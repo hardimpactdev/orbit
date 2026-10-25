@@ -53,6 +53,7 @@ final readonly class GatewayReleaseBuilder
         $path = $this->layout->releasePath($id);
 
         try {
+            new GatewayReleaseAgentDelivery($this->layout, $this->commands)->install($sha, $this->stepLock);
             if ($withWeb || $prepared['reused']) {
                 $this->web->install($id, $sha);
             }

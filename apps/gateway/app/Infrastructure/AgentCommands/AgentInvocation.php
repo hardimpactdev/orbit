@@ -24,9 +24,9 @@ final readonly class AgentInvocation
      *
      * @param  array<string, mixed>  $input
      */
-    public static function envelope(string $pin, float $budgetSeconds, array $input): string
+    public static function envelope(string $pin, float $budgetSeconds, array $input, ?int $streamBytes = null): string
     {
-        return json_encode(['agent_sha256' => $pin, 'deadline_ms' => (int) floor($budgetSeconds * 1000), 'input' => (object) $input], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        return json_encode(['agent_sha256' => $pin, 'deadline_ms' => (int) floor($budgetSeconds * 1000), 'input' => (object) $input, ...($streamBytes === null ? [] : ['stream_bytes' => $streamBytes])], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
     }
 
     /** @param  array<string, mixed>  $input */

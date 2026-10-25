@@ -10,6 +10,7 @@ use App\Infrastructure\AgentCommands\IncusAgentTransport;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Models\Node;
+use Tests\Support\ProcessInput;
 
 final class IncusCarrierFixture implements AgentTransport
 {
@@ -31,7 +32,7 @@ final class IncusCarrierFixture implements AgentTransport
 
     public function run(array $arguments, ProtectedInput $envelope, float $timeout, ?Closure $output = null): CommandResult
     {
-        $this->calls[] = [$arguments, stream_get_contents($envelope->stream()), $timeout];
+        $this->calls[] = [$arguments, ProcessInput::contents($envelope), $timeout];
 
         return new CommandResult($this->failPush && in_array('push', $arguments, true) ? 1 : 0, '{"ok":true,"data":{}}', '', 1, false);
     }

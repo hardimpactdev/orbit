@@ -457,6 +457,28 @@ fn peer_lock_blocks_before_package_changes() {
 
 #[test]
 fn holds_the_actual_peer_lock_through_both_restoration_calls() {
+    // An unrelated test's fork can retain the open flock until exec. Keep the immediate
+    // release assertion in a separate process, as command execution does in production.
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--ignored",
+            "--exact",
+            "commands::node_bootstrap::tests::peer_lock_restoration_helper",
+            "--nocapture",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+#[ignore = "runs in its own process from the peer lock restoration test"]
+fn peer_lock_restoration_helper() {
     struct Recovery {
         fake: Fake,
         path: PathBuf,

@@ -6,7 +6,6 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\ComposerSourceClassifier;
 use App\Domain\Instances\InstancePhpVersionCatalog;
 use App\Domain\Nodes\ManagedUserAccount;
-use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Projects\ProjectType;
 use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentPhpFpmConfigRenderer;
@@ -215,22 +214,11 @@ function orb170_source_configurator(ProjectType $type, string $composer, string 
         'starting_commit' => str_repeat('a', 40),
         'status' => 'source_resolved',
     ]);
-    $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
-    $accounts = new class($account) implements ManagedUserAccountResolver
-    {
-        public function __construct(private readonly ManagedUserAccount $account) {}
-
-        public function resolve(Node $node): ManagedUserAccount
-        {
-            return $this->account;
-        }
-    };
     $agents = new FakeAgentCommandRunner()->answer('instances.inspect-development-profile', ['kind' => 'composer', 'entry_point' => $entryPointKind, 'composer' => base64_encode($composer)]);
 
     return [
         new RemoteDevelopmentInstanceConfigurator(
             $agents,
-            $accounts,
             new ComposerSourceClassifier(new InstancePhpVersionCatalog),
         ),
         $instance,

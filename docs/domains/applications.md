@@ -239,7 +239,7 @@ For a Laravel source, Orbit writes `APP_URL=https://<route-domain>`:
 
 Laravel cannot boot without `APP_KEY`, and a fresh `.env.example` often has an empty key and `APP_NAME=Laravel`. So a new `.env` takes the Instance's non-empty [stored](/reference/environment-variables) `APP_KEY`. Without one, it keeps a non-empty template key or gets a random 32-byte key with the `base64:` prefix. It takes the Instance's stored `APP_NAME` too. Without one, a missing, empty, or `Laravel` name becomes the Project name. An existing `.env` keeps its name and any non-empty key. The key reaches the Node as protected input, never as a command argument. Orbit leaves duplicate `APP_KEY` or `APP_NAME` lines as they are.
 
-A symlinked file, two `APP_URL` lines, or an unclear cached value stops provisioning with `app-dev.laravel_url_configuration_failed`. After activation, the [stored environment](/reference/environment-variables) owns `APP_URL`.
+A symlinked file or cache directory, two `APP_URL` lines, or an unclear cached value stops provisioning with `app-dev.laravel_url_configuration_failed`. Orbit validates both files and the cache directories before it changes either file or its permissions. Each file replacement is atomic. After activation, the [stored environment](/reference/environment-variables) owns `APP_URL`.
 
 ## Production Instances
 

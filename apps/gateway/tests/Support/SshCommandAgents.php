@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Tests\Support;
 
 use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
+use App\Infrastructure\AgentCommands\AgentBinaryInput;
+use App\Infrastructure\AgentCommands\AgentBinaryOutput;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -22,7 +24,7 @@ final readonly class SshCommandAgents implements AdmissionAgentRunner, AgentComm
 {
     public function __construct(private SshExecutor $ssh, private ?AgentCommandRunner $others = null) {}
 
-    public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null): array
+    public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
     {
         return $this->runOver($node, new SshConnection((string) $node->wireguard_ip, $node->user, 22, '/tmp/orbit-test-key', '/tmp/orbit-test-known-hosts', commandTimeout: $deadlineSeconds ?? 900.0), $command, $input, $deadlineSeconds);
     }

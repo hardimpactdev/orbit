@@ -52,12 +52,18 @@ impl Fixture {
             )
             .unwrap();
         }
+        fs::create_dir_all(origin.join("apps/agent")).unwrap();
+        fs::write(
+            origin.join("apps/agent/Cargo.toml"),
+            "[package]\nversion = \"0.5.0\"\n",
+        )
+        .unwrap();
         for app in ["apps/cli", "apps/gateway"] {
             fs::write(origin.join(app).join("composer.json"), "{}").unwrap();
         }
         fs::write(
             origin.join(".gitignore"),
-            "/REVISION\napps/*/vendor/\napps/gateway/.env\n",
+            "/REVISION\napps/*/vendor/\napps/gateway/.env\napps/agent/delivery/\n",
         )
         .unwrap();
         fs::write(
@@ -68,6 +74,7 @@ file_put_contents(getenv('APP_CONFIG_CACHE'), json_encode([
     'revision' => trim(file_get_contents(dirname(__DIR__, 2).'/REVISION')),
     'environment' => file_get_contents(__DIR__.'/.env'),
     'inherited_cargo' => getenv('CARGO_MANIFEST_DIR'),
+    'agent_delivery' => getenv('ORBIT_AGENT_DELIVERY'),
 ]));
 "#,
         )
@@ -145,8 +152,30 @@ file_put_contents(getenv('APP_CONFIG_CACHE'), json_encode([
         );
         self.sha = git_at(&self.origin, &["rev-parse", "HEAD"]);
     }
+    fn stage_delivery(&self, host: &mut Fake) {
+        let source = delivery::inspect(
+            &delivery::Input {
+                checkout: self.checkout.clone(),
+                sha: self.sha.clone(),
+            },
+            host,
+        )
+        .unwrap();
+        delivery::install(
+            &delivery::InstallInput {
+                checkout: self.checkout.clone(),
+                sha: self.sha.clone(),
+                step_lock: self.step.clone(),
+                manifest: delivery_manifest(&source.commit),
+            },
+            host,
+            deadline(),
+        )
+        .unwrap();
+    }
     fn build(&self, host: &mut Fake) {
         assert!(!prepare(&self.prepare(), host, deadline()).unwrap().reused);
+        self.stage_delivery(host);
         assert!(finish(&self.finish(), host, deadline()).unwrap().changed);
     }
 }
@@ -224,7 +253,18 @@ impl Host for Fake {
                 .get_envs()
                 .filter_map(|(key, value)| value.map(|_| key.to_str().unwrap()))
                 .collect();
-            assert_eq!(keys, ["APP_CONFIG_CACHE", "HOME", "LANG", "PATH"]);
+            let expected = if args.iter().any(|arg| arg == "config:cache") {
+                vec![
+                    "APP_CONFIG_CACHE",
+                    "HOME",
+                    "LANG",
+                    "ORBIT_AGENT_DELIVERY",
+                    "PATH",
+                ]
+            } else {
+                vec!["APP_CONFIG_CACHE", "HOME", "LANG", "PATH"]
+            };
+            assert_eq!(keys, expected);
             if self.fail_configuration {
                 return Ok(incus::Output {
                     code: 1,
@@ -312,11 +352,17 @@ fn prepares_finishes_and_reuses_without_touching_shared_storage_or_running_build
         .unwrap()
         .contains("private-sentinel"));
     assert_eq!(cached["inherited_cargo"], false);
+    assert_eq!(
+        cached["agent_delivery"],
+        path.join("apps/agent/delivery/manifest.json")
+            .to_str()
+            .unwrap()
+    );
     assert_eq!(git_at(&path, &["status", "--porcelain"]), "");
     let calls = host.calls.len();
     assert!(prepare(&f.prepare(), &mut host, deadline()).unwrap().reused);
     assert!(!finish(&f.finish(), &mut host, deadline()).unwrap().changed);
-    assert_eq!(host.calls.len(), calls);
+    assert_eq!(host.calls.len(), calls + 1);
     let composer: Vec<_> = host
         .calls
         .iter()
@@ -385,6 +431,7 @@ fn interrupted_builds_repeat_and_configuration_failure_removes_revision() {
     host.fail_composer = false;
     host.fail_configuration = true;
     assert!(!prepare(&f.prepare(), &mut host, deadline()).unwrap().reused);
+    f.stage_delivery(&mut host);
     failure(
         finish(&f.finish(), &mut host, deadline()),
         Failure::Configuration {},
@@ -862,5 +909,176 @@ fn handoff_refuses_unprepared_or_nonprivate_releases_and_busy_steps_before_execu
         r#"{"checkout":"/home/orbit/orbit/apps/gateway","release":"0123456789ab","step_lock":"/home/orbit/.orbit/step.lock","phase":"serve","executable":"/bin/sh"}"#,
     ] {
         assert!(serde_json::from_str::<HandoffInput>(json).is_err());
+    }
+}
+
+fn delivery_manifest(commit: &str) -> delivery::Manifest {
+    serde_json::from_value(json!({"commit": commit, "version": "0.5.0", "artifacts":
+        (["linux-x86_64", "linux-aarch64", "macos-aarch64", "macos-x86_64"].into_iter().map(|platform| {
+            (platform.to_owned(), json!({"sha256": "a".repeat(64), "path": format!("orbit-agent-{platform}"),
+                "url": format!("https://github.com/hardimpactdev/orbit/releases/download/agent-v{commit}/orbit-agent-{platform}")}))
+        }).collect::<serde_json::Map<String, Value>>())
+    })).unwrap()
+}
+
+#[test]
+fn fresh_release_requires_its_own_published_delivery_before_completion() {
+    let f = Fixture::new();
+    let mut host = Fake::default();
+    prepare(&f.prepare(), &mut host, deadline()).unwrap();
+    let input = delivery::Input {
+        checkout: f.checkout.clone(),
+        sha: f.sha.clone(),
+    };
+    let observed = delivery::inspect(&input, &mut host).unwrap();
+    assert_eq!(observed.commit, f.sha);
+    assert!(!observed.installed);
+    failure(
+        finish(&f.finish(), &mut host, deadline()),
+        Failure::Delivery {},
+    );
+    assert!(!f.path().join("REVISION").exists());
+    f.stage_delivery(&mut host);
+    assert!(delivery::inspect(&input, &mut host).unwrap().installed);
+    let before = fs::read(f.path().join("apps/agent/delivery/manifest.json")).unwrap();
+    f.stage_delivery(&mut host);
+    assert_eq!(
+        before,
+        fs::read(f.path().join("apps/agent/delivery/manifest.json")).unwrap()
+    );
+    assert!(finish(&f.finish(), &mut host, deadline()).unwrap().changed);
+}
+
+#[test]
+fn delivery_identity_ignores_gateway_only_changes_and_includes_extension_sources() {
+    let mut f = Fixture::new();
+    let core = f.sha.clone();
+    fs::write(
+        f.origin.join("apps/gateway/composer.json"),
+        "{\"name\":\"fixture/test\"}",
+    )
+    .unwrap();
+    f.commit();
+    let mut host = Fake::default();
+    let mut input = f.prepare();
+    input.git_read = Some(GitRead::default());
+    prepare(&input, &mut host, deadline()).unwrap();
+    assert_eq!(
+        delivery::inspect(
+            &delivery::Input {
+                checkout: f.checkout.clone(),
+                sha: f.sha.clone()
+            },
+            &mut host
+        )
+        .unwrap()
+        .commit,
+        core
+    );
+    fs::create_dir_all(f.origin.join("apps/gateway/extensions/documents/agent/src")).unwrap();
+    fs::write(
+        f.origin
+            .join("apps/gateway/extensions/documents/agent/src/lib.rs"),
+        "// native",
+    )
+    .unwrap();
+    f.commit();
+    let mut input = f.prepare();
+    input.git_read = Some(GitRead::default());
+    prepare(&input, &mut host, deadline()).unwrap();
+    assert_eq!(
+        delivery::inspect(
+            &delivery::Input {
+                checkout: f.checkout.clone(),
+                sha: f.sha.clone()
+            },
+            &mut host
+        )
+        .unwrap()
+        .commit,
+        f.sha
+    );
+}
+
+#[test]
+fn invalid_delivery_refuses_before_writing_or_publishing_the_release() {
+    for kind in [
+        "commit",
+        "version",
+        "missing-platform",
+        "digest",
+        "url",
+        "path",
+        "mixed-repository",
+    ] {
+        let f = Fixture::new();
+        let mut host = Fake::default();
+        prepare(&f.prepare(), &mut host, deadline()).unwrap();
+        let mut manifest = delivery_manifest(&f.sha);
+        match kind {
+            "commit" => manifest.commit = "f".repeat(40),
+            "version" => manifest.version = "wrong".into(),
+            "missing-platform" => {
+                manifest.artifacts.remove("macos-aarch64");
+            }
+            _ => {
+                let artifact = manifest.artifacts.get_mut("linux-x86_64").unwrap();
+                match kind {
+                    "digest" => artifact.sha256 = "x".repeat(64),
+                    "url" => artifact.url = "https://example.test/agent".into(),
+                    "path" => artifact.path = "../agent".into(),
+                    _ => artifact.url = artifact.url.replace("hardimpactdev", "another"),
+                }
+            }
+        }
+        failure(
+            delivery::install(
+                &delivery::InstallInput {
+                    checkout: f.checkout.clone(),
+                    sha: f.sha.clone(),
+                    step_lock: f.step.clone(),
+                    manifest,
+                },
+                &mut host,
+                deadline(),
+            ),
+            Failure::Delivery {},
+        );
+        assert!(!f.path().join("apps/agent/delivery").exists());
+        assert!(!f.path().join("REVISION").exists());
+    }
+}
+
+#[test]
+fn delivery_preserves_invalid_existing_files_and_refuses_linked_manifests() {
+    for linked in [false, true] {
+        let f = Fixture::new();
+        let mut host = Fake::default();
+        prepare(&f.prepare(), &mut host, deadline()).unwrap();
+        let parent = f.path().join("apps/agent/delivery");
+        fs::create_dir(&parent).unwrap();
+        let manifest = parent.join("manifest.json");
+        let outside = f.work.0.join("outside-manifest");
+        fs::write(&outside, "preserve").unwrap();
+        if linked {
+            symlink(&outside, &manifest).unwrap();
+        } else {
+            fs::write(&manifest, "invalid").unwrap();
+        }
+        let before = fs::read(&manifest).unwrap();
+        assert!(delivery::install(
+            &delivery::InstallInput {
+                checkout: f.checkout.clone(),
+                sha: f.sha.clone(),
+                step_lock: f.step.clone(),
+                manifest: delivery_manifest(&f.sha),
+            },
+            &mut host,
+            deadline(),
+        )
+        .is_err());
+        assert_eq!(fs::read(&manifest).unwrap(), before);
+        assert_eq!(fs::read(&outside).unwrap(), b"preserve");
+        assert!(!f.path().join("REVISION").exists());
     }
 }

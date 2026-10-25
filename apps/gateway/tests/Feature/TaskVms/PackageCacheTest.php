@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Actions\TaskVms\FillPackageCacheAction;
 use App\Actions\TaskVms\ObservePackageCacheAction;
 use App\Domain\TaskVms\TaskVmException;
+use App\Infrastructure\AgentCommands\AgentBinaryInput;
+use App\Infrastructure\AgentCommands\AgentBinaryOutput;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentGitHubToken;
@@ -241,7 +243,7 @@ it('publishes verified Project usage only after a successful fill and skips a su
 
         public ?Closure $duringFill = null;
 
-        public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null): array
+        public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
         {
             $payload = $input;
             if ($payload['artifacts'] !== []) {
@@ -295,7 +297,7 @@ it('publishes available cache artifacts without App coverage and rejects invalid
     {
         public bool $invalid = false;
 
-        public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null): array
+        public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
         {
             $payload = $input;
             expect($payload['github_token'])->toBeNull();
@@ -333,7 +335,7 @@ it('records partial fills per Project and keeps them pending until every host su
     {
         public bool $failArtifact = true;
 
-        public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null): array
+        public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
         {
             return [
                 'hashes' => $this->failArtifact ? ['healthy' => 'sha256-'.str_repeat('a', 64)] : ['healthy' => 'sha256-'.str_repeat('a', 64), 'broken' => 'sha256-'.str_repeat('b', 64)],
@@ -371,7 +373,7 @@ it('isolates conflicting archive checksums without blocking another Project', fu
     }
     $agents = new class extends CacheAgentFixture
     {
-        public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null): array
+        public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
         {
             $payload = $input;
             expect(array_column($payload['artifacts'], 'key'))->toBe(['healthy']);
@@ -406,7 +408,7 @@ it('requires every host to verify a changed Composer checksum even when its arch
     {
         public bool $fail = false;
 
-        public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null): array
+        public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
         {
             $payload = $input;
 
@@ -443,7 +445,7 @@ it('accepts bounded printable archive failure reasons and rejects unsafe or over
     {
         public function __construct(private readonly string $reason) {}
 
-        public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null): array
+        public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
         {
             return ['hashes' => [], 'failures' => ['archive' => $this->reason]];
         }
@@ -477,7 +479,7 @@ it('fails a package fill after one attempt and leaves the Project pending for it
     {
         public int $calls = 0;
 
-        public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null): array
+        public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
         {
             $this->calls++;
 
@@ -533,7 +535,7 @@ it('drops an overlapping fill without failure and fills a changed lock on the ne
 
         public function __construct(private readonly Closure $duringFill) {}
 
-        public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null): array
+        public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
         {
             $payload = $input;
             $keys = array_column($payload['artifacts'], 'key');

@@ -5,20 +5,16 @@ declare(strict_types=1);
 use App\Actions\Instances\DeployDefaultInstanceAction;
 use App\Actions\Instances\SelectInstanceSeedAction;
 use App\Domain\Instances\Deployment\DeploymentRequest;
+use App\Domain\Instances\Deployment\DeploymentResult;
 use App\Domain\Instances\Deployment\DevelopmentDeployment;
 use App\Domain\Projects\DevelopmentDeployStep;
 use App\Domain\Projects\ProjectDevelopmentDeployStepStore;
 use App\Models\Instance;
 use Tests\Support\DevelopmentDeploymentFixture;
-use Tests\Support\SubprocessFixture;
 
 beforeEach(function (): void {
     $this->fixture = new DevelopmentDeploymentFixture;
     app()->instance(DevelopmentDeployment::class, $this->fixture->deployment);
-});
-
-afterEach(function (): void {
-    $this->fixture->cleanup();
 });
 
 /** @param list<DevelopmentDeployStep> $steps */
@@ -29,153 +25,110 @@ function plain_steps(Instance $instance, array $steps): void
     }
 }
 
-function plain_git(string $directory, string ...$arguments): string
+function plain_deploy(Instance $instance, ?string $commit = null, ?DeploymentRequest $request = null): DeploymentResult
 {
-    return trim(DevelopmentDeploymentFixture::command(['git', '-C', $directory, ...$arguments]));
+    $action = app(DeployDefaultInstanceAction::class);
+
+    return $action->execute($instance, operation_steps($instance, $action), $request ?? DeploymentRequest::withoutOutput(), $commit);
 }
 
-describe('development defaults in place', function (): void {
-    it('checks out the newest commit on the branch and keeps untracked files and linked worktrees', function (): void {
-        $instance = $this->fixture->instance;
-        $home = $this->fixture->home;
-        plain_steps($instance, [new DevelopmentDeployStep('install', 'printf "%s" "$PWD" > step-ran-in')]);
-        $commit = $this->fixture->push('second');
+it('deploys the selected branch commit and publishes a seed only after every required step passes', function (): void {
+    $instance = $this->fixture->instance;
+    plain_steps($instance, [new DevelopmentDeployStep('install', 'project-install')]);
 
-        $result = app(DeployDefaultInstanceAction::class)->execute($instance, operation_steps($instance, app(DeployDefaultInstanceAction::class)), DeploymentRequest::withoutOutput());
+    $result = plain_deploy($instance);
 
-        expect($result->succeeded)->toBeTrue()
-            ->and($result->commit)->toBe($commit)
-            ->and(plain_git($home, 'rev-parse', 'HEAD'))->toBe($commit)
-            ->and(plain_git($home, 'symbolic-ref', '--short', 'HEAD'))->toBe('main')
-            ->and(file_get_contents($home.'/public/index.php'))->toContain('second')
-            ->and(file_exists($home.'/old.txt'))->toBeFalse()
-            ->and(file_exists($home.'/packages'))->toBeFalse()
-            ->and(file_get_contents($home.'/step-ran-in'))->toBe($home)
-            ->and(file_get_contents($home.'/.cache/warm'))->toBe('previous-cache')
-            ->and(file_get_contents($home.'/.env'))->toBe("APP_ENV=development\n")
-            ->and(file_exists($home.'/releases'))->toBeFalse()
-            ->and(file_exists($home.'/current'))->toBeFalse()
-            ->and(plain_git($this->fixture->sandbox.'/apps/dev935/t3code-ab12', 'rev-parse', 'HEAD'))->toBe($this->fixture->initialCommit)
-            ->and($instance->fresh()->seed_path)->toBe($home)
-            ->and($instance->fresh()->seed_commit)->toBe($commit);
+    expect($result->succeeded)->toBeTrue()
+        ->and($result->commit)->toBe(str_repeat('b', 40))
+        ->and($instance->fresh()->seed_path)->toBe($this->fixture->home)
+        ->and($instance->fresh()->seed_commit)->toBe(str_repeat('b', 40))
+        ->and($this->fixture->agents->commands())->toBe(['instances.resolve-development-target', 'instances.checkout-development-default', 'instances.run-development-step'])
+        ->and($this->fixture->agents->calls[0]['input'])->toMatchArray(['home' => $this->fixture->home, 'branch' => 'main', 'commit' => null])
+        ->and($this->fixture->agents->calls[1]['input']['commit'])->toBe(str_repeat('b', 40))
+        ->and($this->fixture->agents->calls[2]['input'])->toMatchArray(['home' => $this->fixture->home, 'script' => 'project-install', 'step' => 'install']);
 
-        $consumer = Instance::query()->create([
-            'project_id' => $instance->project_id, 'node_id' => $instance->node_id, 'name' => 'feature',
-            'checkout_path' => $this->fixture->sandbox.'/apps/dev935/feature', 'status' => 'reserved',
-        ]);
-        app(SelectInstanceSeedAction::class)->execute($consumer);
-        expect($consumer->fresh()->seed_path)->toBe($home)
-            ->and($consumer->fresh()->seed_commit)->toBe($commit)
-            ->and($consumer->fresh()->seed_repository)->toBe($home);
-    });
+    $consumer = Instance::query()->create([
+        'project_id' => $instance->project_id, 'node_id' => $instance->node_id, 'name' => 'feature',
+        'checkout_path' => '/srv/apps/dev935/feature', 'status' => 'reserved',
+    ]);
+    app(SelectInstanceSeedAction::class)->execute($consumer);
+    expect($consumer->fresh()->seed_path)->toBe($this->fixture->home)
+        ->and($consumer->fresh()->seed_commit)->toBe(str_repeat('b', 40))
+        ->and($consumer->fresh()->seed_repository)->toBe($this->fixture->home);
+});
 
-    it('leaves the checkout at the new commit after a failed step and reruns the steps on the next deployment', function (): void {
-        $instance = $this->fixture->instance;
-        $home = $this->fixture->home;
-        plain_steps($instance, [new DevelopmentDeployStep('install', 'test -f allow-install; touch installed')]);
-        $commit = $this->fixture->push('second');
+it('keeps the previous seed after a failed step and retries the ordered steps on the next deployment', function (): void {
+    $instance = $this->fixture->instance;
+    $instance->update(['seed_path' => $this->fixture->home, 'seed_commit' => str_repeat('a', 40), 'seed_repository' => $this->fixture->home]);
+    plain_steps($instance, [new DevelopmentDeployStep('install', 'project-install'), new DevelopmentDeployStep('verify', 'project-verify')]);
+    $agents = $this->fixture->agents;
+    $agents->answer('instances.run-development-step', ['exit_code' => 1, 'output' => [['stream' => 'stderr', 'value' => 'Install failed']], 'truncated' => false]);
 
-        $failed = app(DeployDefaultInstanceAction::class)->execute($instance, operation_steps($instance, app(DeployDefaultInstanceAction::class)), DeploymentRequest::withoutOutput());
+    $failed = plain_deploy($instance);
 
-        expect($failed->failure?->errorCode)->toBe('deployment.step_failed')
-            ->and(plain_git($home, 'rev-parse', 'HEAD'))->toBe($commit)
-            ->and($instance->fresh()->seed_commit)->toBeNull();
+    expect($failed->failure?->errorCode)->toBe('deployment.step_failed')
+        ->and($failed->commit)->toBe(str_repeat('b', 40))
+        ->and($instance->fresh()->seed_commit)->toBe(str_repeat('a', 40))
+        ->and($agents->commands())->toBe(['instances.resolve-development-target', 'instances.checkout-development-default', 'instances.run-development-step']);
 
-        touch($home.'/allow-install');
-        $retried = app(DeployDefaultInstanceAction::class)->execute($instance, operation_steps($instance, app(DeployDefaultInstanceAction::class)), DeploymentRequest::withoutOutput());
+    $agents->calls = [];
+    $agents->answer('instances.run-development-step', ['exit_code' => 0, 'output' => [], 'truncated' => false]);
+    $retried = plain_deploy($instance);
+    expect($retried->succeeded)->toBeTrue()
+        ->and($instance->fresh()->seed_commit)->toBe(str_repeat('b', 40))
+        ->and(array_column(array_slice(array_column($agents->calls, 'input'), 2), 'step'))->toBe(['install', 'verify']);
+});
 
-        expect($retried->succeeded)->toBeTrue()
-            ->and(file_exists($home.'/installed'))->toBeTrue()
-            ->and($instance->fresh()->seed_commit)->toBe($commit);
-    });
+it('passes a pinned commit to the agent and maps a commit outside the branch without checking out', function (): void {
+    $instance = $this->fixture->instance;
+    $agents = $this->fixture->agents;
+    $commit = str_repeat('b', 40);
 
-    it('checks out a pinned commit that the fetched branch contains, and refuses one it does not', function (): void {
-        $instance = $this->fixture->instance;
-        $home = $this->fixture->home;
-        $second = $this->fixture->push('second');
-        $this->fixture->push('third');
+    expect(plain_deploy($instance, $commit)->succeeded)->toBeTrue()
+        ->and($agents->calls[0]['input']['commit'])->toBe($commit)
+        ->and($instance->fresh()->seed_commit)->toBe($commit);
 
-        $pinned = app(DeployDefaultInstanceAction::class)->execute($instance, operation_steps($instance, app(DeployDefaultInstanceAction::class)), DeploymentRequest::withoutOutput(), $second);
+    $agents->calls = [];
+    $agents->refuse('instances.resolve-development-target', 'instances.commit_not_on_branch');
+    $refused = plain_deploy($instance, str_repeat('f', 40));
+    expect($refused->failure?->errorCode)->toBe('deployment.commit_not_on_branch')
+        ->and($refused->commit)->toBe(str_repeat('f', 40))
+        ->and($agents->commands())->toBe(['instances.resolve-development-target'])
+        ->and($instance->fresh()->seed_commit)->toBe($commit);
+});
 
-        expect($pinned->succeeded)->toBeTrue()
-            ->and($pinned->commit)->toBe($second)
-            ->and(plain_git($home, 'rev-parse', 'HEAD'))->toBe($second)
-            ->and($instance->fresh()->seed_commit)->toBe($second);
+it('maps checkout refusals without running steps or publishing a seed', function (string $code, string $expected): void {
+    $instance = $this->fixture->instance;
+    plain_steps($instance, [new DevelopmentDeployStep('install', 'project-install')]);
+    $this->fixture->agents->refuse('instances.checkout-development-default', $code, ['changes' => 'public/index.php']);
+    $events = [];
 
-        $refused = app(DeployDefaultInstanceAction::class)->execute($instance, operation_steps($instance, app(DeployDefaultInstanceAction::class)), DeploymentRequest::withoutOutput(), str_repeat('f', 40));
+    $result = plain_deploy($instance, request: new DeploymentRequest(static function ($event) use (&$events): void {
+        $events[] = $event->value;
+    }));
 
-        expect($refused->failure?->errorCode)->toBe('deployment.commit_not_on_branch')
-            ->and($refused->commit)->toBe(str_repeat('f', 40))
-            ->and(plain_git($home, 'rev-parse', 'HEAD'))->toBe($second);
-    });
+    expect($result->failure?->errorCode)->toBe($expected)
+        ->and($instance->fresh()->seed_commit)->toBeNull()
+        ->and($this->fixture->agents->commands())->toBe(['instances.resolve-development-target', 'instances.checkout-development-default']);
+    if ($code === 'instances.checkout_dirty') {
+        expect(implode('', $events))->toContain('public/index.php');
+    }
+})->with([
+    ['instances.checkout_dirty', 'deployment.checkout_dirty'],
+    ['instances.branch_diverged', 'deployment.branch_diverged'],
+    ['instances.lifecycle_busy', 'instance.lifecycle_busy'],
+]);
 
-    it('refuses a checkout with uncommitted changes to tracked files and changes nothing', function (): void {
-        $home = $this->fixture->home;
-        file_put_contents($home.'/public/index.php', '<?php echo "local edit";');
-        $this->fixture->push('second');
-        $events = [];
+it('sends the step timeout and records the agent exit status and output', function (): void {
+    $instance = $this->fixture->instance;
+    plain_steps($instance, [new DevelopmentDeployStep('hang', 'project-wait', timeoutSeconds: 1)]);
+    $this->fixture->agents->answer('instances.run-development-step', ['exit_code' => 143, 'output' => [['stream' => 'stdout', 'value' => 'started']], 'truncated' => false, 'timed_out' => true]);
 
-        $result = app(DeployDefaultInstanceAction::class)->execute($this->fixture->instance, operation_steps($this->fixture->instance, app(DeployDefaultInstanceAction::class)), new DeploymentRequest(static function ($event) use (&$events): void {
-            $events[] = $event->value;
-        }));
+    $result = plain_deploy($instance);
 
-        expect($result?->failure?->errorCode)->toBe('deployment.checkout_dirty')
-            ->and(plain_git($home, 'rev-parse', 'HEAD'))->toBe($this->fixture->initialCommit)
-            ->and(file_get_contents($home.'/public/index.php'))->toBe('<?php echo "local edit";')
-            ->and(implode('', $events))->toContain('public/index.php');
-    });
-
-    it('refuses a local branch with commits that the target commit does not contain', function (): void {
-        $home = $this->fixture->home;
-        plain_git($home, '-c', 'user.email=dev935@example.test', '-c', 'user.name=Local', 'commit', '--allow-empty', '-m', 'local only');
-        $local = plain_git($home, 'rev-parse', 'HEAD');
-        $this->fixture->push('second');
-
-        $result = app(DeployDefaultInstanceAction::class)->execute($this->fixture->instance, operation_steps($this->fixture->instance, app(DeployDefaultInstanceAction::class)), DeploymentRequest::withoutOutput());
-
-        expect($result?->failure?->errorCode)->toBe('deployment.branch_diverged')
-            ->and(plain_git($home, 'rev-parse', 'HEAD'))->toBe($local)
-            ->and(plain_git($home, 'rev-parse', 'main'))->toBe($local);
-    });
-
-    it('runs back-to-back steps when an earlier step leaves a process behind', function (): void {
-        plain_steps($this->fixture->instance, [
-            new DevelopmentDeployStep('daemon', 'setsid -f sleep 5 >/dev/null 2>&1 </dev/null'),
-            ...array_map(static fn (int $step): DevelopmentDeployStep => new DevelopmentDeployStep('step-'.$step, 'true'), range(1, 8)),
-        ]);
-
-        $result = app(DeployDefaultInstanceAction::class)->execute($this->fixture->instance, operation_steps($this->fixture->instance, app(DeployDefaultInstanceAction::class)), DeploymentRequest::withoutOutput());
-
-        expect($result?->succeeded)->toBeTrue()
-            ->and($result?->commands)->toHaveCount(9);
-    });
-
-    it('waits for a setup step that runs in the checkout', function (): void {
-        $this->fixture->push('second');
-        $lock = DevelopmentDeploymentFixture::holdLifecycleLock($this->fixture->home);
-
-        $result = app(DeployDefaultInstanceAction::class)->execute($this->fixture->instance, operation_steps($this->fixture->instance, app(DeployDefaultInstanceAction::class)), DeploymentRequest::withoutOutput());
-        fclose($lock);
-
-        expect($result?->failure?->errorCode)->toBe('instance.lifecycle_busy')
-            ->and(plain_git($this->fixture->home, 'rev-parse', 'HEAD'))->toBe($this->fixture->initialCommit)
-            ->and(file_exists('/tmp/orbit-lifecycle-'.posix_geteuid().'-'.hash('sha256', $this->fixture->home).'.lock'))->toBeFalse();
-    });
-
-    it('stops a step at its timeout', function (): void {
-        plain_steps($this->fixture->instance, [new DevelopmentDeployStep('hang', SubprocessFixture::DelayedHook, timeoutSeconds: 1)]);
-        $started = microtime(true);
-
-        $result = app(DeployDefaultInstanceAction::class)->execute($this->fixture->instance, operation_steps($this->fixture->instance, app(DeployDefaultInstanceAction::class)), DeploymentRequest::withoutOutput());
-
-        expect($result?->failure?->errorCode)->toBe('deployment.step_failed')
-            ->and($result?->commands[0]->result->exitCode)->toBe(143)
-            ->and(microtime(true) - $started)->toBeLessThan(20.0)
-            ->and(is_file($this->fixture->home.'/start-marker'))->toBeTrue();
-        SubprocessFixture::assertExited(
-            (int) file_get_contents($this->fixture->home.'/hook-pid'),
-            (int) file_get_contents($this->fixture->home.'/child-pid'),
-        );
-        expect(is_file($this->fixture->home.'/later-marker'))->toBeFalse();
-    });
+    expect($result->failure?->errorCode)->toBe('deployment.step_failed')
+        ->and($result->commands[0]->result->exitCode)->toBe(143)
+        ->and($result->commands[0]->result->stdout)->toBe('started')
+        ->and($this->fixture->agents->calls[2]['input']['timeout_seconds'])->toBe(1)
+        ->and($this->fixture->agents->deadlines[2])->toBe(31.0);
 });

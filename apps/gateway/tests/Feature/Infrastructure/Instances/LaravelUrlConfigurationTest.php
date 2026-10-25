@@ -7,23 +7,23 @@ use App\Data\Projects\UpdateProjectData;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\ComposerSourceClassifier;
 use App\Domain\Instances\InstancePhpVersionCatalog;
-use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceConfigurator;
+use App\Infrastructure\Nodes\AgentManagedUserAccountResolver;
 use App\Models\Instance;
 use App\Models\InstanceEnvironmentValue;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
 use Dotenv\Dotenv;
-use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
-use Tests\Support\LocalAgentBinary;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\Orb101ProjectUpdateFixture;
 
 it('requires one Composer Laravel declaration and one regular Artisan marker', function (): void {
@@ -62,83 +62,52 @@ it('leaves a Composer non-Laravel source classified as PHP only', function (): v
     expect($profile->phpVersion)->toBe('8.4')->and($profile->laravel)->toBeFalse();
 });
 
-it('emits a source preflight that rejects foreign-owned Composer metadata', function (): void {
-    $directory = sys_get_temp_dir().'/orbit-source-owner-'.Str::uuid();
-    $files = new Filesystem;
-    $files->ensureDirectoryExists($directory);
-    file_put_contents($directory.'/composer.json', '{"require":{"php":"^8.4"}}');
+it('maps unsafe source metadata to the domain refusal', function (): void {
+    [$configurator, $agents, $instance] = orb127_laravel_configurator('/home/orbit/acme');
+    $agents->answer('instances.inspect-development-profile', ['kind' => 'unsafe']);
 
-    try {
-        [$configurator, $ssh, $instance] = orb127_laravel_configurator($directory, 'nobody');
-
-        expect(fn () => $configurator->inspect($instance))
-            ->toThrow(function (RuntimeConvergenceException $exception): void {
-                expect($exception->errorCode)->toBe('app-dev.source_metadata_unsafe');
-            });
-
-    } finally {
-        $files->deleteDirectory($directory);
-    }
+    expect(fn () => $configurator->inspect($instance))
+        ->toThrow(fn (RuntimeConvergenceException $exception) => expect($exception->errorCode)->toBe('app-dev.source_metadata_unsafe'));
+    expect($agents->calls)->toBe([[
+        'node' => 'laravel-configurator',
+        'command' => 'instances.inspect-development-profile',
+        'input' => ['application' => '/home/orbit/acme', 'owner' => 'orbit', 'entry_point' => 'artisan'],
+    ]]);
 });
 
 it('does not classify application metadata for an unrouted monorepo default', function (): void {
-    $directory = sys_get_temp_dir().'/orbit-monorepo-default-'.Str::uuid();
-    $files = new Filesystem;
-    $files->ensureDirectoryExists($directory);
-    // A monorepo's root metadata need not belong to a single managed application.
-    file_put_contents($directory.'/composer.json', '{"scripts":{"check":"composer check --working-dir=apps/gateway"}}');
+    [$configurator, $agents, $instance] = orb127_laravel_configurator('/home/orbit/acme');
+    $instance->project->update(['type' => ProjectType::Monorepo]);
+    $instance->update(['name' => 'default']);
 
-    try {
-        [$configurator, $ssh, $instance] = orb127_laravel_configurator($directory, 'nobody');
-        $instance->project->update(['type' => ProjectType::Monorepo]);
-        $instance->update(['name' => 'default']);
-        try {
-            $profile = $configurator->inspect($instance);
-        } catch (RuntimeConvergenceException $exception) {
-            expect($exception->errorCode)->toBe('app-dev.source_metadata_unsafe');
+    $profile = $configurator->inspect($instance);
 
-            throw $exception;
-        }
-
-        expect($profile->phpVersion)->toBeNull()
-            ->and($profile->laravel)->toBeFalse();
-    } finally {
-        $files->deleteDirectory($directory);
-    }
+    expect($profile->phpVersion)->toBeNull()->and($profile->laravel)->toBeFalse();
+    expect($agents->calls)->toBe([]);
 });
 
 it('retains metadata safety checks for a monorepo with a Route', function (RouteStatus $status): void {
-    $directory = sys_get_temp_dir().'/orbit-monorepo-routed-'.Str::uuid();
-    $files = new Filesystem;
-    $files->ensureDirectoryExists($directory);
-    file_put_contents($directory.'/composer.json', '{}');
+    [$configurator, $agents, $instance] = orb127_laravel_configurator('/home/orbit/acme');
+    $agents->answer('instances.inspect-development-profile', ['kind' => 'unsafe']);
+    $instance->project->update(['type' => ProjectType::Monorepo]);
+    $route = Route::query()->create([
+        'project_id' => $instance->project_id,
+        'node_id' => $instance->node_id,
+        'domain' => 'monorepo.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    $route->update([
+        'status' => $status,
+        'failed_step' => $status === RouteStatus::Failed ? 'source-classification' : null,
+        'error_code' => $status === RouteStatus::Failed ? 'app-dev.source_metadata_unsafe' : null,
+    ]);
 
-    try {
-        [$configurator, $ssh, $instance] = orb127_laravel_configurator($directory, 'nobody');
-        $instance->project->update(['type' => ProjectType::Monorepo]);
-        $route = Route::query()->create([
-            'project_id' => $instance->project_id,
-            'node_id' => $instance->node_id,
-            'domain' => 'monorepo.test',
-            'provenance' => RouteProvenance::Explicit,
-            'publication' => RoutePublication::Private,
-            'status' => RouteStatus::Pending,
-        ]);
-        $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
-        $route->update([
-            'status' => $status,
-            'failed_step' => $status === RouteStatus::Failed ? 'source-classification' : null,
-            'error_code' => $status === RouteStatus::Failed ? 'app-dev.source_metadata_unsafe' : null,
-        ]);
-
-        expect(fn () => $configurator->inspect($instance))
-            ->toThrow(function (RuntimeConvergenceException $exception): void {
-                expect($exception->errorCode)->toBe('app-dev.source_metadata_unsafe');
-            });
-
-    } finally {
-        $files->deleteDirectory($directory);
-    }
+    expect(fn () => $configurator->inspect($instance))
+        ->toThrow(fn (RuntimeConvergenceException $exception) => expect($exception->errorCode)->toBe('app-dev.source_metadata_unsafe'));
+    expect($agents->commands())->toBe(['instances.inspect-development-profile']);
 })->with([RouteStatus::Pending, RouteStatus::Active, RouteStatus::Failed]);
 
 it('refuses malformed Composer metadata and conflicting Laravel declarations', function (): void {
@@ -157,227 +126,61 @@ it('refuses malformed Composer metadata and conflicting Laravel declarations', f
         });
 });
 
-it('atomically reconciles only Laravel URL values and preserves later operator changes', function (): void {
-    $directory = sys_get_temp_dir().'/orbit-laravel-url-'.Str::uuid();
-    $files = new Filesystem;
-    $files->ensureDirectoryExists($directory.'/bootstrap/cache');
-    $initialEnvironment = "APP_NAME=Acme\nAPP_URL=http://old.test\nTOKEN=unchanged\n";
-    $initialCache = <<<'PHP'
-        <?php
+it('sends a generated application key and quoted Project name to the managed account', function (): void {
+    [$configurator, $agents, $instance] = orb127_laravel_configurator('/home/orbit/acme');
+    $instance->project->update(['name' => 'Acme "Shop" $HOME']);
+    $agents->answer('instances.write-development-url', ['written' => true]);
 
-        return [
-            'app' => [
-                'name' => 'Acme',
-                'url' => 'http://old.test',
-            ],
-            'filesystems' => [
-                'disks' => ['public' => ['url' => 'https://files.example.test/storage']],
-            ],
-            'token' => 'unchanged',
-        ];
-        PHP;
-    file_put_contents($directory.'/.env', $initialEnvironment);
-    file_put_contents($directory.'/bootstrap/cache/config.php', $initialCache);
-    chmod($directory.'/.env', 0o640);
-    chmod($directory.'/bootstrap/cache/config.php', 0o644);
+    $configurator->configureLaravelUrl($instance, 'https://feature.acme.test');
 
-    try {
-        [$configurator, $ssh, $instance] = orb127_laravel_configurator($directory);
-
-        $configurator->configureLaravelUrl($instance, 'https://feature.acme.test');
-
-        expect(file_get_contents($directory.'/.env'))
-            ->toBe("APP_NAME=Acme\nAPP_URL=https://feature.acme.test\nTOKEN=unchanged\n")
-            ->and(file_get_contents($directory.'/bootstrap/cache/config.php'))
-            ->toBe(str_replace("'url' => 'http://old.test'", "'url' => 'https://feature.acme.test'", $initialCache))
-            ->and(fileperms($directory.'/.env') & 0o777)
-            ->toBe(0o640)
-            ->and(fileperms($directory.'/bootstrap/cache/config.php') & 0o777)
-            ->toBe(0o644);
-
-        file_put_contents(
-            $directory.'/.env',
-            "APP_NAME=Operator\nAPP_URL=https://operator.test\nTOKEN=later-change\n",
-        );
-        $operatorCache = str_replace(
-            ["'name' => 'Acme'", "'url' => 'https://feature.acme.test'", "'token' => 'unchanged'"],
-            ["'name' => 'Operator'", "'url' => 'https://operator.test'", "'token' => 'later-change'"],
-            (string) file_get_contents($directory.'/bootstrap/cache/config.php'),
-        );
-        file_put_contents($directory.'/bootstrap/cache/config.php', $operatorCache);
-
-        $configurator->configureLaravelUrl($instance, 'https://next.acme.test');
-
-        expect(file_get_contents($directory.'/.env'))
-            ->toBe("APP_NAME=Operator\nAPP_URL=https://next.acme.test\nTOKEN=later-change\n")
-            ->and(file_get_contents($directory.'/bootstrap/cache/config.php'))
-            ->toBe(str_replace(
-                "'url' => 'https://operator.test'",
-                "'url' => 'https://next.acme.test'",
-                $operatorCache,
-            ));
-    } finally {
-        $files->deleteDirectory($directory);
-    }
+    expect($agents->commands())->toBe(['instances.write-development-url']);
+    $call = $agents->calls[0];
+    $input = $call['input'];
+    $key = Dotenv::parse($input['app_key'])['APP_KEY'];
+    expect($key)->toStartWith('base64:');
+    expect(strlen(base64_decode(substr($key, 7), true)))->toBe(32);
+    expect(Dotenv::parse($input['app_name']))->toBe(['APP_NAME' => 'Acme "Shop" $HOME']);
+    unset($input['app_key'], $input['app_name']);
+    expect($call['node'])->toBe('laravel-configurator');
+    expect($input)->toBe([
+        'directory' => '/home/orbit/acme', 'owner' => 'orbit', 'url' => 'https://feature.acme.test',
+        'app_key_stored' => false, 'app_name_stored' => false, 'require_artisan' => false,
+    ]);
 });
 
-it('creates missing Laravel environment configuration from its safe template', function (): void {
-    $directory = sys_get_temp_dir().'/orbit-laravel-template-'.Str::uuid();
-    $files = new Filesystem;
-    $files->ensureDirectoryExists($directory);
-    file_put_contents($directory.'/.env.example', "APP_NAME=Acme\nTOKEN=installation-input\n");
-    chmod($directory.'/.env.example', 0o640);
-
-    try {
-        [$configurator, $ssh, $instance] = orb127_laravel_configurator($directory);
-
-        $configurator->configureLaravelUrl($instance, 'https://feature.acme.test');
-
-        expect(file_get_contents($directory.'/.env.example'))
-            ->toBe("APP_NAME=Acme\nTOKEN=installation-input\n")
-            ->and(file_get_contents($directory.'/.env'))
-            ->toMatch('#^APP_NAME=Acme\nTOKEN=installation-input\nAPP_URL=https://feature\.acme\.test\nAPP_KEY="base64:[A-Za-z0-9+/]{43}="\n$#')
-            ->and(fileperms($directory.'/.env') & 0o777)
-            ->toBe(0o640);
-    } finally {
-        $files->deleteDirectory($directory);
-    }
-});
-
-it('writes a usable development .env APP_KEY and the Project name from an empty template', function (): void {
-    $directory = sys_get_temp_dir().'/orbit-laravel-key-'.Str::uuid();
-    $files = new Filesystem;
-    $files->ensureDirectoryExists($directory);
-    file_put_contents($directory.'/.env.example', "APP_NAME=Laravel\nAPP_ENV=local\nAPP_KEY=\nAPP_URL=http://localhost\n");
-
-    try {
-        [$configurator, $ssh, $instance] = orb127_laravel_configurator($directory);
-        $instance->project->update(['name' => 'Acme "Shop" $HOME']);
-
-        $configurator->configureLaravelUrl($instance->refresh(), 'https://feature.acme.test');
-        $environment = Dotenv::parse((string) file_get_contents($directory.'/.env'));
-
-        expect(array_keys($environment))->toBe(['APP_NAME', 'APP_ENV', 'APP_KEY', 'APP_URL'])
-            ->and($environment['APP_NAME'])->toBe('Acme "Shop" $HOME')
-            ->and($environment['APP_URL'])->toBe('https://feature.acme.test')
-            ->and($environment['APP_KEY'])->toStartWith('base64:')
-            ->and(strlen((string) base64_decode(substr((string) $environment['APP_KEY'], 7), true)))->toBe(32);
-    } finally {
-        $files->deleteDirectory($directory);
-    }
-});
-
-it('projects stored values into a new development .env APP_KEY and APP_NAME', function (): void {
-    $directory = sys_get_temp_dir().'/orbit-laravel-stored-key-'.Str::uuid();
-    $files = new Filesystem;
-    $files->ensureDirectoryExists($directory);
-    file_put_contents($directory.'/.env.example', "APP_NAME=Template\nAPP_KEY=base64:template\n");
+it('sends stored application values and the requested URL on every call', function (): void {
+    [$configurator, $agents, $instance] = orb127_laravel_configurator('/home/orbit/acme');
     $key = 'base64:'.base64_encode(str_repeat('k', 32));
+    $instance->environmentValues()->createMany([
+        ['env_key' => 'APP_KEY', 'env_value' => $key],
+        ['env_key' => 'APP_NAME', 'env_value' => 'Stored Name'],
+    ]);
+    $agents->answer('instances.write-development-url', ['written' => false]);
 
-    try {
-        [$configurator, $ssh, $instance] = orb127_laravel_configurator($directory);
-        $instance->environmentValues()->createMany([
-            ['env_key' => 'APP_KEY', 'env_value' => $key],
-            ['env_key' => 'APP_NAME', 'env_value' => 'Stored Name'],
-        ]);
+    foreach (['https://feature.acme.test', 'https://next.acme.test'] as $url) {
+        $configurator->configureLaravelUrl($instance, $url);
+    }
 
-        $configurator->configureLaravelUrl($instance, 'https://feature.acme.test');
-
-        expect(Dotenv::parse((string) file_get_contents($directory.'/.env')))
-            ->toBe(['APP_NAME' => 'Stored Name', 'APP_KEY' => $key, 'APP_URL' => 'https://feature.acme.test']);
-    } finally {
-        $files->deleteDirectory($directory);
+    expect($agents->commands())->toBe(['instances.write-development-url', 'instances.write-development-url']);
+    expect(array_column(array_column($agents->calls, 'input'), 'url'))
+        ->toBe(['https://feature.acme.test', 'https://next.acme.test']);
+    foreach ($agents->calls as $call) {
+        expect(Dotenv::parse($call['input']['app_key']."\n".$call['input']['app_name']))
+            ->toBe(['APP_KEY' => $key, 'APP_NAME' => 'Stored Name']);
+        expect($call['input']['app_key_stored'])->toBeTrue()
+            ->and($call['input']['app_name_stored'])->toBeTrue();
     }
 });
 
-it('fills only an empty development .env APP_KEY in an existing file', function (): void {
-    $directory = sys_get_temp_dir().'/orbit-laravel-existing-key-'.Str::uuid();
-    $files = new Filesystem;
-    $files->ensureDirectoryExists($directory);
-    file_put_contents($directory.'/.env', "APP_NAME=Laravel\nAPP_KEY=\nAPP_URL=http://old.test\n");
+it('maps an agent URL refusal without retrying or changing stored environment', function (): void {
+    [$configurator, $agents, $instance] = orb127_laravel_configurator('/home/orbit/acme');
+    $instance->environmentValues()->create(['env_key' => 'APP_URL', 'env_value' => 'https://old.test']);
+    $agents->refuse('instances.write-development-url', 'instances.release_invalid', ['check' => 'ambiguous cache']);
 
-    try {
-        [$configurator, $ssh, $instance] = orb127_laravel_configurator($directory);
-
-        $configurator->configureLaravelUrl($instance, 'https://feature.acme.test');
-        $filled = (string) file_get_contents($directory.'/.env');
-
-        $configurator->configureLaravelUrl($instance, 'https://next.acme.test');
-
-        expect($filled)->toMatch('#^APP_NAME=Laravel\nAPP_KEY="base64:[A-Za-z0-9+/]{43}="\nAPP_URL=https://feature\.acme\.test\n$#')
-            ->and(file_get_contents($directory.'/.env'))
-            ->toBe(str_replace('https://feature.acme.test', 'https://next.acme.test', $filled));
-    } finally {
-        $files->deleteDirectory($directory);
-    }
-});
-
-it('keeps an Instance environment unreadable to other local users', function (bool $exists): void {
-    $directory = sys_get_temp_dir().'/orbit-laravel-env-mode-'.Str::uuid();
-    $files = new Filesystem;
-    $files->ensureDirectoryExists($directory);
-    $file = $directory.($exists ? '/.env' : '/.env.example');
-    file_put_contents($file, $exists ? "APP_URL=https://feature.acme.test\n" : "APP_NAME=Acme\n");
-    chmod($file, 0o664);
-
-    try {
-        [$configurator, $ssh, $instance] = orb127_laravel_configurator($directory);
-
-        $configurator->configureLaravelUrl($instance, 'https://feature.acme.test');
-
-        expect(fileperms($directory.'/.env') & 0o777)->toBe(0o660);
-    } finally {
-        $files->deleteDirectory($directory);
-    }
-})->with(['created from a template' => false, 'already present and unchanged' => true]);
-
-it('refuses unsafe Laravel URL files before replacing any bytes', function (string $unsafe): void {
-    $directory = sys_get_temp_dir().'/orbit-laravel-unsafe-'.Str::uuid();
-    $files = new Filesystem;
-    $files->ensureDirectoryExists($directory.'/bootstrap/cache');
-    $external = $directory.'-external';
-    file_put_contents($external, "APP_URL=https://outside.test\n");
-    file_put_contents($directory.'/.env', "APP_URL=https://inside.test\n");
-    file_put_contents($directory.'/bootstrap/cache/config.php', "<?php return ['url' => 'https://inside.test'];\n");
-
-    if ($unsafe === 'symlink') {
-        unlink($directory.'/.env');
-        symlink($external, $directory.'/.env');
-    }
-
-    try {
-        [$configurator, $ssh, $instance] = orb127_laravel_configurator(
-            $directory,
-            $unsafe === 'owner' ? 'not-the-file-owner' : null,
-        );
-
-        expect(fn () => $configurator->configureLaravelUrl($instance, 'https://next.test'))->toThrow(RuntimeConvergenceException::class);
-        expect(file_get_contents($external))
-            ->toBe("APP_URL=https://outside.test\n")
-            ->and(file_get_contents($directory.'/bootstrap/cache/config.php'))
-            ->toBe("<?php return ['url' => 'https://inside.test'];\n");
-    } finally {
-        $files->deleteDirectory($directory);
-        $files->delete($external);
-    }
-})->with(['symlink', 'owner']);
-
-it('refuses duplicate Laravel URL values without changing the environment', function (): void {
-    $directory = sys_get_temp_dir().'/orbit-laravel-duplicate-'.Str::uuid();
-    $files = new Filesystem;
-    $files->ensureDirectoryExists($directory);
-    $environment = "APP_URL=https://first.test\nAPP_NAME=Acme\nAPP_URL=https://second.test\n";
-    file_put_contents($directory.'/.env', $environment);
-
-    try {
-        [$configurator, $ssh, $instance] = orb127_laravel_configurator($directory);
-
-        expect(fn () => $configurator->configureLaravelUrl($instance, 'https://next.test'))->toThrow(RuntimeConvergenceException::class);
-        expect(file_get_contents($directory.'/.env'))
-            ->toBe($environment);
-    } finally {
-        $files->deleteDirectory($directory);
-    }
+    expect(fn () => $configurator->configureLaravelUrl($instance, 'https://next.test'))
+        ->toThrow(fn (RuntimeConvergenceException $exception) => expect($exception->errorCode)->toBe('app-dev.laravel_url_configuration_failed'));
+    expect($agents->commands())->toBe(['instances.write-development-url']);
+    expect($instance->environmentValues()->where('env_key', 'APP_URL')->value('env_value'))->toBe('https://old.test');
 });
 
 it('reconciles Laravel canonical URLs when a Project slug changes', function (): void {
@@ -458,23 +261,10 @@ it('restores Laravel URL environment on a failed slug update and ignores applica
     expect($fixture->project->refresh()->slug)->toBe('acme');
 });
 
-/** @return array{RemoteDevelopmentInstanceConfigurator, null, Instance} */
-function orb127_laravel_configurator(string $checkoutPath, ?string $managedUser = null): array
+/** @return array{RemoteDevelopmentInstanceConfigurator, FakeAgentCommandRunner, Instance} */
+function orb127_laravel_configurator(string $checkoutPath): array
 {
-    $owner = posix_getpwuid(posix_geteuid());
-    $user = $managedUser ?? (is_array($owner) && is_string($owner['name'] ?? null) ? $owner['name'] : 'orbit');
-    $account = new ManagedUserAccount($user, $user, '/home/'.$user);
-    $accounts = new class($account) implements ManagedUserAccountResolver
-    {
-        public function __construct(
-            private readonly ManagedUserAccount $account,
-        ) {}
-
-        public function resolve(Node $node): ManagedUserAccount
-        {
-            return $this->account;
-        }
-    };
+    $user = 'orbit';
     $node = Node::query()->create([
         'name' => 'laravel-configurator',
         'status' => 'active',
@@ -498,12 +288,10 @@ function orb127_laravel_configurator(string $checkoutPath, ?string $managedUser 
         'starting_commit' => str_repeat('a', 40),
         'status' => 'source_resolved',
     ]);
-    // The managed account's commands run with the agent built from this checkout, as the current user.
-    $configurator = new RemoteDevelopmentInstanceConfigurator(
-        LocalAgentBinary::localRunner(sys_get_temp_dir().'/orbit-laravel-agent-'.Str::uuid()),
-        $accounts,
-        new ComposerSourceClassifier(new InstancePhpVersionCatalog),
-    );
+    $agents = new FakeAgentCommandRunner;
+    app()->instance(AgentCommandRunner::class, $agents);
+    app()->bind(ManagedUserAccountResolver::class, AgentManagedUserAccountResolver::class);
+    $configurator = app(RemoteDevelopmentInstanceConfigurator::class);
 
-    return [$configurator, null, $instance];
+    return [$configurator, $agents, $instance];
 }

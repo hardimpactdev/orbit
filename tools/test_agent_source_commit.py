@@ -27,6 +27,7 @@ class AgentSourceCommitTest(unittest.TestCase):
             script = root / 'apps/agent/scripts/source-commit'
             script.parent.mkdir(parents=True)
             shutil.copy2(ROOT / 'apps/agent/scripts/source-commit', script)
+            shutil.copy2(ROOT / 'apps/agent/source-paths.json', root / 'apps/agent/source-paths.json')
             core = commit('apps/agent/src/lib.rs', 'core')
             native = commit('apps/gateway/extensions/documents/agent/src/lib.rs', 'extension')
             commit('apps/gateway/app/Controller.php', '<?php')

@@ -94,10 +94,12 @@ pub mod source;
 pub mod sqlite_copy;
 mod sqlite_query;
 pub mod sqlite_seed;
+pub mod sqlite_transfer;
 mod ssh_host_key;
 pub mod storage_root;
 pub mod task_git;
 pub mod task_git_export;
+pub mod task_git_import;
 pub(crate) mod task_topology;
 mod task_vm_hub;
 pub mod tls_check;
@@ -145,6 +147,8 @@ pub fn all() -> Vec<Entry> {
         entry::<gateway_releases::Inventory>(),
         entry::<gateway_build::Inspect>(),
         entry::<gateway_build::Prepare>(),
+        entry::<gateway_build::delivery::Inspect>(),
+        entry::<gateway_build::delivery::Install>(),
         entry::<gateway_build::Finish>(),
         entry::<gateway_build::Refresh>(),
         entry::<gateway_build::Remove>(),
@@ -330,17 +334,22 @@ pub fn all() -> Vec<Entry> {
         entry::<application_log::ReadApplicationLog>(),
         entry::<instances::CheckPathFree>(),
         entry::<environment::ReadEnvironment>(),
+        entry::<environment::InspectEnvironmentSync>(),
         entry::<environment::WriteEnvironment>(),
         entry::<laravel::InspectProfile>(),
         entry::<laravel::WriteUrl>(),
         entry::<caddy_access::GrantDevelopmentCaddyAccess>(),
         entry::<clone_candidate::InspectCloneCandidate>(),
         entry::<sqlite_copy::CopySqlite>(),
+        entry::<sqlite_transfer::ReadSnapshot>(),
+        entry::<sqlite_transfer::ReceiveSnapshot>(),
         entry::<sqlite_query::Query>(),
         entry::<sqlite_query::Write>(),
         entry::<sqlite_seed::PrepareSqliteSeed>(),
         entry::<sqlite_seed::InstallSqliteSeed>(),
         entry::<transfer_source::TransferSource>(),
+        entry::<transfer_source::ReadArchive>(),
+        entry::<transfer_source::Materialize>(),
         entry::<vite::SelectVitePort>(),
         entry::<vite::CheckViteListener>(),
         entry::<vite::SetViteTraffic>(),
@@ -355,6 +364,7 @@ pub fn all() -> Vec<Entry> {
         entry::<topology_evidence::ReadTopologyEvidence>(),
         entry::<task_git::ReadRefs>(),
         entry::<task_git_export::ExportPack>(),
+        entry::<task_git_import::ImportPack>(),
         entry::<caddy_certificate::InstallCertificate>(),
         entry::<caddy::Reload>(),
         entry::<caddy_publication::Publish>(),

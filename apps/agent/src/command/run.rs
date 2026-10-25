@@ -82,6 +82,15 @@ fn is_sha256(value: &str) -> bool {
 }
 
 pub fn execute(name: &str, envelope: &[u8], host: &Host) -> Outcome {
+    execute_stream(name, envelope, host, Box::new(std::io::empty()))
+}
+
+pub fn execute_stream(
+    name: &str,
+    envelope: &[u8],
+    host: &Host,
+    stream: super::binary_input::Stream,
+) -> Outcome {
     // 1. The frozen part: the expected digest, checked before anything else is read.
     let Ok(Value::Object(mut fields)) = serde_json::from_slice::<Value>(envelope) else {
         return Outcome::refused(
@@ -142,6 +151,19 @@ pub fn execute(name: &str, envelope: &[u8], host: &Host) -> Outcome {
             "The envelope has no input.",
             json!({"field": "input"}),
         );
+    };
+    let stream_bytes = match (entry.input_max_bytes, fields.remove("stream_bytes")) {
+        (0, None) => None,
+        (max, Some(value)) if max > 0 && value.as_u64().is_some_and(|bytes| bytes <= max) => {
+            value.as_u64()
+        }
+        _ => {
+            return Outcome::refused(
+                "agent.envelope_invalid",
+                "The binary input size does not match the command's contract.",
+                json!({"field": "stream_bytes"}),
+            )
+        }
     };
     if let Some(field) = fields.keys().next() {
         return Outcome::refused(
@@ -209,7 +231,16 @@ pub fn execute(name: &str, envelope: &[u8], host: &Host) -> Outcome {
                 )
             }
         };
-        return supervise::launch(&host.executable, name, envelope, budget, user, &locks);
+        return supervise::launch(
+            &host.executable,
+            name,
+            envelope,
+            budget,
+            user,
+            &locks,
+            stream,
+            stream_bytes,
+        );
     }
 
     if !privilege.accepts(host.platform, host.euid) {
@@ -220,7 +251,24 @@ pub fn execute(name: &str, envelope: &[u8], host: &Host) -> Outcome {
         );
     }
 
-    run_in_process(entry, input, Context::new(host.platform, deadline))
+    let (sender, receiver) = mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sender.send(super::binary_input::receive(stream, stream_bytes));
+    });
+    let context = Context::new(host.platform, deadline);
+    let context = match receiver.recv_timeout(context.remaining()) {
+        Ok(Ok(Some(file))) => context.with_binary_input(file),
+        Ok(Ok(None)) => context,
+        Ok(Err(outcome)) => return outcome,
+        Err(_) => {
+            return Outcome::refused(
+                "agent.deadline_exceeded",
+                "The command input did not arrive before its deadline.",
+                json!({}),
+            )
+        }
+    };
+    run_in_process(entry, input, context)
 }
 
 fn run_in_process(entry: &'static Entry, input: Value, context: Context) -> Outcome {
@@ -298,6 +346,108 @@ mod tests {
             Outcome::Refused { code, .. } => code,
             Outcome::Ok(_) => "ok",
         }
+    }
+
+    #[test]
+    fn mismatch_does_not_read_any_binary_input_or_interpret_new_framing_fields() {
+        struct Unreadable;
+        impl std::io::Read for Unreadable {
+            fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+                panic!("mismatch must not read binary input");
+            }
+        }
+        let envelope =
+            json!({"agent_sha256": "b".repeat(64), "stream_bytes": "future", "input": null});
+        assert_eq!(
+            code(&execute_stream(
+                "future.command",
+                envelope.to_string().as_bytes(),
+                &host(1000),
+                Box::new(Unreadable)
+            )),
+            VERSION_MISMATCH
+        );
+    }
+
+    #[test]
+    fn binary_commands_require_a_bounded_size_before_reading_input() {
+        for size in [
+            None,
+            Some(json!(-1)),
+            Some(json!(2147483649u64)),
+            Some(json!("large")),
+        ] {
+            let mut envelope = json!({"agent_sha256": PIN, "deadline_ms": 1000, "input": {}});
+            if let Some(size) = size {
+                envelope["stream_bytes"] = size;
+            }
+            assert_eq!(
+                code(&execute(
+                    "task-vms.import-git-pack",
+                    envelope.to_string().as_bytes(),
+                    &host(1000)
+                )),
+                "agent.envelope_invalid"
+            );
+        }
+        let mut host = host(1000);
+        host.supervised = true;
+        let envelope =
+            json!({"agent_sha256": PIN, "deadline_ms": 1000, "input": {}, "stream_bytes": 2});
+        assert_eq!(
+            code(&execute_stream(
+                "task-vms.import-git-pack",
+                envelope.to_string().as_bytes(),
+                &host,
+                Box::new(std::io::Cursor::new(vec![0]))
+            )),
+            "agent.binary_input_invalid"
+        );
+    }
+
+    #[test]
+    fn json_commands_refuse_binary_metadata_and_trailing_bytes() {
+        let envelope = json!({"agent_sha256": PIN, "deadline_ms": 1000, "input": {}});
+        assert_eq!(
+            code(&execute_stream(
+                "agent.status",
+                envelope.to_string().as_bytes(),
+                &host(1000),
+                Box::new(std::io::Cursor::new(vec![0, 255]))
+            )),
+            "agent.binary_input_invalid"
+        );
+        let mut envelope = envelope;
+        envelope["stream_bytes"] = 1.into();
+        assert_eq!(
+            code(&execute(
+                "agent.status",
+                envelope.to_string().as_bytes(),
+                &host(1000)
+            )),
+            "agent.envelope_invalid"
+        );
+    }
+
+    #[test]
+    fn stalled_input_expires_before_starting_the_command() {
+        struct Slow;
+        impl std::io::Read for Slow {
+            fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+                std::thread::sleep(Duration::from_millis(100));
+                Ok(0)
+            }
+        }
+        let envelope = json!({"agent_sha256": PIN, "deadline_ms": 1, "input": {}});
+        assert_eq!(
+            code(&execute_stream(
+                "agent.status",
+                envelope.to_string().as_bytes(),
+                &host(1000),
+                Box::new(Slow)
+            )),
+            "agent.deadline_exceeded"
+        );
     }
 
     #[test]

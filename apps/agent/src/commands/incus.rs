@@ -82,12 +82,22 @@ fn capture(command: &mut Process) -> io::Result<Output> {
     capture_input(command, None)
 }
 pub(super) fn capture_input(command: &mut Process, input: Option<&str>) -> io::Result<Output> {
-    let mut child = command
-        .stdin(if input.is_some() {
+    capture_stdin(
+        command,
+        if input.is_some() {
             Stdio::piped()
         } else {
             Stdio::null()
-        })
+        },
+        input,
+    )
+}
+pub(super) fn capture_file(command: &mut Process, file: std::fs::File) -> io::Result<Output> {
+    capture_stdin(command, Stdio::from(file), None)
+}
+fn capture_stdin(command: &mut Process, stdin: Stdio, input: Option<&str>) -> io::Result<Output> {
+    let mut child = command
+        .stdin(stdin)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\GitHub\GitReadEnvironment;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\WorkspaceAgentCommandRunner;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -156,14 +157,12 @@ describe('CI cache Git transport replacing Actions downloads', function (): void
     it('keeps source refs available when the optional cache transfer fails', function (): void {
         ci_ref_git($this->root.'/source', ['push', '--quiet', $this->root.'/origin.git', $this->cacheCommit.':'.$this->cacheRef]);
         $tips = $this->git->fetch($this->project, ['main'], $this->access, 'tasks.fetch_failed');
-        $run = function (RemoteCommand $command): CommandResult {
-            if (in_array($this->cacheRef, $command->arguments, true)) {
-                throw new RuntimeException('Disposable cache transfer failed.');
+        app(WorkspaceAgentCommandRunner::class)->beforeImport = function (array $input): void {
+            if (in_array($this->cacheRef, array_column($input['updates'], 'reference'), true)) {
+                throw new AgentCommandRefused('task-vms.import-git-pack', 'task_vm.git_import_failed', 'Disposable cache transfer failed.');
             }
-
-            return ($this->run)($command);
         };
-        $this->git->send($this->project, new Node(['name' => 'task-vm']), $this->root.'/vm', $tips, $run, 'tasks.fetch_failed');
+        $this->git->send($this->project, new Node(['name' => 'task-vm']), $this->root.'/vm', $tips, $this->run, 'tasks.fetch_failed');
 
         expect(ci_ref_git($this->root.'/vm', ['rev-parse', 'refs/remotes/origin/main']))->toBe($this->sha)
             ->and(ci_ref_git($this->root.'/vm', ['for-each-ref', 'refs/orbit/ci-cache/']))->toBe('');

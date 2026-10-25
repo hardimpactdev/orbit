@@ -160,3 +160,138 @@ fn an_identical_repeat_keeps_the_file_and_mode_drift_is_repaired_by_a_replacemen
         0o600
     );
 }
+
+impl Base {
+    fn sync_input(&self) -> SyncInput {
+        let input = self.input(Operation::WriteCheck);
+        SyncInput {
+            base: input.base,
+            user: input.user,
+            maximum: input.maximum,
+            require_home: input.require_home,
+            required_capacity: input.required_capacity,
+        }
+    }
+}
+
+#[test]
+fn sync_inspection_reads_a_writable_file_without_changing_it_on_repeated_calls() {
+    let base = Base::new();
+    let file = base.0.join(".env");
+    fs::write(&file, "APP_KEY=secret\n").unwrap();
+    let before = fs::metadata(&file).unwrap();
+    for _ in 0..2 {
+        let result = inspect_sync(base.sync_input());
+        assert_eq!(result.preflight, outcome(State::Ok));
+        assert_eq!(
+            result.existing,
+            Some(Outcome {
+                state: State::Ok,
+                content: Some("QVBQX0tFWT1zZWNyZXQK".into()),
+                installed: false,
+            })
+        );
+        let after = fs::metadata(&file).unwrap();
+        assert_eq!(
+            (after.ino(), after.mode(), after.mtime(), after.mtime_nsec()),
+            (
+                before.ino(),
+                before.mode(),
+                before.mtime(),
+                before.mtime_nsec()
+            )
+        );
+        assert_eq!(fs::read_to_string(&file).unwrap(), "APP_KEY=secret\n");
+        assert_eq!(fs::read_dir(&base.0).unwrap().count(), 1);
+    }
+}
+
+#[test]
+fn sync_inspection_reports_an_absent_file_without_creating_it() {
+    let base = Base::new();
+    for _ in 0..2 {
+        assert_eq!(
+            inspect_sync(base.sync_input()),
+            SyncInspection {
+                preflight: outcome(State::Ok),
+                existing: Some(outcome(State::Missing)),
+            }
+        );
+        assert_eq!(fs::read_dir(&base.0).unwrap().count(), 0);
+    }
+}
+
+#[test]
+fn sync_inspection_stops_before_reading_when_the_write_preflight_refuses() {
+    let base = Base::new();
+    fs::write(base.0.join(".env"), "SECRET=keep\n").unwrap();
+    for failure in ["capacity", "home", "owner", "directory-mode"] {
+        let mut input = base.sync_input();
+        match failure {
+            "capacity" => input.required_capacity = u64::MAX,
+            "home" => input.require_home = true,
+            "owner" => input.user = "root".into(),
+            "directory-mode" => {
+                fs::set_permissions(&base.0, fs::Permissions::from_mode(0o500)).unwrap()
+            }
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            inspect_sync(input),
+            SyncInspection {
+                preflight: outcome(State::Refused),
+                existing: None,
+            },
+            "{failure}"
+        );
+        fs::set_permissions(&base.0, fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(
+            fs::read_to_string(base.0.join(".env")).unwrap(),
+            "SECRET=keep\n"
+        );
+    }
+}
+
+#[test]
+fn sync_inspection_refuses_links_without_reading_or_changing_the_target() {
+    let base = Base::new();
+    let target = Base::new();
+    fs::write(target.0.join(".env"), "SECRET=keep\n").unwrap();
+    symlink(target.0.join(".env"), base.0.join(".env")).unwrap();
+    assert_eq!(
+        inspect_sync(base.sync_input()),
+        SyncInspection {
+            preflight: outcome(State::Refused),
+            existing: None,
+        }
+    );
+    symlink(&target.0, base.0.join("linked")).unwrap();
+    let mut input = base.sync_input();
+    input.base = base.0.join("linked").display().to_string();
+    assert_eq!(
+        inspect_sync(input),
+        SyncInspection {
+            preflight: outcome(State::Refused),
+            existing: None,
+        }
+    );
+    assert_eq!(
+        fs::read_to_string(target.0.join(".env")).unwrap(),
+        "SECRET=keep\n"
+    );
+}
+
+#[test]
+fn sync_inspection_distinguishes_read_refusal_from_a_successful_write_preflight() {
+    let base = Base::new();
+    let content = "x".repeat(2048);
+    fs::write(base.0.join(".env"), &content).unwrap();
+    assert_eq!(
+        inspect_sync(base.sync_input()),
+        SyncInspection {
+            preflight: outcome(State::Ok),
+            existing: Some(outcome(State::Refused)),
+        }
+    );
+    assert_eq!(fs::read_to_string(base.0.join(".env")).unwrap(), content);
+}

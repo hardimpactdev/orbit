@@ -15,6 +15,7 @@ pub struct Entry {
     pub mutates: bool,
     pub timeout: Duration,
     pub output_max_bytes: u64,
+    pub input_max_bytes: u64,
     pub privilege: fn(Platform) -> Option<Privilege>,
     pub errors: &'static [&'static str],
     pub run: fn(Value, &Context) -> Outcome,
@@ -31,6 +32,7 @@ pub fn entry<C: Command>() -> Entry {
         mutates: C::MUTATES,
         timeout: C::TIMEOUT,
         output_max_bytes: C::OUTPUT_MAX_BYTES,
+        input_max_bytes: C::INPUT_MAX_BYTES,
         privilege: C::privilege,
         errors: <C::Error as CommandError>::CODES,
         run: run::<C>,
@@ -236,6 +238,9 @@ pub fn contract() -> Value {
             });
             if entry.output_max_bytes > 0 {
                 definition["output_max_bytes"] = entry.output_max_bytes.into();
+            }
+            if entry.input_max_bytes > 0 {
+                definition["input_max_bytes"] = entry.input_max_bytes.into();
             }
             definition
         })

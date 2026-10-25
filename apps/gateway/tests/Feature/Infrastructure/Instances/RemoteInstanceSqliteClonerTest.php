@@ -6,36 +6,11 @@ use App\Domain\Instances\Sqlite\SqliteSeedPlacement;
 use App\Domain\Instances\Sqlite\SqliteSnapshotTransfer;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Instances\RemoteInstanceSqliteCloner;
-use App\Infrastructure\Processes\NativeProcessRunner;
-use App\Infrastructure\Processes\ProcessInvocation;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
-use Tests\Support\LocalAgentBinary;
-
-beforeEach(function (): void {
-    $this->root = sys_get_temp_dir().'/orbit-sqlite-cloner-'.bin2hex(random_bytes(6));
-    mkdir("{$this->root}/default/database", 0755, true);
-    mkdir("{$this->root}/feature", 0755, true);
-    $database = new PDO("sqlite:{$this->root}/default/database/database.sqlite");
-    $database->exec('CREATE TABLE users (name TEXT); INSERT INTO users VALUES (\'ada\');');
-    $database = null;
-    chmod("{$this->root}/default/database/database.sqlite", 0640);
-
-    $this->project = Project::query()->create([
-        'name' => 'Acme',
-        'slug' => 'acme',
-        'repository_url' => 'https://github.com/acme/site.git',
-    ]);
-    $this->sourceNode = sqlite_cloner_node('source', '10.44.0.11');
-    $this->default = sqlite_cloner_instance($this->project, $this->sourceNode, 'default', "{$this->root}/default");
-});
-
-afterEach(function (): void {
-    (new NativeProcessRunner)->run(new ProcessInvocation(['rm', '-rf', '--', $this->root]));
-});
+use Tests\Support\FakeAgentCommandRunner;
 
 function sqlite_cloner_node(string $name, string $address): Node
 {
@@ -60,169 +35,79 @@ function sqlite_cloner_instance(Project $project, Node $node, string $name, stri
     ]);
 }
 
-function sqlite_cloner(SqliteClonerRecordingAgents $agents): RemoteInstanceSqliteCloner
+function sqlite_clone_intent(): array
 {
-    return new RemoteInstanceSqliteCloner(
-        $agents,
-        new class implements SqliteSnapshotTransfer
-        {
-            public function transfer(
-                SqliteSeedPlacement $source,
-                string $sourcePath,
-                SqliteSeedPlacement $target,
-                string $targetPath,
-                int $expectedBytes,
-                string $expectedDigest,
-            ): void {
-                if (filesize($sourcePath) !== $expectedBytes || hash_file('sha256', $sourcePath) !== $expectedDigest) {
-                    throw new RuntimeException('The snapshot changed in transit.');
-                }
+    $project = Project::query()->create(['name' => 'Acme', 'slug' => 'acme', 'repository_url' => 'https://github.com/acme/site.git']);
+    $node = sqlite_cloner_node('source', '10.44.0.11');
 
-                copy($sourcePath, $targetPath);
-            }
-        },
-    );
+    return [$project, $node, sqlite_cloner_instance($project, $node, 'default', '/apps/default')];
 }
 
-/** Whether `cp` can clone a file inside the directory, the same block cloning the program uses. */
-function sqlite_cloner_can_reflink(string $directory): bool
-{
-    file_put_contents("{$directory}/reflink-probe", 'probe');
-    $result = (new NativeProcessRunner)->run(new ProcessInvocation(['cp', '--reflink=always', "{$directory}/reflink-probe", "{$directory}/reflink-probe-copy"]));
-    @unlink("{$directory}/reflink-probe");
-    @unlink("{$directory}/reflink-probe-copy");
+it('requests one local copy on the shared Node with both checkout boundaries', function (): void {
+    [$project, $node, $source] = sqlite_clone_intent();
+    $target = sqlite_cloner_instance($project, $node, 'feature', '/apps/feature');
+    $agents = new FakeAgentCommandRunner()->answer('instances.copy-sqlite', ['bytes' => 4096, 'sha256' => str_repeat('a', 64), 'mode' => 0640]);
+    $transfer = Mockery::mock(SqliteSnapshotTransfer::class);
+    $transfer->shouldNotReceive('transfer');
 
-    return $result->succeeded();
-}
+    new RemoteInstanceSqliteCloner($agents, $transfer)->copy($source, '/apps/default/database.sqlite', $target, '/apps/feature/database.sqlite');
 
-function sqlite_cloner_rows(string $path): array
-{
-    return (new PDO("sqlite:{$path}"))->query('SELECT name FROM users')->fetchAll(PDO::FETCH_COLUMN);
-}
-
-describe('RemoteInstanceSqliteCloner', function (): void {
-    it('copies a consistent snapshot into the same relative path on the same Node', function (): void {
-        $agents = new SqliteClonerRecordingAgents("{$this->root}/agent");
-        $target = sqlite_cloner_instance($this->project, $this->sourceNode, 'feature', "{$this->root}/feature");
-
-        sqlite_cloner($agents)->copy($this->default, "{$this->root}/default/database/database.sqlite", $target, "{$this->root}/feature/database/database.sqlite");
-
-        expect(sqlite_cloner_rows("{$this->root}/feature/database/database.sqlite"))->toBe(['ada'])
-            ->and(fileperms("{$this->root}/feature/database/database.sqlite") & 0777)->toBe(0640)
-            ->and(glob("{$this->root}/feature/database/.orbit-sqlite-*") ?: [])->toBe([])
-            ->and(array_column($agents->commands, 'operation'))->toBe(['local'])
-            ->and($agents->hosts)->toBe(['10.44.0.11']);
-    });
-
-    it('copies writes that are still in the WAL, by reflink where the filesystem can clone and by snapshot otherwise', function (): void {
-        $source = "{$this->root}/default/database/database.sqlite";
-        $writer = new PDO("sqlite:{$source}");
-        $writer->exec('PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;');
-        $writer->exec("INSERT INTO users VALUES ('grace')");
-        $agents = new SqliteClonerRecordingAgents("{$this->root}/agent");
-        $target = sqlite_cloner_instance($this->project, $this->sourceNode, 'feature', "{$this->root}/feature");
-
-        expect(filesize("{$source}-wal"))->toBeGreaterThan(0);
-
-        sqlite_cloner($agents)->copy($this->default, $source, $target, "{$this->root}/feature/database/database.sqlite");
-
-        expect(sqlite_cloner_rows("{$this->root}/feature/database/database.sqlite"))->toBe(['ada', 'grace'])
-            ->and($agents->outputs[0]['copy'])->toBe(sqlite_cloner_can_reflink("{$this->root}/feature") ? 'reflink' : 'snapshot')
-            ->and(glob("{$this->root}/feature/database/.orbit-sqlite-*") ?: [])->toBe([]);
-
-        $writer = null;
-    });
-
-    it('copies a snapshot instead of waiting when a writer holds the lock', function (): void {
-        $source = "{$this->root}/default/database/database.sqlite";
-        $writer = new PDO("sqlite:{$source}");
-        $writer->exec('PRAGMA journal_mode=WAL;');
-        $writer->exec('BEGIN IMMEDIATE');
-        $writer->exec("INSERT INTO users VALUES ('uncommitted')");
-        $agents = new SqliteClonerRecordingAgents("{$this->root}/agent");
-        $target = sqlite_cloner_instance($this->project, $this->sourceNode, 'feature', "{$this->root}/feature");
-        $started = hrtime(true);
-
-        sqlite_cloner($agents)->copy($this->default, $source, $target, "{$this->root}/feature/database/database.sqlite");
-
-        expect(sqlite_cloner_rows("{$this->root}/feature/database/database.sqlite"))->toBe(['ada'])
-            ->and($agents->outputs[0]['copy'])->toBe('snapshot')
-            ->and((hrtime(true) - $started) / 1e9)->toBeLessThan(10.0);
-
-        $writer->exec('ROLLBACK');
-        $writer = null;
-    });
-
-    it('moves the snapshot through the Gateway to another Node and removes the source snapshot', function (): void {
-        $agents = new SqliteClonerRecordingAgents("{$this->root}/agent");
-        $target = sqlite_cloner_instance($this->project, sqlite_cloner_node('target', '10.44.0.12'), 'feature', "{$this->root}/feature");
-
-        sqlite_cloner($agents)->copy($this->default, "{$this->root}/default/database/database.sqlite", $target, "{$this->root}/feature/database/database.sqlite");
-
-        $exportDirectory = $agents->commands[0]['directory'];
-
-        expect(sqlite_cloner_rows("{$this->root}/feature/database/database.sqlite"))->toBe(['ada'])
-            ->and(array_column($agents->commands, 'operation'))->toBe(['export', 'prepare', 'install', 'cleanup'])
-            ->and($agents->hosts)->toBe(['10.44.0.11', '10.44.0.12', '10.44.0.12', '10.44.0.11'])
-            ->and(is_dir($exportDirectory))->toBeFalse()
-            ->and(glob("{$this->root}/feature/database/.orbit-sqlite-*") ?: [])->toBe([]);
-    });
-
-    it('refuses a source outside the checkout or through a symlink', function (string $source): void {
-        symlink("{$this->root}/default/database", "{$this->root}/default/linked");
-        $target = sqlite_cloner_instance($this->project, $this->sourceNode, 'feature', "{$this->root}/feature");
-        $source = str_replace('ROOT', $this->root, $source);
-
-        expect(fn () => sqlite_cloner(new SqliteClonerRecordingAgents("{$this->root}/agent"))->copy($this->default, $source, $target, "{$this->root}/feature/database.sqlite"))
-            ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.database_clone_failed'));
-
-        expect(file_exists("{$this->root}/feature/database.sqlite"))->toBeFalse();
-    })->with([
-        'outside' => ['ROOT/feature/../default/database/database.sqlite'],
-        'symlink' => ['ROOT/default/linked/database.sqlite'],
-    ]);
-
-    it('removes a copied file and treats a missing checkout as removed', function (): void {
-        $target = sqlite_cloner_instance($this->project, $this->sourceNode, 'feature', "{$this->root}/feature");
-        touch("{$this->root}/feature/database.sqlite");
-        $cloner = sqlite_cloner(new SqliteClonerRecordingAgents("{$this->root}/agent"));
-
-        $cloner->remove($target, "{$this->root}/feature/database.sqlite");
-        $cloner->remove(sqlite_cloner_instance($this->project, $this->sourceNode, 'gone', "{$this->root}/gone"), "{$this->root}/gone/database.sqlite");
-
-        expect(file_exists("{$this->root}/feature/database.sqlite"))->toBeFalse();
-    });
+    expect($agents->calls)->toBe([['node' => 'source', 'command' => 'instances.copy-sqlite', 'input' => [
+        'operation' => 'local', 'checkout' => '/apps/default', 'source' => '/apps/default/database.sqlite',
+        'target_checkout' => '/apps/feature', 'target' => '/apps/feature/database.sqlite',
+    ]]]);
 });
 
-/** The built agent, run locally, with each call's host, input, and answer recorded. */
-final class SqliteClonerRecordingAgents implements AgentCommandRunner
-{
-    /** @var list<array<string, mixed>> */
-    public array $commands = [];
+it('exports transfers installs and always requests source cleanup across Nodes', function (bool $transferFails): void {
+    [$project, $node, $source] = sqlite_clone_intent();
+    $target = sqlite_cloner_instance($project, sqlite_cloner_node('target', '10.44.0.12'), 'feature', '/apps/feature');
+    $agents = new FakeAgentCommandRunner()->answer('instances.copy-sqlite', static fn (array $input): array => $input['operation'] === 'export'
+        ? ['bytes' => 4096, 'sha256' => str_repeat('a', 64), 'mode' => 0640] : []);
+    $transfer = Mockery::mock(SqliteSnapshotTransfer::class);
+    $transfer->shouldReceive('transfer')->once()->withArgs(function (SqliteSeedPlacement $from, string $fromPath, SqliteSeedPlacement $to, string $toPath, int $bytes, string $digest) use ($source, $target, $agents): bool {
+        expect($from->instanceId)->toBe($source->id)
+            ->and($to->instanceId)->toBe($target->id)
+            ->and($fromPath)->toBe($agents->calls[0]['input']['directory'].'/snapshot.sqlite')
+            ->and($toPath)->toStartWith('/apps/feature/.orbit-sqlite-')
+            ->and($bytes)->toBe(4096)->and($digest)->toBe(str_repeat('a', 64));
 
-    /** @var list<string> */
-    public array $hosts = [];
+        return true;
+    })->andReturnUsing(static function () use ($transferFails): void {
+        if ($transferFails) {
+            throw new RuntimeException('Transfer unavailable.');
+        }
+    });
+    $copy = fn () => new RemoteInstanceSqliteCloner($agents, $transfer)->copy($source, '/apps/default/database.sqlite', $target, '/apps/feature/database.sqlite');
 
-    /** @var list<array<string, mixed>> */
-    public array $outputs = [];
-
-    private AgentCommandRunner $agents;
-
-    public function __construct(string $sandbox)
-    {
-        $this->agents = LocalAgentBinary::localRunner($sandbox);
+    if ($transferFails) {
+        expect($copy)->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('instance.database_clone_failed'));
+    } else {
+        $copy();
     }
 
-    public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null): array
-    {
-        $this->hosts[] = (string) $node->wireguard_ip;
-        $this->commands[] = $input;
-
-        return $this->outputs[] = $this->agents->run($node, $command, $input, $deadlineSeconds);
+    expect(array_column(array_column($agents->calls, 'input'), 'operation'))->toBe($transferFails ? ['export', 'prepare', 'cleanup'] : ['export', 'prepare', 'install', 'cleanup'])
+        ->and(end($agents->calls)['input'])->toBe(['operation' => 'cleanup', 'directory' => $agents->calls[0]['input']['directory']]);
+    if (! $transferFails) {
+        expect($agents->calls[2]['node'])->toBe('target')
+            ->and($agents->calls[2]['input'])->toMatchArray(['operation' => 'install', 'target_checkout' => '/apps/feature', 'target' => '/apps/feature/database.sqlite', 'bytes' => 4096, 'sha256' => str_repeat('a', 64), 'mode' => 0640]);
     }
+})->with([false, true]);
 
-    public function install(Node $node): bool
-    {
-        return $this->agents->install($node);
-    }
-}
+it('maps native refusals and malformed reports to the public clone failure', function (bool $malformed): void {
+    [$project, $node, $source] = sqlite_clone_intent();
+    $target = sqlite_cloner_instance($project, $node, 'feature', '/apps/feature');
+    $agents = new FakeAgentCommandRunner;
+    $malformed ? $agents->answer('instances.copy-sqlite', ['bytes' => 'bad']) : $agents->refuse('instances.copy-sqlite', 'instances.sqlite_copy_refused');
+
+    expect(fn () => new RemoteInstanceSqliteCloner($agents, Mockery::mock(SqliteSnapshotTransfer::class))->copy($source, '/apps/default/database.sqlite', $target, '/apps/feature/database.sqlite'))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('instance.database_clone_failed'));
+})->with([false, true]);
+
+it('requests removal within the owning checkout', function (): void {
+    [, , $source] = sqlite_clone_intent();
+    $agents = new FakeAgentCommandRunner()->answer('instances.copy-sqlite', []);
+
+    new RemoteInstanceSqliteCloner($agents, Mockery::mock(SqliteSnapshotTransfer::class))->remove($source, '/apps/default/database.sqlite');
+
+    expect($agents->calls[0]['input'])->toBe(['operation' => 'remove', 'checkout' => '/apps/default', 'path' => '/apps/default/database.sqlite']);
+});

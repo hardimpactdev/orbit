@@ -2,6 +2,7 @@
   "common_errors": [
     "agent.version_mismatch",
     "agent.envelope_invalid",
+    "agent.binary_input_invalid",
     "agent.unknown_command",
     "agent.invalid_input",
     "agent.identity_mismatch",
@@ -316,6 +317,7 @@
         "gateway.release_link_failed",
         "gateway.release_dependencies_failed",
         "gateway.release_access_failed",
+        "gateway.release_agent_delivery_invalid",
         "gateway.release_revision_failed",
         "gateway.release_configuration_failed",
         "gateway.release_migrate_failed",
@@ -350,6 +352,77 @@
         "gateway.release_link_failed",
         "gateway.release_dependencies_failed",
         "gateway.release_access_failed",
+        "gateway.release_agent_delivery_invalid",
+        "gateway.release_revision_failed",
+        "gateway.release_configuration_failed",
+        "gateway.release_migrate_failed",
+        "gateway.release_schema_pending",
+        "gateway.release_handoff_failed",
+        "gateway.release_current",
+        "gateway.release_not_prepared",
+        "gateway.release_lock_unavailable",
+        "gateway.release_in_progress"
+      ]
+    },
+    {
+      "name": "gateway.inspect-release-agent-delivery",
+      "summary": "Resolve the prepared checkout's agent source identity and verify its delivery.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_commit_invalid",
+        "gateway.release_layout_missing",
+        "gateway.release_path_conflict",
+        "gateway.release_disk_low",
+        "gateway.release_fetch_failed",
+        "gateway.release_commit_unknown",
+        "gateway.release_conflict",
+        "gateway.release_current_incomplete",
+        "gateway.release_worktree_failed",
+        "gateway.release_link_failed",
+        "gateway.release_dependencies_failed",
+        "gateway.release_access_failed",
+        "gateway.release_agent_delivery_invalid",
+        "gateway.release_revision_failed",
+        "gateway.release_configuration_failed",
+        "gateway.release_migrate_failed",
+        "gateway.release_schema_pending",
+        "gateway.release_handoff_failed",
+        "gateway.release_current",
+        "gateway.release_not_prepared",
+        "gateway.release_lock_unavailable",
+        "gateway.release_in_progress"
+      ]
+    },
+    {
+      "name": "gateway.install-release-agent-delivery",
+      "summary": "Validate and atomically install the immutable agent manifest in a release checkout.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_commit_invalid",
+        "gateway.release_layout_missing",
+        "gateway.release_path_conflict",
+        "gateway.release_disk_low",
+        "gateway.release_fetch_failed",
+        "gateway.release_commit_unknown",
+        "gateway.release_conflict",
+        "gateway.release_current_incomplete",
+        "gateway.release_worktree_failed",
+        "gateway.release_link_failed",
+        "gateway.release_dependencies_failed",
+        "gateway.release_access_failed",
+        "gateway.release_agent_delivery_invalid",
         "gateway.release_revision_failed",
         "gateway.release_configuration_failed",
         "gateway.release_migrate_failed",
@@ -384,6 +457,7 @@
         "gateway.release_link_failed",
         "gateway.release_dependencies_failed",
         "gateway.release_access_failed",
+        "gateway.release_agent_delivery_invalid",
         "gateway.release_revision_failed",
         "gateway.release_configuration_failed",
         "gateway.release_migrate_failed",
@@ -418,6 +492,7 @@
         "gateway.release_link_failed",
         "gateway.release_dependencies_failed",
         "gateway.release_access_failed",
+        "gateway.release_agent_delivery_invalid",
         "gateway.release_revision_failed",
         "gateway.release_configuration_failed",
         "gateway.release_migrate_failed",
@@ -452,6 +527,7 @@
         "gateway.release_link_failed",
         "gateway.release_dependencies_failed",
         "gateway.release_access_failed",
+        "gateway.release_agent_delivery_invalid",
         "gateway.release_revision_failed",
         "gateway.release_configuration_failed",
         "gateway.release_migrate_failed",
@@ -486,6 +562,7 @@
         "gateway.release_link_failed",
         "gateway.release_dependencies_failed",
         "gateway.release_access_failed",
+        "gateway.release_agent_delivery_invalid",
         "gateway.release_revision_failed",
         "gateway.release_configuration_failed",
         "gateway.release_migrate_failed",
@@ -520,6 +597,7 @@
         "gateway.release_link_failed",
         "gateway.release_dependencies_failed",
         "gateway.release_access_failed",
+        "gateway.release_agent_delivery_invalid",
         "gateway.release_revision_failed",
         "gateway.release_configuration_failed",
         "gateway.release_migrate_failed",
@@ -554,6 +632,7 @@
         "gateway.release_link_failed",
         "gateway.release_dependencies_failed",
         "gateway.release_access_failed",
+        "gateway.release_agent_delivery_invalid",
         "gateway.release_revision_failed",
         "gateway.release_configuration_failed",
         "gateway.release_migrate_failed",
@@ -588,6 +667,7 @@
         "gateway.release_link_failed",
         "gateway.release_dependencies_failed",
         "gateway.release_access_failed",
+        "gateway.release_agent_delivery_invalid",
         "gateway.release_revision_failed",
         "gateway.release_configuration_failed",
         "gateway.release_migrate_failed",
@@ -3603,6 +3683,19 @@
       ]
     },
     {
+      "name": "instances.inspect-environment-sync",
+      "summary": "Check that an Instance's .env can be replaced, then read its existing workload keys.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.environment_input_invalid"
+      ]
+    },
+    {
       "name": "instances.write-environment",
       "summary": "Replace an Instance's .env, or merge Orbit's keys into .env.testing.",
       "mutates": true,
@@ -3697,6 +3790,38 @@
       ]
     },
     {
+      "name": "instances.read-sqlite-snapshot",
+      "summary": "Stream a verified private SQLite snapshot to the Gateway.",
+      "mutates": false,
+      "timeout_seconds": 1800,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.sqlite_transfer_invalid",
+        "instances.sqlite_transfer_refused",
+        "instances.sqlite_transfer_failed"
+      ],
+      "output_max_bytes": 1099511627776
+    },
+    {
+      "name": "instances.receive-sqlite-snapshot",
+      "summary": "Receive a verified SQLite snapshot into its prepared account-owned file.",
+      "mutates": true,
+      "timeout_seconds": 1800,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.sqlite_transfer_invalid",
+        "instances.sqlite_transfer_refused",
+        "instances.sqlite_transfer_failed"
+      ],
+      "input_max_bytes": 1099511627776
+    },
+    {
       "name": "database.query-sqlite",
       "summary": "Query an existing SQLite database read-only as its selected owner.",
       "mutates": false,
@@ -3756,7 +3881,7 @@
     },
     {
       "name": "instances.transfer-source",
-      "summary": "Capture, materialize, discard, or clean up a development Instance transfer.",
+      "summary": "Capture, discard, or clean up a development Instance transfer.",
       "mutates": true,
       "timeout_seconds": 600,
       "privilege": {
@@ -3764,8 +3889,39 @@
         "macos": null
       },
       "errors": [
+        "instances.transfer_archive_invalid",
         "instances.transfer_source_failed"
       ]
+    },
+    {
+      "name": "instances.read-transfer-archive",
+      "summary": "Stream a private captured checkout archive to the Gateway.",
+      "mutates": false,
+      "timeout_seconds": 1800,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.transfer_archive_invalid",
+        "instances.transfer_source_failed"
+      ],
+      "output_max_bytes": 1099511627776
+    },
+    {
+      "name": "instances.materialize-transfer",
+      "summary": "Materialize a received checkout archive as the managed account.",
+      "mutates": true,
+      "timeout_seconds": 1800,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.transfer_archive_invalid",
+        "instances.transfer_source_failed"
+      ],
+      "input_max_bytes": 1099511627776
     },
     {
       "name": "vite.select-port",
@@ -4016,6 +4172,22 @@
         "task_vm.git_pack_too_large"
       ],
       "output_max_bytes": 2147483648
+    },
+    {
+      "name": "task-vms.import-git-pack",
+      "summary": "Import a mirror pack and set approved checkout refs without network access.",
+      "mutates": true,
+      "timeout_seconds": 1800,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.git_import_invalid",
+        "task_vm.git_pack_invalid",
+        "task_vm.git_import_failed"
+      ],
+      "input_max_bytes": 2147483648
     },
     {
       "name": "caddy.install-certificate",

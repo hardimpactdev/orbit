@@ -10,14 +10,16 @@ use serde::{Deserialize, Serialize};
 use std::{
     ffi::OsString,
     fs, io,
-    os::unix::fs::PermissionsExt,
-    path::{Path, PathBuf},
+    io::{Read, Seek, Write},
+    os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
+    path::{Component, Path, PathBuf},
     process::{Command as Process, Stdio},
     time::Duration,
 };
 
 command_errors! {
     pub enum TransferError {
+        Archive {} => "instances.transfer_archive_invalid", "The transfer archive or destination is invalid.";
         Failed { step: String } => "instances.transfer_source_failed", "A transfer step failed on the Node.";
     }
 }
@@ -34,15 +36,6 @@ pub enum TransferInput {
         /// `checkout` or `worktree`.
         layout: String,
         sqlite_source: Option<PathBuf>,
-    },
-    Materialize {
-        archive: PathBuf,
-        destination: PathBuf,
-        head: String,
-        branch: Option<String>,
-        detached: bool,
-        /// The environment file whose access the account keeps to itself.
-        environment: PathBuf,
     },
     Discard {
         destination: PathBuf,
@@ -103,13 +96,21 @@ fn capture(
     sqlite_source: Option<&Path>,
 ) -> Result<TransferOutput, TransferError> {
     let step = "capture";
+    if !super::doctor_route::absolute(source)
+        || !matches!(layout, "checkout" | "worktree")
+        || sqlite_source.is_some_and(|path| {
+            !super::doctor_route::absolute(path) || !path.starts_with(source) || path == source
+        })
+    {
+        return Err(TransferError::Archive {});
+    }
     let name = source
         .file_name()
         .ok_or_else(|| failed(step))?
         .to_string_lossy();
     let archive = PathBuf::from(format!(
-        "/tmp/orbit-transfer-{name}-{}.tar",
-        std::process::id()
+        "/tmp/orbit-transfer-{name}-{:016x}.tar",
+        rand::random::<u64>()
     ));
     let head = git(source, &["rev-parse", "HEAD"], step)?;
     let branch = git(source, &["rev-parse", "--abbrev-ref", "HEAD"], step).unwrap_or_default();
@@ -136,38 +137,51 @@ fn capture(
             exclusions.push(format!("--exclude={relative}{suffix}").into());
         }
     }
+    let file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&archive)
+        .map_err(|_| failed(step))?;
+    drop(file);
     let mut arguments: Vec<OsString> = Vec::new();
-    if layout == "worktree" {
-        let mut bundle = archive.as_os_str().to_owned();
-        bundle.push(".bundle");
-        let bundle = PathBuf::from(bundle);
-        git(
-            source,
-            &["bundle", "create", &bundle.to_string_lossy(), "HEAD"],
-            step,
-        )?;
-        arguments.push("--exclude=.git".into());
-        arguments.extend(exclusions);
-        arguments.extend(["-cf".into(), archive.clone().into_os_string(), ".".into()]);
-        let appended = tar(source, &arguments, step).and_then(|()| {
-            tar(
+    let captured = (|| {
+        if layout == "worktree" {
+            let bundle_directory = super::recipe::WorkDir::new().map_err(|_| failed(step))?;
+            let bundle = bundle_directory.0.join("checkout.bundle");
+            git(
                 source,
-                &[
-                    "-rf".into(),
-                    archive.clone().into_os_string(),
-                    "-C".into(),
-                    "/tmp".into(),
-                    bundle.file_name().unwrap_or_default().to_owned(),
-                ],
+                &["bundle", "create", &bundle.to_string_lossy(), "HEAD"],
                 step,
-            )
-        });
-        let _ = fs::remove_file(&bundle);
-        appended?;
-    } else {
-        arguments.extend(exclusions);
-        arguments.extend(["-cf".into(), archive.clone().into_os_string(), ".".into()]);
-        tar(source, &arguments, step)?;
+            )?;
+            arguments.push("--exclude=.git".into());
+            arguments.extend(exclusions);
+            arguments.extend(["-cf".into(), archive.clone().into_os_string(), ".".into()]);
+            let appended = tar(source, &arguments, step).and_then(|()| {
+                tar(
+                    source,
+                    &[
+                        "-rf".into(),
+                        archive.clone().into_os_string(),
+                        "-C".into(),
+                        bundle_directory.0.clone().into_os_string(),
+                        bundle.file_name().unwrap_or_default().to_owned(),
+                    ],
+                    step,
+                )
+            });
+            let _ = fs::remove_file(&bundle);
+            appended?;
+        } else {
+            arguments.extend(exclusions);
+            arguments.extend(["-cf".into(), archive.clone().into_os_string(), ".".into()]);
+            tar(source, &arguments, step)?;
+        }
+        Ok::<(), TransferError>(())
+    })();
+    if let Err(error) = captured {
+        let _ = fs::remove_file(&archive);
+        return Err(error);
     }
     Ok(TransferOutput::Captured {
         head,
@@ -180,25 +194,49 @@ fn capture(
 }
 
 fn materialize(
-    archive: &Path,
+    mut archive: fs::File,
     destination: &Path,
     head: &str,
     branch: Option<&str>,
     detached: bool,
     environment: &Path,
+    context: &Context,
 ) -> Result<TransferOutput, TransferError> {
     let step = "materialize";
+    if !super::doctor_route::absolute(destination)
+        || !super::doctor_route::absolute(environment)
+        || !environment.starts_with(destination)
+        || environment == destination
+        || !super::task_git::object_id(head)
+        || (!detached && branch.is_none())
+        || branch
+            .is_some_and(|branch| !git2::Reference::is_valid_name(&format!("refs/heads/{branch}")))
+        || fs::symlink_metadata(destination).is_ok()
+    {
+        return Err(TransferError::Archive {});
+    }
+    if let Some(existing) = destination.ancestors().find(|path| path.exists()) {
+        if fs::canonicalize(existing).ok().as_deref() != Some(existing) {
+            return Err(TransferError::Archive {});
+        }
+    }
+    validate_archive(&mut archive, context)?;
     let io_failed = |_: io::Error| failed(step);
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent).map_err(io_failed)?;
     }
     fs::create_dir(destination).map_err(io_failed)?;
-    tar(
-        destination,
-        &["-xf".into(), archive.as_os_str().to_owned()],
-        step,
-    )?;
-    fs::remove_file(archive).map_err(io_failed)?;
+    let status = Process::new("/usr/bin/tar")
+        .args(["--extract", "--file=-"])
+        .current_dir(destination)
+        .stdin(Stdio::from(archive))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map_err(|_| failed(step))?;
+    if !status.success() {
+        return Err(failed(step));
+    }
     if !destination.join(".git").is_dir() {
         git(destination, &["init", "--quiet"], step)?;
         let bundles: Vec<PathBuf> = fs::read_dir(destination)
@@ -264,21 +302,6 @@ pub fn transfer(input: &TransferInput) -> Result<TransferOutput, TransferError> 
             layout,
             sqlite_source,
         } => capture(source, layout, sqlite_source.as_deref()),
-        TransferInput::Materialize {
-            archive,
-            destination,
-            head,
-            branch,
-            detached,
-            environment,
-        } => materialize(
-            archive,
-            destination,
-            head,
-            branch.as_deref(),
-            *detached,
-            environment,
-        ),
         TransferInput::Discard { destination } => remove_tree(destination)
             .map(|()| TransferOutput::Done {})
             .map_err(|_| failed("discard")),
@@ -297,8 +320,7 @@ pub struct TransferSource;
 
 impl Command for TransferSource {
     const NAME: &'static str = "instances.transfer-source";
-    const SUMMARY: &'static str =
-        "Capture, materialize, discard, or clean up a development Instance transfer.";
+    const SUMMARY: &'static str = "Capture, discard, or clean up a development Instance transfer.";
     const MUTATES: bool = true;
     const TIMEOUT: Duration = Duration::from_secs(600);
     type Input = TransferInput;
@@ -314,3 +336,195 @@ impl Command for TransferSource {
         transfer(&input)
     }
 }
+
+const MAX_ARCHIVE_BYTES: u64 = 1 << 40;
+
+fn validate_archive(file: &mut fs::File, context: &Context) -> Result<(), TransferError> {
+    let invalid = |_: io::Error| TransferError::Archive {};
+    let mut archive = tar::Archive::new(&mut *file);
+    let mut count = 0;
+    let mut links = std::collections::HashSet::new();
+    for entry in archive.entries().map_err(invalid)? {
+        if context.remaining().is_zero() {
+            return Err(failed("archive-validation"));
+        }
+        let mut entry = entry.map_err(invalid)?;
+        let path = entry.path().map_err(invalid)?;
+        if path
+            .components()
+            .any(|part| !matches!(part, Component::Normal(_) | Component::CurDir))
+        {
+            return Err(TransferError::Archive {});
+        }
+        let normalized: PathBuf = path
+            .components()
+            .filter(|part| matches!(part, Component::Normal(_)))
+            .collect();
+        if normalized
+            .ancestors()
+            .skip(1)
+            .any(|ancestor| links.contains(ancestor))
+        {
+            return Err(TransferError::Archive {});
+        }
+        if entry.header().entry_type().is_symlink() {
+            links.insert(normalized);
+        }
+        if entry.header().entry_type().is_hard_link() {
+            let link = entry
+                .link_name()
+                .map_err(invalid)?
+                .ok_or(TransferError::Archive {})?;
+            if link
+                .components()
+                .any(|part| !matches!(part, Component::Normal(_) | Component::CurDir))
+            {
+                return Err(TransferError::Archive {});
+            }
+        }
+        let mut buffer = [0; 65536];
+        loop {
+            if context.remaining().is_zero() {
+                return Err(failed("archive-validation"));
+            }
+            if entry.read(&mut buffer).map_err(invalid)? == 0 {
+                break;
+            }
+        }
+        count += 1;
+    }
+    if count == 0 {
+        return Err(TransferError::Archive {});
+    }
+    file.rewind().map_err(invalid)?;
+    Ok(())
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchiveInput {
+    archive: PathBuf,
+}
+#[derive(Serialize)]
+pub struct ArchiveOutput {
+    bytes: u64,
+}
+fn read_archive(
+    input: &ArchiveInput,
+    context: &Context,
+    output: impl Write,
+) -> Result<ArchiveOutput, TransferError> {
+    let name = input
+        .archive
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
+    if input.archive.parent() != Some(Path::new("/tmp"))
+        || !name.starts_with("orbit-transfer-")
+        || !name.ends_with(".tar")
+    {
+        return Err(TransferError::Archive {});
+    }
+    let mut file = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(&input.archive)
+        .map_err(|_| TransferError::Archive {})?;
+    let meta = file.metadata().map_err(|_| failed("download"))?;
+    if !meta.is_file()
+        || meta.len() > MAX_ARCHIVE_BYTES
+        || meta.uid() != crate::command::identity::effective_uid()
+        || meta.mode() & 0o7777 != 0o600
+        || meta.nlink() != 1
+    {
+        return Err(TransferError::Archive {});
+    }
+    validate_archive(&mut file, context)?;
+    let mut output = crate::command::binary_output::Frames::new(output, MAX_ARCHIVE_BYTES);
+    let mut buffer = [0; 65536];
+    loop {
+        if context.remaining().is_zero() {
+            return Err(failed("download"));
+        }
+        let count = file.read(&mut buffer).map_err(|_| failed("download"))?;
+        if count == 0 {
+            break;
+        }
+        output
+            .write_all(&buffer[..count])
+            .map_err(|_| failed("download"))?;
+    }
+    if output.bytes() != meta.len() {
+        return Err(failed("download"));
+    }
+    Ok(ArchiveOutput {
+        bytes: output.bytes(),
+    })
+}
+pub struct ReadArchive;
+impl Command for ReadArchive {
+    const NAME: &'static str = "instances.read-transfer-archive";
+    const SUMMARY: &'static str = "Stream a private captured checkout archive to the Gateway.";
+    const MUTATES: bool = false;
+    const TIMEOUT: Duration = Duration::from_secs(1800);
+    const OUTPUT_MAX_BYTES: u64 = MAX_ARCHIVE_BYTES;
+    type Input = ArchiveInput;
+    type Output = ArchiveOutput;
+    type Error = TransferError;
+    fn privilege(platform: Platform) -> Option<Privilege> {
+        super::linux_only(platform, Privilege::Account)
+    }
+    fn run(input: ArchiveInput, context: &Context) -> Result<ArchiveOutput, TransferError> {
+        read_archive(
+            &input,
+            context,
+            crate::command::binary_output::DeadlineWriter::new(
+                libc::STDOUT_FILENO,
+                context.deadline(),
+            )
+            .map_err(|_| failed("download"))?,
+        )
+    }
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MaterializeInput {
+    destination: PathBuf,
+    head: String,
+    branch: Option<String>,
+    detached: bool,
+    environment: PathBuf,
+}
+pub struct Materialize;
+impl Command for Materialize {
+    const NAME: &'static str = "instances.materialize-transfer";
+    const SUMMARY: &'static str = "Materialize a received checkout archive as the managed account.";
+    const MUTATES: bool = true;
+    const TIMEOUT: Duration = Duration::from_secs(1800);
+    const INPUT_MAX_BYTES: u64 = MAX_ARCHIVE_BYTES;
+    type Input = MaterializeInput;
+    type Output = TransferOutput;
+    type Error = TransferError;
+    fn privilege(platform: Platform) -> Option<Privilege> {
+        super::linux_only(platform, Privilege::Account)
+    }
+    fn target(input: &MaterializeInput) -> Option<String> {
+        Some(format!("transfer:{}", input.destination.display()))
+    }
+    fn run(input: MaterializeInput, context: &Context) -> Result<TransferOutput, TransferError> {
+        materialize(
+            context
+                .take_binary_input()
+                .ok_or(TransferError::Archive {})?,
+            &input.destination,
+            &input.head,
+            input.branch.as_deref(),
+            input.detached,
+            &input.environment,
+            context,
+        )
+    }
+}
+#[cfg(test)]
+#[path = "transfer_source_tests.rs"]
+mod tests;

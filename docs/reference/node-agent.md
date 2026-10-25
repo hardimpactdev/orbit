@@ -136,15 +136,23 @@ Gateway bootstrap configures its own observer after its web service and private 
 
 ## Commands
 
-The Gateway runs every Node action through one runner, `AgentCommandRunner`. The recorded Gateway serving Node uses local execution, including during role reconvergence. Before bootstrap records that identity, the Node whose Gateway role serves the site runs locally. Other Nodes use pinned SSH. It sends a command name and typed input, never program source ([ADR 0225](/decisions/0225-make-node-changes-through-agent-commands)).
+The Gateway runs every Node action through one runner, `AgentCommandRunner`. The recorded Gateway serving Node uses local execution, including during role reconvergence. Before bootstrap records that identity, the Node whose Gateway role serves the site runs locally. Other Nodes use pinned SSH. It sends a command name and typed input, never program source.
 
 ```text
 [sudo -n] /usr/local/bin/orbit-agent command <name>
 ```
 
-Standard input carries one JSON envelope. Standard output carries one JSON result. Redacted logs go to standard error.
+A Gateway architecture check scans core and extension PHP for process, SSH, and agent transport dependencies. Only the command transports, Gateway control-plane processes, command rendering, and the excluded Tasks and private DNS paths may use those dependencies. New Node behavior must call `AgentCommandRunner`; adding another executor fails the check.
 
-Read commands can declare bounded binary output before their result. The runner streams each chunk to a private sink, then requires the final typed result. It rejects partial chunks, excess bytes, and output after that result. A mismatch precedes all binary data; a partial transfer is never retried. See the [binary output framing](/decisions/0225-make-node-changes-through-agent-commands#one-typed-command).
+Development profile inspection and URL writing take the Node’s recorded managed username. Each command resolves the account and checks file ownership locally; the Gateway makes no separate account lookup for these actions.
+
+Standard input starts with one JSON envelope line. Standard output carries one JSON result. Redacted logs go to standard error.
+
+Commands with binary input declare an `input_max_bytes` bound in the exported contract. The envelope's `stream_bytes` gives the exact number of raw bytes after its newline. The agent checks its pin before reading them. The supervised process receives them into an unlinked private file and checks the exact size and end of input before invoking the command. Short input, excess bytes, and failed reads refuse with `agent.binary_input_invalid`. Git packs, SQLite snapshots, and source archives remain binary; their bytes never enter JSON, logs, or diagnostics. Each domain command validates and consumes its own data.
+
+The Gateway sends the envelope line followed by the staged file through one process input stream. It keeps the file open and rewinds it after a version mismatch, without making another disk copy. The caller owns the private staging file and leaves its contents unchanged until the command finishes. Transfer archives stay in `storage/app/transfer-staging`, including during upload.
+
+Read commands can declare bounded binary output before their result. Each chunk starts with one JSON header line, `{"stream_bytes":N}`, followed by exactly `N` raw bytes. A chunk is at most 64 KiB, and the exported contract sets the total byte limit. The runner streams each chunk to a private sink, then requires the final typed result. It rejects partial chunks, excess bytes, and output after that result. A mismatch precedes all binary data; a partial transfer is never retried.
 
 A binary producer enforces its deadline and stops its children before returning the final result. The dispatcher cannot write a timeout result over an unfinished binary frame. If the consumer stops reading, the final write gets at most one second to drain before the agent exits with a transport failure.
 
@@ -152,17 +160,20 @@ A binary producer enforces its deadline and stops its children before returning 
 | --- | --- |
 | `agent_sha256` | The SHA-256 of the binary that the Gateway pins for this Node |
 | `deadline_ms` | The time left for the call. The command's own bound applies too |
+| `stream_bytes` | Exact binary body size; required only for commands that declare binary input |
 | `input` | The command's typed input. Unknown fields refuse with `agent.invalid_input` |
 
 The result is `{"ok": true, "data": {...}}` or `{"ok": false, "error": {"code": ..., "message": ..., "details": {...}}}`. A valid result exits 0, a refusal included.
 
 ### The frozen check
 
-The process that executes a command first checks the SHA-256 of its own executable against `agent_sha256`. It does this before it looks up the name or parses the input. On a mismatch it answers `agent.version_mismatch` with the expected and observed digests. The envelope field, this check, and that answer never change between versions. So every command-mode agent answers a newer Gateway in a way the Gateway can act on.
+The process that executes a command first checks the SHA-256 of its own executable against `agent_sha256`. It does this before it looks up the name, parses the input, or reads binary bytes. On a mismatch it answers `agent.version_mismatch` with the expected and observed digests. From the first released command-mode agent, the envelope line framing, its hash field, this check, and that answer never change between versions. Every released command-mode agent answers a newer Gateway in a way the Gateway can act on. Unpublished SPIKE prototypes are reconverged before this contract is frozen.
 
 ### Privilege and supervision
 
 Each command declares one privilege per platform. The runner reads it from the contract, never from caller input. The command checks its effective identity before any change.
+
+Linux keeps the managed account's existing `NOPASSWD:ALL` sudo rule. The named-command boundary is a code rule, enforced by architecture tests and command definitions. It does not narrow that account's OS authority. Commands use filesystem and OS APIs or fixed executable arguments. Project hooks, Git, builds, and package tools run as their recorded owner, without root trust files or secrets in their input or environment.
 
 | Privilege | Linux | macOS |
 | --- | --- | --- |
@@ -185,6 +196,7 @@ These errors can come from any command:
 | Code | Meaning |
 | --- | --- |
 | `agent.version_mismatch` | The binary is not the pinned one. The runner installs the pin |
+| `agent.binary_input_invalid` | Binary input is short, has excess bytes, or cannot be read |
 | `agent.envelope_invalid` | The envelope is not one JSON object with a valid digest, deadline, and input |
 | `agent.unknown_command` | The pinned binary has no command with that name |
 | `agent.invalid_input` | The input does not match the command |
@@ -199,14 +211,31 @@ Binary output also reports `output_limit` when it exceeds its declared or caller
 
 ### Transports
 
-The runner picks the transport from the Node. Both carry the same arguments, envelope, and result.
+The runner picks the transport from the Node or build guest. Every adapter carries the same arguments, envelope, and result.
 
 | Node | Transport |
 | --- | --- |
 | A managed Node | SSH to its WireGuard address, as its enrolled account, with its pinned host key |
 | The Gateway's own Node | A local process. Mutations still change the Node, because each runs in its own transient service outside the worker's read-only view |
+| A Node being admitted | Its pinned bootstrap SSH connection, until managed WireGuard SSH is ready |
+| An Incus build guest | `incus exec` through its managed host, before guest networking or SSH exists |
+| An UpCloud build guest | Guest SSH with the host identity that Orbit generated and pinned through user-data |
 
-An image build has no runner. `orbit:node-programs` renders each ported enrollment program as `orbit-agent command <name>` with the envelope on standard input, pinned for `--architecture`. Its JSON names the pinned binary, which the builder installs before the first program.
+Image building installs command mode before the first recipe command through the runner's guest interface. Images need no observer, WireGuard identity, agent secret, or PHP to run commands. Enrollment adds the Node identity later. `orbit:node-programs` also renders enrollment commands as `orbit-agent command <name>` with the pinned envelope on standard input for external consumers.
+
+Only binary staging may change a Node outside a named command. First admission uses a fixed `uname -sm` staging probe because no agent exists yet. It validates the platform and architecture before installing a candidate. A root bootstrap login runs root commands directly; other Linux logins use passwordless sudo. The installer owns atomic replacement and candidate cleanup.
+
+### Ownership and exclusions
+
+The Gateway owns validation, authorization, records, operations, placement, and error mapping. Rust commands own Node execution and its tests. [Extensions](/reference/extensions#add-a-plug-in-point) own their Rust command modules, startup hooks, and compiled services; one agent binary dispatches them. There is no dynamic loader or second command runner.
+
+Tasks workspace scripts, their operation journal, and `gateway.task-workspace-owner` retain their [existing runner](/reference/remote-programs). The private DNS listener and its publication scripts remain for the separate [DNS migration](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router). Python outside the Gateway is outside this port. The Gateway's own Artisan entry point and OPcache adapter are control-plane code. Static configuration, templates, and certificates remain data.
+
+The agent has no job table or general receipt ledger. Operations own recovery, and domain commands retain only the evidence their existing recovery needs. Cancellation finishes the current operation step and starts no next step. A lost result fails for inspection or resumes only through an existing resumable operation step. Detached Tasks checks and topologies keep their own supervision; they are not a generic command runner.
+
+### Future Mac session execution
+
+Command mode currently runs as the enrolled macOS account. A future LaunchAgent can receive the same envelope in that user's login session and show Touch ID or password confirmation for root work. That path is not built. It must authenticate the SSH-started process beyond its user ID, prevent project code from replacing the executable, and name the command in each prompt. The executing process must still check its own binary digest and declared privilege.
 
 ### Live output
 
@@ -303,7 +332,7 @@ Every Unix user on a Node reaches the Gateway from the Node's WireGuard address,
 
 The agent reads the file when it starts. It exits with an error when the file is missing or malformed, and systemd starts it again after 2 seconds. The Gateway compares the hashes in constant time.
 
-Each agent converge reads the file's hash with `sudo sha256sum` and keeps the secret while it matches the stored hash. Otherwise it writes a new secret through standard input, never in a command's arguments, and restarts the agent. There is no scheduled rotation. To rotate a secret, delete the file on the Node and converge.
+Each agent converge sends the stored hash to `agent.configure`. The command keeps the secret while the file matches that hash; otherwise it creates a new secret and restarts the agent. It returns only the hash. There is no scheduled rotation. To rotate a secret, delete the file on the Node and converge.
 
 The converge writes the secret file first, then installs the other files, restarts the agent, and stores the new hash last. The running agent reads its secret only when it starts. So a converge that fails at any step leaves the running agent with a secret that the Gateway still accepts. Doctor then reports `mismatch`, and the next converge repairs it.
 
@@ -388,7 +417,7 @@ The subscriber accepts `client-log` and `client-log-end` only from `agent.{id}` 
 
 ## Delivery
 
-Each Gateway release pins one agent build: the delivery of the last commit that changed `apps/agent`. CI builds the Linux and macOS artifacts from that exact source. A delivery job checks that their source commits and versions agree, verifies each binary digest, and combines them into one `manifest.json`:
+Each Gateway release pins one agent build: the delivery of the last commit that changed `apps/agent` or a compiled extension. CI builds the Linux and macOS artifacts from that exact source. A delivery job checks that their source commits and versions agree, verifies each binary digest, and combines them into one `manifest.json`:
 
 ```json
 {
@@ -403,7 +432,9 @@ Each Gateway release pins one agent build: the delivery of the last commit that 
 }
 ```
 
-The Gateway reads it from `apps/agent/delivery/manifest.json` in its checkout, or from the path in `ORBIT_AGENT_DELIVERY`. Git does not track the file. The Gateway picks a Node's artifact by its platform and recorded architecture. It uses the file beside the manifest when it exists, and otherwise downloads the URL once into `ORBIT_HOME/agent-artifacts/<sha256>`. It checks the SHA-256 before every use. `apps/agent/scripts/build-delivery` writes the same layout for CI and for a topology.
+The Gateway reads it from `apps/agent/delivery/manifest.json` in its checkout, or from the path in `ORBIT_AGENT_DELIVERY`. Git does not track the file. The Gateway picks a Node's artifact by its platform and recorded architecture. It uses the file beside the manifest when it exists, and otherwise downloads the URL once into `ORBIT_HOME/agent-artifacts/<sha256>`. It checks the SHA-256 before every use. An existing local artifact with the wrong digest refuses; only an absent local file uses the published URL. `apps/agent/scripts/build-delivery` writes the same layout for CI and for a topology.
+
+Preparing a managed Gateway release resolves the last commit that changed the agent or a compiled extension, then obtains that commit's published manifest from the release repository. The agent verifies the commit, Cargo version, all platform digests, and immutable artifact URLs before writing the manifest into the new checkout. Preparation, including adoption, refuses to finish without it. The release's private configuration cache selects this checkout's manifest, so a shared environment override cannot keep the previous release's pin. Repeating preparation verifies the existing manifest.
 
 The manifest also supplies the Linux pins in the [recipe identity](/reference/compute-drivers#recipe-identity). The recipe source carries no separate agent version or hashes. `python3 tools/check_agent_release.py <production-manifest.json>` checks a production delivery against its published commit tag, manifest, and checksums. This production check does not gate local or CI builds that use unpublished artifacts.
 
@@ -559,6 +590,12 @@ Scripts that the Gateway assembles and sends on every call have hidden contracts
 SSH stays the transport. It authenticates the Gateway with a pinned host key and the enrolled account. It also reaches a Node whose agent is broken, so the Gateway can always repair it. An agent that listened on the network would add a root-capable endpoint that every user on every Node could reach. So the observer still listens on no port, and command mode starts only when SSH or the Gateway starts it. The binary is not setuid: a Node user who runs it gets only that user's permissions.
 
 A Gateway release delivers new agent code, as it delivered scripts before. Install on mismatch reaches an offline Node, a Node that the rollout missed, and a VM from an older image on their first command. No separate agent update step exists.
+
+Moving source into named Python programs improved linting but kept source assembly, interpreter startup, and a second execution contract. Delivering scripts through the agent would keep those costs. PHP SSH command sequences would also split a Node action across round trips without one lock around its checks and changes. Compiled commands keep the rule and its tests together.
+
+The exact binary digest identifies the contract. Version ranges and compatibility commands would keep multiple implementations active. The frozen mismatch response lets a released agent refuse a newer command before understanding its name or input. The Gateway can then install the pinned implementation once.
+
+Ordinary commands run from their open executable and do not hold the update lock. Atomic replacement leaves them valid while an update proceeds. Holding the lock throughout a long deploy would block updates unnecessarily. Installers and final recipe verification take it exclusively, so verification cannot record a pin while it is being replaced.
 
 ### Rust
 

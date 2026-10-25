@@ -34,6 +34,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 use Tests\Support\EnvironmentConcurrencySchemaFixture;
+use Tests\Support\FakesEnvironmentSyncInspection;
 
 beforeAll(fn () => EnvironmentConcurrencySchemaFixture::prepare(orb207_concurrency_worker_script()));
 afterAll(fn () => EnvironmentConcurrencySchemaFixture::forget());
@@ -297,6 +298,8 @@ it('renders stored production values for candidate and previous Route domains wi
     $route->update(['replaced_by_route_id' => $replacement->id]);
     $preflight = new class implements InstanceOperationPreflight
     {
+        use FakesEnvironmentSyncInspection;
+
         /** @var list<string> */
         public array $domains = [];
 
@@ -613,6 +616,8 @@ function orb212_sync_concurrency_worker_script(): string
 
         final class Orb212Preflight implements App\Domain\Instances\Environment\InstanceOperationPreflight
         {
+            use \Tests\Support\FakesEnvironmentSyncInspection;
+
             public function assertEnvironmentReadable(App\Domain\Instances\Environment\InstanceEnvironmentContext $context): void {}
 
             public function assertEnvironmentWritable(

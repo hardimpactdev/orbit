@@ -46,7 +46,7 @@ An evaluation of the Pi Durable harness (`@earendil-works/pi-durable`) ran besid
 
 [ADR 0209](/decisions/0209-run-long-operations-as-durable-queued-operations) makes long commands durable operations. Today only `instance.deploy` and `instance.rollback` are operations. One job runs a whole operation and holds its target, an operation runs at most 1,600 seconds, and the `operations` queue has one worker ([Operations](/reference/operations#how-an-operation-runs)). [ADR 0218](/decisions/0218-take-long-commands-off-the-request-path) names a kind after its CLI command and keeps only the newest 50 finished operations of each target.
 
-[ADR 0224](/decisions/0224-give-each-task-group-one-holder-and-one-sender) gives each group one workspace holder and makes `tasks:tick` the only place that starts an actor or sends a turn, from one turn-request record. It binds a review to the tree recorded at handoff, and it keeps detached supervision for checks and topologies. [ADR 0225](/decisions/0225-make-node-changes-through-agent-commands) states that this supervision is not a generic command runner. ADR 0224's build has not started. It waits for the remaining steps of [ADR 0223](/decisions/0223-run-one-gate-from-handoff-to-merge), and many of its build steps rework the tick's engine.
+[ADR 0224](/decisions/0224-give-each-task-group-one-holder-and-one-sender) gives each group one workspace holder and makes `tasks:tick` the only place that starts an actor or sends a turn, from one turn-request record. It binds a review to the tree recorded at handoff, and it keeps detached supervision for checks and topologies. [Node commands](/reference/node-agent#commands) states that this supervision is not a generic command runner. ADR 0224's build has not started. It waits for the remaining steps of [ADR 0223](/decisions/0223-run-one-gate-from-handoff-to-merge), and many of its build steps rework the tick's engine.
 
 ### People need to see the work
 
@@ -233,7 +233,7 @@ Step 3 waits for the amendments that cover topology subtasks and review-and-merg
 - **The orchestrator as a second sender.** It would call Pi or the task drivers directly. That breaks the one-sender rule of [ADR 0224](/decisions/0224-give-each-task-group-one-holder-and-one-sender).
 - **Step 1 after ADR 0224.** The first external run would wait for ADR 0223's remaining steps and all of ADR 0224, and much of ADR 0224 reworks the tick engine that step 3 removes.
 - **A development Instance as the workspace for steps without an agent.** It is a second path outside the VM. A commit would move between the Instance and the VM, and the step would not run unchanged on UpCloud overflow.
-- **A generic command operation.** Feature work needs only the checks and the agent. A generic run would need ADR 0225's agent commands, because check supervision is not a generic command runner.
+- **A generic command operation.** Feature work needs only the checks and the agent. A generic run would need [named agent commands](/reference/node-agent#commands), because check supervision is not a generic command runner.
 - **Publish of any commit.** With a raw SHA, a caller would skip the check. Publish takes a passed handoff check, so it pushes only the commit that the check recorded. The orchestrator owns the review gate.
 - **A long step as one blocking step.** A 15-minute test suite would hold the single `operations` worker and stall every deploy.
 - **Per-step jobs for every operation.** The target would be free between steps. Only a waiting step ends its job, and it keeps the target.
@@ -249,7 +249,7 @@ Step 3 waits for the amendments that cover topology subtasks and review-and-merg
 - Until step 3, task work has two modes, as the Principle line states.
 - Step 1 does not wait for ADR 0224. ADR 0224 continues for tick groups, Orbit's among them, until step 3. Its "One resume" build step no longer includes Pi restart resume or provider retries after #1464.
 - Topology subtasks and review-and-merge Projects, Orbit itself among them, stay on the tick until an amendment covers them.
-- An update that an agent turn makes is ordinary feature work, so a dependency-update group runs as an external group. Only a deterministic step without an agent waits for a command operation and ADR 0225's agent commands.
+- An update that an agent turn makes is ordinary feature work, so a dependency-update group runs as an external group. Only a deterministic step without an agent waits for a command operation using [named agent commands](/reference/node-agent#commands).
 - The orchestrator becomes a dependency for task work. Its availability, licensing, and storage are outside Orbit.
 
 ## Affects

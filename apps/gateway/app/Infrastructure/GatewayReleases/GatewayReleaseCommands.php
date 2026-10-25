@@ -90,6 +90,24 @@ final readonly class GatewayReleaseCommands implements GatewayReleaseObserver
         return ['sha' => $result['sha'], 'reused' => $result['reused']];
     }
 
+    /** @return array{commit: string, version: string, installed: bool} */
+    public function inspectAgentDelivery(GatewayReleaseLayout $layout, string $sha): array
+    {
+        $result = $this->run($layout, 'gateway.inspect-release-agent-delivery', ['sha' => $sha], 'agent-delivery', 'gateway.release_agent_delivery_invalid');
+        if (! is_string($result['commit'] ?? null) || strlen($result['commit']) !== 40 || ! GatewayReleaseCommit::isSha($result['commit'])
+            || ! is_string($result['version'] ?? null) || $result['version'] === '' || ! is_bool($result['installed'] ?? null)) {
+            throw $this->malformed('agent-delivery', 'gateway.release_agent_delivery_invalid');
+        }
+
+        return ['commit' => $result['commit'], 'version' => $result['version'], 'installed' => $result['installed']];
+    }
+
+    /** @param array<string, mixed> $manifest */
+    public function installAgentDelivery(GatewayReleaseLayout $layout, string $sha, string $stepLock, array $manifest): void
+    {
+        $this->changed($layout, 'gateway.install-release-agent-delivery', ['sha' => $sha, 'step_lock' => $stepLock, 'manifest' => $manifest], 'agent-delivery', 'gateway.release_agent_delivery_invalid');
+    }
+
     public function finish(GatewayReleaseLayout $layout, string $sha, string $stepLock): void
     {
         $this->changed($layout, 'gateway.finish-release', ['sha' => $sha, 'step_lock' => $stepLock], 'revision', 'gateway.release_revision_failed');
@@ -393,7 +411,7 @@ final readonly class GatewayReleaseCommands implements GatewayReleaseObserver
                 'gateway.release_not_prepared', 'gateway.release_commit_invalid', 'gateway.release_commit_unknown' => 422,
                 'gateway.release_switch_failed', 'gateway.release_source_unknown',
                 'gateway.release_fetch_failed', 'gateway.release_worktree_failed', 'gateway.release_link_failed',
-                'gateway.release_dependencies_failed', 'gateway.release_access_failed', 'gateway.release_revision_failed',
+                'gateway.release_dependencies_failed', 'gateway.release_access_failed', 'gateway.release_revision_failed', 'gateway.release_agent_delivery_invalid',
                 'gateway.release_configuration_failed', 'gateway.release_lock_unavailable' => 500,
                 'gateway.release_snapshot_unavailable', 'gateway.release_snapshot_failed', 'gateway.release_migrate_failed', 'gateway.release_handoff_failed' => 500,
                 default => 409,
@@ -407,6 +425,7 @@ final readonly class GatewayReleaseCommands implements GatewayReleaseObserver
                     'gateway.release_link_failed' => 'link',
                     'gateway.release_dependencies_failed' => 'dependencies',
                     'gateway.release_access_failed' => 'access',
+                    'gateway.release_agent_delivery_invalid' => 'agent-delivery',
                     'gateway.release_revision_failed' => 'revision',
                     'gateway.release_configuration_failed' => 'configuration',
                     'gateway.release_lock_unavailable', 'gateway.release_in_progress' => 'lock',

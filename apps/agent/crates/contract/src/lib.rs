@@ -54,6 +54,8 @@ pub trait Command {
     const TIMEOUT: Duration;
     /// A read may emit framed binary bytes before its result. Zero means JSON output only.
     const OUTPUT_MAX_BYTES: u64 = 0;
+    /// Maximum raw bytes after the envelope line. Zero means JSON input only.
+    const INPUT_MAX_BYTES: u64 = 0;
     type Input: DeserializeOwned;
     type Output: Serialize;
     type Error: CommandError;
@@ -86,10 +88,24 @@ pub trait CommandError {
 pub struct Context {
     pub platform: Platform,
     deadline: Instant,
+    binary_input: std::sync::Mutex<Option<std::fs::File>>,
 }
 impl Context {
     pub fn new(platform: Platform, deadline: Instant) -> Self {
-        Self { platform, deadline }
+        Self {
+            platform,
+            deadline,
+            binary_input: std::sync::Mutex::new(None),
+        }
+    }
+    /// The dispatcher supplies a complete, size-checked private input file.
+    pub fn with_binary_input(self, file: std::fs::File) -> Self {
+        *self.binary_input.lock().expect("binary input lock") = Some(file);
+        self
+    }
+    /// A binary consumer takes its input once. No pathname crosses the command boundary.
+    pub fn take_binary_input(&self) -> Option<std::fs::File> {
+        self.binary_input.lock().ok()?.take()
     }
     pub fn deadline(&self) -> Instant {
         self.deadline

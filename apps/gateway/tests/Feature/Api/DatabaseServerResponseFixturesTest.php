@@ -25,6 +25,7 @@ use Orbit\Sdk\Requests\DatabaseServers\CreateDatabaseServerRequest;
 use Orbit\Sdk\Requests\DatabaseServers\ListDatabaseServersRequest;
 use Orbit\Sdk\Requests\DatabaseServers\ShowDatabaseServerRequest;
 use Tests\Support\FakeDatabaseServerAdmin;
+use Tests\Support\FakesEnvironmentSyncInspection;
 use Tests\Support\FakeValkeyAclAgent;
 use Tests\Support\FakeValkeyServerAdmin;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
@@ -188,6 +189,8 @@ it('records the database server and database user responses', function (): void 
 
 final class DatabaseServerFixtureEnvironment implements InstanceEnvironmentReader, InstanceEnvironmentWriter, InstanceOperationPreflight
 {
+    use FakesEnvironmentSyncInspection;
+
     public function assertEnvironmentReadable(InstanceEnvironmentContext $context): void
     {
         throw new RuntimeException('The fixture contacted the workload Node.');

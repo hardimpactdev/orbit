@@ -1,11 +1,12 @@
 //! Command mode: `orbit-agent command <name>` runs one named Node action (ADR 0225).
 //!
-//! Standard input carries one JSON envelope; standard output carries declared binary chunks and one JSON result. Redacted logs go to
-//! standard error. Three things never change across agent versions, so every command-mode agent answers a
+//! Standard input carries one newline-terminated JSON envelope and an optional bounded binary body; standard output carries declared binary chunks and one JSON result. Redacted logs go to
+//! standard error. From the first released command-mode agent, newline framing and the hash check and reply never change, so it answers a
 //! newer Gateway with a mismatch it can act on: the envelope's `agent_sha256` field, the check of the
 //! executing binary against it, and the shape of the `agent.version_mismatch` result. The check runs
 //! first, before the command name is looked up or the input is parsed.
 
+pub mod binary_input;
 pub mod binary_output;
 pub mod identity;
 pub mod lock;
@@ -14,7 +15,7 @@ pub mod run;
 pub mod supervise;
 
 use serde_json::{json, Value};
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 
 pub use orbit_agent_contract::{Command, CommandError, Context, Platform, Privilege};
 
@@ -29,6 +30,7 @@ pub const MAX_ENVELOPE_BYTES: u64 = 4 * 1024 * 1024;
 pub const COMMON_ERRORS: &[&str] = &[
     VERSION_MISMATCH,
     "agent.envelope_invalid",
+    "agent.binary_input_invalid",
     "agent.unknown_command",
     "agent.invalid_input",
     "agent.identity_mismatch",
@@ -80,14 +82,24 @@ pub fn main(arguments: &[String]) -> i32 {
         return 64;
     };
     let mut envelope = Vec::new();
-    if let Err(error) = std::io::stdin()
+    let mut stdin = BufReader::new(std::io::stdin());
+    if let Err(error) = stdin
+        .by_ref()
         .take(MAX_ENVELOPE_BYTES + 1)
-        .read_to_end(&mut envelope)
+        .read_until(b'\n', &mut envelope)
     {
         eprintln!("orbit-agent: cannot read the envelope: {error}");
         return 74;
     }
-    let outcome = run::execute(name, &envelope, &run::Host::current());
+    let outcome = if envelope.len() as u64 > MAX_ENVELOPE_BYTES {
+        Outcome::refused(
+            "agent.envelope_invalid",
+            "The envelope exceeds its limit.",
+            json!({}),
+        )
+    } else {
+        run::execute_stream(name, &envelope, &run::Host::current(), Box::new(stdin))
+    };
     let line = serde_json::to_string(&outcome.to_json()).expect("a result serializes");
     if registry::find(name).is_some_and(|entry| entry.output_max_bytes > 0) {
         return binary_output::finish(&line);

@@ -1,5 +1,11 @@
-#!/usr/bin/env bash
-# One delivery identity covers core and every compiled extension source.
-set -euo pipefail
-root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
-git -C "$root" log -1 --format=%H "${1:-HEAD}" -- apps/agent ':(glob)apps/gateway/extensions/*/agent/**'
+#!/usr/bin/env python3
+"""One delivery identity covers core and every compiled extension source."""
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+root = Path(__file__).resolve().parents[3]
+paths = json.loads((root / 'apps/agent/source-paths.json').read_text())
+subprocess.run(['git', '-C', str(root), 'log', '-1', '--format=%H',
+                sys.argv[1] if len(sys.argv) > 1 else 'HEAD', '--', *paths], check=True)

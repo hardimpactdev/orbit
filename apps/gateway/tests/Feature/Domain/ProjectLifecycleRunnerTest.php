@@ -17,14 +17,10 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
-use Illuminate\Filesystem\Filesystem;
-use Illuminate\Support\Str;
 use Tests\Support\LifecycleAgent;
-use Tests\Support\SubprocessFixture;
 
 beforeEach(function (): void {
-    $this->sandbox = sys_get_temp_dir().'/orbit-lifecycle-'.Str::uuid();
-    mkdir($this->sandbox, 0700);
+    $this->sandbox = '/srv/apps/lifecycle';
     $project = Project::query()->create(['name' => 'Lifecycle', 'slug' => 'lifecycle', 'repository_url' => 'https://example.test/lifecycle.git']);
     $node = Node::query()->create(['name' => 'lifecycle', 'public_ssh_host' => '192.0.2.8', 'wireguard_ip' => '192.0.2.8']);
     $this->instance = Instance::query()->create([
@@ -32,24 +28,17 @@ beforeEach(function (): void {
         'checkout_path' => $this->sandbox, 'status' => InstanceState::Active,
     ]);
     $this->steps = new ProjectLifecycleStepStore;
-    $this->transport = new LifecycleAgent(local: true);
+    $this->transport = new LifecycleAgent;
     $this->runner = $this->transport->runner();
     app()->instance(ProjectLifecycleRunner::class, $this->runner);
 });
 
-afterEach(function (): void {
-    (new Filesystem)->deleteDirectory($this->sandbox);
-});
-
 it('exports resolved VP_HOME to project-local vp in non-login lifecycle shells', function (string $home, LifecyclePhase $phase): void {
-    mkdir($this->sandbox.'/node_modules/.bin', 0755, true);
-    file_put_contents($this->sandbox.'/node_modules/.bin/vp', "#!/bin/sh\nprintf '%s' \"\$VP_HOME\" > vp-home\n");
-    chmod($this->sandbox.'/node_modules/.bin/vp', 0755);
     $this->steps->create($this->instance->project, $phase, new LifecycleStep('vp-home', './node_modules/.bin/vp'), null, null);
     $runner = $this->transport->runner(null, $home);
 
     expect($runner->run($this->instance, $phase))->toBeTrue();
-    expect(file_get_contents($this->sandbox.'/vp-home'))->toBe($home);
+    expect($this->transport->inputs[0]['environment']['VP_HOME'])->toBe($home);
 })->with([
     ['/opt/orbit/vite-plus', LifecyclePhase::Setup],
     ['/home/orbit/.local/share/vite-plus', LifecyclePhase::Setup],
@@ -68,7 +57,7 @@ it('passes the default checkout seed to setup and keeps the selection on retry',
     $this->instance->update(['status' => InstanceState::SourceResolved]);
     $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('seed', 'printf "%s\\n%s" "$ORBIT_SEED_PATH" "$ORBIT_SEED_COMMIT" > seed'), null, null);
     $this->runner->run($this->instance, LifecyclePhase::Setup);
-    expect(file_get_contents($this->sandbox.'/seed'))->toBe($default->seed_path."\n".$default->seed_commit);
+    expect($this->transport->inputs[0]['environment'])->toMatchArray(['ORBIT_SEED_PATH' => $default->seed_path, 'ORBIT_SEED_COMMIT' => $default->seed_commit]);
     $default->update(['seed_commit' => str_repeat('b', 40)]);
     $this->instance->update(['seed_selected' => false]); // A legacy writer already recorded the snapshot.
     app(SelectInstanceSeedAction::class)->execute($this->instance);
@@ -100,7 +89,7 @@ it('gives the setup of a default no seed, because its seed is its own checkout',
     $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('cold', 'test -z "$ORBIT_SEED_PATH"; test -z "$ORBIT_SEED_COMMIT"; pwd > ran-here'), null, null);
 
     expect($this->runner->run($this->instance, LifecyclePhase::Setup))->toBeTrue()
-        ->and(file_get_contents($this->sandbox.'/ran-here'))->toBe($this->sandbox."\n");
+        ->and($this->transport->inputs[0]['environment'])->toMatchArray(['ORBIT_SEED_PATH' => '', 'ORBIT_SEED_COMMIT' => '']);
 });
 
 it('keeps an explicitly empty seed through setup and retries after a default release appears', function (): void {
@@ -128,14 +117,14 @@ it('runs the lists in the checkout', function (LifecyclePhase $phase): void {
     $this->steps->create($this->instance->project, $phase, new LifecycleStep('where', 'pwd > ran-here'), null, null);
 
     expect($this->runner->run($this->instance, $phase))->toBeTrue()
-        ->and(file_get_contents($this->sandbox.'/ran-here'))->toBe($this->sandbox."\n")
+
         ->and($this->transport->inputs[0]['checkout'])->toBe($this->sandbox);
 })->with([LifecyclePhase::Setup, LifecyclePhase::Teardown]);
 
 it('passes empty seed values when the Project has no release', function (): void {
     $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('cold', 'test -z "$ORBIT_SEED_PATH"; test -z "$ORBIT_SEED_COMMIT"; touch installed'), null, null);
     expect($this->runner->run($this->instance, LifecyclePhase::Setup))->toBeTrue()
-        ->and(file_exists($this->sandbox.'/installed'))->toBeTrue();
+        ->and($this->transport->inputs[0]['environment'])->toMatchArray(['ORBIT_SEED_PATH' => '', 'ORBIT_SEED_COMMIT' => '']);
 });
 
 it('reports a busy lifecycle lock as a busy result', function (): void {
@@ -150,32 +139,16 @@ it('reports a busy lifecycle lock as a busy result', function (): void {
         });
 });
 
-it('locks the checkout directory itself and leaves no lock file in the temporary directory', function (): void {
-    $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('install', 'touch installed'), null, null);
-    $legacyLock = '/tmp/orbit-lifecycle-'.posix_geteuid().'-'.hash('sha256', $this->sandbox).'.lock';
-    $held = fopen($this->sandbox, 'r');
-    expect($held !== false && flock($held, LOCK_EX | LOCK_NB))->toBeTrue();
-
-    try {
-        expect(fn () => $this->runner->run($this->instance, LifecyclePhase::Setup))
-            ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.lifecycle_busy'));
-    } finally {
-        fclose($held);
-    }
-
-    expect($this->runner->run($this->instance, LifecyclePhase::Setup))->toBeTrue()
-        ->and(file_exists($this->sandbox.'/installed'))->toBeTrue()
-        ->and(file_exists($legacyLock))->toBeFalse();
-});
-
-it('runs an ordered snapshot from the checkout and keeps commands out of argv', function (): void {
+it('sends an ordered snapshot of the configured commands', function (): void {
     $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('first', 'printf first > result'), null, null);
     $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('second', 'printf second >> result'), null, null);
     expect($this->runner->run($this->instance, LifecyclePhase::Setup))->toBeTrue()
-        ->and(file_get_contents($this->sandbox.'/result'))->toBe('firstsecond');
+        ->and(array_column($this->transport->inputs, 'command'))->toBe(['printf first > result', 'printf second >> result']);
 });
 
 it('stops after a failed step and preserves the instance on explicit setup', function (): void {
+    $this->transport->result = static fn (): int => 41;
+    $this->transport->stderr = 'secret-output';
     $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('broken', 'echo secret-output; exit 41'), null, null);
     $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('later', 'touch later'), null, null);
     try {
@@ -187,11 +160,13 @@ it('stops after a failed step and preserves the instance on explicit setup', fun
             ->and((string) $exception)->not->toContain('secret-output');
     }
     expect(Instance::query()->whereKey($this->instance->id)->exists())->toBeTrue()
-        ->and(file_exists($this->sandbox.'/later'))->toBeFalse()
+
         ->and($this->transport->inputs)->toHaveCount(1);
 });
 
 it('reports a teardown step whose command is missing as unavailable', function (): void {
+    $this->transport->result = static fn (): int => 127;
+    $this->transport->stderr = '/nonexistent/orbit/e2e-task-cleanup: not found';
     $this->steps->create($this->instance->project, LifecyclePhase::Teardown,
         new LifecycleStep('task-e2e-bridge', '/nonexistent/orbit/e2e-task-cleanup'), null, null);
 
@@ -208,8 +183,8 @@ it('reports a teardown step whose command is missing as unavailable', function (
 });
 
 it('reports non-executable lifecycle commands as unavailable with a bounded stderr tail', function (LifecyclePhase $phase): void {
-    file_put_contents($this->sandbox.'/cleanup', '#!/usr/bin/bash');
-    chmod($this->sandbox.'/cleanup', 0600);
+    $this->transport->result = static fn (): int => 126;
+    $this->transport->stderr = str_repeat('x', 2048).'diagnostic-tail: Permission denied';
     $this->steps->create($this->instance->project, $phase,
         new LifecycleStep('cleanup', 'printf "%1048576s" "" >&2; printf diagnostic-tail >&2; ./cleanup'), null, null);
     $this->steps->create($this->instance->project, $phase,
@@ -227,10 +202,11 @@ it('reports non-executable lifecycle commands as unavailable with a bounded stde
                 ->and(strlen($result?->stderr ?? ''))->toBe(1024)
                 ->and($result?->stderr)->toContain('diagnostic-tail', 'Permission denied');
         });
-    expect(file_exists($this->sandbox.'/later'))->toBeFalse();
+    expect($this->transport->inputs)->toHaveCount(1);
 })->with([LifecyclePhase::Setup, LifecyclePhase::Teardown]);
 
 it('reports a setup step whose command is missing as unavailable', function (): void {
+    $this->transport->result = static fn (): int => 127;
     $this->steps->create($this->instance->project, LifecyclePhase::Setup,
         new LifecycleStep('install', '/nonexistent/orbit/install'), null, null);
 
@@ -243,6 +219,7 @@ it('reports a setup step whose command is missing as unavailable', function (): 
 });
 
 it('reports other teardown command failures as failed', function (): void {
+    $this->transport->result = static fn (): int => 41;
     $this->steps->create($this->instance->project, LifecyclePhase::Teardown,
         new LifecycleStep('cleanup', 'exit 41'), null, null);
 
@@ -251,18 +228,6 @@ it('reports other teardown command failures as failed', function (): void {
             expect($exception->errorCode)->toBe('instance.teardown_step_failed')
                 ->and($exception->details)->toBe(['step' => 'cleanup', 'outcome' => 'failed']);
         });
-});
-
-it('kills the timed-out command group before returning failure', function (): void {
-    $this->steps->create($this->instance->project, LifecyclePhase::Setup,
-        new LifecycleStep('slow', 'bash -c '.escapeshellarg(SubprocessFixture::DelayedHook)." &\nwait", 1), null, null);
-    expect(fn () => $this->runner->run($this->instance, LifecyclePhase::Setup))->toThrow(ResourceOperationException::class);
-    expect(file_get_contents($this->sandbox.'/start-marker'))->toBe('start');
-    SubprocessFixture::assertExited(
-        (int) file_get_contents($this->sandbox.'/hook-pid'),
-        (int) file_get_contents($this->sandbox.'/child-pid'),
-    );
-    expect(file_exists($this->sandbox.'/later-marker'))->toBeFalse();
 });
 
 it('refuses setup for an unfinished instance before executing commands', function (): void {

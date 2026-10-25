@@ -470,7 +470,15 @@ fn removal_refuses_a_live_linked_worktree_and_ignores_a_prunable_one() {
         input.force = true;
         code(remove_source(input, &context()))
     };
+    let before = recovery::tree_bytes(&checkout);
+    let sibling_before = recovery::tree_bytes(&linked);
+    let observed = InspectSource::run(inspect_input(&sandbox, &checkout), &context()).unwrap();
+    let inventory = String::from_utf8(decode(&observed.worktrees)).unwrap();
+    assert!(inventory.contains(&format!("worktree {}\0", checkout.display())));
+    assert!(inventory.contains(&format!("worktree {}\0", linked.display())));
     assert_eq!(forced(), "instances.worktrees_mismatch");
+    assert_eq!(recovery::tree_bytes(&checkout), before);
+    assert_eq!(recovery::tree_bytes(&linked), sibling_before);
     fs::remove_dir_all(&linked).unwrap();
     assert_eq!(forced(), "ok");
 }
@@ -1051,3 +1059,9 @@ fn a_path_is_free_only_when_nothing_and_no_dangling_link_occupies_it() {
     assert!(!check(&base));
     fs::remove_dir_all(&base).unwrap();
 }
+
+#[path = "instances_recovery_tests.rs"]
+mod recovery;
+
+#[path = "instances_safety_tests.rs"]
+mod safety;

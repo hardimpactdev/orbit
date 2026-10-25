@@ -105,6 +105,8 @@ Linux package-cache tests run Composer, npm, and Bun against temporary homes. Pu
 
 `cargo test` uses Rust’s default test threads, which follow the available CPU count. Do not set `RUST_TEST_THREADS=1` or `--test-threads=1`. Run `cargo test` as a normal user, not as root. The agent refuses to tail a log file that root owns, and one log stream test fails when root creates its fixture. Commit `Cargo.lock` with any dependency change. CI also builds static musl binaries for `x86_64` and `aarch64` with [`cross`](https://github.com/cross-rs/cross). On a pull request, CI builds the agent only when the change touches `apps/agent` or the CI workflow.
 
+The privileged Caddy access tests live in `apps/agent/tests/caddy_access.rs`. On a disposable Linux test host with `acl`, a `caddy` account, and passwordless sudo, run `cargo test --release --locked --test caddy_access -- --ignored`. To test ACL publication through Docker, use `cargo test --release --locked --test valkey_acl -- --ignored` on the same disposable host with Docker. The tests run the agent as root and check access as the managed user and Caddy. They own private fixture and lock directories. When copying the compiled test to a test host, set `ORBIT_AGENT_TEST_BINARY` to the agent built from the same source.
+
 To watch what an installed agent reports, join its Node's presence channel with the viewer script:
 
 ```bash

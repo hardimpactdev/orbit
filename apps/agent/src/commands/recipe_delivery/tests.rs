@@ -29,7 +29,8 @@ impl Fixture {
             input,
             &self.0.join("lock"),
             &self.0.join("agent"),
-            Instant::now(),
+            // A parallel fork can retain the previous call's descriptor until exec.
+            Instant::now() + Duration::from_secs(2),
             || version,
         )
     }
@@ -49,7 +50,8 @@ fn returns_the_recipe_only_for_matching_installed_versions_and_can_repeat() {
         assert_eq!(result.identity, input.identity);
         assert_eq!(result.agent_sha256, input.agent_sha256);
         assert_eq!(result.cli_version, input.cli_version);
-        assert!(lock::acquire(&f.0.join("lock"), Instant::now()).is_ok());
+        // Parallel tests can briefly inherit the flock descriptor between fork and exec.
+        assert!(lock::acquire(&f.0.join("lock"), Instant::now() + Duration::from_secs(2)).is_ok());
     }
 }
 

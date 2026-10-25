@@ -181,6 +181,58 @@ fn a_task_vm_checkout_names_the_origin_without_fetching_it() {
 }
 
 #[test]
+fn preparation_retries_preserve_existing_work_and_require_the_attempt_receipt() {
+    use std::os::unix::fs::MetadataExt;
+    let fixture = Fixture::new();
+    let source = || fixture.source("workspace", Some("attempt-1"));
+    fixture.prepare(source(), false, true).unwrap();
+    fixture.resolve(source(), "feature", &["file"]).unwrap();
+    let checkout = source().checkout;
+    fs::create_dir(checkout.join("vendor")).unwrap();
+    fs::write(checkout.join("vendor/cache"), "private cache").unwrap();
+    fs::write(checkout.join(".git/info/exclude"), "vendor/\n").unwrap();
+    fs::write(checkout.join("README"), "uncommitted work").unwrap();
+    let inode = fs::metadata(checkout.join("vendor/cache")).unwrap().ino();
+    let index = fs::read(checkout.join(".git/index")).unwrap();
+    let head = sh_git(&checkout, &["rev-parse", "HEAD"]);
+
+    fixture.prepare(source(), true, true).unwrap();
+    fixture.inspect(source(), false).unwrap();
+    assert_eq!(
+        fs::metadata(checkout.join("vendor/cache")).unwrap().ino(),
+        inode
+    );
+    assert_eq!(
+        fs::read_to_string(checkout.join("README")).unwrap(),
+        "uncommitted work"
+    );
+    assert_eq!(fs::read(checkout.join(".git/index")).unwrap(), index);
+    assert_eq!(sh_git(&checkout, &["rev-parse", "HEAD"]), head);
+
+    fs::remove_file(checkout.join(".git").join(PREPARE_RECEIPT)).unwrap();
+    for allow_existing in [false, true] {
+        assert!(fixture.prepare(source(), allow_existing, true).is_err());
+        assert!(!checkout.join(".git").join(PREPARE_RECEIPT).exists());
+        assert_eq!(
+            fs::metadata(checkout.join("vendor/cache")).unwrap().ino(),
+            inode
+        );
+        assert_eq!(fs::read(checkout.join(".git/index")).unwrap(), index);
+        assert_eq!(
+            fs::read_to_string(checkout.join("README")).unwrap(),
+            "uncommitted work"
+        );
+    }
+
+    // A reservation with no preparation ID retains the documented interrupted-clone path.
+    fixture
+        .prepare(fixture.source("workspace", None), true, true)
+        .unwrap();
+    assert_eq!(sh_git(&checkout, &["rev-parse", "HEAD"]), head);
+    assert_eq!(fs::read(checkout.join(".git/index")).unwrap(), index);
+}
+
+#[test]
 fn refuses_a_parent_that_is_a_link_before_it_creates_anything() {
     let fixture = Fixture::new();
     fs::create_dir(fixture.base.join("elsewhere")).unwrap();
@@ -297,4 +349,284 @@ fn fetch_options_refuse_every_transport_that_is_not_allowed() {
             "{refused}"
         );
     }
+}
+
+#[test]
+fn explicit_and_default_branches_use_the_right_commit_and_preserve_a_local_only_branch() {
+    let f = Fixture::new();
+    let work = f.base.join("work");
+    sh_git(
+        &work,
+        &["commit", "--quiet", "--allow-empty", "-m", "new main"],
+    );
+    sh_git(&work, &["push", "--quiet", &f.origin, "main"]);
+    let main = sh_git(&work, &["rev-parse", "main"]);
+    let feature = sh_git(&work, &["rev-parse", "feature"]);
+    assert_ne!(main, feature);
+    for (name, selected, branch, expected) in [
+        ("default", None, "main", &main),
+        ("feature", None, "feature", &feature),
+        ("task-12", None, "task-12", &main),
+        ("default", Some("feature"), "feature", &feature),
+        ("default", Some("missing"), "missing", &main),
+        ("t3-1234", Some("t3code/1234"), "t3code/1234", &main),
+    ] {
+        let checkout_name = format!("case-{:016x}", rand::random::<u64>());
+        f.prepare(f.source(&checkout_name, None), false, true)
+            .unwrap();
+        let resolve = || {
+            ResolveDevelopmentSource::run(
+                ResolveInput {
+                    source: f.source(&checkout_name, None),
+                    instance_name: name.into(),
+                    default_branch: "main".into(),
+                    branch_override: selected.map(str::to_owned),
+                    seed_commit: None,
+                    network: true,
+                    protocols: vec!["file".into()],
+                    git_read: GitRead::default(),
+                },
+                &context(),
+            )
+        };
+        let result = resolve().unwrap();
+        assert_eq!(
+            (&result.branch, &result.commit),
+            (&branch.to_string(), expected)
+        );
+        let checkout = f.source(&checkout_name, None).checkout;
+        assert_eq!(
+            sh_git(&checkout, &["symbolic-ref", "--short", "HEAD"]),
+            branch
+        );
+        if branch == "t3code/1234" {
+            sh_git(
+                &checkout,
+                &["commit", "--quiet", "--allow-empty", "-m", "local"],
+            );
+            let local = sh_git(&checkout, &["rev-parse", "HEAD"]);
+            assert_ne!(&local, expected);
+            assert_eq!(resolve().unwrap().commit, local);
+        }
+    }
+}
+
+#[test]
+fn linked_source_uses_the_seed_commit_even_when_origin_main_is_newer() {
+    let f = Fixture::new();
+    f.prepare(f.source("default", None), false, true).unwrap();
+    let deployed = f
+        .resolve(f.source("default", None), "default", &["file"])
+        .unwrap()
+        .commit;
+    let work = f.base.join("work");
+    sh_git(
+        &work,
+        &["commit", "--quiet", "--allow-empty", "-m", "new main"],
+    );
+    sh_git(&work, &["push", "--quiet", &f.origin, "main"]);
+    let newer = sh_git(&work, &["rev-parse", "HEAD"]);
+    assert_ne!(deployed, newer);
+    let source = || {
+        let mut source = f.source("task-12", Some("attempt-1"));
+        source.seed_repository = Some(f.source("default", None).checkout);
+        source
+    };
+    PrepareDevelopmentSource::run(
+        PrepareInput {
+            source: source(),
+            allow_existing: false,
+            seed_commit: Some(deployed.clone()),
+            network: false,
+            git_read: GitRead::default(),
+        },
+        &context(),
+    )
+    .unwrap();
+    let resolved = ResolveDevelopmentSource::run(
+        ResolveInput {
+            source: source(),
+            instance_name: "task-12".into(),
+            default_branch: "main".into(),
+            branch_override: None,
+            seed_commit: Some(deployed.clone()),
+            network: false,
+            protocols: vec![],
+            git_read: GitRead::default(),
+        },
+        &context(),
+    )
+    .unwrap();
+    assert_eq!(
+        resolved,
+        ResolveOutput {
+            branch: "task-12".into(),
+            commit: deployed
+        }
+    );
+    assert!(source().checkout.join(".git").is_file());
+    assert!(f.inspect(source(), false).is_ok());
+}
+
+#[test]
+fn copied_receipts_do_not_authorize_a_replacement_checkout() {
+    let f = Fixture::new();
+    let source = || f.source("dev", Some("attempt-1"));
+    f.prepare(source(), false, true).unwrap();
+    let kept = f.base.join("original");
+    fs::rename(source().checkout, &kept).unwrap();
+    assert!(Process::new("cp")
+        .arg("-a")
+        .arg(&kept)
+        .arg(source().checkout)
+        .status()
+        .unwrap()
+        .success());
+    let before = fs::read(source().checkout.join(".git").join(PREPARE_RECEIPT)).unwrap();
+    assert_eq!(
+        f.inspect(source(), false),
+        Err(DevSourceError::Invalid {
+            check: "the prepare receipt names this attempt".into()
+        })
+    );
+    assert!(f.prepare(source(), true, true).is_err());
+    assert_eq!(
+        fs::read(source().checkout.join(".git").join(PREPARE_RECEIPT)).unwrap(),
+        before
+    );
+    assert!(kept.join(".git").is_dir());
+}
+
+#[test]
+fn configured_origin_is_used_despite_a_local_insteadof_rewrite() {
+    let f = Fixture::new();
+    let source = || f.source("dev", None);
+    f.prepare(source(), false, true).unwrap();
+    let checkout = source().checkout;
+    sh_git(
+        &checkout,
+        &[
+            "config",
+            &format!("url.file://{}.insteadOf", f.origin),
+            &f.origin,
+        ],
+    );
+    assert_eq!(f.inspect(source(), false).unwrap().origin, f.origin);
+    assert!(!f.prepare(source(), true, true).unwrap().created);
+    assert!(f.resolve(source(), "dev", &["file"]).is_ok());
+    sh_git(
+        &checkout,
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "https://wrong.test/other.git",
+        ],
+    );
+    assert_eq!(
+        f.inspect(source(), false),
+        Err(DevSourceError::Invalid {
+            check: "the origin is the Project repository".into()
+        })
+    );
+}
+
+#[test]
+fn resolve_does_not_run_command_keys_planted_in_checkout_config() {
+    let f = Fixture::new();
+    f.prepare(f.source("dev", None), false, true).unwrap();
+    let checkout = f.source("dev", None).checkout;
+    let markers = f.base.join("markers");
+    fs::create_dir(&markers).unwrap();
+    let included = f.base.join("included.config");
+    fs::write(
+        &included,
+        format!(
+            "[credential]\nhelper = !touch {}/included\n",
+            markers.display()
+        ),
+    )
+    .unwrap();
+    let hooks = f.base.join("hooks");
+    fs::create_dir(&hooks).unwrap();
+    fs::write(
+        hooks.join("post-checkout"),
+        format!("#!/bin/sh\ntouch {}/hook\n", markers.display()),
+    )
+    .unwrap();
+    fs::set_permissions(
+        hooks.join("post-checkout"),
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )
+    .unwrap();
+    for (key, value) in [
+        (
+            "credential.helper",
+            format!("!touch {}/credential", markers.display()),
+        ),
+        (
+            "core.sshCommand",
+            format!("touch {}/ssh;", markers.display()),
+        ),
+        (
+            "core.fsmonitor",
+            format!("touch {}/fsmonitor;", markers.display()),
+        ),
+        (
+            "remote.origin.uploadpack",
+            format!("touch {}/upload; git-upload-pack", markers.display()),
+        ),
+        (
+            "remote.origin.receivepack",
+            format!("touch {}/receive; git-receive-pack", markers.display()),
+        ),
+        ("include.path", included.display().to_string()),
+        ("core.hooksPath", hooks.display().to_string()),
+        ("protocol.ext.allow", "always".into()),
+    ] {
+        sh_git(&checkout, &["config", "--add", key, &value]);
+    }
+    assert!(f.resolve(f.source("dev", None), "dev", &["file"]).is_ok());
+    assert!(fs::read_dir(&markers).unwrap().next().is_none());
+    let rewrite = format!("url.ext::sh -c touch% {}/ext.insteadOf", markers.display());
+    sh_git(&checkout, &["config", &rewrite, &f.origin]);
+    assert_eq!(
+        f.resolve(f.source("dev", None), "dev", &["file"]),
+        Err(DevSourceError::GitFailed {
+            step: "fetch the origin".into()
+        })
+    );
+    assert!(fs::read_dir(markers).unwrap().next().is_none());
+}
+
+#[test]
+fn idle_inspection_is_a_local_read_and_creates_no_lock_file() {
+    let f = Fixture::new();
+    let source = || f.source("dev", None);
+    f.prepare(source(), false, true).unwrap();
+    f.resolve(source(), "dev", &["file"]).unwrap();
+    let checkout = source().checkout;
+    let index = fs::read(checkout.join(".git/index")).unwrap();
+    let refs = sh_git(&checkout, &["show-ref"]);
+    fs::rename(&f.origin, f.base.join("offline.git")).unwrap();
+    let entries = || {
+        let mut entries: Vec<_> = fs::read_dir(&checkout)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        entries.sort();
+        entries
+    };
+    let before = entries();
+    let held = fs::File::open(&checkout).unwrap();
+    rustix::fs::flock(&held, rustix::fs::FlockOperation::LockExclusive).unwrap();
+    assert_eq!(f.inspect(source(), true), Err(DevSourceError::Busy {}));
+    drop(held);
+    assert_eq!(
+        f.inspect(source(), true).unwrap().branch.as_deref(),
+        Some("dev")
+    );
+    assert_eq!(entries(), before);
+    assert_eq!(fs::read(checkout.join(".git/index")).unwrap(), index);
+    assert_eq!(sh_git(&checkout, &["show-ref"]), refs);
 }

@@ -33,21 +33,17 @@ use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentPhpFpmConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
-use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Doctor\ProductionInstanceInspectionExpectationFactory;
 use App\Infrastructure\Instances\ProductionPhpRuntimeConfigRenderer;
 use App\Infrastructure\Instances\RemoteProductionDeployment;
 use App\Infrastructure\Projects\NativeProjectUpdateProjectionMutator;
 use App\Infrastructure\Routes\NativeRouteRemovalProjector;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Collection;
-use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeRouteRemovalProjector;
 
@@ -700,11 +696,6 @@ function web_root_production(Project $project): array
 /** @return list<array{web_root: string, directory: string}> The served web roots that a later release preparation sends. */
 function web_root_production_deploy_served(Instance $instance): array
 {
-    $executor = new ProductionSshExecutor(
-        new AppDevFakeSshExecutor([]),
-        Mockery::mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/unused')->getMock(),
-        Mockery::mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/unused')->getMock(),
-    );
     $agents = new FakeAgentCommandRunner()->answer('instances.prepare-release', ['name' => '20261009-a1', 'commit' => str_repeat('b', 40)]);
     $instance->update(['source_layout' => 'checkout']);
     new RemoteProductionDeployment($agents, app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class), static fn (): string => '20261009-a1')->prepare($instance->refresh(), 'main');

@@ -27,7 +27,7 @@ final readonly class FixtureProcessRunner implements ProcessRunner
         $protectedInput = $invocation->protectedInput;
 
         try {
-            $process->setInput($protectedInput?->stream() ?? $invocation->input);
+            $process->setInput($protectedInput?->chunks() ?? $invocation->input);
             $process->run();
             $limit = $invocation->maxOutputBytes ?? 1_048_576;
             $stdout = $process->getOutput();

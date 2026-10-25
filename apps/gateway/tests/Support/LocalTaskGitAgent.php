@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Infrastructure\AgentCommands\AgentBinaryInput;
 use App\Infrastructure\AgentCommands\AgentBinaryOutput;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\AgentCommands\WorkspaceAgentCommandRunner;
+use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 use Closure;
 use LogicException;
@@ -25,9 +27,34 @@ final class LocalTaskGitAgent implements WorkspaceAgentCommandRunner
 
     public ?int $reportedBytes = null;
 
-    public function runInWorkspace(Node $node, Closure $execute, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null): array
+    /** @var (Closure(array<string, mixed>): void)|null */
+    public ?Closure $beforeImport = null;
+
+    public function runInWorkspace(Node $node, Closure $execute, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
     {
         $this->calls[] = ['command' => $command, 'input' => $input];
+        if ($command === 'task-vms.import-git-pack') {
+            if ($this->beforeImport !== null) {
+                ($this->beforeImport)($input);
+            }
+            if ($binaryInput === null) {
+                throw new LogicException('Import requires a binary source.');
+            }
+            // Materialize the fake's reply for later Gateway mirror/publication fixture steps.
+            $git = ['git', '-C', $input['checkout']];
+            $execute(new RemoteCommand([...$git, 'index-pack', '--stdin', '--fix-thin'], protectedInput: $binaryInput->envelope('')));
+            foreach ($input['updates'] as $update) {
+                new Process([...$git, 'update-ref', ...($update['commit'] === null ? ['-d', $update['reference']] : [$update['reference'], $update['commit']])])->mustRun();
+            }
+            if ($input['default_branch'] !== null) {
+                $ref = 'refs/remotes/origin/'.$input['default_branch'];
+                if (new Process([...$git, 'rev-parse', '--verify', '--quiet', $ref])->run() === 0) {
+                    new Process([...$git, 'symbolic-ref', 'refs/remotes/origin/HEAD', $ref])->mustRun();
+                }
+            }
+
+            return ['imported' => true];
+        }
         if ($command === 'task-vms.export-git-pack') {
             if ($output === null) {
                 throw new LogicException('Export requires a binary sink.');

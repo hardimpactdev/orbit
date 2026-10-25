@@ -85,9 +85,6 @@ uses()
         'Feature/GatewayReleases/SystemdGatewayReleaseDrainTest.php',
     );
 
-uses(WithSharedGitFixtureCleanup::class)
-    ->in('Feature/Api/TransferInstanceTest.php', 'Feature/Infrastructure/Instances/TransferEnvironmentModeTest.php', 'Feature/Infrastructure/Instances/RemoteInstanceTransferSourceTest.php');
-
 // Each moved extension's tests run with its switch on (docs/reference/extensions.md#the-runtime-switch).
 uses()
     ->beforeEach(function (): void {

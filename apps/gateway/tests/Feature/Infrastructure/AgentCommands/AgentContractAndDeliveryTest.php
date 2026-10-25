@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Infrastructure\AgentCommands\AgentContract;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Node;
+use Illuminate\Support\Facades\Http;
 
 function deliveryNode(string $architecture = 'x86_64', string $platform = 'linux'): Node
 {
@@ -80,4 +81,27 @@ describe(AgentDelivery::class, function (): void {
         'no version' => [['commit' => 'c', 'artifacts' => []]],
         'bad digest' => [['commit' => 'c', 'version' => '0.5.0', 'artifacts' => ['linux-x86_64' => ['sha256' => 'ABC']]]],
     ]);
+});
+
+it('downloads a published artifact when its optional adjacent file is absent and reuses the verified cache', function (): void {
+    $url = 'https://github.com/hardimpactdev/orbit/releases/download/agent-v'.str_repeat('c', 40).'/orbit-agent-linux-x86_64';
+    $bytes = 'published agent';
+    $manifest = temporaryDelivery(['commit' => str_repeat('c', 40), 'version' => '0.5.0', 'artifacts' => [
+        'linux-x86_64' => ['sha256' => hash('sha256', $bytes), 'path' => 'orbit-agent-linux-x86_64', 'url' => $url],
+    ]]);
+    Http::fake([$url => Http::response($bytes)]);
+    $delivery = new AgentDelivery($manifest, dirname($manifest).'/cache');
+    expect(file_get_contents($delivery->localFile(deliveryNode())))->toBe($bytes)
+        ->and($delivery->localFile(deliveryNode()))->toBe(dirname($manifest).'/cache/'.hash('sha256', $bytes));
+    Http::assertSentCount(1);
+});
+
+it('refuses a corrupt adjacent artifact instead of downloading another copy', function (): void {
+    $manifest = temporaryDelivery(['commit' => str_repeat('c', 40), 'version' => '0.5.0', 'artifacts' => [
+        'linux-x86_64' => ['sha256' => hash('sha256', 'pinned'), 'path' => 'agent', 'url' => 'https://example.test/agent'],
+    ]], ['agent' => 'corrupt']);
+    Http::fake();
+    expect(fn () => (new AgentDelivery($manifest, dirname($manifest).'/cache'))->localFile(deliveryNode()))
+        ->toThrow(RuntimeException::class, 'does not match its pin');
+    Http::assertNothingSent();
 });

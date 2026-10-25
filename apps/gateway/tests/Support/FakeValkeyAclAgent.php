@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Infrastructure\AgentCommands\AgentBinaryInput;
+use App\Infrastructure\AgentCommands\AgentBinaryOutput;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Node;
@@ -31,7 +33,7 @@ final class FakeValkeyAclAgent implements AgentCommandRunner
 
     public function __construct(private readonly ?AgentCommandRunner $others = null) {}
 
-    public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null): array
+    public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
     {
         if ($command !== 'databases.write-valkey-acl') {
             return ($this->others ?? throw new LogicException("Unexpected agent command [{$command}]."))->run($node, $command, $input, $deadlineSeconds);

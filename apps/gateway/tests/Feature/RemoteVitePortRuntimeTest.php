@@ -13,9 +13,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Project;
-use Illuminate\Support\Str;
 use Tests\Support\FakeAgentCommandRunner;
-use Tests\Support\LocalAgentBinary;
 
 function vite_port_runtime(AgentCommandRunner $agents): RemoteVitePortRuntime
 {
@@ -27,24 +25,26 @@ function vite_port_node(): Node
     return new Node(['name' => 'vite', 'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit', 'wireguard_ip' => '192.0.2.1']);
 }
 
-it('skips actual occupied TCP ports and explicit exclusions', function (string $address): void {
-    $listener = stream_socket_server($address, $code, $message);
-    expect($listener)->not->toBeFalse();
-    $name = stream_socket_get_name($listener, false);
-    $port = (int) substr($name, strrpos($name, ':') + 1);
-    try {
-        $selected = vite_port_runtime(LocalAgentBinary::localRunner(sys_get_temp_dir().'/orbit-vite-agent-'.Str::uuid()))
-            ->selectPort(vite_port_node(), $port, [$port + 1]);
-        expect($selected)->toBeGreaterThan($port + 1);
-    } finally {
-        fclose($listener);
-    }
-})->with(['IPv4' => 'tcp://127.0.0.1:0', 'IPv6' => 'tcp://[::1]:0']);
+it('sends the preferred port and exclusions to the agent and returns its selection', function (): void {
+    $agents = new FakeAgentCommandRunner()->answer('vite.select-port', ['port' => 5212]);
+
+    expect(vite_port_runtime($agents)->selectPort(vite_port_node(), 5210, [5211]))->toBe(5212)
+        ->and($agents->calls[0]['input'])->toBe(['preferred' => 5210, 'excluded' => [5211]]);
+});
 
 it('reports finite exhaustion when the final candidate is excluded', function (): void {
-    $runtime = vite_port_runtime(LocalAgentBinary::localRunner(sys_get_temp_dir().'/orbit-vite-agent-'.Str::uuid()));
+    $runtime = vite_port_runtime(new FakeAgentCommandRunner()->refuse('vite.select-port', 'vite.ports_exhausted'));
 
     expect(fn () => $runtime->selectPort(vite_port_node(), 65535, [65535]))->toThrow(ProcessOperationException::class, 'No available Vite port remains');
+});
+
+it('maps a failed port check and rejects malformed agent results', function (): void {
+    $agents = new FakeAgentCommandRunner()->refuse('vite.select-port', 'vite.node_failed');
+    expect(fn () => vite_port_runtime($agents)->selectPort(vite_port_node(), 5210, []))
+        ->toThrow(fn (ProcessOperationException $error) => expect($error->errorCode)->toBe('vite.port_check_failed'));
+    $agents->answer('vite.select-port', ['port' => 0]);
+    expect(fn () => vite_port_runtime($agents)->selectPort(vite_port_node(), 5210, []))
+        ->toThrow(fn (ProcessOperationException $error) => expect($error->errorCode)->toBe('vite.port_check_invalid'));
 });
 
 it('writes the Vite environment from the application directory', function (string $root, bool $laravel, string $suffix): void {

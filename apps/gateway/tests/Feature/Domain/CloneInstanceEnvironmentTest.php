@@ -53,6 +53,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\FakesEnvironmentSyncInspection;
 
 it('copies independent encrypted values and resolves placeholders through the exact pending clone Route', function (): void {
     [$source, $target] = clone_environment_fixture();
@@ -544,6 +545,8 @@ final class Orb198CloneEnvironmentLock implements InstanceEnvironmentOperationLo
 
 final class Orb198CloneEnvironmentPreflight implements InstanceOperationPreflight
 {
+    use FakesEnvironmentSyncInspection;
+
     public ?InstanceEnvironmentContext $context = null;
 
     public ?int $requiredCapacityBytes = null;

@@ -49,6 +49,7 @@ use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
 use App\Models\Route;
 use Tests\Support\FakeDatabaseServerAdmin;
+use Tests\Support\FakesEnvironmentSyncInspection;
 use Tests\Support\LifecycleAgent;
 
 const DATABASE_CLONE_ROOT_SECRET = 'clone-root-secret-77ab';
@@ -985,6 +986,8 @@ final class DatabaseCloneSqliteFake implements InstanceSqliteCloner
 
 final class DatabaseCloneEnvironmentFakes implements InstanceEnvironmentReader, InstanceEnvironmentWriter, InstanceOperationPreflight, InstanceTestEnvironmentWriter
 {
+    use FakesEnvironmentSyncInspection;
+
     public ?string $contents = null;
 
     public ?string $testingContents = null;

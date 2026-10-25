@@ -90,6 +90,7 @@ use Orbit\Sdk\Requests\Instances\ListInstancesRequest;
 use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\FakesEnvironmentSyncInspection;
 use Tests\Support\LifecycleAgent;
 use Tests\Support\SharedPhpPoolAnswers;
 use Tests\Support\SshCommandAgents;
@@ -2567,7 +2568,7 @@ it('completes Instance removal while another Node service metrics snapshot fails
     expect(app(ExporterDegradationRepository::class)->get($failed->id))->toBe(ExporterDegradationReason::ReconcileFailed);
     expect(app(ExporterDegradationRepository::class)->step($failed->id))->toBe('snapshot');
     expect(app(MetricsReconcileDegradationRepository::class)->errorCode($failed->id))->toBe('metrics.service_convergence_failed');
-    expect($poolAgents->commands())->toContain('php.inspect-shared-pools', 'php.converge-shared-pools');
+    expect($poolAgents->commands())->toContain('php.converge-shared-pools')->not->toContain('php.inspect-shared-pools');
 });
 
 it('removes an active Instance through every durable checkpoint', function (bool $force): void {
@@ -3249,6 +3250,8 @@ function orb182_api_removal_graph(TestCase $test): array
 
 final class RecoveredSourceProfileEnvironmentAccess implements InstanceEnvironmentReader, InstanceEnvironmentWriter, InstanceOperationPreflight
 {
+    use FakesEnvironmentSyncInspection;
+
     public function assertEnvironmentReadable(
         InstanceEnvironmentContext $context,
     ): void {}

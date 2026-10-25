@@ -61,6 +61,7 @@ pub fn arguments(
 }
 
 /// Runs the same envelope under a transient service and returns its one result.
+#[allow(clippy::too_many_arguments)]
 pub fn launch(
     executable: &Path,
     command: &str,
@@ -68,6 +69,8 @@ pub fn launch(
     budget: Duration,
     user: Option<&str>,
     locks: &Path,
+    stream: super::binary_input::Stream,
+    stream_bytes: Option<u64>,
 ) -> Outcome {
     if let Err(outcome) = system_bus_ready(Path::new("/run/dbus/system_bus_socket")) {
         return outcome;
@@ -91,11 +94,26 @@ pub fn launch(
             )
         }
     };
-    let written = child
-        .stdin
-        .take()
-        .map(|mut stdin| stdin.write_all(envelope))
-        .unwrap_or(Ok(()));
+    let stdin = child.stdin.take();
+    let mut envelope = envelope.to_vec();
+    if !envelope.ends_with(b"\n") {
+        envelope.push(b'\n');
+    }
+    let (sent, written) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let result = (|| -> std::io::Result<()> {
+            let Some(mut stdin) = stdin else {
+                return Ok(());
+            };
+            stdin.write_all(&envelope)?;
+            std::io::copy(
+                &mut stream.take(stream_bytes.unwrap_or(0).saturating_add(1)),
+                &mut stdin,
+            )?;
+            Ok(())
+        })();
+        let _ = sent.send(result);
+    });
     let mut output = String::new();
     let read = child
         .stdout
@@ -111,7 +129,7 @@ pub fn launch(
         json!({
             "unit": unit,
             "status": status.ok().and_then(|status| status.code()),
-            "stdin": written.err().map(|error| error.to_string()),
+            "stdin": written.try_recv().ok().and_then(Result::err).map(|error| error.to_string()),
             "stdout": read.and_then(Result::err).map(|error| error.to_string()),
         }),
     )

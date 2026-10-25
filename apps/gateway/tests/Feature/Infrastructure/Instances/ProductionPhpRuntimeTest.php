@@ -16,19 +16,14 @@ use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentPhpFpmConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
-use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Instances\ProductionPhpRuntimeConfigRenderer;
 use App\Infrastructure\Instances\RemoteInstanceEnvironmentRuntimeRefresher;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Schema;
-use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\CachedLaravelApplicationFixture;
 use Tests\Support\FakeAgentCommandRunner;
 
@@ -408,31 +403,4 @@ function orb214_runtime_instance(): array
         ]),
         $node,
     ];
-}
-
-function orb214_app_prod_ssh(AppDevFakeSshExecutor $ssh): ProductionSshExecutor
-{
-    $keys = new class implements SshKeyProvider
-    {
-        public function privateKeyPath(): string
-        {
-            return '/tmp/orbit-test-key';
-        }
-
-        public function publicKey(): string
-        {
-            return 'ssh-ed25519 AAAA';
-        }
-    };
-    $knownHosts = new class implements KnownHostsStore
-    {
-        public function path(): string
-        {
-            return '/tmp/orbit-test-known-hosts';
-        }
-
-        public function put(string $host, int $port, HostKey $key): void {}
-    };
-
-    return new ProductionSshExecutor($ssh, $keys, $knownHosts);
 }

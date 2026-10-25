@@ -378,3 +378,92 @@ fn bounds_each_file_by_its_kind() {
         "a lockfile may hold 8 MiB"
     );
 }
+
+#[test]
+fn monorepo_discovery_reads_only_direct_qualifying_children_and_isolates_unsafe_files() {
+    let source = Sandbox::new();
+    source
+        .write("apps/api/composer.json", "{}")
+        .write("apps/api/composer.lock", "{}")
+        .write("packages/widget/package.json", "{}")
+        .write("packages/widget/package-lock.json", "{}")
+        .write("apps/native/Cargo.toml", "[package]")
+        .write("apps/native/nested/composer.json", "{}")
+        .write("apps/unsupported/package.json", "{}")
+        .write("apps/unsupported/yarn.lock", "unsupported")
+        .write("elsewhere/api/composer.json", "{}")
+        .write("package.json", r#"{"workspaces":["apps/*"]}"#);
+    symlink(source.0.join("apps/api"), source.0.join("apps/linked")).unwrap();
+    let input = FilesInput {
+        path: source.path(),
+        application: "/apps/api".into(),
+        monorepo: true,
+    };
+    let first = read_files("development", &input);
+    assert_eq!(
+        first["sub_projects"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        ["apps/api", "packages/widget"]
+    );
+    assert_eq!(first["root"], source.path());
+    assert_eq!(first, read_files("development", &input));
+    fs::remove_file(source.0.join("apps/api/composer.lock")).unwrap();
+    symlink(
+        source.0.join("packages/widget/package-lock.json"),
+        source.0.join("apps/api/composer.lock"),
+    )
+    .unwrap();
+    let second = read_files("development", &input);
+    assert_eq!(
+        second["sub_projects"]["apps/api"]["files"]["composer.lock"]["error"],
+        "dependencies.unsafe_source"
+    );
+    assert_eq!(
+        second["sub_projects"]["packages/widget"]["files"],
+        first["sub_projects"]["packages/widget"]["files"]
+    );
+    assert!(source.0.join("apps/api/composer.lock").is_symlink());
+    assert_eq!(
+        fs::read_to_string(source.0.join("package.json")).unwrap(),
+        r#"{"workspaces":["apps/*"]}"#
+    );
+}
+
+#[test]
+fn missing_monorepo_directories_fall_back_to_the_selected_application_but_empty_discovery_does_not()
+{
+    let source = Sandbox::new();
+    source
+        .write("package.json", "root")
+        .write("server/web/composer.json", "{}")
+        .write("server/web/apps/ignored/package.json", "{}");
+    let input = FilesInput {
+        path: source.path(),
+        application: "/server/web".into(),
+        monorepo: true,
+    };
+    let fallback = read_files("development", &input);
+    assert!(fallback["sub_projects"].is_null());
+    assert_eq!(fallback["root"], format!("{}/server/web", source.path()));
+    assert_eq!(fallback["files"]["composer.json"]["content"], "e30=");
+    assert!(fallback["files"]["package.json"]["content"].is_null());
+    source
+        .write("apps/native/package.json", "{}")
+        .write("apps/native/yarn.lock", "unsupported");
+    let empty = read_files("development", &input);
+    assert_eq!(empty["sub_projects"], json!({}));
+    assert_eq!(empty["root"], source.path());
+    let single = read_files(
+        "development",
+        &FilesInput {
+            monorepo: false,
+            ..input
+        },
+    );
+    assert!(single.get("sub_projects").is_none());
+    assert_eq!(single["files"], fallback["files"]);
+}

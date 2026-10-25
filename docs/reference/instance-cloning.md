@@ -103,6 +103,8 @@ The [Node agent](/reference/node-agent#commands) does the work on each Node as r
 - `instances.prepare-sqlite-seed` takes the snapshot as the candidate's user.
 - `instances.install-sqlite-seed` installs it as a new file, never over an existing database.
 
+The Gateway transfers the snapshot with `instances.read-sqlite-snapshot` and `instances.receive-sqlite-snapshot` through the agent runner. These account commands accept only managed snapshot paths and verify the SQLite header, exact size, and SHA-256. Binary framing bounds each snapshot to 1 TiB. Upload preserves the prepared file's inode, so the target's ownership receipt remains valid. No general file upload or `scp` path handles database contents.
+
 Each records its progress under `/var/lib/orbit/app-instance-sqlite-seeds`, so a retry resumes or cleans up what an earlier run left.
 
 Orbit registers a SQLite connection named `<project>-<instance>` (shortened with a stable hash when it exceeds 63 characters), owned by the new Instance on the destination Node, attaches it under prefix `DB`, and syncs the production `.env` with `DB_CONNECTION=sqlite` and `DB_DATABASE=<home>/database.sqlite`. Retrying an interrupted clone reuses that connection and attachment. Without the option, the clone gets no database and no candidate `DB_*` values.

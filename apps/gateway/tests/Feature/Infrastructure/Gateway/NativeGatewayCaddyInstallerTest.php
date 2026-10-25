@@ -6,7 +6,6 @@ use App\Domain\Nodes\NodeProvisioningException;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
-use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\AppProd\RemoteAppProdCaddyManager;
 use App\Infrastructure\Gateway\NativeGatewayCaddyInstaller;
 use App\Infrastructure\Nodes\AgentCaddyPackage;
@@ -56,7 +55,6 @@ arch('Caddy installation and ordering use only typed agent commands')
         SshExecutor::class,
         RemoteCommand::class,
         DevelopmentSshExecutor::class,
-        ProductionSshExecutor::class,
     ]);
 
 it('maps transport failure at the Caddy ordering step', function (): void {

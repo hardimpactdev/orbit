@@ -23,6 +23,7 @@ use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Instances\RemoteInstanceEnvironmentAccess;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -38,6 +39,8 @@ use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\FakesEnvironmentSyncInspection;
 
 function environment_api_production(Instance $instance): void
 {
@@ -880,6 +883,33 @@ it('preflights from encrypted-size metadata before decrypting or writing', funct
     expect($this->access->writePreflights)->toBe(2)->and($this->access->writes)->toBe([]);
 });
 
+it('synchronizes through one inspection and retains the workload-key refusal', function (array $existing, bool $allowed): void {
+    $this->instance->environmentValues()->create(['env_key' => 'KEY', 'env_value' => 'value']);
+    $agents = new FakeAgentCommandRunner()->answer('instances.inspect-environment-sync', [
+        'preflight' => ['state' => 'ok', 'installed' => false],
+        'existing' => $existing,
+    ]);
+    app()->instance(InstanceOperationPreflight::class, new RemoteInstanceEnvironmentAccess($agents));
+
+    $response = $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->call('POST', "/api/v1/instances/{$this->instance->id}/environment/sync", server: ['CONTENT_TYPE' => 'application/json'], content: '{}');
+
+    if ($allowed) {
+        $response->assertOk();
+        expect($this->access->writes)->toHaveCount(1);
+    } else {
+        $response->assertConflict()->assertJsonPath('error.code', 'env.sync_would_drop_keys');
+        expect($this->access->writes)->toBe([]);
+    }
+    expect(array_column($agents->calls, 'command'))->toBe(['instances.inspect-environment-sync'])
+        ->and($this->access->reads)->toBe(0)
+        ->and($this->access->writePreflights)->toBe(0);
+})->with([
+    'missing file' => [['state' => 'missing'], true],
+    'stored key' => [['state' => 'ok', 'content' => base64_encode("KEY=old\n")], true],
+    'unowned key' => [['state' => 'ok', 'content' => base64_encode("UNOWNED=keep\n")], false],
+]);
+
 it('reports an unconfirmed synchronization without values or an unchanged claim', function (): void {
     $this->access->contents = '';
     $sentinel = 'unconfirmed-secret-sentinel';
@@ -1119,6 +1149,8 @@ function ambiguous_environment_target(Node $caller): array
 
 final class EnvironmentApiAccess implements InstanceEnvironmentReader, InstanceEnvironmentWriter, InstanceOperationPreflight
 {
+    use FakesEnvironmentSyncInspection;
+
     public int $preflights = 0;
 
     public int $reads = 0;

@@ -11,19 +11,14 @@ use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
-use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Instances\ProductionApplicationPaths;
 use App\Infrastructure\Instances\ProductionPhpRuntimeConfigRenderer;
 use App\Infrastructure\Instances\RemoteProductionDeployment;
 use App\Infrastructure\Instances\RemoteProductionPhpRuntimeManager;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
-use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeAgentCommandRunner;
 
 /*
@@ -129,7 +124,6 @@ function prod_equivalence_render(Node $node, array $instances): array
         $agents = new FakeAgentCommandRunner()
             ->answer('instances.prepare-release', ['name' => '20261009-a1', 'commit' => str_repeat('b', 40)])
             ->answer('instances.activate-release', ['name' => '20261009-a1', 'commit' => str_repeat('b', 40)]);
-        $executor = prod_equivalence_executor(new AppDevFakeSshExecutor([]));
         $deployment = new RemoteProductionDeployment($agents, app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class), static fn (): string => '20261009-a1');
         $release = $deployment->prepare($instance, 'main');
         $deployment->activate($instance, new DeploymentRelease($release->name, $release->path, $release->commit));
@@ -160,32 +154,4 @@ function prod_equivalence_render(Node $node, array $instances): array
     }
 
     return $rendered;
-}
-
-function prod_equivalence_executor(AppDevFakeSshExecutor $ssh): ProductionSshExecutor
-{
-    return new ProductionSshExecutor(
-        $ssh,
-        new class implements SshKeyProvider
-        {
-            public function privateKeyPath(): string
-            {
-                return '/tmp/orbit-test-key';
-            }
-
-            public function publicKey(): string
-            {
-                return 'ssh-ed25519 test';
-            }
-        },
-        new class implements KnownHostsStore
-        {
-            public function path(): string
-            {
-                return '/tmp/orbit-test-known-hosts';
-            }
-
-            public function put(string $host, int $port, HostKey $key): void {}
-        },
-    );
 }

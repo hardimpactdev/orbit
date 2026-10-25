@@ -136,10 +136,13 @@ fn low_space_invalid_policy_and_expired_deadline_refuse_before_creating_backups(
         snapshot(&f.input, deadline, |_| Some(0)),
         Err(Error::DiskLow { .. })
     ));
+    // A parallel test can fork while the low-space call holds its lock. Use a fresh lock to test only the deadline.
+    let expired = Fixture::new();
     assert!(matches!(
-        snapshot(&f.input, Instant::now(), |_| Some(1 << 40)),
+        snapshot(&expired.input, Instant::now(), |_| Some(1 << 40)),
         Err(Error::Failed {})
     ));
+    assert!(!expired.work.0.join("backups").exists());
     f.input.kept_snapshots = 0;
     assert!(matches!(
         snapshot(&f.input, deadline, |_| Some(1 << 40)),

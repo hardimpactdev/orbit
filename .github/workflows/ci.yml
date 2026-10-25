@@ -420,7 +420,7 @@ jobs:
         run: |
           cp .env.example .env
           composer install --no-interaction --prefer-dist
-      # Source removal tests run the agent built from this commit (tests/Support/LocalAgentBinary.php).
+      # Native Caddy and Valkey tests run the agent built from this commit.
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - name: Restore Rust caches
@@ -430,6 +430,9 @@ jobs:
       - name: Build the agent
         working-directory: apps/agent
         run: cargo build --release --locked
+      - name: Test native Caddy access and Valkey ACL publication
+        working-directory: apps/agent
+        run: cargo test --release --locked --test caddy_access --test valkey_acl -- --ignored
       # Valkey tests pull their image on the first real docker run.
       - name: Run privileged tests
         env:
@@ -459,7 +462,7 @@ jobs:
           sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
           sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install --no-install-recommends --yes shellcheck
           python3 -m venv "$RUNNER_TEMP/ruff"
-          "$RUNNER_TEMP/ruff/bin/pip" install --quiet ruff==0.17.0 -r apps/gateway/tests/Programs/requirements.txt
+          "$RUNNER_TEMP/ruff/bin/pip" install --quiet ruff==0.17.0 -r tools/test-requirements.txt
           echo "$RUNNER_TEMP/ruff/bin" >> "$GITHUB_PATH"
       - name: Refuse Gateway script growth
         env:
@@ -473,14 +476,7 @@ jobs:
         run: |
           shellcheck tools/ci-runners/setup.sh
           python3 -m unittest discover -s tools/ci-runners -p 'test_*.py' -v
-      # ORBIT_TEST_DOCKER also starts Valkey from a bootstrapped ACL file in Docker.
-      - name: Pull the current Valkey test image
-        run: |
-          docker pull valkey/valkey:8.1
-          docker run --rm valkey/valkey:8.1 valkey-server --version
       - name: Lint and test the remote programs
-        env:
-          ORBIT_TEST_DOCKER: '1'
         run: bin/remote-programs-check
 
   api-reference:

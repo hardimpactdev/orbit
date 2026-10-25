@@ -461,3 +461,7 @@ impl Command for CopySqlite {
         copy(&input)
     }
 }
+
+#[cfg(test)]
+#[path = "sqlite_copy_tests.rs"]
+mod tests;

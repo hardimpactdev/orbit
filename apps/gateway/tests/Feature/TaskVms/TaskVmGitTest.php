@@ -22,6 +22,7 @@ use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Support\Facades\Queue;
 use Symfony\Component\Process\Process;
 use Tests\Support\GitRemoteRedirect;
+use Tests\Support\ProcessInput;
 use Tests\Support\StreamingLocalShellSshExecutor;
 use Tests\Support\TaskVmSettingsBuilder;
 use Tests\Support\TestOrbitHome;
@@ -87,8 +88,7 @@ afterEach(function (): void {
 function tvm_git_expect_no_token(): void
 {
     foreach (test()->sent as $command) {
-        $input = $command->protectedInput?->stream();
-        $text = implode("\n", $command->arguments)."\n".($command->input ?? '').(is_resource($input) ? stream_get_contents($input) : '');
+        $text = implode("\n", $command->arguments)."\n".($command->input ?? '').ProcessInput::contents($command->protectedInput);
         expect($text)->not->toContain(TVM_GIT_TOKEN)
             ->not->toContain(base64_encode('x-access-token:'.TVM_GIT_TOKEN))
             ->and($command->protectedInput?->carriesGitCredential())->not->toBeTrue();
@@ -133,7 +133,7 @@ describe('send branches to the VM', function (): void {
             ->and(tvm_git($this->root.'/vm', ['rev-parse', 'refs/remotes/origin/main']))->toBe($next)
             ->and(tvm_git($this->root.'/vm', ['for-each-ref', 'refs/remotes/origin/task-7']))->toBe('')
             // The VM already had README, so the pack holds only the new commit, its tree, and CHANGELOG.
-            ->and(strlen((string) stream_get_contents($this->sent[0]->protectedInput?->stream())))->toBeLessThan(400);
+            ->and(strlen(ProcessInput::contents($this->sent[0]->protectedInput)))->toBeLessThan(400);
     });
 
     it('ignores commit IDs from the VM that the mirror does not hold', function (): void {

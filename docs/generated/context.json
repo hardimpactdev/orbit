@@ -741,9 +741,7 @@
                 "Task check",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0225"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/decisions/0182-start-tasks-from-project-task-definitions.md",
@@ -906,27 +904,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0211-ship-node-changes-as-remote-programs.md",
-            "title": "ADR 0211: Ship Node changes as remote programs",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Gateway",
-                "Instance",
-                "Node",
-                "Node agent",
-                "Process",
-                "Task"
-            ],
-            "governing_adrs": [
-                "0211",
-                "0225"
-            ]
-        },
-        {
             "path": "docs/decisions/0212-turn-proxycli-into-the-ai-router-extension.md",
             "title": "ADR 0212: Turn ProxyCli into the AI router extension",
             "kind": "decision",
@@ -979,8 +956,7 @@
             ],
             "governing_adrs": [
                 "0213",
-                "0223",
-                "0225"
+                "0223"
             ]
         },
         {
@@ -1077,7 +1053,6 @@
             ],
             "governing_adrs": [
                 "0209",
-                "0211",
                 "0212",
                 "0218",
                 "0229"
@@ -1109,7 +1084,6 @@
             "governing_adrs": [
                 "0209",
                 "0210",
-                "0211",
                 "0212",
                 "0218",
                 "0219",
@@ -1202,49 +1176,10 @@
             ],
             "governing_adrs": [
                 "0210",
-                "0211",
                 "0212",
                 "0218",
                 "0223",
                 "0224"
-            ]
-        },
-        {
-            "path": "docs/decisions/0225-make-node-changes-through-agent-commands.md",
-            "title": "ADR 0225: Make Node changes through agent commands",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Activity",
-                "Cluster",
-                "Deployment",
-                "Doctor",
-                "Extension",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Node agent",
-                "Placement",
-                "Process",
-                "Project",
-                "Role",
-                "Task"
-            ],
-            "governing_adrs": [
-                "0209",
-                "0210",
-                "0211",
-                "0212",
-                "0213",
-                "0218",
-                "0219",
-                "0224",
-                "0225"
             ]
         },
         {
@@ -1300,7 +1235,6 @@
                 "0218",
                 "0223",
                 "0224",
-                "0225",
                 "0229"
             ]
         },
@@ -1356,7 +1290,6 @@
                 "0206",
                 "0209",
                 "0210",
-                "0211",
                 "0212",
                 "0213",
                 "0214",
@@ -1366,7 +1299,6 @@
                 "0221",
                 "0223",
                 "0224",
-                "0225",
                 "0226",
                 "0229"
             ]
@@ -1789,7 +1721,6 @@
             ],
             "governing_adrs": [
                 "0206",
-                "0225",
                 "2026"
             ]
         },
@@ -2226,7 +2157,6 @@
                 "Gateway",
                 "Instance",
                 "Node",
-                "Node agent",
                 "Pi server",
                 "Process",
                 "Project",
@@ -2552,11 +2482,14 @@
             "concepts": [
                 "Access grant",
                 "Activity",
+                "Cluster",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Node agent",
+                "Placement",
                 "Process",
                 "Project",
                 "Role",
@@ -2565,7 +2498,7 @@
                 "Task"
             ],
             "governing_adrs": [
-                "0225"
+                "0219"
             ]
         },
         {
@@ -2839,20 +2772,15 @@
                 "apps/gateway"
             ],
             "concepts": [
-                "Activity",
                 "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
-                "Project",
                 "Task",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0211",
-                "0225"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/routes.md",

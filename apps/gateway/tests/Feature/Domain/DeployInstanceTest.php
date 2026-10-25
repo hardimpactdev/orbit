@@ -55,13 +55,13 @@ it('does not run the env-sync runtime refresher during deployment', function ():
     $instance = orb219_deployment_instance([], php: true);
     $instance->environmentValues()->create(['env_key' => 'QUEUE_CONNECTION', 'env_value' => 'redis']);
     $preflight = Mockery::mock(InstanceOperationPreflight::class);
-    $preflight->shouldReceive('assertEnvironmentWritable')->once();
+    $preflight->shouldReceive('readWritableEnvironment')->once()->andReturn('');
     app()->instance(InstanceOperationPreflight::class, $preflight);
     $writer = Mockery::mock(InstanceEnvironmentWriter::class);
     $writer->shouldReceive('write')->once()->andReturn(InstanceEnvironmentWriteResult::changed());
     app()->instance(InstanceEnvironmentWriter::class, $writer);
     $reader = Mockery::mock(InstanceEnvironmentReader::class);
-    $reader->shouldReceive('read')->once()->andReturn('');
+    $reader->shouldNotReceive('read');
     app()->instance(InstanceEnvironmentReader::class, $reader);
     $refresher = Mockery::mock(InstanceEnvironmentRuntimeRefresher::class);
     $refresher->shouldNotReceive('refresh');

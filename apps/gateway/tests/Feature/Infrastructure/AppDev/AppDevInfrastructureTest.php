@@ -34,6 +34,7 @@ use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevTldRouteManager;
 use App\Infrastructure\AppProd\RemoteAppProdCaddyManager;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
+use App\Infrastructure\Nodes\AgentManagedUserAccountResolver;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
@@ -253,6 +254,17 @@ it('sends all desired shared pools in one command after installing the inspected
         ->and(array_keys($this->phpAgents->calls[1]['input']['versions']))->toBe(['8.4', '8.5']);
 });
 
+it('retires the last shared pools without account or package preflights', function (): void {
+    [$node] = app_dev_runtime_models();
+    $agents = new FakeAgentCommandRunner()->answer('php.converge-shared-pools', ['changed' => true, 'missing_pools' => []]);
+    $manager = new RemoteAppDevPhpFpmManager(new DevelopmentSiteRepository, new DevelopmentPhpFpmConfigRenderer, $agents, new AgentManagedUserAccountResolver($agents), new RemotePhpPackageManager(agents: $agents));
+
+    $manager->converge($node);
+
+    expect($agents->commands())->toBe(['php.converge-shared-pools']);
+    expect($agents->calls[0]['input'])->toEqual(['configurations' => (object) []]);
+});
+
 it('renders shared pools for the nondefault managed account', function (): void {
     $account = new ManagedUserAccount('nckrtl', 'nckrtl', '/srv/users/nckrtl');
     [$node, $project] = app_dev_runtime_models(account: $account);
@@ -284,6 +296,8 @@ it('reports missing pools after native publication and installs only the inspect
 
 it('maps shared pool command refusals without retrying a mutation', function (string $command, string $code, string $expected): void {
     [$node, $project] = app_dev_runtime_models();
+    $instance = app_dev_supported_app_instance($node, $project->id);
+    app_dev_supported_route($instance, 'acme.app-dev.orbit');
     $this->phpAgents->refuse($command, $code);
     $manager = new RemoteAppDevPhpFpmManager(new DevelopmentSiteRepository, new DevelopmentPhpFpmConfigRenderer, $this->phpAgents, app_dev_account_resolver(), new RemotePhpPackageManager);
 
@@ -298,7 +312,9 @@ it('maps shared pool command refusals without retrying a mutation', function (st
 ]);
 
 it('refuses malformed shared pool responses before package installation', function (array $report): void {
-    [$node] = app_dev_runtime_models();
+    [$node, $project] = app_dev_runtime_models();
+    $instance = app_dev_supported_app_instance($node, $project->id);
+    app_dev_supported_route($instance, 'acme.app-dev.orbit');
     $this->phpAgents->answer('php.inspect-shared-pools', $report);
     $manager = new RemoteAppDevPhpFpmManager(new DevelopmentSiteRepository, new DevelopmentPhpFpmConfigRenderer, $this->phpAgents, app_dev_account_resolver(), new RemotePhpPackageManager);
 

@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-use Tests\Support\ForkedPythonPrograms;
+use Tests\Support\PythonPrograms;
 
-it('shares compiled input but isolates each real Python process and keeps its filesystem effects', function (): void {
-    $host = new ForkedPythonPrograms;
+it('isolates each real Python process and keeps its filesystem effects', function (): void {
+    $host = new PythonPrograms;
     $path = sys_get_temp_dir().'/orbit-fork-proof-'.bin2hex(random_bytes(8));
     $bootstrap = file_get_contents(__DIR__.'/../../../resources/remote/bootstrap.py');
     $source = <<<'PYTHON'
@@ -35,39 +35,50 @@ it('shares compiled input but isolates each real Python process and keeps its fi
             ->and($a['environment'])->toBe('first')->and($b['environment'])->toBe('second')
             ->and($a['previous'])->toBeNull()->and($b['previous'])->toBe('exit cleanup ran');
     } finally {
-        $host->close();
         @unlink($path);
     }
 });
 
 it('captures stdout stderr and nonzero exits without poisoning the next invocation', function (): void {
-    $host = new ForkedPythonPrograms;
+    $host = new PythonPrograms;
     $bootstrap = file_get_contents(__DIR__.'/../../../resources/remote/bootstrap.py');
-    try {
-        $failed = $host->run($bootstrap, 'failure-proof', "import sys\nprint('partial output')\nprint('diagnostic', file=sys.stderr)\nsys.exit(7)\0{}");
-        $passed = $host->run($bootstrap, 'success-proof', "print('recovered')\0{}");
+    $failed = $host->run($bootstrap, 'failure-proof', "import sys\nprint('partial output')\nprint('diagnostic', file=sys.stderr)\nsys.exit(7)\0{}");
+    $passed = $host->run($bootstrap, 'success-proof', "print('recovered')\0{}");
 
-        expect($failed->exitCode)->toBe(7)->and($failed->stdout)->toBe("partial output\n")
-            ->and($failed->stderr)->toBe("diagnostic\n")->and($failed->truncated)->toBeFalse()
-            ->and($passed->exitCode)->toBe(0)->and($passed->stdout)->toBe("recovered\n");
-    } finally {
-        $host->close();
-        $host->close();
-    }
+    expect($failed->exitCode)->toBe(7)->and($failed->stdout)->toBe("partial output\n")
+        ->and($failed->stderr)->toBe("diagnostic\n")->and($failed->truncated)->toBeFalse()
+        ->and($passed->exitCode)->toBe(0)->and($passed->stdout)->toBe("recovered\n");
 });
 
 it('bounds a hung real program and can execute another program afterwards', function (): void {
-    $host = new ForkedPythonPrograms(timeoutSeconds: 0.1);
+    $host = new PythonPrograms(timeoutSeconds: 0.1);
     $bootstrap = file_get_contents(__DIR__.'/../../../resources/remote/bootstrap.py');
-    try {
-        $hung = $host->run($bootstrap, 'timeout-proof', "import time\nprint('started', flush=True)\ntime.sleep(30)\0{}");
-        $passed = $host->run($bootstrap, 'success-proof', "print('recovered')\0{}");
+    $hung = $host->run($bootstrap, 'timeout-proof', "import time\nprint('started', flush=True)\ntime.sleep(30)\0{}");
+    $passed = $host->run($bootstrap, 'success-proof', "print('recovered')\0{}");
 
-        expect($hung->exitCode)->toBe(124)
-            ->and($hung->stdout)->toBe("started\n")
-            ->and($hung->stderr)->toContain('timed out')
-            ->and($passed->exitCode)->toBe(0)->and($passed->stdout)->toBe("recovered\n");
-    } finally {
-        $host->close();
-    }
+    expect($hung->exitCode)->toBe(124)
+        ->and($hung->stdout)->toBe("started\n")
+        ->and($hung->stderr)->toContain('timed out')
+        ->and($passed->exitCode)->toBe(0)->and($passed->stdout)->toBe("recovered\n");
+});
+
+it('kills a hung program and its children before returning the timeout', function (): void {
+    $programs = new PythonPrograms(timeoutSeconds: 0.2);
+    $source = "import subprocess, time\nchild = subprocess.Popen(['sleep', '30'])\nprint(child.pid, flush=True)\ntime.sleep(30)";
+
+    $result = $programs->runCommand($source, []);
+
+    expect($result->exitCode)->toBe(124);
+    $child = (int) trim($result->stdout);
+    expect($child)->toBeGreaterThan(1);
+    $deadline = microtime(true) + 2;
+    do {
+        $stat = '/proc/'.$child.'/stat';
+        $state = is_file($stat) ? file_get_contents($stat) : false;
+        if ($state === false || preg_match('/\) Z /', $state) === 1) {
+            break;
+        }
+        usleep(10_000);
+    } while (microtime(true) < $deadline);
+    expect($state === false || preg_match('/\) Z /', $state) === 1)->toBeTrue();
 });

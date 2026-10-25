@@ -33,9 +33,9 @@ use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Schema;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\Fleet\FakeFleetConvergeUnits;
+use Tests\Support\GatewayAdoptionFixture;
 use Tests\Support\GatewayReleaseFixture;
 use Tests\Support\GatewayReleasePipeline;
-use Tests\Support\LocalAgentBinary;
 use Tests\Support\ReleaseTestOwner;
 use Tests\Support\WebArtifactFixture;
 
@@ -45,6 +45,7 @@ beforeEach(function (): void {
     $this->sha = $this->fixture->inPlaceCheckout();
     $this->id = substr($this->sha, 0, 12);
     $this->steps = new AdoptionSteps;
+    $this->adoptionFixture = new GatewayAdoptionFixture($this->fixture);
     config(['orbit.home' => $this->fixture->base.'/home']);
     $node = Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.2', 'user' => 'orbit', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.1']);
     $node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
@@ -70,11 +71,10 @@ describe('gateway:release:adopt', function (): void {
         expect($this->steps->steps)->toBe([]);
     });
 
-    it('converts the in-place checkout into a release of its own commit, swaps it in one step, then deploys it', function (): void {
+    it('adopts the checkout commit before deploying and verifying the target', function (): void {
         $result = adoption($this->fixture, $this->steps)->execute();
         $layout = $this->fixture->layout;
         $kept = $layout->basePath().'/orbit.pre-adopt-20261007T120000Z';
-        $storage = $layout->storagePath();
 
         expect($result['release'])->toBe($this->id)
             ->and($result['switch']['method'])->toBe('exchange')
@@ -83,21 +83,7 @@ describe('gateway:release:adopt', function (): void {
             ->and($result['phase1']['release'])->toBe($this->id)
             ->and($result['deploy']['outcome'])->toBe('verified')
             ->and($layout->currentReleaseId())->toBe($this->id)
-            ->and(is_dir($kept.'/.git'))->toBeTrue()
-            ->and(readlink($kept.'/apps/gateway/.env'))->toBe($layout->environmentPath())
-            ->and(file_get_contents($kept.'/apps/gateway/.env.pre-adopt'))->toBe("APP_ENV=production\nAPP_VERSION=0.1.0\n")
-            ->and(fileperms($kept.'/apps/gateway/.env.pre-adopt') & 0o777)->toBe(0o600)
-            ->and(file_get_contents($layout->environmentPath()))->toStartWith("APP_ENV=production\n# APP_VERSION=0.1.0 (left out by gateway:release:adopt")
             ->and($result['shared'])->toMatchArray(['storage' => 'moved', 'storage_method' => 'exchange', 'storage_gap_us' => 0])
-            ->and(is_dir($storage) && ! is_link($storage))->toBeTrue()
-            ->and(file_exists($kept.'/apps/gateway/storage.adopt-link') || is_link($kept.'/apps/gateway/storage.adopt-link'))->toBeFalse()
-            ->and(file_get_contents($layout->sharedPath().'/env-backups/.env.bak-deploy-1'))->toBe("APP_ENV=old\n")
-            ->and(readlink($kept.'/apps/gateway/storage'))->toBe($storage)
-            ->and(file_get_contents($storage.'/framework/cache/data/aa/lock'))->toBe('held')
-            ->and(fileperms($storage.'/logs/laravel.log') & 0o777)->toBe(0o640)
-            ->and(trim($this->fixture->git($kept, 'status', '--porcelain', '--untracked-files=no')))->toBe('')
-            ->and(trim($this->fixture->git($layout->repositoryPath(), 'rev-parse', 'refs/orbit/pre-adopt')))->toBe($this->sha)
-            ->and(trim($this->fixture->git($layout->repositoryPath(), 'remote', 'get-url', 'origin')))->toBe('https://github.com/hardimpactdev/orbit.git')
             // Phase 1 prepares the release with its web build; phase 2 reuses that release and installs the web build again only when it is missing.
             ->and($this->steps->installed)->toBe([$this->id, $this->id])
             // Phase 1 changes the layout with identical code and checks that it serves; phase 2 is a deploy.
@@ -109,6 +95,12 @@ describe('gateway:release:adopt', function (): void {
             ->and(GatewayRelease::query()->pluck('trigger')->all())->toBe(['adopt', 'adopt'])
             ->and(GatewayRelease::query()->pluck('outcome')->all())->toBe(['verified', 'verified'])
             ->and(Activity::query()->value('command'))->toBe('gateway:release:adopt');
+        expect($this->adoptionFixture->agents->commands())->toBe([
+            'gateway.check-release-adoption', 'gateway.adopt-release-repository',
+            'gateway.adopt-release-environment', 'gateway.adopt-release-storage', 'gateway.switch-release-adoption',
+        ]);
+        expect($this->adoptionFixture->agents->calls[1]['input'])->toBe(['checkout' => $layout->applicationPath, 'sha' => $this->sha])
+            ->and($this->adoptionFixture->agents->calls[4]['input'])->toBe(['checkout' => $layout->applicationPath, 'release' => $this->id, 'stamp' => '20261007T120000Z']);
     });
 
     it('starts the fleet rollout only after phase 2 verifies the exact commit, never after phase 1', function (): void {
@@ -151,14 +143,12 @@ describe('gateway:release:adopt', function (): void {
         $this->fixture->git($this->fixture->base, 'clone', '--quiet', $this->fixture->origin, $source);
 
         $result = adoption($this->fixture, $this->steps)->execute(substr($target, 0, 10), $source);
-        $kept = $this->fixture->layout->basePath().'/orbit.pre-adopt-20261007T120000Z';
 
         expect($result)->toMatchArray(['release' => $targetId, 'sha' => $target, 'from' => $this->sha])
             ->and($result['phase1']['release'])->toBe($this->id)
             ->and($result['deploy']['migrations_ran'])->toBeTrue()
             ->and($result['deploy']['previous'])->toBe($this->id)
             ->and($this->fixture->layout->currentReleaseId())->toBe($targetId)
-            ->and(trim($this->fixture->git($kept, 'rev-parse', 'HEAD')))->toBe($this->sha)
             // The first release serves the checkout's commit, which may predate the CI web build.
             ->and($this->steps->installed)->toBe([$targetId])
             ->and($this->steps->steps)->toBe([
@@ -229,29 +219,24 @@ describe('gateway:release:adopt', function (): void {
             ->and(GatewayRelease::query()->orderBy('id')->pluck('outcome')->all())->toBe(['verified', 'paused']);
     });
 
-    it('refuses a checkout with tracked changes before it changes anything', function (): void {
-        file_put_contents($this->current.'/apps/gateway/public/index.php', "<?php // hotfix\n");
+    it('records a tracked-change refusal without starting adoption', function (): void {
+        $this->adoptionFixture->agents->refuse('gateway.check-release-adoption', 'gateway.release_adopt_local_changes', ['count' => 1, 'path' => 'apps/gateway/public/index.php']);
 
         $exception = release_failure(fn () => adoption($this->fixture, $this->steps)->execute());
 
         expect($exception->errorCode)->toBe('gateway.release_adopt_local_changes')
             ->and($exception->getMessage())->toContain('apps/gateway/public/index.php')
-            ->and(file_exists($this->fixture->layout->sharedPath()))->toBeFalse()
-            ->and(is_link($this->current))->toBeFalse()
+            ->and($this->adoptionFixture->agents->commands())->toBe(['gateway.check-release-adoption', 'gateway.restore-adoption-environment'])
             ->and(Activity::query()->value('error_code'))->toBe('gateway.release_adopt_local_changes');
     });
 
-    it('puts the checkout and its env file back when the Gateway does not serve after the swap, and finishes on the next run', function (): void {
+    it('requests checkout and environment restoration after a serving failure and retries', function (): void {
         $this->steps->failServing = true;
 
         $exception = release_failure(fn () => adoption($this->fixture, $this->steps)->execute());
 
         expect($exception->errorCode)->toBe('gateway.release_verify_failed')
-            ->and(is_link($this->current))->toBeFalse()
-            ->and(glob($this->fixture->layout->basePath().'/orbit.pre-adopt-*'))->toBe([])
-            ->and(readlink($this->current.'/apps/gateway/storage'))->toBe($this->fixture->layout->storagePath())
-            ->and(is_link($this->current.'/apps/gateway/.env'))->toBeFalse()
-            ->and(file_get_contents($this->current.'/apps/gateway/.env'))->toBe("APP_ENV=production\nAPP_VERSION=0.1.0\n")
+            ->and(array_slice($this->adoptionFixture->agents->commands(), -2))->toBe(['gateway.restore-release-adoption', 'gateway.restore-adoption-environment'])
             ->and(GatewayRelease::query()->sole()->outcome)->toBe('switched_back')
             // The scheduler had not moved yet, so only the serving side is handed back.
             ->and($this->steps->steps)->toBe(['handoff:'.$this->id, 'serving', 'handoff:'.$this->id]);
@@ -335,18 +320,17 @@ describe('gateway:release:adopt', function (): void {
     });
 
     it('refuses when the shared env file differs from the checkout', function (): void {
-        mkdir($this->fixture->layout->sharedPath(), 0700, true);
-        file_put_contents($this->fixture->layout->environmentPath(), "APP_ENV=other\n");
+        $this->adoptionFixture->agents->refuse('gateway.adopt-release-environment', 'gateway.release_adopt_env_conflict');
 
         expect(release_failure(fn () => adoption($this->fixture, $this->steps)->execute())->errorCode)->toBe('gateway.release_adopt_env_conflict')
-            ->and(is_link($this->current))->toBeFalse();
+            ->and($this->adoptionFixture->agents->commands())->not->toContain('gateway.switch-release-adoption');
     });
 
     it('refuses a commit that is not a hex SHA before it changes anything', function (): void {
         $exception = release_failure(fn () => adoption($this->fixture, $this->steps)->execute('main'));
 
         expect($exception->errorCode)->toBe('gateway.release_commit_invalid')
-            ->and(file_exists($this->fixture->layout->sharedPath()))->toBeFalse();
+            ->and($this->adoptionFixture->agents->commands())->toBeEmpty();
     });
 
     it('prints the adoption as one JSON object', function (): void {
@@ -392,7 +376,7 @@ function adoption(
         new GatewayReleaseAdopter(
             layout: $fixture->layout,
             builder: $builder,
-            files: new GatewayReleaseAdoptionFiles($agents ?? LocalAgentBinary::localRunner($fixture->base, ['GIT_CONFIG_GLOBAL' => '/dev/null', 'GIT_CONFIG_NOSYSTEM' => '1'])),
+            files: new GatewayReleaseAdoptionFiles($agents ?? test()->adoptionFixture->agents),
             runtime: $runtime,
             verifier: $verifier,
             recorder: $recorder,

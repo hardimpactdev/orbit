@@ -255,6 +255,7 @@ final class GatewayReleaseFixture implements ProcessRunner
 
                 return ['sha' => $sha, 'reused' => $reused];
             })
+            ->answer('gateway.inspect-release-agent-delivery', ['commit' => str_repeat('a', 40), 'version' => '0.5.0', 'installed' => true])
             ->answer('gateway.finish-release', function (array $input): array {
                 $this->markPrepared($input['sha']);
 

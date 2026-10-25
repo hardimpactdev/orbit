@@ -35,15 +35,15 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
     ) {}
 
     #[\Override]
-    public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null): array
+    public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
     {
-        return $this->runWith($this->transports->for($node), $node, $command, $input, $deadlineSeconds);
+        return $this->runWith($this->transports->for($node), $node, $command, $input, $deadlineSeconds, $output, $binaryInput);
     }
 
     #[\Override]
-    public function runInWorkspace(Node $node, Closure $execute, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null): array
+    public function runInWorkspace(Node $node, Closure $execute, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
     {
-        return $this->runWith(new WorkspaceAgentTransport($this->transports->for($node), $execute), $node, $command, $input, $deadlineSeconds, $output);
+        return $this->runWith(new WorkspaceAgentTransport($this->transports->for($node), $execute), $node, $command, $input, $deadlineSeconds, $output, $binaryInput);
     }
 
     #[\Override]
@@ -80,9 +80,12 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
      * @param  array<string, mixed>  $input
      * @return array<string, mixed>
      */
-    private function runWith(AgentTransport $transport, Node|AgentGuest $node, string $command, array $input, ?float $deadlineSeconds, ?AgentBinaryOutput $output = null): array
+    private function runWith(AgentTransport $transport, Node|AgentGuest $node, string $command, array $input, ?float $deadlineSeconds, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
     {
         $spec = $this->contract->command($command);
+        if (($spec->inputMaxBytes > 0) !== ($binaryInput !== null) || ($binaryInput !== null && $binaryInput->bytes > $spec->inputMaxBytes)) {
+            throw new \LogicException('Binary input must match the command and its size limit.');
+        }
         if (($spec->outputMaxBytes > 0) !== ($output !== null) || ($output !== null && $output->bytes() !== 0)) {
             throw new \LogicException('A binary output command requires a fresh private sink.');
         }
@@ -96,10 +99,10 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
         }
 
         $deadline = $deadlineSeconds === null ? null : microtime(true) + $deadlineSeconds;
-        $outcome = $this->send($transport, $spec, $pin, $input, $deadline, output: $output);
+        $outcome = $this->send($transport, $spec, $pin, $input, $deadline, output: $output, binaryInput: $binaryInput);
         if (($outcome['error']['code'] ?? null) === self::VersionMismatch) {
             $this->installPin($node, $transport, $pin, $deadline);
-            $outcome = $this->send($transport, $spec, $pin, $input, $deadline, output: $output);
+            $outcome = $this->send($transport, $spec, $pin, $input, $deadline, output: $output, binaryInput: $binaryInput);
             if (($outcome['error']['code'] ?? null) === self::VersionMismatch) {
                 throw new AgentRunnerFailure($command, AgentRunnerFailure::RepeatedMismatch, "Node [{$node->name}] still runs another agent after a passing installation.", $outcome['error']['details']);
             }
@@ -170,7 +173,7 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
      * @param  array<string, mixed>  $input
      * @return array{ok: true, data: array<string, mixed>}|array{ok: false, error: array{code: string, message: string, details: array<string, mixed>}}
      */
-    private function send(AgentTransport $transport, AgentCommandSpec $spec, string $pin, array $input, ?float $deadline, ?string $executable = null, ?AgentBinaryOutput $output = null): array
+    private function send(AgentTransport $transport, AgentCommandSpec $spec, string $pin, array $input, ?float $deadline, ?string $executable = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
     {
         $budget = (float) $spec->timeoutSeconds;
         if ($deadline !== null) {
@@ -194,7 +197,7 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
                 $input[$key] = ['github_token' => $value->githubToken()];
             }
         }
-        $envelope = AgentInvocation::envelope($pin, $budget, $input);
+        $envelope = AgentInvocation::envelope($pin, $budget, $input, $binaryInput?->bytes);
         $decoder = $output === null ? null : new AgentOutputDecoder($spec->name, $output, $spec->outputMaxBytes);
         $consume = null;
         if ($decoder !== null) {
@@ -204,7 +207,7 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
         try {
             $result = $transport->run(
                 $arguments,
-                $credential ? ProtectedInput::gitCredential($envelope) : ProtectedInput::fromString($envelope),
+                $binaryInput?->envelope($envelope, $credential) ?? ($credential ? ProtectedInput::gitCredential($envelope) : ProtectedInput::fromString($envelope)),
                 $budget + self::TransportGraceSeconds,
                 $consume,
             );

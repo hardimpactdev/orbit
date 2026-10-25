@@ -52,7 +52,7 @@ trait FollowsOperations
             fn (int $afterSequence): OperationResponse => $this->sendOrThrow($connector, new ShowOperationRequest($started->id, $afterSequence), OperationResponse::class),
             $this->operationSubscriber($connector, $profile, $started->id),
             $this->option('json') === true ? null : function (OperationOutputLine $output): void {
-                $this->outputTail?->printedLive($output->step);
+                $this->outputTail?->printedLive($output->step, $output->line);
                 $this->writeOperationOutputLine($output->step, $output->line);
             },
         );

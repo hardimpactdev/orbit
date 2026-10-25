@@ -600,9 +600,11 @@ A lock lets one operation at a time change the mirror of a Project. The lock cov
 1. The Gateway fetches the operation's branches into the mirror. Only `task-<id>` may be missing on GitHub.
 2. It calls `task-vms.read-git-refs` through the agent runner as the checkout account. The Gateway keeps IDs that the mirror holds as commits.
 3. It packs the objects of the branches that are not in the history of those commits.
-4. It sends the pack on the standard input of one SSH command. The VM indexes the pack and sets `refs/remotes/origin/<branch>` to the mirror's commit. A missing `task-<id>` loses its ref.
+4. It calls `task-vms.import-git-pack` through the agent runner and workspace executor. The command sets `refs/remotes/origin/<branch>` to the mirror's commit. A missing `task-<id>` loses its ref.
 5. When the default branch was sent, the VM points `refs/remotes/origin/HEAD` at it, as a clone does. The [`@orbit/ci-caches`](/reference/instance-setup#import-ci-main-caches) setup step reads the default branch there.
 6. In a separate optional transfer, it sends only the cache ref for the selected code SHA. Failure of this transfer does not undo source delivery.
+
+The imported pack follows the JSON envelope as bounded binary input, without a token, staging call, or script. The command validates the pack and approved ref names, then updates the refs in one Git transaction.
 
 The ref command returns at most 1,000 distinct ref object IDs, the worktree's recorded cache baseline, its branch, and its `HEAD`. Calls inside a Tasks lease retain the workspace executor and its remote operation journal, including an agent installation after a pin mismatch.
 
@@ -628,7 +630,7 @@ The job records its start on the row. A job that has not finished 40 minutes aft
 
 1. The Gateway fetches the default branch and `task-<id>` into the mirror.
 2. It asks the VM for a pack of the approved commit. The pack leaves out the history of the mirror's commits of those branches.
-3. The Gateway calls `task-vms.export-git-pack` through the agent runner and the workspace executor. The command streams the pack to a private Gateway file through [bounded binary output](/decisions/0225-make-node-changes-through-agent-commands#one-typed-command).
+3. The Gateway calls `task-vms.export-git-pack` through the agent runner and the workspace executor. The command streams the pack to a private Gateway file through [bounded binary output](/reference/node-agent#commands).
 
 4. The Gateway indexes the pack into a quarantine object directory with `git index-pack --strict`. That command checks every object. The quarantine reads the mirror's objects but changes nothing in the mirror.
 5. It checks that the approved commit is a commit there, and that its history is complete.

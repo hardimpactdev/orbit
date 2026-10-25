@@ -406,17 +406,24 @@ mod tests {
 
     #[test]
     fn a_held_port_is_skipped_and_excluded_ports_are_never_chosen() {
-        let held = TcpListener::bind(("::", 0))
-            .or_else(|_| TcpListener::bind(("0.0.0.0", 0)))
-            .unwrap();
-        let port = held.local_addr().unwrap().port();
-        let chosen = select_port(&PortInput {
-            preferred: port,
-            excluded: vec![port + 1],
-        })
-        .unwrap()
-        .port;
-        assert!(chosen > port + 1);
+        for address in ["127.0.0.1", "::1"] {
+            let held = TcpListener::bind((address, 0)).unwrap();
+            let port = held.local_addr().unwrap().port();
+            let chosen = select_port(&PortInput {
+                preferred: port,
+                excluded: vec![port + 1],
+            })
+            .unwrap()
+            .port;
+            assert!(chosen > port + 1);
+        }
+        assert!(matches!(
+            select_port(&PortInput {
+                preferred: u16::MAX,
+                excluded: vec![u16::MAX],
+            }),
+            Err(ViteError::Exhausted {})
+        ));
     }
 
     #[test]

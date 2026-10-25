@@ -33,12 +33,14 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
     {
         $sites = $this->desiredSites($node);
         $configurations = $this->configurations($node, $sites);
-        $inspection = $this->run($node, 'php.inspect-shared-pools', $configurations);
-        $missingDirectories = array_column($inspection['missing_pools'], 'directory');
-        $presentSites = $sites->reject(static fn (DevelopmentSite $site): bool => in_array($site->phpWorkingDirectory(), $missingDirectories, true));
-        $role = $presentSites->contains(static fn (DevelopmentSite $site): bool => $site->environment === 'production')
-            ? RoleName::AppProd : RoleName::AppDev;
-        $this->packages->installForInstance($node->loadMissing('roles'), collect($inspection['versions']), $role);
+        if ($configurations !== []) {
+            $inspection = $this->run($node, 'php.inspect-shared-pools', $configurations);
+            $missingDirectories = array_column($inspection['missing_pools'], 'directory');
+            $presentSites = $sites->reject(static fn (DevelopmentSite $site): bool => in_array($site->phpWorkingDirectory(), $missingDirectories, true));
+            $role = $presentSites->contains(static fn (DevelopmentSite $site): bool => $site->environment === 'production')
+                ? RoleName::AppProd : RoleName::AppDev;
+            $this->packages->installForInstance($node->loadMissing('roles'), collect($inspection['versions']), $role);
+        }
         $result = $this->run($node, 'php.converge-shared-pools', $configurations);
         if ($result['missing_pools'] !== []) {
             $pools = collect($result['missing_pools'])->map(static fn (array $pool): string => "{$pool['pool']} ({$pool['directory']})")->implode(', ');
@@ -75,6 +77,10 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
      */
     private function configurations(Node $node, Collection $sites): array
     {
+        if ($sites->isEmpty()) {
+            return [];
+        }
+
         $account = $this->accounts->resolve($node);
         $configurations = [];
         foreach ($sites->groupBy('phpVersion') as $version => $versionSites) {

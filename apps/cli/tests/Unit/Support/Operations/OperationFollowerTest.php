@@ -44,12 +44,25 @@ it('hands each live output line of the channel to onOutput and stays connected',
         ->and($subscriber->state())->toBe(RealtimeState::Connected);
 });
 
-it('prints no record tail for a step whose output printed live', function (): void {
+it('prints only unseen persisted output after a partial live stream', function (): void {
     $tail = new OperationOutputTail;
 
     expect($tail->lines('build', "one\n"))->toBe(['one']);
 
-    $tail->printedLive('migrate');
+    $tail->printedLive('migrate', 'Migrating');
 
-    expect($tail->lines('migrate', "Migrating\n"))->toBe([]);
+    expect($tail->lines('migrate', "Migrating\nSQLSTATE failure\n"))->toBe(['SQLSTATE failure'])
+        ->and($tail->lines('migrate', "Migrating\nSQLSTATE failure\n"))->toBe([]);
+});
+
+it('recovers the final tail when a live connection joins after earlier output', function (): void {
+    $tail = new OperationOutputTail;
+    $tail->printedLive('build', 'middle');
+    expect($tail->lines('build', "earlier\nmiddle\nfailed\n"))->toBe(['failed']);
+});
+
+it('marks a gap and prints the final tail when live and persisted text do not overlap', function (): void {
+    $tail = new OperationOutputTail;
+    $tail->printedLive('build', 'first');
+    expect($tail->lines('build', "late failure\n"))->toBe(['[orbit] earlier output skipped', 'late failure']);
 });

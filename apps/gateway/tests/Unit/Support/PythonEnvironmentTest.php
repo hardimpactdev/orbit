@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use Tests\Support\ForkedPythonPrograms;
+use Tests\Support\PythonPrograms;
 
 it('uses the current caller environment and temporary directory for every fresh child', function (): void {
     $name = 'ORBIT_PYTHON_CHILD_'.bin2hex(random_bytes(8))."\xff";
@@ -10,7 +10,7 @@ it('uses the current caller environment and temporary directory for every fresh 
     mkdir($directory, 0700);
     $originalTmpdir = getenv('TMPDIR');
     putenv($name.'=host startup');
-    $host = new ForkedPythonPrograms;
+    $host = new PythonPrograms;
     $source = <<<'PYTHON'
         import base64, json, os, sys, tempfile
         name = base64.b64decode(sys.argv[1])
@@ -37,7 +37,6 @@ it('uses the current caller environment and temporary directory for every fresh 
             ->and(getenv($name))->toBe('current again')
             ->and(getenv('TMPDIR'))->toBe($directory);
     } finally {
-        $host->close();
         putenv($name);
         putenv($originalTmpdir === false ? 'TMPDIR' : 'TMPDIR='.$originalTmpdir);
         rmdir($directory);

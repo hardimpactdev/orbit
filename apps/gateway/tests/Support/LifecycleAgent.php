@@ -6,6 +6,8 @@ namespace Tests\Support;
 
 use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Projects\ProjectLifecycleStepStore;
+use App\Infrastructure\AgentCommands\AgentBinaryInput;
+use App\Infrastructure\AgentCommands\AgentBinaryOutput;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
@@ -18,7 +20,7 @@ use UnexpectedValueException;
 /**
  * Answers `instances.run-lifecycle-step` and records each step's checkout, command, environment, and timeout. The
  * `$result` closure gives an exit status: 75 is a busy checkout, 124 the step's own timeout, and 255 a lost
- * transport. A local agent instead runs the built agent on this host.
+ * transport. Rust tests exercise the command itself.
  */
 final class LifecycleAgent implements AgentCommandRunner
 {
@@ -26,9 +28,9 @@ final class LifecycleAgent implements AgentCommandRunner
     public array $inputs = [];
 
     /** @param (Closure(array{checkout: string, command: string, environment: array<string, string>, timeout: int}): int)|null $result */
-    public function __construct(public ?Closure $result = null, public bool $local = false) {}
+    public function __construct(public ?Closure $result = null, public string $stderr = '') {}
 
-    public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null): array
+    public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
     {
         if ($command !== 'instances.run-lifecycle-step') {
             throw new LogicException("Unexpected agent command [{$command}].");
@@ -37,18 +39,12 @@ final class LifecycleAgent implements AgentCommandRunner
         $recorded = $this->record($input);
         $this->inputs[] = $recorded;
 
-        if ($this->local) {
-            $host = new Node(['name' => $node->name, 'platform' => 'linux', 'architecture' => 'x86_64', 'user' => $node->user, 'wireguard_ip' => '127.0.0.1']);
-
-            return LocalAgentBinary::localRunner(sys_get_temp_dir().'/orbit-lifecycle-agent-'.bin2hex(random_bytes(6)))->run($host, $command, $input, $deadlineSeconds);
-        }
-
         $exit = $this->result === null ? 0 : ($this->result)($recorded);
 
         return match ($exit) {
             75 => throw new AgentCommandRefused($command, 'instances.lifecycle_busy', 'A setup or teardown step is running in the checkout.'),
             255 => throw new AgentRunnerFailure($command, AgentRunnerFailure::Transport, 'The connection closed.'),
-            default => ['exit_code' => $exit === 124 ? 143 : $exit, 'timed_out' => $exit === 124, 'output' => [], 'truncated' => false],
+            default => ['exit_code' => $exit === 124 ? 143 : $exit, 'timed_out' => $exit === 124, 'output' => $this->stderr === '' ? [] : [['stream' => 'stderr', 'value' => $this->stderr]], 'truncated' => false],
         };
     }
 

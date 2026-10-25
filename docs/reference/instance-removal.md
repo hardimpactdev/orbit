@@ -223,9 +223,9 @@ After deploying this fix, the operator checks Instances 298 and 302 on beast and
 
 ## Removal tests
 
-The Rust tests in `apps/agent/src/commands/instances_tests.rs` run each command and real Git commands against temporary checkouts and worktrees. Each case creates its own origin, Git configuration, checkouts, and worktrees, so removal, refusal, and retry checks never share a writable repository. Run them with `cargo test --lib instances` in `apps/agent`.
+The Rust tests in `apps/agent/src/commands/instances_tests.rs` and its safety and recovery modules run each command against temporary checkouts and worktrees. They cover repository identity at deletion, unchanged Git state after inspection or refusal, process cleanup, and interrupted removal. Each case has its own writable origin and checkouts. The deletion tests use the shared repository identity fixtures in both normal and forced modes. Run them with `cargo test --lib instances` in `apps/agent`.
 
-The Gateway's privileged `RemoteDevelopmentInstanceSourceLifecycleTest` runs the whole removal through the real runner and the agent built from the checkout, with `cargo build --release` in `apps/agent` first. Its SSH stand-in starts the binary as the current user, and loses or rewrites a result where a test needs an interruption.
+Gateway command tests fake the agent and check its inputs, evidence validation, error mapping, and database checkpoints. They cover failed creation, lost preparation and finalization responses, registration evidence, and force retries. They also check that every removal passes the Instance's managed units, regardless of task names or workspace ownership. Domain tests cover cancellation and the fixed removal member set. Gateway tests do not build or run the agent.
 
 ## Why it works this way
 

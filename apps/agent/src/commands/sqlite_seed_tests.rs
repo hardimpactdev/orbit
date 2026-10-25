@@ -254,3 +254,45 @@ fn an_interrupted_install_resumes_from_its_recorded_candidate() {
     assert_eq!(candidates, 0);
     assert!(!fixture.root.join("state/target").exists());
 }
+
+#[test]
+fn abandoned_seed_cleanup_repeats_and_a_fresh_snapshot_contains_later_writes() {
+    let fixture = Fixture::new();
+    let (bytes, digest, snapshot) = ready(prepare(&fixture.source("prepare")).unwrap());
+    let TargetOutput::Ready { incoming } =
+        install(&fixture.target("prepare", bytes, &digest)).unwrap()
+    else {
+        panic!("missing incoming file")
+    };
+    fs::copy(&snapshot, &incoming).unwrap();
+    let unrelated = fixture.root.join("unrelated.sqlite");
+    fs::write(&unrelated, "unrelated").unwrap();
+    for _ in 0..2 {
+        assert_eq!(
+            prepare(&fixture.source("cleanup")),
+            Ok(SourceOutput::Cleaned {})
+        );
+        assert_eq!(
+            install(&fixture.target("cleanup", 0, "")),
+            Ok(TargetOutput::Cleaned)
+        );
+    }
+    assert!(!snapshot.exists());
+    assert!(!incoming.exists());
+    assert_eq!(fs::read_to_string(unrelated).unwrap(), "unrelated");
+    let writer = Connection::open(&fixture.source("prepare").source_path).unwrap();
+    writer
+        .execute_batch("PRAGMA journal_mode=WAL; INSERT INTO users VALUES ('after restore');")
+        .unwrap();
+    let (_, fresh_digest, fresh_snapshot) = ready(prepare(&fixture.source("prepare")).unwrap());
+    assert_ne!(fresh_digest, digest);
+    let names: Vec<String> = Connection::open(fresh_snapshot)
+        .unwrap()
+        .prepare("SELECT name FROM users ORDER BY rowid")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .map(|row| row.unwrap())
+        .collect();
+    assert_eq!(names, ["ada", "after restore"]);
+}

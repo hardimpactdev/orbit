@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Infrastructure\AgentCommands\AgentBinaryInput;
+use App\Infrastructure\AgentCommands\AgentBinaryOutput;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentContract;
@@ -28,7 +30,7 @@ final class FakeAgentCommandRunner implements AgentCommandRunner
     /** @var list<string> */
     public array $installs = [];
 
-    /** @var array<string, Closure(array<string, mixed>, Node): array<string, mixed>> */
+    /** @var array<string, Closure(array<string, mixed>, Node, ?AgentBinaryOutput, ?AgentBinaryInput): array<string, mixed>> */
     private array $answers = [];
 
     private ?Throwable $installFailure = null;
@@ -45,7 +47,7 @@ final class FakeAgentCommandRunner implements AgentCommandRunner
         $this->contract = $contract ?? app(AgentContract::class);
     }
 
-    /** @param  array<string, mixed>|Closure(array<string, mixed>, Node): array<string, mixed>  $output */
+    /** @param  array<string, mixed>|Closure(array<string, mixed>, Node, ?AgentBinaryOutput, ?AgentBinaryInput): array<string, mixed>  $output */
     public function answer(string $command, array|Closure $output): self
     {
         $this->contract->command($command);
@@ -89,14 +91,14 @@ final class FakeAgentCommandRunner implements AgentCommandRunner
     }
 
     #[\Override]
-    public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null): array
+    public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
     {
         $this->contract->command($command);
         $this->deadlines[] = $deadlineSeconds;
         $this->calls[] = ['node' => $node->name, 'command' => $command, 'input' => $input];
         $answer = $this->answers[$command] ?? throw new LogicException("No fake answer for agent command [{$command}].");
 
-        return $answer($input, $node);
+        return $answer($input, $node, $output, $binaryInput);
     }
 
     #[\Override]

@@ -21,6 +21,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+pub(super) mod delivery;
+
 command_errors! {
     enum Failure {
         Invalid {} => "gateway.release_layout_invalid", "The Gateway release layout is invalid.";
@@ -36,6 +38,7 @@ command_errors! {
         Link {} => "gateway.release_link_failed", "The shared environment and storage could not be linked into the release.";
         Dependencies {} => "gateway.release_dependencies_failed", "The release runtime dependencies could not be installed or verified.";
         Access {} => "gateway.release_access_failed", "The release cache or source permissions could not be set.";
+        Delivery {} => "gateway.release_agent_delivery_invalid", "The release has no valid published agent delivery for its source. Prepare its matching agent manifest before activation.";
         Revision {} => "gateway.release_revision_failed", "The release revision could not be published.";
         Configuration {} => "gateway.release_configuration_failed", "The release configuration could not be cached privately.";
         Migration {} => "gateway.release_migrate_failed", "The release migrations failed. The database may be partly migrated; the snapshot holds the state before.";
@@ -668,7 +671,11 @@ fn cache(path: &Path, host: &mut impl Host) -> Result<(), Error> {
         command
             .arg(application.join("artisan"))
             .args(["config:cache", "--no-interaction"])
-            .env("APP_CONFIG_CACHE", &candidate);
+            .env("APP_CONFIG_CACHE", &candidate)
+            .env(
+                "ORBIT_AGENT_DELIVERY",
+                path.join("apps/agent/delivery/manifest.json"),
+            );
         execute(host, command, 120, Failure::Configuration {})?;
         if !owned(&candidate)?.is_some_and(|m| m.is_file()) {
             return Err(Failure::Configuration {}.into());
@@ -700,6 +707,13 @@ fn finish(input: &FinishInput, host: &mut impl Host, deadline: Instant) -> Resul
     }
     let _step = hold_step(&input.step_lock, deadline)?;
     let result = (|| {
+        delivery::require(
+            &delivery::Input {
+                checkout: input.checkout.clone(),
+                sha: input.sha.clone(),
+            },
+            host,
+        )?;
         let cache_dir = app_directory(&path, "apps/gateway/bootstrap/cache")?;
         if prepared(&layout, id)?.as_ref() == Some(&input.sha)
             && owned(&cache_dir.join("config.php"))?

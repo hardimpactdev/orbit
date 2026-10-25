@@ -236,7 +236,11 @@ impl Command for UpdateProjectSource {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{fs, process::Command as Process};
+    use std::{
+        fs,
+        os::unix::fs::{MetadataExt, PermissionsExt},
+        process::Command as Process,
+    };
 
     fn sh(directory: &Path, arguments: &[&str]) {
         let status = Process::new("git")
@@ -274,6 +278,14 @@ mod tests {
             &checkout,
             &["remote", "add", "origin", "https://example.test/old.git"],
         );
+        sh(
+            &checkout,
+            &[
+                "config",
+                "url.https://rewritten.test/.insteadOf",
+                "https://example.test/",
+            ],
+        );
         let preflight = |current: &str| ProjectSourceInput::PreflightRepository {
             path: checkout.clone(),
             current: current.into(),
@@ -307,7 +319,25 @@ mod tests {
             origin(&checkout).as_deref(),
             Some("https://example.test/old.git")
         );
-        let _ = fs::remove_dir_all(&root);
+        // A repeat restore must not write an unchanged config, including a read-only checkout.
+        fs::set_permissions(checkout.join(".git"), fs::Permissions::from_mode(0o555)).unwrap();
+        let before = fs::read(checkout.join(".git/config")).unwrap();
+        update(&ProjectSourceInput::RestoreOrigin {
+            path: checkout.clone(),
+            url: "https://example.test/old.git".into(),
+        })
+        .unwrap();
+        assert_eq!(fs::read(checkout.join(".git/config")).unwrap(), before);
+        assert_eq!(
+            update(&ProjectSourceInput::SetOrigin {
+                path: checkout.clone(),
+                url: "https://example.test/new.git".into(),
+            }),
+            Err(failed("app-update-repository-origin"))
+        );
+        assert_eq!(fs::read(checkout.join(".git/config")).unwrap(), before);
+        fs::set_permissions(checkout.join(".git"), fs::Permissions::from_mode(0o755)).unwrap();
+        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
@@ -321,11 +351,37 @@ mod tests {
         let work = root.join("work");
         fs::create_dir_all(&work).unwrap();
         sh(&work, &["init", "--quiet"]);
-        sh(&work, &["commit", "--quiet", "--allow-empty", "-m", "one"]);
-        sh(&work, &["branch", "release"]);
+        fs::write(work.join(".gitattributes"), "readme filter=uid\n").unwrap();
+        fs::write(work.join("readme"), "main").unwrap();
+        sh(&work, &["add", "."]);
+        sh(&work, &["commit", "--quiet", "-m", "one"]);
+        sh(&work, &["checkout", "--quiet", "-b", "release"]);
+        fs::write(work.join("readme"), "release").unwrap();
+        sh(&work, &["commit", "--quiet", "-am", "release"]);
+        sh(&work, &["checkout", "--quiet", "main"]);
         sh(&root, &["clone", "--quiet", "--bare", "work", "origin.git"]);
         sh(&root, &["clone", "--quiet", "origin.git", "checkout"]);
         let checkout = root.join("checkout");
+        for filter in ["clean", "smudge"] {
+            sh(&checkout, &["config", &format!("filter.uid.{filter}"),
+                "printf '%s:%s\\n' \"$(id -u)\" \"${GIT_CONFIG_VALUE_0-absent}\" >> .git/filter-users; cat"]);
+        }
+        let hooks = checkout.join(".git/planted-hooks");
+        fs::create_dir(&hooks).unwrap();
+        fs::write(
+            hooks.join("post-checkout"),
+            "#!/bin/sh\ntouch .git/hook-ran\n",
+        )
+        .unwrap();
+        fs::set_permissions(
+            hooks.join("post-checkout"),
+            fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
+        sh(
+            &checkout,
+            &["config", "core.hooksPath", hooks.to_str().unwrap()],
+        );
         let repository = root.join("origin.git").display().to_string();
         let preflight = |branch: &str| ProjectSourceInput::PreflightBranch {
             path: checkout.clone(),
@@ -349,6 +405,18 @@ mod tests {
             git_in(&checkout, &["symbolic-ref", "--short", "HEAD"]).as_deref(),
             Some("release")
         );
+        assert_eq!(
+            fs::read_to_string(checkout.join("readme")).unwrap(),
+            "release"
+        );
+        assert_eq!(
+            git_in(&checkout, &["config", "branch.release.remote"]).as_deref(),
+            Some("origin")
+        );
+        assert_eq!(
+            git_in(&checkout, &["config", "branch.release.merge"]).as_deref(),
+            Some("refs/heads/release")
+        );
         update(&ProjectSourceInput::RestoreBranch {
             path: checkout.clone(),
             branch: "main".into(),
@@ -358,6 +426,13 @@ mod tests {
             git_in(&checkout, &["symbolic-ref", "--short", "HEAD"]).as_deref(),
             Some("main")
         );
-        let _ = fs::remove_dir_all(&root);
+        assert_eq!(fs::read_to_string(checkout.join("readme")).unwrap(), "main");
+        let users = fs::read_to_string(checkout.join(".git/filter-users")).unwrap();
+        assert!(!users.is_empty());
+        let uid = rustix::process::geteuid().as_raw();
+        assert!(users.lines().all(|line| line == format!("{uid}:absent")));
+        assert_eq!(fs::metadata(checkout.join("readme")).unwrap().uid(), uid);
+        assert!(!checkout.join(".git/hook-ran").exists());
+        fs::remove_dir_all(&root).unwrap();
     }
 }

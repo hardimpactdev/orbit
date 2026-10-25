@@ -22,6 +22,7 @@ use Orbit\Sdk\Requests\WebSocket\DestroyWebSocketAppRequest;
 use Orbit\Sdk\Requests\WebSocket\ListWebSocketAppsRequest;
 use Orbit\Sdk\Requests\WebSocket\RemoveInstanceWebSocketAppRequest;
 use Orbit\Sdk\Requests\WebSocket\ShowWebSocketAppRequest;
+use Tests\Support\FakesEnvironmentSyncInspection;
 
 afterEach(function (): void {
     Str::createRandomStringsNormally();
@@ -145,6 +146,8 @@ it('records the websocket app and attachment responses', function (): void {
 
 final class WebSocketAppFixtureEnvironment implements InstanceEnvironmentReader, InstanceEnvironmentWriter, InstanceOperationPreflight
 {
+    use FakesEnvironmentSyncInspection;
+
     public function assertEnvironmentReadable(InstanceEnvironmentContext $context): void
     {
         throw new RuntimeException('The fixture contacted the workload Node.');

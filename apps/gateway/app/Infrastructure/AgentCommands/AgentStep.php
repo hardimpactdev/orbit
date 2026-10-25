@@ -20,10 +20,10 @@ final class AgentStep
      * @param  string  $label  The kind of step in the message, such as `App development` or `App production`.
      * @return array<string, mixed>
      */
-    public static function run(AgentCommandRunner $agents, Node $node, string $command, array $input, string $step, string $errorCode, string $label, ?float $deadlineSeconds = null): array
+    public static function run(AgentCommandRunner $agents, Node $node, string $command, array $input, string $step, string $errorCode, string $label, ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
     {
         try {
-            return $agents->run($node, $command, $input, $deadlineSeconds);
+            return $agents->run($node, $command, $input, $deadlineSeconds, $output, $binaryInput);
         } catch (AgentCommandRefused $refused) {
             throw self::failed($node, $step, $errorCode, $label, self::output($refused), $refused);
         } catch (AgentRunnerFailure $failure) {

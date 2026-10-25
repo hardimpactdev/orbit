@@ -19,7 +19,6 @@ use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\AgentCommands\NativeAgentCommandRunner;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\Node;
@@ -28,12 +27,12 @@ use Illuminate\Support\Sleep;
 use Predis\Client;
 use Predis\Connection\ConnectionException;
 use Symfony\Component\Process\Process as LocalProcess;
-use Tests\Support\LocalAgentBinary;
+use Tests\Support\FakeAgentCommandRunner;
 
 /**
  * Runs the Valkey Database server code against a real Valkey in Docker. Each test starts a disposable server as Orbit
- * does: its initial ACL is a private copy of an immutable seed made through the real remote writer and checked
- * against its records. Repairs use the real writer. The container runs the production image, entrypoint and command.
+ * does: its initial ACL is a private copy of an immutable seed checked against its records.
+ * Agent writes are faked by copying the requested ACL into the private container; native Rust tests prove publication. The container runs the production image, entrypoint and command.
  * The server listens on a random loopback port. The tests run when ORBIT_TEST_DOCKER=1, as in CI's Gateway privileged job, and need Docker and
  * passwordless sudo. Startup and repair restarts read TCP readiness directly from the attached start process,
  * so no extra inspect/log-follow clients or retry sleep are needed. Containers and volumes are private to each case.
@@ -55,28 +54,36 @@ final class ValkeyDockerTestSeed
         $fixture = json_decode(file_get_contents(__DIR__.'/../../../Fixtures/valkey/acl-list.json'), true, flags: JSON_THROW_ON_ERROR);
         $acl = array_find($fixture['closed'], static fn (string $line): bool => str_starts_with($line, 'user default '))."\n";
         $image = DatabaseServerProcess::valkeyImage(self::TAG);
-        $volume = 'orbit-test-valkey-seed-'.bin2hex(random_bytes(6));
-        try {
-            valkey_agent()->run(new Node(['name' => 'valkey-seed', 'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit', 'wireguard_ip' => '127.0.0.1']), 'databases.write-valkey-acl', [
-                'volume' => $volume, 'image' => $image, 'acl' => $acl,
-            ]);
-            $written = valkey_docker([
-                'run', '--rm', '--network', 'none', '--mount', "type=volume,source=$volume,target=/data,readonly",
-                '--entrypoint', 'cat', $image, DatabaseServerProcess::VALKEY_ACL_FILE,
-            ])."\n";
-            $entrypoint = json_decode(valkey_docker(['image', 'inspect', '--format', '{{json .Config.Entrypoint}}', $image]), true, flags: JSON_THROW_ON_ERROR);
+        valkey_docker(['pull', $image]);
+        $entrypoint = json_decode(valkey_docker(['image', 'inspect', '--format', '{{json .Config.Entrypoint}}', $image]), true, flags: JSON_THROW_ON_ERROR);
 
-            return new self($written, $entrypoint);
-        } finally {
-            valkey_docker(['volume', 'rm', '--force', $volume]);
-        }
+        return new self($acl, $entrypoint);
     }
 }
 
-/** The built agent, run on this host with root's Docker as on a Node. */
-function valkey_agent(): NativeAgentCommandRunner
+/** The Node writer is tested in Rust. This fake supplies its result to the private Predis fixture. */
+function valkey_agent(string $container, string $volume): FakeAgentCommandRunner
 {
-    return LocalAgentBinary::localRunner(sys_get_temp_dir().'/orbit-valkey-agent-'.bin2hex(random_bytes(6)));
+    return new FakeAgentCommandRunner()->answer('databases.write-valkey-acl', static function (array $input) use ($container, $volume): array {
+        expect($input)->toHaveKeys(['volume', 'image', 'acl'])
+            ->and($input['volume'])->toBe($volume)
+            ->and($input['image'])->toBe(DatabaseServerProcess::valkeyImage(ValkeyDockerTestSeed::TAG));
+        // docker cp can seed a stopped container too. No publication or validation implementation lives here.
+        $path = sys_get_temp_dir().'/orbit-valkey-fixture-'.bin2hex(random_bytes(6)).'.tar';
+        try {
+            $archive = new PharData($path);
+            $archive['users.acl'] = $input['acl'];
+            $archive['users.acl']->chmod(0600);
+            unset($archive);
+            new LocalProcess(['docker', 'cp', '-', $container.':/data/'])->setInput(file_get_contents($path))->mustRun();
+        } finally {
+            if (is_file($path)) {
+                unlink($path);
+            }
+        }
+
+        return [];
+    });
 }
 
 /** Restarts the server's container and reads its state; a repair needs nothing else from the Process runtime. */
@@ -193,7 +200,7 @@ beforeEach(function (): void {
     $name = 'orbit-test-valkey-'.bin2hex(random_bytes(6));
     $this->container = $name;
     $this->volume = DatabaseServerProcess::volume($name);
-    app()->instance(AgentCommandRunner::class, valkey_agent());
+    app()->instance(AgentCommandRunner::class, valkey_agent($name, $this->volume));
     app()->instance(ProcessRuntimeManager::class, new ValkeyDockerTestRuntime($name));
 
     $this->node = Node::query()->create([

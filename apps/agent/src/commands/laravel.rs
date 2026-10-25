@@ -280,20 +280,20 @@ pub fn write_url(input: &UrlInput) -> Result<Written, ReleaseError> {
     {
         updated = put(&updated, &found, input.app_name.as_bytes());
     }
-    // Other local users, the Node agent included, never read an Instance's environment.
-    let mode = mode & 0o770;
-    let mut written = false;
-    if updated != original || created {
-        atomic(&environment, &updated, mode)?;
-        written = true;
-    } else if fs::metadata(&environment).is_ok_and(|metadata| metadata.mode() & 0o007 != 0) {
-        fs::set_permissions(&environment, fs::Permissions::from_mode(mode))
-            .map_err(|_| refused("the .env mode can be set"))?;
+    // Validate every existing cache ancestor before publishing either file.
+    for relative in ["bootstrap", "bootstrap/cache"] {
+        let directory = root.join(relative);
+        match fs::symlink_metadata(&directory) {
+            Ok(metadata)
+                if metadata.is_dir()
+                    && realpath(&directory).as_deref() == Some(directory.as_path()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            _ => return Err(refused("the cache directories are canonical directories")),
+        }
     }
-
     let cache = root.join("bootstrap/cache/config.php");
     safe_regular(&cache, uid)?;
-    if exists(&cache) {
+    let prepared_cache = if exists(&cache) {
         let original =
             fs::read(&cache).map_err(|_| refused("the cached configuration is readable"))?;
         let range = cached_url(&original)
@@ -307,11 +307,31 @@ pub fn write_url(input: &UrlInput) -> Result<Written, ReleaseError> {
         .concat();
         if updated != original {
             let mode = fs::metadata(&cache)
-                .map(|metadata| metadata.mode() & 0o777)
-                .unwrap_or(0o600);
-            atomic(&cache, &updated, mode)?;
-            written = true;
+                .map_err(|_| refused("the cached configuration is readable"))?
+                .mode()
+                & 0o777;
+            Some((updated, mode))
+        } else {
+            None
         }
+    } else {
+        None
+    };
+
+    // Other local users, the Node agent included, never read an Instance's environment.
+    let mode = mode & 0o770;
+    let mut written = false;
+    if updated != original || created {
+        atomic(&environment, &updated, mode)?;
+        written = true;
+    } else if fs::metadata(&environment).is_ok_and(|metadata| metadata.mode() & 0o007 != 0) {
+        fs::set_permissions(&environment, fs::Permissions::from_mode(mode))
+            .map_err(|_| refused("the .env mode can be set"))?;
+    }
+
+    if let Some((updated, mode)) = prepared_cache {
+        atomic(&cache, &updated, mode)?;
+        written = true;
     }
     Ok(Written { written })
 }

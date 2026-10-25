@@ -17,8 +17,7 @@ use SensitiveParameter;
 use Throwable;
 
 /**
- * An Instance's `.env` and `.env.testing` through the Node agent's `instances.read-environment` and
- * `instances.write-environment` (docs/reference/environment-variables.md). The agent walks to the checkout or home
+ * An Instance's `.env` and `.env.testing` through the Node agent's environment commands (docs/reference/environment-variables.md). The agent walks to the checkout or home
  * without following a link, accepts only the Instance user's regular file, and publishes a write with one rename.
  */
 final readonly class RemoteInstanceEnvironmentAccess implements InstanceEnvironmentReader, InstanceEnvironmentWriter, InstanceOperationPreflight, InstanceTestEnvironmentWriter
@@ -41,7 +40,30 @@ final readonly class RemoteInstanceEnvironmentAccess implements InstanceEnvironm
 
     public function read(InstanceEnvironmentContext $context): string
     {
-        $outcome = $this->inspect($context, 'read');
+        return $this->readContents($this->inspect($context, 'read'));
+    }
+
+    public function readWritableEnvironment(InstanceEnvironmentContext $context, int $requiredCapacityBytes): string
+    {
+        try {
+            $outcome = $this->agents->run($context->node, 'instances.inspect-environment-sync', [
+                ...$this->contextInput($context),
+                'required_capacity' => $requiredCapacityBytes,
+            ]);
+        } catch (Throwable) {
+            $this->failWritePreflight();
+        }
+
+        if (! is_array($outcome['preflight'] ?? null) || ($outcome['preflight']['state'] ?? null) !== 'ok') {
+            $this->failWritePreflight();
+        }
+
+        return $this->readContents(is_array($outcome['existing'] ?? null) ? $outcome['existing'] : []);
+    }
+
+    /** @param array<string, mixed> $outcome */
+    private function readContents(#[SensitiveParameter] array $outcome): string
+    {
 
         if (($outcome['state'] ?? null) === 'missing') {
             throw new ResourceOperationException(
@@ -111,8 +133,13 @@ final readonly class RemoteInstanceEnvironmentAccess implements InstanceEnvironm
     /** @return array<string, mixed> */
     private function input(InstanceEnvironmentContext $context, string $mode): array
     {
+        return ['mode' => $mode, ...$this->contextInput($context)];
+    }
+
+    /** @return array<string, mixed> */
+    private function contextInput(InstanceEnvironmentContext $context): array
+    {
         return [
-            'mode' => $mode,
             'base' => $context->path,
             'user' => $context->executionUser,
             'maximum' => InstanceEnvironmentValidator::MaximumFileBytes,

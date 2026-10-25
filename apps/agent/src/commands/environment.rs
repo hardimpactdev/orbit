@@ -561,6 +561,68 @@ fn write(
     result
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SyncInput {
+    pub base: String,
+    pub user: String,
+    pub maximum: u64,
+    pub require_home: bool,
+    pub required_capacity: u64,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+pub struct SyncInspection {
+    pub preflight: Outcome,
+    pub existing: Option<Outcome>,
+}
+
+fn inspect_sync(input: SyncInput) -> SyncInspection {
+    let mut access_input = EnvironmentInput {
+        mode: Operation::WriteCheck,
+        base: input.base,
+        user: input.user,
+        maximum: input.maximum,
+        require_home: input.require_home,
+        required_capacity: input.required_capacity,
+        file: default_file(),
+        managed_keys: Vec::new(),
+        content: None,
+    };
+    let preflight = access(&access_input);
+    let existing = if preflight.state == State::Ok {
+        access_input.mode = Operation::Read;
+        Some(access(&access_input))
+    } else {
+        None
+    };
+    SyncInspection {
+        preflight,
+        existing,
+    }
+}
+
+pub struct InspectEnvironmentSync;
+
+impl Command for InspectEnvironmentSync {
+    const NAME: &'static str = "instances.inspect-environment-sync";
+    const SUMMARY: &'static str =
+        "Check that an Instance's .env can be replaced, then read its existing workload keys.";
+    const MUTATES: bool = false;
+    const TIMEOUT: Duration = Duration::from_secs(60);
+    type Input = SyncInput;
+    type Output = SyncInspection;
+    type Error = EnvironmentError;
+
+    fn privilege(platform: Platform) -> Option<Privilege> {
+        super::linux_only(platform, Privilege::Owner)
+    }
+
+    fn run(input: SyncInput, _: &Context) -> Result<SyncInspection, EnvironmentError> {
+        Ok(inspect_sync(input))
+    }
+}
+
 pub struct ReadEnvironment;
 
 impl Command for ReadEnvironment {

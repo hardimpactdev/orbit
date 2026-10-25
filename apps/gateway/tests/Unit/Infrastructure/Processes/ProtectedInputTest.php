@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Infrastructure\Processes\ProtectedInput;
+use Tests\Support\ProcessInput;
 
 it('stores sensitive input in a protected temporary file without exposing it in debug output', function (): void {
     $sensitiveValue = 'ALPHA=opaque-value-with-spaces';
@@ -44,14 +45,23 @@ it('keeps a non-seekable input stream open until it is closed', function (): voi
     expect(is_resource($stream))->toBeFalse();
 });
 
-it('spools a bounded file after its header and refuses oversized input', function (): void {
+it('prefixes a private open file without copying it and leaves it available for replay', function (): void {
     $file = tmpfile();
     fwrite($file, "\0binary\xff");
     $path = stream_get_meta_data($file)['uri'];
     try {
-        $input = ProtectedInput::fromFile($path, "header\n", 8);
-        expect(stream_get_contents($input->stream()))->toBe("header\n\0binary\xff");
-        expect(fn () => ProtectedInput::fromFile($path, '', 7))->toThrow(RuntimeException::class, 'limit');
+        $body = ProtectedInput::openFile($path);
+        $input = ProtectedInput::prefixed($body, "header\n", credential: true);
+        $chunks = iterator_to_array($input->chunks());
+        expect($chunks[0])->toBe("header\n")
+            ->and(fstat($chunks[1])['ino'])->toBe(fstat($file)['ino'])
+            ->and($input->carriesGitCredential())->toBeTrue()
+            ->and(ProcessInput::contents($input))->toBe("header\n\0binary\xff")
+            ->and(print_r($input, true))->not->toContain('header');
+        $input->close();
+        expect(fn () => iterator_to_array($input->chunks()))->toThrow(LogicException::class);
+        $retry = ProtectedInput::prefixed($body, "retry\n");
+        expect(ProcessInput::contents($retry))->toBe("retry\n\0binary\xff");
     } finally {
         fclose($file);
     }

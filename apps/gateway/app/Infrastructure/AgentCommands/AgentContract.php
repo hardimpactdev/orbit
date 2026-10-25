@@ -88,14 +88,16 @@ final class AgentContract
         $linux = is_array($privilege) ? ($privilege['linux'] ?? null) : null;
         $macos = is_array($privilege) ? ($privilege['macos'] ?? null) : null;
         $outputMax = $command['output_max_bytes'] ?? 0;
+        $inputMax = $command['input_max_bytes'] ?? 0;
 
         if (! is_string($command['name'] ?? null) || ! is_bool($command['mutates'] ?? null) || ! is_int($command['timeout_seconds'] ?? null)
+            || ! is_int($inputMax) || $inputMax < 0
             || $errors === null || ! is_int($outputMax) || $outputMax < 0 || ($outputMax > 0 && $command['mutates'])
             || ($linux !== null && ! is_string($linux)) || ($macos !== null && ! is_string($macos))) {
             return null;
         }
 
-        return new AgentCommandSpec($command['name'], $command['mutates'], $command['timeout_seconds'], $linux, $macos, $errors, $outputMax);
+        return new AgentCommandSpec($command['name'], $command['mutates'], $command['timeout_seconds'], $linux, $macos, $errors, $outputMax, $inputMax);
     }
 
     /** @return list<string>|null */

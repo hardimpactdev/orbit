@@ -22,9 +22,9 @@ use App\Models\Project;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
-use Tests\Support\ForkedPythonPrograms;
 use Tests\Support\LinuxHost;
 use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\PythonPrograms;
 use Tests\Support\ResolvedVp;
 use Tests\Support\StandardLibraryPython;
 
@@ -36,15 +36,14 @@ beforeAll(function (): void {
 });
 
 afterAll(function (): void {
-    tmpdir_programs()->close();
     new Filesystem()->deleteDirectory(tmpdir_repository_seed());
 });
 
-function tmpdir_programs(): ForkedPythonPrograms
+function tmpdir_programs(): PythonPrograms
 {
     static $programs = null;
 
-    return $programs ??= new ForkedPythonPrograms;
+    return $programs ??= new PythonPrograms;
 }
 
 beforeEach(function (): void {

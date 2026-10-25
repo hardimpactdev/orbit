@@ -8,7 +8,6 @@ use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Metrics\NativeServiceMetricsRuntime;
 use App\Infrastructure\Metrics\ServiceMetricsNode;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -173,7 +172,6 @@ arch('service metrics runs Node code only through the agent command runner')
     ->not->toUse([
         SshExecutor::class,
         RemoteCommand::class,
-        ProductionSshExecutor::class,
         Process::class,
     ]);
 

@@ -24,7 +24,7 @@ interface AgentCommandRunner
      * @throws AgentCommandRefused when the command returns a declared refusal.
      * @throws AgentRunnerFailure when no valid result arrives.
      */
-    public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null): array;
+    public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array;
 
     /**
      * Installs the pinned agent on a Node, also after a recorded failed installation, and clears that record.

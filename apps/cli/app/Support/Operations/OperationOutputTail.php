@@ -7,7 +7,7 @@ namespace App\Support\Operations;
 /**
  * Turns the output tail that each read returns into the new text since the last read of the same step. The Gateway
  * keeps only the last 8 KiB, so when the tail moved past what was printed, the new tail prints whole after a marker.
- * A step whose output printed live prints no tail: its live lines already showed the output.
+ * Live lines advance the same bounded text history, so a final record can recover a disconnected stream.
  */
 final class OperationOutputTail
 {
@@ -16,19 +16,16 @@ final class OperationOutputTail
     /** @var array<string, string> */
     private array $printed = [];
 
-    /** @var array<string, true> */
-    private array $live = [];
-
     /** Records that the output of the step printed live. */
-    public function printedLive(string $step): void
+    public function printedLive(string $step, string $line): void
     {
-        $this->live[$step] = true;
+        $this->printed[$step] = substr(($this->printed[$step] ?? '').$line."\n", -8192);
     }
 
     /** @return list<string> the new lines of this step */
     public function lines(string $step, ?string $tail): array
     {
-        if ($tail === null || $tail === '' || isset($this->live[$step])) {
+        if ($tail === null || $tail === '') {
             return [];
         }
 

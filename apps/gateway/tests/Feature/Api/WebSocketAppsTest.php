@@ -37,6 +37,7 @@ use Illuminate\Support\Sleep;
 use Tests\Support\FakeGatewayPrivateDnsRoute;
 use Tests\Support\FakeNodeConverger;
 use Tests\Support\FakeNodeRoleFirewallManager;
+use Tests\Support\FakesEnvironmentSyncInspection;
 use Tests\Support\FakeToolManagerMaterializer;
 
 beforeEach(function (): void {
@@ -423,6 +424,8 @@ final class WebSocketAppsPublicationFake implements WebSocketPublicationManager
 
 final class WebSocketAppsEnvironmentAccess implements InstanceEnvironmentReader, InstanceEnvironmentWriter, InstanceOperationPreflight
 {
+    use FakesEnvironmentSyncInspection;
+
     public function assertEnvironmentReadable(InstanceEnvironmentContext $context): void
     {
         throw new RuntimeException('Attachment contacted the workload Node.');

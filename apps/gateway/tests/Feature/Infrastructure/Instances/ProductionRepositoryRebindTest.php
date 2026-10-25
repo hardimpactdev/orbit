@@ -7,15 +7,12 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\ProductionRepositoryRecord;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Instances\RemoteProductionDeployment;
 use App\Infrastructure\Instances\RemoteProductionRepositoryBinding;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
-use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeAgentCommandRunner;
-use Tests\Support\Fleet\FleetTestSsh;
 
 // The Gateway's part of a production re-bind: what it reads from the agent, which changes it sends in which order,
 // and how deployment names a binding failure. The agent's Rust tests in apps/agent/src/commands/production_tests.rs
@@ -134,7 +131,6 @@ function rebind_instance(string $repository): array
     ]);
     $agents = new FakeAgentCommandRunner;
     $binding = new RemoteProductionRepositoryBinding($agents);
-    $executor = new ProductionSshExecutor(new AppDevFakeSshExecutor([]), new FleetTestSsh, new FleetTestSsh);
 
     return [
         $instance,

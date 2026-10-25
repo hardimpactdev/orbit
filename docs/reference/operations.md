@@ -161,7 +161,9 @@ When the [`websocket` role](/reference/events) is active, the Gateway sends `ope
 3. Applies each event whose `sequence` is greater than the one it has: it reads the operation again with `after_sequence`.
 4. Unsubscribes when `status` is terminal.
 
-An `operation.updated` event never carries output. While a production deploy step runs, the Node agent publishes each output line on the same channel as [`client-output`](/reference/events#deploy-step-output). The web app and the CLI show those lines live. Once the step ends, the step's output comes from the record; the CLI prints no tail for a step whose lines it already showed live. Reverb can lose an event, for example while the socket reconnects, so a client that has no event for a while reads the operation anyway. The web app and the CLI read every 15 seconds while subscribed. [Realtime events: Operation](/reference/events#operation) lists the fields.
+An `operation.updated` event never carries output. While a production deploy step runs, the Node agent publishes each output line on the same channel as [`client-output`](/reference/events#deploy-step-output). The web app and the CLI show those lines live. Once the step ends, the step's output comes from the record; the CLI compares that tail with the live text it printed and shows the remaining output. If the retained text and record do not overlap, it shows the final tail with an earlier-output-skipped marker.
+
+Reverb can lose an event, for example while the socket reconnects, so a client that has no event for a while reads the operation anyway. The web app and the CLI read every 15 seconds while subscribed. [Realtime events: Operation](/reference/events#operation) lists the fields.
 
 ## Cancel an operation
 

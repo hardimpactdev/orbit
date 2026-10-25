@@ -687,7 +687,6 @@
               "decisions/0206-build-task-vm-images-as-chains-of-small-jobs",
               "decisions/0209-run-long-operations-as-durable-queued-operations",
               "decisions/0210-give-each-extension-its-own-code-boundary",
-              "decisions/0211-ship-node-changes-as-remote-programs",
               "decisions/0212-turn-proxycli-into-the-ai-router-extension",
               "decisions/0213-run-ci-runners-through-a-ci-runner-role",
               "decisions/0214-pin-the-ai-router-version-and-flag-upgrades",
@@ -697,7 +696,6 @@
               "decisions/0221-run-valkey-database-servers-with-orbit-owned-acl-users",
               "decisions/0223-run-one-gate-from-handoff-to-merge",
               "decisions/0224-give-each-task-group-one-holder-and-one-sender",
-              "decisions/0225-make-node-changes-through-agent-commands",
               "decisions/0226-split-private-dns-on-managed-peers",
               "decisions/0229-let-an-orchestrator-drive-task-work-through-gateway-operations"
             ]
@@ -1645,6 +1643,14 @@
     {
       "source": "/decisions/0233-publish-node-processes-through-public-routes",
       "destination": "/reference/routes#public-process-routes-select-an-edge-separately-from-the-workload"
+    },
+    {
+      "source": "/decisions/0211-ship-node-changes-as-remote-programs",
+      "destination": "/reference/node-agent#typed-commands-over-ssh"
+    },
+    {
+      "source": "/decisions/0225-make-node-changes-through-agent-commands",
+      "destination": "/reference/node-agent#commands"
     }
   ]
 }

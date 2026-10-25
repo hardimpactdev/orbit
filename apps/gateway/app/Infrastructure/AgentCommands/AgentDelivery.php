@@ -88,7 +88,10 @@ final class AgentDelivery
         $path = $artifact['path'] ?? null;
         $file = $path !== null
             ? (str_starts_with($path, '/') ? $path : dirname($this->manifestPath).'/'.$path)
-            : $this->download($key, $artifact['url'] ?? '', $artifact['sha256']);
+            : null;
+        if ($file === null || (! file_exists($file) && ! is_link($file))) {
+            $file = $this->download($key, $artifact['url'] ?? '', $artifact['sha256']);
+        }
 
         if (@hash_file('sha256', $file) !== $artifact['sha256']) {
             throw new RuntimeException("The delivered agent for [{$key}] does not match its pin.");

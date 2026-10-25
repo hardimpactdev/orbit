@@ -38,7 +38,7 @@ final readonly class NativeProcessRunner implements ProcessRunner
             $process = ($this->processFactory)(['setsid', '--', ...$invocation->arguments]);
             $timeout = $this->deadline?->cap($invocation->timeout) ?? $invocation->timeout;
             $process->setTimeout($timeout);
-            $process->setInput($protectedInput?->stream() ?? $invocation->input);
+            $process->setInput($protectedInput?->chunks() ?? $invocation->input);
 
             if ($invocation->environment !== []) {
                 $process->setEnv($invocation->environment);

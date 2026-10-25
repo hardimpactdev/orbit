@@ -13,12 +13,11 @@ use App\Domain\Instances\Transfer\TransferSourceCapture;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ApplicationDirectory;
+use App\Infrastructure\AgentCommands\AgentBinaryInput;
+use App\Infrastructure\AgentCommands\AgentBinaryOutput;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentContract;
 use App\Infrastructure\AgentCommands\AgentStep;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessRunner;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
 use App\Models\Node;
@@ -28,15 +27,13 @@ use Throwable;
 
 /**
  * Moves a development Instance between Nodes (docs/reference/instance-transfer.md). The Node agent's
- * `instances.transfer-source` captures, unpacks, and removes checkouts; the Gateway moves the archive with `scp`.
+ * commands capture, stream, materialize, and remove checkouts. The Gateway stages only private archive bytes.
  */
 final readonly class RemoteInstanceTransferSource implements InstanceTransferSource
 {
     public function __construct(
         private AgentCommandRunner $agents,
-        private ProcessRunner $processes,
-        private SshKeyProvider $keys,
-        private KnownHostsStore $knownHosts,
+        private AgentContract $contract,
     ) {}
 
     public function capture(Instance $instance, ?string $sqliteSourcePath = null): TransferSourceCapture
@@ -134,17 +131,25 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
             throw $this->stagingFailed('app-instance-transfer-stage');
         }
 
+        $sink = null;
         try {
-            $this->copyArchive(
-                $this->scpFromRemote($source, $capture->archiveIdentity, $temporary),
-                'app-instance-transfer-download',
-            );
-        } catch (Throwable $exception) {
+            $sink = fopen($temporary, 'wb');
+            if ($sink === false) {
+                throw $this->failed();
+            }
+            $this->agents->run($source, 'instances.read-transfer-archive', [
+                'archive' => $capture->archiveIdentity,
+            ], output: new AgentBinaryOutput($sink, $this->contract->command('instances.read-transfer-archive')->outputMaxBytes));
+        } catch (Throwable) {
             if (is_file($temporary)) {
                 unlink($temporary);
             }
 
-            throw $exception;
+            throw $this->stagingFailed('app-instance-transfer-download');
+        } finally {
+            if (is_resource($sink)) {
+                fclose($sink);
+            }
         }
 
         return $temporary;
@@ -160,35 +165,18 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
         $environmentDirectory = $instance->source_is_laravel === true
             ? ApplicationDirectory::resolve($path->value, $instance->root ?? $instance->project->root)
             : $path->value;
-        $remoteArchive = "/tmp/orbit-transfer-{$capture->instanceId}.tar";
-        $this->copyArchive(
-            $this->scpToRemote($destination, $archive, $remoteArchive),
-            'app-instance-transfer-upload',
-        );
-
-        $this->run($destination, [
-            'operation' => 'materialize',
-            'archive' => $remoteArchive,
+        try {
+            $binary = AgentBinaryInput::fromFile($archive, $this->contract->command('instances.materialize-transfer')->inputMaxBytes);
+        } catch (Throwable) {
+            throw $this->stagingFailed('app-instance-transfer-upload');
+        }
+        AgentStep::run($this->agents, $destination, 'instances.materialize-transfer', [
             'destination' => $path->value,
             'head' => $capture->head,
             'branch' => $capture->branch,
             'detached' => $capture->detached,
             'environment' => $environmentDirectory.'/.env',
-        ], 'app-instance-transfer-materialize', 'instance.transfer_failed');
-    }
-
-    /** @param non-empty-list<string> $arguments */
-    private function copyArchive(array $arguments, string $step): void
-    {
-        try {
-            $result = $this->processes->run(new ProcessInvocation($arguments, maxOutputBytes: 256));
-        } catch (Throwable) {
-            throw $this->stagingFailed($step);
-        }
-
-        if (! $result->succeeded() || $result->truncated) {
-            throw $this->stagingFailed($step, $result->exitCode);
-        }
+        ], 'app-instance-transfer-materialize', 'instance.transfer_failed', 'Instance transfer', binaryInput: $binary);
     }
 
     private function stagingFailed(string $step, ?int $exitCode = null): ResourceOperationException
@@ -199,52 +187,6 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
         ]);
 
         return $this->failed();
-    }
-
-    /** @return non-empty-list<string> */
-    private function scpFromRemote(Node $node, string $remote, string $local): array
-    {
-        return $this->scpArguments($node, $this->remotePath($node, $remote), $local);
-    }
-
-    /** @return non-empty-list<string> */
-    private function scpToRemote(Node $node, string $local, string $remote): array
-    {
-        return $this->scpArguments($node, $local, $this->remotePath($node, $remote));
-    }
-
-    /** @return non-empty-list<string> */
-    private function scpArguments(Node $node, string $source, string $target): array
-    {
-        return [
-            'scp',
-            '-o',
-            'BatchMode=yes',
-            '-o',
-            'IdentitiesOnly=yes',
-            '-o',
-            'StrictHostKeyChecking=yes',
-            '-i',
-            $this->keys->privateKeyPath(),
-            '-o',
-            'UserKnownHostsFile='.$this->knownHosts->path(),
-            $source,
-            $target,
-        ];
-    }
-
-    private function remotePath(Node $node, string $path): string
-    {
-        $host = $node->wireguard_ip;
-        $user = $node->user;
-
-        if (! is_string($host) || filter_var($host, FILTER_VALIDATE_IP) === false) {
-            throw $this->failed();
-        }
-
-        $formattedHost = str_contains($host, ':') ? "[{$host}]" : $host;
-
-        return "{$user}@{$formattedHost}:{$path}";
     }
 
     /**

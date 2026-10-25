@@ -72,6 +72,7 @@ use App\Models\Route;
 use App\Models\Schedule;
 use Illuminate\Support\Facades\Event;
 use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\FakesEnvironmentSyncInspection;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 
 beforeEach(function (): void {
@@ -919,6 +920,8 @@ final class Orb198SourceLock implements AppDevSourceOperationLock
 
 final class Orb198EnvironmentPreflight implements InstanceOperationPreflight
 {
+    use FakesEnvironmentSyncInspection;
+
     public function assertEnvironmentReadable(InstanceEnvironmentContext $context): void {}
 
     public function assertEnvironmentWritable(InstanceEnvironmentContext $context, int $requiredCapacityBytes): void {}

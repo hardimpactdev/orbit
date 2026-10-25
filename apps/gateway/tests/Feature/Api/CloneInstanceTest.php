@@ -37,6 +37,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\WebSocketAppTarget;
+use Tests\Support\FakesEnvironmentSyncInspection;
 
 beforeEach(function (): void {
     $this->caller = clone_api_node('clone-api-caller');
@@ -462,6 +463,8 @@ final class Orb198ApiProductionSource implements ProductionInstanceSourceLifecyc
 
 final class Orb198ApiEnvironmentPreflight implements InstanceOperationPreflight
 {
+    use FakesEnvironmentSyncInspection;
+
     public function assertEnvironmentReadable(InstanceEnvironmentContext $context): void {}
 
     public function assertEnvironmentWritable(InstanceEnvironmentContext $context, int $requiredCapacityBytes): void {}

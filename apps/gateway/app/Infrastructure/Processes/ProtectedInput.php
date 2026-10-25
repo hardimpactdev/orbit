@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Processes;
 
+use Generator;
 use LogicException;
 use RuntimeException;
 use SensitiveParameter;
@@ -19,7 +20,11 @@ final class ProtectedInput
 
     private bool $gitCredential = false;
 
-    /** @param resource $stream */
+    private ?self $body = null;
+
+    private string $prefix = '';
+
+    /** @param resource|null $stream */
     private function __construct(mixed $stream)
     {
         $this->stream = $stream;
@@ -90,7 +95,7 @@ final class ProtectedInput
         return $this->gitCredential;
     }
 
-    /** Streams a file as it is, without a copy, such as a Git pack. The file holds no secret. */
+    /** Streams a caller-owned private file as it is, without a copy. */
     public static function openFile(string $path): self
     {
         $stream = fopen($path, 'rb');
@@ -101,31 +106,27 @@ final class ProtectedInput
         return new self($stream);
     }
 
-    /** Copy bounded file input into the same private spool used for secrets. */
-    public static function fromFile(string $path, string $prefix, int $maxBytes): self
+    /** Prefix an open private file without copying it. Closing this input leaves the caller's file open for replay. */
+    public static function prefixed(self $body, #[SensitiveParameter] string $prefix, bool $credential = false): self
     {
-        $source = fopen($path, 'rb');
-        if ($source === false) {
-            throw new RuntimeException('Unable to read protected process input.');
-        }
-        $input = self::fromString($prefix);
-        try {
-            $destination = $input->stream();
-            if (fseek($destination, 0, SEEK_END) !== 0) {
-                throw new RuntimeException('Unable to append protected process input.');
-            }
-            $copied = stream_copy_to_stream($source, $destination, $maxBytes + 1);
-            if ($copied === false || $copied > $maxBytes || ! feof($source)) {
-                throw new RuntimeException('Protected process input exceeds its limit.');
-            }
-        } catch (Throwable $exception) {
-            $input->close();
-            throw $exception;
-        } finally {
-            fclose($source);
-        }
+        $input = new self(null);
+        $input->body = $body;
+        $input->prefix = $prefix;
+        $input->gitCredential = $credential;
 
         return $input;
+    }
+
+    /** @return Generator<int, string|resource> */
+    public function chunks(): Generator
+    {
+        if ($this->body !== null) {
+            $stream = $this->body->stream();
+            yield $this->prefix;
+            yield $stream;
+        } else {
+            yield $this->stream();
+        }
     }
 
     public static function holdOpen(): self
@@ -160,6 +161,8 @@ final class ProtectedInput
 
     public function close(): void
     {
+        $this->body = null;
+        $this->prefix = '';
         if (is_resource($this->hold)) {
             fclose($this->hold);
             $this->hold = null;

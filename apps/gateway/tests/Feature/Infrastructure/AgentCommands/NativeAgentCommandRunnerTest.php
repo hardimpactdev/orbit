@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentCommands\AgentBinaryInput;
 use App\Infrastructure\AgentCommands\AgentBinaryOutput;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentContract;
@@ -24,11 +25,12 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Node;
 use Tests\Support\Fleet\FleetTestSsh;
+use Tests\Support\ProcessInput;
 
 /** A Node that answers each call from a queue of result lines, and records what it was sent. */
 class ScriptedAgentTransport implements AgentTransport
 {
-    /** @var list<array{arguments: list<string>, envelope: array<string, mixed>, credential: bool}> */
+    /** @var list<array{arguments: list<string>, envelope: array<string, mixed>, credential: bool, body: string}> */
     public array $calls = [];
 
     /** @var list<string> */
@@ -49,8 +51,9 @@ class ScriptedAgentTransport implements AgentTransport
 
     public function run(array $arguments, ProtectedInput $envelope, float $timeout, ?Closure $output = null): CommandResult
     {
-        $decoded = json_decode((string) stream_get_contents($envelope->stream()), true, flags: JSON_THROW_ON_ERROR);
-        $this->calls[] = ['arguments' => $arguments, 'envelope' => $decoded, 'credential' => $envelope->carriesGitCredential()];
+        [$header, $body] = explode("\n", ProcessInput::contents($envelope), 2);
+        $decoded = json_decode($header, true, flags: JSON_THROW_ON_ERROR);
+        $this->calls[] = ['arguments' => $arguments, 'envelope' => $decoded, 'credential' => $envelope->carriesGitCredential(), 'body' => $body];
         $result = array_shift($this->results) ?? throw new LogicException('No scripted result left.');
 
         $result = $result instanceof Closure ? $result($decoded) : $result;
@@ -587,3 +590,48 @@ it('records an installer failure without persisting unverified admission identit
         expect(Node::query()->where('name', 'not-admitted')->exists())->toBeFalse();
     }
 })->with([true, false]);
+
+it('replays the complete private binary input after mismatch and keeps every call journaled', function (): void {
+    $node = agentRunnerNode();
+    $base = new ScriptedAgentTransport([]);
+    $journaled = new ScriptedAgentTransport([
+        agentRefusal('agent.version_mismatch'),
+        agentResult(['ok' => true, 'data' => ['replaced' => true]]),
+        agentResult(['ok' => true, 'data' => ['imported' => true]]),
+    ]);
+    $source = tmpfile();
+    $bytes = str_repeat("PACK\0\xff\n", 20000);
+    fwrite($source, $bytes);
+    $binary = AgentBinaryInput::fromFile(stream_get_meta_data($source)['uri'], strlen($bytes));
+    fclose($source);
+    $execute = static fn (RemoteCommand $command): CommandResult => $journaled->run($command->arguments, $command->protectedInput, $command->timeout);
+
+    $result = agentRunner($base)->runInWorkspace($node, $execute, 'task-vms.import-git-pack', [
+        'checkout' => '/home/orbit/worktree', 'default_branch' => null, 'updates' => [],
+    ], binaryInput: $binary);
+
+    expect($result)->toBe(['imported' => true])
+        ->and($journaled->calls)->toHaveCount(3)
+        ->and($journaled->calls[0]['envelope']['stream_bytes'])->toBe(strlen($bytes))
+        ->and($journaled->calls[0]['body'])->toBe($bytes)
+        ->and($journaled->calls[2]['body'])->toBe($bytes)
+        ->and($journaled->calls[1]['body'])->toBe('')
+        ->and($base->calls)->toBe([])
+        ->and($base->staged)->toHaveCount(1)
+        ->and(print_r($binary, true))->not->toContain('PACK');
+});
+
+it('rejects binary input missing from a binary command or supplied to a JSON command before transport', function (): void {
+    $transport = new ScriptedAgentTransport([]);
+    $runner = agentRunner($transport);
+    $node = agentRunnerNode();
+    expect(fn () => $runner->run($node, 'task-vms.import-git-pack'))->toThrow(LogicException::class);
+    $source = tmpfile();
+    fwrite($source, 'body');
+    $path = stream_get_meta_data($source)['uri'];
+    expect(fn () => AgentBinaryInput::fromFile($path, 3))->toThrow(RuntimeException::class);
+    $binary = AgentBinaryInput::fromFile($path, 4);
+    expect(fn () => $runner->run($node, 'agent.status', binaryInput: $binary))->toThrow(LogicException::class)
+        ->and($transport->calls)->toBe([]);
+    fclose($source);
+});

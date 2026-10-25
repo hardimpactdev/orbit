@@ -11,7 +11,6 @@ use App\Domain\Instances\DevelopmentSourceProfile;
 use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
 use App\Domain\Instances\Environment\LaravelApplicationKey;
 use App\Domain\Instances\RouteApplicationUrlWriter;
-use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Projects\ProjectType;
 use App\Domain\SourceControl\RelativeWebRoot;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
@@ -26,7 +25,6 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
 {
     public function __construct(
         private AgentCommandRunner $agents,
-        private ManagedUserAccountResolver $accounts,
         private ComposerSourceClassifier $classifier,
     ) {}
 
@@ -39,10 +37,9 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
             return new DevelopmentSourceProfile(null, false);
         }
 
-        $account = $this->accounts->resolve($instance->node);
         $profile = AgentStep::run($this->agents, $instance->node, 'instances.inspect-development-profile', [
             'application' => $instance->applicationDirectory(),
-            'owner' => $account->user,
+            'owner' => $instance->node->user,
             'entry_point' => $instance->project->type->frameworkEntryPoint(),
         ], 'app-instance-source-classify', 'app-dev.source_classification_failed', 'App development');
 
@@ -69,13 +66,12 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
     private function writeLaravelUrl(Instance $instance, string $directory, string $url, bool $otherApplication): void
     {
         $instance->loadMissing(['node', 'project']);
-        $account = $this->accounts->resolve($instance->node);
         $storedKey = $otherApplication ? null : LaravelApplicationKey::stored($instance);
         $storedName = $instance->environmentValues()->where('env_key', 'APP_NAME')->first()?->env_value;
         $storedName = is_string($storedName) && $storedName !== '' && ! str_contains($storedName, '{{') ? $storedName : null;
         AgentStep::run($this->agents, $instance->node, 'instances.write-development-url', [
             'directory' => $directory,
-            'owner' => $account->user,
+            'owner' => $instance->node->user,
             'url' => $url,
             'app_key' => 'APP_KEY='.InstanceEnvironmentRenderer::quote($storedKey ?? LaravelApplicationKey::generate()),
             'app_key_stored' => $storedKey !== null,

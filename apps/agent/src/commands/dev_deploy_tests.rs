@@ -147,6 +147,23 @@ fn refuses_a_checkout_with_another_origin() {
 #[test]
 fn checks_out_the_target_and_drops_untracked_files_in_removed_directories() {
     let fixture = Fixture::new();
+    let initial = sh_git(&fixture.home, &["rev-parse", "HEAD"]);
+    let sibling = fixture.base.join("sibling");
+    sh_git(
+        &fixture.home,
+        &[
+            "worktree",
+            "add",
+            "--quiet",
+            "-b",
+            "sibling",
+            sibling.to_str().unwrap(),
+            "HEAD",
+        ],
+    );
+    fs::create_dir(fixture.home.join(".cache")).unwrap();
+    fs::write(fixture.home.join(".cache/warm"), "cached").unwrap();
+    fs::write(fixture.home.join(".env"), "APP_ENV=development\n").unwrap();
     let second = fixture.advance();
     fixture.target(None).unwrap();
     fs::create_dir_all(fixture.home.join("packages/old/node_modules/dep")).unwrap();
@@ -169,6 +186,17 @@ fn checks_out_the_target_and_drops_untracked_files_in_removed_directories() {
         fs::read_to_string(fixture.home.join("README")).unwrap(),
         "two\n"
     );
+    assert_eq!(sh_git(&sibling, &["rev-parse", "HEAD"]), initial);
+    assert_eq!(
+        fs::read_to_string(fixture.home.join(".cache/warm")).unwrap(),
+        "cached"
+    );
+    assert_eq!(
+        fs::read_to_string(fixture.home.join(".env")).unwrap(),
+        "APP_ENV=development\n"
+    );
+    assert!(!fixture.home.join("current").exists());
+    assert!(!fixture.home.join("releases").exists());
 }
 
 #[test]
@@ -354,6 +382,36 @@ fn lifecycle_repeat_helper() {
             .exit_code,
         0
     );
+
+    let executable = checkout.join("project-tool");
+    fs::write(&executable, "#!/bin/sh\nprintf '%s' \"$VP_HOME\"\n").unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+    let script = "./project-tool\ncat /proc/$$/cmdline > command-line\n";
+    let mut input = lifecycle_input(&checkout, script);
+    input
+        .environment
+        .insert("VP_HOME".into(), "/project/vp".into());
+    let output = lifecycle_step(&input).unwrap();
+    assert_eq!(output.exit_code, 0);
+    assert!(output
+        .output
+        .iter()
+        .any(|chunk| chunk.stream == "stdout" && chunk.value == "/project/vp"));
+    let arguments = fs::read_to_string(checkout.join("command-line")).unwrap();
+    assert!(
+        !arguments.contains(script),
+        "project source stays out of argv"
+    );
+
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o600)).unwrap();
+    for (script, expected) in [("./project-tool\n", 126), ("./missing-project-tool\n", 127)] {
+        let output = lifecycle_step(&lifecycle_input(&checkout, script)).unwrap();
+        assert_eq!(output.exit_code, expected);
+        assert!(output
+            .output
+            .iter()
+            .any(|chunk| chunk.stream == "stderr" && !chunk.value.is_empty()));
+    }
     let _ = fs::remove_dir_all(&checkout);
 }
 
@@ -384,13 +442,24 @@ fn a_lifecycle_step_refuses_a_busy_or_non_canonical_checkout_before_it_runs() {
 #[test]
 fn a_lifecycle_step_reports_that_its_own_bound_stopped_it() {
     let checkout = lifecycle_checkout();
-    let mut input = lifecycle_input(&checkout, "sleep 5\n");
+    let mut input = lifecycle_input(&checkout, "sleep 30 &\necho $! > child-pid\nwait\n");
     input.timeout_seconds = 1;
 
+    let started = std::time::Instant::now();
     let output = lifecycle_step(&input).unwrap();
 
+    assert!(started.elapsed() < Duration::from_secs(5));
     assert!(output.timed_out);
     assert_ne!(output.exit_code, 0);
+    let child: u32 = fs::read_to_string(checkout.join("child-pid"))
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    assert!(
+        !Path::new(&format!("/proc/{child}")).exists(),
+        "the lifecycle step's background process stopped"
+    );
     let _ = fs::remove_dir_all(&checkout);
 }
 

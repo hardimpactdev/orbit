@@ -10,6 +10,7 @@ use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
+use App\Infrastructure\AgentCommands\AgentBinaryInput;
 use App\Infrastructure\AgentCommands\AgentBinaryOutput;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
@@ -64,28 +65,6 @@ final readonly class TaskVmGit
 
     /** The automatic garbage collection threshold that {@see collectGarbage()} applies, Git's default. */
     private const int GcAutoObjects = 6700;
-
-    /** Indexes the pack on stdin, then sets each `<ref> <commit>` pair, or deletes the ref for `-`. */
-    private const string Apply = <<<'BASH'
-        set -eu
-        checkout=$1
-        head=$2
-        shift 2
-        git() { command git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" "$@"; }
-        git index-pack --stdin --fix-thin >/dev/null
-        while [ "$#" -ge 2 ]; do
-            if [ "$2" = - ]; then
-                git update-ref -d "$1"
-            else
-                git update-ref "$1" "$2"
-            fi
-            shift 2
-        done
-        # origin/HEAD names the default branch, as a clone sets it. The @orbit/ci-caches setup step reads it.
-        if [ -n "$head" ] && git rev-parse --verify --quiet "refs/remotes/origin/$head" >/dev/null; then
-            git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$head"
-        fi
-        BASH;
 
     /**
      * @param  list<string>  $protocols  the protocols the mirror may fetch and push with
@@ -277,21 +256,23 @@ final readonly class TaskVmGit
             });
             $updates = [];
             foreach ($cachesOnly ? [] : $tips as $branch => $commit) {
-                $updates[] = 'refs/remotes/origin/'.$branch;
-                $updates[] = $commit ?? '-';
+                $updates[] = ['reference' => 'refs/remotes/origin/'.$branch, 'commit' => $commit];
             }
             if ($selectBaseline && $baseline === null) {
-                $updates[] = 'refs/worktree/orbit/ci-baseline';
-                $updates[] = '-';
+                $updates[] = ['reference' => 'refs/worktree/orbit/ci-baseline', 'commit' => null];
             }
             if ($cacheRef !== null && is_string($baseline)) {
-                $updates[] = $cacheRef;
-                $updates[] = $cacheCommit ?? '-';
-                $updates[] = 'refs/worktree/orbit/ci-baseline';
-                $updates[] = $baseline;
+                $updates[] = ['reference' => $cacheRef, 'commit' => $cacheCommit];
+                $updates[] = ['reference' => 'refs/worktree/orbit/ci-baseline', 'commit' => $baseline];
             }
             $head = is_string($project->default_branch) && GitBranchName::isValid($project->default_branch) && array_key_exists($project->default_branch, $tips) ? $project->default_branch : '';
-            $run(new RemoteCommand(['bash', '-c', self::Apply, '--', $checkout, $head, ...$updates], protectedInput: ProtectedInput::openFile($pack), timeout: 1800.0));
+            try {
+                $this->agents->runInWorkspace($node, $run, 'task-vms.import-git-pack', [
+                    'checkout' => $checkout, 'default_branch' => $head === '' ? null : $head, 'updates' => $updates,
+                ], binaryInput: AgentBinaryInput::fromFile($pack, self::MaxPackBytes));
+            } catch (AgentCommandRefused|AgentRunnerFailure $exception) {
+                throw new RuntimeConvergenceException('task-vm-git-import', $errorCode, 'The checkout pack could not be imported.', previous: $exception);
+            }
         } finally {
             File::deleteDirectory($scratch);
         }
