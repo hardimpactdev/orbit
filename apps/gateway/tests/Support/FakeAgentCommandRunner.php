@@ -111,17 +111,9 @@ final class FakeAgentCommandRunner implements AgentCommandRunner
     #[\Override]
     public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
     {
-        $spec = $this->contract->command($command);
-        if (($spec->inputMaxBytes > 0) !== ($binaryInput !== null) || (($spec->outputMaxBytes > 0) !== ($output !== null))) {
-            throw new LogicException("Binary input and output must match the agent contract for [{$command}].");
-        }
-        $platform = $node->platform === 'macos' ? 'macos' : 'linux';
-        if ($spec->privilege($platform) === null) {
-            throw new LogicException("The agent command [{$command}] does not run on {$platform}.");
-        }
+        self::admit($node, $command, $input, $output, $binaryInput, $this->contract);
         $this->deadlines[] = $deadlineSeconds;
         $this->calls[] = ['node' => $node->name, 'command' => $command, 'input' => $input];
-        AgentSchemas::assertInput($command, $input);
         $answer = $this->answers[$command] ?? throw new LogicException("No fake answer for agent command [{$command}].");
         $result = $answer($input, $node, $output, $binaryInput);
         if (! isset($this->malformed[$command])) {
@@ -129,6 +121,27 @@ final class FakeAgentCommandRunner implements AgentCommandRunner
         }
 
         return $result;
+    }
+
+    /**
+     * The checks the real runner makes before it sends a command, and the input schema. Every fake calls it.
+     *
+     * @param  array<string, mixed>  $input
+     */
+    public static function admit(Node $node, string $command, array $input, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null, ?AgentContract $contract = null): void
+    {
+        $spec = ($contract ?? app(AgentContract::class))->command($command);
+        if (($spec->inputMaxBytes > 0) !== ($binaryInput !== null) || ($binaryInput !== null && $binaryInput->bytes > $spec->inputMaxBytes)) {
+            throw new LogicException("Binary input must match the agent contract and its size limit for [{$command}].");
+        }
+        if (($spec->outputMaxBytes > 0) !== ($output !== null) || ($output !== null && $output->bytes() !== 0)) {
+            throw new LogicException("A binary output command needs a fresh sink for [{$command}].");
+        }
+        $platform = $node->platform === 'macos' ? 'macos' : 'linux';
+        if ($spec->privilege($platform) === null) {
+            throw new LogicException("The agent command [{$command}] does not run on {$platform}.");
+        }
+        AgentSchemas::assertInput($command, $input);
     }
 
     #[\Override]

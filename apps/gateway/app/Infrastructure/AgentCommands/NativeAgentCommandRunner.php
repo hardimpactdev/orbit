@@ -163,6 +163,9 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
 
         if (! $outcome['ok']) {
             $code = $outcome['error']['code'];
+            if (! $spec->declares($code) && ! in_array($code, $this->contract->commonErrors(), true)) {
+                throw new AgentRunnerFailure(self::Install, AgentRunnerFailure::UndeclaredError, 'The command [agent.install] returned an undeclared error.', ['code' => $code]);
+            }
             if (! $spec->declares($code) || in_array($code, self::RetryableInstallRefusals, true)) {
                 throw new AgentCommandRefused(self::Install, $code, $outcome['error']['message'], $outcome['error']['details']);
             }

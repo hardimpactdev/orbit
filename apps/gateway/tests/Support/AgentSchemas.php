@@ -110,13 +110,16 @@ final class AgentSchemas
             $errors[] = "{$path}: matches a forbidden schema";
         }
 
-        if (self::is($value, 'object', $wire) && (isset($schema['properties']) || isset($schema['required']) || isset($schema['additionalProperties']))) {
+        if (self::is($value, 'object', $wire) && (isset($schema['properties']) || isset($schema['required']) || isset($schema['additionalProperties']) || isset($schema['propertyNames']))) {
             $errors = [...$errors, ...self::object((array) $value, $schema, $root, $path, $wire)];
         }
         if (is_array($value) && array_is_list($value) && (isset($schema['items']) || isset($schema['prefixItems']))) {
             $errors = [...$errors, ...self::list($value, $schema, $root, $path, $wire)];
         }
         if (is_array($value) && array_is_list($value)) {
+            if (($schema['uniqueItems'] ?? false) === true && count(array_unique(array_map(static fn (mixed $item): string => json_encode($item, JSON_THROW_ON_ERROR), $value))) !== count($value)) {
+                $errors[] = "{$path}: items are not unique";
+            }
             if (isset($schema['minItems']) && count($value) < $schema['minItems']) {
                 $errors[] = "{$path}: fewer than {$schema['minItems']} items";
             }
@@ -132,6 +135,12 @@ final class AgentSchemas
             }
             if (isset($schema['maximum']) && $value > $schema['maximum']) {
                 $errors[] = "{$path}: above {$schema['maximum']}";
+            }
+            if (isset($schema['exclusiveMinimum']) && $value <= $schema['exclusiveMinimum']) {
+                $errors[] = "{$path}: not above {$schema['exclusiveMinimum']}";
+            }
+            if (isset($schema['exclusiveMaximum']) && $value >= $schema['exclusiveMaximum']) {
+                $errors[] = "{$path}: not below {$schema['exclusiveMaximum']}";
             }
         }
         if (is_string($value)) {
@@ -149,6 +158,9 @@ final class AgentSchemas
             }
             if (isset($schema['maxLength']) && mb_strlen($value) > $schema['maxLength']) {
                 $errors[] = "{$path}: longer than {$schema['maxLength']}";
+            }
+            if (isset($schema['pattern']) && preg_match('/'.str_replace('/', '\\/', $schema['pattern']).'/u', $value) !== 1) {
+                $errors[] = "{$path}: does not match {$schema['pattern']}";
             }
         }
 
@@ -180,6 +192,9 @@ final class AgentSchemas
         }
         foreach ($value as $name => $item) {
             $name = (string) $name;
+            if (isset($schema['propertyNames'])) {
+                $errors = [...$errors, ...self::check($name, $schema['propertyNames'], $root, "{$path}.{$name}", $wire)];
+            }
             if (isset($schema['properties'][$name])) {
                 $errors = [...$errors, ...self::check($item, $schema['properties'][$name], $root, "{$path}.{$name}", $wire)];
             } elseif (array_key_exists('additionalProperties', $schema)) {
@@ -217,7 +232,8 @@ final class AgentSchemas
             'object' => $value instanceof stdClass || (! $wire && is_array($value) && ($value === [] || ! array_is_list($value))),
             'array' => is_array($value) && array_is_list($value),
             'string' => is_string($value),
-            'integer' => is_int($value) || (is_float($value) && floor($value) === $value),
+            // The agent refuses `5.0` for an integer; a Gateway answer decodes whole numbers to int anyway.
+            'integer' => is_int($value),
             'number' => is_int($value) || is_float($value),
             'boolean' => is_bool($value),
             'null' => $value === null,

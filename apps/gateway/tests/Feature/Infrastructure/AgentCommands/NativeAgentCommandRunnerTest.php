@@ -395,6 +395,15 @@ it('records no failed pin for a common error or an installer that had too little
     expect(agentRunner($next)->run($node->fresh() ?? $node, 'agent.status'))->toBe(['version' => '0.5.0']);
 })->with(['agent.deadline_exceeded', 'agent.supervisor_failed', 'agent.lock_unavailable', 'agent.install_time_short']);
 
+it('treats an installer error the contract does not declare as a runner failure and records nothing', function (): void {
+    $node = agentRunnerNode();
+    $transport = new ScriptedAgentTransport([agentRefusal('agent.version_mismatch'), agentRefusal('agent.not_a_declared_code')]);
+
+    expect(fn () => agentRunner($transport)->run($node, 'agent.status'))
+        ->toThrow(fn (AgentRunnerFailure $failure): bool => $failure->kind === AgentRunnerFailure::UndeclaredError);
+    expect($node->fresh()?->agent_failed_pin)->toBeNull();
+});
+
 // Only a refusal from agent.install proves the pin cannot install; a lost connection or a failed copy may pass next time.
 it('records no failed pin when the candidate cannot be staged or the installer gives no answer', function (string $failure): void {
     $node = agentRunnerNode();

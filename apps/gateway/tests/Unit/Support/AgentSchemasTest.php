@@ -57,6 +57,16 @@ it('accepts an empty array as an empty object in a Gateway answer, as json_decod
         ->and(AgentSchemas::errors(['a' => 1], ['type' => 'array']))->toBe(['$: expected array, got array']);
 });
 
+it('enforces the keywords it knows, as strictly as the agent decodes', function (): void {
+    expect(AgentSchemas::errors(json_decode('{"n":5.0}', flags: JSON_THROW_ON_ERROR), ['type' => 'object', 'properties' => ['n' => ['type' => 'integer']]]))
+        ->toBe(['$.n: expected integer, got float'])
+        ->and(AgentSchemas::errors(['a', 'a'], ['type' => 'array', 'uniqueItems' => true]))->toBe(['$: items are not unique'])
+        ->and(AgentSchemas::errors('abc', ['type' => 'string', 'pattern' => '^a/b$']))->toBe(['$: does not match ^a/b$'])
+        ->and(AgentSchemas::errors('a/b', ['type' => 'string', 'pattern' => '^a/b$']))->toBe([])
+        ->and(AgentSchemas::errors(0, ['type' => 'integer', 'exclusiveMinimum' => 0]))->toBe(['$: not above 0'])
+        ->and(AgentSchemas::errors(['Bad' => 1], ['type' => 'object', 'propertyNames' => ['pattern' => '^[a-z]+$']]))->toBe(['$.Bad: does not match ^[a-z]+$']);
+});
+
 it('refuses a keyword it does not know instead of ignoring it', function (): void {
     expect(fn () => AgentSchemas::errors('x', ['type' => 'string', 'patternProperties' => []]))
         ->toThrow(LogicException::class, 'Unsupported JSON Schema keyword [patternProperties]');

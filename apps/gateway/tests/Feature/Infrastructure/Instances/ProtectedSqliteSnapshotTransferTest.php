@@ -8,6 +8,8 @@ use App\Infrastructure\AgentCommands\AgentBinaryOutput;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Instances\ProtectedSqliteSnapshotTransfer;
 use App\Models\Node;
+use Tests\Support\AgentSchemas;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\ProcessInput;
 
 it('streams the verified snapshot through both agents and closes its private output sink', function (): void {
@@ -55,6 +57,15 @@ final class SnapshotTransferAgents implements AgentCommandRunner
     public function __construct(private readonly string $bytes, private readonly bool $fail = false) {}
 
     public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
+    {
+        FakeAgentCommandRunner::admit($node, $command, $input, $output, $binaryInput);
+        $result = $this->respond($node, $command, $input, $deadlineSeconds, $output, $binaryInput);
+        AgentSchemas::assertOutput($command, $result);
+
+        return $result;
+    }
+
+    private function respond(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
     {
         $this->calls[] = ['node' => $node->name, 'command' => $command, 'input' => $input];
         if ($command === 'instances.read-sqlite-snapshot') {

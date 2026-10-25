@@ -24,9 +24,14 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\WireGuard\RecoverableWireGuardPeerConverger;
 use App\Infrastructure\WireGuard\WireGuardPeerConverger;
 use App\Models\Node;
+use Tests\Support\AgentSchemas;
+use Tests\Support\FakeAgentCommandRunner;
 
 final class BaseAdmissionAgents implements AdmissionAgentRunner
 {
+    /** Answers may break their output schema, to test the converger's own guard against a malformed result. */
+    public bool $malformed = false;
+
     public array $calls = [];
 
     public ?Closure $answer = null;
@@ -49,6 +54,17 @@ final class BaseAdmissionAgents implements AdmissionAgentRunner
 
     public function runOver(Node $node, SshConnection $connection, string $command, array $input = [], ?float $deadlineSeconds = null): array
     {
+        FakeAgentCommandRunner::admit($node, $command, $input);
+        $result = $this->respond($node, $connection, $command, $input, $deadlineSeconds);
+        if (! $this->malformed) {
+            AgentSchemas::assertOutput($command, $result);
+        }
+
+        return $result;
+    }
+
+    private function respond(Node $node, SshConnection $connection, string $command, array $input = [], ?float $deadlineSeconds = null): array
+    {
         return $this->call($node, $connection, $command, $input);
     }
 
@@ -59,7 +75,7 @@ final class BaseAdmissionAgents implements AdmissionAgentRunner
             return ($this->answer)($node, $connection, $command, $input);
         }
 
-        return $command === 'agent.status' ? ['architecture' => $this->architecture] : [];
+        return $command === 'agent.status' ? base_agent_status($this->architecture) : [];
     }
 }
 
@@ -143,7 +159,7 @@ it('pins the host and installs before native bootstrap using the selected login 
             expect($target->fresh()->architecture)->toBe('x86_64');
         }
 
-        return $command === 'agent.status' ? ['architecture' => 'x86_64'] : [];
+        return $command === 'agent.status' ? base_agent_status('x86_64') : [];
     };
     $firewall = Mockery::mock(NodeRoleFirewallManager::class);
     $firewall->shouldReceive('convergeBase')->once()->andReturnUsing(function () use ($agents): void {
@@ -228,6 +244,7 @@ it('maps native failures and stops before networking', function (string $command
 
 it('verifies the installed architecture before networking', function (): void {
     $agents = new BaseAdmissionAgents;
+    $agents->malformed = true;
     $agents->answer = static fn () => ['architecture' => 'invalid'];
     expect(fn () => base_node_converger($agents)->converge(base_provisionable_node(), base_identity(), 'SHA256:pinned'))
         ->toThrow(fn (NodeProvisioningException $e) => expect($e->errorCode)->toBe('node.architecture_unavailable'));
@@ -245,7 +262,7 @@ it('retries only connection failures on the private read with bounded backoff an
             }
         }
 
-        return ['architecture' => 'x86_64'];
+        return base_agent_status('x86_64');
     };
     $sleeps = [];
     $converger = base_node_converger($agents, sleep: function (int $delay) use (&$sleeps): void {
@@ -274,7 +291,7 @@ it('keeps peer publication recovery and skips it only for active roles', functio
             throw new AgentCommandRefused($command, 'agent.identity_mismatch', 'Failed.');
         }
 
-        return ['architecture' => 'x86_64'];
+        return base_agent_status('x86_64');
     };
     $events = [];
     $wireGuard = new class($events) implements RecoverableWireGuardPeerConverger, WireGuardPeerConverger
@@ -346,3 +363,9 @@ it('translates base firewall failures before peer convergence', function (): voi
     expect(fn () => base_node_converger(new BaseAdmissionAgents, $firewall)->converge(base_provisionable_node(), base_identity(), 'SHA256:pinned'))
         ->toThrow(fn (NodeProvisioningException $e) => expect($e->errorCode)->toBe('firewall.failed'));
 });
+
+/** @return array<string, string> */
+function base_agent_status(string $architecture): array
+{
+    return ['version' => '0.5.0', 'sha256' => str_repeat('a', 64), 'platform' => 'linux', 'architecture' => $architecture, 'observer' => 'active'];
+}

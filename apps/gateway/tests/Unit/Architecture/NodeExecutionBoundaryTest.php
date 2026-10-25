@@ -10,10 +10,12 @@ use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use App\Infrastructure\RemotePrograms\SshProgramRunner;
 use App\Infrastructure\Ssh\NativeSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshExecutor;
+use App\Infrastructure\Tasks\TaskUnitProgram;
 use PhpParser\Node;
 use PhpParser\NodeFinder;
 use PhpParser\NodeTraverser;
@@ -34,6 +36,8 @@ function node_execution_dependencies(string $source): array
         DevelopmentSshExecutor::class,
         RemoteProgramRunner::class,
         SshProgramRunner::class,
+        RemoteProgramCatalog::class,
+        TaskUnitProgram::class,
         AgentTransport::class,
         AgentTransports::class,
         AgentInvocation::class,
@@ -144,6 +148,7 @@ it('keeps Node execution inside the agent transports across core and extensions'
         // Existing Tasks workspace execution and its journal are excluded from this port.
         'app/Infrastructure/AppDev/DevelopmentSshExecutor.php',
         'app/Infrastructure/RemotePrograms/SshProgramRunner.php',
+        'app/Infrastructure/RemotePrograms/RemoteProgramCatalog.php',
         'app/Domain/Tasks/TaskWorkspaceLeaseRecovery.php',
         'app/Infrastructure/Tasks/GitHubTaskBaseBranchFetcher.php',
         'app/Infrastructure/Tasks/GitHubTaskPullRequestPublisher.php',

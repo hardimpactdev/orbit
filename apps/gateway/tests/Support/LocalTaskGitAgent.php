@@ -25,12 +25,26 @@ final class LocalTaskGitAgent implements WorkspaceAgentCommandRunner
 
     public ?string $pack = null;
 
+    /** Answers may break their output schema, to test the Gateway's own guard against a malformed result. */
+    public bool $malformed = false;
+
     public ?int $reportedBytes = null;
 
     /** @var (Closure(array<string, mixed>): void)|null */
     public ?Closure $beforeImport = null;
 
     public function runInWorkspace(Node $node, Closure $execute, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
+    {
+        FakeAgentCommandRunner::admit($node, $command, $input, $output, $binaryInput);
+        $result = $this->respond($node, $execute, $command, $input, $deadlineSeconds, $output, $binaryInput);
+        if (! $this->malformed) {
+            AgentSchemas::assertOutput($command, $result);
+        }
+
+        return $result;
+    }
+
+    private function respond(Node $node, Closure $execute, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
     {
         $this->calls[] = ['command' => $command, 'input' => $input];
         if ($command === 'task-vms.import-git-pack') {

@@ -51,6 +51,15 @@ final class FakeMacAdmissionAgentRunner implements AdmissionAgentRunner
 
     public function runOver(Node $node, SshConnection $connection, string $command, array $input = [], ?float $deadlineSeconds = null): array
     {
+        FakeAgentCommandRunner::admit($node, $command, $input);
+        $result = $this->respond($node, $connection, $command, $input, $deadlineSeconds);
+        AgentSchemas::assertOutput($command, $result);
+
+        return $result;
+    }
+
+    private function respond(Node $node, SshConnection $connection, string $command, array $input = [], ?float $deadlineSeconds = null): array
+    {
         $this->commands[] = $command;
         $this->inputs[] = $input;
         if ($this->inspectionFailure !== null) {

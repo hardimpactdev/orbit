@@ -36,8 +36,17 @@ final class FakeValkeyAclAgent implements AgentCommandRunner
     public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
     {
         if ($command !== 'databases.write-valkey-acl') {
-            return ($this->others ?? throw new LogicException("Unexpected agent command [{$command}]."))->run($node, $command, $input, $deadlineSeconds);
+            return ($this->others ?? throw new LogicException("Unexpected agent command [{$command}]."))->run($node, $command, $input, $deadlineSeconds, $output, $binaryInput);
         }
+        FakeAgentCommandRunner::admit($node, $command, $input, $output, $binaryInput);
+        $result = $this->respond($node, $command, $input, $deadlineSeconds, $output, $binaryInput);
+        AgentSchemas::assertOutput($command, $result);
+
+        return $result;
+    }
+
+    private function respond(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
+    {
 
         $this->runs[] = ['node' => $node->name, 'input' => $input];
 

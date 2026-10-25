@@ -138,6 +138,7 @@ describe('send branches to the VM', function (): void {
 
     it('ignores commit IDs from the VM that the mirror does not hold', function (): void {
         $tips = $this->git->fetch($this->project, ['main'], $this->access, 'tasks.fetch_failed');
+        app(WorkspaceAgentCommandRunner::class)->malformed = true;
         app(WorkspaceAgentCommandRunner::class)->refs = [
             'haves' => [str_repeat('b', 40), '../../etc/passwd', 7],
             'baseline' => 'not-a-commit', 'head' => 'HEAD', 'branch' => 'main',
