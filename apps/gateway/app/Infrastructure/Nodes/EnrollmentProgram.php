@@ -18,6 +18,9 @@ final class EnrollmentProgram
 
     public const string CaddyPackage = 'caddy-package';
 
+    /** The recipe's pinned JavaScript runtimes of an application role. */
+    public const string JavascriptRuntime = 'javascript-runtime';
+
     public const string VpManager = 'vp-manager';
 
     public const string ComposerManager = 'composer-manager';

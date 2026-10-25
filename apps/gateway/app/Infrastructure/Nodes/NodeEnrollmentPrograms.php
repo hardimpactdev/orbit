@@ -8,6 +8,7 @@ use App\Domain\Instances\InstancePhpVersionCatalog;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\RoleName;
 use App\Infrastructure\AgentCommands\AgentInvocation;
+use App\Infrastructure\MachineSoftware\NodeRecipeProgram;
 use App\Infrastructure\Nodes\Roles\RolePrerequisites;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\TaskVms\TaskVmImageRecipe;
@@ -50,7 +51,8 @@ final readonly class NodeEnrollmentPrograms
 
     /**
      * The bootstrap program, then for each role in order its pinned Caddy package (once for all roles) and its
-     * prerequisites. An application role then materializes the Vite+ and Composer managers, and `app-dev` adds the
+     * prerequisites. An application role then installs its pinned JavaScript runtimes and materializes the Vite+ and
+     * Composer managers, and `app-dev` adds the
      * PHP packages of every PHP version an Instance can select. No roles renders the bootstrap of a roleless
      * operator Node. Each program runs as `orbit` and starts with `sudo`.
      *
@@ -81,6 +83,10 @@ final readonly class NodeEnrollmentPrograms
             // The gateway role has no prerequisites program; its Caddy follows the VPN through a role step.
             if ($role !== RoleName::Gateway) {
                 $programs[EnrollmentProgram::prerequisites($role)] = $this->agent->command($node, 'roles.install-prerequisites', $this->roles->input($node, $role, $account));
+            }
+            $javascript = $role === RoleName::AppDev || $role === RoleName::AppProd ? NodeRecipeProgram::javascript($node, $role) : null;
+            if ($javascript !== null) {
+                $programs[EnrollmentProgram::JavascriptRuntime] ??= $this->agent->command($node, 'recipe.install-javascript', $javascript);
             }
             if ($role === RoleName::AppDev || $role === RoleName::AppProd) {
                 $programs[EnrollmentProgram::VpManager] ??= $this->agent->command($node, 'tools.materialize-vp', $this->vp->materializeInput($node));

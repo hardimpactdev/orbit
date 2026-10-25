@@ -516,7 +516,10 @@ it('passes a nondefault managed account into every baseline prerequisite command
     expect($inputs)->toHaveCount(3)
         ->and(array_unique(array_map(static fn (array $input): string => $input['user'].':'.$input['group'].':'.$input['home'], $inputs)))->toBe(['nckrtl:nckrtl:/srv/users/nckrtl'])
         ->and(array_column($inputs, 'apps_directory'))->toBe([false, true, false])
-        ->and(array_column($inputs, 'application_runtime'))->toBe([false, true, true]);
+        ->and(array_column($inputs, 'composer_home'))->toBe([false, true, true]);
+    $javascript = array_column(array_filter($agents->calls, static fn (array $call): bool => $call['command'] === 'recipe.install-javascript'), 'input');
+    expect($javascript)->toHaveCount(2)
+        ->and(array_keys($javascript[array_key_first($javascript)]['tools']))->toEqualCanonicalizing(['bun', 'node', 'pnpm', 'vp', 'vp-cli']);
 });
 
 it('converges Docker prerequisites and leaves them installed on remove', function (): void {
@@ -1108,7 +1111,8 @@ function baseline_prerequisites(array &$events, ?Closure $fails = null, FakeAgen
             }
 
             return [];
-        });
+        })
+        ->answer('recipe.install-javascript', ['changed' => false, 'retired' => []]);
 
     return new RolePrerequisites($agents, new AgentCaddyPackage($agents));
 }

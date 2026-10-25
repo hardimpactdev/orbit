@@ -1,6 +1,6 @@
 //! `roles.install-prerequisites`: a role's Ubuntu packages, and for application roles the managed user's `apps`
-//! directory, the shared Composer home, and the JavaScript runtime launchers in `/usr/local/bin`. A healthy Docker CE
-//! installation replaces `docker.io`. Every step is idempotent, and a launcher conflict refuses before a change.
+//! directory and the shared Composer home. The machine recipe installs their JavaScript runtimes. A healthy Docker CE
+//! installation replaces `docker.io`. Every step is idempotent, and a path conflict refuses before a change.
 
 use super::caddy::{chown, group_id};
 use super::os_release;
@@ -10,17 +10,14 @@ use crate::command_errors;
 use serde::{Deserialize, Serialize};
 use std::{
     fs, io,
-    os::unix::fs::{symlink, DirBuilderExt, MetadataExt, PermissionsExt},
+    os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt},
     path::{Path, PathBuf},
     process::{Command as Process, Stdio},
     time::Duration,
 };
 
 const ORBIT_OPT: &str = "/opt/orbit";
-const BUN_HOME: &str = "/opt/orbit/bun";
 const COMPOSER_HOME: &str = "/opt/orbit/composer";
-const BIN: &str = "/usr/local/bin";
-const LAUNCHERS: [&str; 5] = ["vp", "node", "pnpm", "npm", "npx"];
 /// apt waits this long for the dpkg locks, as every other agent package command does.
 const DPKG_LOCK: &str = "DPkg::Lock::Timeout=300";
 
@@ -67,8 +64,8 @@ pub struct PrerequisiteInput {
     pub packages: Vec<String>,
     /// Create `<home>/apps` for the managed user.
     pub apps_directory: bool,
-    /// The shared Composer home and the Vite+, Node, and Bun launchers of an application role.
-    pub application_runtime: bool,
+    /// The shared Composer home of an application role. Its JavaScript runtimes come from the machine recipe.
+    pub composer_home: bool,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -209,20 +206,6 @@ fn directory(path: &Path, uid: u32, gid: u32, step: &str) -> Result<(), Prerequi
 }
 
 /// Refuses an existing path that is a symlink, no directory, or another owner's.
-fn owned_directory_or_absent(
-    files: &Files,
-    path: &Path,
-    uid: u32,
-    gid: u32,
-) -> Result<(), PrerequisiteError> {
-    match present(path) {
-        Some(metadata) if !metadata.is_dir() || !owned_by(&metadata, uid, gid) => {
-            Err(conflict(files, path))
-        }
-        _ => Ok(()),
-    }
-}
-
 fn composer_home(
     files: &Files,
     host: &mut impl Host,
@@ -275,267 +258,6 @@ fn composer_home(
 
 /// The Vite+ home: the first candidate that holds a `vp`, or that is anything but the managed user's empty directory.
 /// Candidates and the result are host paths.
-fn vite_plus_home(
-    files: &Files,
-    candidates: &[PathBuf],
-    uid: u32,
-    gid: u32,
-) -> Result<PathBuf, PrerequisiteError> {
-    for candidate in candidates {
-        let path = at(files, candidate);
-        let Some(metadata) = present(&path) else {
-            continue;
-        };
-        let holds_vp = present(&path.join("bin/vp")).is_some();
-        if metadata.is_dir() && !holds_vp {
-            if !owned_by(&metadata, uid, gid) {
-                return Err(conflict(files, &path));
-            }
-            continue;
-        }
-        return Ok(candidate.clone());
-    }
-    Ok(candidates.last().cloned().unwrap_or_default())
-}
-
-/// The launcher Orbit writes for a Vite+ binary.
-fn launcher(vp_home: &Path, binary: &str) -> String {
-    format!(
-        "#!/bin/sh\nexport VP_HOME=\"{home}\"\nexec \"{home}/bin/{binary}\" \"$@\"\n",
-        home = vp_home.display()
-    )
-}
-
-/// The launcher earlier Orbit releases wrote, which an upgrade replaces.
-fn legacy_launcher(vp_home: &Path, binary: &str) -> String {
-    let environment = if vp_home == Path::new("/opt/orbit/vite-plus") {
-        "export VP_HOME=/opt/orbit/vite-plus\n"
-    } else {
-        ""
-    };
-    format!(
-        "#!/bin/sh\n{environment}exec \"{}/bin/{binary}\" \"$@\"\n",
-        vp_home.display()
-    )
-}
-
-/// Whether an existing launcher is one Orbit wrote: root's regular `0755` file with a known content.
-fn launcher_ours(files: &Files, path: &Path, vp_home: &Path, binary: &str) -> bool {
-    let Some(metadata) = present(path) else {
-        return true;
-    };
-    let content = fs::read_to_string(path).unwrap_or_default();
-    metadata.is_file()
-        && owned_by(&metadata, files.uid, files.gid)
-        && metadata.mode() & 0o7777 == 0o755
-        && (content == launcher(vp_home, binary) || content == legacy_launcher(vp_home, binary))
-}
-
-/// A published change the runtime step undoes when a later check fails.
-enum Published {
-    Created(PathBuf),
-    Replaced(PathBuf, Vec<u8>),
-}
-
-fn undo(published: &[Published]) {
-    for change in published.iter().rev() {
-        match change {
-            Published::Created(path) => {
-                let _ = fs::remove_file(path);
-            }
-            Published::Replaced(path, previous) => {
-                let _ = fs::write(path, previous);
-            }
-        }
-    }
-}
-
-fn write_launcher(files: &Files, path: &Path, content: &str) -> io::Result<()> {
-    let candidate =
-        path.with_file_name(format!(".orbit-js-runtime.{:016x}", rand::random::<u64>()));
-    let result = fs::write(&candidate, content)
-        .and_then(|()| fs::set_permissions(&candidate, fs::Permissions::from_mode(0o755)))
-        .and_then(|()| chown(&candidate, files.uid, files.gid))
-        .and_then(|()| fs::rename(&candidate, path));
-    if result.is_err() {
-        let _ = fs::remove_file(&candidate);
-    }
-    result
-}
-
-fn javascript_runtime(
-    files: &Files,
-    host: &mut impl Host,
-    account: &Account,
-) -> Result<(), PrerequisiteError> {
-    let opt = files.path(ORBIT_OPT);
-    if present(&opt)
-        .is_some_and(|metadata| !metadata.is_dir() || !owned_by(&metadata, files.uid, files.gid))
-    {
-        return Err(conflict(files, &opt));
-    }
-    let bun_home = files.path(BUN_HOME);
-    owned_directory_or_absent(files, &bun_home, account.uid, account.gid)?;
-    directory(&opt, files.uid, files.gid, "javascript-runtime")?;
-    directory(&bun_home, account.uid, account.gid, "javascript-runtime")?;
-    let ownership = format!("{}:{}", account.uid, account.gid);
-    run(
-        host,
-        "javascript-runtime",
-        "chown",
-        &["-R", "--no-dereference", &ownership, BUN_HOME],
-        &[],
-    )?;
-
-    let vp_home = vite_plus_home(
-        files,
-        &[
-            PathBuf::from("/opt/orbit/vite-plus"),
-            account.home.join(".vite-plus"),
-            account.home.join(".local/share/vite-plus"),
-        ],
-        account.uid,
-        account.gid,
-    )?;
-    if present(&at(files, &vp_home)).is_some_and(|metadata| !metadata.is_dir()) {
-        return Err(conflict(files, &at(files, &vp_home)));
-    }
-    let vp_environment = format!("VP_HOME={}", vp_home.display());
-    let vp = vp_home.join("bin/vp");
-    let vp_binary = vp.display().to_string();
-    if !executable(&at(files, &vp)) {
-        as_user(
-            host,
-            "vite-plus",
-            account,
-            &[
-                "env",
-                "-u",
-                "VP_HOME",
-                "bash",
-                "-o",
-                "pipefail",
-                "-c",
-                "curl -fsSL https://vite.plus | bash",
-            ],
-        )?;
-        for arguments in [
-            &["env", "setup"][..],
-            &["env", "on"],
-            &["env", "install", "lts"],
-            &["env", "default", "lts"],
-            &["install", "-g", "--node", "lts", "pnpm"],
-        ] {
-            let mut all = vec!["env", vp_environment.as_str(), vp_binary.as_str()];
-            all.extend_from_slice(arguments);
-            as_user(host, "vite-plus", account, &all)?;
-        }
-    }
-    if !executable(&at(files, &vp)) || !executable(&at(files, &vp_home.join("bin/pnpm"))) {
-        return Err(failed("vite-plus", "Vite+ did not install vp and pnpm"));
-    }
-
-    as_user(
-        host,
-        "bun",
-        account,
-        &[
-            "env",
-            "BUN_INSTALL=/opt/orbit/bun",
-            "bash",
-            "-o",
-            "pipefail",
-            "-c",
-            "curl -fsSL https://bun.com/install | bash",
-        ],
-    )?;
-    let bun = Path::new(BUN_HOME).join("bin/bun");
-    if !executable(&at(files, &bun)) {
-        return Err(failed("bun", "Bun did not install"));
-    }
-    run(host, "bun", "chmod", &["-R", "a+rX", BUN_HOME], &[])?;
-
-    for binary in LAUNCHERS {
-        if !executable(&at(files, &vp_home.join("bin").join(binary))) {
-            return Err(failed(
-                "javascript-runtime",
-                format!("Vite+ has no {binary}"),
-            ));
-        }
-        let path = files.path(BIN).join(binary);
-        if !launcher_ours(files, &path, &vp_home, binary) {
-            return Err(conflict(files, &path));
-        }
-    }
-    let bun_link = files.path(BIN).join("bun");
-    if let Some(metadata) = present(&bun_link) {
-        if !metadata.file_type().is_symlink()
-            || !owned_by(&metadata, files.uid, files.gid)
-            || fs::read_link(&bun_link).ok().as_deref() != Some(bun.as_path())
-        {
-            return Err(conflict(files, &bun_link));
-        }
-    }
-
-    let mut published = Vec::new();
-    let result = publish_launchers(files, &vp_home, &bun, &bun_link, &mut published)
-        .and_then(|()| verify_runtime(host, account));
-    if result.is_err() {
-        undo(&published);
-    }
-    result
-}
-
-fn publish_launchers(
-    files: &Files,
-    vp_home: &Path,
-    bun: &Path,
-    bun_link: &Path,
-    published: &mut Vec<Published>,
-) -> Result<(), PrerequisiteError> {
-    for binary in LAUNCHERS {
-        let path = files.path(BIN).join(binary);
-        let content = launcher(vp_home, binary);
-        let previous = fs::read(&path).ok();
-        if previous.as_deref() == Some(content.as_bytes()) {
-            continue;
-        }
-        write_launcher(files, &path, &content)
-            .map_err(|error| failed("javascript-runtime", error.to_string()))?;
-        published.push(match previous {
-            Some(previous) => Published::Replaced(path, previous),
-            None => Published::Created(path),
-        });
-    }
-    if present(bun_link).is_none() {
-        symlink(bun, bun_link).map_err(|error| failed("javascript-runtime", error.to_string()))?;
-        published.push(Published::Created(bun_link.to_path_buf()));
-    }
-    Ok(())
-}
-
-fn verify_runtime(host: &mut impl Host, account: &Account) -> Result<(), PrerequisiteError> {
-    for binary in LAUNCHERS {
-        as_user(
-            host,
-            "javascript-runtime",
-            account,
-            &[&format!("{BIN}/{binary}"), "--version"],
-        )?;
-    }
-    as_user(
-        host,
-        "javascript-runtime",
-        account,
-        &[
-            "env",
-            "BUN_INSTALL=/opt/orbit/bun",
-            "/usr/local/bin/bun",
-            "--version",
-        ],
-    )
-}
-
 fn install(
     files: &Files,
     host: &mut impl Host,
@@ -604,9 +326,8 @@ fn install(
             "apps-directory",
         )?;
     }
-    if input.application_runtime {
+    if input.composer_home {
         composer_home(files, host, &account)?;
-        javascript_runtime(files, host, &account)?;
     }
     Ok(Prerequisites {})
 }

@@ -11,14 +11,16 @@ use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\AgentCommands\AgentStep;
+use App\Infrastructure\MachineSoftware\NodeRecipeProgram;
 use App\Infrastructure\Nodes\AgentCaddyPackage;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
 
 /**
- * A role's prerequisites through the agent: the pinned Caddy package, then `roles.install-prerequisites`. Each answers
- * a command result, so each role keeps its own failure.
+ * A role's prerequisites through the agent: the pinned Caddy package, then `roles.install-prerequisites`, then, for an
+ * application role, the recipe's pinned JavaScript runtimes. Each answers a command result, so each role keeps its own
+ * failure.
  */
 final readonly class RolePrerequisites
 {
@@ -50,6 +52,10 @@ final readonly class RolePrerequisites
 
         try {
             $this->agents->run($node, 'roles.install-prerequisites', $this->input($node, $role, $account));
+            $javascript = self::application($role) ? NodeRecipeProgram::javascript($node, $role) : null;
+            if ($javascript !== null) {
+                $this->agents->run($node, 'recipe.install-javascript', $javascript);
+            }
         } catch (AgentCommandRefused $refusal) {
             return AgentStep::output($refusal);
         } catch (AgentRunnerFailure $failure) {
@@ -75,7 +81,7 @@ final readonly class RolePrerequisites
         }
     }
 
-    /** @return array{user: string, group: string, home: string, releases: list<string>, packages: list<string>, apps_directory: bool, application_runtime: bool} */
+    /** @return array{user: string, group: string, home: string, releases: list<string>, packages: list<string>, apps_directory: bool, composer_home: bool} */
     public function input(Node $node, RoleName $role, ManagedUserAccount $account): array
     {
         return [
@@ -85,7 +91,12 @@ final readonly class RolePrerequisites
             'releases' => array_map(static fn (UbuntuRelease $release): string => $release->value, UbuntuRelease::forRole($role)),
             'packages' => $this->packages->forRole($node, $role),
             'apps_directory' => $role === RoleName::AppDev,
-            'application_runtime' => in_array($role, [RoleName::AppDev, RoleName::AppProd], strict: true),
+            'composer_home' => self::application($role),
         ];
+    }
+
+    private static function application(RoleName $role): bool
+    {
+        return in_array($role, [RoleName::AppDev, RoleName::AppProd], strict: true);
     }
 }

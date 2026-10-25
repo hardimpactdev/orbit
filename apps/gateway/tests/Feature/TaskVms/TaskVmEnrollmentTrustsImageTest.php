@@ -67,7 +67,7 @@ it('trusts only a linked task VM image and still applies VM-specific infrastruct
         }
     };
     app()->instance(SshExecutor::class, $ssh);
-    $agents = (new FakeAgentCommandRunner)->answer('caddy.install-package', ['changed' => false])->answer('roles.install-prerequisites', [])
+    $agents = (new FakeAgentCommandRunner)->answer('caddy.install-package', ['changed' => false])->answer('roles.install-prerequisites', [])->answer('recipe.install-javascript', ['changed' => false, 'retired' => []])
         ->answer('nodes.bootstrap', [])->answer('agent.status', ['architecture' => 'x86_64'])
         ->answer('hibernation.prepare-directories', [])
         ->answer('tools.materialize-composer', [])

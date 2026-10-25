@@ -437,7 +437,9 @@ For Caddy, the Gateway pins a release and the SHA-512 digest of its `.deb` for `
 
 Each role installs its prerequisites through the agent's `roles.install-prerequisites`. The role guard first reads `ID` and `VERSION_CODENAME` with `nodes.os-release` and refuses a release the role does not support. The command checks the release again and installs the role's packages with `apt-get`, which waits up to 300 seconds for the dpkg locks. A healthy Docker CE installation replaces `docker.io`.
 
-For `app-dev`, it also creates `<home>/apps` for the managed user. For `app-dev` and `app-prod`, it prepares the shared Composer home, `/opt/orbit/composer`, and the Vite+, Node, and Bun launchers in `/usr/local/bin`. A launcher that Orbit did not write fails the step with `roles.prerequisite_conflict` before any change. A failed version check after publication restores the launchers it replaced.
+For `app-dev`, it also creates `<home>/apps` for the managed user. For `app-dev` and `app-prod`, it prepares the shared Composer home, `/opt/orbit/composer`. A path that Orbit did not make fails the step with `roles.prerequisite_conflict` before any change.
+
+An application role then installs the JavaScript runtimes its [recipe profile](/reference/compute-drivers#role-and-base-tool-sets) pins: Node, Vite+, pnpm, and Bun. It sends `recipe.install-javascript`, the same command and verified archives as [recipe convergence](#converge-a-node-to-a-recipe), and it runs no downloaded installer. Image programs render the same call as `javascript-runtime`.
 
 Caddy must be at least 2.9.0. A lower release fails the `caddy-package-source` step and names both releases. Doctor reports it as `role.caddy_version_unsupported`. Converging a role upgrades an archive Caddy in place. A Caddy at or above the floor stays as it is, so a newer pin does not restart it. `/etc/caddy/Caddyfile` is a symlink into Orbit's own versions directory, so the upgrade keeps the live configuration.
 

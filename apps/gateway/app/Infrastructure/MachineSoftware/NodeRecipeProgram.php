@@ -17,6 +17,9 @@ use RuntimeException;
 /** Fixed recipe operations over the same pinned SSH transport as fleet convergence. */
 final readonly class NodeRecipeProgram
 {
+    /** The tools `recipe.install-javascript` installs. */
+    public const array JavascriptTools = ['bun', 'node', 'pnpm', 'vp', 'vp-cli'];
+
     public function __construct(private AgentCommandRunner $agents, private PhpBuildInstaller $php, private PrivateDnsManager $dns) {}
 
     /** @return array<string, ToolPin> */
@@ -203,10 +206,13 @@ final readonly class NodeRecipeProgram
     }
 
     /**
+     * The typed recipe input for the selected tools. `recipe.inspect`, `recipe.apply`, and `recipe.install-javascript`
+     * take the same shape.
+     *
      * @param  array<string, ToolPin>  $tools
      * @return array<string, mixed>
      */
-    private function run(Node $node, MachineRecipe $recipe, array $tools, string $mode): array
+    public static function payload(Node $node, MachineRecipe $recipe, array $tools): array
     {
         $data = json_decode($recipe->json, true, flags: JSON_THROW_ON_ERROR);
         if (! is_array($data) || ! is_array($data['tools'] ?? null)) {
@@ -218,7 +224,7 @@ final readonly class NodeRecipeProgram
             }
             $data['tools'][$name]['version'] = $pin->version;
         }
-        $payload = [
+        return [
             'user' => $node->user,
             'snapshot' => $recipe->snapshot,
             'git_packages' => $recipe->gitPackages, 'artifact_mirror' => $recipe->artifactMirror,
@@ -226,6 +232,34 @@ final readonly class NodeRecipeProgram
             'tools' => array_intersect_key($data['tools'], $tools),
             'vp_lock' => isset($tools['vp']) ? VitePlusRuntimeLock::read($tools['vp']) : null,
         ];
+    }
+
+    /**
+     * The `recipe.install-javascript` input for the JavaScript runtimes a role's recipe profile pins, or null when it
+     * pins none. Role convergence and image programs install them with the same verified archives and launchers as
+     * recipe convergence.
+     *
+     * @return array<string, mixed>|null
+     */
+    public static function javascript(Node $node, RoleName $role): ?array
+    {
+        $recipe = new RecipeLoader()->load();
+        $architecture = in_array($node->architecture, ['x86_64', 'amd64'], true) ? 'amd64' : 'arm64';
+        $tools = [];
+        foreach (array_intersect($recipe->profile($role->value), self::JavascriptTools) as $name) {
+            $tools[$name] = $recipe->tools[$name]->forArchitecture($architecture);
+        }
+
+        return $tools === [] ? null : self::payload($node, $recipe, $tools);
+    }
+
+    /**
+     * @param  array<string, ToolPin>  $tools
+     * @return array<string, mixed>
+     */
+    private function run(Node $node, MachineRecipe $recipe, array $tools, string $mode): array
+    {
+        $payload = self::payload($node, $recipe, $tools);
         try {
             return $this->agents->run($node, 'recipe.'.$mode, $payload);
         } catch (AgentCommandRefused $error) {
