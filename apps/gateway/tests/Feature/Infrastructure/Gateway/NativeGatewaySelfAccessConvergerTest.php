@@ -50,7 +50,7 @@ it('refuses missing addresses before calling the agent', function (): void {
 
 it('refuses malformed agent identity before recording a host pin', function (array $result): void {
     [$converger, $agents, $home, $node] = gateway_self_access_fixture();
-    $agents->answer('gateway.converge-self-access', $result);
+    $agents->answerMalformed('gateway.converge-self-access', $result);
     expect(fn () => $converger->converge($node))->toThrow(NodeProvisioningException::class);
     expect(is_file($home.'/known_hosts'))->toBeFalse();
 })->with([

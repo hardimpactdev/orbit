@@ -119,7 +119,7 @@ it('maps a runtime publication refusal to the installation step', function (): v
 
 it('logs skipped downloads and masters left for later publication', function (): void {
     Log::spy();
-    $this->agents->answer('php.install-build', ['outcome' => 'current', 'data' => ['stale_masters' => ['orbit-shop-php8.5-fpm.service'], 'deferred' => ['php8.5-fpm.service']]]);
+    $this->agents->answer('php.install-build', PhpBuildAnswers::result('current', ['stale_masters' => ['orbit-shop-php8.5-fpm.service'], 'deferred' => ['php8.5-fpm.service']]));
     new RemotePhpPackageManager()->installForAppDev(php_package_node(RoleName::AppDev), collect(['8.5']));
     Log::shouldHaveReceived('info')->once()->with('PHP packages match the recipe; skipped the package download.', Mockery::any());
     Log::shouldHaveReceived('warning')->with('Dedicated PHP-FPM masters were not restarted or reloaded; they may still use the previous PHP build or settings.', Mockery::on(static fn (array $c): bool => $c['masters'] === ['orbit-shop-php8.5-fpm.service']));

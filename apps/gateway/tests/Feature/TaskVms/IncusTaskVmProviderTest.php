@@ -119,7 +119,7 @@ it('returns the typed native observation', function (?array $state, ?VmObservati
 ]);
 
 it('rejects incomplete native observations', function (array $output): void {
-    $this->agents->answer('incus.vm-state', $output);
+    $this->agents->answerMalformed('incus.vm-state', $output);
 
     expect(fn () => $this->provider->observe($this->vm))->toThrow(TaskVmException::class);
 })->with([[[]], [['observation' => []]], [['observation' => ['running' => true, 'address' => null, 'image_fingerprint' => 42]]]]);

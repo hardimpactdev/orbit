@@ -180,7 +180,7 @@ describe('web command orchestration', function (): void {
 
     it('refuses malformed native answers', function (string $command, string $method, array $args, array $answer): void {
         $this->web->github();
-        $this->web->agents->answer($command, $answer);
+        $this->web->agents->answerMalformed($command, $answer);
         $build = $this->web->build();
         if ($method === 'restore') {
             $build->publish('aaaaaaaaaaaa');

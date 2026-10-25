@@ -151,6 +151,7 @@ it('adopts a running phase on resume without requesting a restart', function ():
 
 it('ends unknown observations at the shared bound and does not start an unobserved phase', function (): void {
     [$programs, $agents, $guest, $recipe] = nativePhaseFixture();
+    $agents->malformed = true;
     $agents->answer = static fn (): array => [];
     $state = ['observed_at' => microtime(true) - 1501];
 

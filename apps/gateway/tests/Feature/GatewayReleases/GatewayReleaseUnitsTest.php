@@ -57,7 +57,7 @@ describe(NativeGatewayReleaseUnitConverger::class, function (): void {
     });
 
     it('refuses a malformed convergence result', function (): void {
-        $this->agents->answer('gateway.converge-release-units', ['changed' => 'yes']);
+        $this->agents->answerMalformed('gateway.converge-release-units', ['changed' => 'yes']);
         expect(fn () => new NativeGatewayReleaseUnitConverger($this->commands)->converge())->toThrow(NodeProvisioningException::class);
     });
 });

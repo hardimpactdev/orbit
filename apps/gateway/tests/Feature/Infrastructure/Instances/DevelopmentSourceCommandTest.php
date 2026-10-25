@@ -113,7 +113,7 @@ describe('development source commands', function (): void {
 
     it('refuses source results that disagree with branch intent or omit a commit', function (array $result): void {
         [$source, $agents, $instance] = developmentSourceFixture();
-        $agents->answer('instances.resolve-development-source', $result);
+        $agents->answerMalformed('instances.resolve-development-source', $result);
 
         expect(fn () => $source->resolve($instance))->toThrow(function (RuntimeConvergenceException $exception): void {
             expect($exception->errorCode)->toBe('instance.source_identity_invalid');

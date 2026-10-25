@@ -49,7 +49,7 @@ it('preserves the handoff domain error reported by the selected release', functi
 });
 
 it('refuses malformed or incomplete phase results', function (array $result): void {
-    $this->agents->answer('gateway.handoff-release', $result);
+    $this->agents->answerMalformed('gateway.handoff-release', $result);
     expect(fn () => $this->runtime->handoff('0123456789ab'))->toThrow(
         fn (GatewayReleaseException $e) => expect($e->errorCode)->toBe('gateway.release_handoff_failed')->and($e->status)->toBe(500),
     );

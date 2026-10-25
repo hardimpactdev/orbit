@@ -123,7 +123,7 @@ it('keeps source Git credentials and Composer setup on reviewed remote paths', f
         // The publisher removes the token from Git's error output; the others only unset or filter the variables.
         ->and($only('/x-access-token/'))->toBe(['app/Domain/GitHub/GitReadEnvironment.php', 'app/Infrastructure/Tasks/GitHubTaskPullRequestPublisher.php'])
         ->and($only('/GIT_CONFIG_VALUE_/'))->toBe(['app/Domain/GitHub/GitReadEnvironment.php'])
-        ->and($only('/->githubToken\(/'))->toBe(['app/Infrastructure/AgentCommands/NativeAgentCommandRunner.php'])
+        ->and($only('/->githubToken\(/'))->toBe(['app/Infrastructure/AgentCommands/AgentInvocation.php'])
         // GitHub access in the environment of a process on the Gateway, never in a remote command.
         ->and($only('/->variables\b/'))->toBe([
             'app/Domain/GitHub/GitReadEnvironment.php',
@@ -137,6 +137,8 @@ it('keeps source Git credentials and Composer setup on reviewed remote paths', f
     $remote = $only('/\b(?:RemoteCommand|SshExecutor)\b/');
     $access = $only('/\b(?:RepositoryPullRequestAccess|RepositoryReadAccess|GitReadEnvironment)\b/');
     expect(array_values(array_intersect($remote, $access)))->toBe([
+        // The agent envelope carries the token only on the runner's protected input.
+        'app/Infrastructure/AgentCommands/AgentInvocation.php',
         'app/Infrastructure/Instances/RemoteDevelopmentInstanceSourceLifecycle.php',
         'app/Infrastructure/RemotePrograms/SshProgramRunner.php',
         'app/Infrastructure/TaskVms/TaskVmGit.php',

@@ -274,7 +274,7 @@ describe(ComposerToolManager::class, function (): void {
 
     it('rejects malformed typed responses', function (string $method, string $command, array $output): void {
         [$manager, $agent] = composer_tool_manager();
-        $agent->answer($command, $output);
+        $agent->answerMalformed($command, $output);
         expect(fn () => $manager->$method(composer_tool_node(), 'vendor/package', ToolOperation::Install))->toThrow(ToolManagerException::class);
     })->with([
         ['managerVersion', 'tools.composer-version', ['version' => null]],

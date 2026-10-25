@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AgentCommands;
 
-use App\Domain\GitHub\GitReadEnvironment;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\SshConnection;
@@ -206,17 +205,7 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
             'command',
             $spec->name,
         ];
-        $credential = false;
-        foreach ($input as $key => $value) {
-            if ($value instanceof AgentGitHubToken) {
-                $credential = true;
-                $input[$key] = $value->value;
-            }
-            if ($value instanceof GitReadEnvironment) {
-                $credential = $credential || ! $value->isEmpty();
-                $input[$key] = ['github_token' => $value->githubToken()];
-            }
-        }
+        [$input, $credential] = AgentInvocation::wire($input);
         $envelope = AgentInvocation::envelope($pin, $budget, $input, $binaryInput?->bytes);
         $decoder = $output === null ? null : new AgentOutputDecoder($spec->name, $output, $spec->outputMaxBytes);
         $consume = null;

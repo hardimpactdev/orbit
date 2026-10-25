@@ -237,6 +237,8 @@ it('retries an unreadable observation without another start', function (array|Th
         RecipeImageAnswers::observation('missing'), RecipeImageAnswers::observation('running'),
         $reply, RecipeImageAnswers::observation('complete'),
     ]);
+    // Two cases send observations the agent never returns, to test the build's own guard.
+    $agents->malformed = is_array($reply);
     new BuildRecipeImageStep($build->id, 'base', 'packages')->handle(app(RecipeImageBuildSteps::class));
     new BuildRecipeImageStep($build->id, 'base', 'packages')->handle(app(RecipeImageBuildSteps::class));
     expect($build->refresh()->steps[0]['error'])->toBeNull();

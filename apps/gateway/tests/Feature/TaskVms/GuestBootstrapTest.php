@@ -32,6 +32,7 @@ it('requests typed readiness and fingerprint observations', function (): void {
 
 it('rejects missing or mistyped observation fields', function (string $method, array $answer): void {
     $agents = new FakeGuestAgentCommandRunner;
+    $agents->malformed = true;
     $agents->answer = static fn (): array => $answer;
 
     expect(fn () => new GuestBootstrap($agents)->{$method}(bootstrapGuest(), 'builder'))->toThrow(function (TaskVmException $error): void {

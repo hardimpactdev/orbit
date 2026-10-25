@@ -238,7 +238,7 @@ describe(VpToolManager::class, function (): void {
 
     it('refuses malformed typed agent results', function (string $method, string $command, array $data): void {
         [$manager, $agent] = vp_tool_manager();
-        $agent->answer($command, $data);
+        $agent->answerMalformed($command, $data);
         expect(fn () => $manager->{$method}(vp_tool_node(), 'typescript', ToolOperation::Install))->toThrow(ToolManagerException::class);
     })->with([
         ['managerVersion', 'tools.vp-version', ['version' => []]],
@@ -276,7 +276,7 @@ describe(VpToolManager::class, function (): void {
 
     it('materializes Linux from verified pins and only inspects the macOS scope', function (): void {
         [$manager, $agent] = vp_tool_manager();
-        $agent->answer('tools.materialize-vp', ['changed' => true])
+        $agent->answer('tools.materialize-vp', ['binary' => '/opt/orbit/vite-plus/bin/vp', 'changed' => true])
             ->answer('tools.inspect-vp-scope', ['binary' => '/Users/mini/.vite-plus/bin/vp']);
         $manager->materialize(vp_tool_node());
         $manager->materialize(vp_tool_node('macos', [], 'mini'));

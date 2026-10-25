@@ -35,7 +35,7 @@ describe('registration source facts', function (): void {
 
     it('refuses invalid or mixed repository evidence from inspection', function (array $rows): void {
         [$manager, $agents, $instance] = registrationFixture();
-        $agents->answer('instances.inspect-registration-source', ['rows' => $rows]);
+        $agents->answerMalformed('instances.inspect-registration-source', ['rows' => $rows]);
 
         expect(fn () => $manager->inspect($instance->node, '/incoming/site', false))
             ->toThrow(function (ResourceOperationException $exception): void {
@@ -224,7 +224,7 @@ describe('registration relocation checkpoints', function (): void {
 
     it('refuses incomplete preparation identities before asking for cleanup', function (array $identities): void {
         [$manager, $agents, $instance] = registrationFixture();
-        $agents->answer('instances.relocate-registration-source', ['identities' => $identities]);
+        $agents->answerMalformed('instances.relocate-registration-source', ['identities' => $identities]);
 
         expect(fn () => $manager->relocate($instance, registrationFacts()))
             ->toThrow(function (ResourceOperationException $exception): void {
@@ -332,7 +332,7 @@ describe('in-place registration', function (): void {
                 throw new AgentRunnerFailure('instances.relocate-registration-source', AgentRunnerFailure::MissingResult, 'Connection lost.');
             }
 
-            return [];
+            return ['identities' => []];
         });
         if ($lost !== null) {
             expect(fn () => $manager->relocate($instance, registrationFacts()))->toThrow(RuntimeConvergenceException::class);

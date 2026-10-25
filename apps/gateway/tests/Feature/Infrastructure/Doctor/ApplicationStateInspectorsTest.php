@@ -106,9 +106,9 @@ it('keeps a failed or malformed Project observation unavailable', function (stri
     match ($failure) {
         'refusal' => $agents->refuse('doctor.inspect-project', 'doctor.project_input_invalid'),
         'transport' => $agents->answer('doctor.inspect-project', static fn (): array => throw new RuntimeException('lost transport')),
-        'missing' => $agents->answer('doctor.inspect-project', []),
-        'wrong identity' => $agents->answer('doctor.inspect-project', ['checkouts' => [['instance_id' => 0, 'matches' => true]]]),
-        'wrong value' => $agents->answer('doctor.inspect-project', ['checkouts' => [['instance_id' => (int) $instance->id, 'matches' => 'true']]]),
+        'missing' => $agents->answerMalformed('doctor.inspect-project', []),
+        'wrong identity' => $agents->answerMalformed('doctor.inspect-project', ['checkouts' => [['instance_id' => 0, 'matches' => true]]]),
+        'wrong value' => $agents->answerMalformed('doctor.inspect-project', ['checkouts' => [['instance_id' => (int) $instance->id, 'matches' => 'true']]]),
     };
 
     expect(application_app_inspector($agents)->inspect($project, $node))
@@ -177,9 +177,9 @@ it('sanitizes failed and malformed development source observations', function (s
     match ($failure) {
         'refusal' => $agents->refuse('doctor.inspect-development-source', 'doctor.source_inspection_failed'),
         'transport' => $agents->answer('doctor.inspect-development-source', static fn (): array => throw new RuntimeException('remote-secret-token')),
-        'missing' => $agents->answer('doctor.inspect-development-source', []),
-        'unavailable' => $agents->answer('doctor.inspect-development-source', ['checkout' => null, 'layout' => true, 'origin' => true, 'history' => true]),
-        'malformed' => $agents->answer('doctor.inspect-development-source', ['checkout' => 'private-output', 'layout' => true, 'origin' => true, 'history' => true]),
+        'missing' => $agents->answerMalformed('doctor.inspect-development-source', []),
+        'unavailable' => $agents->answerMalformed('doctor.inspect-development-source', ['checkout' => null, 'layout' => true, 'origin' => true, 'history' => true]),
+        'malformed' => $agents->answerMalformed('doctor.inspect-development-source', ['checkout' => 'private-output', 'layout' => true, 'origin' => true, 'history' => true]),
     };
 
     $exception = application_capture_exception(fn () => application_instance_inspector($agents)->inspect($instance));
@@ -265,8 +265,8 @@ it('sanitizes failed or malformed production command responses', function (strin
     match ($failure) {
         'refusal' => $agents->refuse('doctor.inspect-production-instance', 'doctor.production_inspection_failed'),
         'transport' => $agents->answer('doctor.inspect-production-instance', static fn (): array => throw new RuntimeException('private-secret')),
-        'missing' => $agents->answer('doctor.inspect-production-instance', []),
-        'malformed' => $agents->answer('doctor.inspect-production-instance', [...production_observations(), 'php' => 'private-secret']),
+        'missing' => $agents->answerMalformed('doctor.inspect-production-instance', []),
+        'malformed' => $agents->answerMalformed('doctor.inspect-production-instance', [...production_observations(), 'php' => 'private-secret']),
     };
 
     application_assert_sanitized(application_capture_exception(fn () => application_instance_inspector($agents)->inspect($instance)), 'private-secret');

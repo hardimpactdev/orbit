@@ -2508,7 +2508,7 @@ it('rejects repository execution and unsupported transport keys', function (): v
 
 it('completes Instance removal while another Node service metrics snapshot fails', function (): void {
     // The creation request resolves singletons used by the native removal projector.
-    $poolAgents = SharedPhpPoolAnswers::register(new FakeAgentCommandRunner()->answer('firewall.route-lan', [])->answer('certificates.remove-leaf', []));
+    $poolAgents = SharedPhpPoolAnswers::register(new FakeAgentCommandRunner()->answer('firewall.route-lan', ['matches' => false])->answer('certificates.remove-leaf', []));
     app()->instance(AgentCommandRunner::class, $poolAgents);
     $processes = Mockery::mock(ProcessRunner::class);
     $processes->shouldReceive('run')->twice()->andReturn(new CommandResult(0, '', '', 1, false));

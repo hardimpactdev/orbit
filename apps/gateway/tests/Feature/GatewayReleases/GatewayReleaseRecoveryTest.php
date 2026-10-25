@@ -57,7 +57,7 @@ it('rejects recovery phases that do not bind this record before sending a comman
 })->with([['outcome', 'pending'], ['path', '/other/snapshot.sqlite'], ['sha256', null]]);
 
 it('rejects incomplete recovery evidence returned by the agent', function (array $result): void {
-    $this->agents->answer('gateway.protect-release-recovery', $result);
+    $this->agents->answerMalformed('gateway.protect-release-recovery', $result);
 
     expect(fn () => $this->recovery->protect($this->record))->toThrow(GatewayReleaseException::class, 'invalid release command result');
 })->with([
@@ -67,7 +67,7 @@ it('rejects incomplete recovery evidence returned by the agent', function (array
 
 it('does not accept an incomplete verification result', function (): void {
     $this->record->phases = ['recovery' => $this->saved];
-    $this->agents->answer('gateway.verify-release-recovery', []);
+    $this->agents->answerMalformed('gateway.verify-release-recovery', []);
 
     expect(fn () => $this->recovery->verify($this->record))->toThrow(GatewayReleaseException::class, 'invalid release command result');
 });
@@ -131,7 +131,7 @@ it('keeps native receipt refusals in the abandon phase', function (string $comma
 })->with(['gateway.write-release-receipt', 'gateway.read-release-receipt']);
 
 it('rejects malformed native receipt attributes', function (array $output): void {
-    $this->agents->answer('gateway.read-release-receipt', $output);
+    $this->agents->answerMalformed('gateway.read-release-receipt', $output);
 
     expect(fn () => $this->restore->read($this->sha, 7))->toThrow(GatewayReleaseException::class, 'invalid release command result');
 })->with([[[]], [['attributes' => null]], [['attributes' => [1]]]]);

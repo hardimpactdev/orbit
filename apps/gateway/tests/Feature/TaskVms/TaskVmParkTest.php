@@ -249,7 +249,7 @@ describe('park', function (): void {
 describe('resume', function (): void {
     beforeEach(function (): void {
         $this->agents = new FakeAgentCommandRunner;
-        $this->agents->answer('agent.status', ['observer' => 'active']);
+        $this->agents->answer('agent.status', ['version' => '0.5.0', 'sha256' => str_repeat('a', 64), 'platform' => 'linux', 'architecture' => 'x86_64', 'observer' => 'active']);
         app()->instance(AgentCommandRunner::class, $this->agents);
         Sleep::fake(syncWithCarbon: true);
     });
@@ -282,7 +282,7 @@ describe('resume', function (): void {
         Http::fake(['*' => Http::response([], 200)]);
         $observations = 0;
         $this->agents->answer('agent.status', static function () use (&$observations): array {
-            return ['observer' => ++$observations === 1 ? 'inactive' : 'active'];
+            return ['version' => '0.5.0', 'sha256' => str_repeat('a', 64), 'platform' => 'linux', 'architecture' => 'x86_64', 'observer' => ++$observations === 1 ? 'inactive' : 'active'];
         });
         [, $vm] = tvm_park_waiting();
         $vm->update(['state' => TaskVmState::Parked]);

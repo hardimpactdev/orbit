@@ -134,7 +134,7 @@ it('refuses malformed native cache paths before loading configuration', function
         'type' => [$this->cache, 7],
         'map' => ['cache' => $this->cache],
     };
-    $this->agents->answer('gateway.inspect-release-owner', ['caches' => $caches]);
+    $this->agents->answerMalformed('gateway.inspect-release-owner', ['caches' => $caches]);
     expect(fn () => $this->owner->assertAllowed())->toThrow(GatewayReleaseException::class, 'invalid release command result');
 })->with(['missing', 'foreign', 'duplicate', 'type', 'map']);
 

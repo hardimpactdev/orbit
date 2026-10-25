@@ -905,9 +905,9 @@ it('synchronizes through one inspection and retains the workload-key refusal', f
         ->and($this->access->reads)->toBe(0)
         ->and($this->access->writePreflights)->toBe(0);
 })->with([
-    'missing file' => [['state' => 'missing'], true],
-    'stored key' => [['state' => 'ok', 'content' => base64_encode("KEY=old\n")], true],
-    'unowned key' => [['state' => 'ok', 'content' => base64_encode("UNOWNED=keep\n")], false],
+    'missing file' => [['state' => 'missing', 'installed' => false], true],
+    'stored key' => [['state' => 'ok', 'content' => base64_encode("KEY=old\n"), 'installed' => false], true],
+    'unowned key' => [['state' => 'ok', 'content' => base64_encode("UNOWNED=keep\n"), 'installed' => false], false],
 ]);
 
 it('reports an unconfirmed synchronization without values or an unchanged claim', function (): void {

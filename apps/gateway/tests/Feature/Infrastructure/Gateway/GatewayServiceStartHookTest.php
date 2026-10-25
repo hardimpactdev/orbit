@@ -81,7 +81,7 @@ describe('production wiring', function (): void {
     });
 
     it('installs and runs the Documents hook before the reload in Gateway web convergence', function (): void {
-        $agents = new FakeAgentCommandRunner()->answer('gateway.check-checkout', ['changed' => false])->answer('gateway.prepare-checkout', ['changed' => false])->answer('gateway.prepare-web-directory', ['changed' => false])->answer('gateway.publish-certificate', ['changed' => false])->answer('caddy.install-package', ['changed' => false])->answer('caddy.order-after-vpn', ['changed' => false])->answer('gateway.converge-fpm', ['changed' => true, 'activated' => true]);
+        $agents = new FakeAgentCommandRunner()->answer('gateway.check-checkout', ['changed' => false])->answer('gateway.prepare-checkout', ['changed' => false])->answer('gateway.prepare-web-directory', ['changed' => false])->answer('gateway.publish-certificate', ['changed' => false])->answer('caddy.install-package', ['changed' => false, 'version' => '2.10.2'])->answer('caddy.order-after-vpn', ['changed' => false])->answer('gateway.converge-fpm', ['changed' => true, 'activated' => true]);
         app()->instance(AgentCommandRunner::class, $agents);
         app(GatewayWebConverger::class)->converge($this->gateway, 'gateway.orbit', '10.44.0.2');
 

@@ -109,9 +109,9 @@ it('refuses another refusal, a transport failure, or a malformed answer as unava
 })->with([
     'another refusal' => [fn () => new FakeAgentCommandRunner()->refuse('instances.inspect-clone-candidate', 'agent.deadline_exceeded'), 409],
     'transport failure' => [fn () => new FakeAgentCommandRunner()->answer('instances.inspect-clone-candidate', fn () => throw new RuntimeException('SSH unavailable.')), 502],
-    'short commit' => [fn () => new FakeAgentCommandRunner()->answer('instances.inspect-clone-candidate', ['source' => '/srv/orbit/apps/acme', 'commit' => 'abcd']), 409],
-    'uppercase commit' => [fn () => new FakeAgentCommandRunner()->answer('instances.inspect-clone-candidate', ['source' => '/srv/orbit/apps/acme', 'commit' => str_repeat('A', 40)]), 409],
-    'missing source' => [fn () => new FakeAgentCommandRunner()->answer('instances.inspect-clone-candidate', ['commit' => str_repeat('a', 40)]), 409],
+    'short commit' => [fn () => new FakeAgentCommandRunner()->answerMalformed('instances.inspect-clone-candidate', ['source' => '/srv/orbit/apps/acme', 'commit' => 'abcd']), 409],
+    'uppercase commit' => [fn () => new FakeAgentCommandRunner()->answerMalformed('instances.inspect-clone-candidate', ['source' => '/srv/orbit/apps/acme', 'commit' => str_repeat('A', 40)]), 409],
+    'missing source' => [fn () => new FakeAgentCommandRunner()->answerMalformed('instances.inspect-clone-candidate', ['commit' => str_repeat('a', 40)]), 409],
 ]);
 
 it('refuses a production answer that is not the recorded selected release', function (): void {

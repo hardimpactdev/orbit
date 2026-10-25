@@ -45,7 +45,7 @@ final class VpStoreAgentRunner implements AgentCommandRunner
     public array $configuration = [
         'package' => ['devDependencies' => ['vite-plus' => '^0.3.0'], 'packageManager' => 'npm@11.12.0', 'engines' => ['node' => '24.22.0']],
         'locks' => ['package-lock.json' => '{"lockfileVersion":3,"packages":{"node_modules/vite-plus":{"version":"0.3.3"}}}'],
-        '.node-version' => '24.22.0', '.nvmrc' => null, 'npmrc' => '',
+        '.node-version' => '24.22.0', '.nvmrc' => null, 'npmrc' => '', 'workspaces' => [],
     ];
 
     public ?Closure $onInstall = null;
@@ -62,6 +62,19 @@ final class VpStoreAgentRunner implements AgentCommandRunner
     }
 
     public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
+    {
+        AgentSchemas::assertInput($command, $input);
+        $result = $this->respond($node, $command, $input, $deadlineSeconds);
+        AgentSchemas::assertOutput($command, $result);
+
+        return $result;
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     * @return array<string, mixed>
+     */
+    private function respond(Node $node, string $command, array $input, ?float $deadlineSeconds): array
     {
         $this->deadlines[] = $deadlineSeconds;
         $this->agentCalls[] = ['command' => $command, 'input' => $input];

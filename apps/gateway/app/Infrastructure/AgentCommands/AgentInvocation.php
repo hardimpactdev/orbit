@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AgentCommands;
 
+use App\Domain\GitHub\GitReadEnvironment;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 
@@ -27,6 +28,29 @@ final readonly class AgentInvocation
     public static function envelope(string $pin, float $budgetSeconds, array $input, ?int $streamBytes = null): string
     {
         return json_encode(['agent_sha256' => $pin, 'deadline_ms' => (int) floor($budgetSeconds * 1000), 'input' => (object) $input, ...($streamBytes === null ? [] : ['stream_bytes' => $streamBytes])], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
+    }
+
+    /**
+     * The input as the agent receives it, with each credential in its wire form, and whether it carries one.
+     *
+     * @param  array<string, mixed>  $input
+     * @return array{0: array<string, mixed>, 1: bool}
+     */
+    public static function wire(array $input): array
+    {
+        $credential = false;
+        foreach ($input as $key => $value) {
+            if ($value instanceof AgentGitHubToken) {
+                $credential = true;
+                $input[$key] = $value->value;
+            }
+            if ($value instanceof GitReadEnvironment) {
+                $credential = $credential || ! $value->isEmpty();
+                $input[$key] = ['github_token' => $value->githubToken()];
+            }
+        }
+
+        return [$input, $credential];
     }
 
     /** @param  array<string, mixed>  $input */

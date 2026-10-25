@@ -64,7 +64,7 @@ function vp_store_fixture(): array
         ->answer('instances.run-deploy-step', static function () use ($agent): array {
             $agent->operations[] = 'build';
 
-            return ['exit_code' => $agent->buildFails ? 1 : 0, 'output' => [], 'truncated' => false];
+            return ['exit_code' => $agent->buildFails ? 1 : 0, 'timed_out' => false, 'output' => [], 'truncated' => false];
         });
     $deployment = new RemoteProductionDeployment($agents, app(RepositoryReadAccess::class), $prepare);
 
@@ -314,7 +314,7 @@ it('reads development requirements as the enrolled account', function (): void {
     $instance->node->roles()->delete();
     $instance->node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
     $instance->unsetRelation('node');
-    $agents = new FakeAgentCommandRunner()->answer('tools.read-vp-project', ['package' => []]);
+    $agents = new FakeAgentCommandRunner()->answer('tools.read-vp-project', ['package' => [], 'locks' => [], 'workspaces' => [], 'npmrc' => '']);
     $prepare = new PrepareVpEnvironmentAction($vp, $agents, app(ToolManagerScopeLock::class));
 
     expect($prepare->prepare($instance, $instance->checkout_path, 'npm-build', 'vp run build'))->toBeNull();

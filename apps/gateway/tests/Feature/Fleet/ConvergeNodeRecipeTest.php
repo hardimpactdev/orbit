@@ -55,12 +55,12 @@ function recipeAgents(array|AgentCommandRefused|null $application = null, ?Closu
             $versions[$name] = ['source' => $pin['source'], 'version' => $pin['version'], 'installed' => $name === 'curl' ? '1.0.0' : $pin['version'], 'changed' => $name === 'curl', 'status' => $name === 'curl' ? 'older_than_recipe' : 'current'];
         }
 
-        return $versions;
+        return ['_actions' => [], ...$versions];
     });
     if ($application instanceof AgentCommandRefused) {
         $agents->refuse('recipe.apply', $application->errorCode, $application->details);
     } else {
-        $agents->answer('recipe.apply', $application ?? ['changed_packages' => ['curl'], 'restarted_services' => [], 'changed_tools' => ['curl'], 'healthy' => true]);
+        $agents->answer('recipe.apply', $application ?? ['changed_packages' => ['curl'], 'restarted_services' => [], 'changed_tools' => ['curl'], 'newer_than_recipe' => [], 'healthy' => true]);
     }
     if ($incusPreflight !== null) {
         $agents->refuse('recipe.incus-preflight', $incusPreflight->errorCode, $incusPreflight->details);
@@ -626,7 +626,7 @@ function incusRecipeInspection(array $payload, bool $phpChange = false): array
         $tools[$name] = ['source' => $pin['source'], 'version' => $pin['version'], 'installed' => $changed ? 'previous-build' : $pin['version'], 'changed' => $changed, 'status' => $changed ? 'different' : 'current'];
     }
 
-    return $tools;
+    return ['_actions' => [], ...$tools];
 }
 
 it('applies other pins automatically and records the held Incus pins without a full identity', function (): void {

@@ -103,7 +103,8 @@ describe(HomebrewInventoryInspector::class, function (): void {
 /** @return array{HomebrewInventoryInspector, FakeAgentCommandRunner} */
 function homebrew_inventory_inspector(array $data): array
 {
-    $agent = new FakeAgentCommandRunner()->answer('tools.homebrew-scan', $data);
+    // Many cases send scan shapes the agent never returns, to test the inspector's own guards.
+    $agent = new FakeAgentCommandRunner()->answerMalformed('tools.homebrew-scan', $data);
 
     return [new HomebrewInventoryInspector(new SemverVersionNormalizer, new HomebrewCommand($agent)), $agent];
 }

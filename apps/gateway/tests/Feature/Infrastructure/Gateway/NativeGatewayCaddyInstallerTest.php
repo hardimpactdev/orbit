@@ -18,7 +18,7 @@ use Tests\Support\FakeAgentCommandRunner;
 describe('Gateway Caddy installer', function (): void {
     it('requests the pinned package and then WireGuard ordering on the Gateway Node', function (): void {
         $node = new Node(['name' => 'gateway']);
-        $agents = new FakeAgentCommandRunner()->answer('caddy.install-package', ['changed' => false])->answer('caddy.order-after-vpn', ['changed' => false]);
+        $agents = new FakeAgentCommandRunner()->answer('caddy.install-package', ['changed' => false, 'version' => '2.10.2'])->answer('caddy.order-after-vpn', ['changed' => false]);
 
         new NativeGatewayCaddyInstaller($agents)->install($node);
 
@@ -29,7 +29,7 @@ describe('Gateway Caddy installer', function (): void {
     });
 
     it('maps each refusal and stops at the failed step', function (string $command, string $refusal, string $step, string $errorCode, int $calls): void {
-        $agents = new FakeAgentCommandRunner()->answer('caddy.install-package', ['changed' => false])->refuse($command, $refusal);
+        $agents = new FakeAgentCommandRunner()->answer('caddy.install-package', ['changed' => false, 'version' => '2.10.2'])->refuse($command, $refusal);
         $node = new Node;
 
         expect(fn () => new NativeGatewayCaddyInstaller($agents)->install($node))
@@ -59,7 +59,7 @@ arch('Caddy installation and ordering use only typed agent commands')
 
 it('maps transport failure at the Caddy ordering step', function (): void {
     $failure = new AgentRunnerFailure('caddy.order-after-vpn', AgentRunnerFailure::Transport, 'Connection lost.');
-    $agents = new FakeAgentCommandRunner()->answer('caddy.install-package', ['changed' => false])
+    $agents = new FakeAgentCommandRunner()->answer('caddy.install-package', ['changed' => false, 'version' => '2.10.2'])
         ->answer('caddy.order-after-vpn', static fn (): never => throw $failure);
 
     expect(fn () => new NativeGatewayCaddyInstaller($agents)->install(new Node))

@@ -37,7 +37,7 @@ it('asks the agent to read the current release routes as the production user', f
 
 it('fails without the agent message when the routes cannot be read', function (?string $refusal): void {
     $agents = $refusal === null
-        ? new FakeAgentCommandRunner()->answer('instances.inspect-laravel-routes', [])
+        ? new FakeAgentCommandRunner()->answerMalformed('instances.inspect-laravel-routes', [])
         : new FakeAgentCommandRunner()->refuse('instances.inspect-laravel-routes', $refusal);
 
     expect(fn () => new NativeWebSocketRouteInspector($agents)->hasCollisions(route_inspection_instance()))

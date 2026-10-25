@@ -234,7 +234,7 @@ describe('gateway:release:handoff', function (): void {
     it('refuses malformed drain observations before forcing a stop or clearing overlap locks', function (array $drain): void {
         handoff_scheduler(handoff_gateway());
         [$handoff, $agents, , , , $probe] = runtime_handoff();
-        $probe->drain = $drain;
+        $agents->answerMalformed('gateway.drain-scheduler', static fn (): array => $drain);
 
         $error = release_failure(fn () => $handoff->schedule());
 

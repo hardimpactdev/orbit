@@ -55,7 +55,7 @@ function websocket_runtime_lifecycle(FakeAgentCommandRunner $agents, string $ref
 function websocket_runtime_agents(): FakeAgentCommandRunner
 {
     return (new FakeAgentCommandRunner)
-        ->answer('caddy.install-package', ['changed' => false])
+        ->answer('caddy.install-package', ['changed' => false, 'version' => '2.10.2'])
         ->answer('roles.install-prerequisites', [])
         ->answer('websocket.converge-runtime', ['release' => '/opt/orbit/websocket.releases/release.1'])
         ->answer('websocket.remove-runtime', [])

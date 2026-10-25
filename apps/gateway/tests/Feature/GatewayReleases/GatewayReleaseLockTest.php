@@ -94,7 +94,7 @@ it('refuses a foreign existing regular file without mutation', function (): void
 it('refuses a missing native step result before starting the operation', function (): void {
     $directory = sys_get_temp_dir().'/release-lock-'.bin2hex(random_bytes(6));
     $lock = new GatewayReleaseLock($directory.'/gateway-release.lock', $this->commands);
-    $this->agents->answer('gateway.inspect-release-step', []);
+    $this->agents->answerMalformed('gateway.inspect-release-step', []);
     try {
         $failure = release_failure(fn () => $lock->run(static fn () => throw new LogicException('The operation must not start.')));
         expect($failure->errorCode)->toBe('gateway.release_lock_unavailable');

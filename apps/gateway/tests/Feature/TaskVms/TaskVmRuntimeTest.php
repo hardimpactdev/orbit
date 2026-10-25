@@ -199,7 +199,7 @@ describe('prepare', function (): void {
     it('creates no Process when Pi inspection or configuration returns an incomplete result', function (string $command): void {
         tvm_runtime_cliproxy();
         $vm = tvm_runtime_vm();
-        $this->agents->answer($command, []);
+        $this->agents->answerMalformed($command, []);
 
         expect(fn () => app(TaskVmRuntime::class)->prepare($vm))->toThrow(TaskVmException::class, 'Pi could not be prepared');
         expect(Process::query()->count())->toBe(0);

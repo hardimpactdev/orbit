@@ -38,7 +38,7 @@ it('maps native validation activation and recovery refusals', function (string $
 ]);
 
 it('rejects a missing activation result and malformed connection observations', function (): void {
-    $agents = new FakeAgentCommandRunner()->answer('gateway.converge-fpm', [])->answer('gateway.inspect-fpm-connections', ['connections' => -1]);
+    $agents = new FakeAgentCommandRunner()->answerMalformed('gateway.converge-fpm', [])->answerMalformed('gateway.inspect-fpm-connections', ['connections' => -1]);
     $converger = new NativeGatewayFpmConverger($agents, []);
 
     expect(fn () => $converger->converge(new Node, 'pool'))->toThrow(NodeProvisioningException::class)

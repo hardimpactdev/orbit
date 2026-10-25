@@ -79,7 +79,7 @@ it('rejects a typed refusal or malformed observation without running another pro
             'disk' => $data['disks'][0]['available_kib'] = '1',
             'architecture' => $data['architecture'] = 'arm64',
         };
-        $agents->answer('doctor.inspect-node', $data);
+        $agents->answerMalformed('doctor.inspect-node', $data);
     }
     expect(fn () => doctorNativeNodeInspector($agents)->inspect(doctorObservedNode()))->toThrow(DoctorInspectionException::class);
     expect($agents->calls)->toHaveCount(1);

@@ -256,7 +256,7 @@ function public_edge_agents(): FakeAgentCommandRunner
 {
     return new FakeAgentCommandRunner()
         ->answer('doctor.inspect-public-route', ['ingress' => true, 'forwarding' => true, 'tls' => true])
-        ->answer('firewall.inspect', ['matches' => true]);
+        ->answer('firewall.inspect', ['backend' => 'active', 'ownerships' => [], 'matches' => true, 'live' => []]);
 }
 
 /** @return array{Node, Route} */
@@ -310,7 +310,7 @@ it('maps native drift without changing other observations', function (): void {
 
 it('reports native firewall drift', function (): void {
     [$node, $route] = public_edge_fixture();
-    $agents = public_edge_agents()->answer('firewall.inspect', ['matches' => false]);
+    $agents = public_edge_agents()->answer('firewall.inspect', ['backend' => 'active', 'ownerships' => [], 'matches' => false, 'live' => []]);
 
     expect(new NativePublicRouteEdgeInspector($agents)->inspect($node, $route)->firewallMatches)->toBeFalse();
 });
@@ -320,8 +320,8 @@ it('reports failed and malformed observations as unavailable', function (string 
     $agents = public_edge_agents();
     match ($failure) {
         'refused' => $agents->refuse('doctor.inspect-public-route', 'doctor.public_route_unavailable'),
-        'incomplete' => $agents->answer('doctor.inspect-public-route', ['ingress' => true]),
-        'firewall' => $agents->answer('firewall.inspect', ['matches' => 'private']),
+        'incomplete' => $agents->answerMalformed('doctor.inspect-public-route', ['ingress' => true]),
+        'firewall' => $agents->answerMalformed('firewall.inspect', ['matches' => 'private']),
     };
 
     expect(fn () => new NativePublicRouteEdgeInspector($agents)->inspect($node, $route))->toThrow(DoctorInspectionException::class);

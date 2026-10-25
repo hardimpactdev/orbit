@@ -67,8 +67,8 @@ it('trusts only a linked task VM image and still applies VM-specific infrastruct
         }
     };
     app()->instance(SshExecutor::class, $ssh);
-    $agents = (new FakeAgentCommandRunner)->answer('caddy.install-package', ['changed' => false])->answer('roles.install-prerequisites', [])->answer('recipe.install-javascript', ['changed' => false, 'retired' => []])
-        ->answer('nodes.bootstrap', [])->answer('agent.status', ['architecture' => 'x86_64'])
+    $agents = (new FakeAgentCommandRunner)->answer('caddy.install-package', ['changed' => false, 'version' => '2.10.2'])->answer('roles.install-prerequisites', [])->answer('recipe.install-javascript', ['changed' => false, 'retired' => []])
+        ->answer('nodes.bootstrap', [])->answer('agent.status', ['version' => '0.5.0', 'sha256' => str_repeat('a', 64), 'platform' => 'linux', 'architecture' => 'x86_64', 'observer' => 'active'])
         ->answer('hibernation.prepare-directories', [])
         ->answer('tools.materialize-composer', [])
         ->answer('tools.materialize-vp', ['binary' => '/opt/orbit/vite-plus/bin/vp', 'changed' => false])

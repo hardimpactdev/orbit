@@ -149,6 +149,7 @@ it('refuses an invalid target before native observation', function (): void {
 
 it('rejects incomplete native identities', function (string $field, mixed $value): void {
     $this->identity[$field] = $value;
+    $this->agents->answerMalformed('gateway.inspect-release-process', fn (): array => $this->identity);
 
     expect(fn () => $this->declarations->observe($this->target, $this->process->id))->toThrow(GatewayReleaseException::class, 'incomplete Process identity');
 })->with([

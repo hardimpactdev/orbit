@@ -1455,7 +1455,7 @@ describe('park failure recovery', function (): void {
         $vm = TaskVm::forGroup($group);
         $vm->update(['state' => TaskVmState::Parked]);
         rm_runtime();
-        $agents = new FakeAgentCommandRunner()->answer('agent.status', ['observer' => 'active']);
+        $agents = new FakeAgentCommandRunner()->answer('agent.status', ['version' => '0.5.0', 'sha256' => str_repeat('a', 64), 'platform' => 'linux', 'architecture' => 'x86_64', 'observer' => 'active']);
         app()->instance(AgentCommandRunner::class, $agents);
         $provider = new RecordingTaskVmProvider;
         app()->instance(TaskVmProvider::class, $provider);

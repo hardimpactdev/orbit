@@ -23,7 +23,7 @@ it('sends credential input through the typed runner and exposes only its result'
 });
 
 it('refuses malformed runtime results', function (): void {
-    $agents = new FakeAgentCommandRunner()->answer('metrics.credentials', ['verified' => 'yes']);
+    $agents = new FakeAgentCommandRunner()->answerMalformed('metrics.credentials', ['verified' => 'yes']);
     $commands = new MetricsRuntimeCommands($agents, new CommandDeadline);
     expect(fn () => $commands->verify(new Node(['wireguard_ip' => '10.44.0.3']), 'secret'))->toThrow(ResourceOperationException::class, 'invalid result');
 });

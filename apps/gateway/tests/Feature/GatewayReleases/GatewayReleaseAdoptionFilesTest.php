@@ -58,10 +58,10 @@ it('keeps a native storage conflict and maps an exchange failure into its releas
 });
 
 it('refuses malformed output rather than claiming a completed transition', function (): void {
-    $this->agents->answer('gateway.adopt-release-storage', ['storage' => 'moved'])
-        ->answer('gateway.switch-release-adoption', ['method' => 'rename', 'gap_us' => 1, 'from' => 'a', 'to' => 'b'])
-        ->answer('gateway.restore-release-adoption', ['changed' => 'yes'])
-        ->answer('gateway.finish-release-adoption', []);
+    $this->agents->answerMalformed('gateway.adopt-release-storage', ['storage' => 'moved'])
+        ->answerMalformed('gateway.switch-release-adoption', ['method' => 'rename', 'gap_us' => 1, 'from' => 'a', 'to' => 'b'])
+        ->answerMalformed('gateway.restore-release-adoption', ['changed' => 'yes'])
+        ->answerMalformed('gateway.finish-release-adoption', []);
     foreach ([
         fn () => $this->files->storage($this->layout),
         fn () => $this->files->switch($this->layout, '0123456789ab', '20261024T120000Z'),
@@ -116,7 +116,7 @@ it('retains the unresolved target for the authenticated release builder to fetch
 });
 
 it('refuses malformed preparation results', function (string $command, array $result, string $method, array $arguments): void {
-    $this->agents->answer($command, $result);
+    $this->agents->answerMalformed($command, $result);
 
     expect(fn () => $this->files->{$method}($this->layout, ...$arguments))->toThrow(GatewayReleaseException::class, 'invalid release adoption result');
 })->with([

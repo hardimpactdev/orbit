@@ -56,7 +56,7 @@ it('preserves the native hold refusal before reading queue reservations', functi
 });
 
 it('refuses missing or malformed declaration collections', function (array $output): void {
-    $this->agents->answer('gateway.inspect-release-hold', $output);
+    $this->agents->answerMalformed('gateway.inspect-release-hold', $output);
     $this->redis->shouldNotReceive('zcard');
 
     expect(fn () => $this->drain->assertHeld($this->target))->toThrow(GatewayReleaseException::class);

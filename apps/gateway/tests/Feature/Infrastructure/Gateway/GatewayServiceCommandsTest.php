@@ -51,7 +51,7 @@ it('preserves the family error and native failure stage', function (string $meth
 ]);
 
 it('keeps malformed and lost results as convergence failures', function (bool $lost): void {
-    $this->agents->answer('gateway.converge-agent-view', $lost
+    $this->agents->answerMalformed('gateway.converge-agent-view', $lost
         ? static fn (): array => throw new AgentRunnerFailure('gateway.converge-agent-view', AgentRunnerFailure::Timeout, 'expired')
         : ['changed' => 'yes']);
     expect(fn () => app(AgentViewConverger::class)->converge())
@@ -73,7 +73,7 @@ it('sends immediate and delayed start intent without waiting for fleet work', fu
 it('logs a refused or malformed start and lets the timer retry later', function (bool $deferred, bool $malformed): void {
     Log::spy();
     if ($malformed) {
-        $this->agents->answer('gateway.start-fleet-run', ['accepted' => 'yes']);
+        $this->agents->answerMalformed('gateway.start-fleet-run', ['accepted' => 'yes']);
     } else {
         $this->agents->refuse('gateway.start-fleet-run', 'gateway.fleet_start_failed');
     }

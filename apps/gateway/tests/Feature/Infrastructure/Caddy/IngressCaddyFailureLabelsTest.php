@@ -204,7 +204,7 @@ function caddy_failure_bind(?string $fail = null): void
     $agents = (new FakeAgentCommandRunner)->answer('roles.install-prerequisites', [])->answer('nodes.os-release', ['id' => 'ubuntu', 'codename' => 'resolute']);
     $fail === 'source'
         ? $agents->refuse('caddy.install-package', 'caddy.package_failed', ['reason' => 'forced failure'])
-        : $agents->answer('caddy.install-package', ['changed' => false]);
+        : $agents->answer('caddy.install-package', ['changed' => false, 'version' => '2.10.2']);
     $fail === 'ordering'
         ? $agents->refuse('caddy.order-after-vpn', 'services.ordering_failed', ['stage' => 'restart'])
         : $agents->answer('caddy.order-after-vpn', ['changed' => false]);

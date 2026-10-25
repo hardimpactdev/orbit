@@ -20,6 +20,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
 use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\PhpBuildAnswers;
 
 /*
  * Production Instances that existed before Routes with a web root reached production have no such
@@ -130,7 +131,7 @@ function prod_equivalence_render(Node $node, array $instances): array
         // Both the PHP build and runtime use typed agent commands.
         $runtime = static function (Closure $operation): array {
             $agents = new FakeAgentCommandRunner()
-                ->answer('php.install-build', ['outcome' => 'current', 'data' => []])->answer('php.converge-production-runtime', ['published' => true])
+                ->answer('php.install-build', PhpBuildAnswers::result())->answer('php.converge-production-runtime', ['published' => true])
                 ->answer('php.remove-production-runtime', ['removed' => true])
                 ->answer('php.refresh-production-cache', ['complete' => true]);
             $operation(new RemoteProductionPhpRuntimeManager(new ProductionPhpRuntimeConfigRenderer, $agents));

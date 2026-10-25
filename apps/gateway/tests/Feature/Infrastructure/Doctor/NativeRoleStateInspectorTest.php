@@ -121,9 +121,9 @@ it('refuses malformed results and agent failures without changing stored role at
     match ($failure) {
         'refusal' => $agents->refuse('doctor.inspect-role-runtime', 'doctor.role_inspection_failed'),
         'transport' => $agents->answer('doctor.inspect-role-runtime', fn () => throw new RuntimeException('secret detail')),
-        'malformed' => $agents->answer('doctor.inspect-role-runtime', ['packages' => '1', 'services' => true, 'caddy_version' => null]),
-        'missing version' => $agents->answer('doctor.inspect-role-runtime', ['packages' => true, 'services' => true]),
-        'firewall' => $agents->answer('firewall.inspect', []),
+        'malformed' => $agents->answerMalformed('doctor.inspect-role-runtime', ['packages' => '1', 'services' => true, 'caddy_version' => null]),
+        'missing version' => $agents->answerMalformed('doctor.inspect-role-runtime', ['packages' => true, 'services' => true]),
+        'firewall' => $agents->answerMalformed('firewall.inspect', []),
     };
     $assignment = role_inspector_assignment(RoleName::Gateway);
     $before = $assignment->getAttributes();
@@ -138,7 +138,7 @@ function role_runtime_agents(bool $firewall): FakeAgentCommandRunner
         ->answer('doctor.inspect-role-runtime', static fn (array $input): array => [
             'packages' => true, 'services' => true,
             'caddy_version' => in_array('caddy', $input['packages'], true) ? 'v2.11.4' : null,
-        ])->answer('firewall.inspect', ['matches' => $firewall]);
+        ])->answer('firewall.inspect', ['backend' => 'active', 'ownerships' => [], 'matches' => $firewall, 'live' => []]);
 }
 
 function role_state_inspector(FakeAgentCommandRunner $agents, ?RoleInspectorSshExecutor $ssh = null, string $ciOutcome = 'matches'): NativeRoleStateInspector

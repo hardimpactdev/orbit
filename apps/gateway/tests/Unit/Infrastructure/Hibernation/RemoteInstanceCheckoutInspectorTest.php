@@ -33,7 +33,7 @@ it('classifies reconstructable vendor and node_modules from the agent checkout f
 
 it('inspects and prunes the application directory of a nested Laravel app and dates edits by the whole checkout', function (): void {
     $agents = new FakeAgentCommandRunner()
-        ->answer('hibernation.inspect-checkout', ['composer_json' => true, 'composer_lock' => true, 'vendor_present' => true, 'javascript_locks' => [], 'source_mtime' => 200])
+        ->answer('hibernation.inspect-checkout', ['composer_json' => true, 'composer_lock' => true, 'vendor_present' => true, 'vendor_symlink' => false, 'package_json' => false, 'node_modules_present' => false, 'node_modules_symlink' => false, 'javascript_locks' => [], 'source_mtime' => 200])
         ->answer('hibernation.prune-checkout', []);
     $instance = checkout_instance();
     $instance->forceFill(['root' => 'server/web/public']);

@@ -75,8 +75,8 @@ it('has no file reservation for an in-memory configuration', function (): void {
 });
 
 it('refuses malformed native results and migration paths outside the release layout', function (): void {
-    $this->agents->answer('gateway.inspect-release-database', ['bytes' => -1])
-        ->answer('gateway.snapshot-release-database', ['path' => '/outside/pre-0123456789ab.sqlite']);
+    $this->agents->answerMalformed('gateway.inspect-release-database', ['bytes' => -1])
+        ->answerMalformed('gateway.snapshot-release-database', ['path' => '/outside/pre-0123456789ab.sqlite']);
     expect(fn () => $this->database->snapshotBytes())->toThrow(GatewayReleaseException::class, 'invalid release command result');
     expect(fn () => $this->database->snapshot('0123456789ab'))->toThrow(GatewayReleaseException::class, 'invalid release command result');
     $this->agents->calls = [];

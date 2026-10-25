@@ -483,7 +483,7 @@ it('keeps a native CLI admission refusal definite and skips a foreign binary', f
 ]);
 
 it('retries a native result without a CLI verdict once and refuses a malformed result', function (bool $malformed): void {
-    $agents = (new FakeAgentCommandRunner)->answer('cli.self-update', $malformed
+    $agents = (new FakeAgentCommandRunner)->answerMalformed('cli.self-update', $malformed
         ? ['outcome' => 'unknown']
         : [...selfUpdateResult('failed', 'fleet.self_update_failed'), 'report' => null]);
     $result = fleetConverger($agents)->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());

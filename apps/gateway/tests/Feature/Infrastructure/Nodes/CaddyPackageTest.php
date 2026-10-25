@@ -55,7 +55,7 @@ describe('Caddy package', function (): void {
     ]);
 
     it('passes only the pinned release, digests, and version floor to the agent', function (): void {
-        $agents = (new FakeAgentCommandRunner)->answer('caddy.install-package', ['changed' => true]);
+        $agents = (new FakeAgentCommandRunner)->answer('caddy.install-package', ['changed' => true, 'version' => '2.10.2']);
 
         expect((new AgentCaddyPackage($agents))->install(new Node(['name' => 'dev']))->stdout)->toBe(AgentCaddyPackage::Changed."\n")
             ->and($agents->calls[0]['input'])->toBe([

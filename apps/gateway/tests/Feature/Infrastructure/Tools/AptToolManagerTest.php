@@ -174,7 +174,7 @@ describe(AptToolManager::class, function (): void {
 
     it('refuses malformed typed replies without reporting absent packages', function (string $method, string $command, array $data): void {
         [$manager, $agent] = apt_tool_manager();
-        $agent->answer($command, $data);
+        $agent->answerMalformed($command, $data);
         expect(fn () => $manager->{$method}(apt_tool_node(), 'jq', ToolOperation::Install))->toThrow(ToolManagerException::class);
     })->with([
         ['managerVersion', 'tools.apt-version', ['version' => null]],

@@ -228,7 +228,8 @@ it('reports a delivery install that waits on another release step as a lock fail
     $this->agents->answer('gateway.inspect-release-agent-delivery', ['commit' => $agentCommit, 'version' => '0.5.0', 'installed' => false])
         ->answer('gateway.inspect-release-source', ['origin' => 'git@github.com:hardimpactdev/orbit.git'])
         ->refuse('gateway.install-release-agent-delivery', 'gateway.release_in_progress');
-    Http::fake([$base.'/manifest.json' => Http::response(['commit' => $agentCommit, 'version' => '0.5.0', 'artifacts' => []])]);
+    $artifacts = ['linux-x86_64' => ['sha256' => str_repeat('c', 64), 'path' => 'orbit-agent-linux-x86_64', 'url' => $base.'/orbit-agent-linux-x86_64']];
+    Http::fake([$base.'/manifest.json' => Http::response(['commit' => $agentCommit, 'version' => '0.5.0', 'artifacts' => $artifacts])]);
 
     $error = release_failure(fn () => $this->builder->prepare($this->sha, withWeb: false));
 

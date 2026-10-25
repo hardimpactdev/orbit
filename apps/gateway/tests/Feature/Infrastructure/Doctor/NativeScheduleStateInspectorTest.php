@@ -51,7 +51,7 @@ it('reports failed or incomplete native observations as unavailable', function (
     if ($refused) {
         $this->agents->refuse('doctor.inspect-schedule', 'schedules.failed');
     } else {
-        $this->agents->answer('doctor.inspect-schedule', ['artifacts_present' => true]);
+        $this->agents->answerMalformed('doctor.inspect-schedule', ['artifacts_present' => true]);
     }
 
     expect(fn () => $this->inspector->inspect($this->schedule))->toThrow(DoctorInspectionException::class);
@@ -66,7 +66,7 @@ it('passes known intent to the native orphan scan', function (): void {
 });
 
 it('does not report a malformed orphan scan as empty', function (): void {
-    $this->agents->answer('doctor.schedule-orphans', ['ids' => [false]]);
+    $this->agents->answerMalformed('doctor.schedule-orphans', ['ids' => [false]]);
 
     expect(fn () => $this->inspector->orphanIds($this->node, []))->toThrow(DoctorInspectionException::class);
 });

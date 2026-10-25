@@ -19,6 +19,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
 use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\PhpBuildAnswers;
 
 describe('production web roots', function (): void {
     it('passes the served web roots to release preparation and activation only when a Route has one', function (): void {
@@ -81,7 +82,7 @@ describe('production web roots', function (): void {
 
     it('adds a pool for each served directory to the runtime it converges', function (): void {
         [$instance] = prodweb_instance();
-        $agents = new FakeAgentCommandRunner()->answer('php.install-build', ['outcome' => 'current', 'data' => []])->answer('php.converge-production-runtime', ['published' => true]);
+        $agents = new FakeAgentCommandRunner()->answer('php.install-build', PhpBuildAnswers::result())->answer('php.converge-production-runtime', ['published' => true]);
         $manager = new RemoteProductionPhpRuntimeManager(new ProductionPhpRuntimeConfigRenderer, $agents);
         $manager->converge($instance);
         prodweb_route($instance, 'docs.example.com', 'apps/docs/public');

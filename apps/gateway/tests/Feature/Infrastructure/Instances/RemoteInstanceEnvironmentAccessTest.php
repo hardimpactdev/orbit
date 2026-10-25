@@ -59,7 +59,7 @@ it('checks writability and reads the workload file in one command before synchro
 })->with(['development' => false, 'production' => true]);
 
 it('preserves distinct write and read refusals from a synchronization inspection', function (?array $outcome, string $errorCode): void {
-    $agents = new FakeAgentCommandRunner()->answer('instances.inspect-environment-sync', fn (): array => $outcome
+    $agents = new FakeAgentCommandRunner()->answerMalformed('instances.inspect-environment-sync', fn (): array => $outcome
         ?? throw new AgentRunnerFailure('instances.inspect-environment-sync', AgentRunnerFailure::Transport, 'password=secret'));
 
     expect(fn () => new RemoteInstanceEnvironmentAccess($agents)->readWritableEnvironment(environment_access_context(), 4096))

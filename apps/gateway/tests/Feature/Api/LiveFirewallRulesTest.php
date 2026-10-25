@@ -119,7 +119,7 @@ function live_firewall_agent(array $live = [], bool $throws = false): void
 {
     $agents = new FakeAgentCommandRunner()->answer('firewall.inspect', $throws
         ? static fn () => throw new RuntimeException('node unreachable')
-        : ['backend' => 'active', 'live' => $live]);
+        : ['backend' => 'active', 'ownerships' => [], 'matches' => true, 'live' => $live]);
     app()->instance(AgentCommandRunner::class, $agents);
 }
 

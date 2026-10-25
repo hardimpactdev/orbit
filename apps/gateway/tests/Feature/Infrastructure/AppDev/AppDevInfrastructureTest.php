@@ -315,7 +315,7 @@ it('refuses malformed shared pool responses before package installation', functi
     [$node, $project] = app_dev_runtime_models();
     $instance = app_dev_supported_app_instance($node, $project->id);
     app_dev_supported_route($instance, 'acme.app-dev.orbit');
-    $this->phpAgents->answer('php.inspect-shared-pools', $report);
+    $this->phpAgents->answerMalformed('php.inspect-shared-pools', $report);
     $manager = new RemoteAppDevPhpFpmManager(new DevelopmentSiteRepository, new DevelopmentPhpFpmConfigRenderer, $this->phpAgents, app_dev_account_resolver(), new RemotePhpPackageManager);
 
     expect(fn () => $manager->converge($node))->toThrow(function (RuntimeConvergenceException $error): void {

@@ -90,9 +90,10 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeToolManagerMaterializer;
+use Tests\Support\PhpBuildAnswers;
 
 beforeEach(function (): void {
-    app()->instance(AgentCommandRunner::class, (new FakeAgentCommandRunner)->answer('php.install-build', ['outcome' => 'current', 'data' => []]));
+    app()->instance(AgentCommandRunner::class, (new FakeAgentCommandRunner)->answer('php.install-build', PhpBuildAnswers::result()));
 });
 
 it('converges and removes only app development role-owned infrastructure', function (): void {
@@ -395,7 +396,7 @@ it('verifies VPN PHP before Gateway publication regardless of requested role ord
 
         return $installFails
             ? throw new AgentCommandRefused($command, 'php.build_fpm_invalid', 'Invalid FPM', ['unit' => 'orbit-gateway-php8.5-fpm.service'])
-            : ['outcome' => 'applied', 'data' => ['changed' => ['php8.5-cli'], 'restarted' => ['orbit-gateway-php8.5-fpm.service']]];
+            : PhpBuildAnswers::result('applied', ['changed' => ['php8.5-cli'], 'restarted' => ['orbit-gateway-php8.5-fpm.service']]);
     });
     app()->instance(AgentCommandRunner::class, $runner);
     $vpn = new VpnRoleBaseline(baseline_prerequisites($events), baseline_firewall($events), baseline_account_resolver());
@@ -1100,7 +1101,7 @@ function baseline_prerequisites(array &$events, ?Closure $fails = null, FakeAgen
                 throw new AgentCommandRefused('caddy.install-package', 'caddy.package_failed', 'The caddy candidate does not come from the pinned Orbit source.', ['reason' => 'The caddy candidate does not come from the pinned Orbit source.']);
             }
 
-            return ['changed' => false];
+            return ['changed' => false, 'version' => '2.10.2'];
         })
         ->answer('roles.install-prerequisites', static function (array $input, Node $node) use (&$events, $fails): array {
             $role = array_find(RoleName::cases(), static fn (RoleName $role): bool => (new NodeBootstrapPackageCatalog)->forRole($node, $role) === $input['packages']

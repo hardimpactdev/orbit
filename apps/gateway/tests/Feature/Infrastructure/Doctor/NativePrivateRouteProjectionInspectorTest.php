@@ -208,7 +208,7 @@ function private_route_inspector_address(): string
 
 it('rejects incomplete private Route observations', function (): void {
     [$instance, $route] = private_route_inspector_standalone();
-    $agents = new FakeAgentCommandRunner()->answer('doctor.inspect-private-route', ['caddy' => true]);
+    $agents = new FakeAgentCommandRunner()->answerMalformed('doctor.inspect-private-route', ['caddy' => true]);
 
     expect(fn () => private_route_inspector($agents)->inspect($instance, $route))->toThrow(DoctorInspectionException::class);
 });

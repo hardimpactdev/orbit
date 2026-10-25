@@ -448,7 +448,7 @@ function certificate_order_bind_projectors(
             $live[] = certificate_order_firewall_shape($comment, '443', '10.0.0.1', $host, protocol: 'tcp');
         }
 
-        return ['backend' => 'active', 'live' => $nodes->firewallShapes[$host] ?? $live];
+        return ['backend' => 'active', 'ownerships' => [], 'matches' => true, 'live' => $nodes->firewallShapes[$host] ?? $live];
     });
     app()->instance(NativeLiveUfwReader::class, new NativeLiveUfwReader($liveFirewall, app(AgentContract::class)));
     $sites = new DevelopmentSiteRepository;

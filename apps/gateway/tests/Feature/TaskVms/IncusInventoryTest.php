@@ -53,7 +53,7 @@ it('maps native inventory refusals to the existing host error', function (string
 it('rejects malformed typed inventory results', function (string $method, string $command, array $output): void {
     $node = new Node(['id' => 123, 'name' => 'host']);
     $agents = new FakeAgentCommandRunner;
-    $agents->answer($command, $output);
+    $agents->answerMalformed($command, $output);
     app()->instance(AgentCommandRunner::class, $agents);
     $incus = app(IncusHost::class);
 

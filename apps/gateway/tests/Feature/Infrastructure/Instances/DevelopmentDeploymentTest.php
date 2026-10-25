@@ -62,7 +62,7 @@ it('keeps the previous seed after a failed step and retries the ordered steps on
     $instance->update(['seed_path' => $this->fixture->home, 'seed_commit' => str_repeat('a', 40), 'seed_repository' => $this->fixture->home]);
     plain_steps($instance, [new DevelopmentDeployStep('install', 'project-install'), new DevelopmentDeployStep('verify', 'project-verify')]);
     $agents = $this->fixture->agents;
-    $agents->answer('instances.run-development-step', ['exit_code' => 1, 'output' => [['stream' => 'stderr', 'value' => 'Install failed']], 'truncated' => false]);
+    $agents->answer('instances.run-development-step', ['exit_code' => 1, 'timed_out' => false, 'output' => [['stream' => 'stderr', 'value' => 'Install failed']], 'truncated' => false]);
 
     $failed = plain_deploy($instance);
 
@@ -72,7 +72,7 @@ it('keeps the previous seed after a failed step and retries the ordered steps on
         ->and($agents->commands())->toBe(['instances.resolve-development-target', 'instances.checkout-development-default', 'instances.run-development-step']);
 
     $agents->calls = [];
-    $agents->answer('instances.run-development-step', ['exit_code' => 0, 'output' => [], 'truncated' => false]);
+    $agents->answer('instances.run-development-step', ['exit_code' => 0, 'timed_out' => false, 'output' => [], 'truncated' => false]);
     $retried = plain_deploy($instance);
     expect($retried->succeeded)->toBeTrue()
         ->and($instance->fresh()->seed_commit)->toBe(str_repeat('b', 40))

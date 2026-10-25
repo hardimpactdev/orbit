@@ -1107,7 +1107,7 @@ describe(DestroyTaskVm::class, function (): void {
         mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/keys/known_hosts');
         app()->instance(SshExecutor::class, new AppDevFakeSshExecutor);
         app()->instance(AgentCommandRunner::class,
-            new FakeAgentCommandRunner()->answer('agent.status', ['observer' => 'active']));
+            new FakeAgentCommandRunner()->answer('agent.status', ['version' => '0.5.0', 'sha256' => str_repeat('a', 64), 'platform' => 'linux', 'architecture' => 'x86_64', 'observer' => 'active']));
         Http::fake(['http://10.44.0.129:3774/capabilities' => Http::response(['models' => []])]);
 
         app()->call([new DestroyTaskVm($vm->id), 'handle']);

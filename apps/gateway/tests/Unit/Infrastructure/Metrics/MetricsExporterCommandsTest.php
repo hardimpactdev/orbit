@@ -76,7 +76,7 @@ it('preserves typed refusals and maps lost results to exporter unavailability', 
 })->with(['exporter', 'cadvisor'])->with([true, false]);
 
 it('refuses malformed snapshots before fleet mutation', function (array $data): void {
-    $agents = new FakeAgentCommandRunner()->answer('metrics.node-exporter', $data);
+    $agents = new FakeAgentCommandRunner()->answerMalformed('metrics.node-exporter', $data);
     $commands = new MetricsExporterCommands($agents, new CommandDeadline);
     $node = new Node(['wireguard_ip' => '10.44.0.4']);
     $metrics = new Node(['wireguard_ip' => '10.44.0.3']);

@@ -110,9 +110,10 @@ final class FakeInstanceTransferAgents
 
             return ['state' => 'changed'];
         })->answer('instances.read-sqlite-snapshot', function (array $input, Node $node, ?AgentBinaryOutput $output): array {
-            $output?->write($this->snapshot ?? throw new RuntimeException('No prepared snapshot.'));
+            $snapshot = $this->snapshot ?? throw new RuntimeException('No prepared snapshot.');
+            $output?->write($snapshot);
 
-            return [];
+            return ['bytes' => strlen($snapshot), 'sha256' => hash('sha256', $snapshot)];
         })->answer('instances.receive-sqlite-snapshot', function (array $input, Node $node, ?AgentBinaryOutput $output, ?AgentBinaryInput $binary): array {
             $body = $binary?->envelope('') ?? throw new RuntimeException('No snapshot body.');
             $this->received = ProcessInput::contents($body);
@@ -122,7 +123,7 @@ final class FakeInstanceTransferAgents
                 throw new RuntimeException('Injected snapshot transfer failure.');
             }
 
-            return [];
+            return ['bytes' => strlen($this->received), 'sha256' => hash('sha256', $this->received)];
         });
     }
 

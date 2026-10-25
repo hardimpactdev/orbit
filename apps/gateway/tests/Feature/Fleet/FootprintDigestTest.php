@@ -126,7 +126,7 @@ describe('footprint digests', function (): void {
     });
 
     it('runs the Caddy package step through the agent on the Nodes that run Caddy, pinned to the program and the floor', function (): void {
-        $agents = (new FakeAgentCommandRunner)->answer('caddy.install-package', ['changed' => false]);
+        $agents = (new FakeAgentCommandRunner)->answer('caddy.install-package', ['changed' => false, 'version' => '2.10.2']);
         $caddy = new CaddyFootprintArtifact(app(NodeCaddyfileRenderer::class), new FakeNodeCaddyBuilds, contributions: app()->tagged(ContributedCaddySiteSource::class));
         $artifact = new CaddyPackageFootprintArtifact($caddy, new AgentCaddyPackage($agents));
         $dev = FleetFixtures::node('dev', [RoleName::AppDev]);
@@ -147,7 +147,7 @@ describe('footprint digests', function (): void {
         $node = FleetFixtures::node('dev', [RoleName::AppDev]);
         $caddy = new CaddyFootprintArtifact(app(NodeCaddyfileRenderer::class), new FakeNodeCaddyBuilds, contributions: app()->tagged(ContributedCaddySiteSource::class));
 
-        expect((new CaddyPackageFootprintArtifact($caddy, new AgentCaddyPackage((new FakeAgentCommandRunner)->answer('caddy.install-package', ['changed' => true]))))->apply($node))->toBeTrue();
+        expect((new CaddyPackageFootprintArtifact($caddy, new AgentCaddyPackage((new FakeAgentCommandRunner)->answer('caddy.install-package', ['changed' => true, 'version' => '2.10.2']))))->apply($node))->toBeTrue();
 
         $refused = new AgentCaddyPackage((new FakeAgentCommandRunner)->refuse('caddy.install-package', 'caddy.package_failed', ['reason' => 'The Caddy 2.11.7 package does not match the Orbit pin.']));
         expect(fn () => (new CaddyPackageFootprintArtifact($caddy, $refused))->apply($node))->toThrow(function (ResourceOperationException $exception): void {

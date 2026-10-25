@@ -81,7 +81,7 @@ function nightlyRecipeFleet(bool $newerUbuntu = false): array
             $tools[$name] = ['source' => $pin['source'], 'version' => $pin['version'], 'installed' => $newer ? $newerCurl : $pin['version'], 'changed' => false, 'status' => $newer ? 'newer_than_recipe' : 'current'];
         }
 
-        return $tools;
+        return ['_actions' => [], ...$tools];
     });
     $agents->answer('recipe.apply', [
         'changed_packages' => $newerUbuntu ? [] : ['curl'], 'restarted_services' => [], 'changed_tools' => $newerUbuntu ? [] : ['curl'], 'healthy' => true,
@@ -434,9 +434,9 @@ it('converges non-Incus pins and alerts once per held version across fleet gener
             $tools[$name] = ['source' => $pin['source'], 'version' => $pin['version'], 'installed' => $changed ? 'previous-build' : $pin['version'], 'changed' => $changed, 'status' => $changed ? 'different' : 'current'];
         }
 
-        return $tools;
+        return ['_actions' => [], ...$tools];
     });
-    $agents->answer('recipe.apply', ['healthy' => true]);
+    $agents->answer('recipe.apply', ['changed_packages' => [], 'restarted_services' => [], 'changed_tools' => [], 'newer_than_recipe' => [], 'healthy' => true]);
     FleetFixtures::recipeDelivery($agents);
     app()->instance(AgentCommandRunner::class, $agents);
     $php = new PhpBuildAnswers(['apply' => ['applied', ['changed' => ['php8.5-cli']]]]);

@@ -24,6 +24,7 @@ it('installs the pinned agent then requests typed builder cleanup', function ():
 it('fails the build on cleanup refusal or absent confirmation', function (string $result): void {
     $guest = AgentGuest::incus(new Node(['name' => 'host', 'architecture' => 'x86_64']), 'orbit-tasks', 'tvm-image-1');
     $agents = new FakeGuestAgentCommandRunner;
+    $agents->malformed = true;
     $agents->answer = static fn (): array => $result === 'missing' ? [] : throw new AgentCommandRefused('image.clean', $result, 'Cleanup refused.');
     app()->instance(GuestAgentCommandRunner::class, $agents);
 
@@ -88,6 +89,7 @@ it('sends recipe identity and bounded observations through fixed guest commands'
 it('fails recipe record writes on native refusal or missing confirmation', function (bool $refused): void {
     $guest = AgentGuest::incus(new Node(['architecture' => 'x86_64']), 'orbit-tasks', 'builder');
     $agents = new FakeGuestAgentCommandRunner;
+    $agents->malformed = true;
     $agents->answer = static fn (): array => $refused ? throw new AgentCommandRefused('image.recipe-marker', 'task_vm.image_build_failed', 'Foreign marker.') : [];
 
     expect(fn () => (new TaskVmImageRecipe($agents))->mark($guest, 'sha256:'.str_repeat('a', 64), 'base'))->toThrow(TaskVmException::class);

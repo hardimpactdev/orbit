@@ -17,6 +17,7 @@ use Tests\Support\FakeAgentCommandRunner;
 it('runs a deploy step in the release and records its output in order', function (): void {
     [$deployment, $agents, $instance] = release_commands(fn (FakeAgentCommandRunner $agents) => $agents->answer('instances.run-deploy-step', [
         'exit_code' => 0,
+        'timed_out' => false,
         'output' => [['stream' => 'stdout', 'value' => "building\n"], ['stream' => 'stderr', 'value' => "warning\n"]],
         'truncated' => false,
     ]));
@@ -43,6 +44,7 @@ it('runs a deploy step in the release and records its output in order', function
 it('fails the step with its exit code and output when the program fails', function (): void {
     [$deployment, , $instance] = release_commands(fn (FakeAgentCommandRunner $agents) => $agents->answer('instances.run-deploy-step', [
         'exit_code' => 3,
+        'timed_out' => false,
         'output' => [['stream' => 'stderr', 'value' => "boom\n"]],
         'truncated' => false,
     ]));

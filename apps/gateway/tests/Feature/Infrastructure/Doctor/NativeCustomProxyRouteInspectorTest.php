@@ -47,7 +47,7 @@ it('keeps drift separate from unknown DNS intent', function (): void {
 it('reports an agent refusal or incomplete result as an inspection failure', function (bool $refuse): void {
     $proxy = custom_proxy_inspector_fixture();
     $agents = new FakeAgentCommandRunner;
-    $refuse ? $agents->refuse('doctor.inspect-custom-proxy', 'doctor.projection_invalid') : $agents->answer('doctor.inspect-custom-proxy', []);
+    $refuse ? $agents->refuse('doctor.inspect-custom-proxy', 'doctor.projection_invalid') : $agents->answerMalformed('doctor.inspect-custom-proxy', []);
 
     expect(fn () => new NativeCustomProxyRouteInspector($agents, new CommandDeadline)->inspect($proxy))->toThrow(DoctorInspectionException::class);
 })->with([true, false]);

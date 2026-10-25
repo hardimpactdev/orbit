@@ -77,9 +77,9 @@ it('preserves native refusals with the release phase and HTTP status', function 
 ]);
 
 it('rejects malformed output without reporting a completed operation', function (): void {
-    $this->agents->answer('gateway.switch-release', [])
-        ->answer('gateway.check-release-forward', ['source' => null, 'source_sha' => str_repeat('a', 40)])
-        ->answer('gateway.inspect-release-source', ['origin' => false]);
+    $this->agents->answerMalformed('gateway.switch-release', [])
+        ->answerMalformed('gateway.check-release-forward', ['source' => null, 'source_sha' => str_repeat('a', 40)])
+        ->answerMalformed('gateway.inspect-release-source', ['origin' => false]);
     expect(fn () => $this->commands->switch($this->layout, 'aaaaaaaaaaaa'))->toThrow(GatewayReleaseException::class, 'invalid release command result');
     expect(fn () => $this->commands->forward($this->layout, null, false))->toThrow(GatewayReleaseException::class, 'invalid release command result');
     expect(fn () => $this->commands->origin($this->layout))->toThrow(GatewayReleaseException::class, 'invalid release command result');
@@ -118,7 +118,7 @@ it('reads release observations through the runner and keeps their native orderin
 });
 
 it('rejects malformed release inventories', function (array $changes): void {
-    $this->agents->answer('gateway.inspect-releases', array_replace([
+    $this->agents->answerMalformed('gateway.inspect-releases', array_replace([
         'current' => null, 'state' => 'unreadable', 'superseded' => false, 'commits' => [], 'incomplete' => [], 'retained' => [],
     ], $changes));
 
@@ -170,7 +170,7 @@ it('reports a lost switch result as a failure and never resends it', function ()
 });
 
 it('rejects malformed native preparation results', function (string $command, array $result): void {
-    $this->agents->answer($command, $result);
+    $this->agents->answerMalformed($command, $result);
     $invoke = match ($command) {
         'gateway.inspect-release-preparation' => fn () => $this->commands->inspectPreparation($this->layout, str_repeat('a', 40), 0, 0),
         'gateway.prepare-release' => fn () => $this->commands->prepare($this->layout, str_repeat('a', 40), 0, 0, null, '/home/orbit/.orbit/gateway-release-step.lock'),

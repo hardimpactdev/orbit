@@ -32,6 +32,19 @@ final class LifecycleAgent implements AgentCommandRunner
 
     public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
     {
+        AgentSchemas::assertInput($command, $input);
+        $result = $this->respond($node, $command, $input, $deadlineSeconds);
+        AgentSchemas::assertOutput($command, $result);
+
+        return $result;
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     * @return array<string, mixed>
+     */
+    private function respond(Node $node, string $command, array $input, ?float $deadlineSeconds): array
+    {
         if ($command !== 'instances.run-lifecycle-step') {
             throw new LogicException("Unexpected agent command [{$command}].");
         }

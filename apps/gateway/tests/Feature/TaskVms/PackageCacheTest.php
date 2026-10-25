@@ -187,9 +187,9 @@ it('requests a fixed read-only mount before seeding the selected guest inventory
     $node = Node::query()->create(['public_ssh_host' => '192.0.2.7', 'name' => 'cache-host', 'platform' => 'linux', 'architecture' => 'x86_64']);
     TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($node->id)]]);
     $vm = TaskVm::query()->create(['host_node_id' => $node->id, 'provider' => 'incus', 'name' => 'tvm-77', 'state' => 'ready', 'wireguard_ip' => '10.44.0.130', 'pi_token' => 'private']);
-    $artifacts = [['key' => 'selected']];
+    $artifacts = [['manager' => 'npm', 'package' => 'left-pad', 'version' => '1.3.0', 'url' => 'https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz', 'integrity' => null, 'key' => 'selected']];
     PackageCacheSnapshot::query()->create(['project_id' => $project->id, 'blobs' => [], 'artifacts' => $artifacts]);
-    $agents = (new FakeAgentCommandRunner)->answer('package-cache.host', [])->answer('incus.package-cache', ['ready' => true]);
+    $agents = (new FakeAgentCommandRunner)->answer('package-cache.host', ['hashes' => [], 'failures' => []])->answer('incus.package-cache', ['ready' => true]);
     $guests = new FakeGuestAgentCommandRunner;
     $cache = new TaskVmPackageCache($agents, $guests);
 
@@ -213,7 +213,7 @@ it('stops before guest seeding when the mount does not confirm completion', func
     $node = Node::query()->create(['public_ssh_host' => '192.0.2.7', 'name' => 'cache-host', 'platform' => 'linux']);
     TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($node->id)]]);
     $vm = TaskVm::query()->create(['host_node_id' => $node->id, 'provider' => 'incus', 'name' => 'tvm-77', 'state' => 'ready', 'wireguard_ip' => '10.44.0.130', 'pi_token' => 'private']);
-    $agents = (new FakeAgentCommandRunner)->answer('package-cache.host', [])->answer('incus.package-cache', $result);
+    $agents = (new FakeAgentCommandRunner)->answer('package-cache.host', ['hashes' => [], 'failures' => []])->answerMalformed('incus.package-cache', $result);
     $guests = new FakeGuestAgentCommandRunner;
 
     expect(fn () => (new TaskVmPackageCache($agents, $guests))->prepare($vm, $project))->toThrow(function (TaskVmException $error): void {

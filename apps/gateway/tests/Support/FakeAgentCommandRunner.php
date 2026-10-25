@@ -17,7 +17,7 @@ use Throwable;
 /**
  * A runner for PHP tests: they test Gateway intent, and Rust tests prove what a command does on a Node.
  * Every call is checked against the real contract, so a test cannot use a command or a refusal code that
- * the agent does not declare.
+ * the agent does not declare, send an input the agent would refuse, or answer with a shape it never returns.
  */
 final class FakeAgentCommandRunner implements AgentCommandRunner
 {
@@ -32,6 +32,9 @@ final class FakeAgentCommandRunner implements AgentCommandRunner
 
     /** @var array<string, Closure(array<string, mixed>, Node, ?AgentBinaryOutput, ?AgentBinaryInput): array<string, mixed>> */
     private array $answers = [];
+
+    /** @var array<string, true> commands whose answers may break their output schema */
+    private array $malformed = [];
 
     private ?Throwable $installFailure = null;
 
@@ -51,9 +54,24 @@ final class FakeAgentCommandRunner implements AgentCommandRunner
     public function answer(string $command, array|Closure $output): self
     {
         $this->contract->command($command);
+        if (! $output instanceof Closure && ! isset($this->malformed[$command])) {
+            AgentSchemas::assertOutput($command, $output);
+        }
         $this->answers[$command] = $output instanceof Closure ? $output : static fn (): array => $output;
 
         return $this;
+    }
+
+    /**
+     * Answers with a shape the agent never returns, to test the Gateway's own guard against a malformed result.
+     *
+     * @param  array<string, mixed>|Closure(array<string, mixed>, Node, ?AgentBinaryOutput, ?AgentBinaryInput): array<string, mixed>  $output
+     */
+    public function answerMalformed(string $command, array|Closure $output): self
+    {
+        $this->malformed[$command] = true;
+
+        return $this->answer($command, $output);
     }
 
     /** @param  array<string, mixed>  $details */
@@ -103,9 +121,14 @@ final class FakeAgentCommandRunner implements AgentCommandRunner
         }
         $this->deadlines[] = $deadlineSeconds;
         $this->calls[] = ['node' => $node->name, 'command' => $command, 'input' => $input];
+        AgentSchemas::assertInput($command, $input);
         $answer = $this->answers[$command] ?? throw new LogicException("No fake answer for agent command [{$command}].");
+        $result = $answer($input, $node, $output, $binaryInput);
+        if (! isset($this->malformed[$command])) {
+            AgentSchemas::assertOutput($command, $result);
+        }
 
-        return $answer($input, $node, $output, $binaryInput);
+        return $result;
     }
 
     #[\Override]

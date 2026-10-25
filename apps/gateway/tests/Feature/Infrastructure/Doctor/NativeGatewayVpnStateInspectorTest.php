@@ -136,9 +136,9 @@ it('fails closed for a refusal, a lost result, and malformed output', function (
     match ($case) {
         'refusal' => $harness->agents->refuse('wireguard.inspect-hub', 'wireguard.hub_unreadable'),
         'transport' => $harness->agents->answer('wireguard.inspect-hub', static fn (): array => throw new AgentRunnerFailure('wireguard.inspect-hub', AgentRunnerFailure::Transport, 'secret')),
-        'malformed active' => $harness->agents->answer('wireguard.inspect-hub', ['active' => 'yes', 'config_sha256' => null, 'dns_records_sha256' => null]),
-        'missing digest' => $harness->agents->answer('wireguard.inspect-hub', ['active' => true, 'config_sha256' => null]),
-        'malformed digest' => $harness->agents->answer('wireguard.inspect-hub', ['active' => true, 'config_sha256' => 7, 'dns_records_sha256' => null]),
+        'malformed active' => $harness->agents->answerMalformed('wireguard.inspect-hub', ['active' => 'yes', 'config_sha256' => null, 'dns_records_sha256' => null]),
+        'missing digest' => $harness->agents->answerMalformed('wireguard.inspect-hub', ['active' => true, 'config_sha256' => null]),
+        'malformed digest' => $harness->agents->answerMalformed('wireguard.inspect-hub', ['active' => true, 'config_sha256' => 7, 'dns_records_sha256' => null]),
     };
 
     try {

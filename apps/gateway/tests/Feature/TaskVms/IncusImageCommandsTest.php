@@ -62,7 +62,7 @@ it('refuses a builder with the wrong account identity before preparation or host
 
 it('requires the typed image result to confirm publication', function (array $result): void {
     $agents = new FakeAgentCommandRunner;
-    $agents->answer('incus.image', $result);
+    $agents->answerMalformed('incus.image', $result);
     app()->instance(AgentCommandRunner::class, $agents);
     expect(fn () => app(IncusTaskVmImageBuilder::class)->publish(TaskVmSettingsBuilder::host(123), new Node(['name' => 'host']), 'builder', 'base'))
         ->toThrow(TaskVmException::class);
@@ -72,6 +72,6 @@ it('maps an image host failure without attempting a second path', function (): v
     $agents = new FakeAgentCommandRunner;
     $agents->refuse('incus.image', 'task_vm.host_command_failed', ['operation' => 'publish', 'exit_code' => 1, 'stderr' => 'fixture refusal']);
     app()->instance(AgentCommandRunner::class, $agents);
-    expect(fn () => app(IncusHost::class)->image(TaskVmSettingsBuilder::host(123), new Node(['name' => 'host']), ['kind' => 'publish']))->toThrow(TaskVmException::class, 'fixture refusal');
+    expect(fn () => app(IncusHost::class)->image(TaskVmSettingsBuilder::host(123), new Node(['name' => 'host']), ['kind' => 'publish', 'name' => 'builder', 'alias' => 'base', 'properties' => ['os' => 'ubuntu']]))->toThrow(TaskVmException::class, 'fixture refusal');
     expect($agents->commands())->toBe(['incus.image']);
 });

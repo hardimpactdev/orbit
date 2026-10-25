@@ -38,7 +38,7 @@ final class DevelopmentDeploymentFixture
         $this->agents = new FakeAgentCommandRunner()
             ->answer('instances.resolve-development-target', ['commit' => str_repeat('b', 40)])
             ->answer('instances.checkout-development-default', static fn (array $input): array => ['commit' => $input['commit']])
-            ->answer('instances.run-development-step', ['exit_code' => 0, 'output' => [], 'truncated' => false]);
+            ->answer('instances.run-development-step', ['exit_code' => 0, 'timed_out' => false, 'output' => [], 'truncated' => false]);
         $this->deployment = new RemoteDevelopmentDeployment(
             $this->agents, $accounts, app(CheckoutRemovalBoundary::class), app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class),
         );

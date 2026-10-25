@@ -41,7 +41,7 @@ it('checks the checkout itself when a Route serves it', function (): void {
 
 it('fails closed on an incomplete or malformed observation', function (array $output): void {
     $instance = route_application_url_instance('/srv/apps/shop');
-    $agents = new FakeAgentCommandRunner()->answer('doctor.inspect-application-urls', $output);
+    $agents = new FakeAgentCommandRunner()->answerMalformed('doctor.inspect-application-urls', $output);
 
     expect(fn () => route_application_url_inspector($agents)->inspect($instance, ['apps/docs' => 'https://docs.test']))
         ->toThrow(DoctorInspectionException::class);

@@ -34,6 +34,6 @@ final class FakeRetargetAgentRunner implements AdmissionAgentRunner
             throw $this->failure;
         }
 
-        return (new FakeAgentCommandRunner)->answer('agent.status', ['architecture' => $node->architecture])->run($node, $command, $input, $deadlineSeconds);
+        return (new FakeAgentCommandRunner)->answer('agent.status', ['version' => '0.5.0', 'sha256' => str_repeat('a', 64), 'platform' => 'linux', 'architecture' => (string) $node->architecture, 'observer' => 'active'])->run($node, $command, $input, $deadlineSeconds);
     }
 }

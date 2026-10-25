@@ -12,6 +12,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\PhpBuildAnswers;
 
 // The Gateway's part of the production PHP runtime: what it renders and sends, and how it reads each answer. The
 // agent's Rust tests in apps/agent/src/commands/php_runtime_tests.rs prove what each command does to a runtime.
@@ -131,7 +132,7 @@ function php_runtime_commands(?Closure $configure = null): array
     ]);
     $identity = ProductionPhpRuntimeIdentity::forProvisioning($instance, '8.5');
     $instance->update($identity->attributes());
-    $agents = (new FakeAgentCommandRunner)->answer('php.install-build', ['outcome' => 'current', 'data' => []]);
+    $agents = (new FakeAgentCommandRunner)->answer('php.install-build', PhpBuildAnswers::result());
     if ($configure !== null) {
         $configure($agents);
     }

@@ -108,7 +108,7 @@ it('rejects invalid names before key or hub mutations', function (): void {
 
 it('rejects malformed key results before changing desired state or projecting the hub', function (array $result): void {
     [$converger, $peer, $connection, $agents, $hub] = native_peer_fixture();
-    $agents->runner->answer('wireguard.prepare-peer-key', $result);
+    $agents->runner->answerMalformed('wireguard.prepare-peer-key', $result);
 
     expect(fn () => $converger->converge($peer, $connection))->toThrow(function (NodeProvisioningException $error): void {
         expect($error->errorCode)->toBe('vpn.peer_key_failed');

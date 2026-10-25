@@ -14,7 +14,7 @@ use App\Models\Node;
 use Tests\Support\FakeAgentCommandRunner;
 
 it('sends stored and synthetic shapes in one bounded inspection', function (): void {
-    $agents = new FakeAgentCommandRunner()->answer('firewall.inspect', ['backend' => 'active', 'ownerships' => ['exact', 'drift']]);
+    $agents = new FakeAgentCommandRunner()->answer('firewall.inspect', ['backend' => 'active', 'ownerships' => ['exact', 'drift'], 'matches' => true, 'live' => []]);
 
     $result = new NativeUfwFirewallInspector($agents, app(AgentContract::class))->inspect([inspector_target(), inspector_metrics_target()]);
 
@@ -29,7 +29,7 @@ it('sends stored and synthetic shapes in one bounded inspection', function (): v
 });
 
 it('maps inactive and absent backends without mutating intent', function (string $backend): void {
-    $agents = new FakeAgentCommandRunner()->answer('firewall.inspect', ['backend' => $backend, 'ownerships' => ['missing']]);
+    $agents = new FakeAgentCommandRunner()->answer('firewall.inspect', ['backend' => $backend, 'ownerships' => ['missing'], 'matches' => true, 'live' => []]);
     $rule = inspector_rule();
     $before = $rule->getAttributes();
 
@@ -40,10 +40,10 @@ it('maps inactive and absent backends without mutating intent', function (string
 })->with(['inactive', 'absent']);
 
 it('performs fresh inspections on separate Nodes', function (): void {
-    $agents = new FakeAgentCommandRunner()->answer('firewall.inspect', ['backend' => 'active', 'ownerships' => ['missing']]);
+    $agents = new FakeAgentCommandRunner()->answer('firewall.inspect', ['backend' => 'active', 'ownerships' => ['missing'], 'matches' => true, 'live' => []]);
     $inspector = new NativeUfwFirewallInspector($agents, app(AgentContract::class));
     $first = $inspector->inspect([inspector_target()]);
-    $agents->answer('firewall.inspect', ['backend' => 'active', 'ownerships' => ['exact']]);
+    $agents->answer('firewall.inspect', ['backend' => 'active', 'ownerships' => ['exact'], 'matches' => true, 'live' => []]);
     $second = $inspector->inspect([inspector_metrics_target(8, '10.44.0.4')]);
 
     expect($first->rules)->toBe([FirewallRuleInspectionStatus::Missing])->and($second->rules)->toBe([FirewallRuleInspectionStatus::Exact]);
@@ -58,7 +58,7 @@ it('rejects targets from different Nodes before an agent call', function (): voi
 });
 
 it('refuses malformed native observations without leaking details', function (array $result): void {
-    $agents = new FakeAgentCommandRunner()->answer('firewall.inspect', $result);
+    $agents = new FakeAgentCommandRunner()->answerMalformed('firewall.inspect', $result);
 
     expect(fn () => new NativeUfwFirewallInspector($agents, app(AgentContract::class))->inspect([inspector_target()]))->toThrow(DoctorInspectionException::class);
 })->with([

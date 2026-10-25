@@ -20,7 +20,7 @@ use App\Models\Project;
 use Tests\Support\FakeAgentCommandRunner;
 
 /** @return array{NativeProcessStateInspector, FakeAgentCommandRunner, Process} */
-function native_process_inspector(ProcessRuntime $runtime, array $result, ?CommandDeadline $deadline = null): array
+function native_process_inspector(ProcessRuntime $runtime, array $result, ?CommandDeadline $deadline = null, bool $malformed = false): array
 {
     $node = Node::query()->create([
         'name' => fake()->unique()->word(),
@@ -58,7 +58,9 @@ function native_process_inspector(ProcessRuntime $runtime, array $result, ?Comma
         'desired_state' => DesiredProcessState::Running,
         'status' => LifecycleStatus::Active,
     ]);
-    $agents = new FakeAgentCommandRunner()->answer('doctor.inspect-process', $result);
+    $agents = $malformed
+        ? new FakeAgentCommandRunner()->answerMalformed('doctor.inspect-process', $result)
+        : new FakeAgentCommandRunner()->answer('doctor.inspect-process', $result);
 
     return [new NativeProcessStateInspector(new ProcessTargetResolver, $agents, new SystemdProcessRenderer, new DockerProcessRenderer, $deadline ?? new CommandDeadline, app(AgentContract::class)), $agents, $process];
 }
@@ -146,7 +148,7 @@ it('refuses an expired parent deadline before an agent call', function (): void 
 });
 
 it('reports malformed native observations as unavailable', function (array $result): void {
-    [$inspector, , $process] = native_process_inspector(ProcessRuntime::Systemd, $result);
+    [$inspector, , $process] = native_process_inspector(ProcessRuntime::Systemd, $result, malformed: true);
 
     expect(fn () => $inspector->inspect($process))->toThrow(DoctorInspectionException::class);
 })->with([

@@ -641,7 +641,7 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
                             throw new AgentCommandRefused('caddy.install-package', 'caddy.package_failed', $result->stderr, ['reason' => $result->stderr]);
                         }
 
-                        return ['changed' => false];
+                        return ['changed' => false, 'version' => '2.10.2'];
                     })
                     ->answer('caddy.order-after-vpn', static function (array $input) use ($processes): array {
                         $processes->run(new ProcessInvocation(['orbit-agent', 'command', 'caddy.order-after-vpn'], input: json_encode($input, JSON_THROW_ON_ERROR)));
