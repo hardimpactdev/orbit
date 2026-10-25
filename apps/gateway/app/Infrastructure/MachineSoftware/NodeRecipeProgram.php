@@ -22,14 +22,20 @@ final readonly class NodeRecipeProgram
 
     public function __construct(private AgentCommandRunner $agents, private PhpBuildInstaller $php, private PrivateDnsManager $dns) {}
 
-    /** @return array<string, ToolPin> */
-    public function tools(Node $node, MachineRecipe $recipe): array
+    /** The recipe architecture of a Node; another architecture is refused. */
+    public static function architecture(Node $node): string
     {
-        $architecture = match ($node->architecture) {
+        return match ($node->architecture) {
             'x86_64', 'amd64' => 'amd64',
             'aarch64', 'arm64' => 'arm64',
             default => throw new ResourceOperationException('node.recipe_architecture', 'The Node architecture is not supported by the recipe.', 422),
         };
+    }
+
+    /** @return array<string, ToolPin> */
+    public function tools(Node $node, MachineRecipe $recipe): array
+    {
+        $architecture = self::architecture($node);
         $node->load('roles');
         $names = $node->roles->isEmpty() ? $recipe->profile('operator', $architecture) : [];
         foreach ($node->roles as $role) {
@@ -229,7 +235,7 @@ final readonly class NodeRecipeProgram
             'user' => $node->user,
             'snapshot' => $recipe->snapshot,
             'git_packages' => $recipe->gitPackages, 'artifact_mirror' => $recipe->artifactMirror,
-            'architecture' => in_array($node->architecture, ['x86_64', 'amd64'], true) ? 'amd64' : 'arm64',
+            'architecture' => self::architecture($node),
             'tools' => array_intersect_key($data['tools'], $tools),
             'vp_lock' => isset($tools['vp']) ? VitePlusRuntimeLock::read($tools['vp']) : null,
         ];
@@ -245,9 +251,9 @@ final readonly class NodeRecipeProgram
     public static function javascript(Node $node, RoleName $role): ?array
     {
         $recipe = new RecipeLoader()->load();
-        $architecture = in_array($node->architecture, ['x86_64', 'amd64'], true) ? 'amd64' : 'arm64';
+        $architecture = self::architecture($node);
         $tools = [];
-        foreach (array_intersect($recipe->profile($role->value), self::JavascriptTools) as $name) {
+        foreach (array_intersect($recipe->profile($role->value, $architecture), self::JavascriptTools) as $name) {
             $tools[$name] = $recipe->tools[$name]->forArchitecture($architecture);
         }
 

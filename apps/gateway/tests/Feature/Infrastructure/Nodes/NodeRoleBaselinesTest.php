@@ -1148,6 +1148,7 @@ function role_baseline_models(RoleName $role, string $name = 'role-node'): array
         'name' => $name,
         'status' => 'active',
         'platform' => 'linux',
+        'architecture' => 'x86_64',
         'public_ssh_host' => '192.0.2.10',
         'public_ssh_port' => 22,
         'user' => 'orbit',

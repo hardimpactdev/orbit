@@ -413,7 +413,7 @@ it('refuses an unavailable requested CLI release before application', function (
 it('does not record an unexpected verification reply', function (): void {
     $node = FleetFixtures::node('recipe-invalid-verification');
     $agents = recipeAgents();
-    $agents->answer('recipe.verify-delivery', ['identity' => 'wrong']);
+    $agents->answerMalformed('recipe.verify-delivery', ['identity' => 'wrong']);
     app()->instance(FleetNodeVerification::class, new RecipeVerification);
 
     expect(fn () => app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load()))
@@ -521,13 +521,13 @@ it('keeps newer Ubuntu versions visible in the plan result and recorded status',
     $node = FleetFixtures::node('recipe-newer');
     $recipe = new RecipeLoader()->load();
     $newer = ['curl' => ['installed' => '8.18.0-1ubuntu2.8', 'version' => $recipe->tools['curl']->version]];
-    recipeAgents(['changed_packages' => [], 'healthy' => true, 'newer_than_recipe' => $newer], static function (array $payload): array {
+    recipeAgents(['changed_packages' => [], 'restarted_services' => [], 'changed_tools' => [], 'healthy' => true, 'newer_than_recipe' => $newer], static function (array $payload): array {
         $tools = [];
         foreach ($payload['tools'] as $name => $pin) {
             $tools[$name] = ['source' => $pin['source'], 'version' => $pin['version'], 'installed' => $name === 'curl' ? '8.18.0-1ubuntu2.8' : $pin['version'], 'changed' => false, 'status' => $name === 'curl' ? 'newer_than_recipe' : 'current'];
         }
 
-        return $tools;
+        return ['_actions' => [], ...$tools];
     });
     app()->instance(FleetNodeVerification::class, new RecipeVerification);
 

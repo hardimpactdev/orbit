@@ -90,7 +90,7 @@ Every topology Node is a copy of the stopped VM `node-template` in the Incus poo
 
 The base already provides pinned software, `orbit` with uid/gid 1000 and passwordless sudo, masked apt timers, and identity cleanup before publication. The template never booted, so it holds no machine identity, and each copy gets its own. The shared base preserves DNS configuration for normal task VMs. Only nested topology guests receive persistent public DNS upstreams: as soon as their guest agents respond, the harness sets them before waiting for cloud-init. This avoids the two-minute network-online timeout on topology bridges without usable DNS, while normal task VMs keep their link DNS for internal names.
 
-Convergence clears known hosts, verifies the account, and keeps apt timers masked. It converts the exact root-owned Bun launcher from the recipe into the symlink required by app-role enrollment. Other executables remain subject to the normal conflict checks.
+Convergence clears known hosts, verifies the account, and keeps apt timers masked.
 
 Before enrollment, the harness prepares pnpm through `recipe.install-javascript`. Build the agent from the checkout with `cargo build --release --locked` in `apps/agent` before acquiring a topology. The harness stages that binary in a private directory on every guest and sends its exact digest and recipe pin. The native command checks the launcher as `orbit`, repairs a broken launcher from the pinned archive, and verifies it again. Staging is removed after the command. This works before enrollment and does not require a source mount on production guests.
 
