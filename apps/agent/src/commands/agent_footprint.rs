@@ -150,6 +150,7 @@ fn configure(
     input: &ConfigureInput,
     deadline: Instant,
 ) -> Result<Configured, FootprintError> {
+    let _lock = hold_update_lock(files, deadline)?;
     let directory = &files.path(LOCK_PATH);
     if !directory.is_dir() {
         fs::DirBuilder::new()
@@ -160,7 +161,6 @@ fn configure(
     }
     fs::set_permissions(directory, fs::Permissions::from_mode(0o700))
         .map_err(|_| failed("agent-directory"))?;
-    let _lock = hold_update_lock(files, deadline)?;
     let installed = fs::read(files.path(SECRET_PATH)).ok();
     let keep = kept(installed.as_deref(), input.secret_hash.as_deref());
     let secret_hash = if let (true, Some(recorded)) = (keep, &input.secret_hash) {
@@ -243,12 +243,12 @@ impl Command for ConfigureAgent {
         super::linux_only(platform, Privilege::Root)
     }
 
-    fn run(input: ConfigureInput, _: &Context) -> Result<Configured, FootprintError> {
+    fn run(input: ConfigureInput, context: &Context) -> Result<Configured, FootprintError> {
         configure(
             &Files::system(),
             &mut Native,
             &input,
-            Instant::now() + UPDATE_WAIT,
+            lock::answer_by(context.deadline()).min(Instant::now() + UPDATE_WAIT),
         )
     }
 }
@@ -270,8 +270,12 @@ impl Command for RemoveAgent {
         super::linux_only(platform, Privilege::Root)
     }
 
-    fn run(_: RemoveInput, _: &Context) -> Result<Removed, FootprintError> {
-        remove(&Files::system(), &mut Native, Instant::now() + UPDATE_WAIT)
+    fn run(_: RemoveInput, context: &Context) -> Result<Removed, FootprintError> {
+        remove(
+            &Files::system(),
+            &mut Native,
+            lock::answer_by(context.deadline()).min(Instant::now() + UPDATE_WAIT),
+        )
     }
 }
 

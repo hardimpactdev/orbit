@@ -263,6 +263,10 @@ fn a_held_update_lock_refuses_before_any_change() {
     );
     assert!(!sandbox.path(SECRET_PATH).exists());
     assert!(!sandbox.path(UNIT_PATH).exists());
+    assert!(
+        !sandbox.path(LOCK_PATH).exists(),
+        "the agent directory waits for the lock"
+    );
     assert!(sandbox.host.calls.is_empty());
 
     fs::write(sandbox.path(UNIT_PATH), "unit").unwrap();
