@@ -1,0 +1,41 @@
+id: f6396e8f-001e-48d0-8f89-5ac76037381b
+name: website-package
+tags: {}
+description: Admit or resume one explicit package group; one guarded tick, no group creation.
+inputs:
+  properties:
+    workItem: { type: string }
+    manager: { type: string, enum: [composer, js] }
+    package: { type: string }
+    version: { type: string }
+    purpose: { type: string, enum: [major, security] }
+    advisoryUrls: { type: array, items: { type: string }, default: [] }
+    advisories: { type: array, items: { type: string }, default: [] }
+  required: [workItem, manager, package, version, purpose]
+jobs:
+  - name: tick
+    steps:
+      - name: admit
+        task:
+          type: model_method
+          modelIdOrName: orbit-gateway
+          methodName: admit_package
+          inputs:
+            workItem: '${{ inputs.workItem }}'
+            manager: '${{ inputs.manager }}'
+            package: '${{ inputs.package }}'
+            version: '${{ inputs.version }}'
+            purpose: '${{ inputs.purpose }}'
+            advisories: '${{ inputs.advisories }}'
+            advisoryUrls: '${{ inputs.advisoryUrls }}'
+      - name: reconcile
+        dependsOn:
+          - step: admit
+            condition: { type: succeeded }
+        task:
+          type: model_method
+          modelIdOrName: orbit-driver-package
+          methodName: tick
+          inputs:
+            workItems: '${{ [inputs.workItem] }}'
+            maxSteps: 3

@@ -5,8 +5,10 @@ import { analysisFixture, HEAD, TREE } from "./analysis_fixture.ts";
 import { sha256 } from "../../extensions/behaviors/_lib/repository_analysis.ts";
 
 export interface Scenario {
+  prStaysOpen?: boolean;
   scriptNoChange?: boolean;
   scriptFails?: boolean;
+  scriptFailsOnce?: boolean;
   scriptInfrastructureFailure?: boolean;
   scriptInterrupted?: boolean;
   handoffFailOnce?: boolean;
@@ -27,6 +29,9 @@ export interface Scenario {
 }
 
 interface Group {
+  project_id: number;
+  taskable_id: number | null;
+  vm_power: string | null;
   id: number;
   title: string;
   brief: string;
@@ -52,7 +57,7 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
   for (const [id, scenario] of Object.entries(scenarios)) {
     const gid = Number(id);
     groups.set(gid, {
-      id: gid, title: `Group ${gid}`, brief: "Routing test.", status: "backlog", watched_pr_state: null, scenario, counts: {}, head: HEAD, tree: TREE,
+      project_id: 20, taskable_id: null, vm_power: null, id: gid, title: `Group ${gid}`, brief: "Routing test.", status: "backlog", watched_pr_state: null, scenario, counts: {}, head: HEAD, tree: TREE,
       orchestration: "external", assistance_requested: false, assistance_kind: null, assistance_reason: null, assistance_question: null,
       tasks: Array.from({ length: scenario.subtasks ?? 1 }, (_, i) => ({
         id: gid * 100 + i + 1, position: i + 1, title: `Subtask ${i + 1}`, brief: "Do it.", status: "todo", deliverables: [], assistance_requested: false, assistance_kind: null, assistance_question: null, assistance_reason: null,
@@ -78,6 +83,7 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
           return { status: "failed", error_code: "task_vm.invalid_config" };
         }
         g.status = "running";
+        g.taskable_id = 1; g.vm_power = "running";
         if (s.provisionIdentity) return { status: "succeeded", result: s.provisionIdentity };
         return { status: "succeeded", result: { instance_id: 1, node_id: 2, starting_commit: HEAD,
           analysis_base: { base: HEAD, instance_id: 1, repository: "https://example.test/repo.git", branch: `task-${g.id}` } } };
@@ -85,7 +91,7 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
         bump(g, "script");
         if (s.scriptInfrastructureFailure) return { status: "failed", error_code: "tasks.script_unavailable" };
         if (!s.scriptNoChange) g.tree = "e".repeat(40);
-        return { status: "succeeded", result: { outcome: s.scriptFails || s.scriptInterrupted ? "failed" : "passed", exit_code: s.scriptInterrupted ? null : s.scriptFails ? 23 : 0,
+        return { status: "succeeded", result: { outcome: (s.scriptFails || (s.scriptFailsOnce && g.counts.script === 1)) || s.scriptInterrupted ? "failed" : "passed", exit_code: s.scriptInterrupted ? null : (s.scriptFails || (s.scriptFailsOnce && g.counts.script === 1)) ? 23 : 0,
           output: s.scriptFails ? "npm update failed" : "updated", output_truncated: false, changed: !s.scriptNoChange, head: g.head, tree: g.tree } };
       }
       case "analyze": {
@@ -133,7 +139,7 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
         const n = bump(g, "publish");
         if (s.publishFailOnce && n === 1) return { status: "failed", error_code: "tasks.push_failed" };
         const ok = (g.counts.published = (g.counts.published ?? 0) + 1);
-        g.watched_pr_state = s.prClosedOnce && ok === 1 ? "closed" : "merged";
+        g.watched_pr_state = s.prClosedOnce && ok === 1 ? "closed" : s.prStaysOpen ? "open" : "merged";
         return { status: "succeeded", result: { branch: `task-${g.id}`, commit: "head", pull_request_number: ok, pull_request_url: `https://example.test/pull/${ok}` } };
       }
     }
@@ -218,6 +224,7 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
       }
       if (req.method === "POST" && rest === "/complete") {
         g.status = "completed";
+        g.vm_power = "destroyed";
         return json(200, view());
       }
       const op = /^\/(provision|script|check|analyze|turn|publish)$/.exec(rest);

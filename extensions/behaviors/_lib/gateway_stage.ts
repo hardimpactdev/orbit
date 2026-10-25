@@ -1,3 +1,4 @@
+import { packageArgs, packageDescription, PackageTargetSchema, type PackageTarget } from "./package_target.ts";
 import { type GroupRequest, syncGroupAssistance } from "./group_assistance.ts";
 import { type AuthorizedPlan, briefSource, canonical, type Candidate, validateAnalysis, validateAnalysisFailure, validatePlan, validateProvisionResult } from "./repository_analysis.ts";
 
@@ -72,6 +73,7 @@ export interface StageArgs {
   baseline?: unknown;
   script?: unknown;
   routine?: boolean;
+  packageTarget?: PackageTarget;
 }
 
 export interface Deps {
@@ -153,7 +155,7 @@ export function inputIdentity(args: StageArgs): string {
     const e = envelope(rec);
     return e ? { recordedAt: e.recordedAt, payload: e.payload } : null;
   };
-  if (args.routine) return JSON.stringify({ routine: true,
+  if (args.routine) return JSON.stringify({ routine: true, ...(args.packageTarget ? { packageTarget: args.packageTarget } : {}),
     ...(args.stage === "handoff" ? { script: ref(args.script), change: ref(args.change) } : {}),
     ...(["repair", "publish", "finish"].includes(args.stage) ? { handoff: ref(args.handoff) } : {}),
     ...(["repair", "finish"].includes(args.stage) ? { script: ref(args.script) } : {}) });
@@ -352,7 +354,7 @@ async function plan(args: StageArgs, group: number, http: Http): Promise<{ subta
       if (!h || h.payload.outcome !== "passed") throw new Error("publish needs a passed handoff check");
       return req("/publish", {
         check: h.payload.checkId,
-        pull_request: { title: g.title, body: `${g.brief}\n\nDriven by Swamp through ADR 0229 Gateway operations (group ${group}).` },
+        pull_request: { title: g.title, body: `${g.brief}${args.packageTarget ? `\n\nSingle package: ${packageDescription(args.packageTarget)}.` : ""}\n\nDriven by Swamp through ADR 0229 Gateway operations (group ${group}).` },
       }, null);
     }
     case "merged":
@@ -364,17 +366,18 @@ async function plan(args: StageArgs, group: number, http: Http): Promise<{ subta
     case "script":
       if (!args.routine) throw new Error("script stage requires the routine method");
       await setSubtaskStatus(http, group, t, "running");
-      return req("/script", { subtask: t.id, script: "scripts/dependencies", args: ["routine"] }, t.id);
+      return req("/script", { subtask: t.id, script: "scripts/dependencies", args: args.packageTarget ? packageArgs(args.packageTarget) : ["routine"] }, t.id);
     case "repair": {
       if (!args.routine) throw new Error("repair stage requires the routine method");
       const h = ofSubtask(args.handoff, t.id);
       const script = ofSubtask(args.script, t.id);
       if (!(h && ["failed", "changed"].includes(String(h.outcome))) && !(script && script.outcome === "failed")) throw new Error("repair requires failed script or local check evidence");
+      const scope = args.packageTarget ? `Only ${packageDescription(args.packageTarget)}. Finish scripts/dependencies ${packageArgs(args.packageTarget).join(" ")}; do not upgrade another direct package. A security fix must clear the selected package advisories. ` : "";
       return req("/turn", { subtask: t.id, role: "implementer", thread: "new", prompt:
         implementerPrompt(g, t, null, envelope(args.handoff), null) +
-        "\n\nThis is the single routine dependency repair turn. Preserve manifest ranges, overrides and release-age/security policy. " +
-        "If the routine command failed, fix its cause and rerun scripts/dependencies routine in this VM; do not claim ready until it completes. " +
-        "Fix the failing checks. Do not add majors or unrelated changes. Stop blocked if you cannot finish within this turn. " +
+        "\n\n" + scope + "This is the single routine dependency repair turn. Preserve manifest ranges, overrides and release-age/security policy. " +
+        (args.packageTarget ? "If the selected package command failed, fix its cause and rerun that exact command in this VM; do not claim ready until it completes. " : "If the routine command failed, fix its cause and rerun scripts/dependencies routine in this VM; do not claim ready until it completes. ") +
+        (args.packageTarget ? "Fix the failing checks. Do not add unrelated upgrades or changes. " : "Fix the failing checks. Do not add majors or unrelated changes. ") + "Stop blocked if you cannot finish within this turn. " +
         `\nRoutine command output: ${String(script?.output ?? "")}` }, t.id);
     }
     case "baseline":
@@ -511,8 +514,9 @@ async function products(job: Job, op: Record<string, unknown>, http: Http, args:
     case "provision": {
       if (args.routine) {
         requireOperation(job, op);
+        if (args.packageTarget && !(typeof result.starting_commit === "string" && /^[a-f0-9]{40}$/.test(result.starting_commit))) throw new Error("package provision lacks a fresh starting commit");
         if (![result.instance_id, result.node_id].every((n) => Number.isSafeInteger(n) && Number(n) > 0)) throw new Error("provision has no workspace identity");
-        return { artifacts: { workspace: { group: job.group, operationId: job.operationId, outcome: "ready", instanceId: result.instance_id, nodeId: result.node_id } }, evidence: ev() };
+        return { artifacts: { workspace: { group: job.group, operationId: job.operationId, outcome: "ready", instanceId: result.instance_id, nodeId: result.node_id, ...(args.packageTarget ? { startingCommit: result.starting_commit } : {}) } }, evidence: ev() };
       }
       try {
         requireOperation(job, op);
@@ -535,7 +539,9 @@ async function products(job: Job, op: Record<string, unknown>, http: Http, args:
         typeof result.output !== "string" || typeof result.output_truncated !== "boolean" ||
         ![result.head, result.tree].every((v) => typeof v === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(v)) ||
         (result.outcome === "passed") !== (result.exit_code === 0)) throw new Error("invalid scoped script result");
-      return { artifacts: { script: { subtask: job.subtask, ...result } }, evidence: ev() };
+      const earlier = args.packageTarget ? ofSubtask(args.script, job.subtask) : null;
+      const changed = result.changed || earlier?.changed === true || (earlier?.tree != null && earlier.tree !== result.tree);
+      return { artifacts: { script: { subtask: job.subtask, ...result, changed: Boolean(changed), ...(args.packageTarget ? { commandChanged: result.changed } : {}) } }, evidence: ev() };
     }
     case "baseline":
     case "handoff": {
@@ -674,6 +680,10 @@ async function finishRoutine(job: Job, args: StageArgs, http: Http): Promise<Job
 /** One ensure call for one driver key. */
 export async function runStage(args: StageArgs, deps: Deps): Promise<Job> {
   const group = groupOf(args.workItem);
+  if (args.packageTarget) {
+    args.packageTarget = PackageTargetSchema.parse(args.packageTarget);
+    if (args.packageTarget.workItem !== args.workItem || !args.routine) throw new Error("package target differs from work item");
+  }
   if (args.routine) {
     const parsed = keyParts(args.key);
     if (parsed.workItem !== args.workItem || parsed.stage !== args.stage) throw new Error("routine key does not match work item and stage");

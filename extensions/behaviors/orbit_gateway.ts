@@ -1,3 +1,4 @@
+import { admitPackage, PackageTargetSchema, type PackageTarget } from "./_lib/package_target.ts";
 // @nckrtl/orbit-gateway — the stage work of the orbit-groups factory.
 // `stage` ensures one Gateway task operation per driver key and never waits:
 // see _lib/gateway_stage.ts. The Gateway authenticates this Node by its
@@ -67,9 +68,10 @@ export function curlHttp(g: GlobalArgs): Http {
 
 export const behavior = {
   type: "@nckrtl/orbit-gateway",
-  version: "2026.10.25.4",
+  version: "2026.10.25.5",
   globalArguments: GlobalArgsSchema,
   resources: {
+    packageTarget: { description: "Immutable single-package selection per admitted group", schema: PackageTargetSchema, lifetime: "infinite", garbageCollection: 10 },
     job: {
       description: "One Gateway task operation per driver key, with its stage products",
       schema: JobSchema,
@@ -91,6 +93,34 @@ export const behavior = {
     },
   },
   methods: {
+    admit_package: {
+      description: "Admit one unused website group after all earlier packages merged and completed; never creates a group",
+      arguments: PackageTargetSchema.strip(), // Swamp merges global args into method validation.
+      execute: async (target: PackageTarget, context: StageContext & { runModel: (args: { definition: string; method: string; arguments: Record<string, unknown> }) => Promise<{ ok: boolean; error?: { message: string } }> }) => {
+        let handle: { name: string } | null = null;
+        await admitPackage(target, {
+          http: curlHttp(context.globalArgs),
+          targets: await context.queryData(`modelName == "${context.definition.name}" && name.startsWith("package-")`, "attributes") as PackageTarget[],
+          runState: async (workItem) => ((await context.queryData(`modelName == "website-package" && name == "state-${workItem}"`, "attributes")) as { stageId: string; status: string }[])[0] ?? null,
+          save: async (value) => { handle = await context.writeResource("packageTarget", `package-${target.workItem}`, value); },
+          start: async (workItem) => {
+            const r = await context.runModel({ definition: "website-package", method: "start", arguments: { workItem } });
+            if (!r.ok) throw new Error(r.error?.message ?? "cannot start package factory");
+          },
+        });
+        return { dataHandles: handle ? [handle] : [] };
+      },
+    },
+    package: {
+      description: "One selected package through the existing routine stage client",
+      arguments: z.object({ workItem: z.string(), stage: z.enum(["provision", "script", "repair", "handoff", "publish", "merged", "finish"]),
+        key: z.string(), handoff: z.unknown().optional(), change: z.unknown().optional(), script: z.unknown().optional() }),
+      execute: async (args: StageArgs, context: StageContext) => {
+        const rows = await context.queryData(`modelName == "${context.definition.name}" && name == "package-${args.workItem}"`, "attributes");
+        const target = PackageTargetSchema.parse(rows[0]);
+        return executeStage({ ...args, routine: true, packageTarget: target }, context);
+      },
+    },
     assistance: {
       description: "Reconcile parked assistance; post-child group requests clear only after their exact factory approval",
       arguments: z.object({

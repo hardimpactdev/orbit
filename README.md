@@ -12,6 +12,8 @@ commands and allowed versions. One failed update/check gets one repair turn;
 a second failure parks for assistance. Green work publishes a PR; unchanged
 work completes without one. Start only after the Orbit operation and website
 script merge and the Gateway release is verified. Nick owns the first live run.
+The [single-package workflow](docs/website-packages.md) handles one explicit major or security target per new group. It waits for merge and cleanup before admitting another package, with one repair turn and a fresh script/audit rerun before publication. Detection and version policy remain in the website. This package workflow has not been applied to live Swamp.
+
 The earlier [dependency planner](docs/dependency-workflow-adoption.md) remains
 historical and is not part of this flow. External review-and-merge/topology
 admission stays closed. Live Swamp has not been updated by these changes.
