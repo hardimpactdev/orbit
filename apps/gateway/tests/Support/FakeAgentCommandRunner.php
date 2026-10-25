@@ -93,7 +93,14 @@ final class FakeAgentCommandRunner implements AgentCommandRunner
     #[\Override]
     public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
     {
-        $this->contract->command($command);
+        $spec = $this->contract->command($command);
+        if (($spec->inputMaxBytes > 0) !== ($binaryInput !== null) || (($spec->outputMaxBytes > 0) !== ($output !== null))) {
+            throw new LogicException("Binary input and output must match the agent contract for [{$command}].");
+        }
+        $platform = $node->platform === 'macos' ? 'macos' : 'linux';
+        if ($spec->privilege($platform) === null) {
+            throw new LogicException("The agent command [{$command}] does not run on {$platform}.");
+        }
         $this->deadlines[] = $deadlineSeconds;
         $this->calls[] = ['node' => $node->name, 'command' => $command, 'input' => $input];
         $answer = $this->answers[$command] ?? throw new LogicException("No fake answer for agent command [{$command}].");

@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Infrastructure\AgentCommands\AgentContract;
 use App\Infrastructure\AgentCommands\AgentGuest;
 use App\Infrastructure\AgentCommands\GuestAgentCommandRunner;
 use Closure;
+use LogicException;
 
 /** Fakes guest command results while keeping image build intent observable. */
 final class FakeGuestAgentCommandRunner implements GuestAgentCommandRunner
@@ -28,6 +30,9 @@ final class FakeGuestAgentCommandRunner implements GuestAgentCommandRunner
 
     public function runGuest(AgentGuest $guest, string $command, array $input = [], ?float $deadlineSeconds = null): array
     {
+        if (app(AgentContract::class)->command($command)->privilege('linux') === null) {
+            throw new LogicException("The agent command [{$command}] does not run in a Linux guest.");
+        }
         $this->calls[] = ['guest' => $guest, 'command' => $command, 'input' => $input];
         $this->deadlines[] = $deadlineSeconds;
 
