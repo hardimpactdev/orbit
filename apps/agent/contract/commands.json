@@ -14,6 +14,49 @@
   ],
   "commands": [
     {
+      "name": "analytics.configure-clickhouse",
+      "summary": "Publish Plausible's four fixed ClickHouse configuration files.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "analytics.clickhouse_config_unsafe",
+        "analytics.clickhouse_config_failed",
+        "analytics.clickhouse_recovery_failed"
+      ]
+    },
+    {
+      "name": "task-vms.start-topology",
+      "summary": "Start one bounded topology preparation as the managed account.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.topology_input_invalid",
+        "task_vm.topology_failed"
+      ]
+    },
+    {
+      "name": "task-vms.topology-status",
+      "summary": "Read a topology result, boot identity, or conservative systemd state.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.topology_input_invalid",
+        "task_vm.topology_failed"
+      ]
+    },
+    {
       "name": "agent.status",
       "summary": "Report the running agent binary and its observer.",
       "mutates": false,
@@ -3577,6 +3620,34 @@
       ]
     },
     {
+      "name": "database.query-sqlite",
+      "summary": "Query an existing SQLite database read-only as its selected owner.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "owner",
+        "macos": "owner"
+      },
+      "errors": [
+        "database.sqlite_unreadable",
+        "database.query_failed"
+      ]
+    },
+    {
+      "name": "database.write-sqlite",
+      "summary": "Run an authorized write against an existing SQLite database as its selected owner.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "owner",
+        "macos": "owner"
+      },
+      "errors": [
+        "database.sqlite_unreadable",
+        "database.query_failed"
+      ]
+    },
+    {
       "name": "instances.prepare-sqlite-seed",
       "summary": "Take or clean up the source snapshot of a SQLite seed.",
       "mutates": true,
@@ -3840,7 +3911,7 @@
     },
     {
       "name": "caddy.install-certificate",
-      "summary": "Install a certificate and key that Caddy reads, and reload Caddy when they change.",
+      "summary": "Atomically publish an owned Caddy certificate pair, restoring it if reload fails.",
       "mutates": true,
       "timeout_seconds": 60,
       "privilege": {
@@ -3848,8 +3919,12 @@
         "macos": null
       },
       "errors": [
+        "caddy.certificate_input_invalid",
         "caddy.certificate_invalid",
-        "caddy.certificate_failed"
+        "caddy.certificate_unsafe",
+        "caddy.publication_lock_failed",
+        "caddy.certificate_failed",
+        "caddy.certificate_recovery_failed"
       ]
     },
     {
@@ -4045,16 +4120,20 @@
     },
     {
       "name": "caddy.remove-certificate",
-      "summary": "Remove a certificate directory that Caddy reads.",
+      "summary": "Remove only an owned role or extension Caddy certificate pair under its publication lock.",
       "mutates": true,
-      "timeout_seconds": 30,
+      "timeout_seconds": 60,
       "privilege": {
         "linux": "root",
         "macos": null
       },
       "errors": [
+        "caddy.certificate_input_invalid",
         "caddy.certificate_invalid",
-        "caddy.certificate_failed"
+        "caddy.certificate_unsafe",
+        "caddy.publication_lock_failed",
+        "caddy.certificate_failed",
+        "caddy.certificate_recovery_failed"
       ]
     },
     {

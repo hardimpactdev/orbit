@@ -1814,7 +1814,6 @@
             "title": "Database connections",
             "kind": "reference",
             "components": [
-                "apps/cli",
                 "apps/gateway"
             ],
             "concepts": [

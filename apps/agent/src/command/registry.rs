@@ -173,6 +173,7 @@ fn registry() -> &'static Registry {
             hooks: Vec::new(),
             services: Vec::new(),
         };
+        registry.service::<crate::commands::task_topology::Worker>();
         orbit_documents_agent::register(&mut registry);
         orbit_ai_router_agent::register(&mut registry);
         registry

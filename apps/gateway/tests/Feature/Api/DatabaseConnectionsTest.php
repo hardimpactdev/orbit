@@ -4,10 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\Instance;
@@ -15,6 +12,7 @@ use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Project;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\FakeAgentCommandRunner;
 
 const DATABASE_CONNECTION_SECRET = 'db-registry-secret-9f3a';
 
@@ -52,16 +50,12 @@ it('selects a production home only on the registered Node and at a path boundary
         'slug' => 'production-file', 'driver' => 'sqlite',
         'node_id' => $sameNode ? $worker->id : $this->node->id, 'path' => $path,
     ])->assertCreated();
-    $ssh = Mockery::mock(SshExecutor::class);
-    $ssh->shouldReceive('execute')->once()->withArgs(function (SshConnection $connection, RemoteCommand $command) use ($sudo): bool {
-        expect($connection->user)->toBe('orbit')
-            ->and($command->arguments)->toBe($sudo
-                ? ['sudo', '-n', '-u', 'orbit-app-82', '-H', 'orbit', 'internal:database-local']
-                : ['orbit', 'internal:database-local']);
+    $agents = (new FakeAgentCommandRunner)->answer('database.query-sqlite', function (array $input) use ($sudo): array {
+        expect($input['owner'])->toBe($sudo ? 'orbit-app-82' : 'orbit');
 
-        return true;
-    })->andReturn(new CommandResult(0, '{"columns":["name"],"rows":[{"name":"users"}],"row_count":1,"truncated":false}', '', 1, false));
-    app()->instance(SshExecutor::class, $ssh);
+        return ['columns' => ['name'], 'rows' => [['name' => 'users']], 'row_count' => 1, 'truncated' => false];
+    });
+    app()->instance(AgentCommandRunner::class, $agents);
 
     $this->getJson('/api/v1/database-connections/production-file/tables')
         ->assertOk()->assertJsonPath('data.tables', ['users']);
@@ -77,10 +71,9 @@ it('returns a distinct safe API error when SQLite inspection cannot read the fil
         'slug' => 'unreadable', 'driver' => 'sqlite', 'node_id' => $this->node->id,
         'path' => '/private/database.sqlite',
     ])->assertCreated();
-    $ssh = Mockery::mock(SshExecutor::class);
-    $ssh->shouldReceive('execute')->andReturn(new CommandResult(1,
-        '{"error":{"code":"database.sqlite_unreadable","message":"remote-private-secret"}}', '', 1, false));
-    app()->instance(SshExecutor::class, $ssh);
+    app()->instance(AgentCommandRunner::class, (new FakeAgentCommandRunner)->refuse(
+        'database.query-sqlite', 'database.sqlite_unreadable', ['private' => 'remote-private-secret'],
+    ));
 
     $response = $this->getJson('/api/v1/database-connections/unreadable/tables')
         ->assertUnprocessable()->assertJsonPath('error.code', 'database.sqlite_unreadable');

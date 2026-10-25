@@ -7,6 +7,7 @@ namespace App\Infrastructure\Caddy;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
+use App\Infrastructure\AgentCommands\AgentStep;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
 use SensitiveParameter;
@@ -51,7 +52,7 @@ final readonly class RoleCaddyCertificate
 
             return new CommandResult(0, '', '', 0, false);
         } catch (AgentCommandRefused $refusal) {
-            return new CommandResult(1, '', $refusal->errorCode.': '.$refusal->getMessage(), 0, false);
+            return new CommandResult(1, AgentStep::output($refusal)->stdout, $refusal->errorCode.': '.$refusal->getMessage(), 0, false);
         } catch (AgentRunnerFailure $failure) {
             return $failure->result ?? new CommandResult(255, '', $failure->getMessage(), 0, false);
         }

@@ -3,9 +3,11 @@
 pub mod accounts;
 pub mod agent;
 pub mod agent_footprint;
+mod analytics_clickhouse;
 pub mod application_log;
 pub mod caddy;
 pub mod caddy_access;
+mod caddy_certificate;
 mod caddy_package;
 mod caddy_publication;
 pub mod ci_runner;
@@ -86,8 +88,10 @@ pub mod schedules;
 pub mod service_metrics;
 pub mod source;
 pub mod sqlite_copy;
+mod sqlite_query;
 pub mod sqlite_seed;
 pub mod storage_root;
+pub(crate) mod task_topology;
 mod task_vm_hub;
 pub mod tls_check;
 pub mod tmpfiles;
@@ -116,6 +120,9 @@ pub fn linux_only(platform: Platform, privilege: Privilege) -> Option<Privilege>
 
 pub fn all() -> Vec<Entry> {
     vec![
+        entry::<analytics_clickhouse::Configure>(),
+        entry::<task_topology::Start>(),
+        entry::<task_topology::Inspect>(),
         entry::<agent::Status>(),
         entry::<gateway_start_hooks::Converge>(),
         entry::<gateway_adoption::preparation::Check>(),
@@ -316,6 +323,8 @@ pub fn all() -> Vec<Entry> {
         entry::<caddy_access::GrantDevelopmentCaddyAccess>(),
         entry::<clone_candidate::InspectCloneCandidate>(),
         entry::<sqlite_copy::CopySqlite>(),
+        entry::<sqlite_query::Query>(),
+        entry::<sqlite_query::Write>(),
         entry::<sqlite_seed::PrepareSqliteSeed>(),
         entry::<sqlite_seed::InstallSqliteSeed>(),
         entry::<transfer_source::TransferSource>(),
@@ -331,7 +340,7 @@ pub fn all() -> Vec<Entry> {
         entry::<tls_check::VerifyCertificate>(),
         entry::<http_check::VerifyHttp>(),
         entry::<topology_evidence::ReadTopologyEvidence>(),
-        entry::<caddy::InstallCertificate>(),
+        entry::<caddy_certificate::InstallCertificate>(),
         entry::<caddy::Reload>(),
         entry::<caddy_publication::Publish>(),
         entry::<caddy_publication::CheckAddresses>(),
@@ -346,7 +355,7 @@ pub fn all() -> Vec<Entry> {
         entry::<doctor_public_route::InspectPublicRoute>(),
         entry::<doctor_route::InspectCustomProxy>(),
         entry::<doctor_route::ResolveRouteDns>(),
-        entry::<caddy::RemoveCertificate>(),
+        entry::<caddy_certificate::RemoveCertificate>(),
         entry::<caddy_package::InstallPackage>(),
         entry::<health::AwaitHealthy>(),
         entry::<metrics_certificate::MetricsCertificate>(),

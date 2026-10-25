@@ -1459,7 +1459,7 @@ Orbit prepares the group's topology in the VM after the group's baseline check, 
 
 Every other turn in the subtask follows one of these turns: a consult, a direction relay or review, a resolution, a deliverable correction, a nudge to continue, and the resume of an interrupted turn. These turns do not admit the topology again.
 
-To prepare the topology, Orbit starts the systemd unit `orbit-task-topology-<run>` as `orbit` and polls it on each tick. The subtask waits meanwhile with `Task VM: preparing the topology <nodes>.` The unit runs `resources/task-vms/topology.sh` from the workspace checkout:
+To prepare the topology, the Gateway calls `task-vms.start-topology` and polls `task-vms.topology-status` on each tick. The subtask waits meanwhile with `Task VM: preparing the topology <nodes>.` The Rust agent starts the systemd unit `orbit-task-topology-<run>` as the managed account, with its home and workspace checkout. The unit runs the compiled `task-topology` service:
 
 | Step | What happens |
 | --- | --- |
@@ -1475,6 +1475,8 @@ A ready topology serves every next subtask whose declaration it holds. A subtask
 A VM can also restart on its own. So before each of the turns above in a subtask with a ready topology, Orbit reads the run's state. The run records the VM's boot ID, and a run from an earlier boot is `stale`. Orbit then prepares the topology again.
 
 When the unit fails, or stops without a result, the subtask asks for assistance with the step and the end of its log. The row forgets the run, so a resolution prepares again. A unit runs for at most 75 minutes. A start stops the units of earlier runs first, so one preparation runs at a time. When the start call fails, Orbit reads the run's state: a unit that runs or finished is the run, and only a run without a unit fails. Host setup gets the Gateway's VPN subnet, so its input rule covers the VM's own address.
+
+The agent holds one start lock for the VM. A repeated start leaves an active, queued, or unreadable run alone. Without a result, status stays `running` until systemd and its cgroup prove the unit has stopped. The service writes its result atomically under the account's `.local/state/orbit/task-topology`, with the step, elapsed seconds, boot ID, and last 40 log lines. The returned log is bounded to 16 KiB. Project harness commands run as the managed account; only the existing host-setup command uses sudo.
 
 ### Prove work on a topology
 

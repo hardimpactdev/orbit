@@ -13,15 +13,15 @@ use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
+use App\Infrastructure\AgentCommands\AgentStep;
 use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use App\Models\Process;
 use SensitiveParameter;
+use Throwable;
 
 /**
  * Publishes Plausible's ClickHouse files on the ClickHouse Process's Node, adds their read-only
@@ -33,12 +33,8 @@ final readonly class NativeAnalyticsClickhouseConfigurationManager implements An
 {
     public const string STEP = 'clickhouse-config';
 
-    private const string CANDIDATE_SUFFIX = '.orbit-candidate';
-
     public function __construct(
-        private SshExecutor $ssh,
-        private SshKeyProvider $keys,
-        private KnownHostsStore $knownHosts,
+        private AgentCommandRunner $agents,
         private ProcessRuntimeManager $runtime,
         private ProcessRuntimeLease $lease,
     ) {}
@@ -113,63 +109,18 @@ final readonly class NativeAnalyticsClickhouseConfigurationManager implements An
         }
     }
 
-    /** Writes each file that differs through a candidate beside it, so ClickHouse never reads a partial file. */
     private function publishFiles(Node $node): bool
     {
-        $this->run($node, new RemoteCommand([
-            'sudo', 'install', '-d', '-o', 'root', '-g', 'root', '-m', '0755', '--',
-            ...PlausibleClickhouseConfiguration::hostDirectories(),
-        ]));
-        $changed = false;
-
-        foreach (array_keys(PlausibleClickhouseConfiguration::FILES) as $file) {
-            $path = PlausibleClickhouseConfiguration::hostPath($file);
-            $contents = PlausibleClickhouseConfiguration::contents($file);
-
-            if ($this->readFile($node, $path) === $contents) {
-                continue;
-            }
-
-            $candidate = $path.self::CANDIDATE_SUFFIX;
-            $this->run($node, new RemoteCommand(['sudo', 'rm', '-f', '--', $candidate]));
-            $this->run($node, new RemoteCommand(
-                ['sudo', 'install', '-o', 'root', '-g', 'root', '-m', '0644', '/dev/stdin', $candidate],
-                input: $contents,
-            ));
-            $this->run($node, new RemoteCommand(['sudo', 'mv', '-fT', '--', $candidate, $path]));
-            $changed = true;
+        try {
+            return $this->agents->run($node, 'analytics.configure-clickhouse')['changed'] === true;
+        } catch (AgentCommandRefused $refusal) {
+            $this->fail($node, AgentStep::output($refusal), $refusal);
+        } catch (AgentRunnerFailure $failure) {
+            $this->fail($node, $failure->result, $failure);
         }
-
-        return $changed;
     }
 
-    private function readFile(Node $node, string $path): ?string
-    {
-        $exists = $this->execute($node, new RemoteCommand(['sudo', 'test', '-f', $path]));
-
-        if ($exists->exitCode === 1) {
-            return null;
-        }
-
-        if (! $exists->succeeded()) {
-            $this->fail($node, $exists);
-        }
-
-        return $this->run($node, new RemoteCommand(['sudo', 'cat', '--', $path]))->stdout;
-    }
-
-    private function run(Node $node, RemoteCommand $command): CommandResult
-    {
-        $result = $this->execute($node, $command);
-
-        if (! $result->succeeded()) {
-            $this->fail($node, $result);
-        }
-
-        return $result;
-    }
-
-    private function fail(Node $node, ?CommandResult $result = null): never
+    private function fail(Node $node, ?CommandResult $result = null, ?Throwable $previous = null): never
     {
         throw new NodeRoleOperationException(
             self::STEP,
@@ -177,24 +128,7 @@ final readonly class NativeAnalyticsClickhouseConfigurationManager implements An
             'analytics.clickhouse_config_failed',
             "Plausible's ClickHouse configuration could not be published on node [{$node->name}].",
             $result,
-        );
-    }
-
-    private function execute(Node $node, RemoteCommand $command): CommandResult
-    {
-        if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
-            $this->fail($node);
-        }
-
-        return $this->ssh->execute(
-            new SshConnection(
-                host: $node->wireguard_ip,
-                user: $node->user,
-                port: 22,
-                identityFile: $this->keys->privateKeyPath(),
-                knownHostsFile: $this->knownHosts->path(),
-            ),
-            $command,
+            $previous,
         );
     }
 

@@ -247,7 +247,7 @@ describe('command vocabulary', function (): void {
         expect(CommandVocabulary::allowsCommand('app:new'))->toBeFalse();
         expect(CommandVocabulary::allowsCommand('app:frobnicate'))->toBeFalse();
         expect(CommandVocabulary::allowsCommand('cluster:attach'))->toBeFalse();
-        expect(CommandVocabulary::allowsCommand('internal:database-local'))->toBeTrue();
+        expect(CommandVocabulary::allowsCommand('internal:database-local'))->toBeFalse();
         expect(CommandVocabulary::allowsCommand('internal:database-query-local'))->toBeFalse();
         expect(CommandVocabulary::allowsCommand('internal:frobnicate'))->toBeFalse();
     });

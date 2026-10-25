@@ -10,43 +10,24 @@ use App\Domain\DatabaseConnections\DatabaseTableColumn;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProtectedInput;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
-use JsonException;
 
 final readonly class SqliteNodeDatabaseInspector
 {
     public const int ROW_LIMIT = 500;
 
-    public const string REMOTE_COMMAND = 'internal:database-local';
-
     public function __construct(
-        private SshExecutor $ssh,
-        private SshKeyProvider $keys,
-        private KnownHostsStore $knownHosts,
+        private AgentCommandRunner $agents,
         private DatabaseResultRedactor $redactor,
     ) {}
 
     public function query(DatabaseConnection $connection, string $sql, bool $write): DatabaseQueryResult
     {
-        $result = $this->run($connection, $sql, $write);
-
-        try {
-            $decoded = json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR);
-        } catch (JsonException) {
-            $this->fail($connection);
-        }
-
-        if (! is_array($decoded) || isset($decoded['error'])) {
-            $this->fail($connection);
-        }
+        $decoded = $this->run($connection, $sql, $write);
 
         $columns = [];
         $rows = [];
@@ -147,101 +128,40 @@ final readonly class SqliteNodeDatabaseInspector
         return $this->redactor->columns($connection->password, $columns);
     }
 
-    /**
-     * @return non-empty-list<string>
-     */
-    public function arguments(): array
-    {
-        return ['orbit', self::REMOTE_COMMAND];
-    }
-
-    /**
-     * @return array{token: string, path: string, sql: string, write: bool}
-     */
-    public function payload(DatabaseConnection $connection, string $sql, bool $write, string $token): array
-    {
-        return [
-            'token' => $token,
-            'path' => $connection->path ?? '',
-            'sql' => $sql,
-            'write' => $write,
-        ];
-    }
-
-    private function run(DatabaseConnection $connection, string $sql, bool $write): CommandResult
+    /** @return array<string, mixed> */
+    private function run(DatabaseConnection $connection, string $sql, bool $write): array
     {
         $node = $this->owningNode($connection);
-        $token = bin2hex(random_bytes(32));
-        $input = ProtectedInput::fromString(json_encode(
-            $this->payload($connection, $sql, $write, $token),
-            JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
-        ));
 
         try {
-            $result = $this->ssh->execute(
-                new SshConnection(
-                    host: (string) $node->wireguard_ip,
-                    user: $node->user,
-                    port: 22,
-                    identityFile: $this->keys->privateKeyPath(),
-                    knownHostsFile: $this->knownHosts->path(),
-                    commandTimeout: 30.0,
-                ),
-                new RemoteCommand($this->executionArguments($connection, $node), protectedInput: $input, timeout: 30.0),
-            );
-        } finally {
-            $input->close();
-        }
-
-        if (! $result->succeeded()) {
-            // SSH uses 255 for transport and authentication errors, not remote execution failures.
-            if ($result->exitCode === 255) {
-                $this->fail($connection);
-            }
-
-            $error = json_decode($result->stdout, true);
-            $details = is_array($error) ? ($error['error'] ?? null) : null;
-
-            if (is_array($details) && ($details['code'] ?? null) === 'database.sqlite_unreadable') {
+            return $this->agents->run($node, $write ? 'database.write-sqlite' : 'database.query-sqlite', [
+                'owner' => $this->executionOwner($connection, $node),
+                'path' => $connection->path,
+                'sql' => $sql,
+            ]);
+        } catch (AgentCommandRefused $refusal) {
+            if ($refusal->errorCode === 'database.sqlite_unreadable') {
                 $this->unreadable('The SQLite file is not readable or writable by the inspection user.');
             }
 
-            $stderr = strtolower($result->stderr);
-
-            if ((str_contains($stderr, 'permission denied') && (
-                str_contains($stderr, 'sudo:')
-                || preg_match('/(?:^|\n)(?:[^\n]*\/)?(?:ba|da|z|k)?sh: [^\n]*permission denied/', $stderr) === 1
-            ))
-                || str_contains($stderr, 'is not allowed to execute')
-                || str_contains($stderr, 'is not in the sudoers file')
-                || (str_contains($stderr, 'sudo:') && (
-                    str_contains($stderr, 'password is required')
-                    || str_contains($stderr, 'not allowed')
-                    || str_contains($stderr, 'not in the sudoers')
-                    || str_contains($stderr, 'a terminal is required')
-                ))) {
-                $this->unreadable('The Node could not run SQLite inspection as the required user; check sudo access and CLI executable permissions.');
-            }
-
+            $this->fail($connection);
+        } catch (AgentRunnerFailure) {
             $this->fail($connection);
         }
-
-        return $result;
     }
 
-    /** @return non-empty-list<string> */
-    private function executionArguments(DatabaseConnection $connection, Node $node): array
+    private function executionOwner(DatabaseConnection $connection, Node $node): string
     {
         if (! $node->roles->contains('role', RoleName::AppProd)
             || $node->roles->contains('role', RoleName::AppDev)) {
-            return $this->arguments();
+            return $node->user;
         }
 
         $owner = $connection->ownerInstance;
 
         if ($owner !== null && $owner->node_id === $node->id
             && is_string($owner->production_user) && $owner->production_user !== '') {
-            return ['sudo', '-n', '-u', $owner->production_user, '-H', ...$this->arguments()];
+            return $owner->production_user;
         }
 
         $path = $connection->path ?? '';
@@ -253,12 +173,12 @@ final readonly class SqliteNodeDatabaseInspector
 
                 if ($home !== '' && $instance->production_user !== ''
                     && str_starts_with($path, $home.'/')) {
-                    return ['sudo', '-n', '-u', (string) $instance->production_user, '-H', ...$this->arguments()];
+                    return (string) $instance->production_user;
                 }
             }
         }
 
-        return $this->arguments();
+        return $node->user;
     }
 
     private function unreadable(string $reason): never

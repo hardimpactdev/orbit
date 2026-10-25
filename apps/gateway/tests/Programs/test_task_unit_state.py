@@ -145,32 +145,6 @@ if (home / 'finish').exists():
         record.assert_not_called()
         self.assertFalse((self.home / 'stops').exists())
 
-    def test_topology_reports_pending_job_as_running(self):
-        self.state.update(ActiveState='inactive', SubState='dead', Job='45809123', ExecMainCode='0')
-        (self.home / 'unit.json').write_text(json.dumps(self.state))
-        result = subprocess.run(['bash', '-c', program('task-vms/topology.sh'), 'topology', 'status', 'test1234'],
-                                env=self.environment, capture_output=True, text=True, timeout=10, check=True)
-        self.assertEqual(json.loads(result.stdout), {'state': 'running'})
-
-    def test_topology_requires_inactive_missing_unit_without_a_cgroup_or_job(self):
-        stub = dict(LoadState='not-found', ActiveState='inactive', SubState='dead',
-                    ControlGroup='', Job='', Description='orbit-task-topology-test1234.service')
-        cases = [('collected', stub, 'lost'),
-                 ('running without file', dict(stub, ActiveState='active', SubState='running',
-                                               ControlGroup='/system.slice/live.service'), 'running'),
-                 ('inactive cgroup', dict(stub, ControlGroup='/system.slice/live.service'), 'running'),
-                 ('pending job', dict(stub, Job='45809123'), 'running'),
-                 ('failed', dict(stub, ActiveState='failed'), 'running')]
-        cases += [('missing ' + key, {name: value for name, value in stub.items() if name != key}, 'running')
-                  for key in ('LoadState', 'ActiveState', 'ControlGroup', 'Job')]
-        for condition, state, expected in cases:
-            with self.subTest(condition=condition):
-                (self.home / 'unit.json').write_text(json.dumps(state))
-
-                result = subprocess.run(['bash', '-c', program('task-vms/topology.sh'), 'topology', 'status', 'test1234'],
-                                        env=self.environment, capture_output=True, text=True, timeout=10, check=True)
-
-                self.assertEqual(json.loads(result.stdout), {'state': expected})
 
 
 class TaskUnitLintTest(unittest.TestCase):

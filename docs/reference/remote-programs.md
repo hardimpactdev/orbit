@@ -106,7 +106,7 @@ The remaining assembly includes the former recipe image builder and shared recip
 
 Task monitors and the recipe library share `tasks/unit-state.py` through `TaskUnitProgram`, which inserts it at `# ORBIT_TASK_UNIT_STATE` before transport. The remote program catalogue expands the same marker inside named libraries. `# Uses:` only prepends same-language libraries; it cannot insert Python into the existing Bash topology script.
 
-The check lints these programs exactly as sent, including the Python heredoc inside `task-vms/topology.sh`, and maps findings to the original template or library line. This preserves the existing scripts while they await the agent migration in [ADR 0225](/decisions/0225-make-node-changes-through-agent-commands); it adds no script or contract.
+The check lints these programs exactly as sent, and maps findings to the original template or library line. This preserves the existing scripts while they await the agent migration in [ADR 0225](/decisions/0225-make-node-changes-through-agent-commands); it adds no script or contract.
 
 A finding is fixed, or suppressed on its line with a comment that gives the reason. The `Remote programs` CI job pins Ruff in its install command, installs shellcheck and the pytest requirements, and runs the check. The [candidate gate](/reference/implementation-loop#the-candidate-gate) runs it when a candidate changes `apps/gateway/resources`, `apps/gateway/tests/Programs`, `apps/gateway/ruff.toml`, or the check itself. A missing tool fails the check.
 

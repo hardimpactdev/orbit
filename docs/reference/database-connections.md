@@ -8,7 +8,7 @@ covers:
   - apps/gateway/app/Http/Controllers/Api/{DatabaseConnectionsController,DatabaseConnectionAttachmentsController}.php
   - apps/gateway/app/Http/Requests/DatabaseConnections/**
   - apps/gateway/{app/Models/{DatabaseConnection,DatabaseConnectionTarget}.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - apps/cli/app/{Commands/Internal/InternalDatabaseLocalCommand.php,Services/Database/**}
+  - apps/agent/src/commands/sqlite_query*.rs
   - apps/gateway/app/{Actions/Instances/CloneInstanceDatabaseAction.php,Domain/Instances/DatabaseClone/**,Infrastructure/Instances/RemoteInstanceSqliteCloner.php}
 ---
 
@@ -74,16 +74,12 @@ Without `write: true`, the Gateway refuses a statement whose leading verb writes
 | Driver | Where it runs |
 | --- | --- |
 | `mysql`, `pgsql` | On the Gateway, through PDO, with the stored host, port, database, user, and password. |
-| `sqlite` | On the linked Node, through the hidden command `orbit internal:database-local`, which opens the file with PDO. |
+| `sqlite` | On the linked Node, through the native `database.query-sqlite` or `database.write-sqlite` agent command. |
 | `redis` | Not supported. `database.driver_unsupported` (422). |
 
-For SQLite, the Gateway connects to the linked Node over SSH and sends a JSON envelope on protected standard input: a random 64-character token, the path, the SQL, and the write flag. None of these values appear on the command line.
+For SQLite, the Gateway sends the selected owner, path, and SQL through `AgentCommandRunner` on protected standard input. The query command opens an existing file read-only. The write command opens an existing file for writing and runs under the agent's mutation supervisor and a lock for that path. Neither command creates a missing database. Both return at most 500 rows and preserve column order and scalar values.
 
-The hidden command checks only that the token is 64 hexadecimal characters. It compares the token with `ORBIT_INTERNAL_DATABASE_TOKEN` only when that variable is set on the Node, and Orbit does not set it. So any user who can run `orbit internal:database-local` on the Node can open a local SQLite file that the user can read.
-
-A read-only request opens the file read-only. The Node must be active, with a WireGuard address and an `orbit` binary on its `PATH`. A record without a Node returns `database.sqlite_node_required`.
-
-SQLite inspection runs as the owning production Instance user, or as the production Instance user whose home contains the registered path on that Node. The Gateway uses `sudo -n -u <production_user> -H orbit internal:database-local`; it does not change home or file permissions. Development inspection still runs as the Node user. The Node baseline already grants the managed Node user passwordless sudo, and the CLI installer publishes the root-owned binary with mode `0755`, so Instance users can execute it. Inaccessible files and denied sudo return `database.sqlite_unreadable` with a safe reason rather than the generic query error.
+The Node must be active and have a WireGuard address. A record without a Node returns `database.sqlite_node_required`. SQLite inspection runs as the owning production Instance user, or as the production Instance user whose home contains the registered path on that Node. Development inspection runs as the Node user. The agent drops to that user's identity before opening the file and does not change home or file permissions. Inaccessible files or an unavailable owner return `database.sqlite_unreadable`. SQL failures return `database.query_failed`, without database contents or native diagnostics.
 
 An unknown table returns `database.table_missing` (404). A failed query on the database or the Node returns `database.query_failed` (502).
 
@@ -184,9 +180,9 @@ The registry records how to reach a database, so a connection works for an exter
 
 A test run with `RefreshDatabase` empties the database it uses. A separate test database of the same kind keeps an Instance's data safe, and `.env.testing` lets Laravel use it without a change in each repository. Making each repository read a `DB_TEST_*` key was rejected, because every repository would need that change first.
 
-### One PDO path for every SQL driver
+### One result shape for every SQL driver
 
-Every SQL driver runs through PHP PDO, so query results have one shape. The Gateway reaches mysql and pgsql directly. A SQLite file exists only on its Node, so the Node runs PDO through the hidden CLI command. `sqlite3` on the Node is a rejected alternative, because it is a second engine with its own output format. Opening the file from the Gateway is impossible.
+The Gateway reaches mysql and pgsql through PDO. A SQLite file exists only on its Node, so the agent uses its embedded SQLite library and returns the same result shape. The Gateway retains owner selection, write authorization, and redaction. This removes the hidden CLI execution path and its PHP dependency. A `sqlite3` subprocess would add another output format and parser. Opening the Node file from the Gateway is impossible.
 
 ### Secrets stay off the command line
 

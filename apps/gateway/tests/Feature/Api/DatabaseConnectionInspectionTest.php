@@ -6,13 +6,11 @@ use App\Domain\DatabaseConnections\DatabaseInspectionExecutor;
 use App\Domain\DatabaseConnections\DatabaseQueryResult;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeDatabaseInspectionExecutor;
 
 const DATABASE_INSPECTION_SECRET = 'db-query-secret-6c2e';
@@ -186,7 +184,7 @@ it('lists schema and describes tables on a registered connection', function (): 
         ->assertJsonPath('error.code', 'database.table_missing');
 });
 
-it('runs sqlite queries on the owning node through the Orbit CLI PDO lane and keeps SQL off argv', function (): void {
+it('runs sqlite queries on the owning node through the native agent with typed input', function (): void {
     $worker = Node::query()->create([
         'name' => 'worker',
         'status' => LifecycleStatus::Active,
@@ -205,56 +203,22 @@ it('runs sqlite queries on the owning node through the Orbit CLI PDO lane and ke
         'path' => '/var/lib/app/database.sqlite',
     ])->assertCreated();
 
-    $ssh = new class implements SshExecutor
-    {
-        public ?SshConnection $connection = null;
-
-        public ?RemoteCommand $command = null;
-
-        public ?string $payload = null;
-
-        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-        {
-            $this->connection = $connection;
-            $this->command = $command;
-            $this->payload = $command->protectedInput === null
-                ? null
-                : stream_get_contents($command->protectedInput->stream());
-
-            return new CommandResult(0, '{"columns":["name"],"rows":[{"name":"users"}],"row_count":1,"truncated":false}', '', 12, false);
-        }
-    };
-    app()->instance(SshExecutor::class, $ssh);
+    $agents = (new FakeAgentCommandRunner)->answer('database.query-sqlite', [
+        'columns' => ['name'], 'rows' => [['name' => 'users']], 'row_count' => 1, 'truncated' => false,
+    ]);
+    app()->instance(AgentCommandRunner::class, $agents);
 
     $this->getJson('/api/v1/database-connections/local/tables')
-        ->assertOk()
-        ->assertJsonPath('data.tables.0', 'users');
+        ->assertOk()->assertJsonPath('data.tables.0', 'users');
 
-    expect($ssh->connection?->host)
-        ->toBe('10.44.0.8')
-        ->and($ssh->command?->arguments)
-        ->toBe(['orbit', 'internal:database-local'])
-        ->and(implode("\0", $ssh->command?->arguments ?? []))
-        ->not->toContain('SELECT')
-        ->not->toContain('sqlite3')
-        ->and($ssh->command?->protectedInput)
-        ->not->toBeNull()
-        ->and($ssh->payload)
-        ->toBeString()
-        ->toContain('/var/lib/app/database.sqlite')
-        ->toContain('sqlite_master')
-        ->not->toContain('sqlite3');
-
-    $decoded = json_decode((string) $ssh->payload, true, flags: JSON_THROW_ON_ERROR);
-
-    expect($decoded)
-        ->toBeArray()
-        ->and($decoded['token'] ?? null)
-        ->toMatch('/\A[a-f0-9]{64}\z/')
-        ->and($decoded['write'] ?? null)
-        ->toBeFalse()
-        ->and($decoded['path'] ?? null)
-        ->toBe('/var/lib/app/database.sqlite');
+    expect($agents->calls)->toHaveCount(1);
+    expect($agents->calls[0])->toBe([
+        'node' => 'worker', 'command' => 'database.query-sqlite',
+        'input' => [
+            'owner' => 'orbit', 'path' => '/var/lib/app/database.sqlite',
+            'sql' => "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+        ],
+    ]);
 });
 
 it('refuses sqlite inspection without an associated node and unknown slugs', function (): void {

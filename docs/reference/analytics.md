@@ -74,7 +74,7 @@ The current lifecycle identifies Plausible by its Node and the name `plausible`,
 
 ClickHouse's defaults assume a large server. On a small Node, its system log tables grow and its background merges run out of memory. So each role convergence applies the four ClickHouse files that Plausible Community Edition ships, unchanged.
 
-The role writes each file on the Node that runs the ClickHouse Process, owned by root with mode `0644`. It writes a file only when the content differs. It mounts each file read-only into the ClickHouse Process at the path that Plausible's own setup uses.
+The role calls `analytics.configure-clickhouse` on the Node that runs the ClickHouse Process. The Rust agent carries Plausible's four files and publishes them as root with mode `0644`. It refuses symlinks, foreign ownership, and writable shared paths before publication. It writes a file only when its content differs and restores earlier files if a later publication fails. Failed restoration reports `analytics.clickhouse_recovery_failed`. The Gateway mounts each file read-only into the ClickHouse Process at the path that Plausible's own setup uses, then applies the Process restart rules below.
 
 | Host file | Container path |
 | --- | --- |

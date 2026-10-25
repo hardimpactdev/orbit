@@ -4,19 +4,16 @@ declare(strict_types=1);
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
+use App\Infrastructure\AgentCommands\AgentContract;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\DatabaseConnections\DatabaseResultRedactor;
 use App\Infrastructure\DatabaseConnections\SqliteNodeDatabaseInspector;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\DatabaseConnection;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
 use Illuminate\Database\Eloquent\Collection;
+use Tests\Support\FakeAgentCommandRunner;
 
 beforeEach(function (): void {
     $this->node = new Node(['id' => 7, 'user' => 'orbit', 'status' => 'active', 'wireguard_ip' => '10.44.0.7']);
@@ -24,63 +21,59 @@ beforeEach(function (): void {
     $this->node->setRelation('roles', new Collection([new NodeRole(['role' => 'app-dev'])]));
     $this->connection = new DatabaseConnection(['slug' => 'local', 'driver' => 'sqlite', 'node_id' => 7, 'path' => '/home/app/shared/database.sqlite']);
     $this->connection->setRelation('node', $this->node);
-    $keys = Mockery::mock(SshKeyProvider::class);
-    $keys->shouldReceive('privateKeyPath')->andReturn('/keys/private');
-    $hosts = Mockery::mock(KnownHostsStore::class);
-    $hosts->shouldReceive('path')->andReturn('/keys/known_hosts');
-    $this->ssh = Mockery::mock(SshExecutor::class);
-    $this->inspector = new SqliteNodeDatabaseInspector($this->ssh, $keys, $hosts, new DatabaseResultRedactor(new CommandActivityInputSanitizer));
+    $this->agents = new FakeAgentCommandRunner(new AgentContract(dirname(__DIR__, 5).'/agent/contract/commands.json'));
+    $this->inspector = new SqliteNodeDatabaseInspector($this->agents, new DatabaseResultRedactor(new CommandActivityInputSanitizer));
 });
 
-it('uses the production owner identity and protected stdin without exposing SQL on argv', function (): void {
+it('sends the production owner and query intent to the native command', function (): void {
     $this->node->setRelation('roles', new Collection([new NodeRole(['role' => 'app-prod'])]));
     $owner = new Instance(['node_id' => 7, 'production_user' => 'orbit-app-7', 'production_home' => '/home/orbit-app-7']);
-    $owner->setRelation('node', $this->node);
     $this->connection->setRelation('ownerInstance', $owner);
-
-    $this->ssh->shouldReceive('execute')->once()->withArgs(function (SshConnection $ssh, RemoteCommand $command): bool {
-        expect($ssh->user)->toBe('orbit')
-            ->and($command->arguments)->toBe(['sudo', '-n', '-u', 'orbit-app-7', '-H', 'orbit', 'internal:database-local']);
-        $payload = json_decode(stream_get_contents($command->protectedInput->stream()), true, flags: JSON_THROW_ON_ERROR);
-        expect($payload['sql'])->toBe('SELECT 1')->and($payload['path'])->toBe($this->connection->path)
-            ->and($payload['token'])->toMatch('/\A[a-f0-9]{64}\z/')->and($payload['write'])->toBeFalse();
-
-        return true;
-    })->andReturn(new CommandResult(0, '{"columns":["n"],"rows":[{"n":1}],"row_count":1,"truncated":false}', '', 1, false));
+    $this->agents->answer('database.query-sqlite', ['columns' => ['n'], 'rows' => [['n' => 1]], 'row_count' => 1, 'truncated' => false]);
 
     expect($this->inspector->query($this->connection, 'SELECT 1', false)->rows)->toBe([['n' => 1]]);
+    expect($this->agents->calls[0])->toMatchArray([
+        'command' => 'database.query-sqlite',
+        'input' => ['owner' => 'orbit-app-7', 'path' => $this->connection->path, 'sql' => 'SELECT 1'],
+    ]);
 });
 
-it('keeps development inspection as the Node user', function (): void {
-    $this->ssh->shouldReceive('execute')->once()->withArgs(function (SshConnection $ssh, RemoteCommand $command): bool {
-        expect($ssh->user)->toBe('orbit')->and($command->arguments)->toBe(['orbit', 'internal:database-local']);
+it('keeps development inspection as the Node user and selects the write command only for authorized writes', function (bool $write, string $command): void {
+    $this->agents->answer($command, ['columns' => [], 'rows' => [], 'row_count' => 0, 'truncated' => false]);
 
-        return true;
-    })->andReturn(new CommandResult(0, '{"columns":[],"rows":[],"row_count":0,"truncated":false}', '', 1, false));
+    expect($this->inspector->query($this->connection, 'SELECT 1', $write)->rows)->toBe([]);
+    expect($this->agents->calls[0])->toMatchArray([
+        'command' => $command,
+        'input' => ['owner' => 'orbit', 'path' => $this->connection->path, 'sql' => 'SELECT 1'],
+    ]);
+})->with([[false, 'database.query-sqlite'], [true, 'database.write-sqlite']]);
 
-    expect($this->inspector->query($this->connection, 'SELECT 1', false)->rows)->toBe([]);
-});
-
-it('maps inaccessible files and denied execution without returning remote secrets', function (string $stdout, string $stderr, string $code, int $exitCode = 1): void {
-    $this->ssh->shouldReceive('execute')->once()->andReturn(new CommandResult($exitCode, $stdout, $stderr, 1, false));
+it('maps native refusals without returning private details', function (string $refusal, string $expected): void {
+    $this->agents->refuse('database.query-sqlite', $refusal, ['private' => 'private-remote-value']);
 
     try {
         $this->inspector->query($this->connection, 'SELECT 1', false);
         test()->fail('Inspection unexpectedly succeeded.');
     } catch (ResourceOperationException $exception) {
-        expect($exception->errorCode)->toBe($code)
+        expect($exception->errorCode)->toBe($expected)
             ->and($exception->getMessage())->not->toContain('private-remote-value');
     }
 })->with([
-    'file permissions' => ['{"error":{"code":"database.sqlite_unreadable","message":"private-remote-value"}}', '', 'database.sqlite_unreadable'],
-    'sudo password' => ['', 'sudo: a password is required private-remote-value', 'database.sqlite_unreadable'],
-    'sudo policy' => ['', "Sorry, user orbit is not allowed to execute 'private-remote-value' as orbit-app-7 on node.", 'database.sqlite_unreadable'],
-    'sudoers missing' => ['', 'orbit is not in the sudoers file. private-remote-value', 'database.sqlite_unreadable'],
-    'binary permissions' => ['', 'sh: 1: orbit: Permission denied private-remote-value', 'database.sqlite_unreadable'],
-    'bash binary permissions' => ['', 'bash: line 1: /usr/local/bin/orbit: Permission denied private-remote-value', 'database.sqlite_unreadable'],
-    'sudo binary permissions' => ['', 'sudo: unable to execute /usr/local/bin/orbit: Permission denied private-remote-value', 'database.sqlite_unreadable'],
-    'unrelated permission denial' => ['', 'Permission denied private-remote-value', 'database.query_failed'],
-    'SSH authentication failure' => ['', 'orbit@node: Permission denied (publickey). private-remote-value', 'database.query_failed', 255],
-    'SSH transport failure' => ['', 'ssh: connect to host node port 22: Connection refused private-remote-value', 'database.query_failed', 255],
-    'ordinary SQL failure' => ['{"error":{"code":"database.query_failed"}}', 'private-remote-value', 'database.query_failed'],
+    ['database.sqlite_unreadable', 'database.sqlite_unreadable'],
+    ['database.query_failed', 'database.query_failed'],
+    ['agent.identity_mismatch', 'database.query_failed'],
 ]);
+
+it('maps a runner failure to a safe query error', function (): void {
+    $this->agents->answer('database.query-sqlite', static fn (): array => throw new AgentRunnerFailure(
+        'database.query-sqlite', AgentRunnerFailure::Transport, 'private-remote-value',
+    ));
+
+    try {
+        $this->inspector->query($this->connection, 'SELECT 1', false);
+        test()->fail('Inspection unexpectedly succeeded.');
+    } catch (ResourceOperationException $exception) {
+        expect($exception->errorCode)->toBe('database.query_failed')
+            ->and($exception->getMessage())->not->toContain('private-remote-value');
+    }
+});
