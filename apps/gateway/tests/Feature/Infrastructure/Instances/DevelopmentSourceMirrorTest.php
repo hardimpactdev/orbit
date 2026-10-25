@@ -27,6 +27,7 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Process;
+use Tests\Support\AgentSchemas;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\GitRemoteRedirect;
 use Tests\Support\TestOrbitHome;
@@ -165,6 +166,19 @@ final class SourceMirrorAgent implements WorkspaceAgentCommandRunner
 
     public function runInWorkspace(Node $node, Closure $execute, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
     {
+        FakeAgentCommandRunner::admit($node, $command, $input, $output, $binaryInput);
+        $result = $this->respond($command, $input, $binaryInput);
+        AgentSchemas::assertOutput($command, $result);
+
+        return $result;
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     * @return array<string, mixed>
+     */
+    private function respond(string $command, array $input, ?AgentBinaryInput $binaryInput): array
+    {
         if ($command === 'task-vms.read-git-refs') {
             return $this->state;
         }
@@ -173,6 +187,6 @@ final class SourceMirrorAgent implements WorkspaceAgentCommandRunner
         expect($binaryInput?->bytes)->toBeGreaterThan(0);
         $this->imports[] = $input;
 
-        return [];
+        return ['imported' => true];
     }
 }

@@ -223,11 +223,8 @@ final readonly class RecipeImagePrograms
     private function payload(AgentGuest $guest, MachineRecipe $recipe, string $profile): array
     {
         $this->verifyDelivery($guest, $recipe);
-        $architecture = match ($guest->architecture) {
-            'x86_64', 'amd64' => 'amd64',
-            'aarch64', 'arm64' => 'arm64',
-            default => throw new TaskVmException(TaskVmError::ImageBuildFailed, 'The image architecture is unsupported.'),
-        };
+        $architecture = MachineRecipe::architecture($guest->architecture)
+            ?? throw new TaskVmException(TaskVmError::ImageBuildFailed, 'The image architecture is unsupported.');
         $agent = $recipe->agentDigest($architecture);
         $names = array_unique([...$recipe->profile('base', $architecture), ...$recipe->profile($profile, $architecture)]);
         $data = json_decode($recipe->json, true, flags: JSON_THROW_ON_ERROR);

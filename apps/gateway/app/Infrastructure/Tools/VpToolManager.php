@@ -18,6 +18,7 @@ use App\Domain\Tools\VpEnvironment;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
+use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\MachineSoftware\VitePlusRuntimeLock;
 use App\Models\Node;
@@ -99,11 +100,8 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
     /** @return array<string, mixed> */
     public function materializeInput(Node $node): array
     {
-        $architecture = match ($node->architecture) {
-            'x86_64', 'amd64' => 'amd64',
-            'aarch64', 'arm64' => 'arm64',
-            default => throw new ToolManagerException('materialize', 'The Node architecture is not supported by the Vite+ recipe.'),
-        };
+        $architecture = MachineRecipe::architecture($node->architecture)
+            ?? throw new ToolManagerException('materialize', 'The Node architecture is not supported by the Vite+ recipe.');
         $recipe = new RecipeLoader()->load();
         $data = json_decode($recipe->json, true, flags: JSON_THROW_ON_ERROR);
         if (! is_array($data) || ! is_array($data['tools'] ?? null)) {

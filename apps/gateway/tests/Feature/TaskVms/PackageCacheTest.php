@@ -31,6 +31,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Symfony\Component\Process\Process;
 use Tests\Feature\GitHub\GitHubTestSupport;
+use Tests\Support\AgentSchemas;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeGuestAgentCommandRunner;
 use Tests\Support\TaskVmSettingsBuilder;
@@ -155,6 +156,27 @@ it('lists current Project usage with verified hashes and removes usage when a lo
 
 abstract class CacheAgentFixture implements AgentCommandRunner
 {
+    /** Answers may break their output schema, to test the cache's own guard against a malformed result. */
+    public bool $malformed = false;
+
+    /** Holds every scripted answer to the agent contract, as the shared fake does. */
+    final public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
+    {
+        FakeAgentCommandRunner::admit($node, $command, $input, $output, $binaryInput);
+        $result = $this->respond($node, $command, $input, $deadlineSeconds, $output, $binaryInput);
+        if (! $this->malformed) {
+            AgentSchemas::assertOutput($command, $result);
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     * @return array<string, mixed>
+     */
+    abstract protected function respond(Node $node, string $command, array $input, ?float $deadlineSeconds, ?AgentBinaryOutput $output, ?AgentBinaryInput $binaryInput): array;
+
     public function install(Node $node): bool
     {
         throw new LogicException('No cache test should install an agent.');
@@ -243,7 +265,7 @@ it('publishes verified Project usage only after a successful fill and skips a su
 
         public ?Closure $duringFill = null;
 
-        public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
+        protected function respond(Node $node, string $command, array $input, ?float $deadlineSeconds, ?AgentBinaryOutput $output, ?AgentBinaryInput $binaryInput): array
         {
             $payload = $input;
             if ($payload['artifacts'] !== []) {
@@ -297,7 +319,7 @@ it('publishes available cache artifacts without App coverage and rejects invalid
     {
         public bool $invalid = false;
 
-        public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
+        protected function respond(Node $node, string $command, array $input, ?float $deadlineSeconds, ?AgentBinaryOutput $output, ?AgentBinaryInput $binaryInput): array
         {
             $payload = $input;
             expect($payload['github_token'])->toBeNull();
@@ -315,6 +337,7 @@ it('publishes available cache artifacts without App coverage and rejects invalid
 
     expect(PackageCacheEntry::query()->sole()->manager)->toBe('npm');
     $agents->invalid = true;
+    $agents->malformed = true;
     expect(fn () => $fill->execute($node->id))->toThrow(TaskVmException::class, 'no verified archive hash');
     expect(PackageCacheEntry::query()->sole()->manager)->toBe('npm');
 });
@@ -335,7 +358,7 @@ it('records partial fills per Project and keeps them pending until every host su
     {
         public bool $failArtifact = true;
 
-        public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
+        protected function respond(Node $node, string $command, array $input, ?float $deadlineSeconds, ?AgentBinaryOutput $output, ?AgentBinaryInput $binaryInput): array
         {
             return [
                 'hashes' => $this->failArtifact ? ['healthy' => 'sha256-'.str_repeat('a', 64)] : ['healthy' => 'sha256-'.str_repeat('a', 64), 'broken' => 'sha256-'.str_repeat('b', 64)],
@@ -373,7 +396,7 @@ it('isolates conflicting archive checksums without blocking another Project', fu
     }
     $agents = new class extends CacheAgentFixture
     {
-        public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
+        protected function respond(Node $node, string $command, array $input, ?float $deadlineSeconds, ?AgentBinaryOutput $output, ?AgentBinaryInput $binaryInput): array
         {
             $payload = $input;
             expect(array_column($payload['artifacts'], 'key'))->toBe(['healthy']);
@@ -408,7 +431,7 @@ it('requires every host to verify a changed Composer checksum even when its arch
     {
         public bool $fail = false;
 
-        public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
+        protected function respond(Node $node, string $command, array $input, ?float $deadlineSeconds, ?AgentBinaryOutput $output, ?AgentBinaryInput $binaryInput): array
         {
             $payload = $input;
 
@@ -445,7 +468,7 @@ it('accepts bounded printable archive failure reasons and rejects unsafe or over
     {
         public function __construct(private readonly string $reason) {}
 
-        public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
+        protected function respond(Node $node, string $command, array $input, ?float $deadlineSeconds, ?AgentBinaryOutput $output, ?AgentBinaryInput $binaryInput): array
         {
             return ['hashes' => [], 'failures' => ['archive' => $this->reason]];
         }
@@ -479,7 +502,7 @@ it('fails a package fill after one attempt and leaves the Project pending for it
     {
         public int $calls = 0;
 
-        public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
+        protected function respond(Node $node, string $command, array $input, ?float $deadlineSeconds, ?AgentBinaryOutput $output, ?AgentBinaryInput $binaryInput): array
         {
             $this->calls++;
 
@@ -535,7 +558,7 @@ it('drops an overlapping fill without failure and fills a changed lock on the ne
 
         public function __construct(private readonly Closure $duringFill) {}
 
-        public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
+        protected function respond(Node $node, string $command, array $input, ?float $deadlineSeconds, ?AgentBinaryOutput $output, ?AgentBinaryInput $binaryInput): array
         {
             $payload = $input;
             $keys = array_column($payload['artifacts'], 'key');

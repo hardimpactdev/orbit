@@ -89,7 +89,7 @@ describe(HomebrewToolManager::class, function (): void {
 
     it('requires both typed scope fields before using Homebrew', function (array $scope): void {
         [$manager, $ssh, $agent] = homebrew_tool_manager([]);
-        $agent->answer('tools.inspect-homebrew-scope', $scope);
+        $agent->answerMalformed('tools.inspect-homebrew-scope', $scope);
 
         expect(fn () => $manager->materialize(homebrew_tool_node('macos', null, 'arm64', 'mini')))
             ->toThrow(fn (ToolManagerException $error) => expect($error->step)->toBe('manager-probe'));
@@ -271,7 +271,7 @@ it('uses a fresh typed formula inventory on each read', function (string $platfo
 
 it('refuses malformed typed inventory observations', function (array $data): void {
     [$manager, $ssh, $agent] = homebrew_tool_manager([]);
-    $agent->answer('tools.homebrew-formula-inventory', $data);
+    $agent->answerMalformed('tools.homebrew-formula-inventory', $data);
     expect(fn () => $manager->installedInventory(homebrew_tool_node()))->toThrow(ToolManagerException::class);
     expect($ssh->commands)->toBe([]);
 })->with([

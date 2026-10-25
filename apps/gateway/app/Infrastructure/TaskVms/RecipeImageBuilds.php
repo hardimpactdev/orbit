@@ -170,11 +170,8 @@ final readonly class RecipeImageBuilds
 
     private function start(Node $node, MachineRecipe $recipe, int $generation): TaskVmImageBuild
     {
-        $architecture = match ($node->architecture) {
-            'x86_64', 'amd64' => 'amd64',
-            'aarch64', 'arm64' => 'arm64',
-            default => throw new TaskVmException('task_vm.image_build_failed', 'The image host architecture is unsupported.'),
-        };
+        $architecture = MachineRecipe::architecture($node->architecture)
+            ?? throw new TaskVmException('task_vm.image_build_failed', 'The image host architecture is unsupported.');
         $recipe->profile('base', $architecture);
 
         return $this->chain->start($node, $recipe, $generation);

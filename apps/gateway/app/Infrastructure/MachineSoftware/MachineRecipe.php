@@ -32,6 +32,16 @@ final readonly class MachineRecipe
         public array $agentDigests = [],
     ) {}
 
+    /** The recipe architecture of a machine architecture, or null when the recipe has none for it. */
+    public static function architecture(?string $architecture): ?string
+    {
+        return match ($architecture) {
+            'x86_64', 'amd64' => 'amd64',
+            'aarch64', 'arm64' => 'arm64',
+            default => null,
+        };
+    }
+
     public function agentDigest(string $architecture): string
     {
         $platform = match ($architecture) {

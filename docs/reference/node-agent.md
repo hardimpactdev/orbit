@@ -231,7 +231,7 @@ The runner picks the transport from the Node or build guest. Every adapter carri
 
 Image building installs command mode before the first recipe command through the runner's guest interface. Images need no observer, WireGuard identity, agent secret, or PHP to run commands. Enrollment adds the Node identity later. `orbit:node-programs` also renders enrollment commands as `orbit-agent command <name>` with the pinned envelope on standard input for external consumers.
 
-Only binary staging may change a Node outside a named command. First admission uses a fixed `uname -sm` staging probe because no agent exists yet. It validates the platform and architecture before installing a candidate. A root bootstrap login runs root commands directly; other Linux logins use passwordless sudo. The installer owns atomic replacement and candidate cleanup.
+Only binary staging may change a Node outside a named command. First admission uses a fixed `uname -sm` staging probe because no agent exists yet. It validates the platform and architecture before installing a candidate. A root bootstrap login runs root commands directly; other Linux logins use passwordless sudo. The installer owns atomic replacement and the cleanup of each candidate it runs from.
 
 ### Ownership and exclusions
 
@@ -273,7 +273,7 @@ Only a refusal that `agent.install` declares, such as `agent.replace_failed` or 
 
 The installer leaves stopped Processes and in-flight commands alone. When the observer does not stay active for 5 seconds or a compiled service restart fails, it restores the kept binary, restarts those services on it, and fails with `agent.health_check_failed`.
 
-When the installed binary already matches, it changes nothing, so concurrent mismatches install once. It removes the staged candidate whatever the outcome. It records no recipe identity.
+When the installed binary already matches, it changes nothing, so concurrent mismatches install once. Once it runs, it removes the staged candidate whatever the outcome. A call whose deadline passes after staging and before the installer starts leaves its `0700` candidate in `/var/tmp`, where systemd-tmpfiles ages it out; the transport has no file-removal API. It records no recipe identity.
 
 ## How it connects
 

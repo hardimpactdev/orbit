@@ -63,7 +63,7 @@ final class VpStoreAgentRunner implements AgentCommandRunner
 
     public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
     {
-        AgentSchemas::assertInput($command, $input);
+        FakeAgentCommandRunner::admit($node, $command, $input, $output, $binaryInput);
         $result = $this->respond($node, $command, $input, $deadlineSeconds);
         AgentSchemas::assertOutput($command, $result);
 

@@ -25,11 +25,8 @@ final readonly class NodeRecipeProgram
     /** The recipe architecture of a Node; another architecture is refused. */
     public static function architecture(Node $node): string
     {
-        return match ($node->architecture) {
-            'x86_64', 'amd64' => 'amd64',
-            'aarch64', 'arm64' => 'arm64',
-            default => throw new ResourceOperationException('node.recipe_architecture', 'The Node architecture is not supported by the recipe.', 422),
-        };
+        return MachineRecipe::architecture($node->architecture)
+            ?? throw new ResourceOperationException('node.recipe_architecture', 'The Node architecture is not supported by the recipe.', 422);
     }
 
     /** @return array<string, ToolPin> */

@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 use App\Domain\Instances\InstancePhpVersionCatalog;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\MachineSoftware\ArtifactPin;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
+use App\Infrastructure\MachineSoftware\NodeRecipeProgram;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\MachineSoftware\RecipeValidator;
 use App\Infrastructure\MachineSoftware\SnapshotAvailability;
@@ -825,4 +827,15 @@ it('accepts a native artifact version for any artifact package and rejects a cha
     expect($recipe->tools['git']->forArchitecture('amd64')->version)->toBe($document['tools']['git']['version']);
     $document['tools']['git']['artifacts']['amd64']['version'] = 'stable';
     expect(fn () => new RecipeLoader()->resolve(json_encode($document, JSON_THROW_ON_ERROR), app(AgentDelivery::class)))->toThrow(InvalidArgumentException::class, 'expected an exact version');
+});
+
+it('maps machine architectures to recipe architectures in one place and refuses others', function (): void {
+    expect(MachineRecipe::architecture('x86_64'))->toBe('amd64')
+        ->and(MachineRecipe::architecture('amd64'))->toBe('amd64')
+        ->and(MachineRecipe::architecture('aarch64'))->toBe('arm64')
+        ->and(MachineRecipe::architecture('arm64'))->toBe('arm64')
+        ->and(MachineRecipe::architecture('riscv64'))->toBeNull()
+        ->and(MachineRecipe::architecture(null))->toBeNull();
+    expect(fn () => NodeRecipeProgram::architecture(new Node(['architecture' => null])))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('node.recipe_architecture'));
 });

@@ -115,9 +115,7 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
         }
 
         $error = $outcome['error'];
-        if (! $spec->declares($error['code']) && ! in_array($error['code'], $this->contract->commonErrors(), true)) {
-            throw new AgentRunnerFailure($command, AgentRunnerFailure::UndeclaredError, "The command [{$command}] returned an undeclared error.", ['code' => $error['code']]);
-        }
+        $this->assertKnown($spec, $error['code']);
 
         throw new AgentCommandRefused($command, $error['code'], $error['message'], $error['details']);
     }
@@ -163,9 +161,7 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
 
         if (! $outcome['ok']) {
             $code = $outcome['error']['code'];
-            if (! $spec->declares($code) && ! in_array($code, $this->contract->commonErrors(), true)) {
-                throw new AgentRunnerFailure(self::Install, AgentRunnerFailure::UndeclaredError, 'The command [agent.install] returned an undeclared error.', ['code' => $code]);
-            }
+            $this->assertKnown($spec, $code);
             if (! $spec->declares($code) || in_array($code, self::RetryableInstallRefusals, true)) {
                 throw new AgentCommandRefused(self::Install, $code, $outcome['error']['message'], $outcome['error']['details']);
             }
@@ -181,6 +177,14 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
         }
 
         return ($outcome['data']['replaced'] ?? false) === true;
+    }
+
+    /** An error code the command does not declare and the contract does not share is a runner failure. */
+    private function assertKnown(AgentCommandSpec $spec, string $code): void
+    {
+        if (! $spec->declares($code) && ! in_array($code, $this->contract->commonErrors(), true)) {
+            throw new AgentRunnerFailure($spec->name, AgentRunnerFailure::UndeclaredError, "The command [{$spec->name}] returned an undeclared error.", ['code' => $code]);
+        }
     }
 
     private function recordFailedPin(Node $node, ?string $pin): void

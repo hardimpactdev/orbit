@@ -14,6 +14,7 @@ use App\Domain\Tools\ToolManagerScopeLock;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
+use App\Infrastructure\MachineSoftware\NodeRecipeProgram;
 use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Models\Node;
@@ -106,7 +107,7 @@ final readonly class MigrateDockerAction
         $payload = ['fallback' => $fallback, 'recipe' => $recipe->identity, 'snapshot' => $recipe->snapshot,
             'docker_version' => $recipe->tools['docker.io']->version, 'containerd_version' => $recipe->tools['containerd']->version,
             'process_ids' => $ids, 'process_states' => (object) $states, 'process_specs' => (object) $specs,
-            'architecture' => in_array($node->architecture, ['x86_64', 'amd64'], true) ? 'amd64' : 'arm64'];
+            'architecture' => NodeRecipeProgram::architecture($node)];
         $command = match ($mode) {
             'plan' => 'docker.plan-migration',
             'prepare' => 'docker.prepare-migration',
