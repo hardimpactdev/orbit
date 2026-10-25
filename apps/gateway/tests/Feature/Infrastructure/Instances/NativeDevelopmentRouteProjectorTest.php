@@ -52,9 +52,6 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Routes\NativeClusterRouterReplacementProjector;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
@@ -68,9 +65,8 @@ use Illuminate\Support\Str;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
 use Tests\Support\PhpBuildAnswers;
+use Tests\Support\RouteProjectionAgentAnswers;
 use Tests\Support\SharedPhpPoolAnswers;
-use Tests\Support\SshCommandAgents;
-use Tests\Support\SshNodeCaddyBuilds;
 
 beforeEach(function (): void {
     $this->phpAgents = new FakeAgentCommandRunner;
@@ -85,15 +81,11 @@ it('uses one local workload site when Router and workload roles share a Node', f
     $route->publishSites();
     $nodeSites = $sites->forNode($node);
     $configuration = new DevelopmentCaddyConfigRenderer()->render($nodeSites);
-    [$projector, $ssh, $processes, $home] = orb127_route_projector();
+    [$projector, $agents, $processes, $home] = orb127_route_projector();
 
     try {
         $projector->converge($instance, $route);
 
-        $arguments = collect($ssh->commands)
-            ->flatMap(
-                static fn (RemoteCommand $command): array => $command->arguments,
-            );
         expect($nodeSites)
             ->toHaveCount(1)
             ->and($nodeSites->sole()->isProxy())
@@ -111,10 +103,11 @@ it('uses one local workload site when Router and workload roles share a Node', f
             ->toContain('tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt')
             ->not->toContain('tls_trust_pool')
             ->not->toContain("orbit-certificates/app-instance-{$instance->id}/current/root.pem")
-            ->not->toContain('reverse_proxy https://')->and($arguments)->toContain("app-instance-{$instance->id}")
-            ->not->toContain("route-{$route->id}-router", 'ufw', 's_client')->and($processes->invocations)->toHaveCount(
-                1,
-            );
+            ->not->toContain('reverse_proxy https://')
+            ->and(RouteProjectionAgentAnswers::scopes($agents, 'certificates.request-leaf'))
+            ->toBe([['node' => $node->name, 'scope' => "app-instance-{$instance->id}"]])
+            ->and($agents->commands())->not->toContain('firewall.route-lan', 'routes.verify-certificate')
+            ->and($processes->invocations)->toHaveCount(1);
     } finally {
         new Filesystem()->deleteDirectory($home);
     }
@@ -175,7 +168,7 @@ it('retires a transferred generated Route without inventing an old Router certif
     ]);
     $transfer = orb368_projection_transfer($instance, $sourceRoute, $replacement, $source, $destination, $source);
     $sites = new DevelopmentSiteRepository;
-    [$projector, $ssh, $processes, $home] = orb127_route_projector();
+    [$projector, $agents, $processes, $home] = orb127_route_projector();
 
     try {
         expect($sites->forNode($source)->pluck('domain')->all())->toBe(['transferred.acme.test']);
@@ -187,18 +180,16 @@ it('retires a transferred generated Route without inventing an old Router certif
             ->not->toContain('feature.acme.test');
 
         $projector->converge($instance->refresh(), $replacement);
-        $ssh->commands = [];
-        $ssh->hosts = [];
+        $agents->calls = [];
         $projector->retireSource($transfer);
 
-        $deletions = collect($ssh->commands)->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'sudo rm -rf -- "/etc/caddy/orbit-certificates/$scope"'));
-        expect($deletions->map(static fn (RemoteCommand $command): string => $command->arguments[3])->values()->all())
+        $deletions = RouteProjectionAgentAnswers::scopes($agents, 'certificates.remove-leaf');
+        expect(array_column($deletions, 'scope'))
             ->toBe(["app-instance-{$instance->id}", "route-{$sourceRoute->id}-router"]);
-        $firstDeletion = $deletions->keys()->first();
-        $caddyHosts = collect($ssh->commands)->filter(static fn (RemoteCommand $command): bool => SshNodeCaddyBuilds::pushed($command) !== null)
-            ->keys()->map(fn (int $index): string => $ssh->hosts[$index])->unique()->sort()->values()->all();
-        expect($caddyHosts)->toBe(['10.44.0.10', '10.44.0.30']);
-        expect(collect($ssh->commands)->take($firstDeletion)->filter(static fn (RemoteCommand $command): bool => SshNodeCaddyBuilds::pushed($command) !== null)->count())->toBe(2);
+        $firstDeletion = array_search('certificates.remove-leaf', $agents->commands(), true);
+        $caddyNodes = collect(RouteProjectionAgentAnswers::publications($agents))->pluck('node')->unique()->sort()->values()->all();
+        expect($caddyNodes)->toBe(collect([$source->name, $destination->name])->sort()->values()->all());
+        expect(array_count_values(array_slice($agents->commands(), 0, (int) $firstDeletion))['caddy.publish'] ?? 0)->toBe(2);
         $projector->retireSource($transfer);
         expect($sourceRoute->refresh()->status)->toBe(RouteStatus::Retiring);
     } finally {
@@ -216,12 +207,12 @@ it('preserves a Router certificate still serving the transferred explicit Route'
     $destination->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $route->update(['status' => RouteStatus::Active]);
     $transfer = orb368_projection_transfer($instance, $route, $route, $source, $destination, $router);
-    [$projector, $ssh, $processes, $home] = orb127_route_projector();
+    [$projector, $agents, $processes, $home] = orb127_route_projector();
 
     try {
         $projector->retireSource($transfer);
-        $deletions = collect($ssh->commands)->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'sudo rm -rf -- "/etc/caddy/orbit-certificates/$scope"'));
-        expect($deletions->map(static fn (RemoteCommand $command): string => $command->arguments[3])->values()->all())
+        $deletions = RouteProjectionAgentAnswers::scopes($agents, 'certificates.remove-leaf');
+        expect(array_column($deletions, 'scope'))
             ->toBe(["app-instance-{$instance->id}"]);
         expect(new DevelopmentSiteRepository()->forNode($router)->map->certificateDirectory()->all())
             ->toBe(["/etc/caddy/orbit-certificates/route-{$route->id}-router/current"]);
@@ -245,13 +236,13 @@ it('cleans the recorded Router after the source Node changes Cluster membership'
     $route->update(['status' => RouteStatus::Active, 'cluster_id' => $destinationCluster->id]);
     $transfer = orb368_projection_transfer($instance, $route, $route, $source, $destination, $originalRouter);
     $source->update(['cluster_id' => $destinationCluster->id]);
-    [$projector, $ssh, , $home] = orb127_route_projector();
+    [$projector, $agents, , $home] = orb127_route_projector();
 
     try {
         $projector->retireSource($transfer);
 
-        $deletions = collect($ssh->commands)->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'sudo rm -rf -- "/etc/caddy/orbit-certificates/$scope"'));
-        expect($deletions->map(fn (RemoteCommand $command, int $index): array => [$ssh->hosts[$index], $command->arguments[3]])->values()->all())->toBe([
+        $deletions = RouteProjectionAgentAnswers::scopes($agents, 'certificates.remove-leaf');
+        expect(array_map(orb_node_deletion(...), $deletions))->toBe([
             ['10.44.0.10', "app-instance-{$instance->id}"],
             ['10.44.0.20', "route-{$route->id}-router"],
         ]);
@@ -271,13 +262,13 @@ it('retires the source leaves and firewall rules of every recorded Route with a 
     $transfer = orb368_projection_transfer($instance, $route, $route, $source, $destination, $originalRouter);
     // Route 999 left after cutover; its record still names its source leaves.
     $transfer->update(['web_root_route_ids' => [$docs->id, 999]]);
-    [$projector, $ssh, , $home, $agents] = orb127_route_projector();
+    [$projector, $agents, , $home] = orb127_route_projector();
 
     try {
         $projector->retireSource($transfer->refresh());
 
-        $deletions = collect($ssh->commands)->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'sudo rm -rf -- "/etc/caddy/orbit-certificates/$scope"'));
-        expect($deletions->map(fn (RemoteCommand $command, int $index): array => [$ssh->hosts[$index], $command->arguments[3]])->values()->all())->toBe([
+        $deletions = RouteProjectionAgentAnswers::scopes($agents, 'certificates.remove-leaf');
+        expect(array_map(orb_node_deletion(...), $deletions))->toBe([
             ['10.44.0.10', "app-instance-{$instance->id}"],
             ['10.44.0.20', "route-{$route->id}-router"],
             ['10.44.0.10', "route-{$docs->id}"],
@@ -307,13 +298,13 @@ it('keeps the Router leaf of a Route with a web root that stays in its Cluster',
     $docs = orb_web_root_route($instance, Cluster::query()->findOrFail($source->cluster_id), 'docs.acme.test');
     $transfer = orb368_projection_transfer($instance, $route, $route, $source, $destination, $router);
     $transfer->update(['web_root_route_ids' => [$docs->id]]);
-    [$projector, $ssh, , $home] = orb127_route_projector();
+    [$projector, $agents, , $home] = orb127_route_projector();
 
     try {
         $projector->retireSource($transfer->refresh());
 
-        $deletions = collect($ssh->commands)->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'sudo rm -rf -- "/etc/caddy/orbit-certificates/$scope"'));
-        expect($deletions->map(fn (RemoteCommand $command, int $index): array => [$ssh->hosts[$index], $command->arguments[3]])->values()->all())->toBe([
+        $deletions = RouteProjectionAgentAnswers::scopes($agents, 'certificates.remove-leaf');
+        expect(array_map(orb_node_deletion(...), $deletions))->toBe([
             ['10.44.0.10', "app-instance-{$instance->id}"],
             ['10.44.0.10', "route-{$docs->id}"],
         ]);
@@ -329,7 +320,7 @@ it('issues every destination leaf of a transferred Instance before its first des
     $route->update(['status' => RouteStatus::Active, 'cluster_id' => $destinationCluster->id]);
     $docs = orb_web_root_route($instance, $destinationCluster, 'docs.acme.test');
     $instance->update(['node_id' => $destination->id, 'status' => InstanceState::Active, 'provisioning_step' => 'active']);
-    [$projector, $ssh, , $home] = orb127_route_projector();
+    [$projector, $agents, , $home] = orb127_route_projector();
 
     try {
         $instance = $instance->refresh();
@@ -339,7 +330,7 @@ it('issues every destination leaf of a transferred Instance before its first des
         }
 
         $projector->converge($instance, $route->refresh());
-        [$mismatches, , $served] = orb_hostname_change_certificate_replay($ssh, []);
+        [$mismatches, , $served] = orb_hostname_change_certificate_replay($agents, []);
 
         if (! $prepared) {
             expect($mismatches)->toContain("10.44.0.31: docs.acme.test uses route-{$docs->id} (missing)");
@@ -365,13 +356,13 @@ it('keeps source certificates when retirement cannot reconcile Caddy', function 
     [$instance, $route, $source, $router] = orb127_route_projection_models();
     $route->update(['status' => RouteStatus::Active]);
     $transfer = orb368_projection_transfer($instance, $route, $route, $source, $router, $router);
-    [$projector, $ssh, , $home] = orb127_route_projector(
-        static fn (RemoteCommand $command): bool => SshNodeCaddyBuilds::pushed($command) !== null,
+    [$projector, $agents, , $home] = orb127_route_projector(
+        static fn (string $command): bool => $command === 'caddy.publish',
     );
 
     try {
         expect(fn () => $projector->retireSource($transfer))->toThrow(RuntimeConvergenceException::class);
-        expect(collect($ssh->commands)->contains(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'sudo rm -rf -- "/etc/caddy/orbit-certificates/$scope"')))->toBeFalse();
+        expect($agents->commands())->not->toContain('certificates.remove-leaf');
         expect($transfer->refresh()->completed_at)->toBeNull();
         $this->assertModelExists($route);
     } finally {
@@ -461,7 +452,7 @@ it('serves every hostname-change site from a certificate the flow wrote for that
     ]);
     $replacement->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['replaced_by_route_id' => $replacement->id]);
-    [$projector, $ssh, $processes, $home] = orb127_route_projector();
+    [$projector, $agents, $processes, $home] = orb127_route_projector();
 
     try {
         $current = $route->refresh();
@@ -481,7 +472,7 @@ it('serves every hostname-change site from a certificate the flow wrote for that
         orb_domain_change_cleanup($projector, [$instance->refresh()], $replacement);
 
         [$mismatches, $disk, $served] = orb_hostname_change_certificate_replay(
-            $ssh,
+            $agents,
             [
                 $workload->wireguard_ip => ["app-instance-{$instance->id}" => 'feature.acme.test'],
                 $router->wireguard_ip => ["route-{$route->id}-router" => 'feature.acme.test'],
@@ -533,7 +524,7 @@ it('withdraws a failed domain change before removing its certificates and retrie
     [$instance, $route, $workload, $router] = orb127_route_projection_models(phpVersion: '8.5');
     $route->update(['status' => RouteStatus::Active]);
     $instance->update(['status' => InstanceState::Active, 'source_is_laravel' => false]);
-    [$projector, $ssh, $processes, $home] = orb127_route_projector();
+    [$projector, $agents, $processes, $home] = orb127_route_projector();
     app()->instance(RouteDomainProjector::class, $projector);
     $disk = [
         $workload->wireguard_ip => ["app-instance-{$instance->id}" => 'feature.acme.test'],
@@ -547,7 +538,7 @@ it('withdraws a failed domain change before removing its certificates and retrie
         expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'next.acme.test'))
             ->toThrow(RuntimeConvergenceException::class);
 
-        [$mismatches, $afterRollback, $served] = orb_hostname_change_certificate_replay($ssh, $disk);
+        [$mismatches, $afterRollback, $served] = orb_hostname_change_certificate_replay($agents, $disk);
 
         expect($mismatches)->toBe([])
             ->and($route->refresh()->status)->toBe(RouteStatus::Active)
@@ -558,7 +549,7 @@ it('withdraws a failed domain change before removing its certificates and retrie
             ->and($afterRollback)->toBe($disk);
 
         $updated = app(ConvergeRouteAction::class)->execute($route->refresh(), 'next.acme.test');
-        [$mismatches, $afterRetry, $served] = orb_hostname_change_certificate_replay($ssh, $disk);
+        [$mismatches, $afterRetry, $served] = orb_hostname_change_certificate_replay($agents, $disk);
 
         expect($mismatches)->toBe([])
             ->and($updated->domain)->toBe('next.acme.test')
@@ -603,7 +594,7 @@ it('serves a composed Router pool from the staging Router certificate during a d
     $replacement = orb_pending_domain_change($route, $local, RouteReplacementStep::Reserved);
     $replacement->targets()->create(['instance_id' => $remote->id, 'position' => 1]);
     $targets = [$local->refresh(), $remote->refresh()];
-    [$projector, $ssh, $processes, $home] = orb127_route_projector();
+    [$projector, $agents, $processes, $home] = orb127_route_projector();
     $step = static function (RouteReplacementStep $step, Closure $operation) use ($targets, $replacement): void {
         foreach ($targets as $target) {
             $operation($target);
@@ -625,7 +616,7 @@ it('serves a composed Router pool from the staging Router certificate during a d
         orb_domain_change_cleanup($projector, $targets, $replacement);
 
         [$mismatches, $disk, $served] = orb_hostname_change_certificate_replay(
-            $ssh,
+            $agents,
             [
                 $workload->wireguard_ip => ["app-instance-{$remote->id}" => 'feature.acme.test'],
                 $router->wireguard_ip => [
@@ -665,7 +656,7 @@ it('removes the retiring Router certificate from the Router that served it when 
     $newRouter->roles()->create(['cluster_id' => $cluster->id, 'role' => RoleName::Router, 'status' => LifecycleStatus::Active]);
     $replacement = orb_pending_domain_change($route, $instance, RouteReplacementStep::Reserved);
     $replacement->update(['cluster_id' => $cluster->id]);
-    [$projector, $ssh, $processes, $home] = orb127_route_projector();
+    [$projector, $agents, $processes, $home] = orb127_route_projector();
 
     try {
         $current = $route->refresh();
@@ -681,7 +672,7 @@ it('removes the retiring Router certificate from the Router that served it when 
         orb_domain_change_cleanup($projector, [$instance->refresh()], $replacement);
 
         [$mismatches, $disk, $served] = orb_hostname_change_certificate_replay(
-            $ssh,
+            $agents,
             [
                 $workload->wireguard_ip => ["app-instance-{$instance->id}" => 'feature.acme.test'],
                 $oldRouter->wireguard_ip => ["route-{$route->id}-router" => 'feature.acme.test'],
@@ -703,7 +694,7 @@ it('moves a Route to another Cluster through its stored transition and restores 
     $route->update(['status' => RouteStatus::Active]);
     $instance->update(['status' => InstanceState::Active, 'source_is_laravel' => false]);
     [$cluster, $newRouter] = orb_second_cluster_router();
-    [$projector, $ssh, $processes, $home] = orb127_route_projector();
+    [$projector, $agents, $processes, $home] = orb127_route_projector();
     app()->instance(RouteDomainProjector::class, $projector);
     $placement = new RoutePlacement(nodeId: null, clusterId: $cluster->id, effectiveTld: null);
     $disk = [
@@ -718,7 +709,7 @@ it('moves a Route to another Cluster through its stored transition and restores 
         expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'feature.acme.test', placement: $placement))
             ->toThrow(RuntimeConvergenceException::class);
 
-        [$mismatches, $afterRestore, $served] = orb_hostname_change_certificate_replay($ssh, $disk);
+        [$mismatches, $afterRestore, $served] = orb_hostname_change_certificate_replay($agents, $disk);
         $restored = $route->refresh();
 
         expect($mismatches)->toBe([])
@@ -730,7 +721,7 @@ it('moves a Route to another Cluster through its stored transition and restores 
             ->and($served[$oldRouter->wireguard_ip])->toBe(['feature.acme.test' => "route-{$route->id}-router"]);
 
         $moved = app(ConvergeRouteAction::class)->execute($restored, 'feature.acme.test', placement: $placement);
-        [$mismatches, $afterMove, $served] = orb_hostname_change_certificate_replay($ssh, $disk);
+        [$mismatches, $afterMove, $served] = orb_hostname_change_certificate_replay($agents, $disk);
 
         expect($mismatches)->toBe([])
             ->and($moved->cluster_id)->toBe($cluster->id)
@@ -751,7 +742,7 @@ it('replaces a Router through its stored router rows and restores a failed repla
     $route->update(['status' => RouteStatus::Active]);
     $instance->update(['status' => InstanceState::Active, 'source_is_laravel' => false]);
     $candidate = orb_router_candidate($oldRouter);
-    [$projector, $ssh, $processes, $home] = orb127_route_projector();
+    [$projector, $agents, $processes, $home] = orb127_route_projector();
     $action = orb_router_replacement_action();
     $disk = [
         $workload->wireguard_ip => ["app-instance-{$instance->id}" => 'feature.acme.test'],
@@ -764,7 +755,7 @@ it('replaces a Router through its stored router rows and restores a failed repla
     try {
         expect(fn () => $action->execute($cluster, $candidate))->toThrow(RuntimeConvergenceException::class);
 
-        [$mismatches, $afterRestore, $served] = orb_hostname_change_certificate_replay($ssh, $disk);
+        [$mismatches, $afterRestore, $served] = orb_hostname_change_certificate_replay($agents, $disk);
         $row = NodeRole::query()->where('node_id', $candidate->id)->where('role', RoleName::Router)->sole();
 
         expect($mismatches)->toBe([])
@@ -775,7 +766,7 @@ it('replaces a Router through its stored router rows and restores a failed repla
             ->and(new DevelopmentSiteRepository()->forNode($oldRouter)->pluck('domain')->all())->toBe(['feature.acme.test']);
 
         $action->execute($cluster->refresh(), $candidate);
-        [$mismatches, $afterReplacement, $served] = orb_hostname_change_certificate_replay($ssh, $disk);
+        [$mismatches, $afterReplacement, $served] = orb_hostname_change_certificate_replay($agents, $disk);
 
         expect($mismatches)->toBe([])
             ->and($cluster->refresh()->routerAssignment?->node_id)->toBe($candidate->id)
@@ -796,7 +787,7 @@ it('serves a crash-left pending domain change from its staging certificate on th
     // The Gateway stopped after the domain change built the old Router.
     $replacement = orb_pending_domain_change($route, $instance, RouteReplacementStep::RouterCaddy);
     $candidate = orb_router_candidate($oldRouter);
-    [$projector, $ssh, $processes, $home] = orb127_route_projector();
+    [$projector, $agents, $processes, $home] = orb127_route_projector();
     $disk = [
         $workload->wireguard_ip => [
             "app-instance-{$instance->id}" => 'feature.acme.test',
@@ -811,7 +802,7 @@ it('serves a crash-left pending domain change from its staging certificate on th
     try {
         orb_router_replacement_action()->execute(Cluster::query()->findOrFail($oldRouter->cluster_id), $candidate);
 
-        [$mismatches, $after, $served] = orb_hostname_change_certificate_replay($ssh, $disk);
+        [$mismatches, $after, $served] = orb_hostname_change_certificate_replay($agents, $disk);
 
         expect($mismatches)->toBe([])
             ->and($served[$candidate->wireguard_ip])->toBe([
@@ -1009,39 +1000,27 @@ it('projects a dedicated Router over reachable LAN with separate keys and preser
         workloadLan: '10.10.0.10',
         routerLan: '10.10.0.20',
     );
-    [$projector, $ssh, $processes, $home, $agents] = orb127_route_projector();
+    [$projector, $agents, $processes, $home] = orb127_route_projector();
 
     try {
         $projector->converge($instance, $route);
 
-        $arguments = collect($ssh->commands)
-            ->flatMap(
-                static fn (RemoteCommand $command): array => $command->arguments,
-            );
         $firewall = collect($agents->calls)->firstWhere('command', 'firewall.route-lan');
-        $leaf = collect($ssh->commands)
-            ->first(
-                static fn (RemoteCommand $command): bool => in_array('s_client', $command->arguments, true),
-            );
+        $leaf = collect($agents->calls)->firstWhere('command', 'routes.verify-certificate');
         $routerConfiguration = app(NodeCaddyfileRenderer::class)->render($router)->content;
 
-        expect($arguments)
-            ->toContain("app-instance-{$instance->id}", "route-{$route->id}-router")
+        expect(RouteProjectionAgentAnswers::scopes($agents, 'certificates.request-leaf'))
+            ->toBe([
+                ['node' => $workload->name, 'scope' => "app-instance-{$instance->id}"],
+                ['node' => $router->name, 'scope' => "route-{$route->id}-router"],
+            ])
             ->and($firewall)->toBe([
                 'node' => $workload->name, 'command' => 'firewall.route-lan',
                 'input' => ['operation' => 'converge', 'route_id' => $route->id, 'router' => '10.10.0.20', 'workload' => '10.10.0.10'],
             ])
-            ->and($leaf?->arguments)
-            ->toBe([
-                'timeout',
-                '10',
-                'openssl',
-                's_client',
-                '-connect',
-                '10.10.0.10:443',
-                '-servername',
-                $route->domain,
-                '-verify_return_error',
+            ->and($leaf)->toBe([
+                'node' => $router->name, 'command' => 'routes.verify-certificate',
+                'input' => ['address' => '10.10.0.10', 'port' => 443, 'domain' => $route->domain],
             ])
             ->and($routerConfiguration)
             ->toContain(
@@ -1050,11 +1029,8 @@ it('projects a dedicated Router over reachable LAN with separate keys and preser
                 "tls_server_name {$route->domain}",
                 "tls /etc/caddy/orbit-certificates/route-{$route->id}-router/current/cert.pem",
             )
-            ->and(collect($ssh->commands)
-                ->contains(
-                    static fn (RemoteCommand $command): bool => SshNodeCaddyBuilds::pushed($command) === $routerConfiguration,
-                ))
-            ->toBeTrue()
+            ->and(RouteProjectionAgentAnswers::publications($agents))
+            ->toContain(['node' => $router->name, 'content' => $routerConfiguration])
             ->and($processes->invocations)
             ->toHaveCount(1)
             ->and($workload->id)
@@ -1093,14 +1069,14 @@ it('retains active workload and Router sites while publishing a second Route on 
             'instance_id' => $secondInstance->id,
             'position' => 0,
         ]);
-    [$projector, $ssh, , $home] = orb127_route_projector();
+    [$projector, $agents, , $home] = orb127_route_projector();
 
     try {
         $projector->converge($secondInstance, $secondRoute);
 
         $workloadConfiguration = app(NodeCaddyfileRenderer::class)->render($workload)->content;
         $routerConfiguration = app(NodeCaddyfileRenderer::class)->render($router)->content;
-        $pushed = collect($ssh->commands)->map(static fn (RemoteCommand $command): ?string => SshNodeCaddyBuilds::pushed($command))->filter();
+        $pushed = collect(RouteProjectionAgentAnswers::publications($agents))->pluck('content');
 
         expect($workloadConfiguration)
             ->toContain(
@@ -1126,7 +1102,7 @@ it('grants source access only to the converging checkout and checkouts nested in
     route_access_served_instance($instance, $route, $node, 'sibling', '/home/orbit/apps/acme/other', releases: true);
     route_access_served_instance($instance, $route, $node, 'prefix', '/home/orbit/apps/acme/feature-two');
     route_access_served_instance($instance, $route, $node, 'nested', '/home/orbit/apps/acme/feature/.worktrees/nested');
-    [$projector, , , $home, $agents] = orb127_route_projector();
+    [$projector, $agents, , $home] = orb127_route_projector();
 
     try {
         $projector->converge($instance, $route);
@@ -1143,7 +1119,7 @@ describe('setting a development Route target', function (): void {
         $route->publishSites();
         route_access_served_instance($instance, $route, $node, 'sibling', '/home/orbit/apps/acme/other');
         $added = route_access_served_instance($instance, $route, $node, 'added', '/home/orbit/apps/acme/added', routed: false);
-        [, , , $home, $agents] = orb127_route_projector();
+        [, $agents, , $home] = orb127_route_projector();
 
         try {
             app(SetRouteTargetAction::class)->execute($route, $added->id);
@@ -1159,7 +1135,7 @@ describe('setting a development Route target', function (): void {
         [$instance, $route, $node] = orb127_route_projection_models(coLocated: true, phpVersion: '8.5');
         $route->publishSites();
         $added = route_access_served_instance($instance, $route, $node, 'added', '/home/orbit/apps/acme/added', routed: false);
-        [, $ssh, , $home, $agents] = orb127_route_projector();
+        [, $agents, , $home] = orb127_route_projector();
 
         try {
             app(SetRouteTargetAction::class)->execute($route, $added->id);
@@ -1169,12 +1145,10 @@ describe('setting a development Route target', function (): void {
             expect(route_access_walked_checkouts($agents))->toBe(['/home/orbit/apps/acme/added']);
 
             $route->update(['status' => RouteStatus::Active]);
-            $ssh->commands = [];
             $agents->calls = [];
             app(SetRouteTargetAction::class)->execute($route->refresh(), $added->id);
 
-            expect($ssh->commands)->toBe([])
-                ->and($agents->calls)->toBe([]);
+            expect($agents->calls)->toBe([]);
         } finally {
             new Filesystem()->deleteDirectory($home);
         }
@@ -1183,13 +1157,12 @@ describe('setting a development Route target', function (): void {
     it('walks nothing while the Route sites are unpublished', function (): void {
         [$instance, $route, $node] = orb127_route_projection_models(coLocated: true, phpVersion: '8.5');
         $added = route_access_served_instance($instance, $route, $node, 'added', '/home/orbit/apps/acme/added', routed: false);
-        [, $ssh, , $home, $agents] = orb127_route_projector();
+        [, $agents, , $home] = orb127_route_projector();
 
         try {
             app(SetRouteTargetAction::class)->execute($route, $added->id);
 
             expect($route->refresh()->targets->sole()->instance_id)->toBe($added->id)
-                ->and($ssh->commands)->toBe([])
                 ->and($agents->calls)->toBe([]);
         } finally {
             new Filesystem()->deleteDirectory($home);
@@ -1200,7 +1173,7 @@ describe('setting a development Route target', function (): void {
         [$instance, $route, $node] = orb127_route_projection_models(coLocated: true, phpVersion: '8.5');
         $route->publishSites();
         $added = route_access_served_instance($instance, $route, $node, 'added', '/home/orbit/apps/acme/added', routed: false);
-        [, $ssh, , $home] = orb127_route_projector();
+        [, $agents, , $home] = orb127_route_projector();
         new Filesystem()->ensureDirectoryExists($home, 0o700);
         $holder = fopen($home.'/.dnsmasq-projections.lock', 'c+');
         flock($holder, LOCK_EX);
@@ -1220,7 +1193,7 @@ describe('setting a development Route target', function (): void {
                 ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('app-dev.projection_busy')
                     ->and($exception->status)->toBe(409));
             expect($route->refresh()->targets->sole()->instance_id)->toBe($instance->id)
-                ->and($ssh->commands)->toBe([]);
+                ->and($agents->calls)->toBe([]);
             Event::assertNotDispatched(RecordBroadcast::class);
         } finally {
             flock($holder, LOCK_UN);
@@ -1234,7 +1207,7 @@ describe('setting a development Route target', function (): void {
         $route->publishSites();
         $added = route_access_served_instance($instance, $route, $node, 'added', '/home/orbit/apps/acme/added', routed: false);
         $fail = true;
-        [, , , $home, $agents] = orb127_route_projector(failAccess: static function () use (&$fail): bool {
+        [, $agents, , $home] = orb127_route_projector(failAccess: static function () use (&$fail): bool {
             return $fail;
         });
         Event::fake([RecordBroadcast::class]);
@@ -1273,7 +1246,7 @@ describe('setting a development Route target', function (): void {
         ]);
         $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
         $added = route_access_served_instance($instance, $route, $node, 'added', '/home/orbit/apps/acme/added', routed: false);
-        [, $ssh, , $home] = orb127_route_projector();
+        [, $agents, , $home] = orb127_route_projector();
         Event::fake([RecordBroadcast::class]);
 
         try {
@@ -1283,7 +1256,7 @@ describe('setting a development Route target', function (): void {
                 ->and($replacement->domain)->toBe("added.{$instance->project->slug}.acme.test")
                 ->and($replacement->targets->sole()->instance_id)->toBe($added->id)
                 ->and(Route::query()->find($route->id))->toBeNull()
-                ->and($ssh->commands)->toBe([]);
+                ->and($agents->calls)->toBe([]);
             Event::assertDispatched(
                 RecordBroadcast::class,
                 fn (RecordBroadcast $event): bool => $event->type === RecordEventType::RouteUpdated && $event->id === $replacement->id,
@@ -1296,22 +1269,14 @@ describe('setting a development Route target', function (): void {
 
 it('uses WireGuard only when the workload has no configured LAN address', function (): void {
     [$instance, $route] = orb127_route_projection_models();
-    [$projector, $ssh, $processes, $home] = orb127_route_projector();
+    [$projector, $agents, $processes, $home] = orb127_route_projector();
 
     try {
         $projector->converge($instance, $route);
 
-        $leaf = collect($ssh->commands)
-            ->first(
-                static fn (RemoteCommand $command): bool => in_array('s_client', $command->arguments, true),
-            );
-        expect($leaf?->arguments)
-            ->toContain('10.44.0.10:443')
-            ->and(collect($ssh->commands)
-                ->contains(
-                    static fn (RemoteCommand $command): bool => ($command->arguments[1] ?? null) === 'ufw',
-                ))
-            ->toBeFalse()
+        expect(collect($agents->calls)->firstWhere('command', 'routes.verify-certificate')['input'])
+            ->toBe(['address' => '10.44.0.10', 'port' => 443, 'domain' => $route->domain])
+            ->and($agents->commands())->not->toContain('firewall.route-lan')
             ->and($processes->invocations)
             ->toHaveCount(1);
     } finally {
@@ -1321,7 +1286,7 @@ it('uses WireGuard only when the workload has no configured LAN address', functi
 
 it('refuses configured LAN without a Router LAN address before leaf validation or DNS', function (): void {
     [$instance, $route] = orb127_route_projection_models(workloadLan: '10.10.0.10');
-    [$projector, $ssh, $processes, $home] = orb127_route_projector();
+    [$projector, $agents, $processes, $home] = orb127_route_projector();
 
     try {
         expect(fn () => $projector->converge($instance, $route))
@@ -1331,11 +1296,7 @@ it('refuses configured LAN without a Router LAN address before leaf validation o
                     ->and($exception->errorCode)
                     ->toBe('route.lan_unreachable');
             })
-            ->and(collect($ssh->commands)
-                ->contains(
-                    static fn (RemoteCommand $command): bool => in_array('s_client', $command->arguments, true),
-                ))
-            ->toBeFalse()
+            ->and($agents->commands())->not->toContain('routes.verify-certificate')
             ->and($processes->invocations)
             ->toBeEmpty();
     } finally {
@@ -1345,8 +1306,8 @@ it('refuses configured LAN without a Router LAN address before leaf validation o
 
 it('refuses an invalid workload leaf before Router Caddy or DNS publication', function (): void {
     [$instance, $route] = orb127_route_projection_models();
-    [$projector, $ssh, $processes, $home] = orb127_route_projector(
-        static fn (RemoteCommand $command): bool => in_array('s_client', $command->arguments, true),
+    [$projector, $agents, $processes, $home] = orb127_route_projector(
+        static fn (string $command): bool => $command === 'routes.verify-certificate',
     );
 
     try {
@@ -1359,10 +1320,7 @@ it('refuses an invalid workload leaf before Router Caddy or DNS publication', fu
             })
             ->and($processes->invocations)
             ->toBeEmpty()
-            ->and(collect($ssh->commands)
-                ->filter(
-                    static fn (RemoteCommand $command): bool => SshNodeCaddyBuilds::pushed($command) !== null,
-                ))
+            ->and(RouteProjectionAgentAnswers::publications($agents))
             ->toHaveCount(1);
     } finally {
         new Filesystem()->deleteDirectory($home);
@@ -1382,12 +1340,12 @@ it('reports runtime certificate firewall and DNS publication boundaries before a
     $failure = match ($boundary) {
         'source-access', 'firewall' => null,
         'runtime' => null,
-        'certificate' => static fn (RemoteCommand $command): bool => (
-            ($command->arguments[3] ?? null) === "app-instance-{$instance->id}"
+        'certificate' => static fn (string $command, array $input): bool => (
+            $command === 'certificates.request-leaf' && $input['scope'] === "app-instance-{$instance->id}"
         ),
         'dns' => null,
     };
-    [$projector, $ssh, $processes, $home, $agents] = orb127_route_projector(
+    [$projector, $agents, $processes, $home] = orb127_route_projector(
         $failure,
         failDns: $boundary === 'dns',
         failAccess: $boundary === 'source-access' ? static fn (array $input): bool => $input['sites'][0]['checkout'] === $instance->checkout_path : null,
@@ -1412,7 +1370,8 @@ it('reports runtime certificate firewall and DNS publication boundaries before a
         expect($processes->invocations)->toHaveCount($boundary === 'dns' ? 1 : 0);
         if ($boundary === 'source-access') {
             // The certificate request and its publication come first.
-            expect($ssh->commands)->toHaveCount(2);
+            expect(array_values(array_filter($agents->commands(), static fn (string $command): bool => str_starts_with($command, 'certificates.'))))
+                ->toBe(['certificates.request-leaf', 'certificates.publish-leaf']);
         }
         // The Route is published only once its certificate exists, so a failed certificate step
         // leaves every other build on the Node without its site.
@@ -1510,42 +1469,40 @@ function orb127_route_projection_models(
 }
 
 /**
- * Replays the recorded SSH commands against a per-Node certificate store, the way `caddy validate`
+ * Replays the recorded agent calls against a per-Node certificate store, the way `caddy validate`
  * sees the Node. Every published Caddy site must name a certificate scope that is on disk and was
  * issued for that site's domain.
  *
  * @param  array<string, array<string, string>>  $disk  scope => domain per Node address
  * @return array{list<string>, array<string, array<string, string>>, array<string, array<string, string>>}
  */
-function orb_hostname_change_certificate_replay(Orb127RouteSshExecutor $ssh, array $disk): array
+function orb_hostname_change_certificate_replay(FakeAgentCommandRunner $agents, array $disk): array
 {
     $mismatches = [];
     $served = [];
 
-    foreach ($ssh->commands as $index => $command) {
-        $host = $ssh->hosts[$index];
-        $arguments = $command->arguments;
+    foreach ($agents->calls as ['node' => $node, 'command' => $command, 'input' => $input]) {
+        $host = orb_node_address($node);
 
-        if (($arguments[1] ?? null) === '-ceu' && str_contains($arguments[2] ?? '', 'orbit-certificates/$scope')) {
-            $disk[$host][$arguments[4]] = $arguments[5];
-
-            continue;
-        }
-
-        if (str_contains($command->input ?? '', 'sudo rm -rf -- "/etc/caddy/orbit-certificates/$scope"')) {
-            unset($disk[$host][$arguments[3]]);
+        if ($command === 'certificates.publish-leaf') {
+            $disk[$host][$input['scope']] = $input['domain'];
 
             continue;
         }
 
-        $configuration = SshNodeCaddyBuilds::pushed($command);
-        if ($configuration === null) {
+        if ($command === 'certificates.remove-leaf') {
+            unset($disk[$host][$input['scope']]);
+
+            continue;
+        }
+
+        if ($command !== 'caddy.publish') {
             continue;
         }
 
         preg_match_all(
             '#https://(\S+) \{\s+bind [^\n]+\s+tls /etc/caddy/orbit-certificates/([^/]+)/current/cert\.pem#',
-            $configuration,
+            $input['content'],
             $sites,
             PREG_SET_ORDER,
         );
@@ -1562,6 +1519,20 @@ function orb_hostname_change_certificate_replay(Orb127RouteSshExecutor $ssh, arr
     }
 
     return [$mismatches, $disk, $served];
+}
+
+function orb_node_address(string $name): string
+{
+    return (string) Node::query()->where('name', $name)->value('wireguard_ip');
+}
+
+/**
+ * @param  array{node: string, scope: string}  $deletion
+ * @return array{string, string}
+ */
+function orb_node_deletion(array $deletion): array
+{
+    return [orb_node_address($deletion['node']), $deletion['scope']];
 }
 
 /** @return array{Cluster, Node} */
@@ -1678,12 +1649,12 @@ function orb_pending_domain_change(Route $route, Instance $instance, RouteReplac
 }
 
 /**
+ * @param  (Closure(string, array<string, mixed>, Node): bool)|null  $refuse  refuses the matching leaf, TLS check, or Caddy publication
  * @param  (Closure(array<string, mixed>): bool)|null  $failAccess  refuses the agent's source-access walk for this input
- * @return array{NativeDevelopmentRouteProjector, Orb127RouteSshExecutor, Orb127RouteProcessRunner, string, FakeAgentCommandRunner}
+ * @return array{NativeDevelopmentRouteProjector, FakeAgentCommandRunner, Orb127RouteProcessRunner, string}
  */
-function orb127_route_projector(?Closure $failSsh = null, bool $failDns = false, ?Closure $failAccess = null): array
+function orb127_route_projector(?Closure $refuse = null, bool $failDns = false, ?Closure $failAccess = null): array
 {
-    $ssh = new Orb127RouteSshExecutor($failSsh);
     $agents = new FakeAgentCommandRunner()->answer('instances.grant-development-caddy-access', static function (array $input) use ($failAccess): array {
         if ($failAccess instanceof Closure && $failAccess($input)) {
             throw new AgentCommandRefused('instances.grant-development-caddy-access', 'instances.caddy_access_failed', 'Caddy cannot read the Web root.');
@@ -1692,6 +1663,7 @@ function orb127_route_projector(?Closure $failSsh = null, bool $failDns = false,
         return ['unreadable' => []];
     });
     $agents->answer('firewall.route-lan', ['matches' => true]);
+    RouteProjectionAgentAnswers::register($agents, $refuse);
     $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
     $accounts = new class($account) implements ManagedUserAccountResolver
     {
@@ -1720,8 +1692,8 @@ function orb127_route_projector(?Closure $failSsh = null, bool $failDns = false,
     $processes = new Orb127RouteProcessRunner($failDns);
     $home = sys_get_temp_dir().'/orbit-route-projector-'.Str::uuid();
     config()->set('orbit.home', $home);
-    $certificates = new RemoteAppDevCertificateManager(new SshCommandAgents($ssh), $signer, $accounts);
-    $caddy = new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($ssh), new FakeAgentCommandRunner);
+    $certificates = new RemoteAppDevCertificateManager($agents, $signer, $accounts);
+    $caddy = new RemoteAppDevCaddyManager(RouteProjectionAgentAnswers::builds($agents), new FakeAgentCommandRunner);
     $dns = new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class)));
     $sourceAccess = new NativeDevelopmentSourceAccess($agents, $accounts);
     $projector = new NativeDevelopmentRouteProjector(
@@ -1735,7 +1707,7 @@ function orb127_route_projector(?Closure $failSsh = null, bool $failDns = false,
         $certificates,
         $caddy,
         $dns,
-        new SshCommandAgents($ssh, $agents),
+        $agents,
         $sourceAccess,
     );
     app()->instance(DevelopmentSourceAccess::class, $sourceAccess);
@@ -1746,11 +1718,11 @@ function orb127_route_projector(?Closure $failSsh = null, bool $failDns = false,
             $caddy,
             new RemoteAppDevRouteFirewallManager($agents),
             $dns,
-            new SshCommandAgents($ssh, $agents),
+            $agents,
         ),
     );
 
-    return [$projector, $ssh, $processes, $home, $agents];
+    return [$projector, $agents, $processes, $home];
 }
 
 /**
@@ -1830,31 +1802,6 @@ function orb368_projection_transfer(
     return $transfer;
 }
 
-final class Orb127RouteSshExecutor implements SshExecutor
-{
-    /** @var list<RemoteCommand> */
-    public array $commands = [];
-
-    /** @var list<string> */
-    public array $hosts = [];
-
-    public function __construct(
-        private readonly ?Closure $failure = null,
-    ) {}
-
-    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-    {
-        $this->commands[] = $command;
-        $this->hosts[] = $connection->host;
-
-        if ($this->failure instanceof Closure && ($this->failure)($command) === true) {
-            return new CommandResult(1, '', 'injected failure', 1, false);
-        }
-
-        return new CommandResult(0, '', '', 1, false);
-    }
-}
-
 final class Orb127RouteProcessRunner implements ProcessRunner
 {
     /** @var list<ProcessInvocation> */
@@ -1887,7 +1834,7 @@ describe('offline replacement projections', function (): void {
         [$instance, $old, $workload, $router] = orb127_route_projection_models();
         $replacement = orb_pending_domain_change($old, $instance, RouteReplacementStep::RouterCaddy);
         $replacement->update(['status' => RouteStatus::Failed, 'failed_step' => 'withdrawal', 'error_code' => 'route.replacement_withdrawn']);
-        [$projection, $ssh, $processes, $home] = orb127_route_projector();
+        [$projection, $agents, $processes, $home] = orb127_route_projector();
         $skipped = $skippedSide === 'workload' ? $workload : $router;
         $reachable = $skippedSide === 'workload' ? $router : $workload;
 
@@ -1895,9 +1842,8 @@ describe('offline replacement projections', function (): void {
             $projection->rollbackCaddy($instance, $replacement, [$skipped->id]);
             $projection->rollbackCertificates($instance, $replacement, [$skipped->id]);
 
-            expect($ssh->hosts)->not->toContain($skipped->wireguard_ip)
-                ->toContain($reachable->wireguard_ip);
-            expect($ssh->commands)->not->toBeEmpty();
+            expect(array_column($agents->calls, 'node'))->not->toContain($skipped->name)
+                ->toContain($reachable->name);
         } finally {
             (new Filesystem)->deleteDirectory($home);
         }
