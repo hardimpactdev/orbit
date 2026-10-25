@@ -10,10 +10,6 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -21,7 +17,6 @@ use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
 use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\FakeNodeConverger;
-use Tests\Support\SshCommandAgents;
 
 beforeEach(function (): void {
     $this->caller = $this->markAsGateway(caddy_failure_node('gateway-peer', '10.44.0.1'));
@@ -203,10 +198,9 @@ function caddy_failure_builds(): FakeNodeCaddyBuilds
     return $builds;
 }
 
-/** Binds the SSH fake and an agent that answers the role prerequisites, refusing the Caddy package for `source`. */
+/** Binds an agent that answers the role prerequisites, refusing the Caddy package for `source`. */
 function caddy_failure_bind(?string $fail = null): void
 {
-    $ssh = caddy_failure_ssh();
     $agents = (new FakeAgentCommandRunner)->answer('roles.install-prerequisites', [])->answer('nodes.os-release', ['id' => 'ubuntu', 'codename' => 'resolute']);
     $fail === 'source'
         ? $agents->refuse('caddy.install-package', 'caddy.package_failed', ['reason' => 'forced failure'])
@@ -214,17 +208,5 @@ function caddy_failure_bind(?string $fail = null): void
     $fail === 'ordering'
         ? $agents->refuse('caddy.order-after-vpn', 'services.ordering_failed', ['stage' => 'restart'])
         : $agents->answer('caddy.order-after-vpn', ['changed' => false]);
-    app()->instance(SshExecutor::class, $ssh);
-    app()->instance(AgentCommandRunner::class, new SshCommandAgents($ssh, $agents));
-}
-
-function caddy_failure_ssh(): SshExecutor
-{
-    return new class implements SshExecutor
-    {
-        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-        {
-            return new CommandResult(0, '', '', 1, false);
-        }
-    };
+    app()->instance(AgentCommandRunner::class, $agents);
 }

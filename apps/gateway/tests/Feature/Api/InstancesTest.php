@@ -67,7 +67,6 @@ use App\Infrastructure\Metrics\ServiceMetricsRuntime;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessRunner;
-use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Activity;
 use App\Models\Cluster;
 use App\Models\Instance;
@@ -88,12 +87,10 @@ use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\ListInstancesRequest;
 use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
-use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakesEnvironmentSyncInspection;
 use Tests\Support\LifecycleAgent;
 use Tests\Support\SharedPhpPoolAnswers;
-use Tests\Support\SshCommandAgents;
 use Tests\TestCase;
 
 beforeEach(function (): void {
@@ -2511,9 +2508,8 @@ it('rejects repository execution and unsupported transport keys', function (): v
 
 it('completes Instance removal while another Node service metrics snapshot fails', function (): void {
     // The creation request resolves singletons used by the native removal projector.
-    app()->instance(SshExecutor::class, $ssh = new AppDevFakeSshExecutor);
-    $poolAgents = SharedPhpPoolAnswers::register(new FakeAgentCommandRunner()->answer('firewall.route-lan', []));
-    app()->instance(AgentCommandRunner::class, new SshCommandAgents($ssh, $poolAgents));
+    $poolAgents = SharedPhpPoolAnswers::register(new FakeAgentCommandRunner()->answer('firewall.route-lan', [])->answer('certificates.remove-leaf', []));
+    app()->instance(AgentCommandRunner::class, $poolAgents);
     $processes = Mockery::mock(ProcessRunner::class);
     $processes->shouldReceive('run')->twice()->andReturn(new CommandResult(0, '', '', 1, false));
     app()->instance(ProcessRunner::class, $processes);
@@ -2569,6 +2565,7 @@ it('completes Instance removal while another Node service metrics snapshot fails
     expect(app(ExporterDegradationRepository::class)->step($failed->id))->toBe('snapshot');
     expect(app(MetricsReconcileDegradationRepository::class)->errorCode($failed->id))->toBe('metrics.service_convergence_failed');
     expect($poolAgents->commands())->toContain('php.converge-shared-pools')->not->toContain('php.inspect-shared-pools');
+    expect(collect($poolAgents->calls)->where('command', 'certificates.remove-leaf')->pluck('input.scope')->unique()->values()->all())->toBe(["app-instance-{$id}"]);
 });
 
 it('removes an active Instance through every durable checkpoint', function (bool $force): void {
