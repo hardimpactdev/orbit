@@ -26,6 +26,7 @@ pub struct Input {
     domain: String,
     expected_site: String,
     certificates: PathBuf,
+    #[schemars(extend("items" = {"type": "string", "format": "socket-address"}))]
     forwarding: Vec<SocketAddr>,
 }
 

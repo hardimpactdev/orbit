@@ -38,7 +38,9 @@ pub struct Input {
     dns: Ipv4Addr,
     gateway: Ipv4Addr,
     pi_port: u16,
+    #[schemars(extend("format" = "socket-address"))]
     reverb: SocketAddrV4,
+    #[schemars(extend("format" = "socket-address"))]
     model: SocketAddrV4,
     routers: Vec<Ipv4Addr>,
 }

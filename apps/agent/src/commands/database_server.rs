@@ -7,7 +7,6 @@ use crate::command::{Command, Context, Platform, Privilege};
 use crate::command_errors;
 use serde::{Deserialize, Serialize};
 use std::{
-    io,
     path::PathBuf,
     process::{Command as Process, Stdio},
     time::{Duration, Instant},
@@ -111,21 +110,24 @@ struct Native {
 
 impl Host for Native {
     fn exec(&mut self, request: &Request) -> Result<Answer, DatabaseServerError> {
-        let (status, stdout, stderr) = exchange(
-            Process::new(&self.program)
-                .args(&request.arguments)
-                .env(&request.variable, &request.password),
-            Stdio::piped(),
-            Some(request.input.as_bytes()),
-        )
-        .map_err(|error| DatabaseServerError::Failed {
-            exit_code: if error.kind() == io::ErrorKind::NotFound {
-                127
-            } else {
-                1
-            },
-            stderr: error.to_string(),
-        })?;
+        let child = Process::new(&self.program)
+            .args(&request.arguments)
+            .env(&request.variable, &request.password)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| DatabaseServerError::Failed {
+                exit_code: 127,
+                stderr: error.to_string(),
+            })?;
+        let (status, stdout, stderr) =
+            exchange(child, Some(request.input.as_bytes())).map_err(|error| {
+                DatabaseServerError::Failed {
+                    exit_code: 1,
+                    stderr: error.to_string(),
+                }
+            })?;
         Ok(Answer {
             code: status.code(),
             stdout,

@@ -609,14 +609,15 @@ mod tests {
         );
     }
 
-    /// The smallest values a schema accepts, one per `oneOf`/`anyOf` branch with every required field, each with
-    /// its variants that add one unknown field to one struct object inside it. Maps take any key, so they get none.
+    /// Values a schema accepts, each with variants that add one unknown field to one struct object inside it. The
+    /// first pair has only the required fields; the others set one field, required or optional, to each of its own
+    /// values, so every `oneOf`/`anyOf` branch at every depth gets a probe. Maps take any key, so they get none.
     fn samples(schema: &Value, root: &Value, depth: usize) -> Vec<(Value, Vec<Value>)> {
         let leaf = |value: Value| vec![(value, Vec::new())];
         let Some(object) = schema.as_object() else {
             return leaf(Value::Null);
         };
-        if depth > 8 {
+        if depth > 12 {
             return Vec::new();
         }
         if let Some(reference) = object.get("$ref").and_then(Value::as_str) {
@@ -656,8 +657,12 @@ mod tests {
             .unwrap_or("null")
         {
             "object" => {
-                let mut value = serde_json::Map::new();
-                let mut children = Vec::new();
+                let properties = object
+                    .get("properties")
+                    .and_then(Value::as_object)
+                    .cloned()
+                    .unwrap_or_default();
+                let mut base = serde_json::Map::new();
                 for name in object
                     .get("required")
                     .and_then(Value::as_array)
@@ -665,37 +670,55 @@ mod tests {
                     .flatten()
                     .filter_map(Value::as_str)
                 {
-                    let Some((sample, variants)) =
-                        samples(&object["properties"][name], root, depth + 1)
-                            .into_iter()
-                            .next()
+                    let Some((sample, _)) = samples(&properties[name], root, depth + 1)
+                        .into_iter()
+                        .next()
                     else {
                         return Vec::new();
                     };
-                    value.insert(name.to_owned(), sample);
-                    children.push((name.to_owned(), variants));
+                    base.insert(name.to_owned(), sample);
                 }
-                let mut variants = Vec::new();
-                if !matches!(
+                let closed = !matches!(
                     object.get("additionalProperties"),
                     Some(Value::Object(_) | Value::Bool(true))
-                ) {
-                    let mut extended = value.clone();
-                    extended.insert("orbit_unknown_field".into(), json!(1));
-                    variants.push(Value::Object(extended));
-                }
-                for (name, child_variants) in children {
-                    for changed in child_variants {
-                        let mut copy = value.clone();
-                        copy.insert(name.clone(), changed);
-                        variants.push(Value::Object(copy));
+                );
+                let mut extended = base.clone();
+                extended.insert("orbit_unknown_field".into(), json!(1));
+                let mut pairs = vec![(
+                    Value::Object(base.clone()),
+                    if closed {
+                        vec![Value::Object(extended)]
+                    } else {
+                        Vec::new()
+                    },
+                )];
+                for (name, child) in &properties {
+                    for (sample, variants) in samples(child, root, depth + 1) {
+                        let with = |value: Value| {
+                            let mut copy = base.clone();
+                            copy.insert(name.clone(), value);
+                            Value::Object(copy)
+                        };
+                        pairs.push((with(sample), variants.into_iter().map(with).collect()));
                     }
                 }
-                vec![(Value::Object(value), variants)]
+                pairs
             }
-            "array" => leaf(json!([])),
+            "array" => {
+                let mut pairs = vec![(json!([]), Vec::new())];
+                if let Some(items) = object.get("items") {
+                    for (sample, variants) in samples(items, root, depth + 1) {
+                        pairs.push((
+                            json!([sample]),
+                            variants.into_iter().map(|v| json!([v])).collect(),
+                        ));
+                    }
+                }
+                pairs
+            }
             "string" => leaf(json!(match object.get("format").and_then(Value::as_str) {
                 Some("ipv4" | "ip") => "10.0.0.1",
+                Some("socket-address") => "10.0.0.1:1",
                 _ => "x",
             })),
             "integer" | "number" => leaf(json!(0)),
@@ -710,25 +733,38 @@ mod tests {
     fn every_command_decoder_refuses_unknown_fields() {
         let mut probes = 0;
         let mut accepted = Vec::new();
+        let mut unprobed = Vec::new();
         for entry in all() {
             let input = &(entry.schemas)()["input"];
+            let mut probed = 0;
+            let mut struct_inputs = false;
             for (sample, variants) in samples(input, input, 0) {
+                struct_inputs |= !variants.is_empty();
                 if (entry.parse)(sample).is_err() {
                     continue;
                 }
                 for changed in variants {
-                    probes += 1;
+                    probed += 1;
                     if (entry.parse)(changed.clone()).is_ok() {
                         accepted.push(format!("{}: {changed}", entry.name));
                     }
                 }
             }
+            if struct_inputs && probed == 0 {
+                unprobed.push(entry.name);
+            }
+            probes += probed;
         }
         assert!(
             accepted.is_empty(),
             "decoders that accept an unknown field: {accepted:#?}"
         );
-        assert!(probes > 300, "only {probes} probes ran");
+        assert_eq!(
+            unprobed,
+            Vec::<&str>::new(),
+            "commands that no generated input reaches"
+        );
+        assert!(probes > 400, "only {probes} probes ran");
     }
 
     /// Gateway tests read `contract/schemas.json`. The same variable rewrites it.

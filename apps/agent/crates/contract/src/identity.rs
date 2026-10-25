@@ -87,6 +87,27 @@ pub fn user_name(uid: u32) -> Option<String> {
     )
 }
 
+/// The supplementary groups of a user whose primary group is `gid`. The list grows until it fits, up to 65,536 groups,
+/// so a member of many groups is never refused for a fixed buffer.
+pub fn group_list(name: &std::ffi::CStr, gid: u32) -> Option<Vec<libc::gid_t>> {
+    let mut groups = vec![0 as libc::gid_t; 64];
+    loop {
+        let mut count = groups.len() as libc::c_int;
+        // SAFETY: groups has room for count entries; getgrouplist writes at most that many and updates count.
+        // Darwin declares group IDs here as c_int, while gid_t is u32. Both have the same 32-bit ABI.
+        if unsafe { libc::getgrouplist(name.as_ptr(), gid as _, groups.as_mut_ptr().cast(), &mut count) } >= 0 {
+            groups.truncate(count.max(0) as usize);
+            return Some(groups);
+        }
+        // Linux reports the size it needs; other systems only say the list is too small.
+        let next = (count.max(0) as usize).max(groups.len() * 2);
+        if next > 65_536 {
+            return None;
+        }
+        groups.resize(next, 0);
+    }
+}
+
 /// The uid, gid, and home of a user.
 pub fn account(user: &str) -> Result<(u32, u32, String), String> {
     if user.contains('\0') {
@@ -115,22 +136,7 @@ pub fn drop_to(command: &mut std::process::Command, user: &str) -> Result<(), St
     if euid != 0 {
         return Err(format!("only root can run a command as {user}"));
     }
-    let mut groups = vec![0 as libc::gid_t; 256];
-    let mut count = groups.len() as libc::c_int;
-    // SAFETY: groups has room for count entries; getgrouplist writes at most that many and updates count.
-    // Darwin declares group IDs here as c_int, while gid_t is u32. Both have the same 32-bit ABI.
-    if unsafe {
-        libc::getgrouplist(
-            name.as_ptr(),
-            gid as _,
-            groups.as_mut_ptr().cast(),
-            &mut count,
-        )
-    } < 0
-    {
-        return Err(format!("the groups of {user} do not fit"));
-    }
-    groups.truncate(count as usize);
+    let groups = group_list(&name, gid).ok_or_else(|| format!("the groups of {user} do not fit"))?;
     command
         .env("HOME", home)
         .env("USER", user)
@@ -155,6 +161,14 @@ pub fn drop_to(command: &mut std::process::Command, user: &str) -> Result<(), St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_group_list_holds_the_primary_group() {
+        let uid = effective_uid();
+        let name = std::ffi::CString::new(user_name(uid).unwrap()).unwrap();
+        let gid = passwd(name.to_str().unwrap()).unwrap().gid;
+        assert!(group_list(&name, gid).unwrap().contains(&gid));
+    }
 
     #[test]
     fn a_lookup_grows_its_buffer_on_erange_and_gives_up_after_one_mebibyte() {

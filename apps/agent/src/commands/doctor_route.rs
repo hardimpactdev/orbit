@@ -253,6 +253,7 @@ impl Command for InspectApplicationUrls {
 pub struct ProxyInput {
     domain: String,
     certificates: PathBuf,
+    #[schemars(extend("format" = "socket-address"))]
     upstream: std::net::SocketAddr,
     dns_address: Option<Ipv4Addr>,
 }

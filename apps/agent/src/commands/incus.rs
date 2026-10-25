@@ -95,18 +95,12 @@ pub(super) fn capture_input(command: &mut Process, input: Option<&str>) -> io::R
 pub(super) fn capture_file(command: &mut Process, file: std::fs::File) -> io::Result<Output> {
     capture_stdin(command, Stdio::from(file), None)
 }
-/// Runs a child, writing `input` to its stdin from its own thread while both outputs drain, so a large input cannot
-/// block on a full output pipe. Each output keeps at most `MAX_OUTPUT` + 1 bytes.
+/// Writes `input` to a spawned child's stdin from its own thread while both outputs drain, so a large input cannot
+/// block on a full output pipe, then waits for it. Each output keeps at most `MAX_OUTPUT` + 1 bytes.
 pub(super) fn exchange(
-    command: &mut Process,
-    stdin: Stdio,
+    mut child: std::process::Child,
     input: Option<&[u8]>,
 ) -> io::Result<(std::process::ExitStatus, Vec<u8>, Vec<u8>)> {
-    let mut child = command
-        .stdin(stdin)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
     let stdout = child.stdout.take().expect("piped stdout");
     let stderr = child.stderr.take().expect("piped stderr");
     let stdin = child.stdin.take();
@@ -125,7 +119,12 @@ pub(super) fn exchange(
     Ok((status?, stdout, stderr))
 }
 fn capture_stdin(command: &mut Process, stdin: Stdio, input: Option<&str>) -> io::Result<Output> {
-    let (status, stdout, stderr) = exchange(command, stdin, input.map(str::as_bytes))?;
+    let child = command
+        .stdin(stdin)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let (status, stdout, stderr) = exchange(child, input.map(str::as_bytes))?;
     Ok(Output {
         code: status.code().unwrap_or(-1),
         truncated: stdout.len() > MAX_OUTPUT

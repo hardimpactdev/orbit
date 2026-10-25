@@ -123,17 +123,16 @@ fn as_account<T>(account: &Account, body: impl FnOnce() -> Result<T>) -> Result<
     }
     require(current == 0)?;
     let name = std::ffi::CString::new(account.name.as_str()).map_err(|_| Fault::Refused)?;
-    let mut groups = vec![0 as libc::gid_t; 256];
-    let mut count = groups.len() as libc::c_int;
-    // SAFETY: groups has room for count entries; getgrouplist writes at most that many and updates count.
-    if unsafe { libc::getgrouplist(name.as_ptr(), account.gid, groups.as_mut_ptr(), &mut count) }
-        < 0
-    {
+    let Some(groups) = crate::command::identity::group_list(&name, account.gid) else {
         return refuse();
-    }
-    let mut saved = vec![0 as libc::gid_t; 256];
-    // SAFETY: saved has room for 256 entries.
-    let saved_count = unsafe { libc::getgroups(saved.len() as libc::c_int, saved.as_mut_ptr()) };
+    };
+    let count = groups.len();
+    // SAFETY: a zero size asks only for the number of supplementary groups.
+    let size = unsafe { libc::getgroups(0, std::ptr::null_mut()) };
+    require(size >= 0)?;
+    let mut saved = vec![0 as libc::gid_t; size as usize];
+    // SAFETY: saved has room for `size` entries.
+    let saved_count = unsafe { libc::getgroups(size, saved.as_mut_ptr()) };
     require(saved_count >= 0)?;
     saved.truncate(saved_count as usize);
     let none = u32::MAX as libc::c_long;
