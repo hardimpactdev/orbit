@@ -264,6 +264,8 @@ fn fastcgi_accepts_fragmented_end_request_and_rejects_malformed_or_stalled_repli
         let path = work.0.join("fpm.sock");
         let listener = UnixListener::bind(&path).unwrap();
         let good = reply.as_ref().is_some_and(|r| r == &record(3, &[0; 8]));
+        // Only the stalled server needs a deadline shorter than its 100 ms sleep; a reply gets time to arrive under load.
+        let wait = Duration::from_millis(if reply.is_some() { 5000 } else { 50 });
         let server = std::thread::spawn(move || {
             let (mut socket, _) = listener.accept().unwrap();
             socket
@@ -290,10 +292,7 @@ fn fastcgi_accepts_fragmented_end_request_and_rejects_malformed_or_stalled_repli
                 std::thread::sleep(Duration::from_millis(100));
             }
         });
-        assert_eq!(
-            native::ping(&path, Instant::now() + Duration::from_millis(50)).is_ok(),
-            good
-        );
+        assert_eq!(native::ping(&path, Instant::now() + wait).is_ok(), good);
         server.join().unwrap();
     }
 }
