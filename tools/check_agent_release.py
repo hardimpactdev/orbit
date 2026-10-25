@@ -8,7 +8,7 @@ import sys
 from urllib.parse import urlsplit
 
 
-PLATFORMS = {"linux-x86_64", "linux-aarch64"}
+PLATFORMS = {"linux-x86_64", "linux-aarch64", "macos-aarch64", "macos-x86_64"}
 
 
 def validate_manifest(manifest):
@@ -18,7 +18,7 @@ def validate_manifest(manifest):
     if not isinstance(manifest["version"], str) or not manifest["version"]:
         raise ValueError("The delivery must name its Cargo version.")
     if set(manifest["artifacts"]) != PLATFORMS:
-        raise ValueError("The production delivery must pin both Linux artifacts.")
+        raise ValueError("The production delivery must pin both Linux and both macOS artifacts.")
     repository = None
     for platform, artifact in manifest["artifacts"].items():
         url = urlsplit(artifact["url"])
@@ -42,7 +42,7 @@ def validate_release(manifest, release, sums):
         raise ValueError(f"{tag} must be a published stable release.")
     names = {f"orbit-agent-{platform}" for platform in PLATFORMS}
     if {asset["name"] for asset in release["assets"]} != names | {"SHA256SUMS", "manifest.json"}:
-        raise ValueError(f"{tag} must publish both Linux binaries, SHA256SUMS, and manifest.json.")
+        raise ValueError(f"{tag} must publish all four platform binaries, SHA256SUMS, and manifest.json.")
     checksums = {}
     for line in sums.splitlines():
         match = re.fullmatch(r"([a-f0-9]{64})  (\S+)", line)
@@ -50,7 +50,7 @@ def validate_release(manifest, release, sums):
             raise ValueError("Invalid or duplicate SHA256SUMS entry.")
         checksums[match[2]] = match[1]
     if set(checksums) != names:
-        raise ValueError("SHA256SUMS must cover both Linux binaries exactly once.")
+        raise ValueError("SHA256SUMS must cover all four platform binaries exactly once.")
     for platform in PLATFORMS:
         if manifest["artifacts"][platform]["sha256"] != checksums[f"orbit-agent-{platform}"]:
             raise ValueError(f"Delivery SHA-256 for {platform} differs from {tag}/SHA256SUMS.")

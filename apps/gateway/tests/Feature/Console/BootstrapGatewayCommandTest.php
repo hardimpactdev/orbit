@@ -14,13 +14,13 @@ use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\WireGuard\VpnSettings;
-use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\RootCaFixture;
 
 beforeAll(function (): void {
@@ -50,7 +50,7 @@ it('reports typed gateway provisioning failures without leaking command output',
         operatingSystem: new GatewayOperatingSystemGuard($osReleasePath),
         vpnSettings: app(VpnSettings::class),
         processes: new NativeProcessRunner,
-        files: new ProtectedFileWriter,
+        commands: new FakeAgentCommandRunner()->answer('gateway.prepare-identity', ['wireguard_public_key' => base64_encode(str_repeat('x', 32))]),
         vpn: new readonly class($failure) implements GatewayVpnConverger
         {
             public function __construct(
@@ -106,6 +106,9 @@ it('persists and resolves an implicit endpoint with the public host bytes and IP
     $filesystem = new Filesystem;
     $filesystem->ensureDirectoryExists($orbitHome.'/ca', 0o700);
     RootCaFixture::install($orbitHome.'/ca', 'bootstrap-command-endpoint');
+    $filesystem->ensureDirectoryExists($orbitHome.'/wireguard', 0o700);
+    $filesystem->put($orbitHome.'/wireguard/private.key', base64_encode(str_repeat('x', 32)).PHP_EOL);
+    $filesystem->put($orbitHome.'/wireguard/public.key', base64_encode(str_repeat('y', 32)).PHP_EOL);
     $caKeyHash = hash_file('sha256', $orbitHome.'/ca/root.key');
     $caCertificateHash = hash_file('sha256', $orbitHome.'/ca/root.pem');
     $osReleasePath = $orbitHome.'/os-release';
@@ -118,7 +121,7 @@ it('persists and resolves an implicit endpoint with the public host bytes and IP
         operatingSystem: new GatewayOperatingSystemGuard($osReleasePath),
         vpnSettings: app(VpnSettings::class),
         processes: new NativeProcessRunner,
-        files: new ProtectedFileWriter,
+        commands: new FakeAgentCommandRunner()->answer('gateway.prepare-identity', ['wireguard_public_key' => base64_encode(str_repeat('x', 32))]),
         vpn: new class implements GatewayVpnConverger
         {
             public function converge(Node $gateway, BootstrapGatewayData $data): void {}

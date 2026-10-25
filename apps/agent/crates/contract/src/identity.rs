@@ -136,7 +136,16 @@ pub fn drop_to(command: &mut std::process::Command, user: &str) -> Result<(), St
     let mut groups = vec![0 as libc::gid_t; 256];
     let mut count = groups.len() as libc::c_int;
     // SAFETY: groups has room for count entries; getgrouplist writes at most that many and updates count.
-    if unsafe { libc::getgrouplist(name.as_ptr(), gid, groups.as_mut_ptr(), &mut count) } < 0 {
+    // Darwin declares group IDs here as c_int, while gid_t is u32. Both have the same 32-bit ABI.
+    if unsafe {
+        libc::getgrouplist(
+            name.as_ptr(),
+            gid as _,
+            groups.as_mut_ptr().cast(),
+            &mut count,
+        )
+    } < 0
+    {
         return Err(format!("the groups of {user} do not fit"));
     }
     groups.truncate(count as usize);

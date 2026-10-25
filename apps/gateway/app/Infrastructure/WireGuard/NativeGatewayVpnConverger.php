@@ -92,7 +92,6 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
         $generatedPath = rtrim(string: $this->orbitHome, characters: '/').'/generated/wireguard/orbit.conf';
         $configuration = $this->renderer->render($configuration, Node::query()->whereNotNull('wireguard_public_key')->get());
         $this->files->put($generatedPath, $configuration);
-        $this->installAgent($gateway);
         try {
             $this->agents->run($gateway, 'wireguard.bootstrap-hub', ['config' => $configuration]);
         } catch (AgentCommandRefused $refused) {
@@ -241,15 +240,6 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
             throw new NodeProvisioningException('vpn-dns-ordering', 'vpn.dns_config_failed', $refused->getMessage(), previous: $refused, result: AgentStep::output($refused));
         } catch (AgentRunnerFailure $failure) {
             throw new NodeProvisioningException('vpn-dns-ordering', 'vpn.dns_config_failed', 'The dnsmasq ordering command could not run.', previous: $failure, result: $failure->result);
-        }
-    }
-
-    private function installAgent(Node $gateway): void
-    {
-        try {
-            $this->agents->install($gateway);
-        } catch (\Throwable $exception) {
-            throw new NodeProvisioningException('agent-install', 'agent.install_failed', 'The Gateway command agent could not be installed.', previous: $exception);
         }
     }
 

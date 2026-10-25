@@ -95,6 +95,7 @@ fn euid() -> u32 {
 }
 
 struct Account {
+    #[cfg(target_os = "linux")]
     name: String,
     uid: u32,
     gid: u32,
@@ -104,6 +105,7 @@ struct Account {
 fn account(name: &str) -> Result<Account> {
     let (uid, gid, home) = identity::account(name).map_err(|_| Fault::Refused)?;
     Ok(Account {
+        #[cfg(target_os = "linux")]
         name: name.to_string(),
         uid,
         gid,
@@ -113,6 +115,7 @@ fn account(name: &str) -> Result<Account> {
 
 /// Runs `body` with this thread's effective identity switched to `account`, as the Python program's `seteuid` did.
 /// The switch is per thread: the raw system calls do not reach the agent's other threads.
+#[cfg(target_os = "linux")]
 fn as_account<T>(account: &Account, body: impl FnOnce() -> Result<T>) -> Result<T> {
     let current = euid();
     if current == account.uid {
@@ -156,6 +159,11 @@ fn as_account<T>(account: &Account, body: impl FnOnce() -> Result<T>) -> Result<
         std::process::abort();
     }
     result
+}
+
+#[cfg(not(target_os = "linux"))]
+fn as_account<T>(_: &Account, _: impl FnOnce() -> Result<T>) -> Result<T> {
+    Err(Fault::Refused)
 }
 
 /// Each directory on the way to `path` is a real directory; `path` itself is a directory, or a regular file.
@@ -1008,6 +1016,6 @@ impl Command for InstallSqliteSeed {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 #[path = "sqlite_seed_tests.rs"]
 mod tests;

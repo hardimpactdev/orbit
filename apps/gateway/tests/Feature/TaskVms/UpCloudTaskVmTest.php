@@ -264,7 +264,6 @@ class FakeUpCloudSsh implements SshExecutor
             $command->arguments === ['uname', '-m'] => new CommandResult(0, "x86_64\n", '', 1, false),
             $command->arguments === ['sudo', '-n', 'dpkg', '--print-architecture'] => new CommandResult(0, "amd64\n", '', 1, false),
             str_contains($line, 'bash -s') => new CommandResult(0, "{\"ok\":true}\n", '', 1, false),
-            $command->arguments === ['sudo', '-n', 'ufw', 'status'] => new CommandResult(0, "Status: active\n", '', 1, false),
             default => new CommandResult(0, '', '', 1, false),
         };
     }
@@ -773,14 +772,8 @@ describe('image build', function (): void {
     });
 
     it('builds the template with the shared recipe, smoke-boots it, promotes it, and keeps two', function (): void {
-        $cleanupAfterFirewall = false;
         $guestAgents = new FakeGuestAgentCommandRunner;
-        $guestAgents->answer = function (AgentGuest $guest, string $command, array $input) use (&$cleanupAfterFirewall): array {
-            $commands = array_map(static fn (array $call): string => implode(' ', $call[1]), $this->ssh->calls);
-            $cleanupAfterFirewall = in_array('sudo -n ufw status', $commands, true);
-
-            return RecipeImageAnswers::success($command, $input);
-        };
+        $guestAgents->answer = static fn (AgentGuest $guest, string $command, array $input): array => RecipeImageAnswers::success($command, $input);
         app()->instance(GuestAgentCommandRunner::class, $guestAgents);
         $old = $this->upcloud->template('orbit-task-base-20261001000000');
         $previous = $this->upcloud->template('orbit-task-base-20261002000000');
@@ -807,19 +800,12 @@ describe('image build', function (): void {
             ->and($this->upcloud->created[0]['storage_devices']['storage_device'][0]['storage'])->toBe('01000000-0000-4000-8000-000030260200')
             ->and($this->upcloud->created[1]['storage_devices']['storage_device'][0]['storage'])->toBe($template)
             ->and($this->upcloud->created[0]['labels']['label'][0]['key'])->toBe('orbit-task-image')
-            // ufw is on before the identity goes, with only the public SSH rule that enrollment opens and closes.
-            ->and(array_slice($commands, (int) array_search('sudo -n ufw default deny incoming', $commands, true), 4))->toBe([
-                'sudo -n ufw default deny incoming',
-                'sudo ufw allow in proto tcp to any port 22 comment orbit:public-ssh-recovery',
-                'sudo -n ufw --force enable',
-                'sudo -n ufw status',
-            ])
-            ->and($cleanupAfterFirewall)->toBeTrue()
+            ->and($commands)->toBe([])
             ->and(array_column($guestAgents->calls, 'command'))->toBe(['guest.cloud-init', 'image.owner',
                 'image.inspect-phase', 'image.start-phase', 'image.inspect-phase', 'image.start-phase',
                 'image.inspect-phase', 'image.start-phase', 'image.inspect-phase', 'image.start-phase',
                 'image.inspect-phase', 'image.start-phase', 'image.inspect-phase', 'pi.receive-artifact', 'image.start-phase',
-                'image.recipe-marker', 'image.verify', 'image.boot', 'image.clean', 'guest.cloud-init', 'image.verify', 'image.check'])
+                'image.recipe-marker', 'image.verify', 'image.boot', 'image.firewall', 'image.clean', 'guest.cloud-init', 'image.verify', 'image.check'])
             ->and(array_find($guestAgents->calls, static fn (array $call): bool => $call['command'] === 'image.check')['input'])->toBe(['lean_boot' => false, 'firewall' => true])
             ->and(Cache::get('task-vms:upcloud-image-build:running:'.substr((string) $this->upcloud->storages[$template]['title'], -14)))->toBeNull()
             ->and(array_filter($guestAgents->calls, static fn (array $call): bool => $call['command'] === 'image.start-phase' && $call['input']['key']['phase'] === 'packages'))->toHaveCount(1)
@@ -947,15 +933,15 @@ describe('image build', function (): void {
     })->with(['packages', 'verify']);
 
     it('fails the build when ufw does not turn on', function (): void {
-        $this->ssh = new class extends FakeUpCloudSsh
-        {
-            #[Override]
-            public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-            {
-                return $command->arguments === ['sudo', '-n', 'ufw', 'status'] ? new CommandResult(0, "Status: inactive\n", '', 1, false) : parent::execute($connection, $command);
+        $agents = new FakeGuestAgentCommandRunner;
+        $agents->answer = static function (AgentGuest $guest, string $command, array $input): array {
+            if ($command === 'image.firewall') {
+                throw new AgentCommandRefused($command, 'task_vm.image_check_failed', 'The image firewall is inactive.');
             }
+
+            return RecipeImageAnswers::success($command, $input);
         };
-        app()->instance(SshExecutor::class, $this->ssh);
+        app()->instance(GuestAgentCommandRunner::class, $agents);
 
         expect(fn () => app(UpCloudTaskVmImageBuilder::class)->build())->toThrow(TaskVmException::class, 'stage [firewall]')
             ->and($this->upcloud->servers)->toBe([])

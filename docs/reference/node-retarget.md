@@ -28,6 +28,8 @@ On the public SSH path, the Gateway scans the host key at the new address and re
 
 On the WireGuard path, the Gateway scans the host key over the WireGuard address and requires the pinned fingerprint. It stores the new target, probes SSH over WireGuard, and pins the key for the new address.
 
+Both paths prove the private connection with `agent.status` through the pinned SSH adapter. The runner handles a mismatched agent pin before repeating that read. A refused command or transport failure restores the old public target and records `vpn.peer_ssh_failed`.
+
 The WireGuard path never opens a public SSH connection and never rewrites the Node's WireGuard configuration, because a restart of `wg-quick@orbit` would cut the session that drives it.
 
 ## Repair a tunnel that is down

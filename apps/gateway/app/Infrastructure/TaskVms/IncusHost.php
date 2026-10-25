@@ -6,42 +6,15 @@ namespace App\Infrastructure\TaskVms;
 
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
-use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\VmObservation;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProtectedInput;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
-use JsonException;
 
-/**
- * Runs `sudo -n incus --project <project> …` on a task VM host Node over SSH, as the host's managed
- * user. `IncusTaskVmProvider` and `IncusTaskVmImageBuilder` share it, and it validates the image list
- * they both read. Every instance name follows `--`, so no name can be read as an option.
- */
+/** Typed Incus host intent; the agent owns execution and validates host output. */
 final readonly class IncusHost
 {
-    public function __construct(
-        private SshExecutor $ssh,
-        private SshKeyProvider $keys,
-        private KnownHostsStore $knownHosts,
-        private AgentCommandRunner $agents,
-    ) {}
-
-    /**
-     * @param  list<string>  $arguments  the arguments after `incus --project <project>`
-     * @param  string|ProtectedInput|null  $input  stdin; a file goes as `ProtectedInput`, so it is streamed
-     */
-    public function run(TaskVmHost $host, Node $node, array $arguments, string|ProtectedInput|null $input = null, float $timeout = 900.0): CommandResult
-    {
-        return $this->execute($node, ['incus', '--project', $host->project, ...$arguments], $input, $timeout);
-    }
+    public function __construct(private AgentCommandRunner $agents) {}
 
     public function prepare(TaskVmHost $host, Node $node): void
     {
@@ -157,41 +130,6 @@ final readonly class IncusHost
         return $result['fingerprint'];
     }
 
-    /** Sends one API request with `incus query`, which refuses `--project`: the path names the project. */
-    public function query(TaskVmHost $host, Node $node, string $method, string $path, string $data): CommandResult
-    {
-        return $this->execute($node, ['incus', 'query', '-X', $method, '--data', $data, '--', $path.'?project='.rawurlencode($host->project)], null, 120.0);
-    }
-
-    /**
-     * Launches `$image` as the VM `$name` on the host's bridge, with port isolation on its NIC, and the CPU, memory, disk
-     * and QEMU configuration of its size ({@see TaskVmSize::resources()}). Incus can set the QEMU configuration only
-     * before the VM first starts. `$topologySeed`, a volume in the host's pool, becomes the disk
-     * {@see TaskVmVolumes::SeedDevice}. `incus launch` reads instance config and devices as YAML from a stdin that is
-     * not a terminal. JSON is YAML, but YAML knows no `\/` escape.
-     */
-    public function launch(TaskVmHost $host, Node $node, string $name, string $image, string $userData, TaskVmSize $size = TaskVmSize::Normal, ?string $topologySeed = null): CommandResult
-    {
-        $resources = $size->resources();
-        $config = ['cloud-init.user-data' => $userData];
-        if ($resources->qemuConfig !== null) {
-            $config['raw.qemu.conf'] = $resources->qemuConfig;
-        }
-        $instance = ['config' => $config];
-        if ($topologySeed !== null) {
-            $instance['devices'] = [TaskVmVolumes::SeedDevice => ['type' => 'disk', 'pool' => $host->pool, 'source' => $topologySeed]];
-        }
-
-        return $this->run($host, $node, [
-            'launch', '--vm',
-            '--config', 'limits.cpu='.$resources->cpusOn($host),
-            '--config', 'limits.memory='.$resources->memoryOn($host),
-            '--device', 'root,size='.$resources->diskOn($host),
-            '--device', "eth0,network={$host->network}", '--device', 'eth0,security.port_isolation=true',
-            '--', $image, $name,
-        ], json_encode($instance, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
-    }
-
     /**
      * The images of the host's project, as fingerprint => aliases.
      *
@@ -272,43 +210,9 @@ final readonly class IncusHost
         return null;
     }
 
-    /**
-     * The decoded JSON of a complete Incus answer.
-     *
-     * @return array<mixed>
-     */
-    public static function json(string $subject, CommandResult $result): array
-    {
-        try {
-            $value = $result->truncated ? null : json_decode($result->stdout, true, 64, JSON_THROW_ON_ERROR);
-        } catch (JsonException) {
-            $value = null;
-        }
-
-        return is_array($value) ? $value : throw self::invalid($subject, 'the output is not complete JSON');
-    }
-
     public static function invalid(string $subject, string $reason): TaskVmException
     {
         return new TaskVmException('task_vm.invalid_host_output', "Incus returned invalid output for {$subject}: {$reason}.", 502);
-    }
-
-    public static function failed(string $subject, string $operation, CommandResult $result): TaskVmException
-    {
-        $detail = mb_substr(implode("\n", array_slice(explode("\n", trim($result->stderr)), -5)), 0, 2000);
-
-        return new TaskVmException('task_vm.host_command_failed', "`incus {$operation}` for {$subject} failed with exit code [{$result->exitCode}].".($detail === '' ? '' : "\n{$detail}"), 502);
-    }
-
-    /**
-     * Runs `sudo -n <arguments>` on the host without a project: the host-wide Incus settings, its trust store,
-     * and the image copy, which names its own projects.
-     *
-     * @param  list<string>  $arguments
-     */
-    public function root(Node $node, array $arguments, string|ProtectedInput|null $input = null, float $timeout = 120.0): CommandResult
-    {
-        return $this->execute($node, $arguments, $input, $timeout);
     }
 
     /**
@@ -342,31 +246,5 @@ final readonly class IncusHost
         }
 
         return $value;
-    }
-
-    /** @param  list<string>  $arguments */
-    private function execute(Node $node, array $arguments, string|ProtectedInput|null $input, float $timeout): CommandResult
-    {
-        // `incus exec` would hand the credential to a task VM or a template builder, and the host itself needs none.
-        if ($input instanceof ProtectedInput && $input->carriesGitCredential()) {
-            throw TaskVmCredentialGuard::refused();
-        }
-
-        return $this->ssh->execute(
-            new SshConnection(
-                host: $node->wireguard_ip ?? throw new TaskVmException('task_vm.unknown_host', "Host Node [{$node->name}] has no WireGuard address."),
-                user: $node->user,
-                port: 22,
-                identityFile: $this->keys->privateKeyPath(),
-                knownHostsFile: $this->knownHosts->path(),
-                commandTimeout: $timeout,
-            ),
-            new RemoteCommand(
-                ['sudo', '-n', ...$arguments],
-                is_string($input) ? $input : null,
-                $input instanceof ProtectedInput ? $input : null,
-                maxOutputBytes: 1_048_576,
-            ),
-        );
     }
 }

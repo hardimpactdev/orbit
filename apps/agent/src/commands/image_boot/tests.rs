@@ -207,3 +207,60 @@ fn boot_failure_does_not_claim_ready_and_unknown_flags_cannot_select_actions() {
     .is_err());
     assert_eq!(PrepareBoot::privilege(Platform::Macos), None);
 }
+
+#[test]
+fn image_firewall_enables_the_fixed_recovery_rule_on_repeated_calls() {
+    let answers = ["", "", "", "Status: active\n"];
+    let mut host = Fake::new(&[answers, answers].concat());
+    for _ in 0..2 {
+        assert!(firewall(&mut host).unwrap().ready);
+    }
+    assert_eq!(&host.calls[..4], &host.calls[4..]);
+    assert_eq!(
+        host.calls[0],
+        ["/usr/sbin/ufw", "default", "deny", "incoming"]
+    );
+    assert_eq!(
+        host.calls[1],
+        [
+            "/usr/sbin/ufw",
+            "allow",
+            "in",
+            "proto",
+            "tcp",
+            "to",
+            "any",
+            "port",
+            "22",
+            "comment",
+            "orbit:public-ssh-recovery"
+        ]
+    );
+    assert_eq!(host.calls[2], ["/usr/sbin/ufw", "--force", "enable"]);
+    assert_eq!(host.calls[3], ["/usr/sbin/ufw", "status"]);
+    assert_eq!(
+        PrepareFirewall::privilege(Platform::Linux),
+        Some(Privilege::Root)
+    );
+    assert_eq!(PrepareFirewall::privilege(Platform::Macos), None);
+    assert!(serde_json::from_str::<Empty>(r#"{"port":2222}"#).is_err());
+}
+
+#[test]
+fn image_firewall_stops_at_each_failed_command_and_requires_active_confirmation() {
+    for index in 0..4 {
+        for truncated in [false, true] {
+            let mut host = Fake::new(&["", "", "", "Status: active\n"]);
+            host.answers[index].truncated = truncated;
+            host.answers[index].code = if truncated { 0 } else { 1 };
+            assert!(
+                matches!(firewall(&mut host), Err(Error::Failed { stage, .. }) if stage == "firewall")
+            );
+            assert_eq!(host.calls.len(), index + 1);
+        }
+    }
+    for status in ["Status: inactive\n", "", "Status: active but broken"] {
+        let mut host = Fake::new(&["", "", "", status]);
+        assert!(matches!(firewall(&mut host), Err(Error::Failed { .. })));
+    }
+}

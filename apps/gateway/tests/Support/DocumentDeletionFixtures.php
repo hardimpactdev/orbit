@@ -34,7 +34,7 @@ function deletion_provider(TestCase $case, array $objects = []): void
 {
     deletion_bucket($objects);
     $home = config()->string('orbit.home');
-    $server = new Process(['python3', base_path('tests/Fixtures/ProjectDocuments/inventory_http_server.py'), $home.'/bucket.json', $home.'/requests.json'], timeout: 60);
+    $server = new Process([PHP_BINARY, base_path('tests/Fixtures/ProjectDocuments/inventory_http_server.php'), $home.'/bucket.json', $home.'/requests.json'], timeout: 60);
     $case->deletionServer = $server;
     $server->start();
     $port = SubprocessFixture::line($server);

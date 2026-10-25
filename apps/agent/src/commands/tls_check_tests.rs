@@ -98,7 +98,10 @@ fn verifies_trust_sends_sni_repeats_and_preserves_chain_only_policy() {
                 .set_write_timeout(Some(Duration::from_secs(2)))
                 .unwrap();
             let mut tls = rustls::ServerConnection::new(config).unwrap();
-            let _ = tls.complete_io(&mut socket);
+            if tls.complete_io(&mut socket).is_ok() {
+                tls.send_close_notify();
+                let _ = tls.complete_io(&mut socket);
+            }
             tls.server_name().map(str::to_owned)
         });
         let mut command = certificate_process(&input(port)).unwrap();

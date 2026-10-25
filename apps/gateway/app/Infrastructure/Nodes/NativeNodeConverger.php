@@ -119,7 +119,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         }
 
         $bootstrapConnection = $this->connection($node, $identity->bootstrapUser);
-        $hostKey = $this->hostKeys->scan($bootstrapConnection->host, $bootstrapConnection->port, $bootstrapConnection->proxyJump);
+        $hostKey = $this->hostKeys->scan($bootstrapConnection->host, $bootstrapConnection->port, $bootstrapConnection->proxyJump === null ? null : $node->sshJumpNode);
 
         if ($node->ssh_host_fingerprint !== null && $node->ssh_host_fingerprint !== $hostKey->fingerprint) {
             throw new NodeProvisioningException(

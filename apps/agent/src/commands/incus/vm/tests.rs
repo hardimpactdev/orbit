@@ -408,3 +408,163 @@ fn invalid_intent_refuses_before_host_access() {
         assert!(host.calls.is_empty());
     }
 }
+
+fn image_request(builder: bool) -> Input {
+    request(Operation::CreateImage {
+        image: "a".repeat(64),
+        gateway_public_key: "ssh-ed25519 AAAA gateway".into(),
+        cpus: 2,
+        memory: "2GiB".into(),
+        disk: "20GiB".into(),
+        network: "orbittask0".into(),
+        builder,
+    })
+}
+
+#[test]
+fn image_launch_owns_cloud_init_and_isolation_and_repeats_without_replacement() {
+    for builder in [false, true] {
+        let mut host = fake(vec![good("[]"), good(""), listed("Running")]);
+        let input = image_request(builder);
+        change(&mut host, &input).unwrap();
+        change(&mut host, &input).unwrap();
+        assert_eq!(host.calls.len(), 3);
+        let (args, data) = &host.calls[1];
+        assert_eq!(
+            args,
+            &[
+                "--project",
+                "orbit-tasks",
+                "launch",
+                "--vm",
+                "--config",
+                "limits.cpu=2",
+                "--config",
+                "limits.memory=2GiB",
+                "--device",
+                "root,size=20GiB",
+                "--device",
+                "eth0,network=orbittask0",
+                "--device",
+                "eth0,security.port_isolation=true",
+                "--",
+                &"a".repeat(64),
+                "tvm-1"
+            ]
+        );
+        let config: Value = serde_json::from_str(data.as_ref().unwrap()).unwrap();
+        let cloud = config["config"]["cloud-init.user-data"].as_str().unwrap();
+        let cloud: Value =
+            serde_json::from_str(cloud.strip_prefix("#cloud-config\n").unwrap()).unwrap();
+        assert_eq!(cloud["users"][0]["name"], "orbit");
+        assert_eq!(
+            cloud["users"][0]["ssh_authorized_keys"],
+            json!(["ssh-ed25519 AAAA gateway"])
+        );
+        assert_eq!(
+            cloud["users"][0]["uid"],
+            if builder { json!(1000) } else { Value::Null }
+        );
+        assert_eq!(
+            cloud["users"][0]["no_user_group"],
+            if builder { json!(false) } else { Value::Null }
+        );
+        assert!(config.get("devices").is_none());
+    }
+    let mut host = fake(vec![listed("Stopped"), good("")]);
+    change(&mut host, &image_request(true)).unwrap();
+    assert_eq!(
+        host.calls[1].0,
+        ["--project", "orbit-tasks", "start", "--", "tvm-1"]
+    );
+}
+
+#[test]
+fn image_launch_refuses_invalid_intent_wrong_images_and_failed_host_operations() {
+    let mut input = image_request(true);
+    if let Operation::CreateImage { image, .. } = &mut input.operation {
+        *image = "b".repeat(64);
+    }
+    let mut host = fake(vec![listed("Running")]);
+    assert_eq!(change(&mut host, &input), Err(Error::ImageMismatch {}));
+    assert_eq!(host.calls.len(), 1);
+    for result in [output(1, ""), good("malformed")] {
+        let mut host = fake(vec![result]);
+        assert!(change(&mut host, &image_request(false)).is_err());
+        assert_eq!(host.calls.len(), 1);
+    }
+    let mut host = fake(vec![good("[]"), output(1, "")]);
+    assert!(matches!(
+        change(&mut host, &image_request(true)),
+        Err(Error::Failed { .. })
+    ));
+    assert_eq!(host.calls.len(), 2);
+    for (field, value) in [
+        ("image", json!("remote:stock")),
+        ("gateway_public_key", json!("ssh-ed25519 AAAA\ncommand")),
+        ("cpus", json!(0)),
+        ("memory", json!("1GiB --other")),
+        ("disk", json!("0GiB")),
+        ("network", json!("../other")),
+    ] {
+        let mut value_json = json!({"vm":{"project":"orbit-tasks","name":"tvm-image-1","cidr":"10.251.77.0/24"},"operation":{"kind":"create_image","image":"stock","gateway_public_key":"ssh-ed25519 AAAA","cpus":2,"memory":"2GiB","disk":"20GiB","network":"orbittask0","builder":true}});
+        value_json["operation"][field] = value;
+        let input: Input = serde_json::from_value(value_json).unwrap();
+        let mut host = Fake::default();
+        assert_eq!(change(&mut host, &input), Err(Error::Invalid {}));
+        assert!(host.calls.is_empty());
+    }
+}
+
+#[test]
+fn exact_instance_removal_repeats_without_touching_volumes_and_propagates_failure() {
+    let input = request(Operation::RemoveInstance {});
+    let mut host = fake(vec![good(""), output(1, ""), good("[]")]);
+    change(&mut host, &input).unwrap();
+    change(&mut host, &input).unwrap();
+    assert_eq!(host.calls.len(), 3);
+    assert_eq!(
+        host.calls[0].0,
+        [
+            "--project",
+            "orbit-tasks",
+            "delete",
+            "--force",
+            "--",
+            "tvm-1"
+        ]
+    );
+    let mut host = fake(vec![output(1, ""), listed("Running")]);
+    assert!(matches!(
+        change(&mut host, &input),
+        Err(Error::Failed { .. })
+    ));
+    assert_eq!(host.calls.len(), 2);
+    let mut invalid = request(Operation::RemoveInstance {});
+    invalid.vm.name = "--all".into();
+    let mut host = Fake::default();
+    assert_eq!(change(&mut host, &invalid), Err(Error::Invalid {}));
+    assert!(host.calls.is_empty());
+}
+
+#[test]
+fn image_alias_repeats_require_the_same_fingerprint_before_starting() {
+    let mut input = image_request(true);
+    if let Operation::CreateImage { image, .. } = &mut input.operation {
+        *image = "orbit-task-base".into();
+    }
+    let mut host = fake(vec![listed("Running"), images()]);
+    change(&mut host, &input).unwrap();
+    assert_eq!(host.calls.len(), 2);
+    for image_list in [
+        good("[]"),
+        good(
+            json!([{"fingerprint":"b".repeat(64),"aliases":[{"name":"orbit-task-base"}]}])
+                .to_string(),
+        ),
+    ] {
+        let mut host = fake(vec![listed("Stopped"), image_list]);
+        assert_eq!(change(&mut host, &input), Err(Error::ImageMismatch {}));
+        assert_eq!(host.calls.len(), 2);
+    }
+}

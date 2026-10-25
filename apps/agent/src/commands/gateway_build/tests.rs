@@ -530,6 +530,12 @@ fn unsafe_cache_and_shared_storage_are_not_followed_or_repaired() {
 
 #[test]
 fn a_step_inspection_is_read_only_and_reports_a_live_lock() {
+    isolated_lock_test("commands::gateway_build::tests::step_inspection_lock_helper");
+}
+
+#[test]
+#[ignore = "runs in its own process from the step inspection test"]
+fn step_inspection_lock_helper() {
     let f = Fixture::new();
     let input = StepInput {
         step_lock: f.step.clone(),
@@ -723,14 +729,13 @@ fn handoff_input(f: &Fixture, phase: HandoffPhase) -> HandoffInput {
 
 #[test]
 fn handoff_runs_the_selected_phase_with_private_cache_clean_environment_and_step_lock() {
+    isolated_lock_test("commands::gateway_build::tests::handoff_lock_helper");
+}
+
+fn isolated_lock_test(name: &str) {
     // Other tests fork without exec. They must not inherit this fixture's flock and delay its release.
     let output = Process::new(std::env::current_exe().unwrap())
-        .args([
-            "--ignored",
-            "--exact",
-            "commands::gateway_build::tests::handoff_lock_helper",
-            "--nocapture",
-        ])
+        .args(["--ignored", "--exact", name, "--nocapture"])
         .output()
         .unwrap();
     assert!(

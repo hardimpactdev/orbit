@@ -45,6 +45,16 @@ enum Operation {
         pool: String,
         topology: bool,
     },
+    CreateImage {
+        image: String,
+        gateway_public_key: String,
+        cpus: u16,
+        memory: String,
+        disk: String,
+        network: String,
+        builder: bool,
+    },
+    RemoveInstance {},
     Start {},
     Stop {},
     Delete {
@@ -179,28 +189,118 @@ fn validate(input: &Input) -> Result<(), Error> {
             pool: storage,
             ..
         } => {
-            let alias = |s: &str| pattern(s, r"\A[A-Za-z0-9][A-Za-z0-9._/-]{0,253}\z");
-            let size = |s: &str| pattern(s, r"\A[1-9][0-9]{0,5}(?:MiB|GiB)\z");
-            if !alias(image)
-                || !alias(base_alias)
-                || !(1..=64).contains(cpus)
-                || !size(memory)
-                || !size(disk)
-                || !valid_name(network)
+            validate_launch(image, gateway_public_key, *cpus, memory, disk, network)?;
+            if !pattern(base_alias, r"\A[A-Za-z0-9][A-Za-z0-9._/-]{0,253}\z")
                 || !pool(storage)
                 || expected_fingerprint
                     .as_ref()
                     .is_some_and(|v| !volumes::digest(v))
-                || !pattern(
-                    gateway_public_key,
-                    r"\A(?:ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(?:256|384|521)) [A-Za-z0-9+/]+={0,3}(?: [!-~][ -~]*)?\z",
-                )
             {
                 return Err(Error::Invalid {});
             }
         }
+        Operation::CreateImage {
+            image,
+            gateway_public_key,
+            cpus,
+            memory,
+            disk,
+            network,
+            ..
+        } => {
+            validate_launch(image, gateway_public_key, *cpus, memory, disk, network)?;
+        }
         Operation::Delete { pool: storage } if !pool(storage) => return Err(Error::Invalid {}),
         _ => {}
+    }
+    Ok(())
+}
+fn validate_launch(
+    image: &str,
+    key: &str,
+    cpus: u16,
+    memory: &str,
+    disk: &str,
+    network: &str,
+) -> Result<(), Error> {
+    let size = |s: &str| pattern(s, r"\A[1-9][0-9]{0,5}(?:MiB|GiB)\z");
+    if !pattern(image, r"\A[A-Za-z0-9][A-Za-z0-9._/-]{0,253}\z")
+        || !(1..=64).contains(&cpus)
+        || !size(memory)
+        || !size(disk)
+        || !valid_name(network)
+        || !pattern(
+            key,
+            r"\A(?:ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(?:256|384|521)) [A-Za-z0-9+/]+={0,3}(?: [!-~][ -~]*)?\z",
+        )
+    {
+        return Err(Error::Invalid {});
+    }
+    Ok(())
+}
+fn cloud_init(key: &str, builder: bool) -> Value {
+    let mut user = json!({"name":"orbit","lock_passwd":true,"shell":"/bin/bash","sudo":"ALL=(ALL) NOPASSWD:ALL","ssh_authorized_keys":[key]});
+    if builder {
+        user["uid"] = json!(1000);
+        user["no_user_group"] = json!(false);
+    }
+    let cloud = json!({"users":[user]});
+    json!({"config":{"cloud-init.user-data":format!("#cloud-config\n{}\n", serde_json::to_string_pretty(&cloud).unwrap())}})
+}
+struct Launch<'a> {
+    image: &'a str,
+    cpus: u16,
+    memory: &'a str,
+    disk: &'a str,
+    network: &'a str,
+}
+fn launch(
+    host: &mut impl Host,
+    vm: &Location,
+    spec: Launch<'_>,
+    settings: &Value,
+) -> Result<String, Error> {
+    read_input(
+        host,
+        "launch",
+        &[
+            "--project",
+            &vm.project,
+            "launch",
+            "--vm",
+            "--config",
+            &format!("limits.cpu={}", spec.cpus),
+            "--config",
+            &format!("limits.memory={}", spec.memory),
+            "--device",
+            &format!("root,size={}", spec.disk),
+            "--device",
+            &format!("eth0,network={}", spec.network),
+            "--device",
+            "eth0,security.port_isolation=true",
+            "--",
+            spec.image,
+            &vm.name,
+        ],
+        Some(&settings.to_string()),
+    )
+}
+fn remove(host: &mut impl Host, vm: &Location) -> Result<(), Error> {
+    if let Err(error) = read(
+        host,
+        "delete",
+        &[
+            "--project",
+            &vm.project,
+            "delete",
+            "--force",
+            "--",
+            &vm.name,
+        ],
+    ) {
+        if observe(host, vm)?.is_some() {
+            return Err(error);
+        }
     }
     Ok(())
 }
@@ -247,8 +347,7 @@ fn change(host: &mut impl Host, input: &Input) -> Result<Changed, Error> {
                 start(host, vm, &observed)?;
                 return Ok(Changed { ready: true });
             }
-            let cloud = json!({"users":[{"name":"orbit","lock_passwd":true,"shell":"/bin/bash","sudo":"ALL=(ALL) NOPASSWD:ALL","ssh_authorized_keys":[gateway_public_key]}]});
-            let mut settings = json!({"config":{"cloud-init.user-data":format!("#cloud-config\n{}\n", serde_json::to_string_pretty(&cloud).unwrap())}});
+            let mut settings = cloud_init(gateway_public_key, false);
             if *topology {
                 let seed = volumes::change(
                     host,
@@ -268,29 +367,17 @@ fn change(host: &mut impl Host, input: &Input) -> Result<Changed, Error> {
                 settings["config"]["raw.qemu.conf"] =
                     json!("[device \"qemu_balloon\"]\nfree-page-reporting = \"on\"\n");
             }
-            let result = read_input(
+            let result = launch(
                 host,
-                "launch",
-                &[
-                    "--project",
-                    &vm.project,
-                    "launch",
-                    "--vm",
-                    "--config",
-                    &format!("limits.cpu={cpus}"),
-                    "--config",
-                    &format!("limits.memory={memory}"),
-                    "--device",
-                    &format!("root,size={disk}"),
-                    "--device",
-                    &format!("eth0,network={network}"),
-                    "--device",
-                    "eth0,security.port_isolation=true",
-                    "--",
+                vm,
+                Launch {
                     image,
-                    &vm.name,
-                ],
-                Some(&settings.to_string()),
+                    cpus: *cpus,
+                    memory,
+                    disk,
+                    network,
+                },
+                &settings,
             );
             if let Err(error) = result {
                 if !running(host, vm)? {
@@ -310,6 +397,50 @@ fn change(host: &mut impl Host, input: &Input) -> Result<Changed, Error> {
                 }
             }
         }
+        Operation::CreateImage {
+            image,
+            gateway_public_key,
+            cpus,
+            memory,
+            disk,
+            network,
+            builder,
+        } => {
+            if let Some(observed) = observe(host, vm)? {
+                let expected = if volumes::digest(image) {
+                    Some(image.clone())
+                } else {
+                    images(
+                        host,
+                        &Project {
+                            project: vm.project.clone(),
+                        },
+                    )?
+                    .images
+                    .into_iter()
+                    .find(|(_, aliases)| aliases.contains(image))
+                    .map(|(fingerprint, _)| fingerprint)
+                };
+                if expected.is_none() || observed.image_fingerprint != expected {
+                    return Err(Error::ImageMismatch {});
+                }
+                start(host, vm, &observed)?;
+            } else {
+                launch(
+                    host,
+                    vm,
+                    Launch {
+                        image,
+                        cpus: *cpus,
+                        memory,
+                        disk,
+                        network,
+                    },
+                    &cloud_init(gateway_public_key, *builder),
+                )?;
+            }
+        }
+        Operation::RemoveInstance {} => remove(host, vm)?,
         Operation::Start {} => {
             let observed = observe(host, vm)?.ok_or(Error::VmMissing {})?;
             start(host, vm, &observed)?;
@@ -346,22 +477,7 @@ fn change(host: &mut impl Host, input: &Input) -> Result<Changed, Error> {
             }
         }
         Operation::Delete { pool } => {
-            if let Err(error) = read(
-                host,
-                "delete",
-                &[
-                    "--project",
-                    &vm.project,
-                    "delete",
-                    "--force",
-                    "--",
-                    &vm.name,
-                ],
-            ) {
-                if observe(host, vm)?.is_some() {
-                    return Err(error);
-                }
-            }
+            remove(host, vm)?;
             volumes::change(
                 host,
                 &volumes::Input {
@@ -401,7 +517,7 @@ pub struct ChangeVm;
 impl Command for ChangeVm {
     const NAME: &'static str = "incus.vm";
     const SUMMARY: &'static str =
-        "Create, start, stop, or delete one task VM and its topology seed clone.";
+        "Create, start, stop, or remove a task or image VM and its selected seed clone.";
     const MUTATES: bool = true;
     const TIMEOUT: Duration = Duration::from_secs(900);
     const RESOURCES: &'static [&'static str] = &["incus-volumes"];

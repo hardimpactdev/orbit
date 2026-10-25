@@ -59,8 +59,12 @@ final readonly class SshAgentTransport implements AgentTransport
     /** A fixed probe used only to select the first candidate binary during admission. */
     public function architecture(): string
     {
-        $result = $this->ssh->execute($this->connection(10.0), new RemoteCommand(['uname', '-m'], timeout: 10.0));
-        $architecture = trim($result->stdout);
+        $result = $this->ssh->execute($this->connection(10.0), new RemoteCommand(['uname', '-sm'], timeout: 10.0));
+        $parts = preg_split('/\s+/', trim($result->stdout)) ?: [];
+        $architecture = count($parts) === 2 ? $parts[1] : '';
+        if ($result->succeeded() && count($parts) === 2 && $parts[0] !== ($this->platform() === 'macos' ? 'Darwin' : 'Linux')) {
+            throw new AgentCommandRefused('agent.install', 'agent.platform_unsupported', 'The staging host does not match the requested platform.');
+        }
         if (! $result->succeeded() || ! MachineArchitecture::isValid($architecture)) {
             throw new AgentRunnerFailure('agent.install', AgentRunnerFailure::Transport, 'Could not select the agent architecture.', result: $result);
         }
@@ -71,10 +75,21 @@ final readonly class SshAgentTransport implements AgentTransport
     #[\Override]
     public function stage(string $localFile): string
     {
-        $directory = $this->platform() === 'macos' ? '.orbit' : '/var/tmp';
+        $directory = $this->platform() === 'macos' ? '/tmp' : '/var/tmp';
         $path = "{$directory}/orbit-agent-candidate-".bin2hex(random_bytes(8));
+        $arguments = ['install', '-m', '0700', '/dev/stdin', $path];
+        if ($this->platform() === 'macos') {
+            // BSD install refuses a pipe as its source. Prepare the private file, then stream only candidate bytes.
+            $prepared = $this->ssh->execute($this->connection(10.0), new RemoteCommand(
+                ['/usr/bin/install', '-m', '0700', '/dev/null', $path], timeout: 10.0,
+            ));
+            if (! $prepared->succeeded()) {
+                throw new AgentRunnerFailure('agent.install', AgentRunnerFailure::Transport, 'The Mac agent candidate could not be prepared.', result: $prepared);
+            }
+            $arguments = ['/bin/dd', 'of='.$path, 'bs=65536'];
+        }
         $result = $this->ssh->execute($this->connection(180.0), new RemoteCommand(
-            ['install', '-m', '0700', '/dev/stdin', $path],
+            $arguments,
             protectedInput: ProtectedInput::openFile($localFile),
             timeout: 180.0,
         ));

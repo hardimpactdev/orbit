@@ -29,6 +29,7 @@ JOB_PROJECTS = {
     'pi-server': {'pi-server'},
     'agent': {'agent'},
     'agent-macos': {'agent'},
+    'agent-delivery': {'agent'},
     'desktop': {'desktop'},
 }
 ALL = set().union(*JOB_PROJECTS.values())

@@ -9,12 +9,9 @@ use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\VmObservation;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\GuestBootstrap;
 use App\Infrastructure\TaskVms\IncusHost;
 use App\Infrastructure\TaskVms\IncusTaskVmProvider;
@@ -65,26 +62,7 @@ beforeEach(function (): void {
     };
     $this->agents = new FakeAgentCommandRunner;
     app()->instance(AgentCommandRunner::class, $this->agents);
-    $incus = new IncusHost($this->ssh, new class implements SshKeyProvider
-    {
-        public function privateKeyPath(): string
-        {
-            return '/keys/id_ed25519';
-        }
-
-        public function publicKey(): string
-        {
-            return 'ssh-ed25519 AAAA gateway';
-        }
-    }, new class implements KnownHostsStore
-    {
-        public function path(): string
-        {
-            return '/keys/known_hosts';
-        }
-
-        public function put(string $host, int $port, HostKey $key): void {}
-    }, app(AgentCommandRunner::class));
+    $incus = new IncusHost($this->agents);
     $this->volumes = new TaskVmVolumes($incus);
     $this->guestAgents = new FakeGuestAgentCommandRunner;
     $this->provider = new IncusTaskVmProvider($incus, $settings, new GuestBootstrap($this->guestAgents));

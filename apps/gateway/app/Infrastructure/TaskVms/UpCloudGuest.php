@@ -5,12 +5,9 @@ declare(strict_types=1);
 namespace App\Infrastructure\TaskVms;
 
 use App\Domain\TaskVms\TaskVmException;
-use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
@@ -26,7 +23,6 @@ final readonly class UpCloudGuest
     private const string PublicKeyPattern = '/\Assh-ed25519 ([A-Za-z0-9+\/]+={0,2})(?: .*)?\z/D';
 
     public function __construct(
-        private SshExecutor $ssh,
         private KnownHostsStore $knownHosts,
         private SshKeyProvider $keys,
     ) {}
@@ -62,12 +58,6 @@ final readonly class UpCloudGuest
         }
 
         return 'SHA256:'.rtrim(base64_encode(hash('sha256', (string) base64_decode($match[1], true), true)), '=');
-    }
-
-    /** Runs `$command` as {@see TaskVmCloudInit::User} on the server at `$address`, which must present `$publicKey`. */
-    public function run(string $address, string $publicKey, RemoteCommand $command, int $connectTimeout = 10): CommandResult
-    {
-        return $this->ssh->execute($this->connection($address, $publicKey, $command->timeout ?? 900.0, $connectTimeout), $command);
     }
 
     public function connection(string $address, string $publicKey, float $timeout = 900.0, int $connectTimeout = 10): SshConnection

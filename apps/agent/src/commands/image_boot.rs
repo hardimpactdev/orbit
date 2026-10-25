@@ -183,12 +183,8 @@ fn check(host: &mut impl Host, input: &CheckInput) -> Result<Ready, Error> {
             ));
         }
     }
-    if input.firewall
-        && !checked(host, "/usr/sbin/ufw", &["status"], "firewall")?
-            .lines()
-            .any(|line| line == "Status: active")
-    {
-        return Err(failed("firewall", "The image firewall is inactive."));
+    if input.firewall {
+        active_firewall(host)?;
     }
     Ok(Ready { ready: true })
 }
@@ -203,6 +199,58 @@ fn boot(root: &Path, host: &mut impl Host, input: &BootInput) -> Result<Ready, E
     args.extend(MASKS.iter().copied());
     checked(host, "/usr/bin/systemctl", &args, "service masks")?;
     Ok(Ready { ready: true })
+}
+fn firewall(host: &mut impl Host) -> Result<Ready, Error> {
+    for args in [
+        &["default", "deny", "incoming"][..],
+        &[
+            "allow",
+            "in",
+            "proto",
+            "tcp",
+            "to",
+            "any",
+            "port",
+            "22",
+            "comment",
+            "orbit:public-ssh-recovery",
+        ],
+        &["--force", "enable"],
+    ] {
+        checked(host, "/usr/sbin/ufw", args, "firewall")?;
+    }
+    active_firewall(host)?;
+    Ok(Ready { ready: true })
+}
+fn active_firewall(host: &mut impl Host) -> Result<(), Error> {
+    if !checked(host, "/usr/sbin/ufw", &["status"], "firewall")?
+        .lines()
+        .any(|line| line == "Status: active")
+    {
+        return Err(failed("firewall", "The image firewall is inactive."));
+    }
+    Ok(())
+}
+pub struct PrepareFirewall;
+impl Command for PrepareFirewall {
+    const NAME: &'static str = "image.firewall";
+    const SUMMARY: &'static str =
+        "Enable the image firewall with only public SSH allowed by default.";
+    const MUTATES: bool = true;
+    const RESOURCES: &'static [&'static str] = &["firewall"];
+    const TIMEOUT: Duration = Duration::from_secs(120);
+    type Input = Empty;
+    type Output = Ready;
+    type Error = Error;
+    fn privilege(platform: Platform) -> Option<Privilege> {
+        super::linux_only(platform, Privilege::Root)
+    }
+    fn target(_: &Empty) -> Option<String> {
+        Some("image-identity".into())
+    }
+    fn run(_: Empty, context: &Context) -> Result<Ready, Error> {
+        firewall(&mut Native(context))
+    }
 }
 pub struct PrepareBoot;
 impl Command for PrepareBoot {

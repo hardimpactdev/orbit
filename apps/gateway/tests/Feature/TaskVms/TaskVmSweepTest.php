@@ -19,12 +19,8 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\IncusTaskVmBaseImage;
 use App\Infrastructure\TaskVms\TaskVmHostAudit;
@@ -48,12 +44,12 @@ use Tests\Support\TaskVmSettingsBuilder;
 use function Pest\Laravel\mock;
 
 /** Answers `incus list` with the scripted instances and deletes from them, per host address. */
-final class TaskVmSweepIncus implements SshExecutor
+final class TaskVmSweepIncus
 {
     /** @var array<string, list<string>> */
     public array $instances = [];
 
-    /** @var list<array{string, list<string>}> */
+    /** @var list<array{string, array<string, mixed>}> */
     public array $calls = [];
 
     public bool $failList = false;
@@ -79,6 +75,16 @@ final class TaskVmSweepIncus implements SshExecutor
     public function bindAgentInventory(): void
     {
         $agents = new FakeAgentCommandRunner;
+        $agents->answer('incus.vm', function (array $input, Node $node): array {
+            ($this->beforeExecute)?->__invoke($input);
+            $this->calls[] = [$node->wireguard_ip, $input];
+            if ($input['operation']['kind'] !== 'remove_instance') {
+                throw new LogicException('Unexpected VM intent.');
+            }
+            $this->instances[$node->wireguard_ip] = array_values(array_diff($this->instances[$node->wireguard_ip] ?? [], [$input['vm']['name']]));
+
+            return ['ready' => true];
+        });
         $agents->answer('incus.instances', function (array $input, Node $node): array {
             if ($this->projectMissing || $this->failList) {
                 throw new AgentCommandRefused('incus.instances', 'task_vm.host_command_failed', 'Inventory unavailable.', ['operation' => $this->projectMissing ? 'project show' : 'list', 'exit_code' => 1]);
@@ -117,33 +123,6 @@ final class TaskVmSweepIncus implements SshExecutor
         $agents->answer('incus.volumes', ['names' => []]);
         app()->instance(AgentCommandRunner::class, $agents);
     }
-
-    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-    {
-        if ($this->beforeExecute !== null) {
-            ($this->beforeExecute)($command);
-        }
-        $result = $this->executeCommand($connection, $command);
-
-        return $result;
-    }
-
-    private function executeCommand(SshConnection $connection, RemoteCommand $command): CommandResult
-    {
-        $this->calls[] = [$connection->host, $command->arguments];
-        $arguments = array_slice($command->arguments, 5);
-        if ($arguments === ['list', '--format', 'json']) {
-            return new CommandResult(0, json_encode(array_map(static fn (string $name): array => ['name' => $name, 'config' => []], $this->instances[$connection->host] ?? []), JSON_THROW_ON_ERROR), '', 1, false);
-        }
-        if (($arguments[0] ?? null) === 'delete') {
-            $name = end($arguments);
-            $this->instances[$connection->host] = array_values(array_diff($this->instances[$connection->host] ?? [], [$name]));
-
-            return new CommandResult(0, '', '', 1, false);
-        }
-
-        throw new RuntimeException('Unexpected command: '.implode(' ', $command->arguments));
-    }
 }
 
 function tvm_sweep_node(string $name, string $address): Node
@@ -178,7 +157,6 @@ beforeEach(function (): void {
     ]]);
     $this->incus = new TaskVmSweepIncus;
     $this->incus->bindAgentInventory();
-    app()->instance(SshExecutor::class, $this->incus);
     app()->instance(SshKeyProvider::class, new class implements SshKeyProvider
     {
         public function privateKeyPath(): string
@@ -247,8 +225,7 @@ describe(SweepTaskVmHosts::class, function (): void {
             '10.44.0.7' => [$ready->name, 'tvm-image-20261010030000-sync-smoke', 'dev-box'],
             '10.44.0.8' => [$provisioning->name],
         ])
-            ->and(collect($this->incus->calls)->every(static fn (array $call): bool => array_slice($call[1], 0, 5) === ['sudo', '-n', 'incus', '--project', 'orbit-tasks']
-                || (array_slice($call[1], 0, 5) === ['sudo', '-n', 'incus', 'query', '--'] && count($call[1]) === 6)))->toBeTrue()
+            ->and(collect($this->incus->calls)->every(static fn (array $call): bool => $call[1]['vm']['project'] === 'orbit-tasks'))->toBeTrue()
             ->and($ready->fresh()?->state)->toBe(TaskVmState::Ready);
     });
 
@@ -298,7 +275,7 @@ describe(SweepTaskVmHosts::class, function (): void {
 
         expect($ready->fresh()?->state)->toBe(TaskVmState::Ready)
             ->and($parked->fresh()?->state)->toBe(TaskVmState::Parked)
-            ->and(collect($this->incus->calls)->contains(static fn (array $call): bool => in_array('delete', $call[1], true)))->toBeFalse();
+            ->and(collect($this->incus->calls)->contains(static fn (array $call): bool => $call[1]['operation']['kind'] === 'remove_instance'))->toBeFalse();
     });
 
     it('sweeps the other hosts when one fails, then fails', function (): void {
@@ -491,7 +468,7 @@ describe('strays', function (): void {
                 ['node_id' => $this->beast->id, $instance ? 'instance' : 'volume' => $stray],
             )->once();
         }
-        expect(collect($this->incus->calls)->contains(static fn (array $call): bool => in_array('delete', $call[1], true)))->toBeFalse()
+        expect(collect($this->incus->calls)->contains(static fn (array $call): bool => $call[1]['operation']['kind'] === 'remove_instance'))->toBeFalse()
             ->and(tvm_stray_doctor($this->beast))->toBe($expected);
     });
 
@@ -562,8 +539,8 @@ it('fences resume when sweep deletion wins while the builder still exists', func
     $this->incus->instances['10.44.0.7'] = array_values(array_unique([$name, $build->builder_vm_name]));
     $host = app(TaskVmSettings::class)->host($this->beast->id);
     $overlapped = false;
-    $this->incus->beforeExecute = function (RemoteCommand $command) use ($build, $name, &$overlapped): void {
-        if (($command->arguments[5] ?? null) !== 'delete' || $command->arguments[array_key_last($command->arguments)] !== $name) {
+    $this->incus->beforeExecute = function (array $input) use ($build, $name, &$overlapped): void {
+        if ($input['operation']['kind'] !== 'remove_instance' || $input['vm']['name'] !== $name) {
             return;
         }
         $this->incus->beforeExecute = null;
@@ -616,7 +593,7 @@ it('skips a stale sweep candidate when resume wins before deletion claims cleanu
     expect($overlapped)->toBeTrue()->and($build->refresh()->state)->toBe(TaskVmImageBuildState::Running)
         ->and($build->cleanup_started_at)->toBeNull()
         ->and($this->incus->instances['10.44.0.7'])->toContain($name, $build->builder_vm_name)
-        ->and(array_any($this->incus->calls, static fn (array $call): bool => ($call[1][5] ?? null) === 'delete'))->toBeFalse();
+        ->and(array_any($this->incus->calls, static fn (array $call): bool => $call[1]['operation']['kind'] === 'remove_instance'))->toBeFalse();
     Bus::assertDispatched(BuildRecipeImageStep::class, fn (BuildRecipeImageStep $job): bool => $job->buildId === $build->id);
 })->with(['base-image', 'host-audit'])->with(['builder' => '', 'smoke' => '-smoke']);
 

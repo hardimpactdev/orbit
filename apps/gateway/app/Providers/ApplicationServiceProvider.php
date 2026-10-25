@@ -889,10 +889,9 @@ final class ApplicationServiceProvider extends ServiceProvider
         $this->app->singleton(
             GatewaySelfAccessConverger::class,
             static fn (): GatewaySelfAccessConverger => new NativeGatewaySelfAccessConverger(
-                processes: app(ProcessRunner::class),
+                agents: app(AgentCommandRunner::class),
                 knownHosts: app(KnownHostsStore::class),
                 sshKeys: app(SshKeyProvider::class),
-                homeDirectory: self::resolveManagedUserHomeDirectory(...),
             ),
         );
         $this->app->singleton(
@@ -904,7 +903,7 @@ final class ApplicationServiceProvider extends ServiceProvider
                 operatingSystem: app(GatewayOperatingSystemGuard::class),
                 vpnSettings: app(VpnSettings::class),
                 processes: app(ProcessRunner::class),
-                files: app(ProtectedFileWriter::class),
+                commands: app(AgentCommandRunner::class),
                 vpn: app(GatewayVpnConverger::class),
                 web: app(GatewayWebConverger::class),
                 selfAccess: app(GatewaySelfAccessConverger::class),
@@ -1001,12 +1000,5 @@ final class ApplicationServiceProvider extends ServiceProvider
         Relation::morphMap([
             'instance' => Instance::class,
         ]);
-    }
-
-    private static function resolveManagedUserHomeDirectory(string $user): string|false
-    {
-        $account = posix_getpwnam($user);
-
-        return is_array($account) ? (string) $account['dir'] : false;
     }
 }

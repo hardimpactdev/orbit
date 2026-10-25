@@ -40,7 +40,7 @@ it('gates every suite before allocating a runner and filters the Composer matrix
     foreach ($selection['jobs'] as $name => $selected) {
         expect($selected)->toBeTrue();
         $job = $workflow['jobs'][$name];
-        expect($job['needs'])->toBe('changes');
+        expect($job['needs'])->toBe($name === 'agent-delivery' ? ['changes', 'agent', 'agent-macos'] : 'changes');
         expect($job['if'])->toBe('fromJSON(needs.changes.outputs.jobs).'.$name);
         foreach ($job['steps'] as $step) {
             expect($step['if'] ?? '')->not->toContain('steps.changes');

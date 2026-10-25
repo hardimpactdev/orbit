@@ -17,7 +17,10 @@ use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\VpnSettings;
-use App\Infrastructure\Files\ProtectedFileWriter;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
+use App\Infrastructure\AgentCommands\AgentStep;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -35,7 +38,7 @@ final readonly class BootstrapGatewayAction
         private GatewayOperatingSystemGuard $operatingSystem,
         private VpnSettings $vpnSettings,
         private ProcessRunner $processes,
-        private ProtectedFileWriter $files,
+        private AgentCommandRunner $commands,
         private GatewayVpnConverger $vpn,
         private GatewayWebConverger $web,
         private GatewaySelfAccessConverger $selfAccess,
@@ -86,11 +89,10 @@ final readonly class BootstrapGatewayAction
             );
 
             $this->ensureDirectories();
-            $this->ensureSshKeys();
+            $wireGuardPublicKey = $this->prepareIdentity($node);
             $node->update([
                 'ssh_host_fingerprint' => $this->selfAccess->converge($node),
             ]);
-            $wireGuardPublicKey = $this->ensureWireGuardKeys();
             $node->update(['wireguard_public_key' => $wireGuardPublicKey]);
             $this->ensureCertificateAuthority();
             $this->vpn->converge($node, $data);
@@ -156,7 +158,7 @@ final readonly class BootstrapGatewayAction
 
     private function ensureDirectories(): void
     {
-        foreach (['', 'ca', 'generated', 'logs', 'ssh', 'wireguard'] as $directory) {
+        foreach (['', 'ca', 'generated', 'logs'] as $directory) {
             $path = rtrim(string: $this->orbitHome.'/'.$directory, characters: '/');
 
             if (! is_dir($path) && ! mkdir(directory: $path, permissions: 0o700, recursive: true) && ! is_dir($path)) {
@@ -171,74 +173,32 @@ final readonly class BootstrapGatewayAction
         }
     }
 
-    private function ensureSshKeys(): void
+    private function prepareIdentity(Node $node): string
     {
-        $privateKey = $this->orbitHome.'/ssh/id_ed25519';
-
-        if (! is_file($privateKey) || ! is_file($privateKey.'.pub')) {
-            $this->run('gateway-ssh-key', 'gateway.ssh_key_failed', [
-                'ssh-keygen',
-                '-q',
-                '-t',
-                'ed25519',
-                '-N',
-                '',
-                '-C',
-                'orbit-gateway',
-                '-f',
-                $privateKey,
-            ]);
+        try {
+            $this->commands->install($node);
+        } catch (Throwable $exception) {
+            throw new NodeProvisioningException('agent-install', 'agent.install_failed', 'The Gateway agent could not be installed.', previous: $exception);
         }
 
-        chmod(filename: $privateKey, permissions: 0o600);
-        chmod(filename: $privateKey.'.pub', permissions: 0o644);
-    }
-
-    private function ensureWireGuardKeys(): string
-    {
-        $privatePath = $this->orbitHome.'/wireguard/private.key';
-        $publicPath = $this->orbitHome.'/wireguard/public.key';
-
-        if (! is_file($privatePath)) {
-            $privateKey = trim($this->run(
-                'wireguard-private-key',
-                'vpn.key_generation_failed',
-                ['wg', 'genkey'],
-            )->stdout);
-            $this->files->put($privatePath, $privateKey.PHP_EOL);
+        try {
+            $result = $this->commands->run($node, 'gateway.prepare-identity', ['orbit_home' => $this->orbitHome]);
+        } catch (AgentCommandRefused $exception) {
+            [$step, $code] = match ($exception->errorCode) {
+                'gateway.directory_failed' => ['gateway-directories', 'gateway.directory_failed'],
+                'vpn.key_generation_failed' => ['wireguard-private-key', 'vpn.key_generation_failed'],
+                default => ['gateway-ssh-key', 'gateway.ssh_key_failed'],
+            };
+            throw new NodeProvisioningException($step, $code, $exception->getMessage(), previous: $exception, result: AgentStep::output($exception));
+        } catch (AgentRunnerFailure $exception) {
+            throw new NodeProvisioningException('gateway-ssh-key', 'gateway.ssh_key_failed', 'The Gateway identity command could not run.', previous: $exception, result: $exception->result);
+        }
+        $publicKey = $result['wireguard_public_key'] ?? null;
+        if (! is_string($publicKey) || strlen((string) base64_decode($publicKey, true)) !== 32) {
+            throw new NodeProvisioningException('wireguard-public-key', 'vpn.key_generation_failed', 'The agent returned an invalid Gateway WireGuard public key.');
         }
 
-        $privateKey = file_get_contents($privatePath);
-
-        if (! is_string($privateKey) || trim($privateKey) === '') {
-            throw new NodeProvisioningException(
-                step: 'wireguard-private-key',
-                errorCode: 'vpn.key_generation_failed',
-                message: 'The gateway WireGuard private key is invalid.',
-            );
-        }
-
-        if (! is_file($publicPath)) {
-            $publicKey = trim($this->run(
-                'wireguard-public-key',
-                'vpn.key_generation_failed',
-                ['wg', 'pubkey'],
-                input: $privateKey,
-            )->stdout);
-            $this->files->put($publicPath, $publicKey.PHP_EOL, 0o644);
-        }
-
-        $publicKey = file_get_contents($publicPath);
-
-        if (! is_string($publicKey) || trim($publicKey) === '') {
-            throw new NodeProvisioningException(
-                step: 'wireguard-public-key',
-                errorCode: 'vpn.key_generation_failed',
-                message: 'The gateway WireGuard public key is invalid.',
-            );
-        }
-
-        return trim($publicKey);
+        return $publicKey;
     }
 
     private function ensureCertificateAuthority(): void

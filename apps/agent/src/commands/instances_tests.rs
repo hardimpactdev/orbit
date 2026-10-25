@@ -822,7 +822,12 @@ fn publication_finds_a_commit_on_a_branch_of_the_origin_and_not_a_local_one() {
     );
     let unreachable = CheckPublication::run(
         CheckPublicationInput {
-            origin: ORIGIN.into(),
+            origin: sandbox
+                .base
+                .join("missing-origin.git")
+                .to_str()
+                .unwrap()
+                .into(),
             commit: "0".repeat(40),
             git_read: GitRead::default(),
         },

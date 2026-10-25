@@ -13,8 +13,8 @@ class AgentReleaseTest(unittest.TestCase):
         self.release = {"tag_name": f"agent-v{self.commit}", "draft": False, "prerelease": False,
                         "assets": [{"name": "SHA256SUMS"}, {"name": "manifest.json"}]}
         self.sums = ""
-        for architecture, target, digest in [("linux-x86_64", "x86_64", "a" * 64), ("linux-aarch64", "aarch64", "b" * 64)]:
-            name = f"orbit-agent-linux-{target}"
+        for architecture, target, digest in [("linux-x86_64", "x86_64", "a" * 64), ("linux-aarch64", "aarch64", "b" * 64), ("macos-aarch64", "aarch64", "d" * 64), ("macos-x86_64", "x86_64", "e" * 64)]:
+            name = f"orbit-agent-{architecture}"
             self.manifest["artifacts"][architecture] = {
                 "url": f"https://github.com/hardimpactdev/orbit/releases/download/agent-v{self.commit}/{name}",
                 "sha256": digest,

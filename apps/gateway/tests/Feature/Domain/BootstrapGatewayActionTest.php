@@ -20,7 +20,7 @@ use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\VpnSettings;
-use App\Infrastructure\Files\ProtectedFileWriter;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -30,6 +30,7 @@ use App\Models\Node;
 use App\Models\NodeRole;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FixtureProcessRunner;
 use Tests\Support\RootCaFixture;
 
@@ -98,6 +99,7 @@ it('initializes the portable gateway authority idempotently', function (): void 
             return 'SHA256:gateway';
         }
     };
+    $commands = new FakeAgentCommandRunner()->answer('gateway.prepare-identity', ['wireguard_public_key' => base64_encode(str_repeat('x', 32))]);
     $action = new BootstrapGatewayAction(
         agent: app(NodeAgentRuntime::class),
         assignRole: app(AssignRoleAction::class),
@@ -105,7 +107,7 @@ it('initializes the portable gateway authority idempotently', function (): void 
         operatingSystem: bootstrap_gateway_resolute_guard(),
         vpnSettings: app(VpnSettings::class),
         processes: new NativeProcessRunner,
-        files: new ProtectedFileWriter,
+        commands: $commands,
         vpn: gateway_vpn_noop(),
         web: $web,
         selfAccess: $selfAccess,
@@ -125,6 +127,9 @@ it('initializes the portable gateway authority idempotently', function (): void 
     try {
         $first = $action->execute($data);
         $second = $action->execute($data);
+        expect($commands->installs)->toBe(['gateway', 'gateway'])
+            ->and(array_column($commands->calls, 'command'))->toBe(['gateway.prepare-identity', 'gateway.prepare-identity'])
+            ->and($commands->calls[0]['input'])->toBe(['orbit_home' => $orbitHome]);
         expect(app(NodeAgentRuntime::class)->nodeIds)->toBe([$first->id, $second->id]);
         $rootCertificate = file_get_contents($orbitHome.'/ca/root.pem');
         $rootPublicKey = is_string($rootCertificate)
@@ -138,10 +143,8 @@ it('initializes the portable gateway authority idempotently', function (): void 
             ->toBeTrue()
             ->and($first->roles()->pluck('role')->all())
             ->toContain(RoleName::Gateway, RoleName::Vpn)
-            ->and(is_file($orbitHome.'/ssh/id_ed25519'))
-            ->toBeTrue()
-            ->and(is_file($orbitHome.'/wireguard/private.key'))
-            ->toBeTrue()
+            ->and($second->wireguard_public_key)
+            ->toBe(base64_encode(str_repeat('x', 32)))
             ->and(is_file($orbitHome.'/ca/root.key'))
             ->toBeTrue()
             ->and(is_file($orbitHome.'/ca/root.pem'))
@@ -341,13 +344,7 @@ it('fails closed without mutating a partial root CA containing only :filename', 
     string $contents,
 ): void {
     $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
-    mkdir(directory: $orbitHome.'/ssh', permissions: 0o700, recursive: true);
-    mkdir(directory: $orbitHome.'/wireguard', permissions: 0o700, recursive: true);
     mkdir(directory: $orbitHome.'/ca', permissions: 0o700, recursive: true);
-    file_put_contents($orbitHome.'/ssh/id_ed25519', data: 'private');
-    file_put_contents($orbitHome.'/ssh/id_ed25519.pub', data: 'public');
-    file_put_contents($orbitHome.'/wireguard/private.key', data: 'private');
-    file_put_contents($orbitHome.'/wireguard/public.key', data: 'public');
     $partialPath = $orbitHome.'/ca/'.$filename;
     file_put_contents($partialPath, $contents);
     chmod(filename: $partialPath, permissions: 0o640);
@@ -372,7 +369,7 @@ it('fails closed without mutating a partial root CA containing only :filename', 
         operatingSystem: bootstrap_gateway_resolute_guard(),
         vpnSettings: app(VpnSettings::class),
         processes: $processes,
-        files: new ProtectedFileWriter,
+        commands: new FakeAgentCommandRunner()->answer('gateway.prepare-identity', ['wireguard_public_key' => base64_encode(str_repeat('x', 32))]),
         vpn: gateway_vpn_noop(),
         web: new class implements GatewayWebConverger
         {
@@ -438,7 +435,7 @@ it('rejects a mismatched complete root CA pair without replacing it', function (
         operatingSystem: bootstrap_gateway_resolute_guard(),
         vpnSettings: app(VpnSettings::class),
         processes: $processes,
-        files: new ProtectedFileWriter,
+        commands: new FakeAgentCommandRunner()->answer('gateway.prepare-identity', ['wireguard_public_key' => base64_encode(str_repeat('x', 32))]),
         vpn: gateway_vpn_noop(),
         web: new class implements GatewayWebConverger
         {
@@ -510,7 +507,7 @@ it('rejects an existing root CA that is not RSA 4096', function (): void {
         operatingSystem: bootstrap_gateway_resolute_guard(),
         vpnSettings: app(VpnSettings::class),
         processes: $processes,
-        files: new ProtectedFileWriter,
+        commands: new FakeAgentCommandRunner()->answer('gateway.prepare-identity', ['wireguard_public_key' => base64_encode(str_repeat('x', 32))]),
         vpn: gateway_vpn_noop(),
         web: new class implements GatewayWebConverger
         {
@@ -559,7 +556,7 @@ it('rejects an invalid static identity before persistence or host side effects',
         operatingSystem: bootstrap_gateway_resolute_guard(),
         vpnSettings: app(VpnSettings::class),
         processes: $processes,
-        files: new ProtectedFileWriter,
+        commands: new FakeAgentCommandRunner()->answer('gateway.prepare-identity', ['wireguard_public_key' => base64_encode(str_repeat('x', 32))]),
         vpn: gateway_vpn_noop(),
         web: new class implements GatewayWebConverger
         {
@@ -670,7 +667,7 @@ it('records provisioning and failed host convergence state and activates an idem
         operatingSystem: bootstrap_gateway_resolute_guard(),
         vpnSettings: app(VpnSettings::class),
         processes: new NativeProcessRunner,
-        files: new ProtectedFileWriter,
+        commands: new FakeAgentCommandRunner()->answer('gateway.prepare-identity', ['wireguard_public_key' => base64_encode(str_repeat('x', 32))]),
         vpn: gateway_vpn_noop(),
         web: $web,
         selfAccess: gateway_self_access_noop(),
@@ -805,7 +802,7 @@ it('records stable gateway failure state when bootstrap throws an unexpected exc
         operatingSystem: bootstrap_gateway_resolute_guard(),
         vpnSettings: app(VpnSettings::class),
         processes: new NativeProcessRunner,
-        files: new ProtectedFileWriter,
+        commands: new FakeAgentCommandRunner()->answer('gateway.prepare-identity', ['wireguard_public_key' => base64_encode(str_repeat('x', 32))]),
         vpn: gateway_vpn_noop(),
         web: new class implements GatewayWebConverger
         {
@@ -1112,7 +1109,7 @@ it('rejects unsupported local gateway operating systems before any persistence o
         operatingSystem: new GatewayOperatingSystemGuard($osReleasePath),
         vpnSettings: app(VpnSettings::class),
         processes: $processes,
-        files: new ProtectedFileWriter,
+        commands: new FakeAgentCommandRunner()->answer('gateway.prepare-identity', ['wireguard_public_key' => base64_encode(str_repeat('x', 32))]),
         vpn: $vpn,
         web: $web,
         selfAccess: gateway_self_access_noop(),
@@ -1161,6 +1158,7 @@ function bootstrap_gateway_action(
     ?GatewayWebConverger $web = null,
     ?GatewaySelfAccessConverger $selfAccess = null,
     ?PrivateDnsManager $dns = null,
+    ?AgentCommandRunner $commands = null,
 ): BootstrapGatewayAction {
     return new BootstrapGatewayAction(
         agent: app(NodeAgentRuntime::class),
@@ -1169,7 +1167,7 @@ function bootstrap_gateway_action(
         operatingSystem: bootstrap_gateway_resolute_guard(),
         vpnSettings: app(VpnSettings::class),
         processes: new NativeProcessRunner,
-        files: new ProtectedFileWriter,
+        commands: $commands ?? new FakeAgentCommandRunner()->answer('gateway.prepare-identity', ['wireguard_public_key' => base64_encode(str_repeat('x', 32))]),
         vpn: $vpn ?? gateway_vpn_noop(),
         web: $web ?? new class implements GatewayWebConverger
         {
@@ -1309,3 +1307,38 @@ function gateway_root_ca_validity_days(string $orbitHome): int
 
     return is_int($days) ? $days : 0;
 }
+
+it('records native identity refusals and stops before VPN convergence', function (string $native, string $step, string $public): void {
+    $home = bootstrap_gateway_ca_home();
+    $agents = new FakeAgentCommandRunner()->refuse('gateway.prepare-identity', $native);
+    try {
+        expect(fn () => bootstrap_gateway_action($home, commands: $agents)->execute(bootstrap_gateway_action_data()))
+            ->toThrow(function (NodeProvisioningException $exception) use ($step, $public): void {
+                expect($exception->step)->toBe($step)->and($exception->errorCode)->toBe($public);
+            });
+        $node = Node::query()->where('name', 'gateway')->sole();
+        expect($node->status)->toBe(LifecycleStatus::Failed)->and($node->failed_step)->toBe($step)
+            ->and($agents->installs)->toBe(['gateway']);
+    } finally {
+        new Filesystem()->deleteDirectory($home);
+    }
+})->with([
+    ['gateway.directory_failed', 'gateway-directories', 'gateway.directory_failed'],
+    ['gateway.ssh_key_failed', 'gateway-ssh-key', 'gateway.ssh_key_failed'],
+    ['gateway.identity_invalid', 'gateway-ssh-key', 'gateway.ssh_key_failed'],
+    ['vpn.key_generation_failed', 'wireguard-private-key', 'vpn.key_generation_failed'],
+]);
+
+it('installs the agent before attempting host identity and records installation failure', function (): void {
+    $home = bootstrap_gateway_ca_home();
+    $agents = new FakeAgentCommandRunner()->failInstall(new RuntimeException('failed'));
+    try {
+        expect(fn () => bootstrap_gateway_action($home, commands: $agents)->execute(bootstrap_gateway_action_data()))
+            ->toThrow(function (NodeProvisioningException $exception): void {
+                expect($exception->step)->toBe('agent-install')->and($exception->errorCode)->toBe('agent.install_failed');
+            });
+        expect($agents->calls)->toBe([]);
+    } finally {
+        new Filesystem()->deleteDirectory($home);
+    }
+});

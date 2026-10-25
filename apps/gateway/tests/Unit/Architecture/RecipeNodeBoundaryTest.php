@@ -9,9 +9,11 @@ use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\MachineSoftware\NodeRecipeProgram;
+use App\Infrastructure\Nodes\MacOsNodeConverger;
 use App\Infrastructure\Nodes\NativeNodeConverger;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Ssh\SshExecutor;
+use App\Infrastructure\Ssh\SshHostKeyScanner;
 use App\Infrastructure\TaskVms\TaskVmRuntime;
 use App\Infrastructure\TaskVms\TaskVmTopologyEvidenceReader;
 
@@ -24,7 +26,7 @@ arch('Shared PHP pools use the typed agent boundary')
     ->not->toUse([SshExecutor::class, ProcessRunner::class, RemoteProgramRunner::class, DevelopmentSshExecutor::class]);
 
 arch('Node admission uses the typed agent boundary')
-    ->expect(NativeNodeConverger::class)
+    ->expect([NativeNodeConverger::class, MacOsNodeConverger::class, SshHostKeyScanner::class])
     ->not->toUse([SshExecutor::class, ProcessRunner::class, RemoteProgramRunner::class]);
 
 arch('Fleet self-update uses the typed agent boundary')

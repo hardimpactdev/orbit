@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\TaskVms\TaskVmException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\TaskVms\IncusHost;
+use App\Infrastructure\TaskVms\IncusTaskVmBaseImage;
 use App\Infrastructure\TaskVms\IncusTaskVmProvider;
 use App\Infrastructure\TaskVms\TaskVmVolumes;
 use App\Models\Node;
@@ -68,7 +69,7 @@ it('rejects malformed typed inventory results', function (string $method, string
 ]);
 
 it('keeps migrated Incus inventory methods behind the typed agent boundary', function (): void {
-    foreach (['Infrastructure/TaskVms/IncusTaskVmImageBuilder.php', 'Infrastructure/TaskVms/RecipeImagePruning.php', 'Infrastructure/TaskVms/TaskVmVolumes.php', 'Infrastructure/TaskVms/TaskVmHubFilter.php', 'Console/Commands/PrepareTaskVmHubCommand.php'] as $path) {
+    foreach (['Infrastructure/TaskVms/IncusHost.php', 'Infrastructure/TaskVms/IncusTaskVmBaseImage.php', 'Infrastructure/TaskVms/IncusGuestShell.php', 'Infrastructure/TaskVms/TaskVmHostAudit.php', 'Infrastructure/TaskVms/IncusTaskVmImageBuilder.php', 'Infrastructure/TaskVms/RecipeImagePruning.php', 'Infrastructure/TaskVms/TaskVmVolumes.php', 'Infrastructure/TaskVms/TaskVmHubFilter.php', 'Console/Commands/PrepareTaskVmHubCommand.php'] as $path) {
         $source = file_get_contents(app_path($path));
         foreach (['SshExecutor', 'RemoteCommand', 'TaskVmScripts', 'Process::', 'shell_exec', 'bash'] as $forbidden) {
             expect($source)->not->toContain($forbidden);
@@ -114,3 +115,22 @@ it('keeps VM lifecycle decisions behind the native command boundary', function (
         }
     }
 });
+
+it('sends image builder and smoke intent without executable arguments or cloud-init source', function (bool $builder): void {
+    $node = new Node(['id' => 123, 'name' => 'host']);
+    $host = TaskVmSettingsBuilder::host(123);
+    $agents = (new FakeAgentCommandRunner)->answer('incus.vm', ['ready' => true]);
+    app()->instance(AgentCommandRunner::class, $agents);
+    $images = app(IncusTaskVmBaseImage::class);
+
+    $images->launch($host, $node, 'tvm-image-9', 'stock-image', 'ssh-ed25519 AAAA gateway', $builder);
+    $images->delete($host, $node, 'tvm-image-9');
+
+    expect(array_column($agents->calls, 'input'))->toBe([
+        ['vm' => ['project' => $host->project, 'name' => 'tvm-image-9', 'cidr' => $host->cidr], 'operation' => [
+            'kind' => 'create_image', 'image' => 'stock-image', 'gateway_public_key' => 'ssh-ed25519 AAAA gateway',
+            'cpus' => $host->cpus, 'memory' => $host->memory, 'disk' => $host->disk, 'network' => $host->network, 'builder' => $builder,
+        ]],
+        ['vm' => ['project' => $host->project, 'name' => 'tvm-image-9', 'cidr' => $host->cidr], 'operation' => ['kind' => 'remove_instance']],
+    ]);
+})->with([true, false]);

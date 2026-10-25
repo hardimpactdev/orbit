@@ -6,7 +6,6 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet,
-    ffi::CStr,
     fs,
     net::Ipv4Addr,
     os::unix::fs::MetadataExt,
@@ -64,44 +63,10 @@ trait Host {
 struct NativeHost;
 impl Host for NativeHost {
     fn platform(&self) -> Result<(String, String)> {
-        // SAFETY: uname fills the live utsname allocation with NUL-terminated fields.
-        let mut value: libc::utsname = unsafe { std::mem::zeroed() };
-        if unsafe { libc::uname(&mut value) } != 0 {
-            return Err(Error::Unavailable {});
-        }
-        let platform = unsafe { CStr::from_ptr(value.sysname.as_ptr()) }
-            .to_string_lossy()
-            .to_lowercase();
-        let architecture = unsafe { CStr::from_ptr(value.machine.as_ptr()) }
-            .to_string_lossy()
-            .into_owned();
-        Ok((platform, architecture))
+        super::node_identity::platform().map_err(|_| Error::Unavailable {})
     }
     fn addresses(&self) -> Result<Vec<Ipv4Addr>> {
-        let mut first: *mut libc::ifaddrs = std::ptr::null_mut();
-        // SAFETY: getifaddrs allocates a linked list and writes its head to `first`.
-        if unsafe { libc::getifaddrs(&mut first) } != 0 {
-            return Err(Error::Unavailable {});
-        }
-        let mut addresses = vec![];
-        let mut current = first;
-        // SAFETY: list nodes and sockaddr values live until freeifaddrs. Check family before casting.
-        unsafe {
-            while !current.is_null() {
-                let address = (*current).ifa_addr;
-                if !address.is_null() && (*address).sa_family as i32 == libc::AF_INET {
-                    addresses.push(Ipv4Addr::from(
-                        (*(address as *const libc::sockaddr_in))
-                            .sin_addr
-                            .s_addr
-                            .to_ne_bytes(),
-                    ));
-                }
-                current = (*current).ifa_next;
-            }
-            libc::freeifaddrs(first);
-        }
-        Ok(addresses)
+        super::node_identity::addresses().map_err(|_| Error::Unavailable {})
     }
     fn filesystem(&self, path: &Path) -> Result<Filesystem> {
         let stat = rustix::fs::statvfs(path).map_err(|_| Error::Unavailable {})?;

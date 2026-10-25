@@ -520,7 +520,7 @@ it('selects a first candidate with a bounded architecture probe over pinned SSH'
     $result = new CommandResult($exit, $output, '', 1, false);
     $ssh->shouldReceive('execute')->once()->withArgs(function (SshConnection $connection, RemoteCommand $command): bool {
         expect($connection->hostIdentity)->toBe('SHA256:pinned');
-        expect($command->arguments)->toBe(['uname', '-m'])->and($command->timeout)->toBe(10.0);
+        expect($command->arguments)->toBe(['uname', '-sm'])->and($command->timeout)->toBe(10.0);
 
         return true;
     })->andReturn($result);
@@ -532,4 +532,58 @@ it('selects a first candidate with a bounded architecture probe over pinned SSH'
     } else {
         expect($transport->architecture())->toBe($expected);
     }
-})->with([[0, "x86_64\n", 'x86_64'], [0, "aarch64\n", 'aarch64'], [0, "\n", null], [0, 'x86_64; touch injected', null], [1, "x86_64\n", null]]);
+})->with([[0, "Linux x86_64\n", 'x86_64'], [0, "Linux aarch64\n", 'aarch64'], [0, "\n", null], [0, 'Linux x86_64; touch injected', null], [1, "Linux x86_64\n", null]]);
+
+it('refuses a staging platform mismatch before transferring a candidate', function (string $platform, string $observed): void {
+    $ssh = Mockery::mock(SshExecutor::class);
+    $ssh->shouldReceive('execute')->once()->andReturn(new CommandResult(0, $observed, '', 1, false));
+    $node = agentRunnerNode();
+    $node->platform = $platform;
+    $keys = new FleetTestSsh;
+    expect(fn () => new SshAgentTransport($node, $ssh, $keys, $keys)->architecture())
+        ->toThrow(fn (AgentCommandRefused $error) => expect($error->errorCode)->toBe('agent.platform_unsupported'));
+})->with([['macos', "Linux aarch64\n"], ['linux', "Darwin arm64\n"]]);
+
+it('stages a Mac candidate at an absolute path without an existing Orbit directory or sudo', function (): void {
+    $ssh = Mockery::mock(SshExecutor::class);
+    $path = null;
+    $ssh->shouldReceive('execute')->once()->ordered()->withArgs(function (SshConnection $connection, RemoteCommand $command) use (&$path): bool {
+        expect($connection->user)->toBe('mini');
+        expect(array_slice($command->arguments, 0, 4))->toBe(['/usr/bin/install', '-m', '0700', '/dev/null']);
+        $path = $command->arguments[4];
+        expect($path)->toStartWith('/tmp/orbit-agent-candidate-');
+
+        return true;
+    })->andReturn(new CommandResult(0, '', '', 1, false));
+    $ssh->shouldReceive('execute')->once()->ordered()->withArgs(function (SshConnection $connection, RemoteCommand $command) use (&$path): bool {
+        expect($command->arguments)->toBe(['/bin/dd', 'of='.$path, 'bs=65536']);
+        expect(stream_get_contents($command->protectedInput->stream()))->toBe('candidate bytes');
+
+        return true;
+    })->andReturn(new CommandResult(0, '', '', 1, false));
+    $keys = new FleetTestSsh;
+    $node = new Node(['name' => 'mini', 'platform' => 'macos', 'user' => 'mini', 'wireguard_ip' => '10.44.0.40']);
+    $file = tempnam(sys_get_temp_dir(), 'agent-stage-');
+    file_put_contents($file, 'candidate bytes');
+    try {
+        expect(new SshAgentTransport($node, $ssh, $keys, $keys)->stage($file))->toStartWith('/tmp/orbit-agent-candidate-');
+    } finally {
+        unlink($file);
+    }
+});
+
+it('records an installer failure without persisting unverified admission identity', function (bool $exists): void {
+    $node = $exists ? agentRunnerNode() : new Node(['name' => 'not-admitted', 'platform' => 'linux', 'architecture' => 'x86_64']);
+    $originalUser = $node->user;
+    $node->user = 'unverified';
+    $transport = new ScriptedAgentTransport([agentRefusal('agent.health_check_failed')]);
+    expect(fn () => agentRunner($transport)->install($node))->toThrow(AgentCommandRefused::class);
+    expect($node->agent_failed_pin)->toBe(app(AgentDelivery::class)->pin($node));
+    if ($exists) {
+        expect($node->fresh()->user)->toBe($originalUser);
+        expect($node->fresh()->agent_failed_pin)->toBe($node->agent_failed_pin);
+    } else {
+        expect($node->exists)->toBeFalse();
+        expect(Node::query()->where('name', 'not-admitted')->exists())->toBeFalse();
+    }
+})->with([true, false]);

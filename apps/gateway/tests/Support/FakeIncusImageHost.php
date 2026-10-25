@@ -8,12 +8,8 @@ use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentGuest;
 use App\Infrastructure\AgentCommands\GuestAgentCommandRunner;
 use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeGuestAgentCommandRunner;
-use Tests\Support\IncusGuestCall;
 use Tests\Support\RecipeImageAnswers;
 
 const IMAGE_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeGatewayPublicKeyMaterial0123456789abcd orbit@gateway';
@@ -26,23 +22,14 @@ const IMAGE_USED = 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 
 const IMAGE_STOCK = 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd';
 
-/**
- * An Incus host that answers by argv: `$state` holds its images (fingerprint => aliases) and instances
- * (name => base image), and `$fail` names an operation that fails.
- */
-final class FakeIncusImageHost implements SshExecutor
+/** Native command answers for Gateway image-build orchestration tests. */
+final class FakeIncusImageHost
 {
-    /** @var list<RemoteCommand> */
-    public array $commands = [];
-
     /** @var list<string> */
     public array $events = [];
 
-    /** @var list<SshConnection> */
-    public array $connections = [];
-
-    /** @var list<IncusGuestCall> what ran in a guest, in order */
-    public array $guest = [];
+    /** @var list<array{command: string, input: array<string, mixed>}> */
+    public array $guestCalls = [];
 
     /** @var array<string, list<string>> */
     public array $images = [];
@@ -76,18 +63,19 @@ final class FakeIncusImageHost implements SshExecutor
 
     public bool $bootRunning = false;
 
-    /** A test can interleave another operation after the remote result has been captured. */
-    public ?Closure $afterExecute = null;
-
     public ?Closure $afterImage = null;
 
     public array $imageCalls = [];
+
+    /** @var list<array<string, mixed>> */
+    public array $vmCalls = [];
 
     public function bindAgentInventory(): void
     {
         $guests = new FakeGuestAgentCommandRunner;
         $guests->answer = function (AgentGuest $guest, string $command, array $input): array {
             $this->events[] = $command;
+            $this->guestCalls[] = compact('command', 'input');
             if ($command === 'image.recipe-log') {
                 $path = '/var/log/orbit/recipe-images/'.$input['profile'].'-'.$input['phase'].'.log';
                 $this->recipeLogs[$path] = ($this->recipeLogs[$path] ?? '').$input['text'];
@@ -121,6 +109,23 @@ final class FakeIncusImageHost implements SshExecutor
         };
         app()->instance(GuestAgentCommandRunner::class, $guests);
         $agents = new FakeAgentCommandRunner;
+        $agents->answer('incus.vm', function (array $input): array {
+            $this->vmCalls[] = $input;
+            $op = $input['operation'];
+            $name = $input['vm']['name'];
+            $operation = $op['kind'] === 'create_image' ? 'launch' : 'delete '.$name;
+            $this->events[] = $op['kind'] === 'create_image' ? 'create_image '.$name : 'remove_instance '.$name;
+            if ($this->fail === $operation) {
+                throw new AgentCommandRefused('incus.vm', 'task_vm.host_command_failed', 'VM change failed.', ['operation' => $operation, 'exit_code' => 1]);
+            }
+            if ($op['kind'] === 'create_image') {
+                $this->instances[$name] = $this->fingerprintOf($op['image']);
+            } else {
+                unset($this->instances[$name]);
+            }
+
+            return ['ready' => true];
+        });
         $agents->answer('incus.images', function (): array {
             if ($this->fail === 'image list') {
                 throw new AgentCommandRefused('incus.images', 'task_vm.host_command_failed', 'Image list failed.', ['operation' => 'image list', 'exit_code' => 1]);
@@ -198,61 +203,6 @@ final class FakeIncusImageHost implements SshExecutor
         app()->instance(AgentCommandRunner::class, $agents);
     }
 
-    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-    {
-        $this->connections[] = $connection;
-        $result = $this->executeCommand($command);
-        if ($this->afterExecute !== null) {
-            ($this->afterExecute)($command);
-        }
-
-        return $result;
-    }
-
-    private function executeCommand(RemoteCommand $command): CommandResult
-    {
-        $this->commands[] = $command;
-        $argv = $command->arguments;
-        $operation = array_slice($argv, 5);
-        $this->events[] = implode(' ', array_slice($operation, 0, 4));
-
-        return match (true) {
-            $operation[0] === 'list' => $this->answer('list', fn () => json_encode(array_map(
-                static fn (string $name, ?string $image): array => ['name' => $name, 'config' => $image === null ? [] : ['volatile.base_image' => $image]],
-                array_keys($this->instances),
-                $this->instances,
-            ))),
-            $operation[0] === 'launch' => $this->answer('launch', fn () => $this->instances[end($operation)] = $this->fingerprintOf($operation[count($operation) - 2])),
-            $operation[0] === 'exec' => $this->exec($this->guest[] = IncusGuestCall::decode($command)),
-            $operation[0] === 'delete' => $this->answer('delete '.end($operation), function () use ($operation): void {
-                unset($this->instances[end($operation)]);
-            }),
-            default => throw new RuntimeException('Unexpected incus command: '.implode(' ', $argv)),
-        };
-    }
-
-    private function exec(IncusGuestCall $call): CommandResult
-    {
-        if ($call->user !== 'root') {
-            return $this->answer('program');
-        }
-        // `timeout <seconds> <command>`, as the cloud-init status read runs.
-        $command = $call->argv[0] === 'timeout' ? array_slice($call->argv, 2) : $call->argv;
-
-        return match ($command[0]) {
-            'tail' => isset($this->recipeLogs[$command[4]])
-                ? new CommandResult(0, implode("\n", array_slice(explode("\n", rtrim($this->recipeLogs[$command[4]])), -40)), '', 1, false)
-                : new CommandResult(1, '', 'Log unavailable', 1, false),
-            'dpkg' => new CommandResult(0, "amd64\n", '', 1, false),
-            'uname' => new CommandResult(0, "x86_64\n", '', 1, false),
-            'journalctl' => new CommandResult(0, implode('', array_map(static fn (int $boot): string => "{$boot} 0f1e2d3c4b5a69788796a5b4c3d2e1f0 Sat 2026-10-10 03:01:00 UTC\n", range(1 - $this->boots, 0))), '', 1, false),
-            'test' => $this->answer('authorized key'),
-            'sh' => $this->answer('orbit user'),
-            'ssh-keygen' => $this->answer('ssh-keygen', static fn (): string => "256 SHA256:tHGyu/bpS80ShKGdwihLDLg9TzFRZCdsWqnuyInfRsg root@smoke (ED25519)\n"),
-            default => $this->answer('exec'),
-        };
-    }
-
     private function fingerprintOf(string $alias): ?string
     {
         if (array_key_exists($alias, $this->images)) {
@@ -273,16 +223,5 @@ final class FakeIncusImageHost implements SshExecutor
             $this->images[$image] = array_values(array_diff($aliases, [TaskVmHost::BaseImage]));
         }
         $this->images[$fingerprint][] = TaskVmHost::BaseImage;
-    }
-
-    private function answer(string $operation, ?Closure $effect = null): CommandResult
-    {
-        if ($this->fail === $operation) {
-            return str_starts_with($operation, 'recipe ') && $this->recipeFailure !== null
-                ? $this->recipeFailure : new CommandResult(1, '', "Error: {$operation} failed\n", 1, false);
-        }
-        $output = $effect instanceof Closure ? $effect() : null;
-
-        return new CommandResult(0, is_string($output) ? $output : '', '', 1, false);
     }
 }

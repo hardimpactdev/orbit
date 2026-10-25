@@ -49,12 +49,13 @@ it('sends fixed owner, boot, and smoke intent through the guest runner', functio
 
     $recipe->owner($guest);
     $recipe->boot($guest, lean: true);
+    $recipe->firewall($guest);
     $recipe->check($guest, leanBoot: true);
     $recipe->check($guest, firewall: true);
 
     expect($agents->installs)->toBe([$guest]);
-    expect(array_column($agents->calls, 'command'))->toBe(['image.owner', 'image.boot', 'image.check', 'image.check']);
-    expect(array_column($agents->calls, 'input'))->toBe([[], ['lean' => true], ['lean_boot' => true, 'firewall' => false], ['lean_boot' => false, 'firewall' => true]]);
+    expect(array_column($agents->calls, 'command'))->toBe(['image.owner', 'image.boot', 'image.firewall', 'image.check', 'image.check']);
+    expect(array_column($agents->calls, 'input'))->toBe([[], ['lean' => true], [], ['lean_boot' => true, 'firewall' => false], ['lean_boot' => false, 'firewall' => true]]);
     expect(file_exists(resource_path('task-vms/image-check.sh')))->toBeFalse();
     expect(file_exists(resource_path('task-vms/lean-boot.sh')))->toBeFalse();
 });
@@ -92,3 +93,12 @@ it('fails recipe record writes on native refusal or missing confirmation', funct
     expect(fn () => (new TaskVmImageRecipe($agents))->mark($guest, 'sha256:'.str_repeat('a', 64), 'base'))->toThrow(TaskVmException::class);
     expect($agents->calls)->toHaveCount(1);
 })->with([true, false]);
+
+it('keeps cloud image execution behind the guest agent boundary', function (): void {
+    $source = file_get_contents(app_path('Infrastructure/TaskVms/UpCloudTaskVmImageBuilder.php'));
+    foreach (['RemoteCommand', 'asRoot', 'asUser', 'CommandResult', 'NodeFirewallRuleCatalog'] as $forbidden) {
+        expect($source)->not->toContain($forbidden);
+    }
+    expect(file_exists(app_path('Infrastructure/TaskVms/TaskVmGuestShell.php')))->toBeFalse();
+    expect(file_exists(app_path('Infrastructure/TaskVms/UpCloudGuestShell.php')))->toBeFalse();
+});

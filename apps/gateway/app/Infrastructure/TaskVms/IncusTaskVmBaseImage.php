@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Infrastructure\TaskVms;
 
 use App\Domain\TaskVms\TaskVmHost;
-use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
 
 /** Host-local builder lifecycle, smoke checks, and base alias promotion for recipe builds. */
@@ -29,18 +28,19 @@ final readonly class IncusTaskVmBaseImage
         }
     }
 
-    public function launch(TaskVmHost $host, Node $node, string $name, string $image, string $userData): void
+    public function launch(TaskVmHost $host, Node $node, string $name, string $image, string $publicKey, bool $builder): void
     {
-        $result = $this->incus->launch($host, $node, $name, $image, $userData);
-        if (! $result->succeeded()) {
-            throw IncusHost::failed("the base image VM [{$name}]", 'launch', $result);
-        }
+        $this->incus->changeVm($host, $node, $name, [
+            'kind' => 'create_image', 'image' => $image, 'gateway_public_key' => $publicKey,
+            'cpus' => $host->cpus, 'memory' => $host->memory, 'disk' => $host->disk,
+            'network' => $host->network, 'builder' => $builder,
+        ]);
     }
 
     /** The guest shell of the VM `$name` on the host. */
     public function shell(TaskVmHost $host, Node $node, string $name): IncusGuestShell
     {
-        return new IncusGuestShell($this->incus, $host, $node, $name);
+        return new IncusGuestShell($host, $node, $name);
     }
 
     /** Waits until cloud-init is done without errors. */
@@ -64,10 +64,7 @@ final readonly class IncusTaskVmBaseImage
     /** Deletes a VM; an absent VM counts as deleted. */
     public function delete(TaskVmHost $host, Node $node, string $name): void
     {
-        $result = $this->incus->run($host, $node, ['delete', '--force', '--', $name]);
-        if (! $result->succeeded() && array_key_exists($name, $this->instances($host, $node))) {
-            throw IncusHost::failed("the base image VM [{$name}]", 'delete', $result);
-        }
+        $this->incus->changeVm($host, $node, $name, ['kind' => 'remove_instance']);
     }
 
     /**
@@ -78,10 +75,5 @@ final readonly class IncusTaskVmBaseImage
     public function instances(TaskVmHost $host, Node $node): array
     {
         return $this->incus->instanceImages($host, $node);
-    }
-
-    public function checked(string $name, string $operation, CommandResult $result): CommandResult
-    {
-        return $result->succeeded() ? $result : throw IncusHost::failed("the base image VM [{$name}]", $operation, $result);
     }
 }

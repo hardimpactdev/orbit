@@ -69,7 +69,7 @@ final class BaseAdmissionScanner implements HostKeyScanner
 
     public string $fingerprint = 'SHA256:pinned';
 
-    public function scan(string $host, int $port, ?SshConnection $via = null): HostKey
+    public function scan(string $host, int $port, ?Node $via = null): HostKey
     {
         $this->scans[] = compact('host', 'port', 'via');
 
@@ -330,7 +330,7 @@ it('uses the jump node for public admission and direct WireGuard for managed rea
         return;
     }
     $run();
-    expect($scanner->scans[0]['via']?->host)->toBe($activeRole ? null : '10.44.0.7');
+    expect($scanner->scans[0]['via']?->id)->toBe($activeRole ? null : $jump->id);
     foreach ($agents->calls as $index => $call) {
         $public = ! $activeRole && $index < 4;
         expect($call['connection']->host)->toBe($public ? '192.0.2.10' : '10.44.0.2');

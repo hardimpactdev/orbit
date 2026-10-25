@@ -1006,6 +1006,40 @@
       ]
     },
     {
+      "name": "gateway.prepare-identity",
+      "summary": "Prepare the Gateway account's SSH and WireGuard identity without replacing existing keys.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.identity_invalid",
+        "gateway.directory_failed",
+        "gateway.ssh_key_failed",
+        "vpn.key_generation_failed",
+        "gateway.self_access_failed"
+      ]
+    },
+    {
+      "name": "gateway.converge-self-access",
+      "summary": "Authorize the Gateway account's managed key and read its SSH host identity.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.identity_invalid",
+        "gateway.directory_failed",
+        "gateway.ssh_key_failed",
+        "vpn.key_generation_failed",
+        "gateway.self_access_failed"
+      ]
+    },
+    {
       "name": "gateway.adopt-release-storage",
       "summary": "Converge a Gateway release adoption transition without a missing serving path.",
       "mutates": true,
@@ -2562,7 +2596,7 @@
     },
     {
       "name": "incus.vm",
-      "summary": "Create, start, stop, or delete one task VM and its topology seed clone.",
+      "summary": "Create, start, stop, or remove a task or image VM and its selected seed clone.",
       "mutates": true,
       "timeout_seconds": 900,
       "privilege": {
@@ -2598,6 +2632,19 @@
       "summary": "Prepare fixed service masks and optional Incus DHCPv4 boot settings.",
       "mutates": true,
       "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.image_check_failed"
+      ]
+    },
+    {
+      "name": "image.firewall",
+      "summary": "Enable the image firewall with only public SSH allowed by default.",
+      "mutates": true,
+      "timeout_seconds": 120,
       "privilege": {
         "linux": "root",
         "macos": null
@@ -3025,6 +3072,36 @@
         "nodes.bootstrap_dns_refused",
         "nodes.bootstrap_failed",
         "nodes.bootstrap_dns_recovery_failed"
+      ]
+    },
+    {
+      "name": "nodes.inspect-macos-enrollment",
+      "summary": "Verify the existing Mac architecture and enrolled WireGuard address.",
+      "mutates": false,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": null,
+        "macos": "account"
+      },
+      "errors": [
+        "nodes.macos_platform_mismatch",
+        "nodes.macos_architecture_unavailable",
+        "nodes.macos_wireguard_required"
+      ]
+    },
+    {
+      "name": "nodes.scan-host-key",
+      "summary": "Scan and fingerprint a target before trusting its SSH identity.",
+      "mutates": false,
+      "timeout_seconds": 25,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "nodes.host_key_input_invalid",
+        "nodes.host_key_scan_failed",
+        "nodes.host_key_invalid"
       ]
     },
     {

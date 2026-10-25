@@ -37,6 +37,7 @@ mod gateway_checkout;
 mod gateway_database;
 mod gateway_drain;
 mod gateway_fpm;
+mod gateway_identity;
 mod gateway_owner;
 mod gateway_recovery;
 mod gateway_releases;
@@ -61,11 +62,13 @@ pub mod image_recipe;
 mod incus;
 pub mod instances;
 pub mod laravel;
+mod macos_enrollment;
 pub mod metrics_certificate;
 mod metrics_exporter;
 mod metrics_publication;
 mod metrics_runtime;
 mod node_bootstrap;
+mod node_identity;
 pub mod os_release;
 mod package_cache;
 pub mod peer_dns;
@@ -91,6 +94,7 @@ pub mod source;
 pub mod sqlite_copy;
 mod sqlite_query;
 pub mod sqlite_seed;
+mod ssh_host_key;
 pub mod storage_root;
 pub mod task_git;
 pub mod task_git_export;
@@ -174,6 +178,8 @@ pub fn all() -> Vec<Entry> {
         entry::<gateway_units::Inspect>(),
         entry::<gateway_database::Inspect>(),
         entry::<gateway_database::Create>(),
+        entry::<gateway_identity::Prepare>(),
+        entry::<gateway_identity::SelfAccess>(),
         entry::<gateway_adoption::Storage>(),
         entry::<gateway_adoption::Switch>(),
         entry::<gateway_adoption::Restore>(),
@@ -264,6 +270,7 @@ pub fn all() -> Vec<Entry> {
         entry::<incus::vm::ChangeVm>(),
         entry::<image_identity::CleanImage>(),
         entry::<image_boot::PrepareBoot>(),
+        entry::<image_boot::PrepareFirewall>(),
         entry::<image_boot::CheckImage>(),
         entry::<image_boot::CheckOwner>(),
         entry::<guest::ReadCloudInit>(),
@@ -292,6 +299,8 @@ pub fn all() -> Vec<Entry> {
         entry::<cli_update::SelfUpdate>(),
         entry::<os_release::ReadOsRelease>(),
         entry::<node_bootstrap::Bootstrap>(),
+        entry::<macos_enrollment::Inspect>(),
+        entry::<ssh_host_key::Scan>(),
         entry::<role_prerequisites::InstallPrerequisites>(),
         entry::<instances::InspectSource>(),
         entry::<instances::RemoveSource>(),

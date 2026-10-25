@@ -5,18 +5,23 @@
 //! check. It runs as root, so it checks the Instance user's ownership itself, writes through the directory's open
 //! descriptor, hands the candidate to the user, and runs Git as the user.
 
-use crate::command::{identity, Command, Context, Platform, Privilege};
+#[cfg(target_os = "linux")]
+use crate::command::identity;
+use crate::command::{Command, Context, Platform, Privilege};
 use crate::command_errors;
+#[cfg(target_os = "linux")]
 use base64::Engine;
+#[cfg(target_os = "linux")]
 use rustix::fs::{fstat, openat, statat, AtFlags, Mode, OFlags, CWD};
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
+#[cfg(target_os = "linux")]
 use std::{
     collections::BTreeSet,
     fs,
     io::{Read, Write},
     os::fd::{AsFd, OwnedFd},
     process::{Command as Process, Stdio},
-    time::Duration,
 };
 
 command_errors! {
@@ -95,6 +100,7 @@ fn outcome(state: State) -> Outcome {
     }
 }
 
+#[cfg(target_os = "linux")]
 #[derive(Debug)]
 enum Stop {
     Boundary,
@@ -103,18 +109,21 @@ enum Stop {
     Failed,
 }
 
+#[cfg(target_os = "linux")]
 impl From<std::io::Error> for Stop {
     fn from(_: std::io::Error) -> Self {
         Stop::Failed
     }
 }
 
+#[cfg(target_os = "linux")]
 impl From<rustix::io::Errno> for Stop {
     fn from(_: rustix::io::Errno) -> Self {
         Stop::Failed
     }
 }
 
+#[cfg(target_os = "linux")]
 fn boundary(condition: bool) -> Result<(), Stop> {
     if condition {
         Ok(())
@@ -123,12 +132,14 @@ fn boundary(condition: bool) -> Result<(), Stop> {
     }
 }
 
+#[cfg(target_os = "linux")]
 struct Access<'a> {
     input: &'a EnvironmentInput,
     uid: u32,
     gid: u32,
 }
 
+#[cfg(target_os = "linux")]
 impl Access<'_> {
     /// The base directory, opened one component at a time without following a link.
     fn open_base(&self) -> Result<OwnedFd, Stop> {
@@ -249,9 +260,11 @@ impl Access<'_> {
 }
 
 /// A managed key and its whole line.
+#[cfg(target_os = "linux")]
 type Managed = (Vec<u8>, Vec<u8>);
 
 /// The managed lines of a merge, in their order: complete lines, each managed key once, and at least one.
+#[cfg(target_os = "linux")]
 fn managed_lines(supplied: &[u8], keys: &BTreeSet<Vec<u8>>) -> Result<Vec<Managed>, Stop> {
     let mut updates: Vec<Managed> = Vec::new();
     for line in supplied.split_inclusive(|byte| *byte == b'\n') {
@@ -271,6 +284,7 @@ fn managed_lines(supplied: &[u8], keys: &BTreeSet<Vec<u8>>) -> Result<Vec<Manage
 }
 
 /// The key an assignment line sets, as `[ \t]*(export[ \t]+)?KEY[ \t]*=` reads it.
+#[cfg(target_os = "linux")]
 fn assigned_key(line: &[u8]) -> Option<&[u8]> {
     let mut rest = line;
     let skip = |rest: &[u8]| {
@@ -300,6 +314,7 @@ fn assigned_key(line: &[u8]) -> Option<&[u8]> {
 
 /// The existing file with each managed key's line replaced once, its other assignments dropped, and the missing
 /// managed lines added at the end.
+#[cfg(target_os = "linux")]
 fn merged(existing: &[u8], keys: &BTreeSet<Vec<u8>>, updates: &[Managed]) -> Vec<u8> {
     let mut lines: Vec<Vec<u8>> = Vec::new();
     let mut written = BTreeSet::new();
@@ -330,6 +345,7 @@ fn merged(existing: &[u8], keys: &BTreeSet<Vec<u8>>, updates: &[Managed]) -> Vec
     lines.into_iter().chain(missing).flatten().collect()
 }
 
+#[cfg(target_os = "linux")]
 fn valid_key(key: &str) -> bool {
     let bytes = key.as_bytes();
     !bytes.is_empty()
@@ -339,6 +355,12 @@ fn valid_key(key: &str) -> bool {
             .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || *byte == b'_')
 }
 
+#[cfg(not(target_os = "linux"))]
+pub fn access(_: &EnvironmentInput) -> Outcome {
+    outcome(State::Refused)
+}
+
+#[cfg(target_os = "linux")]
 pub fn access(input: &EnvironmentInput) -> Outcome {
     let mut installed = false;
     match run(input, &mut installed) {
@@ -354,6 +376,7 @@ pub fn access(input: &EnvironmentInput) -> Outcome {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn run(input: &EnvironmentInput, installed: &mut bool) -> Result<Outcome, Stop> {
     let (uid, gid, home) = identity::account(&input.user).map_err(|_| Stop::Boundary)?;
     boundary(!input.require_home || home == input.base)?;
@@ -470,6 +493,7 @@ fn run(input: &EnvironmentInput, installed: &mut bool) -> Result<Outcome, Stop> 
 }
 
 /// Publishes the payload with one rename, unless the file already holds it with mode 0600.
+#[cfg(target_os = "linux")]
 fn write(
     access: &Access,
     directory: &OwnedFd,
@@ -598,6 +622,6 @@ impl Command for WriteEnvironment {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 #[path = "environment_tests.rs"]
 mod tests;

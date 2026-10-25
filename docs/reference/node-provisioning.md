@@ -2,14 +2,14 @@
 title: "Node provisioning"
 description: "How node:add bootstraps or converges a Node, how roles share and lock a Node, how the Orbit CLI and footprint reach it, and how node:remove hands it back."
 covers:
-  - apps/gateway/app/Actions/Nodes/{ProvisionNodeAction,EnrollMacOsNodeAction,RemoveNodeAction,AddNodeRoleAction,RemoveNodeRoleAction,AssignRoleAction}.php
-  - apps/gateway/app/Infrastructure/{WireGuard/{NativeGatewayPeerProjectionManager,NativeGatewayVpnConverger}.php,Gateway/NativeGatewayCaddyInstaller.php,Nodes/{Roles/{CiRunnerRoleBaseline,NativeNodeRoleFirewallManager},CiRunnerHostProgram,NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackage*,RemotePhpPackageManager,NodeLocks,NodeLock}.php}
+  - apps/gateway/app/Actions/{Gateway/BootstrapGatewayAction.php,Nodes/{ProvisionNodeAction,EnrollMacOsNodeAction,RemoveNodeAction,AddNodeRoleAction,RemoveNodeRoleAction,AssignRoleAction}.php}
+  - apps/gateway/app/Infrastructure/{WireGuard/{NativeGatewayPeerProjectionManager,NativeGatewayVpnConverger}.php,Gateway/{NativeGatewayCaddyInstaller,NativeGatewaySelfAccessConverger}.php,Nodes/{Roles/{CiRunnerRoleBaseline,NativeNodeRoleFirewallManager},CiRunnerHostProgram,NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackage*,RemotePhpPackageManager,NodeLocks,NodeLock}.php}
   - apps/gateway/app/Console/Commands/{ProvisionNodeCommand,ConvergeNodeRecipeCommand}.php
   - apps/gateway/{app/{Actions/Fleet/ConvergeNodeRecipeAction.php,Data/Fleet/NodeRecipePlan.php,Infrastructure/MachineSoftware/NodeRecipe*.php,Domain/Nodes/RoleRegistry.php}}
   - apps/gateway/app/Infrastructure/{Firewall/NodeFirewallRuleCatalog,Ssh/NativeSshExecutor,Ssh/SshConnection,Ssh/SshHostKeyScanner,Ssh/HostKeyScanner}.php
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/gateway/app/{Infrastructure/Nodes/*Cli*.php,Domain/Nodes/NodeCli*.php,Domain/Fleet/NodeFootprint*.php,Domain/Fleet/NodeCliConvergence.php,Infrastructure/Fleet/Footprint/**,Actions/Fleet/ConvergeNodeFootprintAction.php,Http/Controllers/Api/NodeFootprintsController.php}
-  - apps/agent/src/commands/{ci_runner.rs,recipe.rs,recipe/**,php_build.rs,php_build/**}
+  - apps/agent/src/commands/{ci_runner.rs,recipe.rs,recipe/**,php_build.rs,php_build/**,gateway_identity.rs,gateway_identity/**}
 ---
 
 # Node provisioning
@@ -50,7 +50,9 @@ After the agent, the Gateway installs the [Orbit CLI](#orbit-cli) on a Node of t
 
 The Gateway console command `orbit:node-provision` runs the same steps for the first Node. On failure, `--diagnostics` includes a redacted command-output tail, or the underlying exception messages when no command output exists: at most 40 lines and 4,000 characters. The topology harness uses it to report the prerequisite error. Role firewall intent comes from the shared Node firewall rule catalog. The agent's `firewall.rules` command checks ownership, preserves recovery SSH before enabling UFW, applies desired rules, and removes exact old rules under one firewall lock. Admission calls it over the pinned bootstrap connection; later role work uses the WireGuard connection.
 
-Gateway VPN bootstrap installs the pinned agent before its first Node command. Observer configuration follows once the Gateway is active. `firewall.gateway-vpn` checks all desired and recovery rule ownership before mutation. On an inactive firewall, it proves the stored public SSH recovery rule in both address families before enabling UFW. It applies and verifies the VPN rules before removing recovery SSH. The command holds the firewall lock across these steps. Private DNS publication keeps its separate convergence step.
+Gateway bootstrap installs the pinned agent before preparing its host identity. `gateway.prepare-identity` creates the managed SSH and WireGuard keys under the Gateway's Orbit home, preserving existing private keys on repeat. `gateway.converge-self-access` authorizes the managed public key for the executing account and returns the host public key and fingerprint. Both commands run as the Gateway account. Invalid paths, foreign ownership, and inconsistent existing keys refuse before publication. The Gateway retains its CA authority and known-host records as control-plane data.
+
+Observer configuration follows once the Gateway is active. `firewall.gateway-vpn` checks all desired and recovery rule ownership before mutation. On an inactive firewall, it proves the stored public SSH recovery rule in both address families before enabling UFW. It applies and verifies the VPN rules before removing recovery SSH. The command holds the firewall lock across these steps. Private DNS publication keeps its separate convergence step.
 
 `wireguard.bootstrap-hub` validates the rendered hub configuration, installs IPv4 forwarding, and restarts `wg-quick@orbit`. It shares configuration publication and recovery with `wireguard.project-hub`, which applies peer changes without restarting an active interface. Both commands hold the same hub target lock. The agent rejects WireGuard shell hooks before writing files. The Gateway retains peer selection, configuration rendering, and the projection lock that protects that selection.
 
@@ -73,7 +75,7 @@ Name a bootstrap user with `--user` when root cannot log in, or when the managed
 
 ### Machine architecture
 
-Before staging the first agent binary, the runner selects its architecture with a fixed `uname -m` probe over the pinned bootstrap connection. After bootstrap, `agent.status` verifies the same architecture as the managed user. A Node without a recorded architecture stores it. The value stays even when a later step fails. An existing Node keeps its recorded value. An explicit `--architecture` for a new Node must equal the observed value. A mismatch fails with `node.architecture_mismatch` (HTTP 409) at step `machine-architecture`, before agent installation or any role convergence.
+Before staging the first agent binary, the runner selects its platform and architecture with a fixed `uname -sm` probe over the pinned bootstrap connection. After bootstrap, `agent.status` verifies the same architecture as the managed user. A Node without a recorded architecture stores it. The value stays even when a later step fails. An existing Node keeps its recorded value. An explicit `--architecture` for a new Node must equal the observed value. A mismatch fails with `node.architecture_mismatch` (HTTP 409) at step `machine-architecture`, before agent installation or any role convergence.
 
 ### Failure codes
 
@@ -211,16 +213,17 @@ The Gateway does not record a new Node until enrollment succeeds or a remote che
 | --- | --- | --- |
 | 1 | `ssh-host-key` | Resolve the host and compare its key with the approved fingerprint. Do not pin the key yet. |
 | 2 | `account` | SSH as the existing account. Create no user and change no sudoers file. |
-| 3 | `machine-architecture` | Read `uname -s` and `uname -m`. Refuse a platform or architecture disagreement. |
-| 4 | `identity` | Verify the WireGuard address on the machine. Do not write the registry yet. |
-| 5 | `ssh-pin` | Write the approved host key to the Gateway known_hosts file for the public host and the WireGuard address. |
-| 6 | `active` | Store the host key, fingerprint, observed identity, and `active` status. Skip apt, roles, firewall, DNS, exporters, and the Node agent. |
+| 3 | `machine-architecture` | Use the fixed staging probe to select the macOS agent artifact. Refuse a different platform before staging. |
+| 4 | `agent` | Stage the pinned binary in a unique absolute temporary path and run `agent.install` as the enrolled account. |
+| 5 | `identity` | Call `nodes.inspect-macos-enrollment` to verify the native platform, architecture, and WireGuard address. Do not write the registry yet. |
+| 6 | `ssh-pin` | Write the approved host key to the Gateway known_hosts file for the public host and the WireGuard address. |
+| 7 | `active` | Store the host key, fingerprint, observed identity, and `active` status. Skip apt, roles, firewall, DNS, exporters, and the observer service. |
 
 `uname -s` must be Darwin. A Linux host requested as macOS fails with `node.platform_mismatch` before any account, package, DNS, or firewall change.
 
 ### Enrollment recovery
 
-A failed check changes nothing on the Mac. Retry with the same `node:add`. The retry does not run the Ubuntu bootstrap. The Gateway writes known_hosts before the registry pin. A known_hosts entry with no registry pin is harmless, and the retry completes it. The registry never stores an active pin without those entries.
+A failed native check can leave the pinned command binary installed on the Mac. It changes no account, package manager, tunnel, DNS, or firewall state. Retry with the same `node:add`. The retry does not run the Ubuntu bootstrap. The Gateway writes known_hosts before the registry pin. A known_hosts entry with no registry pin is harmless, and the retry completes it. The registry never stores an active pin without those entries.
 
 | Failure | New Node | Existing peer |
 | --- | --- | --- |
@@ -285,9 +288,11 @@ Doctor checks a Node without roles like any other Node when the Gateway has a pi
 
 The Gateway can enroll a Node that it reaches only through another Node. [Task VMs](/reference/compute-drivers#task-vms) use this: a task VM has only a private address on its Incus host's bridge. The jump is internal. `node:add` and the API have no field for it.
 
-The Node records the jump Node in `ssh_jump_node_id`. While the Node has no active role, SSH to its public address goes through an `ssh` hop to the jump Node, as `<managed user>@<WireGuard address>:22` of the jump Node. The hop uses the same key, pinned host keys, and strict options as the command. See [An explicit hop, not ProxyJump](#an-explicit-hop-not-proxyjump). The host key scan runs `ssh-keyscan` on the jump Node, and the scanned key must match the expected fingerprint. A task VM's fingerprint comes from its host, before any code in the VM runs.
+The Node records the jump Node in `ssh_jump_node_id`. While the Node has no active role, SSH to its public address goes through an `ssh` hop to the jump Node, as `<managed user>@<WireGuard address>:22` of the jump Node. The hop uses the same key, pinned host keys, and strict options as the command. See [An explicit hop, not ProxyJump](#an-explicit-hop-not-proxyjump).
 
-Commands through a jump Node share one connection too, once the Node's host key is pinned. Nodes behind different jump Nodes can have the same private address, and a new Node can reuse an address. So that connection is named after the jump Node, the target, and the target's pinned host key fingerprint. Before the key is pinned, each command opens its own connection. A jump Node without a WireGuard address fails with `vpn.peer_address_missing` before SSH.
+The read-only `nodes.scan-host-key` agent command scans and fingerprints the target on the jump Node, or on the serving Gateway when no jump is needed. It prefers Ed25519, then ECDSA P-256, then RSA. The target needs no installed agent. The Gateway compares the result with the expected fingerprint before pinning it or installing anything on the target. A task VM's expected fingerprint comes from its host, before any code in the VM runs.
+
+When the Node's host key is pinned, commands through its jump Node share one connection. Nodes behind different jump Nodes can have the same private address, and a new Node can reuse an address. So that connection is named after the jump Node, the target, and the target's pinned host key fingerprint. Before the key is pinned, each command opens its own connection. A jump Node without a WireGuard address fails with `vpn.peer_address_missing` before SSH.
 
 The enrollment steps are the same as for any Node. When the first active role closes public SSH, the Gateway reaches the Node over WireGuard and ignores the jump. A Node without a jump Node connects directly, as [SSH connections](#ssh-connections) describes.
 
@@ -638,9 +643,9 @@ After a Gateway release, a Node needs only what the Gateway renders from its own
 
 A Mac is a managed Node for tools, not a service host. It uses the account, WireGuard identity, and SSH access that already exist. Enrollment pins the approved host key and checks the platform, architecture, account, and tunnel before it succeeds. It creates no account, installs no Ubuntu packages, and does not change host DNS or the firewall.
 
-An application role was rejected because tools do not need application services and the role list stays empty. Package operations through the Node agent were rejected because SSH already makes the changes and the agent stays observation-only. The Ubuntu bootstrap was rejected because its packages, users, resolver, firewall, and systemd units do not apply to macOS. A second Homebrew or Vite+ install was rejected because the packages already on the machine would stay outside the scope Orbit manages.
+An application role was rejected because tools do not need application services and the role list stays empty. SSH carries named agent commands for enrollment, package operations, and Doctor. The command binary does not run an observer or login-session service on macOS. The Ubuntu bootstrap was rejected because its packages, users, resolver, firewall, and systemd units do not apply to macOS. A second Homebrew or Vite+ install was rejected because the packages already on the machine would stay outside the scope Orbit manages.
 
-Platform support is checked per operation. Tool management and Doctor run on the enrolled Mac. Linux roles, exporters, Processes, Schedules, and the Node agent do not. A role assignment fails before any remote change. macOS OS updates, firewall management, application hosting, and a macOS Node agent are separate features. A roleless Ubuntu Node proves the same empty-role boundary on Linux, including apt adoption without a reinstall. A real Mac proves enrollment and the Homebrew and Vite+ lifecycle. Low free space on that Mac makes the Node drift with `node.disk_low` while informational package findings stay informational.
+Platform support is checked per operation. Tool management and Doctor run on the enrolled Mac. Linux roles, exporters, Processes, Schedules, and the observer service do not. A role assignment fails before any remote change. macOS OS updates, firewall management, application hosting, and a macOS login-session agent are separate features. A roleless Ubuntu Node proves the same empty-role boundary on Linux, including apt adoption without a reinstall. A real Mac proves enrollment and the Homebrew and Vite+ lifecycle. Low free space on that Mac makes the Node drift with `node.disk_low` while informational package findings stay informational.
 
 ### CI roles own hosts; operators own runner registration
 

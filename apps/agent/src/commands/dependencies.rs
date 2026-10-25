@@ -771,7 +771,11 @@ fn collect_files(fd: &OwnedFd) -> Checked<Map<String, Value>> {
 
 fn device_inode(fd: &OwnedFd) -> Checked<(u64, u64)> {
     let stat = rustix::fs::fstat(fd).map_err(|_| Refusal("unreadable_source"))?;
-    Ok((stat.st_dev, stat.st_ino))
+    #[cfg(target_os = "macos")]
+    let device = stat.st_dev as u64;
+    #[cfg(not(target_os = "macos"))]
+    let device = stat.st_dev;
+    Ok((device, stat.st_ino))
 }
 
 /// The root to read, the selected release, the open root, and the identity of every directory on the way. A

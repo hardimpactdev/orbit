@@ -28,6 +28,11 @@ final readonly class TaskVmImageRecipe
         $this->request($guest, 'image.boot', ['lean' => $lean]);
     }
 
+    public function firewall(AgentGuest $guest): void
+    {
+        $this->request($guest, 'image.firewall');
+    }
+
     public function mark(AgentGuest $guest, string $identity, string $profile): void
     {
         $this->request($guest, 'image.recipe-marker', ['identity' => $identity, 'profile' => $profile]);

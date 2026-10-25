@@ -41,7 +41,7 @@ it('activates the gateway WireGuard address through a validated atomic server co
             arguments: $arguments,
             orbitHome: $orbitHome,
         );
-        expect($agents->installs)->toBe(['gateway']);
+        expect($agents->installs)->toBe([]);
         expect($agents->commands())->toBe(['wireguard.bootstrap-hub', 'wireguard.remove-dns-ordering', 'firewall.gateway-vpn']);
         expect($arguments[1])->toBe(['sudo', 'bash', '-seu', '--', GatewayPrivateDnsResolver::DROP_IN])
             ->and($processes->calls[1]->input)
@@ -137,16 +137,13 @@ function assert_gateway_publication_commands(
     ))->toContain('listen-address=127.0.0.55', 'bind-interfaces');
 }
 
-it('sends Gateway VPN and recovery intent after installation, including private DNS interfaces', function (): void {
+it('sends Gateway VPN and recovery intent through the installed agent, including private DNS interfaces', function (): void {
     [$converger, $processes, $home, $agents] = gateway_vpn_converger();
     $node = Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.1', 'public_ssh_port' => 2222, 'wireguard_ip' => '10.44.0.1']);
-    $agents->onInstall(static function () use ($agents): void {
-        expect($agents->calls)->toBeEmpty();
-    });
     try {
         $converger->converge($node, gateway_bootstrap_data(privateInterface: 'eth3'));
         $input = $agents->calls[2]['input'];
-        expect($agents->installs)->toBe(['gateway']);
+        expect($agents->installs)->toBe([]);
         expect($agents->commands())->toBe(['wireguard.bootstrap-hub', 'wireguard.remove-dns-ordering', 'firewall.gateway-vpn']);
         expect($input['recovery'])->toBe([
             'comment' => 'orbit:public-ssh-recovery', 'action' => 'allow', 'direction' => 'in',
@@ -192,20 +189,6 @@ it('maps native Gateway firewall refusals to their provisioning boundary', funct
     ['vpn.firewall_probe_failed', 'vpn-firewall-probe'],
     ['vpn.firewall_recovery_remove_failed', 'vpn-firewall-recovery-remove'],
 ]);
-
-it('starts no firewall command when the Gateway agent installation fails', function (): void {
-    [$converger, , $home, $agents] = gateway_vpn_converger();
-    $agents->failInstall(new RuntimeException('install failed'));
-    try {
-        expect(fn () => $converger->converge(Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1']), gateway_bootstrap_data()))
-            ->toThrow(function (NodeProvisioningException $exception): void {
-                expect($exception->errorCode)->toBe('agent.install_failed')->and($exception->step)->toBe('agent-install');
-            });
-        expect($agents->calls)->toBeEmpty();
-    } finally {
-        new Filesystem()->deleteDirectory($home);
-    }
-});
 
 it('writes mesh dnsmasq upstreams from visible uplink resolvers', function (): void {
     [$converger, , $orbitHome] = gateway_vpn_converger();
@@ -345,7 +328,7 @@ it('does not touch UFW when dnsmasq convergence fails and includes rollback', fu
                 'systemctl restart dnsmasq || true',
             )
             ->and($agents->commands())->toBe(['wireguard.bootstrap-hub', 'wireguard.remove-dns-ordering'])
-            ->and($agents->installs)->toBe(['gateway']);
+            ->and($agents->installs)->toBe([]);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }

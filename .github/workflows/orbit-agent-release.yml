@@ -106,8 +106,8 @@ jobs:
         run: |
           set -euo pipefail
           version=$(jq -r .version manifest.json)
-          gh release create "agent-v$COMMIT" orbit-agent-linux-* SHA256SUMS manifest.json \
+          gh release create "agent-v$COMMIT" orbit-agent-linux-* orbit-agent-macos-* SHA256SUMS manifest.json \
             --repo "$REPOSITORY" \
             --target "$COMMIT" \
             --title "orbit-agent $version ($COMMIT)" \
-            --notes "Static Linux binaries for orbit-agent $version, built and tested by CI at $COMMIT."
+            --notes "Linux and macOS binaries for orbit-agent $version, built and tested by CI at $COMMIT."

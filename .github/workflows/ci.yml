@@ -713,7 +713,7 @@ jobs:
       - name: Upload the agent delivery
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: agent-delivery
+          name: agent-delivery-linux
           path: ${{ runner.temp }}/agent-delivery
           if-no-files-found: error
           retention-days: 30
@@ -732,16 +732,51 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
+          fetch-depth: 0
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
       - name: Restore Rust caches
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: apps/agent
-      - name: Build
-        run: cargo build --locked
+      - name: Build the macOS delivery
+        run: scripts/build-delivery "$RUNNER_TEMP/agent-delivery" --target aarch64-apple-darwin --target x86_64-apple-darwin
       - name: Test command mode
-        run: cargo test --locked --lib command
+        run: cargo test --locked --lib command::
+      - name: Test native Mac enrollment
+        run: cargo test --locked --lib macos_enrollment
+      - name: Upload the macOS delivery
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: agent-delivery-macos
+          path: ${{ runner.temp }}/agent-delivery
+          if-no-files-found: error
+          retention-days: 30
+
+  agent-delivery:
+    needs: [changes, agent, agent-macos]
+    if: fromJSON(needs.changes.outputs.jobs).agent-delivery
+    name: Combine agent delivery
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: agent-delivery-*
+          path: ${{ runner.temp }}/agent-parts
+      - name: Verify and combine the tested artifacts
+        run: python3 tools/combine_agent_delivery.py "$RUNNER_TEMP/agent-delivery" "$RUNNER_TEMP/agent-parts/agent-delivery-linux" "$RUNNER_TEMP/agent-parts/agent-delivery-macos"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: agent-delivery
+          path: ${{ runner.temp }}/agent-delivery
+          if-no-files-found: error
+          retention-days: 30
 
   desktop:
     needs: changes
@@ -828,7 +863,7 @@ jobs:
   required:
     name: Required checks
     if: always()
-    needs: [changes, project, gateway-shards, privileged, remote-programs, api-reference, web, pi-server, agent, agent-macos, desktop]
+    needs: [changes, project, gateway-shards, privileged, remote-programs, api-reference, web, pi-server, agent, agent-macos, agent-delivery, desktop]
     runs-on: ubuntu-26.04
     steps:
       - name: Require every selected project to pass

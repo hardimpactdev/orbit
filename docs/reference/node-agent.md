@@ -26,7 +26,9 @@ The observer listens on no port. Nothing reaches command mode over the network: 
 
 ## Where it runs
 
-The Gateway installs the agent only on active managed Linux Nodes with a WireGuard address and a pinned SSH host key. macOS tool-only Nodes need no agent and hold no agent secret. An install or repair aimed at macOS returns `node.agent_unsupported` (HTTP 422) before SSH. Only a Node inside the Linux agent boundary runs the agent and holds an agent secret. [Exporter selection](/reference/metrics#exporter-selection) uses the same boundary. The agent needs no role. A Node that the Gateway does not manage over SSH runs no agent.
+The Gateway installs the observer only on active managed Linux Nodes with a WireGuard address and a pinned SSH host key. Only those Nodes hold an agent secret. [Exporter selection](/reference/metrics#exporter-selection) uses the same boundary. The observer needs no role.
+
+A macOS Node uses the command binary as its enrolled account. Enrollment installs it through `agent.install`, then calls `nodes.inspect-macos-enrollment` to read the native architecture and verify the existing WireGuard address. The command reads kernel identity and interface addresses without a shell or network change. macOS has no observer, agent secret, or LaunchAgent.
 
 ## What it observes
 
@@ -218,9 +220,11 @@ SSH stays the repair path. When an agent cannot start or answer, `orbit node:con
 
 A Gateway release is the only step that updates agents. When a command answers `agent.version_mismatch`, the runner:
 
-1. copies the pinned binary from the [delivery](#delivery) to a new private path on the Node, `/var/tmp/orbit-agent-candidate-<random>`, with `install -m 0700 /dev/stdin`;
+1. copies the pinned binary from the [delivery](#delivery) to a unique private candidate file with mode `0700`;
 2. runs that candidate's own `agent.install`, which waits up to 120 seconds for the update lock;
 3. sends the command once more, with the deadline that is left.
+
+Candidate paths use `/var/tmp/orbit-agent-candidate-<random>` on Linux and `/tmp/orbit-agent-candidate-<random>` on macOS. Linux streams through `install`. macOS prepares the file with BSD `install` and streams bytes through fixed `dd` arguments.
 
 The lock wait always leaves 30 seconds of the call's deadline for the swap and the health check. A second mismatch after a passing installation is a runner failure. A busy update lock refuses with `agent.update_busy` and records nothing. A lost connection, a timeout, or a failed copy records nothing either, so the next command tries again.
 
@@ -384,7 +388,7 @@ The subscriber accepts `client-log` and `client-log-end` only from `agent.{id}` 
 
 ## Delivery
 
-Each Gateway release pins one agent build: the delivery of the last commit that changed `apps/agent`. CI builds it from that exact source and writes `manifest.json`:
+Each Gateway release pins one agent build: the delivery of the last commit that changed `apps/agent`. CI builds the Linux and macOS artifacts from that exact source. A delivery job checks that their source commits and versions agree, verifies each binary digest, and combines them into one `manifest.json`:
 
 ```json
 {
@@ -392,7 +396,9 @@ Each Gateway release pins one agent build: the delivery of the last commit that 
   "version": "0.5.0",
   "artifacts": {
     "linux-x86_64": {"sha256": "<sha256>", "path": "orbit-agent-linux-x86_64", "url": "https://github.com/hardimpactdev/orbit/releases/download/agent-v<commit>/orbit-agent-linux-x86_64"},
-    "linux-aarch64": {"sha256": "<sha256>", "path": "orbit-agent-linux-aarch64", "url": "..."}
+    "linux-aarch64": {"sha256": "<sha256>", "path": "orbit-agent-linux-aarch64", "url": "..."},
+    "macos-aarch64": {"sha256": "<sha256>", "path": "orbit-agent-macos-aarch64", "url": "..."},
+    "macos-x86_64": {"sha256": "<sha256>", "path": "orbit-agent-macos-x86_64", "url": "..."}
   }
 }
 ```
@@ -522,7 +528,9 @@ To publish the artifact of an earlier CI run again, run the workflow with `workf
 | --- | --- |
 | `orbit-agent-linux-x86_64` | Static binary for `x86_64` Nodes |
 | `orbit-agent-linux-aarch64` | Static binary for `aarch64` Nodes |
-| `SHA256SUMS` | The checksums of both binaries |
+| `orbit-agent-macos-aarch64` | Command binary for Apple silicon Macs |
+| `orbit-agent-macos-x86_64` | Command binary for Intel Macs |
+| `SHA256SUMS` | The checksums of all four binaries |
 | `manifest.json` | The delivery manifest with release URLs |
 
 Only the release App can create an `agent-v*` tag. A tag ruleset restricts creation, update, and deletion, and the App's credentials live only in the protected `agent-release` environment. Task agents and maintainers have no bypass.
@@ -537,7 +545,7 @@ The agent has these limits.
 - The observer reports state, and commands change it.
 - One-shot log reads, task reads that gate an action, the Horizon queue, and `ufw status` run over SSH.
 - The agent does not report CPU or memory. The Gateway pushes them from Prometheus as [Process usage](#process-usage).
-- The delivery holds Linux builds for `x86_64` and `aarch64`. The observer runs only on Linux. Command mode builds and tests on macOS arm64, but no macOS build is delivered yet.
+- The delivery holds Linux builds for `x86_64` and `aarch64`. The observer runs only on Linux. Command mode builds and tests on macOS arm64, and the delivery includes command binaries for Apple silicon and Intel Macs.
 - The agent cannot trigger `orbit self-update`. The [fleet rollout](/reference/gateway-recovery#fleet-rollout) runs it over SSH.
 
 ## Why it works this way

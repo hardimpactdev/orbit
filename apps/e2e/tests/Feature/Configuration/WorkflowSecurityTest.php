@@ -94,7 +94,7 @@ it('publishes only the tested main agent delivery through its release App', func
     expect($steps['Validate the delivery and its tag']['run'])->toContain('apps/agent/scripts/check-release-tag.sh', '"$HEAD_SHA"');
     expect($steps['Mint the release App token']['with'])->toBe(['app-id' => '${{ secrets.ORBIT_RELEASE_APP_ID }}', 'private-key' => '${{ secrets.ORBIT_RELEASE_APP_PRIVATE_KEY }}']);
     expect($steps['Tag the commit and publish the delivery']['env']['GH_TOKEN'])->toBe('${{ steps.app.outputs.token }}');
-    expect($steps['Tag the commit and publish the delivery']['run'])->toContain('orbit-agent-linux-* SHA256SUMS manifest.json', '--target "$COMMIT"');
+    expect($steps['Tag the commit and publish the delivery']['run'])->toContain('orbit-agent-linux-* orbit-agent-macos-* SHA256SUMS manifest.json', '--target "$COMMIT"');
     foreach ($steps as $step) {
         expect($step['run'] ?? '')->not->toContain('cargo build', 'cross build');
     }

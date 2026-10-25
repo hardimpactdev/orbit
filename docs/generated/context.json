@@ -2562,8 +2562,7 @@
                 "Role",
                 "Schedule",
                 "Subtask",
-                "Task",
-                "Tool"
+                "Task"
             ],
             "governing_adrs": [
                 "0225"

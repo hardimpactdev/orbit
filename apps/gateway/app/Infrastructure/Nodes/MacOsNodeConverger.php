@@ -7,17 +7,18 @@ namespace App\Infrastructure\Nodes;
 use App\Domain\Nodes\MachineArchitecture;
 use App\Domain\Nodes\MacOsEnrollmentObservation;
 use App\Domain\Nodes\NodeProvisioningException;
-use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\HostKeyScanner;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshHostKeyScanException;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Models\Node;
 
 /**
- * Enrolls a Mac over the existing account without changing the machine.
+ * Enrolls a Mac through the pinned command binary as the existing account.
  *
  * The checks are host key, account, platform and architecture, then the
  * WireGuard address. Nothing in this path creates a user, installs packages,
@@ -25,35 +26,14 @@ use App\Infrastructure\Ssh\SshKeyProvider;
  */
 final readonly class MacOsNodeConverger
 {
-    /**
-     * Reads platform, architecture, and whether the enrolled address is up.
-     * The address is an argument, never interpolated into the script.
-     */
-    public const string SCRIPT = <<<'BASH'
-        address=$1
-        platform=$(uname -s)
-        architecture=$(uname -m)
-        if interfaces=$(/sbin/ifconfig); then
-          tunnel=ok
-          wireguard=0
-          if printf '%s\n' "$interfaces" | awk -v address="$address" '$1 == "inet" && $2 == address { found=1 } END { exit found ? 0 : 1 }'; then
-            wireguard=1
-          fi
-        else
-          tunnel=unreadable
-          wireguard=0
-        fi
-        printf '%s\n%s\n%s\n%s\n' "$platform" "$architecture" "$tunnel" "$wireguard"
-        BASH;
-
     public function __construct(
         private HostKeyScanner $hostKeys,
-        private SshExecutor $ssh,
+        private AdmissionAgentRunner $agents,
         private SshKeyProvider $sshKeys,
     ) {}
 
     public function enroll(
-        string $name,
+        Node $node,
         string $host,
         int $port,
         string $account,
@@ -61,6 +41,7 @@ final readonly class MacOsNodeConverger
         ?string $storedFingerprint,
         ?string $expectedFingerprint,
     ): MacOsEnrollmentObservation {
+        $name = $node->name;
         try {
             $hostKey = $this->hostKeys->scan($host, $port);
         } catch (SshHostKeyScanException $exception) {
@@ -112,78 +93,45 @@ final readonly class MacOsNodeConverger
                 commandTimeout: 30.0,
                 shareConnection: false,
             );
-            $accountCheck = $this->ssh->execute($connection, new RemoteCommand(['true']));
+            $original = $node->only(['platform', 'architecture', 'user']);
+            $node->forceFill(['platform' => 'macos', 'user' => $account]);
+            $step = 'machine-architecture';
+            try {
+                $architecture = $this->agents->architectureOver($node, $connection);
+                $node->architecture = $architecture;
+                $step = 'agent';
+                $this->agents->installOver($node, $connection);
+                $step = 'identity';
+                $observed = $this->agents->runOver($node, $connection, 'nodes.inspect-macos-enrollment', ['address' => $address]);
 
-            if (! $accountCheck->succeeded()) {
+                if (! is_string($observed['architecture'] ?? null) || ! MachineArchitecture::isValid($observed['architecture'])) {
+                    throw new AgentRunnerFailure('nodes.inspect-macos-enrollment', AgentRunnerFailure::MalformedResult, 'The agent returned no valid Mac architecture.');
+                }
+
+                return new MacOsEnrollmentObservation($observed['architecture'], $hostKey);
+            } catch (AgentCommandRefused $error) {
+                [$step, $code] = match ($error->errorCode) {
+                    'agent.platform_unsupported', 'nodes.macos_platform_mismatch' => ['machine-architecture', 'node.platform_mismatch'],
+                    'nodes.macos_architecture_unavailable' => ['machine-architecture', 'node.architecture_unavailable'],
+                    'nodes.macos_wireguard_required' => ['identity', 'node.wireguard_required'],
+                    default => [$step, $error->errorCode],
+                };
+                throw new NodeProvisioningException(step: $step, errorCode: $code, message: $error->getMessage(), previous: $error);
+            } catch (AgentRunnerFailure $error) {
+                $accountFailure = $step === 'machine-architecture' && $error->result?->exitCode === 255;
                 throw new NodeProvisioningException(
-                    step: 'account',
-                    errorCode: 'node.account_unavailable',
-                    message: "Could not connect to node [{$name}] as {$account}.",
-                    result: $accountCheck,
+                    step: $accountFailure ? 'account' : $step,
+                    errorCode: $accountFailure ? 'node.account_unavailable' : ($step === 'machine-architecture' ? 'node.architecture_unavailable' : 'agent.runner_failed'),
+                    message: $error->getMessage(), previous: $error, result: $error->result,
                 );
+            } finally {
+                $node->forceFill($original);
             }
-
-            $observation = $this->ssh->execute($connection, new RemoteCommand(
-                ['bash', '-seu', '--', $address],
-                self::SCRIPT,
-            ));
-
-            return $this->readObservation($name, $address, $hostKey, $observation);
         } finally {
             if (is_file($knownHosts)) {
                 unlink($knownHosts);
             }
         }
-    }
-
-    private function readObservation(
-        string $name,
-        string $address,
-        HostKey $hostKey,
-        CommandResult $observation,
-    ): MacOsEnrollmentObservation {
-        $lines = explode("\n", rtrim($observation->stdout, "\n"));
-
-        if (! $observation->succeeded() || count($lines) !== 4) {
-            throw new NodeProvisioningException(
-                step: 'machine-architecture',
-                errorCode: 'node.architecture_unavailable',
-                message: "Could not observe the machine architecture of node [{$name}].",
-                result: $observation,
-            );
-        }
-
-        [$platform, $architecture, $tunnel, $wireguard] = $lines;
-        $platform = strtolower($platform);
-
-        if ($platform !== 'darwin') {
-            throw new NodeProvisioningException(
-                step: 'machine-architecture',
-                errorCode: 'node.platform_mismatch',
-                message: "Node [{$name}] reports platform [{$platform}], not macOS.",
-                result: $observation,
-            );
-        }
-
-        if (! MachineArchitecture::isValid($architecture)) {
-            throw new NodeProvisioningException(
-                step: 'machine-architecture',
-                errorCode: 'node.architecture_unavailable',
-                message: "Could not observe the machine architecture of node [{$name}].",
-                result: $observation,
-            );
-        }
-
-        if ($tunnel !== 'ok' || $wireguard !== '1') {
-            throw new NodeProvisioningException(
-                step: 'identity',
-                errorCode: 'node.wireguard_required',
-                message: "WireGuard address [{$address}] is not present on node [{$name}].",
-                result: $observation,
-            );
-        }
-
-        return new MacOsEnrollmentObservation($architecture, $hostKey);
     }
 
     private function fingerprintMatches(?string $expected, string $actual): bool

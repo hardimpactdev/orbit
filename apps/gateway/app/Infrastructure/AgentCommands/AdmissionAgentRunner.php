@@ -13,7 +13,12 @@ use App\Models\Node;
  */
 interface AdmissionAgentRunner
 {
-    /** Selects the first candidate with the fixed staging probe, before an agent exists. */
+    /**
+     * Selects the first candidate with the fixed staging probe, before an agent exists.
+     *
+     * @throws AgentCommandRefused when the host platform differs.
+     * @throws AgentRunnerFailure when the probe cannot read the architecture.
+     */
     public function architectureOver(Node $node, SshConnection $connection): string;
 
     /**

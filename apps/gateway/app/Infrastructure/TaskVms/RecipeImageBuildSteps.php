@@ -32,7 +32,6 @@ final readonly class RecipeImageBuildSteps
         private IncusTaskVmBaseImage $image,
         private IncusTaskVmImageBuilder $builder,
         private TaskVmImageRecipe $imageRecipe,
-        private TaskVmCloudInit $cloudInit,
         private SshKeyProvider $keys,
         private RecipeImagePrograms $programs,
         private TaskVmVolumes $volumes,
@@ -99,7 +98,7 @@ final readonly class RecipeImageBuildSteps
                     }
                     $source = $build->source_fingerprint ?? TaskVmHost::SourceImage;
                     if (! array_key_exists($name, $this->image->instances($host, $node))) {
-                        $this->image->launch($host, $node, $name, $source, $this->cloudInit->renderImageBuilder($this->keys->publicKey()));
+                        $this->image->launch($host, $node, $name, $source, $this->keys->publicKey(), builder: true);
                     }
                     break;
                 case 'boot':
@@ -202,7 +201,7 @@ final readonly class RecipeImageBuildSteps
     private function ensureSmokeVm(TaskVmHost $host, Node $node, string $smoke, string $fingerprint): void
     {
         if (! array_key_exists($smoke, $this->image->instances($host, $node))) {
-            $this->image->launch($host, $node, $smoke, $fingerprint, $this->cloudInit->render($this->keys->publicKey()));
+            $this->image->launch($host, $node, $smoke, $fingerprint, $this->keys->publicKey(), builder: false);
         }
         $this->image->awaitCloudInit($host, $node, $smoke);
     }

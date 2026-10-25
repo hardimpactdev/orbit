@@ -5,22 +5,16 @@ declare(strict_types=1);
 use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
-use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmState;
-use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\ProtectedInput;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\NativeSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\TaskVms\IncusHost;
 use App\Infrastructure\TaskVms\TaskVmCredentialGuard;
 use App\Models\Node;
 use App\Models\TaskVm;
@@ -94,36 +88,6 @@ it('marks only token-bearing reads as a GitHub credential', function (): void {
     expect(GitReadScript::for(GitReadEnvironment::none(), 'git_read git ls-remote')->protectedInput)->toBeNull()
         ->and(tvm_guard_credential()->carriesGitCredential())->toBeTrue()
         ->and(ProtectedInput::fromString('x')->carriesGitCredential())->toBeFalse();
-});
-
-it('refuses a GitHub credential on a task VM host, where incus exec would hand it to a VM', function (): void {
-    $transport = new TaskVmGuardRunner;
-    $incus = new IncusHost(new TaskVmCredentialGuard(new NativeSshExecutor($transport)), new class implements SshKeyProvider
-    {
-        public function privateKeyPath(): string
-        {
-            return '/keys/id';
-        }
-
-        public function publicKey(): string
-        {
-            return 'ssh-ed25519 AAAA';
-        }
-    }, new class implements KnownHostsStore
-    {
-        public function path(): string
-        {
-            return '/keys/known_hosts';
-        }
-
-        public function put(string $host, int $port, HostKey $key): void {}
-    }, app(AgentCommandRunner::class));
-    $host = Node::query()->create(['name' => 'shark', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.8', 'wireguard_ip' => '10.44.0.8', 'user' => 'nckrtl']);
-    $taskHost = new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 4, 2, '4GiB', '40GiB');
-
-    expect(fn () => $incus->run($taskHost, $host, ['exec', '--', 'tvm-image-1', 'bash', '-se'], tvm_guard_credential()))
-        ->toThrow(TaskVmException::class, 'A command that carries a GitHub credential cannot run on a task VM.');
-    expect($transport->runs)->toBe([]);
 });
 
 /** @return array<string, string> every PHP file under app/, by its path relative to the Gateway */

@@ -152,15 +152,18 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
         }
 
         if ($node instanceof Node && $node->agent_failed_pin !== null) {
-            $node->forceFill(['agent_failed_pin' => null])->save();
+            $this->recordFailedPin($node, null);
         }
 
         return ($outcome['data']['replaced'] ?? false) === true;
     }
 
-    private function recordFailedPin(Node $node, string $pin): void
+    private function recordFailedPin(Node $node, ?string $pin): void
     {
-        $node->forceFill(['agent_failed_pin' => $pin])->save();
+        $node->forceFill(['agent_failed_pin' => $pin]);
+        if ($node->exists) {
+            Node::query()->whereKey($node->getKey())->update(['agent_failed_pin' => $pin]);
+        }
     }
 
     /**

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\TaskVms\TaskVmException;
 use App\Infrastructure\AgentCommands\AgentGuest;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\AgentCommands\AgentTransport;
@@ -86,3 +87,12 @@ it('removes the host candidate even when guest staging fails', function (): void
 it('refuses invalid Incus guest identifiers before creating a transport', function (string $project, string $name): void {
     expect(fn () => AgentGuest::incus(new Node(['architecture' => 'x86_64']), $project, $name))->toThrow(InvalidArgumentException::class);
 })->with([['--project', 'vm'], ['p', '../vm'], ['p', 'vm/secret']]);
+
+it('refuses a source Git credential before the host can carry it into a guest', function (): void {
+    $host = new IncusCarrierFixture;
+    $transport = new IncusAgentTransport($host, 'orbit-tasks', 'tvm-image-check');
+
+    expect(fn () => $transport->run(['/usr/local/bin/orbit-agent', 'command', 'instances.checkout'], ProtectedInput::gitCredential('credential-sentinel'), 30))
+        ->toThrow(TaskVmException::class, 'A command that carries a GitHub credential cannot run on a task VM.');
+    expect($host->calls)->toBe([])->and($host->staged)->toBe([]);
+});

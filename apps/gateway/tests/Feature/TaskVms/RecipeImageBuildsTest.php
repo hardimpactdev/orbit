@@ -20,7 +20,6 @@ use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\IncusTaskVmBaseImage;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
@@ -54,7 +53,6 @@ function recipeImageTransport(Node $host): FakeIncusImageHost
     $incus->bindAgentInventory();
     $incus->recipeImages = true;
     $incus->images = [IMAGE_STOCK => [TaskVmHost::SourceImage], IMAGE_OLD => [TaskVmHost::BaseImage]];
-    app()->instance(SshExecutor::class, $incus);
     app()->instance(SshKeyProvider::class, new class implements SshKeyProvider
     {
         public function privateKeyPath(): string
@@ -466,13 +464,13 @@ describe('recipe image triggers', function (): void {
                 expect(strlen($image['alias']))->toBeLessThanOrEqual(64);
             }
         }
-        foreach ($incus->guest as $call) {
-            expect(json_encode([$call->argv, $call->input], JSON_THROW_ON_ERROR))->not->toContain('resolved.conf', 'resolvectl');
+        foreach ($incus->guestCalls as $call) {
+            expect(json_encode($call, JSON_THROW_ON_ERROR))->not->toContain('resolved.conf', 'resolvectl');
         }
-        $launches = array_values(array_filter($incus->commands, static fn ($command): bool => ($command->arguments[5] ?? '') === 'launch'));
+        $launches = array_values(array_filter($incus->vmCalls, static fn (array $input): bool => $input['operation']['kind'] === 'create_image'));
         expect($launches)->toHaveCount(4);
         $base = $builds[0]->images['base']['fingerprint'];
-        expect(array_filter($launches, static fn ($command): bool => $command->arguments[count($command->arguments) - 2] === $base))->toHaveCount(1);
+        expect(array_filter($launches, static fn (array $input): bool => $input['operation']['image'] === $base))->toHaveCount(1);
         Bus::assertDispatchedTimes(BuildRecipeImageStep::class, 2);
     });
 
@@ -666,7 +664,7 @@ it('builds the topology seed in the smoke VM, then deletes the VM and gives the 
         ->and($incus->instances)->not->toHaveKey('tvm-image-1-smoke');
     $order = $incus->events;
     $built = array_search('incus.build-topology-seed', $order, true);
-    $deleted = min(array_filter(array_keys($order, 'delete --force -- tvm-image-1-smoke', true), static fn (int $index): bool => $index > $built));
+    $deleted = min(array_filter(array_keys($order, 'remove_instance tvm-image-1-smoke', true), static fn (int $index): bool => $index > $built));
     $renamed = array_find_key($incus->events, static fn (string $line): bool => $line === 'incus.volume.finish_seed');
     expect($built)->toBeLessThan($deleted)->and($deleted)->toBeLessThan($renamed);
     expect(array_find($build->steps, static fn (array $step): bool => $step['program'] === 'base:topology-seed')['error'])->toBeNull()
@@ -686,10 +684,9 @@ it('fails the phase with the agent diagnostic and no guest log, and builds the s
         ->not->toContain('/var/log/orbit/recipe-images/base-topology-seed.log')
         ->and($build->promoted_at)->toBeNull()
         ->and($incus->instances)->toHaveKey('tvm-image-1-smoke');
-    expect(array_filter($incus->guest, static fn ($call): bool => str_contains(implode(' ', $call->argv), 'topology-seed')))->toBe([]);
+    expect(array_column($incus->guestCalls, 'command'))->not->toContain('incus.build-topology-seed');
 
     $incus->fail = null;
-    $incus->afterExecute = null;
     if ($smokeGone) {
         unset($incus->instances['tvm-image-1-smoke']);
     }
@@ -706,7 +703,7 @@ it('fails the phase with the agent diagnostic and no guest log, and builds the s
     expect($build->state)->toBe(TaskVmImageBuildState::Succeeded)
         ->and($incus->volumes)->toBe([$seed])
         ->and($incus->instances)->not->toHaveKey('tvm-image-1-smoke')
-        ->and(array_filter($incus->commands, static fn ($command): bool => ($command->arguments[5] ?? '') === 'launch' && array_last($command->arguments) === 'tvm-image-1-smoke'))->toHaveCount(2);
+        ->and(array_filter($incus->vmCalls, static fn (array $input): bool => $input['operation']['kind'] === 'create_image' && $input['vm']['name'] === 'tvm-image-1-smoke'))->toHaveCount(2);
 
     $seeds = count($incus->seeds);
     app(RecipeImageBuildSteps::class)->run($build, TaskVmImageBuildStep::Recipe, 'base:topology-seed');
@@ -787,15 +784,14 @@ it('resumes a failed final prune without rebuilding or moving the base alias aga
         ->and($current->state)->toBe(TaskVmImageBuildState::Failed)
         ->and($current->promoted_at)->not->toBeNull();
     $incus->fail = null;
-    $incus->commands = [];
+    $incus->imageCalls = [];
+    $incus->vmCalls = [];
     app(TaskVmImageBuildChain::class)->resume($host, $current->id);
     runRecipeImageBuild($current->refresh());
 
     expect($current->state)->toBe(TaskVmImageBuildState::Succeeded);
-    foreach ($incus->commands as $command) {
-        expect(array_slice($command->arguments, 5, 2))->not->toBe(['image', 'alias']);
-        expect($command->arguments)->not->toContain('publish', 'launch', 'PATCH');
-    }
+    expect($incus->vmCalls)->toBe([])
+        ->and(array_column($incus->imageCalls, 'kind'))->not->toContain('promote', 'publish', 'prepare_metadata');
 });
 
 it('keeps old build rows readable but refuses to resume the removed build path', function (): void {

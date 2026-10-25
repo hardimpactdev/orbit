@@ -140,10 +140,7 @@ final readonly class TaskVmHostAudit
         if (preg_match(self::TaskVmName, $name) !== 1 && (! self::isChainBuilder($name) || ! self::claimBuildCleanup($node, $name))) {
             return;
         }
-        $result = $this->incus->run($host, $node, ['delete', '--force', '--', $name]);
-        if (! $result->succeeded() && in_array($name, $this->incus->instanceNames($host, $node), true)) {
-            throw IncusHost::failed("task VM [{$name}]", 'delete', $result);
-        }
+        $this->incus->changeVm($host, $node, $name, ['kind' => 'remove_instance']);
     }
 
     /** Recorded image builders have running ownership or failed-build retention, rather than timestamp names. */
