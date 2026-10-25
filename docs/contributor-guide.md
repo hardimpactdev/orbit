@@ -112,7 +112,9 @@ The Gateway's package-cache integration tests run real npm and Bun installs. Kee
 
 Local SSH fixtures give task-runner login shells a disposable `HOME`, not the contributor's shell profiles. Guest-script fixtures redirect host paths, including `/usr/local/bin`, into their temporary root. Keep these boundaries when adding tests: a check must not depend on personal profile output or write host tool launchers.
 
-Build expensive read-only Git fixtures once per test file, then copy them into each case's disposable directory before changing them. Use `WithSharedGitFixtureCleanup` for the shared release and Instance-transfer seeds; its PHPUnit `AfterClass` hook clears them at each file boundary. Stock Pest clears scoped `uses()->afterAll()` hooks between cases. Cleanup must restore owner read, write, and traversal access on fixture directories without following symlinks or changing hard-linked file modes.
+Gateway tests of Node work fake `AgentCommandRunner` with scripted answers and refusals, as `Tests\Support\FakeAgentCommandRunner` does. They assert Gateway intent: the commands, their inputs, and how results and refusals become records and errors. Do not rebuild an agent command's filesystem or Git work in PHP. Rust tests in `apps/agent` prove it on the real implementation.
+
+Build expensive read-only Git fixtures once per test file, then copy them into each case's disposable directory before changing them. Cleanup must restore owner read, write, and traversal access on fixture directories without following symlinks or changing hard-linked file modes.
 
 Use blocking process completion for fixture commands rather than a polling runner. For bundled Python programs, a test host can share imports and compiled code, but each invocation runs in a fresh child with its own globals, environment, working directory, and process group. Share no mutable program state between cases.
 
