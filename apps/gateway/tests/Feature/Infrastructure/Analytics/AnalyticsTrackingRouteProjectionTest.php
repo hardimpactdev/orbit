@@ -18,7 +18,6 @@ use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
@@ -28,18 +27,11 @@ use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Routes\IngressSiteRepository;
 use App\Infrastructure\Routes\NativeRouteRemovalProjector;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
 use Tests\Support\FakeAgentCommandRunner;
-use Tests\Support\SshCommandAgents;
-use Tests\Support\SshNodeCaddyBuilds;
+use Tests\Support\FakeNodeCaddyBuilds;
 
 beforeEach(function (): void {
     $this->cluster = Cluster::query()->create(['name' => 'edge', 'tld' => 'edge.test', 'state' => ClusterState::Active]);
@@ -247,31 +239,7 @@ describe('analytics tracking Route public edge', function (): void {
 
 describe('analytics tracking Route removal', function (): void {
     it('removes the Router certificates of the tracking Route', function (): void {
-        $ssh = new AnalyticsProjectionSshExecutor;
-        $executor = new DevelopmentSshExecutor(
-            $ssh,
-            new class implements SshKeyProvider
-            {
-                public function privateKeyPath(): string
-                {
-                    return '/tmp/orbit-test-key';
-                }
-
-                public function publicKey(): string
-                {
-                    return 'ssh-ed25519 AAAA';
-                }
-            },
-            new class implements KnownHostsStore
-            {
-                public function path(): string
-                {
-                    return '/tmp/orbit-test-known-hosts';
-                }
-
-                public function put(string $host, int $port, HostKey $key): void {}
-            },
-        );
+        $agents = new FakeAgentCommandRunner()->answer('certificates.remove-leaf', []);
         $accounts = new class implements ManagedUserAccountResolver
         {
             public function resolve(Node $node): ManagedUserAccount
@@ -301,22 +269,17 @@ describe('analytics tracking Route removal', function (): void {
         $sites = new DevelopmentSiteRepository;
         $projector = new NativeRouteRemovalProjector(
             new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class))),
-            new RemoteAppDevCertificateManager(new SshCommandAgents($ssh), $signer, $accounts),
-            new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($ssh), new FakeAgentCommandRunner),
+            new RemoteAppDevCertificateManager($agents, $signer, $accounts),
+            new RemoteAppDevCaddyManager(new FakeNodeCaddyBuilds, new FakeAgentCommandRunner),
             new RemoteAppDevRouteFirewallManager(new FakeAgentCommandRunner()->answer('firewall.route-lan', ['matches' => true])),
         );
 
         $projector->cleanupCertificates($this->route);
 
-        $scopes = array_map(
-            static fn (RemoteCommand $command): string => $command->arguments[3],
-            $ssh->commands,
-        );
-
-        expect($scopes)->toBe(["route-{$this->route->id}-router", "route-{$this->route->id}-router-hostname-change"])
-            ->and(array_unique(array_map(static fn (SshConnection $connection): string => $connection->host, $ssh->connections)))
-            ->toBe([$this->router->wireguard_ip])
-            ->and($ssh->commands[0]->input)->toContain('sudo rm -rf -- "/etc/caddy/orbit-certificates/$scope"');
+        expect($agents->calls)->toBe([
+            ['node' => 'edge-router', 'command' => 'certificates.remove-leaf', 'input' => ['scope' => "route-{$this->route->id}-router", 'home' => '/home/orbit']],
+            ['node' => 'edge-router', 'command' => 'certificates.remove-leaf', 'input' => ['scope' => "route-{$this->route->id}-router-hostname-change", 'home' => '/home/orbit']],
+        ]);
     });
 });
 
@@ -353,21 +316,4 @@ function analytics_projection_publish(Route $route): void
         'status' => RouteStatus::Active,
         'replacement_step' => RouteReplacementStep::PublicActivated,
     ]);
-}
-
-final class AnalyticsProjectionSshExecutor implements SshExecutor
-{
-    /** @var list<RemoteCommand> */
-    public array $commands = [];
-
-    /** @var list<SshConnection> */
-    public array $connections = [];
-
-    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-    {
-        $this->connections[] = $connection;
-        $this->commands[] = $command;
-
-        return new CommandResult(0, '', '', 1, false);
-    }
 }
