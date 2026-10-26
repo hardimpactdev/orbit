@@ -115,7 +115,7 @@ php /home/orbit/orbit/apps/gateway/artisan gateway:release:prepare <SHA>
 
 Name the commit by its hex SHA, 7 to 40 characters. Branch names, tags, and other revision syntax are refused.
 
-Prepare first takes the commit's agent, in PHP and before any agent command, so a Gateway whose own agent predates its code can still prepare:
+Prepare first takes the commit's agent, in PHP and before any agent command, so a commit without a release refuses before anything changes:
 
 1. It finds the commit's [published release](/reference/cli-binaries#published-releases). `git ls-remote` lists the `cli-v*` tags of `ORBIT_CLI_RELEASE_REPOSITORY`. The tag that points at the commit names the release, which also resolves a short SHA.
 2. It downloads `manifest.json`, `SHA256SUMS`, and the agent binary for the Gateway's platform, without authentication. It checks every digest, and the binary waits in `ORBIT_HOME/agent-artifacts`.
@@ -447,7 +447,7 @@ When any step fails, the handoff still starts the scheduler unit, so the schedul
 
 ##### Gateway Node agent
 
-The [fleet rollout](#rollout-set-and-order) never visits the Gateway's own machine. [Prepare](#prepare-a-release) installs the release's pin there before any agent command, so an agent that predates the release's code never blocks it. Every agent command then keeps that Node at the pin of the code that sends it, through [install on mismatch](/reference/node-agent#install-on-mismatch). So the deployer's own later commands move it back to the deployer's pin until the switch.
+The [fleet rollout](#rollout-set-and-order) never visits the Gateway's own machine. [Prepare](#prepare-a-release) installs the release's pin there. For a release the Gateway already holds, such as one an older Gateway prepared, it does so before any agent command, so an agent that predates that release's code does not block its deploy. Every agent command then keeps that Node at the pin of the code that sends it, through [install on mismatch](/reference/node-agent#install-on-mismatch). So the deployer's own later commands move it back to the deployer's pin until the switch.
 
 The scheduler phase updates that Node's `orbit-agent` to the release's pin once more. It runs with the release's own code, so it uses that release's [agent pin](/reference/node-agent#install-and-upgrade). It runs after verify, so an agent restart never delays verify. When smoke later fails and the release switches back, the scheduler phase runs again with the previous release's code, which moves the agent to that release's pin. It leaves the Gateway's CLI alone: the Gateway runs the release's own `apps/cli`.
 
@@ -1001,7 +1001,7 @@ One run resolves the desired state of the commit the Gateway serves: the CLI rel
 
 A Gateway in the release layout rolls out only a commit whose release record is `verified`. A run during a release, before the record exists, does nothing (`release_unverified`). When the configured layout cannot be read, or its link names no complete release, the run rolls out nothing (`release_layout_unreadable`). An in-place Gateway, whose current path is a checkout, has no release records, and its running commit is the desired state. A Gateway version that is not a commit, such as `dev`, rolls out nothing.
 
-CI publishes the CLI release a few minutes after the commit's checks pass, and the Gateway usually deploys the commit first. Until the release exists, the rollout is `waiting` and changes nothing on any Node. Once the release appears, the catch-up starts the sequential visit, which brings the footprint and the CLI to each Node together, with its verify and halt. A Node whose `orbit self-update` reports the release as pending is `waiting` too.
+CI publishes the commit's release a few minutes after its checks pass, and the Gateway deploys the commit only after that, because [prepare](#prepare-a-release) takes the agent from it. A Gateway that runs a commit without a CLI release, from before releases carried the agent, rolls out as follows. Until the release exists, the rollout is `waiting` and changes nothing on any Node. Once the release appears, the catch-up starts the sequential visit, which brings the footprint and the CLI to each Node together, with its verify and halt. A Node whose `orbit self-update` reports the release as pending is `waiting` too.
 
 When the commit's release is still missing after 30 minutes, the desired state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit with the same CLI code. The rollout then starts with that release and raises `rollout_cli_fallback` once, so a missing release is never silent. When the commit's own release appears later, the catch-up visits each Node again and brings it to that release.
 

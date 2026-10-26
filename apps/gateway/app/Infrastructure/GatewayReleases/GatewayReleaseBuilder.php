@@ -19,7 +19,9 @@ use Closure;
 
 /**
  * Orders release preparation: the release agent, the native worktree, the web build, Caddy access, and completion.
- * The agent comes first, before any agent command, so a Gateway whose own agent is older than this code can prepare.
+ * The agent is fetched before any agent command, so a commit without a release refuses before anything changes. It
+ * is installed once the release directory exists; for a release the Gateway already holds, such as one an older
+ * Gateway prepared, that is before any agent command too, so an agent older than this code cannot block it.
  */
 final readonly class GatewayReleaseBuilder
 {

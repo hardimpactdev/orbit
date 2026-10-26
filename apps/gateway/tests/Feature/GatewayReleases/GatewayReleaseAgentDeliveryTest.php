@@ -140,6 +140,22 @@ it('puts the manifest into a sealed release and installs that pin on the Gateway
         ->and($this->installs->installs)->toHaveCount(2);
 });
 
+it('uses again the empty delivery directory that an interrupted attempt left in a sealed release', function (): void {
+    ($this->publish)();
+    $delivery = ($this->delivery)();
+    $fetched = $delivery->fetch($this->sha, $this->gateway);
+    $agent = $this->layout->releasePath('aaaaaaaaaaaa').'/apps/agent';
+    mkdir($agent.'/delivery', 0755, true);
+    chmod($agent.'/delivery', 0555);
+    chmod($agent, 0555);
+
+    $delivery->install($fetched, $this->layout, $this->gateway);
+
+    expect(file_get_contents($agent.'/delivery/manifest.json'))->toBe($fetched['manifest'])
+        ->and(fileperms($agent.'/delivery') & 0777)->toBe(0555)
+        ->and(fileperms($agent) & 0777)->toBe(0555);
+});
+
 it('refuses a release that already holds another manifest', function (): void {
     ($this->publish)();
     $delivery = ($this->delivery)();

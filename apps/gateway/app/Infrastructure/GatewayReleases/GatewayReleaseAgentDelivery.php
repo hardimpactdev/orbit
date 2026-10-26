@@ -181,7 +181,10 @@ final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
         }
     }
 
-    /** Writes the manifest once; a sealed release is opened for that one file and sealed again. */
+    /**
+     * Writes the manifest once; a sealed release is opened for that one file and sealed again. A `delivery`
+     * directory that an interrupted attempt left without a manifest is used again.
+     */
     private function place(string $path, string $manifest, string $sha): void
     {
         if (is_file($path) && ! is_link($path)) {
@@ -194,14 +197,15 @@ final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
         $agent = dirname($path, 2);
         $delivery = dirname($path);
         $mode = @fileperms($agent);
-        if (! is_dir($agent) || is_link($agent) || $mode === false || file_exists($delivery) || is_link($delivery)) {
+        if (! is_dir($agent) || is_link($agent) || $mode === false || is_link($delivery) || (file_exists($delivery) && ! is_dir($delivery))) {
             throw $this->invalid($sha, 'The release has no place for its agent manifest.');
         }
         $mode &= 0o7777;
         $candidate = $delivery.'/.manifest-'.bin2hex(random_bytes(8));
 
         try {
-            if (! @chmod($agent, $mode | 0o700) || ! @mkdir($delivery, 0o755) || @file_put_contents($candidate, $manifest) === false
+            if (! @chmod($agent, $mode | 0o700) || (! is_dir($delivery) && ! @mkdir($delivery, 0o755)) || ! @chmod($delivery, 0o755)
+                || @file_put_contents($candidate, $manifest) === false
                 || ! @chmod($candidate, 0o444) || ! @rename($candidate, $path) || ! @chmod($delivery, $mode)) {
                 throw $this->invalid($sha, 'The agent manifest cannot be written into the release.');
             }

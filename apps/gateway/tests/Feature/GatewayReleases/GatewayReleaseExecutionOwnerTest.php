@@ -95,6 +95,17 @@ it('accepts the owner of the shared state without the agent and refuses drifted 
         ->and(fileperms($this->pipeline->fixture->layout->environmentPath()) & 0777)->toBe(0666);
 });
 
+it('refuses shared state of the wrong kind without changing it', function (string $fault): void {
+    $layout = $this->pipeline->fixture->layout;
+    match ($fault) {
+        'environment directory' => [unlink($layout->environmentPath()), mkdir($layout->environmentPath(), 0700)],
+        'releases file' => [rmdir($layout->releasesPath()), file_put_contents($layout->releasesPath(), ''), chmod($layout->releasesPath(), 0600)],
+    };
+
+    expect(fn () => $this->owner->assertAllowed())->toThrow(GatewayReleaseException::class);
+    expect($fault === 'environment directory' ? is_dir($layout->environmentPath()) : is_file($layout->releasesPath()))->toBeTrue();
+})->with(['environment directory', 'releases file']);
+
 it('refuses divergent connection or cached configuration before any release work', function (string $change): void {
     $other = $this->pipeline->home.'/other.sqlite';
     new PDO('sqlite:'.$other)->exec('CREATE TABLE preserve_me (id INTEGER)');

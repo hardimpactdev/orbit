@@ -451,7 +451,7 @@ Each Gateway release pins one agent build: the delivery in its commit's [release
 
 The Gateway reads it from `apps/agent/delivery/manifest.json` in its checkout, or from the path in `ORBIT_AGENT_DELIVERY`. Git does not track the file. The Gateway picks a Node's artifact by its platform and recorded architecture. It uses the file beside the manifest when it exists, and otherwise downloads the URL once into `ORBIT_HOME/agent-artifacts/<sha256>`. It checks the SHA-256 before every use. An existing local artifact with the wrong digest refuses; only an absent local file uses the published URL. `apps/agent/scripts/build-delivery` writes the same layout for CI and for a topology.
 
-[Preparing a Gateway release](/reference/gateway-recovery#prepare-a-release) takes the manifest from the commit's published release, in PHP and without the agent. It checks every digest against the release's `SHA256SUMS`, writes the manifest into the release, and installs the pin on the Gateway's own Node before any agent command. Preparation, including adoption, refuses without it. The release's private configuration cache selects this checkout's manifest, so a shared environment override cannot keep the previous release's pin. Repeating preparation verifies the existing manifest.
+[Preparing a Gateway release](/reference/gateway-recovery#prepare-a-release) takes the manifest from the commit's published release, in PHP and without the agent. It checks every digest against the release's `SHA256SUMS` before any agent command. It then writes the manifest into the release and installs the pin on the Gateway's own Node; for a release the Gateway already holds, that also comes before any agent command. Preparation, including adoption, refuses without it. The release's private configuration cache selects this checkout's manifest, so a shared environment override cannot keep the previous release's pin. Repeating preparation verifies the existing manifest.
 
 The manifest also supplies the Linux pins in the [recipe identity](/reference/compute-drivers#recipe-identity). The recipe source carries no separate agent version or hashes.
 
@@ -498,7 +498,7 @@ The Gateway converges the agent at these points.
 
 To upgrade the fleet, merge the agent change and release the Gateway. Every Node then gets the new pin from the Gateway on its next command, through [install on mismatch](#install-on-mismatch). The [fleet rollout](/reference/gateway-recovery#fleet-rollout) sends `cli.self-update` to each Node of the rollout set, one at a time, so that command installs the pin first. `orbit self-update` itself replaces only the CLI.
 
-The rollout leaves out the Gateway's own Node. [Prepare](/reference/gateway-recovery#prepare-a-release) installs the release's pin there before any agent command, and the [runtime handoff](/reference/gateway-recovery#gateway-node-agent) installs it again through the local transport.
+The rollout leaves out the Gateway's own Node. [Prepare](/reference/gateway-recovery#prepare-a-release) installs the release's pin there, and the [runtime handoff](/reference/gateway-recovery#gateway-node-agent) installs it again through the local transport.
 
 `agent.install` holds `/run/lock/orbit-self-update.lock` while it replaces and restarts the agent. `agent.configure` and `agent.remove` hold the same lock, after the installation. So no two of them swap or restart the agent at the same time. A CLI self-update that keeps the lock longer than 5 minutes fails `agent.configure` with `agent.update_busy`.
 

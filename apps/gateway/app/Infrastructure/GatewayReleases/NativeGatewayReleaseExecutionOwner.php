@@ -32,8 +32,17 @@ final readonly class NativeGatewayReleaseExecutionOwner implements GatewayReleas
         if (! str_starts_with($home, '/')) {
             $this->refuse();
         }
-        foreach ([$home, $database, $this->layout->basePath(), $this->layout->sharedPath(), $this->layout->environmentPath(), $this->layout->storagePath(), $this->layout->releasesPath()] as $path) {
+        foreach ([$home, $this->layout->basePath(), $this->layout->sharedPath(), $this->layout->storagePath(), $this->layout->releasesPath()] as $path) {
             $this->owned($path, $uid);
+            if (! is_dir($path)) {
+                $this->refuse();
+            }
+        }
+        foreach ([$database, $this->layout->environmentPath()] as $path) {
+            $this->owned($path, $uid);
+            if (! is_file($path)) {
+                $this->refuse();
+            }
         }
         foreach ([$home.'/gateway-release.lock', $home.'/gateway-release-step.lock', $home.'/backups', $home.'/recovery', $home.'/gateway-release.paused'] as $path) {
             if (file_exists($path) || is_link($path)) {
