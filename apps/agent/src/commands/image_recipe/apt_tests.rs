@@ -2,6 +2,63 @@
 use super::*;
 use crate::commands::recipe::Output;
 use serde_json::json;
+
+#[test]
+fn package_processes_can_outlive_the_generic_command_cap_within_the_phase_budget() {
+    use crate::command::{Context, Platform};
+
+    struct Download<'a>(recipe::Native<'a>);
+    impl Host for Download<'_> {
+        fn execute(&mut self, call: &Invocation) -> Result<Output, Failure> {
+            // Scale a progressing download beyond the child cap without a ten-minute test.
+            let mut process = call.clone();
+            process.argv = vec!["/bin/sleep".into(), "0.3".into()];
+            self.0.execute(&process)
+        }
+        fn wait(&mut self, _: Duration) -> Result<(), Failure> {
+            panic!("A progressing download must not need a retry")
+        }
+    }
+    let work = WorkDir::new().unwrap();
+    let context = Context::new(Platform::Linux, Instant::now() + Duration::from_secs(4));
+    let mut download = Download(recipe::Native(&context));
+    let mut host = AptHost {
+        host: &mut download,
+        config: work.0.join("apt.conf"),
+        deadline: context.deadline(),
+    };
+    for argv in [
+        &["apt-get", "full-upgrade", "--yes"][..],
+        &["apt-get", "install", "--yes"][..],
+        &[
+            "apt-get",
+            "-o",
+            "DPkg::Lock::Timeout=300",
+            "install",
+            "--yes",
+        ][..],
+    ] {
+        let mut call = Invocation::new(argv);
+        call.timeout = Duration::from_millis(1);
+        recipe::run(&mut host, &call, true).unwrap();
+    }
+    for argv in [
+        &["apt-get", "update"][..],
+        &["apt-get", "--simulate", "install"][..],
+    ] {
+        let mut call = Invocation::new(argv);
+        call.timeout = Duration::from_millis(1);
+        assert_eq!(host.execute(&call).unwrap().code, 124);
+    }
+    host.deadline = Instant::now();
+    assert_eq!(
+        host.execute(&Invocation::new(&["apt-get", "install", "--yes"]))
+            .unwrap_err()
+            .stage,
+        "deadline"
+    );
+}
+
 struct Fixture {
     _work: WorkDir,
     files: Files,
@@ -180,6 +237,7 @@ fn snapshot_configuration_excludes_stock_sources_and_hooks_without_warnings() {
     let mut host = AptHost {
         host: &mut f.host,
         config: apt_check(&f.input, &f.files.path(APT)).unwrap(),
+        deadline: Instant::now() + Duration::from_secs(30),
     };
     let dump = host
         .execute(&Invocation::new(&["apt-config", "dump"]))
@@ -187,7 +245,13 @@ fn snapshot_configuration_excludes_stock_sources_and_hooks_without_warnings() {
         .stdout;
     assert!(!dump.contains("ImageTest::"));
     assert!(dump.contains("APT::Get::Always-Include-Phased-Updates \"true\""));
-    apt_source(&mut f.host, &f.files, &f.input).unwrap();
+    apt_source(
+        &mut f.host,
+        &f.files,
+        &f.input,
+        Instant::now() + Duration::from_secs(30),
+    )
+    .unwrap();
     let update = &f.host.results[0].1;
     assert!(update.contains("https://snapshot.ubuntu.com/ubuntu/20261014T000000Z/"));
     assert!(!update.contains("live.invalid"));
@@ -195,7 +259,13 @@ fn snapshot_configuration_excludes_stock_sources_and_hooks_without_warnings() {
 #[test]
 fn native_package_phase_uses_real_snapshot_resolution_without_downgrades_or_phased_holds() {
     let mut f = Fixture::new();
-    apt_source(&mut f.host, &f.files, &f.input).unwrap();
+    apt_source(
+        &mut f.host,
+        &f.files,
+        &f.input,
+        Instant::now() + Duration::from_secs(30),
+    )
+    .unwrap();
     packages::install(
         &mut f.host,
         &f.files,

@@ -38,7 +38,12 @@ impl Account {
         if rustix::process::geteuid().as_raw() != self.uid {
             command.extend(["sudo".into(), "-u".into(), self.name.clone(), "-H".into()]);
         }
-        command.extend(["env".into(), format!("VP_HOME={}", scope.display())]);
+        command.extend([
+            "env".into(),
+            "-C".into(),
+            self.home.display().to_string(),
+            format!("VP_HOME={}", scope.display()),
+        ]);
         command.extend(argv.iter().map(|v| (*v).into()));
         Invocation::new(&command.iter().map(String::as_str).collect::<Vec<_>>())
     }

@@ -68,7 +68,7 @@ pub fn execute(
     input.validate().map_err(|e| failure(format!("{e:?}")))?;
     assessment::platform(host, files, &input.recipe.recipe)?;
     match input.key.phase {
-        Phase::AptSource => apt_source(host, files, &input.recipe),
+        Phase::AptSource => apt_source(host, files, &input.recipe, deadline),
         Phase::Packages => packages::install(host, files, &input.recipe, deadline),
         Phase::Javascript => javascript(host, files, &input.recipe, account, deadline),
         Phase::Rust => rust::install(host, files, &input.recipe, account),
