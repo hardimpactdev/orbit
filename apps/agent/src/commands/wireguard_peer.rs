@@ -11,7 +11,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
-    io::{self, Read, Write},
+    io::{Read, Write},
     net::{IpAddr, Ipv4Addr},
     os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
@@ -76,11 +76,7 @@ fn link(value: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b"_.:+-".contains(&b))
 }
 fn metadata(path: &Path) -> Result<Option<fs::Metadata>> {
-    match fs::symlink_metadata(path) {
-        Ok(m) => Ok(Some(m)),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(_) => Err(Error::Unsupported {}),
-    }
+    super::recipe::metadata(path).map_err(|_| Error::Unsupported {})
 }
 fn directory(host: &Host) -> Result<()> {
     if let Some(meta) = metadata(&host.wireguard)? {

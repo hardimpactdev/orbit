@@ -198,6 +198,17 @@ fn input_and_key_validation_refuse_before_live_mutation() {
         install(&empty, &fixture.files, &mut runtime),
         Err(Error::Input {})
     );
+    for case in 0..2 {
+        let mut pem = input();
+        match case {
+            0 => pem.certificate.push('\0'),
+            _ => pem.key = "x".repeat(1024 * 1024 + 1),
+        }
+        assert_eq!(
+            install(&pem, &fixture.files, &mut runtime),
+            Err(Error::Input {})
+        );
+    }
     runtime.valid = false;
     assert_eq!(
         install(&input(), &fixture.files, &mut runtime),

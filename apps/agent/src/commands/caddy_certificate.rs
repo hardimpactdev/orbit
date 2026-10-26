@@ -1,5 +1,5 @@
 //! Shared role/extension certificate publication. Scope and PEM bytes are data; filesystem and service actions are fixed.
-use super::caddy;
+use super::{caddy, recipe};
 use crate::{
     command::{Command, Context, Platform, Privilege},
     command_errors,
@@ -7,14 +7,14 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
-    io::{self, Read, Write},
+    io::{self, Read},
     os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
     process::{Command as Process, Stdio},
     time::Duration,
 };
 
-const LIMIT: u64 = 1024 * 1024;
+const LIMIT: u64 = caddy::PEM_LIMIT;
 command_errors! {
     pub enum Error {
         Input {} => "caddy.certificate_input_invalid", "The certificate scope, filenames, service, or PEM input is invalid.";
@@ -81,9 +81,9 @@ fn validate(input: &InstallInput) -> Result<(), Error> {
     scope(&input.directory)?;
     if input.service != "caddy"
         || !names(&input.certificate_file, &input.key_file)
-        || [&input.certificate, &input.key]
+        || ![&input.certificate, &input.key]
             .iter()
-            .any(|s| s.is_empty() || s.len() as u64 > LIMIT || s.contains('\0'))
+            .all(|s| caddy::pem_input(s))
     {
         return Err(Error::Input {});
     }
@@ -172,16 +172,7 @@ impl Files {
         }))
     }
     fn write(&self, path: &Path, bytes: &[u8]) -> Result<(), Error> {
-        let mut file = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o640)
-            .open(path)
-            .map_err(|_| failed("stage"))?;
-        file.write_all(bytes).map_err(|_| failed("stage"))?;
-        caddy::chown(path, self.uid, self.gid).map_err(|_| failed("stage"))?;
-        file.set_permissions(fs::Permissions::from_mode(0o640))
-            .map_err(|_| failed("stage"))
+        caddy::write_certificate_file(path, bytes, self.uid, self.gid).map_err(|_| failed("stage"))
     }
 }
 struct Pair {
@@ -191,11 +182,7 @@ struct Pair {
     key: Vec<u8>,
 }
 fn metadata(path: &Path) -> Result<Option<fs::Metadata>, Error> {
-    match fs::symlink_metadata(path) {
-        Ok(meta) => Ok(Some(meta)),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(_) => Err(failed("inspect")),
-    }
+    recipe::metadata(path).map_err(|_| failed("inspect"))
 }
 pub(super) trait Runtime {
     fn valid(&mut self, certificate: &Path, key: &Path) -> bool;
@@ -231,16 +218,6 @@ fn systemctl(args: &[&str]) -> io::Result<Option<i32>> {
         .stderr(Stdio::null())
         .status()?
         .code())
-}
-fn exchange(first: &Path, second: &Path) -> io::Result<()> {
-    rustix::fs::renameat_with(
-        rustix::fs::CWD,
-        first,
-        rustix::fs::CWD,
-        second,
-        rustix::fs::RenameFlags::EXCHANGE,
-    )
-    .map_err(Into::into)
 }
 
 /// Caller holds the shared Caddy lock through validation, publication and activation/recovery.
@@ -291,14 +268,14 @@ fn install(
         }
         let active = runtime.active().map_err(|_| failed("service-state"))?;
         if previous.is_some() {
-            exchange(&candidate, &current)
+            recipe::exchange(&candidate, &current)
         } else {
             fs::rename(&candidate, &current)
         }
         .map_err(|_| failed("publish"))?;
         if active && runtime.reload().is_err() {
             let restored = if previous.is_some() {
-                exchange(&candidate, &current)
+                recipe::exchange(&candidate, &current)
             } else {
                 fs::rename(&current, &candidate)
             };
