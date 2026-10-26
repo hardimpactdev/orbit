@@ -28,6 +28,8 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmPackageCacheMount;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Tasks\NativeTaskExecutionLock;
@@ -264,6 +266,29 @@ describe('tasks.provision', function (): void {
             ->assertAccepted()->assertJsonPath('data.id', $operation->id)->assertJsonPath('data.status', 'succeeded');
         expect(Instance::query()->count())->toBe(1);
         expect(TaskVm::query()->where('group_id', $group->id)->count())->toBe(1);
+    });
+
+    it('keeps a sanitized package cache failure in the failed workspace step output', function (): void {
+        $group = provision_operation_group();
+        test_task_vm($group, $this->gatewayNode);
+        provision_operation_fakes();
+        mock(TaskVmPackageCacheMount::class)->shouldReceive('prepare')->once()->andThrow(new TaskVmException(
+            'task_vm.package_cache_failed',
+            "The trusted package cache operation [seed] failed for [/opt/orbit/package-cache/npm/archive.tgz].\nPackage [demo@1.0.0]: Permission denied (os error 13)\nPASSWORD=cache-secret",
+        ));
+        $operation = provision_operation_start($group);
+
+        app(OperationRunner::class)->run($operation->id);
+
+        $this->getJson('/api/v1/operations/'.$operation->id)->assertOk()
+            ->assertJsonPath('data.status', 'failed')
+            ->assertJsonPath('data.failed_step', 'workspace')
+            ->assertJsonPath('data.error_code', 'task_vm.package_cache_failed');
+        $step = $operation->steps()->where('name', 'workspace')->sole();
+        expect($step->output)->toContain('[seed]', 'archive.tgz', 'demo@1.0.0', 'Permission denied (os error 13)')
+            ->not->toContain('cache-secret');
+        expect($group->fresh()->status)->toBe(TaskGroupStatus::Failed);
+        expect(TaskCheck::query()->count())->toBe(0);
     });
 
     it('finishes the Route before reporting a routed workspace ready', function (): void {

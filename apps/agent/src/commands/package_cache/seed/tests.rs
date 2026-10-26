@@ -170,3 +170,88 @@ fn marker_wait_is_bounded_and_access_errors_are_immediate() {
     assert!(matches!(result,Err(Error::Failed{path,..}) if path.ends_with(".orbit-owned")));
     assert_eq!(SeedCache::privilege(Platform::Macos), None);
 }
+
+#[test]
+fn registry_directory_modes_cannot_prevent_seeding_their_children() {
+    for mode in [0o666, 0o444, 0o555, 0o000] {
+        let f = Fixture::new();
+        let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        let mut tar = tar::Builder::new(encoder);
+        for path in ["package", "package/lib"] {
+            let mut header = tar::Header::new_gnu();
+            header.set_entry_type(tar::EntryType::Directory);
+            header.set_mode(mode);
+            header.set_size(0);
+            header.set_cksum();
+            tar.append_data(&mut header, path, io::empty()).unwrap();
+        }
+        for (path, mode) in [
+            ("package/CHANGELOG.md", 0o644),
+            ("package/lib/cli.js", 0o755),
+        ] {
+            let mut header = tar::Header::new_gnu();
+            header.set_mode(mode);
+            header.set_size(2);
+            header.set_cksum();
+            tar.append_data(&mut header, path, &b"{}"[..]).unwrap();
+        }
+        let bytes = tar.into_inner().unwrap().finish().unwrap();
+        let a = cached(&f, &bytes, true);
+
+        let result = seed(&f.shared(), &f.home(), std::slice::from_ref(&a));
+        // Restore search permission if the negative control leaves an inaccessible directory.
+        let cache = f.home().join(".bun/install/cache");
+        for entry in fs::read_dir(&cache).unwrap() {
+            let path = entry.unwrap().path();
+            for dir in [path.join("package"), path.join("package/lib")] {
+                let _ = fs::set_permissions(dir, fs::Permissions::from_mode(0o755));
+            }
+        }
+        result.unwrap();
+        let target = cache.join("demo@1.0.0@@@1");
+        assert_eq!(fs::read(target.join("CHANGELOG.md")).unwrap(), b"{}");
+        assert_eq!(
+            fs::metadata(target.join("lib/cli.js")).unwrap().mode() & 0o777,
+            0o755
+        );
+        assert_eq!(fs::metadata(&target).unwrap().mode() & 0o700, 0o700);
+        fs::write(target.join("lib/private"), b"private").unwrap();
+        assert_eq!(fs::read(f.shared().join(&a.key)).unwrap(), bytes);
+    }
+}
+
+#[test]
+fn extraction_failures_identify_the_package_archive_and_underlying_cause() {
+    let f = Fixture::new();
+    // A valid gzip stream containing a tar file whose declared data is cut short.
+    let mut plain = Vec::new();
+    flate2::read::GzDecoder::new(&archive("package/file", None)[..])
+        .read_to_end(&mut plain)
+        .unwrap();
+    plain.truncate(513);
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+    std::io::Write::write_all(&mut encoder, &plain).unwrap();
+    let a = cached(&f, &encoder.finish().unwrap(), true);
+
+    let error = seed(&f.shared(), &f.home(), std::slice::from_ref(&a)).unwrap_err();
+
+    let Error::Failed {
+        operation,
+        path,
+        reason,
+    } = error
+    else {
+        panic!("wrong error");
+    };
+    assert_eq!(operation, "seed");
+    assert_eq!(path, f.shared().join(&a.key).display().to_string());
+    assert!(reason.contains("demo@1.0.0"), "{reason}");
+    assert!(reason.contains("package/file"), "{reason}");
+    assert!(reason.contains("failed to write entire file"), "{reason}");
+    assert_eq!(
+        fs::read_dir(f.home().join(".bun/install/cache"))
+            .unwrap()
+            .count(),
+        0
+    );
+}

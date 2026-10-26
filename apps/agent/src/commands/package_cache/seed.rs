@@ -98,6 +98,12 @@ fn unpack(source: &Path, target: &Path) -> io::Result<()> {
             if !entry.unpack_in(&work)? {
                 return Err(io::Error::other("Registry archive escapes the cache"));
             }
+            if kind.is_dir() {
+                // Registry directory modes need not include search or write permission (pngjs
+                // publishes 0666). This private tree must stay usable by its owner.
+                let mode = (entry.header().mode()? & 0o777) | 0o700;
+                fs::set_permissions(work.join(&path), fs::Permissions::from_mode(mode))?;
+            }
         }
         let extracted =
             work.join(root.ok_or_else(|| io::Error::other("Registry archive is empty"))?);
@@ -146,7 +152,15 @@ fn seed(shared: &Path, home: &Path, artifacts: &[Artifact]) -> Result<(), Error>
             let target = home
                 .join(".bun/install/cache")
                 .join(format!("{}@{}@@@1", a.package, a.version));
-            unpack(&source, &target).map_err(|e| failed("seed", shared, e))?;
+            unpack(&source, &target).map_err(|error| {
+                let mut reason = format!("Package [{}@{}]: {error}", a.package, a.version);
+                let mut cause = std::error::Error::source(&error);
+                while let Some(error) = cause {
+                    reason.push_str(&format!("; caused by: {error}"));
+                    cause = error.source();
+                }
+                failed("seed", &source, reason)
+            })?;
         }
     }
     Ok(())

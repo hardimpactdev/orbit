@@ -541,7 +541,9 @@ Image installer services use `UMask=0022`, matching recipe execution on Nodes. T
 
 Verification runs Node, pnpm, Bun, and Vite+ launchers only as `orbit` and compares their versions with inspection. Other guest-facing binaries must report the same version as root when run as `orbit`. Launcher caches remain owned by `orbit`. The cache-parent probe reads `/opt/orbit` as that user without writing to it.
 
-Cache failures carry a typed code, operation, path, and bounded, sanitized reason; checking the mount marker preserves access errors instead of treating them as a missing mount.
+The Bun archive extractor keeps each private directory readable, writable, and searchable by its owner while extracting it. Registry directory modes can omit search permission, so they cannot be applied unchanged before extracting their children. File executable bits and the archive path and link checks remain intact.
+
+Cache failures carry a typed code, operation, path, and bounded, sanitized reason. Extraction failures identify the package, version, archive, and underlying cause. The failed workspace operation step retains that message in its output. Checking the mount marker preserves access errors instead of treating them as a missing mount.
 
 Existing images and VMs retain their permissions. After an image-builder fix, use `task-vms:build-recipe --rebuild` to replace the images, then recreate affected VMs. Attaching the cache again does not repair an old VM.
 

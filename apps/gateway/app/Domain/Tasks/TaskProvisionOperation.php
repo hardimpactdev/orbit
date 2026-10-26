@@ -12,6 +12,7 @@ use App\Domain\Operations\OperationWaitingKind;
 use App\Domain\Operations\OperationWaitingStep;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmFailedException;
+use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\TaskVms\TaskVmWorkspace;
 use App\Models\Instance;
 use App\Models\Operation;
@@ -52,7 +53,7 @@ final readonly class TaskProvisionOperation implements OperationWaitingKind, Ope
             new OperationStepPlan('route', false),
         ]);
         $run->step('provision', fn (): mixed => $this->read($run));
-        $run->step('workspace', fn (): int => $this->createWorkspace($operation));
+        $run->step('workspace', fn (): int => $this->createWorkspace($operation, $run));
         $run->step('workspace_lease', fn (): mixed => $this->read($run));
         $result = $run->step('route', fn (): array => $this->finishWorkspace($operation, $run));
         if (! is_array($result) || ! is_int($result['instance_id'] ?? null)) {
@@ -113,24 +114,30 @@ final readonly class TaskProvisionOperation implements OperationWaitingKind, Ope
         }
     }
 
-    private function createWorkspace(Operation $operation): int
+    private function createWorkspace(Operation $operation, OperationRun $run): int
     {
-        return $this->execution->synchronized($operation->target_id, function () use ($operation): int {
-            $group = Task::topLevel()->findOrFail($operation->target_id);
-            $this->operations->requireOpenExternal($group);
-            try {
-                $instance = $this->claims->provisionWorkspace($group);
-            } catch (TaskVmFailedException $exception) {
-                throw new ResourceOperationException($exception->vm->error_code ?? 'task_vm.job_failed', $exception->getMessage(), previous: $exception);
-            }
-            if (! $instance instanceof Instance) {
-                throw new ResourceOperationException($instance->errorCode ?? 'tasks.provision_failed', $instance->cause ?? 'Workspace provisioning did not return an instance.');
-            }
-            $group->taskable()->associate($instance);
-            $group->save();
+        try {
+            return $this->execution->synchronized($operation->target_id, function () use ($operation): int {
+                $group = Task::topLevel()->findOrFail($operation->target_id);
+                $this->operations->requireOpenExternal($group);
+                try {
+                    $instance = $this->claims->provisionWorkspace($group);
+                } catch (TaskVmFailedException $exception) {
+                    throw new ResourceOperationException($exception->vm->error_code ?? 'task_vm.job_failed', $exception->getMessage(), previous: $exception);
+                }
+                if (! $instance instanceof Instance) {
+                    throw new ResourceOperationException($instance->errorCode ?? 'tasks.provision_failed', $instance->cause ?? 'Workspace provisioning did not return an instance.');
+                }
+                $group->taskable()->associate($instance);
+                $group->save();
 
-            return $instance->id;
-        });
+                return $instance->id;
+            });
+        } catch (ResourceOperationException $exception) {
+            $run->output(app(CommandActivityInputSanitizer::class)->redactText($exception->getMessage())."\n");
+
+            throw $exception;
+        }
     }
 
     /** @return array{instance_id: int, node_id: int, starting_commit: string|null, analysis_base: array{base: string, instance_id: int, repository: string, branch: string}|null} */
