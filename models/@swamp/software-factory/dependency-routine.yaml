@@ -131,7 +131,7 @@ globalArguments:
         method:
           modelIdOrName: orbit-gateway
           methodName: routine
-          inputs: { workItem: '${{ self.workItem }}', stage: publish, handoff: '${{ data.latest(self.name, "artifact-handoff") }}' }
+          inputs: { workItem: '${{ self.workItem }}', stage: publish, handoff: '${{ data.latest(self.name, "artifact-handoff") }}', workspace: '${{ data.latest(self.name, "artifact-workspace") }}' }
         resultEvidence: publish-run
       artifacts:
         - name: pull-request

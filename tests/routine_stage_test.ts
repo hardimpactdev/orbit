@@ -172,7 +172,7 @@ Deno.test("recording a handoff's own artifact before a crash does not conflict w
     }, f.deps);
     assertEquals(resumed.artifacts, done.artifacts);
     assertEquals(f.fake.operations.size, 1);
-    assertEquals(f.fake.groups.get(7)!.tasks[0].status, "completed");
+    assertEquals(f.fake.groups.get(7)!.tasks[0].status, "todo");
   } finally {
     await f.fake.close();
   }
@@ -438,5 +438,250 @@ Deno.test("repair still refuses changed supplied fields and non-null Gateway def
     } finally {
       await f.fake.close();
     }
+  }
+});
+
+Deno.test("routine publish uses the summary title and body", async () => {
+  const f = await fixture();
+  try {
+    f.fake.groups.get(7)!.tasks[0].status = "running";
+    const base = "b".repeat(40);
+    const args = f.args("publish", { handoff, workspace: rec({ startingCommit: base }) });
+    const started = await runStage(args, f.deps);
+    assertEquals(started.state, "running");
+    const script = f.calls.find((c) => c.path.endsWith("/script"))!;
+    assertEquals(script.key, "tg-7.publish.c1.summary");
+    assertEquals(script.body, {
+      subtask: 701,
+      script: "scripts/dependencies",
+      args: ["summary", "--base", base],
+    });
+    f.tick();
+    const publishing = await runStage(args, f.deps);
+    assertEquals(publishing.state, "running");
+    const publish = f.calls.find((c) => c.path.endsWith("/publish"))!;
+    assertEquals(publish.key, "tg-7.publish.c1");
+    const pull = publish.body!.pull_request as { title: string; body: string };
+    assertEquals(pull.title, "Update dependencies for October 2026");
+    assert(pull.body.includes("| Package | From | To | note |"));
+    assert(pull.body.includes("Tested: compared the lockfiles with the base commit."));
+    assert(!pull.body.includes("Driven by Swamp"));
+    assert(!pull.body.includes("ADR"));
+    assertEquals(publish.body!.check, 3);
+    const completedAt = f.calls.findIndex((c) => c.method === "PATCH" && c.body?.status === "completed");
+    const publishAt = f.calls.findIndex((c) => c.path.endsWith("/publish"));
+    assert(completedAt >= 0 && completedAt < publishAt);
+    assertEquals(f.fake.groups.get(7)!.tasks[0].status, "completed");
+    f.tick();
+    const done = await runStage(args, f.deps);
+    assertEquals(done.state, "succeeded");
+    assertEquals(done.artifacts["pull-request"].number, 1);
+    assertEquals(f.calls.filter((c) => c.path.endsWith("/publish")).length, 1);
+  } finally {
+    await f.fake.close();
+  }
+});
+
+Deno.test("a lost routine child-completion reply still publishes the saved summary", async () => {
+  const f = await fixture();
+  try {
+    f.fake.groups.get(7)!.tasks[0].status = "running";
+    const inner = f.deps.http;
+    let dropped = false;
+    f.deps.http = async (method, path, body, key) => {
+      if (!dropped && method === "PATCH" && body?.status === "completed") {
+        const saved = f.get();
+        assertEquals(saved?.request?.path.endsWith("/publish"), true);
+        assertEquals((saved?.request?.body.pull_request as { title?: string } | undefined)?.title, "Update dependencies for October 2026");
+        assert(saved?.inputIdentity?.includes(`"checkId":3`));
+        const applied = await inner(method, path, body, key);
+        assertEquals(applied.status, 200);
+        dropped = true;
+        return { status: 0, body: { error: { code: "transport", message: "curl: (56) Failure when receiving data from the peer" } } };
+      }
+      return inner(method, path, body, key);
+    };
+    const args = f.args("publish", { handoff, workspace: rec({ startingCommit: "b".repeat(40) }) });
+    await runStage(args, f.deps);
+    f.tick();
+    const publishing = await runStage(args, f.deps);
+    assert(dropped);
+    assertEquals(publishing.state, "running");
+    assertEquals(f.fake.groups.get(7)!.tasks[0].status, "completed");
+    const publish = f.calls.filter((c) => c.path.endsWith("/publish"));
+    assertEquals(publish.length, 1);
+    assertEquals((publish[0].body!.pull_request as { title: string }).title, "Update dependencies for October 2026");
+    const completedAt = f.calls.findIndex((c) => c.method === "PATCH" && c.body?.status === "completed");
+    const publishAt = f.calls.findIndex((c) => c.path.endsWith("/publish"));
+    assert(completedAt >= 0 && completedAt < publishAt);
+  } finally {
+    await f.fake.close();
+  }
+});
+
+Deno.test("a routine completion reply that never applies stays retryable and then publishes", async () => {
+  const f = await fixture();
+  try {
+    f.fake.groups.get(7)!.tasks[0].status = "running";
+    const inner = f.deps.http;
+    let dropped = false;
+    f.deps.http = async (method, path, body, key) => {
+      if (!dropped && method === "PATCH" && body?.status === "completed") {
+        assertEquals(f.get()?.request?.path.endsWith("/publish"), true);
+        dropped = true;
+        return { status: 0, body: { error: { code: "transport", message: "curl: (28) Operation timed out" } } };
+      }
+      return inner(method, path, body, key);
+    };
+    const args = f.args("publish", { handoff });
+    await runStage(args, f.deps);
+    f.tick();
+    const paused = await runStage(args, f.deps);
+    assert(dropped);
+    assertEquals(paused.state, "running");
+    assertEquals(f.fake.groups.get(7)!.tasks[0].status, "running");
+    assertEquals(f.calls.filter((c) => c.path.endsWith("/publish")).length, 0);
+    f.tick();
+    const publishing = await runStage(args, f.deps);
+    assertEquals(publishing.state, "running");
+    assertEquals(f.fake.groups.get(7)!.tasks[0].status, "completed");
+    assertEquals(f.calls.filter((c) => c.path.endsWith("/publish")).length, 1);
+  } finally {
+    await f.fake.close();
+  }
+});
+
+Deno.test("routine publish fails closed and never sends the old pull request text", async () => {
+  for (const scenario of [{ summaryFails: true }, { summaryTruncated: true }, { summaryGarbage: true }]) {
+    const f = await fixture(scenario);
+    try {
+      const args = f.args("publish", { handoff });
+      await runStage(args, f.deps);
+      assertEquals(f.calls.find((c) => c.path.endsWith("/script"))!.body!.args, ["summary"]);
+      f.tick();
+      const failed = await runStage(args, f.deps);
+      assertEquals(failed.state, "failed");
+      assert(String(failed.lastError).startsWith("dependency summary"));
+      assertEquals(f.calls.filter((c) => c.path.endsWith("/publish")).length, 0);
+      f.tick();
+      assertEquals((await runStage(args, f.deps)).state, "failed");
+      assertEquals(f.calls.filter((c) => c.path.endsWith("/publish")).length, 0);
+    } finally {
+      await f.fake.close();
+    }
+  }
+});
+
+Deno.test("a changed handoff stays open so publish can summarize, then completes the child first", async () => {
+  const f = await fixture();
+  try {
+    const tree = "b".repeat(40);
+    f.fake.groups.get(7)!.tasks[0].status = "running";
+    const script = rec({ subtask: 701, outcome: "passed", changed: true, tree });
+    const handoffArgs = f.args("handoff", { script });
+    await runStage(handoffArgs, f.deps);
+    f.tick();
+    const handed = await runStage(handoffArgs, f.deps);
+    assertEquals(handed.artifacts.handoff.outcome, "passed");
+    assertEquals(f.fake.groups.get(7)!.tasks[0].status, "running");
+    f.set(null);
+    const args = f.args("publish", {
+      handoff: rec(handed.artifacts.handoff),
+      script,
+      workspace: rec({ startingCommit: "c".repeat(40) }),
+    });
+    const started = await runStage(args, f.deps);
+    assertEquals(started.state, "running");
+    assertEquals(f.fake.groups.get(7)!.tasks[0].status, "running");
+    assertEquals((f.calls.find((c) => c.path.endsWith("/script"))!.body!.args as string[])[0], "summary");
+    f.tick();
+    const publishing = await runStage(args, f.deps);
+    assertEquals(publishing.state, "running");
+    const completedAt = f.calls.findIndex((c) => c.method === "PATCH" && c.body?.status === "completed");
+    const publishAt = f.calls.findIndex((c) => c.path.endsWith("/publish"));
+    assert(completedAt >= 0 && completedAt < publishAt);
+    assertEquals(f.fake.groups.get(7)!.tasks[0].status, "completed");
+  } finally {
+    await f.fake.close();
+  }
+});
+
+Deno.test("an unchanged handoff still completes its child for no-change cleanup", async () => {
+  const f = await fixture();
+  try {
+    const tree = "b".repeat(40);
+    f.fake.groups.get(7)!.tasks[0].status = "running";
+    const args = f.args("handoff", { script: rec({ subtask: 701, outcome: "passed", changed: false, tree }) });
+    await runStage(args, f.deps);
+    f.tick();
+    await runStage(args, f.deps);
+    assertEquals(f.fake.groups.get(7)!.tasks[0].status, "completed");
+    assertEquals(f.calls.filter((c) => c.path.endsWith("/script")).length, 0);
+  } finally {
+    await f.fake.close();
+  }
+});
+
+Deno.test("publish does not script an ended child when no summary was saved", async () => {
+  const f = await fixture();
+  try {
+    f.fake.groups.get(7)!.tasks[0].status = "completed";
+    await assertRejects(
+      () => runStage(f.args("publish", { handoff }), f.deps),
+      Error,
+      "no saved summary",
+    );
+    assertEquals(f.calls.filter((c) => c.method === "POST").length, 0);
+    assertEquals(f.fake.operations.size, 0);
+  } finally {
+    await f.fake.close();
+  }
+});
+
+Deno.test("a later publish cycle reuses the saved summary and does not script the completed child", async () => {
+  const f = await fixture({ publishFailOnce: true });
+  const jobs = new Map<string, Job>();
+  const deps = (key: string) => ({
+    http: f.deps.http,
+    projects: f.deps.projects,
+    now: f.deps.now,
+    readJob: () => Promise.resolve(jobs.get(key) ?? null),
+    writeJob: (j: Job) => {
+      jobs.set(j.key, structuredClone(j));
+      return Promise.resolve();
+    },
+    readPriorPublish: () => Promise.resolve([...jobs.values()].filter((j) => j.stage === "publish" && j.key !== key)),
+  });
+  try {
+    const tree = "b".repeat(40);
+    f.fake.groups.get(7)!.tasks[0].status = "running";
+    const script = rec({ subtask: 701, outcome: "passed", changed: true, tree });
+    const handoffArgs = f.args("handoff", { script });
+    await runStage(handoffArgs, deps(handoffArgs.key));
+    f.tick();
+    const handed = await runStage(handoffArgs, deps(handoffArgs.key));
+    const handoff = rec(handed.artifacts.handoff);
+    const publish1 = f.args("publish", { handoff, workspace: rec({ startingCommit: "c".repeat(40) }) });
+    await runStage(publish1, deps(publish1.key));
+    f.tick();
+    await runStage(publish1, deps(publish1.key));
+    f.tick();
+    const failed = await runStage(publish1, deps(publish1.key));
+    assertEquals(failed.state, "failed");
+    assertEquals(f.fake.groups.get(7)!.tasks[0].status, "completed");
+    assertEquals(f.calls.filter((c) => c.path.endsWith("/script")).length, 1);
+    const publish2 = { ...publish1, key: "tg-7.publish.c2" };
+    const started = await runStage(publish2, deps(publish2.key));
+    assertEquals(started.state, "running");
+    assertEquals(f.calls.filter((c) => c.path.endsWith("/script")).length, 1);
+    const posts = f.calls.filter((c) => c.path.endsWith("/publish"));
+    assertEquals(posts.map((c) => c.key), ["tg-7.publish.c1", "tg-7.publish.c2"]);
+    assertEquals((posts[1].body!.pull_request as { title: string }).title, (posts[0].body!.pull_request as { title: string }).title);
+    f.tick();
+    const done = await runStage(publish2, deps(publish2.key));
+    assertEquals(done.state, "succeeded");
+    assertEquals(done.artifacts["pull-request"].number, 1);
+  } finally {
+    await f.fake.close();
   }
 });

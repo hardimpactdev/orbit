@@ -25,6 +25,9 @@ export interface Scenario {
   firstReview?: "changes_requested" | "approved";
   reviewAlways?: "changes_requested";
   publishFailOnce?: boolean;
+  summaryFails?: boolean;
+  summaryTruncated?: boolean;
+  summaryGarbage?: boolean;
   prClosedOnce?: boolean;
   provisionIdentity?: Record<string, unknown>;
   analysisFailure?: { schema: number; error: { code: string; required_bytes: number | null } };
@@ -53,6 +56,20 @@ interface Group {
   head: string;
   tree: string;
 }
+
+const SUMMARY = [
+  "Update dependencies for October 2026",
+  "",
+  "Updated the declared dependencies to versions that still fit their ranges.",
+  "",
+  "Nothing changes for users of the app.",
+  "",
+  "| Package | From | To | note |",
+  "| --- | --- | --- | --- |",
+  "| livewire/livewire | 4.2.0 | 4.2.1 | |",
+  "",
+  "Tested: compared the lockfiles with the base commit.",
+].join("\n");
 
 export function startFakeGateway(scenarios: Record<number, Scenario>) {
   const projects = new Map([[20, {
@@ -95,6 +112,11 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
           analysis_base: { base: HEAD, instance_id: 1, repository: "https://example.test/repo.git", branch: `task-${g.id}` } } };
       case "script": {
         bump(g, "script");
+        const summary = Array.isArray(body.args) && body.args[0] === "summary";
+        if (summary) {
+          if (s.summaryFails) return { status: "succeeded", result: { outcome: "failed", exit_code: 1, output: "No dependency changes to summarize.\n", output_truncated: false, changed: false, head: g.head, tree: g.tree } };
+          return { status: "succeeded", result: { outcome: "passed", exit_code: 0, output: s.summaryGarbage ? "not a pull request" : SUMMARY, output_truncated: s.summaryTruncated === true, changed: false, head: g.head, tree: g.tree } };
+        }
         if (s.scriptInfrastructureFailure) return { status: "failed", error_code: "tasks.script_unavailable" };
         if (!s.scriptNoChange) g.tree = "e".repeat(40);
         return { status: "succeeded", result: { outcome: (s.scriptFails || (s.scriptFailsOnce && g.counts.script === 1)) || s.scriptInterrupted ? "failed" : "passed", exit_code: s.scriptInterrupted ? null : (s.scriptFails || (s.scriptFailsOnce && g.counts.script === 1)) ? 23 : 0,
@@ -240,6 +262,14 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
         const key = req.headers.get("idempotency-key") ?? "";
         starts.set(key, (starts.get(key) ?? 0) + 1);
         if (byKey.has(key)) return json(202, { ...ops.get(byKey.get(key)!), status: "queued", poll_after_seconds: 1 });
+        if (typeof body.subtask === "number") {
+          const open = g.tasks
+            .filter((t) => !["completed", "failed", "cancelled"].includes(t.status))
+            .sort((a, b) => a.position - b.position || a.id - b.id);
+          if (open[0]?.id !== body.subtask) {
+            return json(409, { error: { code: "tasks.subtask_not_current", message: "Only the current open subtask can run." } });
+          }
+        }
         const id = nextOp++;
         const out = await run(g, op[1], body, id);
         // StartTaskTurnAction persists TaskTurnData::toArray(), including nullable defaults.

@@ -14,6 +14,11 @@ import { type AuthorizedPlan, briefSource, canonical, type Candidate, validateAn
 // stored request is replayed unchanged, so a lost reply or a killed tick starts
 // no second operation: the Gateway returns the same one. A call for the same key
 // with other input is refused as a conflict.
+// A routine publish first runs the repository summary script, then publishes
+// with that title and body. The script and the publish each have their own key.
+// A failed or unreadable summary fails the stage and does not publish.
+// A later publish cycle for the same checked commit reuses that summary. It does
+// not start another script: the child is already completed.
 
 export const STAGES = ["provision", "baseline", "analyze", "implement", "handoff", "review", "publish", "merged", "script", "repair", "finish"] as const;
 export type Stage = (typeof STAGES)[number];
@@ -83,6 +88,8 @@ export interface Deps {
   projects?: DependencyProject[];
   readJob: () => Promise<Job | null>;
   writeJob: (job: Job) => Promise<void>;
+  /** Earlier publish jobs for this work item, so a later cycle can reuse a summary. */
+  readPriorPublish?: () => Promise<Job[]>;
   now?: () => number;
 }
 
@@ -333,8 +340,39 @@ async function setSubtaskStatus(http: Http, group: number, t: TaskRow, status: s
   if (r.status !== 200) throw new Error(`moving subtask ${t.id} to ${status}: ${errorCode(r)}`);
 }
 
+class RetryableCompletion extends Error {}
+
+/**
+ * Complete the publish child. A lost reply is ambiguous: re-read the child and
+ * treat one that is already completed as success. If the move did not apply, the
+ * caller retries it.
+ */
+async function completePublishChild(http: Http, group: number, subtask: number): Promise<void> {
+  const ready = async (): Promise<TaskRow> => {
+    const g = await readGroup(http, group);
+    const child = g.tasks.find((t) => t.id === subtask);
+    if (g.tasks.length !== 1 || !child || hasAssistance(g) || g.tasks.some(hasAssistance)) {
+      throw new Error("publish summary preserves the open child and operator assistance");
+    }
+    return child;
+  };
+  const child = await ready();
+  if (child.status === "completed") return;
+  if (["failed", "cancelled"].includes(child.status)) {
+    throw new Error("publish has no saved summary for this checked commit, and its child has ended");
+  }
+  const r = await http("PATCH", `/api/v1/task-groups/${group}/tasks/${child.id}`, { status: "completed" });
+  if (r.status === 200) return;
+  if (r.status === 0) {
+    const current = await ready();
+    if (current.status === "completed") return;
+    throw new RetryableCompletion(`moving subtask ${child.id} to completed: ${errorCode(r)}`);
+  }
+  throw new Error(`moving subtask ${child.id} to completed: ${errorCode(r)}`);
+}
+
 /** Plan the operation for a stage. Returns null for `merged`, which starts no operation. */
-async function plan(args: StageArgs, group: number, http: Http): Promise<{ subtask: number | null; request: PlannedRequest | null; analysisContext?: Job["analysisContext"] }> {
+async function plan(args: StageArgs, group: number, http: Http, deps: Deps): Promise<{ subtask: number | null; request: PlannedRequest | null; analysisContext?: Job["analysisContext"] }> {
   const g = await readGroup(http, group);
   const base = `/api/v1/task-groups/${group}`;
   if (args.routine) {
@@ -355,10 +393,29 @@ async function plan(args: StageArgs, group: number, http: Http): Promise<{ subta
     case "publish": {
       const h = envelope(args.handoff);
       if (!h || h.payload.outcome !== "passed") throw new Error("publish needs a passed handoff check");
-      return req("/publish", {
-        check: h.payload.checkId,
-        pull_request: { title: g.title, body: `${g.brief}${args.packageTarget ? `\n\nSingle package: ${packageDescription(args.packageTarget)}.` : ""}\n\nDriven by Swamp through ADR 0229 Gateway operations (group ${group}).` },
-      }, null);
+      if (!args.routine) {
+        return req("/publish", {
+          check: h.payload.checkId,
+          pull_request: { title: g.title, body: `${g.brief}${args.packageTarget ? `\n\nSingle package: ${packageDescription(args.packageTarget)}.` : ""}\n\nDriven by Swamp through ADR 0229 Gateway operations (group ${group}).` },
+        }, null);
+      }
+      const subtask = h.payload.subtask;
+      if (!Number.isSafeInteger(subtask) || Number(subtask) < 1) throw new Error("publish summary needs the handoff subtask");
+      if (!args.dependencyProject) throw new Error("publish summary needs the configured dependency script");
+      const saved = await savedSummary(args, h.payload.checkId as number, deps);
+      if (saved) return req("/publish", { check: h.payload.checkId, pull_request: saved }, null);
+      const child = g.tasks.find((t) => t.id === Number(subtask));
+      if (!child || ["completed", "failed", "cancelled"].includes(child.status)) {
+        throw new Error("publish has no saved summary for this checked commit, and its child has ended");
+      }
+      return {
+        subtask: Number(subtask),
+        request: {
+          path: `${base}/script`,
+          body: { subtask: Number(subtask), script: args.dependencyProject.script, args: summaryArguments(args) },
+          idempotencyKey: `${args.key}.summary`,
+        },
+      };
     }
     case "merged":
       return { subtask: null, request: null };
@@ -517,9 +574,10 @@ async function products(job: Job, op: Record<string, unknown>, http: Http, args:
     case "provision": {
       if (args.routine) {
         requireOperation(job, op);
-        if (args.packageTarget && !(typeof result.starting_commit === "string" && /^[a-f0-9]{40}$/.test(result.starting_commit))) throw new Error("package provision lacks a fresh starting commit");
+        const starting = typeof result.starting_commit === "string" && /^[a-f0-9]{40}$/.test(result.starting_commit) ? result.starting_commit : null;
+        if (args.packageTarget && starting === null) throw new Error("package provision lacks a fresh starting commit");
         if (![result.instance_id, result.node_id].every((n) => Number.isSafeInteger(n) && Number(n) > 0)) throw new Error("provision has no workspace identity");
-        return { artifacts: { workspace: { group: job.group, operationId: job.operationId, outcome: "ready", instanceId: result.instance_id, nodeId: result.node_id, ...(args.packageTarget ? { startingCommit: result.starting_commit } : {}) } }, evidence: ev() };
+        return { artifacts: { workspace: { group: job.group, operationId: job.operationId, outcome: "ready", instanceId: result.instance_id, nodeId: result.node_id, ...(starting ? { startingCommit: starting } : {}) } }, evidence: ev() };
       }
       try {
         requireOperation(job, op);
@@ -557,7 +615,12 @@ async function products(job: Job, op: Record<string, unknown>, http: Http, args:
         if (result.outcome === "passed") {
           const g = await readGroup(http, job.group);
           if (g.tasks.length !== 1 || g.tasks[0].id !== job.subtask || hasAssistance(g) || g.tasks.some(hasAssistance)) throw new Error("routine completion preserves independent children/assistance");
-          await setSubtaskStatus(http, job.group, g.tasks[0], "completed");
+          const script = envelope(args.script)?.payload;
+          const unchanged = script?.changed === false && script.tree === result.tree;
+          // A later publish still has to run the summary script on this child. Completing it
+          // here makes the Gateway reject that script. The no-change path completes now,
+          // because finish requires a completed child and does not run a script.
+          if (unchanged) await setSubtaskStatus(http, job.group, g.tasks[0], "completed");
         }
       }
       const name = job.stage;
@@ -680,6 +743,66 @@ async function finishRoutine(job: Job, args: StageArgs, http: Http): Promise<Job
   return { ...job, state: "succeeded", evidence: { status: "succeeded", runId: job.key, completed: true } };
 }
 
+
+
+/** A summary already validated for this same checked commit, from an earlier publish cycle. */
+async function savedSummary(args: StageArgs, checkId: number, deps: Deps): Promise<{ title: string; body: string } | null> {
+  if (!deps.readPriorPublish) return null;
+  const current = JSON.parse(inputIdentity(args)) as { handoff?: unknown; packageTarget?: unknown };
+  const jobs = (await deps.readPriorPublish()).filter((job) => job.key !== args.key && job.stage === "publish" && job.inputIdentity !== null);
+  jobs.sort((a, b) => keyParts(a.key).cycle - keyParts(b.key).cycle);
+  for (const job of jobs.reverse()) {
+    let stored: { handoff?: unknown; packageTarget?: unknown };
+    try {
+      stored = JSON.parse(job.inputIdentity!) as { handoff?: unknown; packageTarget?: unknown };
+    } catch {
+      continue;
+    }
+    if (JSON.stringify(stored.handoff ?? null) !== JSON.stringify(current.handoff ?? null)) continue;
+    if (JSON.stringify(stored.packageTarget ?? null) !== JSON.stringify(current.packageTarget ?? null)) continue;
+    const request = job.request;
+    const pull = request?.body.pull_request as { title?: unknown; body?: unknown } | undefined;
+    if (!request?.path.endsWith("/publish") || request.body.check !== checkId || typeof pull?.title !== "string" || typeof pull.body !== "string") continue;
+    try {
+      return pullRequestSummary(`${pull.title}\n${pull.body}`);
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+function summaryArguments(args: StageArgs): string[] {
+  const summaryArgs = ["summary"];
+  const start = envelope(args.workspace)?.payload.startingCommit;
+  if (typeof start === "string" && /^[a-f0-9]{40}$/.test(start)) summaryArgs.push("--base", start);
+  return summaryArgs;
+}
+
+function pullRequestSummary(output: string): { title: string; body: string } {
+  const text = output.replace(/\r\n/g, "\n").trim();
+  const split = text.indexOf("\n");
+  if (split <= 0) throw new Error("dependency summary has no title and body");
+  const title = text.slice(0, split).trim();
+  const body = text.slice(split + 1).trim();
+  if (title === "" || title.length > 240 || body === "") throw new Error("dependency summary has no title and body");
+  if (!body.includes("| Package |") || !body.includes("| From |") || !body.includes("| To |") || !/^Tested: \S/m.test(body)) {
+    throw new Error("dependency summary is not a pull request title and body");
+  }
+  return { title, body };
+}
+
+function readPullRequestSummary(job: Job, op: Record<string, unknown>): { title: string; body: string } {
+  const result = (op.result ?? {}) as Record<string, unknown>;
+  if (op.id !== job.operationId || op.kind !== "tasks.script" || op.target_type !== "task_group" || op.target_id !== job.group ||
+    canonical(op.input) !== canonical(job.request?.body)) throw new Error("dependency summary is unreadable");
+  if (result.output_truncated === true) throw new Error("dependency summary was truncated");
+  if (result.outcome !== "passed" || result.exit_code !== 0 || typeof result.output !== "string") {
+    throw new Error(`dependency summary failed (${String(result.outcome)}, exit ${String(result.exit_code)})`);
+  }
+  return pullRequestSummary(result.output);
+}
+
 /** One ensure call for one driver key. */
 export async function runStage(args: StageArgs, deps: Deps): Promise<Job> {
   const group = groupOf(args.workItem);
@@ -724,51 +847,69 @@ export async function runStage(args: StageArgs, deps: Deps): Promise<Job> {
     return job;
   }
 
-  if (job.operationId === null) {
-    if (job.request === null) {
+  const launch = async (current: Job): Promise<Job> => {
+    if (current.request === null) {
       // Plan once and store the request before starting it, so every replay sends the same input.
       try {
-        const p = await plan(args, group, deps.http);
-        job = { ...job, subtask: p.subtask, request: p.request, ...(p.analysisContext ? { analysisContext: p.analysisContext } : {}) };
+        const p = await plan(args, group, deps.http, deps);
+        current = { ...current, subtask: p.subtask, request: p.request, ...(p.analysisContext ? { analysisContext: p.analysisContext } : {}) };
       } catch (e) {
         if (!["analyze", "implement", "review"].includes(args.stage)) throw e;
         const error = e instanceof Error ? e.message : String(e);
-        job = { ...job, state: "failed", lastError: error, evidence: { status: "failed", runId: job.key, error, code: "swamp.analysis_input_invalid" } };
-        await deps.writeJob(job);
-        return job;
+        current = { ...current, state: "failed", lastError: error, evidence: { status: "failed", runId: current.key, error, code: "swamp.analysis_input_invalid" } };
+        await deps.writeJob(current);
+        return current;
       }
-      await deps.writeJob(job);
+      await deps.writeJob(current);
     }
-    const req = job.request!;
+    const req = current.request!;
     if (args.routine) {
       // A retained request may outlive an operator change or a lost response.
       // Reconcile receipts under the same key only while the observed group is safe.
       const g = await readGroup(deps.http, group);
       if (g.orchestration !== "external" || g.tasks.length !== 1 ||
-        (job.subtask !== null && g.tasks[0].id !== job.subtask) ||
+        (current.subtask !== null && g.tasks[0].id !== current.subtask) ||
         hasAssistance(g) || g.tasks.some(hasAssistance)) throw new Error("routine dispatch preserves current children/operator/safety assistance");
+    }
+    if (args.routine && req.path.endsWith("/publish")) {
+      const subtask = Number(envelope(args.handoff)?.payload.subtask);
+      try {
+        await completePublishChild(deps.http, group, subtask);
+      } catch (e) {
+        if (e instanceof RetryableCompletion) {
+          current = { ...current, lastError: e.message };
+          await deps.writeJob(current);
+          return current;
+        }
+        const message = e instanceof Error ? e.message : String(e);
+        current = { ...current, state: "failed", lastError: message, evidence: { status: "failed", runId: current.key, error: message } };
+        await deps.writeJob(current);
+        return current;
+      }
     }
     const r = await deps.http("POST", req.path, req.body, req.idempotencyKey);
     if (r.status === 202) {
       const op = data(r);
-      job = {
-        ...job, operationId: Number(op.id), operationStatus: String(op.status), launches: job.launches + 1,
+      current = {
+        ...current, operationId: Number(op.id), operationStatus: String(op.status), launches: current.launches + 1,
         launchedNow: true, lastError: null, nextReadAt: nextRead(clock(), op.poll_after_seconds),
       };
     } else if (r.status === 409 && (r.body?.error as { code?: string } | undefined)?.code === "operation.target_busy") {
-      job = { ...job, lastError: errorCode(r) };
+      current = { ...current, lastError: errorCode(r) };
     } else if (r.status >= 400 && r.status < 500) {
-      job = await withGroupOutcome(
-        { ...job, state: "failed", lastError: errorCode(r), evidence: { status: "failed", runId: job.key, error: errorCode(r), response: r.body } },
+      current = await withGroupOutcome(
+        { ...current, state: "failed", lastError: errorCode(r), evidence: { status: "failed", runId: current.key, error: errorCode(r), response: r.body } },
         deps.http,
       );
     } else {
-      job = { ...job, lastError: errorCode(r) };
+      current = { ...current, lastError: errorCode(r) };
     }
     // The first call ends once the accepted operation id is stored; a later call reads it.
-    await deps.writeJob(job);
-    return job;
-  }
+    await deps.writeJob(current);
+    return current;
+  };
+
+  if (job.operationId === null) return launch(job);
 
   if (job.nextReadAt !== null && job.nextReadAt !== undefined && now < Date.parse(job.nextReadAt)) {
     if (changedInput) await deps.writeJob(job);
@@ -785,6 +926,50 @@ export async function runStage(args: StageArgs, deps: Deps): Promise<Job> {
   const status = String(op.status);
   job = { ...job, operationStatus: status, lastError: null, nextReadAt: nextRead(clock(), op.poll_after_seconds) };
   if (TERMINAL_OPERATION.includes(status)) {
+    if (args.routine && args.stage === "publish" && op.kind === "tasks.script") {
+      if (status !== "succeeded") {
+        const message = `dependency summary failed (${status}${op.error_code ? ` ${String(op.error_code)}` : ""})`;
+        job = { ...job, state: "failed", lastError: message, evidence: { status: "failed", runId: String(job.operationId), operationId: job.operationId, error: message, code: op.error_code ?? null } };
+        await deps.writeJob(job);
+        return job;
+      }
+      try {
+        const text = readPullRequestSummary(job, op);
+        const handoff = envelope(args.handoff);
+        if (!handoff || !Number.isSafeInteger(handoff.payload.checkId)) throw new Error("publish needs a passed handoff check");
+        const g = await readGroup(deps.http, group);
+        const child = g.tasks[0];
+        if (g.tasks.length !== 1 || child?.id !== Number(handoff.payload.subtask) || hasAssistance(g) || g.tasks.some(hasAssistance)) {
+          throw new Error("publish summary preserves the open child and operator assistance");
+        }
+        if (["failed", "cancelled"].includes(child.status)) {
+          throw new Error("publish summary preserves the open child and operator assistance");
+        }
+        // Keep the validated text and this checked candidate before the child ends.
+        // A lost completion reply can then be reconciled, and a later cycle can reuse it.
+        job = {
+          ...job,
+          state: "running",
+          operationId: null,
+          operationStatus: null,
+          nextReadAt: null,
+          lastError: null,
+          launchedNow: false,
+          request: {
+            path: `/api/v1/task-groups/${group}/publish`,
+            body: { check: handoff.payload.checkId, pull_request: { title: text.title, body: text.body } },
+            idempotencyKey: idempotencyKey(args.key, null),
+          },
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        job = { ...job, state: "failed", lastError: message, evidence: { status: "failed", runId: String(job.operationId), operationId: job.operationId, error: message } };
+        await deps.writeJob(job);
+        return job;
+      }
+      await deps.writeJob(job);
+      return launch(job);
+    }
     if (status === "succeeded") {
       job = await withGroupOutcome({ ...job, state: "succeeded", ...(await products(job, op, deps.http, args)) }, deps.http);
     } else {

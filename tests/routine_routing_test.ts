@@ -188,7 +188,8 @@ Deno.test({
         assertEquals(fake.startsOf(id, "handoff"), checks, `checks ${id}`);
         assertEquals(
           fake.startsOf(id, "publish"),
-          [801, 802, 804, 808, 810].includes(id) ? 1 : 0,
+          [801, 802, 804, 808, 810].includes(id) ? 2 : 0,
+          "summary key plus publish",
         );
       }
       const secondScript = [...fake.operations.values()].find((op) => op.target_id === 810 && op.kind === "tasks.script")!;

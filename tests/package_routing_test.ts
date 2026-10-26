@@ -89,7 +89,7 @@ methods: {}`));
     for (const id of [901, 902, 903, 904]) {
       assertEquals(fake.startsOf(id, "provision"), 1); assertEquals(fake.startsOf(id, "script"), id === 902 ? 1 : 2);
       assertEquals(fake.startsOf(id, "repair"), id === 902 ? 0 : 1);
-      assertEquals(fake.startsOf(id, "publish"), id === 904 ? 0 : 1);
+      assertEquals(fake.startsOf(id, "publish"), id === 904 ? 0 : 2, "summary key plus publish");
       assertEquals(fake.startsOf(id, "analyze"), 0); assertEquals(fake.startsOf(id, "review"), 0);
       const op = [...fake.operations.values()].find((o) => o.target_id === id && o.kind === "tasks.script")!;
       const request = op.input as { args: string[] };

@@ -122,7 +122,7 @@ export const behavior = {
     package: {
       description: "One selected package through the existing routine stage client",
       arguments: z.object({ workItem: z.string(), stage: z.enum(["provision", "script", "repair", "handoff", "publish", "merged", "finish"]),
-        key: z.string(), handoff: z.unknown().optional(), change: z.unknown().optional(), script: z.unknown().optional() }),
+        key: z.string(), handoff: z.unknown().optional(), change: z.unknown().optional(), script: z.unknown().optional(), workspace: z.unknown().optional() }),
       execute: async (args: StageArgs, context: StageContext) => {
         const rows = await context.queryData(`modelName == "${context.definition.name}" && name == "package-${args.workItem}"`, "attributes");
         const target = PackageTargetSchema.parse(rows[0]);
@@ -172,7 +172,7 @@ export const behavior = {
     routine: {
       description: "Routine project update: the tracked script, one repair turn, checks, publication and cleanup through existing keyed jobs",
       arguments: z.object({ workItem: z.string(), stage: z.enum(["provision", "script", "repair", "handoff", "publish", "merged", "finish"]),
-        key: z.string(), handoff: z.unknown().optional(), change: z.unknown().optional(), script: z.unknown().optional() }),
+        key: z.string(), handoff: z.unknown().optional(), change: z.unknown().optional(), script: z.unknown().optional(), workspace: z.unknown().optional() }),
       execute: (args: StageArgs, context: StageContext) => executeStage({ ...args, routine: true }, context),
     },
     stage: {
@@ -213,6 +213,9 @@ async function executeStage(args: StageArgs, context: StageContext) {
       )) as Job[];
       return rows[0] ?? null;
     },
+    readPriorPublish: async () => (await context.queryData(
+      `modelName == "${context.definition.name}" && name.startsWith("job-${args.workItem}.publish.c")`, "attributes",
+    )) as Job[],
     writeJob: async (j) => {
       handle = await context.writeResource("job", `job-${args.key}`, j as unknown as Record<string, unknown>);
     },

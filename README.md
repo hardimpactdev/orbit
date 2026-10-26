@@ -9,7 +9,7 @@ Gateway or task records.
 The [dependency routine workflow](docs/website-routine.md) adds task-VM dependency
 updates through the generic `tasks.script` operation. Each repo owns the
 commands and allowed versions. One failed update/check gets one repair turn;
-a second failure parks for assistance. Green work publishes a PR; unchanged
+a second failure parks for assistance. Green work publishes a pull request whose title and text come from the repository summary. If that summary fails, publication stops. Unchanged
 work completes without one. Start only after the Orbit operation and website
 script merge and the Gateway release is verified. Nick owns the first live run.
 The [single-package workflow](docs/website-packages.md) handles one explicit major or security target per new group. It waits for merge and cleanup before admitting another package, with one repair turn and a fresh script/audit rerun before publication. Detection and version policy remain in each repo. Add repositories with one [project config entry](docs/dependency-projects.md).
