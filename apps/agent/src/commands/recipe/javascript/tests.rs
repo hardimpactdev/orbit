@@ -274,7 +274,7 @@ fn inventory_never_runs_a_moving_node_shim_or_uninitialized_vite_cli() {
     }
 }
 #[test]
-fn root_runtime_commands_drop_to_the_enrolled_account_and_set_scope_after_sudo() {
+fn root_runtime_commands_drop_to_the_enrolled_account_before_changing_directory_and_scope() {
     let account = Account {
         name: "orbit".into(),
         uid: rustix::process::geteuid().as_raw() + 1,
@@ -286,13 +286,15 @@ fn root_runtime_commands_drop_to_the_enrolled_account_and_set_scope_after_sudo()
         &["/home/orbit/.vite-plus/bin/vp", "--version"],
     );
     assert_eq!(
-        &call.argv[..6],
+        &call.argv[..8],
         &[
             "sudo",
             "-u",
             "orbit",
             "-H",
             "env",
+            "-C",
+            "/home/orbit",
             "VP_HOME=/home/orbit/.vite-plus"
         ]
     );

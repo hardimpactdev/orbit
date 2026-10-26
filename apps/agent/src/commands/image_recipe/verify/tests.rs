@@ -44,6 +44,92 @@ struct Fake {
     calls: Vec<Invocation>,
     readable: bool,
 }
+#[test]
+fn verifies_pnpm_from_the_managed_home_when_the_caller_uses_another_directory() {
+    use std::{os::unix::fs::PermissionsExt, process::Command};
+
+    let (work, files, account, mut input) = fixture();
+    fs::set_permissions(
+        files.path("/usr/local/bin/orbit-agent"),
+        fs::Permissions::from_mode(0o755),
+    )
+    .unwrap();
+    let scope = account.home.join(".local/share/vite-plus");
+    fs::create_dir_all(scope.join("bin")).unwrap();
+    fs::create_dir_all(scope.join("recipe/pnpm-current")).unwrap();
+    fs::write(
+        scope.join("recipe/pnpm-current/package.json"),
+        r#"{"version":"12.11.2"}"#,
+    )
+    .unwrap();
+    // Like pnpm, this probe reads configuration relative to its working directory.
+    let pnpm = scope.join("bin/pnpm");
+    fs::write(&pnpm, "#!/bin/sh\ncat ./probe-version\n").unwrap();
+    fs::set_permissions(&pnpm, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::write(account.home.join("probe-version"), "12.11.2\n").unwrap();
+    std::os::unix::fs::symlink(&pnpm, files.path("/usr/local/bin/pnpm")).unwrap();
+    input.recipe.tools = serde_json::from_value(json!({"pnpm": {
+        "source":"artifact", "version":"12.11.2", "artifacts":{"amd64":{
+            "url":"https://example.test/pnpm", "sha256":"a".repeat(64)
+        }}
+    }}))
+    .unwrap();
+    let foreign = work.0.join("caller");
+    fs::create_dir(&foreign).unwrap();
+    fs::write(foreign.join("probe-version"), "99.0.0\n").unwrap();
+
+    struct Processes {
+        caller: PathBuf,
+        base: Fake,
+        probes: usize,
+    }
+    impl Host for Processes {
+        fn execute(&mut self, call: &Invocation) -> Result<Output, Failure> {
+            let fallback = self.base.execute(call)?;
+            if call.argv[0] != "env" {
+                return Ok(fallback);
+            }
+            if call.argv.last().is_some_and(|arg| arg == "--version") {
+                self.probes += 1;
+            }
+            let output = Command::new(&call.argv[0])
+                .args(&call.argv[1..])
+                .envs(call.environment.iter().cloned())
+                .current_dir(&self.caller)
+                .output()
+                .unwrap();
+            Ok(Output {
+                code: output.status.code().unwrap(),
+                stdout: String::from_utf8(output.stdout).unwrap(),
+                stderr: String::from_utf8(output.stderr).unwrap(),
+                ..Output::default()
+            })
+        }
+        fn wait(&mut self, _: Duration) -> Result<(), Failure> {
+            panic!("No retry")
+        }
+    }
+    let mut host = Processes {
+        caller: foreign,
+        base: Fake {
+            calls: vec![],
+            readable: true,
+        },
+        probes: 0,
+    };
+    verify(
+        &mut host,
+        &files,
+        &input,
+        &account,
+        Instant::now() + Duration::from_secs(5),
+    )
+    .unwrap();
+    assert_eq!(
+        host.probes, 2,
+        "Inventory and the published launcher must both run"
+    );
+}
 impl Host for Fake {
     fn execute(&mut self, call: &Invocation) -> Result<Output, Failure> {
         self.calls.push(call.clone());
@@ -386,6 +472,8 @@ fn system_tools_require_equal_root_and_guest_versions_without_requiring_the_reci
                     "orbit".into(),
                     "-H".into(),
                     "env".into(),
+                    "-C".into(),
+                    account.home.display().to_string(),
                     format!(
                         "VP_HOME={}",
                         account.home.join(".local/share/vite-plus").display()
