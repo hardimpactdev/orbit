@@ -18,7 +18,7 @@ final class CreateInstanceCommand extends GatewayCommand
     protected $signature = 'instance:create
         {project : Numeric Project ID}
         {node : Numeric node ID}
-        {name : Instance name; default is reserved for the default development source}
+        {name : Instance name; default, or the Project default branch name, means the default development source}
         {--root= : Optional relative web-root override}
         {--domain= : Optional explicit Route domain}
         {--branch= : Optional explicit source branch}
@@ -87,6 +87,7 @@ HELP;
             return self::SUCCESS;
         }
 
+        $this->writeNameConversion($instance->nameConvertedFrom, 'created');
         $this->writeInstanceDetails($instance);
 
         return self::SUCCESS;

@@ -266,6 +266,26 @@ describe('Instance requests', function (): void {
             ->toBe(instance_request_id());
     });
 
+    it('maps the reported registration name conversion and omits it when there is none', function (): void {
+        $converted = InstanceRegistrationResponse::fromGatewayData([
+            'instance' => instance_gateway_data(),
+            'name_converted_from' => 'main',
+        ], instance_request_id());
+        $unconverted = InstanceRegistrationResponse::fromGatewayData([
+            'instance' => instance_gateway_data(),
+            'name_converted_from' => null,
+        ], instance_request_id());
+
+        expect($converted->nameConvertedFrom)
+            ->toBe('main')
+            ->and($converted->toArray()['name_converted_from'])
+            ->toBe('main')
+            ->and($unconverted->nameConvertedFrom)
+            ->toBeNull()
+            ->and($unconverted->toArray())
+            ->not->toHaveKey('name_converted_from');
+    });
+
     it('omits null and false optional registration values', function (): void {
         expect(new RegisterInstanceRequest('/work/orbit-docs')->body()->all())
             ->toBe(['source_path' => '/work/orbit-docs']);

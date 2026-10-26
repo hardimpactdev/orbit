@@ -8467,7 +8467,7 @@
                     "type": "string",
                     "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
                     "maxLength": 63,
-                    "description": "Instance name; default is reserved for the default development source"
+                    "description": "Instance name; default, or the Project default branch name, means the default development source"
                   },
                   "root": {
                     "type": "string",
@@ -8510,7 +8510,26 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/Instance"
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/Instance"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "name_converted_from": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "description": "The requested name when Orbit used `default` because the name equals the Project default branch. Null otherwise. A create on an `app-prod` Node converts nothing."
+                            }
+                          },
+                          "required": [
+                            "name_converted_from"
+                          ]
+                        }
+                      ]
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -8532,7 +8551,26 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/Instance"
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/Instance"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "name_converted_from": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "description": "The requested name when Orbit used `default` because the name equals the Project default branch. Null otherwise. A create on an `app-prod` Node converts nothing."
+                            }
+                          },
+                          "required": [
+                            "name_converted_from"
+                          ]
+                        }
+                      ]
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -35288,8 +35326,18 @@
           },
           "completed_count": {
             "type": "integer"
+          },
+          "name_converted_from": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The requested name when Orbit used `default` because the name equals the Project default branch. Null otherwise. A create on an `app-prod` Node converts nothing."
           }
-        }
+        },
+        "required": [
+          "name_converted_from"
+        ]
       },
       "Project": {
         "type": "object",

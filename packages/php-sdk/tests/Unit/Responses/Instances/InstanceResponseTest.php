@@ -74,6 +74,16 @@ describe(InstanceResponse::class, function (): void {
             ->and(InstanceResponse::fromGatewayData([], 'request-id')->warnings)->toBe([]);
     });
 
+    it('carries a create name conversion through typed transport and serialization', function (): void {
+        $response = InstanceResponse::fromGatewayData(['name' => 'default', 'name_converted_from' => 'main'], 'request-id');
+        $unconverted = InstanceResponse::fromGatewayData(['name' => 'default', 'name_converted_from' => null], 'request-id');
+
+        expect($response->nameConvertedFrom)->toBe('main')
+            ->and($response->toArray()['name_converted_from'])->toBe('main')
+            ->and($unconverted->nameConvertedFrom)->toBeNull()
+            ->and($unconverted->toArray())->not->toHaveKey('name_converted_from');
+    });
+
     it('uses safe values for invalid gateway fields', function (): void {
         $response = InstanceResponse::fromGatewayData([
             'id' => 'invalid',

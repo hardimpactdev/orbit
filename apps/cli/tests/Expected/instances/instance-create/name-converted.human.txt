@@ -1,0 +1,42 @@
+Creating Instance...
+
+┌  Create Instance
+│
+├  ● Created Instance
+│
+└  Created Instance.
+
+Name `main` is the Project default branch; created the `default` Instance.
+
+┌  Instance: default
+│
+├  ID                1
+│
+├  Project           acme
+│
+├  Node              app-dev
+│
+├  Status            active
+│
+├  Source layout     checkout
+│
+├  Checkout          /srv/orbit/apps/acme/default
+│
+├  Vite port         5173
+│
+├  SSR port          13714
+│
+├  Root override     —
+│
+├  Effective root    public
+│
+├  Selected branch   main
+│
+├  Branch override   —
+│
+├  Domain            acme.test
+│
+├  URL               https://acme.test
+│
+└  Auto deploy       on, without a merge check
+

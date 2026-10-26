@@ -22,10 +22,12 @@ final class InstanceRegistrationData extends Data
         public string $status,
         public int $sourceCount,
         public int $completedCount,
+        /** The requested `instance_name` when Orbit registered it as `default` because it equals the Project default branch; null otherwise. */
+        public ?string $nameConvertedFrom,
     ) {}
 
     /** @param list<Instance> $sourceInstances */
-    public static function fromModels(Project $project, Instance $primary, array $sourceInstances): self
+    public static function fromModels(Project $project, Instance $primary, array $sourceInstances, ?string $nameConvertedFrom): self
     {
         return new self(
             project: ProjectData::fromModel($project),
@@ -34,6 +36,7 @@ final class InstanceRegistrationData extends Data
             status: 'active',
             sourceCount: count($sourceInstances),
             completedCount: count($sourceInstances),
+            nameConvertedFrom: $nameConvertedFrom,
         );
     }
 }

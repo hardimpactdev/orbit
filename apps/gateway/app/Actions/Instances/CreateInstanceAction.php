@@ -12,6 +12,7 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlan;
 use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlanner;
+use App\Domain\Instances\DefaultInstanceName;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
 use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
 use App\Domain\Instances\DevelopmentSourceResolution;
@@ -82,7 +83,12 @@ final readonly class CreateInstanceAction
         private ?CreateInstanceServerDatabaseAction $serverDatabase = null,
     ) {}
 
-    /** @return array{instance: Instance, created: bool} */
+    /**
+     * A development create converts a name that equals the Project default branch to `default`
+     * and reports the requested name in `name_converted_from`. A production create converts nothing.
+     *
+     * @return array{instance: Instance, created: bool, name_converted_from: string|null}
+     */
     public function execute(CreateInstanceData $data): array
     {
         $project = Project::query()->findOrFail($data->projectId);
@@ -97,8 +103,11 @@ final readonly class CreateInstanceAction
                 ->where('status', LifecycleStatus::Active)
                 ->exists()
         ) {
-            return $this->announceCreated($this->productionProvisioner->execute($data, $project, $requestedNode, $root));
+            return [...$this->announceCreated($this->productionProvisioner->execute($data, $project, $requestedNode, $root)), 'name_converted_from' => null];
         }
+
+        $nameConvertedFrom = DefaultInstanceName::convertedFrom($project, $data->name);
+        $data = $data->withName(DefaultInstanceName::resolve($project, $data->name));
 
         $existing = Instance::query()
             ->where('project_id', $project->id)
@@ -222,7 +231,7 @@ final readonly class CreateInstanceAction
             throw $exception;
         }
 
-        return $this->announceCreated(['instance' => $result, 'created' => $created]);
+        return [...$this->announceCreated(['instance' => $result, 'created' => $created]), 'name_converted_from' => $nameConvertedFrom];
     }
 
     private function cleanupFailedCreate(Instance $instance, Throwable $failure): void

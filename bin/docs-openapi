@@ -1681,6 +1681,11 @@ CTRL_DATA_OVERRIDES = {
 SDK_RESPONSE_FALLBACK = {'NodesController@destroy': 'RemovedNodeResponse', 'InstanceEnvironmentImportsController@store': 'EnvironmentOperationResponse', 'InstanceEnvironmentSynchronizationsController@store': 'EnvironmentOperationResponse', 'InstanceEnvironmentValuesController@update': 'EnvironmentOperationResponse'}
 
 
+# The create and register responses report a name that Orbit converted to `default` the same way.
+NAME_CONVERTED_FROM = {'type': ['string', 'null'],
+    'description': 'The requested name when Orbit used `default` because the name equals the Project default branch. Null otherwise. A create on an `app-prod` Node converts nothing.'}
+
+
 def data_schema_for(route):
     action = route['action']
     if action.startswith('ProjectDocumentsController@'):
@@ -2011,6 +2016,14 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
                 'warnings': {'type': 'array', 'items': {'type': 'string'},
                     'description': 'Key-only review hints for copied development hosts, filesystem paths, and service drivers. Values are never included; settings are not rewritten. Empty when no hints apply.'},
             }, 'required': ['warnings']}]}
+        if route['name'] == 'instance:create':
+            data = {'allOf': [data, {'type': 'object', 'properties': {
+                'name_converted_from': NAME_CONVERTED_FROM,
+            }, 'required': ['name_converted_from']}]}
+        if route['name'] == 'instance:register':
+            registration = components['InstanceRegistration']
+            registration['properties']['name_converted_from'] = NAME_CONVERTED_FROM
+            registration['required'] = ['name_converted_from']
         if is_list:
             data = {'type': 'array', 'items': data}
         if route['name'] in ('websocket:app:create', 'websocket:app:destroy', 'websocket:app:rotate', 'websocket:sync', 'websocket:operation:show'):

@@ -22,12 +22,14 @@ use Orbit\Sdk\Responses\Instances\InstanceRegistrationResponse;
 
 final class RegisterInstanceCommand extends GatewayCommand
 {
+    use InstanceOutput;
+
     #[\Override]
     protected $signature = 'instance:register
         {--path= : Existing Git checkout or worktree; defaults to the current directory}
         {--include-worktrees : Adopt the checkout and every linked worktree}
         {--project= : Existing numeric Project ID}
-        {--name= : Optional non-default Instance name}
+        {--name= : Optional Instance name; default, or the Project default branch name, means the default development source}
         {--root= : Relative web-root override for this Instance}
         {--domain= : Optional explicit Route domain}
         {--yes : Confirm source ownership transfer without prompting}
@@ -107,6 +109,7 @@ final class RegisterInstanceCommand extends GatewayCommand
         }
 
         $instance = $response->instance;
+        $this->writeNameConversion($response->nameConvertedFrom, 'registered');
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Instance: {$instance->name}", [
             'ID' => $instance->id,
             'Status' => $instance->status,

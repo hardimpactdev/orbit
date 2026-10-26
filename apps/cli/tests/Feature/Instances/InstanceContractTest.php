@@ -64,6 +64,12 @@ describe('instance contract', function (): void {
         run_instance_contract('instances/instance-create/created', 'instance:create', [...$arguments, '--json' => true], 'instances/instance-create/created.json', 0);
     });
 
+    it('renders a name that the Gateway converted to default', function (): void {
+        $arguments = ['project' => '1', 'node' => '1', 'name' => 'main'];
+        run_instance_contract('instances/instance-create/name-converted', 'instance:create', $arguments, 'instances/instance-create/name-converted.human.txt', 0);
+        run_instance_contract('instances/instance-create/name-converted', 'instance:create', [...$arguments, '--json' => true], 'instances/instance-create/name-converted.json', 0);
+    });
+
     it('renders the candidate-required refusal', function (): void {
         $arguments = ['project' => '1', 'node' => '3', 'name' => 'release-name'];
         run_instance_contract('instances/instance-create/candidate-required', 'instance:create', $arguments, 'instances/instance-create/candidate-required.human.txt', 1);

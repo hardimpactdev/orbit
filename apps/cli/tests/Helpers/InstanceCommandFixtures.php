@@ -63,7 +63,7 @@ function instance_auto_deploy_payload(array $overrides = []): array
 }
 
 /** @return array<string, mixed> */
-function registration_payload(): array
+function registration_payload(?string $nameConvertedFrom = null): array
 {
     $instance = [
         ...instance_payload(),
@@ -90,13 +90,14 @@ function registration_payload(): array
         'status' => 'active',
         'source_count' => 1,
         'completed_count' => 1,
+        'name_converted_from' => $nameConvertedFrom,
     ];
 }
 
-function registration_mock_response(): MockResponse
+function registration_mock_response(?string $nameConvertedFrom = null): MockResponse
 {
     return MockResponse::make([
-        'data' => registration_payload(),
+        'data' => registration_payload($nameConvertedFrom),
         'meta' => ['request_id' => instance_request_id()],
     ]);
 }
@@ -123,6 +124,7 @@ function registration_json(): string
             'request_id' => instance_request_id(),
         ], $data[$key]);
     }
+    unset($data['name_converted_from']);
     $data['request_id'] = instance_request_id();
 
     return json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);

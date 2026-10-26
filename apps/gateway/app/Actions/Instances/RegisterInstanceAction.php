@@ -7,6 +7,7 @@ namespace App\Actions\Instances;
 use App\Data\Instances\RegisterInstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
+use App\Domain\Instances\DefaultInstanceName;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
 use App\Domain\Instances\InstanceDestinationGuard;
@@ -50,7 +51,7 @@ final readonly class RegisterInstanceAction
         private ?RunInstanceSetupAction $setup = null,
     ) {}
 
-    /** @return array{project: Project, primary: Instance, instances: list<Instance>} */
+    /** @return array{project: Project, primary: Instance, instances: list<Instance>, name_converted_from: string|null} */
     public function execute(Node $caller, RegisterInstanceData $data): array
     {
         $result = $this->performRegistration($caller, $data);
@@ -62,7 +63,7 @@ final readonly class RegisterInstanceAction
         return $result;
     }
 
-    /** @return array{project: Project, primary: Instance, instances: list<Instance>} */
+    /** @return array{project: Project, primary: Instance, instances: list<Instance>, name_converted_from: string|null} */
     private function performRegistration(Node $caller, RegisterInstanceData $data): array
     {
         $this->assertPlacement($caller);
@@ -157,6 +158,9 @@ final readonly class RegisterInstanceAction
                 'project' => $project->refresh(),
                 'primary' => $primary,
                 'instances' => $instances,
+                'name_converted_from' => $data->instanceName === null
+                    ? null
+                    : DefaultInstanceName::convertedFrom($project, $data->instanceName),
             ];
         });
     }
@@ -576,7 +580,9 @@ final readonly class RegisterInstanceAction
                 ->where('registration_original_path', $fact->path)
                 ->first();
 
-            $explicitName = $fact === $primary ? $data->instanceName : null;
+            $explicitName = $fact === $primary && $data->instanceName !== null
+                ? DefaultInstanceName::resolve($project, $data->instanceName)
+                : null;
             $name = $instance instanceof Instance && $instance->registration_request_id !== null
                 ? $this->retainedInstanceName($instance, $explicitName)
                 : $this->instanceName($project, $fact, $explicitName);
