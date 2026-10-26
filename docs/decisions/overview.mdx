@@ -41,7 +41,6 @@ Permanent ADRs made the current rule hard to find: amendments spread it across h
 | [0224](/decisions/0224-give-each-task-group-one-holder-and-one-sender) | Give each task group one workspace holder and one sender | In progress; approved on 2026-10-18; built after [0223](/decisions/0223-run-one-gate-from-handoff-to-merge) and before the Tasks extension move; supersedes the scope of backlog group 1758 |
 | [0226](/decisions/0226-split-private-dns-on-managed-peers) | Split private DNS on managed peers | In progress; approved on 2026-10-19; amends [0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router) |
 | [0229](/decisions/0229-let-an-orchestrator-drive-task-work-through-gateway-operations) | Let an orchestrator drive task work through Gateway operations | In progress; decided on 2026-10-22; amends [0209](/decisions/0209-run-long-operations-as-durable-queued-operations), [0218](/decisions/0218-take-long-commands-off-the-request-path), [0224](/decisions/0224-give-each-task-group-one-holder-and-one-sender), and [Node commands](/reference/node-agent#commands) |
-| [0235](/decisions/0235-verify-release-provenance-on-the-gateway) | Verify release provenance on the Gateway | In progress |
 
 
 ## Retired decisions
@@ -265,3 +264,4 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0231 | Publish a Process under an app Route path — superseded by per-service hostnames | [Routes: A service owns its hostname](/reference/routes#a-service-owns-its-hostname) |
 | 0232 | Pre-create managed PostgreSQL test databases | [Database servers: PostgreSQL workers exist before tests start](/reference/database-servers#postgresql-workers-exist-before-tests-start) |
 | 0233 | Publish Node Processes through public Routes | [Routes: Public Process Routes select an edge separately from the workload](/reference/routes#public-process-routes-select-an-edge-separately-from-the-workload) |
+| 0235 | Verify release provenance on the Gateway | [Update and recover a Gateway: Release provenance](/reference/gateway-recovery#release-provenance); [Update and recover a Gateway: One small verifier for one bundle shape](/reference/gateway-recovery#one-small-verifier-for-one-bundle-shape); [CLI binaries: Provenance from the workflow identity](/reference/cli-binaries#provenance-from-the-workflow-identity); [Orbit self-update: The CLI trusts the Gateway's provenance check](/reference/self-update#the-cli-trusts-the-gateways-provenance-check) |

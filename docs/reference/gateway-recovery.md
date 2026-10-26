@@ -1215,6 +1215,14 @@ Each of these needs its own decision:
 
 These reasons explain the design. Check them before you propose a change.
 
+### One small verifier for one bundle shape
+
+The Gateway is the fleet's trust anchor, so it alone proves where a release came from, and it does so before any Node sees the bytes. Asking GitHub's attestation API at runtime was rejected, because it needs an authenticated call. A signing key held by the workflow was rejected too, because it needs a secret and a rotation.
+
+No PHP Sigstore library exists in the locks, and a general one would carry far more code than the one bundle shape that `actions/attest-build-provenance` writes. So the verifier accepts only that shape, a Rekor v1 `dsse` entry with a signed entry timestamp, and refuses the rest. A format change then stops releases instead of weakening the check.
+
+The cost is a trust root to keep current and a verifier to teach a new format before the attest action changes it. Both changes reach the Gateway through a normal release, as long as they ship before the old format or keys stop.
+
 ### The Gateway pulls from GitHub
 
 The Gateway is private, so GitHub cannot reach it, and the GitHub App has [no webhooks](/reference/github-app#no-webhooks). A CI job that pushes to a deploy endpoint with a GitHub OIDC identity was rejected: it needs a new trusted path into the Gateway and new credential handling, and an earlier attempt stalled on exactly that.

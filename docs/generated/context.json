@@ -1241,24 +1241,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0235-verify-release-provenance-on-the-gateway.md",
-            "title": "ADR 0235: Verify release provenance on the Gateway",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/e2e",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Extension",
-                "Gateway",
-                "Node"
-            ],
-            "governing_adrs": [
-                "0235"
-            ]
-        },
-        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -1320,8 +1302,7 @@
                 "0223",
                 "0224",
                 "0226",
-                "0229",
-                "0235"
+                "0229"
             ]
         },
         {
