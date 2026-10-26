@@ -17,12 +17,13 @@ impl<'de> Deserialize<'de> for GitRead {
             github_token: Option<String>,
         }
         let input = Input::deserialize(deserializer)?;
+        // GitHub App installation tokens are `ghs_` followed by base64url segments joined by dots.
         if input.github_token.as_ref().is_some_and(|token| {
             token.is_empty()
                 || token.len() > 4096
                 || !token
                     .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || b"_-".contains(&byte))
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"_-.".contains(&byte))
         }) {
             return Err(serde::de::Error::custom("invalid GitHub read credential"));
         }
@@ -132,6 +133,14 @@ mod tests {
                 .expect("unsafe input accepted");
             assert!(!error.to_string().contains("secret"));
         }
+    }
+    #[test]
+    fn accepts_a_dotted_installation_token() {
+        let read: GitRead = serde_json::from_value(
+            serde_json::json!({"github_token":"ghs_aGVhZGVy.cGF5bG9hZA.c2ln-_"}),
+        )
+        .unwrap();
+        assert!(read.authenticated());
     }
     #[test]
     fn constructs_only_fixed_settings_and_keeps_token_out_of_arguments() {
