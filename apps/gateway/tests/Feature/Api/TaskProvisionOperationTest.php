@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
+use App\Actions\TaskVms\DeleteTaskVmAction;
 use App\Actions\TaskVms\DestroyEndedTaskVmsAction;
 use App\Actions\TaskVms\ParkIdleTaskVmsAction;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
@@ -107,7 +108,7 @@ function provision_operation_group(TaskGroupStatus $status = TaskGroupStatus::To
     return $group;
 }
 
-function provision_operation_fakes(bool $routeFails = false, ?string $startingCommit = null): void
+function provision_operation_fakes(bool $routeFails = false, ?string $startingCommit = null, ?Closure $afterSetup = null): void
 {
     mock(ManagedUserAccountResolver::class)->shouldReceive('resolve')->andReturn(new ManagedUserAccount('orbit', 'orbit', '/home/orbit'));
     mock(InstanceDestinationGuard::class)->shouldReceive('assertUnoccupied');
@@ -119,7 +120,7 @@ function provision_operation_fakes(bool $routeFails = false, ?string $startingCo
     $development = mock(DevelopmentInstanceProvisioner::class);
     $development->shouldReceive('reserve');
     $development->shouldReceive('prepare')->andReturnUsing(fn (Instance $instance): Instance => $instance);
-    $development->shouldReceive('complete')->andReturnUsing(function (Instance $instance) use ($routeFails): Instance {
+    $development->shouldReceive('complete')->andReturnUsing(function (Instance $instance) use ($routeFails, $afterSetup): Instance {
         if ($routeFails) {
             throw new ResourceOperationException('route.projection_failed', 'Route projection failed.');
         }
@@ -127,6 +128,7 @@ function provision_operation_fakes(bool $routeFails = false, ?string $startingCo
         $route->targets()->create(['instance_id' => $instance->id, 'position' => 1, 'weight' => 1]);
         $route->update(['status' => RouteStatus::Active]);
         $instance->update(['status' => InstanceState::Active]);
+        $afterSetup?->__invoke();
 
         return $instance;
     });
@@ -722,21 +724,41 @@ describe('optional provision worker', function (): void {
     ]);
 });
 
-it('rejects an expired staged enrollment before allocating a VM', function (): void {
+it('keeps provision usable when optional enrollment expires during capacity or setup waits', function (string $phase): void {
     $group = provision_operation_group();
+    TaskVmSettingsBuilder::bind();
+    if ($phase === 'setup') {
+        $group->project->update(['task_workspace_routed' => true]);
+        test_task_vm($group, $this->gatewayNode);
+        provision_operation_fakes(afterSetup: fn () => $this->travel(31)->minutes());
+    }
     $agents = new FakeAgentCommandRunner;
     app()->instance(AgentCommandRunner::class, $agents);
     $response = $this->postJson('/api/v1/task-groups/'.$group->id.'/provision', ['worker' => [
         'orchestrator_url' => 'wss://swamp.orbit', 'enrollment_token' => 'expired.'.str_repeat('d', 64),
     ]])->assertAccepted();
     $operation = Operation::query()->findOrFail($response->json('data.id'));
-    $this->travel(31)->minutes();
     app(OperationRunner::class)->run($operation->id);
-    expect($operation->refresh()->error_code)->toBe('tasks.worker_enrollment_expired');
-    expect($group->refresh()->status)->toBe(TaskGroupStatus::Failed);
+    if ($phase === 'capacity') {
+        expect($operation->refresh()->status)->toBe(OperationStatus::Waiting);
+        $this->travel(31)->minutes();
+        test_task_vm($group, $this->gatewayNode);
+        provision_operation_fakes();
+        app(OperationRunner::class)->read($operation->id);
+    }
+    expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded);
+    expect($operation->error_code)->toBeNull();
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Running);
     expect($agents->calls)->toBe([]);
-    expect(TaskVm::query()->count())->toBe(0);
-});
+    expect(TaskVm::query()->count())->toBe(1);
+    expect($group->taskable_id)->not->toBeNull();
+    expect(app(TaskWorkerEnrollment::class)->read($operation->input['worker']['enrollment_reference']))->toBeNull();
+    $agents->answer('swamp.start-worker', ['started' => true]);
+    $worker = worker_operation_start($group);
+    app(OperationRunner::class)->run($worker->id);
+    expect($worker->refresh()->status)->toBe(OperationStatus::Succeeded);
+    expect($agents->commands())->toBe(['swamp.start-worker']);
+})->with(['capacity', 'setup']);
 
 it('removes worker startup material when the workspace Route fails before worker startup', function (): void {
     $group = provision_operation_group();
@@ -763,7 +785,7 @@ function worker_operation_workspace(): array
         'name' => 'worker-vm', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
         'public_ssh_host' => '192.0.2.129', 'wireguard_ip' => '10.44.0.129', 'user' => 'orbit',
     ]);
-    $workspace = test_task_workspace($group, ['node_id' => $node->id]);
+    $workspace = test_task_workspace($group, ['node_id' => $node->id, 'branch' => 'task-'.$group->id, 'starting_commit' => str_repeat('a', 40)]);
     $vm = test_task_vm($group, $node);
     app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
     TaskVmSettingsBuilder::bind();
@@ -905,17 +927,85 @@ it('stops the worker before preservation can leave the VM alive', function (stri
     expect($group->fresh()->taskable_id)->not->toBeNull();
 })->with(['complete', 'workspace']);
 
-it('holds group ending when a live VM cannot confirm its worker stop', function (): void {
+it('powers off an unreachable worker VM so cancellation succeeds and deletion can proceed', function (): void {
     [$group, $vm] = worker_operation_workspace();
+    bind_task_node_reachability(unreachable: true);
     $vm->update(['worker_stop_required' => true]);
     $agents = (new FakeAgentCommandRunner)->answer('swamp.stop-worker', static fn (): array => throw new RuntimeException('unsafe diagnostics'));
     app()->instance(AgentCommandRunner::class, $agents);
     $provider = new RecordingTaskVmProvider;
     app()->instance(TaskVmProvider::class, $provider);
-    $this->postJson('/api/v1/task-groups/'.$group->id.'/cancel')->assertStatus(502)->assertJsonPath('error.code', 'tasks.worker_stop_failed')->assertDontSee('unsafe diagnostics');
-    expect($vm->fresh()->worker_stop_required)->toBeTrue();
-    expect($group->fresh()->status)->toBe(TaskGroupStatus::Running);
-    expect($provider->calls)->toBe(['observe']);
+    $this->postJson('/api/v1/task-groups/'.$group->id.'/cancel')->assertOk()->assertJsonPath('data.status', 'cancelled')->assertDontSee('unsafe diagnostics');
+    expect($vm->fresh()->worker_stop_required)->toBeFalse();
+    expect($vm->fresh()->state)->toBe(TaskVmState::Parked);
+    expect($provider->calls)->toBe(['observe', 'stop']);
+    app(DeleteTaskVmAction::class)->execute($vm);
+    expect($provider->calls)->toBe(['observe', 'stop', 'destroy']);
+    expect($group->fresh()->taskable_id)->toBeNull();
+});
+
+it('completes a settling group after powering off its unreachable worker VM', function (): void {
+    [$group, $vm] = worker_operation_workspace();
+    $group->update(['status' => TaskGroupStatus::WaitingForReview]);
+    $vm->update(['worker_stop_required' => true]);
+    app()->instance(AgentCommandRunner::class, (new FakeAgentCommandRunner)->answer('swamp.stop-worker', static fn (): array => throw new RuntimeException('unreachable')));
+    $provider = new RecordingTaskVmProvider;
+    app()->instance(TaskVmProvider::class, $provider);
+    Queue::fake([ResumeTaskVm::class]);
+
+    $this->postJson('/api/v1/task-groups/'.$group->id.'/complete')->assertOk()->assertJsonPath('data.status', 'completed');
+
+    expect($vm->fresh()->worker_stop_required)->toBeFalse();
+    expect($vm->fresh()->state)->toBe(TaskVmState::Parked);
+    expect($provider->calls)->toBe(['observe', 'stop']);
+});
+
+it('still deletes the VM when both agent stop and provider power-off fail', function (): void {
+    [$group, $vm] = worker_operation_workspace();
+    $group->update(['status' => TaskGroupStatus::Completed]);
+    $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
+    $commit = TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => str_repeat('c', 40), 'source' => TaskReviewedCommitSource::OrbitPush]);
+    $vm->update(['worker_stop_required' => true]);
+    app()->instance(AgentCommandRunner::class, (new FakeAgentCommandRunner)->answer('swamp.stop-worker', static fn (): array => throw new RuntimeException('unsafe agent diagnostics')));
+    $provider = new RecordingTaskVmProvider;
+    $provider->stopError = new RuntimeException('unsafe provider diagnostics');
+    $provider->onDestroy = function (TaskVm $deleting): void {
+        expect($deleting->state)->toBe(TaskVmState::Destroying);
+        expect($deleting->worker_stop_required)->toBeTrue();
+    };
+    app()->instance(TaskVmProvider::class, $provider);
+
+    app(DeleteTaskVmAction::class)->execute($vm);
+
+    expect($provider->calls)->toBe(['observe', 'stop', 'destroy']);
+    expect($vm->fresh()->worker_stop_required)->toBeFalse();
+    expect($vm->fresh()->state)->toBe(TaskVmState::Destroying);
+    expect($group->fresh()->taskable_id)->toBeNull();
+    expect($commit->fresh()->sha)->toBe(str_repeat('c', 40));
+});
+
+it('ends a failed provision after powering off a worker whose startup response was lost', function (): void {
+    $group = provision_operation_group();
+    $vm = test_task_vm($group, $this->gatewayNode);
+    provision_operation_fakes();
+    $agents = (new FakeAgentCommandRunner)
+        ->answer('swamp.start-worker', static fn (): array => throw new RuntimeException('lost startup response'))
+        ->answer('swamp.stop-worker', static fn (): array => throw new RuntimeException('unreachable'));
+    app()->instance(AgentCommandRunner::class, $agents);
+    $provider = new RecordingTaskVmProvider;
+    app()->instance(TaskVmProvider::class, $provider);
+    $response = $this->postJson('/api/v1/task-groups/'.$group->id.'/provision', ['worker' => [
+        'orchestrator_url' => 'wss://swamp.orbit', 'enrollment_token' => 'group.'.str_repeat('a', 64),
+    ]])->assertAccepted();
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+
+    app(OperationRunner::class)->run($operation->id);
+
+    expect($operation->refresh()->error_code)->toBe('tasks.worker_start_failed');
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Failed);
+    expect($vm->fresh()->state)->toBe(TaskVmState::Parked);
+    expect($vm->fresh()->worker_stop_required)->toBeFalse();
+    expect($provider->calls)->toBe(['observe', 'stop']);
 });
 
 it('accepts provider proof that an unreachable worker VM is stopped or absent', function (bool $absent): void {

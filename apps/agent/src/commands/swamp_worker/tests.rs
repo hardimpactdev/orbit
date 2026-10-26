@@ -192,6 +192,10 @@ fn generated_unit_passes_systemd_analyze_verify_when_available() {
         .output()
         .is_err()
     {
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "systemd-analyze must be installed in Linux CI"
+        );
         eprintln!("systemd-analyze is unavailable; unit verification skipped");
         return;
     }

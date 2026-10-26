@@ -37,6 +37,8 @@ final class RecordingTaskVmProvider implements TaskVmProvider
 
     public ?Throwable $startError = null;
 
+    public ?Throwable $stopError = null;
+
     /** @var (Closure(TaskVm): mixed)|null */
     public ?Closure $onCreate = null;
 
@@ -92,6 +94,9 @@ final class RecordingTaskVmProvider implements TaskVmProvider
     public function stop(TaskVm $vm): void
     {
         $this->record('stop', $vm);
+        if ($this->stopError instanceof Throwable) {
+            throw $this->stopError;
+        }
     }
 
     public function destroy(TaskVm $vm): void

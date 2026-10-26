@@ -131,7 +131,9 @@ Provision optionally enrolls a Swamp worker after workspace readiness, under the
 
 A separate keyed `tasks.worker` operation starts or replaces the worker on an open external group with an existing workspace. It resumes a parked VM and accepts fresh per-group enrollment without recreating the group. Optional provision enrollment remains an initial-start shortcut. Parking stays independent of worker enrollment; runtime credentials disappear at stop and the driver mints a fresh token for the next start. Fingerprints exclude enrollment secrets. Worker startup confirms process execution, and Swamp owns enrollment confirmation.
 
-Worker stop precedes group ending and workspace removal, including preservation paths that delay VM destruction. The VM keeps only a nonsecret cleanup marker so an uncertain start still requires a stop. A stop refusal holds the end or removal until the worker is confirmed stopped, or the VM is confirmed stopped or absent.
+Worker stop precedes group ending and workspace removal, including preservation paths that delay VM destruction. The VM keeps only a nonsecret cleanup marker so an uncertain start still requires a stop. When the agent cannot confirm stop and the provider observes a running VM, Orbit powers it off and marks it parked. Cancellation can end that unreachable group and retain its workspace for cleanup. Worker stop failure never blocks an attempt to delete the VM. If neither stop nor power-off succeeds, deletion takes priority over preserving unpublished work.
+
+Provision enrollment is optional even when its staged credential expires during capacity or setup waits. Provision continues without a worker; the driver mints a fresh token and uses `tasks.worker` afterwards. Expiry still fails a dedicated worker operation without ending its group.
 
 To stop a waiting provision, the orchestrator cancels the group with `tasks:cancel`.
 

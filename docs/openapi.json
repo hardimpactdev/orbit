@@ -28186,7 +28186,7 @@
           }
         ],
         "x-orbit-extension": "tasks",
-        "description": "Starts tasks.provision on the Gateway and returns HTTP 202 with the queued operation. Requires an external todo group. Waits for VM capacity and readiness, then returns instance_id, node_id, and starting_commit with the group running. Starts no subtask or check. Refuses tick groups with tasks.not_orchestrated, ended groups with tasks.group_closed, backlog with tasks.not_todo, and claimed groups with tasks.already_claimed (all HTTP 409). Another open group operation returns operation.target_busy. VM errors fail the operation and group. Cancel the group to stop a waiting provision. Supports Idempotency-Key. See /reference/tasks#provision-an-external-group.",
+        "description": "Starts tasks.provision on the Gateway and returns HTTP 202 with the queued operation. Requires an external todo group. Waits for VM capacity and readiness, then returns instance_id, node_id, and starting_commit with the group running. Starts no subtask or check. Refuses tick groups with tasks.not_orchestrated, ended groups with tasks.group_closed, backlog with tasks.not_todo, and claimed groups with tasks.already_claimed (all HTTP 409). Another open group operation returns operation.target_busy. VM errors fail the operation and group. Expired optional enrollment skips worker startup; provision continues, and the driver can use tasks.worker with a fresh token afterwards. No response, Activity entry, or operation record returns the enrollment token, but this tool takes it as an argument, so it reaches the caller transcript. Cancel the group to stop a waiting provision. Supports Idempotency-Key. See /reference/tasks#provision-an-external-group.",
         "requestBody": {
           "required": false,
           "content": {
@@ -29978,7 +29978,7 @@
           }
         ],
         "x-orbit-extension": "tasks",
-        "description": "Starts keyed tasks.worker on an open external group with an existing task VM workspace. Requires worker enrollment and Idempotency-Key. Resumes a parked VM and starts or replaces the official worker with fresh enrollment, without allocating a VM or changing group status. Replays do not restart the worker; token changes do not conflict. Success confirms process execution, not Swamp enrollment. See /reference/tasks#start-a-group-worker.",
+        "description": "Starts keyed tasks.worker on an open external group with an existing task VM workspace. Requires worker enrollment and Idempotency-Key. Resumes a parked VM and starts or replaces the official worker with fresh enrollment, without allocating a VM or changing group status. Replays do not restart the worker; token changes do not conflict. Success confirms process execution, not Swamp enrollment. No response, Activity entry, or operation record returns the enrollment token, but this tool takes it as an argument, so it reaches the caller transcript. See /reference/tasks#start-a-group-worker.",
         "requestBody": {
           "required": true,
           "content": {

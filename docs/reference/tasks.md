@@ -108,15 +108,15 @@ The provision API and generated MCP tool accept an optional `worker` object. Omi
 
 Orbit starts `swamp worker connect` as the VM's `orbit` account only after the workspace and its Route are ready. The worker uses that checkout as its working directory. The [base image](/reference/compute-drivers#swamp-worker) supplies the pinned binary and Orbit CA. The orchestrator owns token minting, expiry, revocation, and step placement. Enrollment alone is supported; an orchestrator that requires a separate server access token must expose a worker entry point that accepts enrollment without that extra credential.
 
-The Gateway stages the token encrypted in its cache outside operation records for at most 30 minutes while startup waits. `cache:clear` drops staged tokens. Provision checks that the staged credential still exists before allocating a VM. A missing or expired staged token fails provision with `tasks.worker_enrollment_expired`. Operation input keeps only the public worker settings and an opaque startup reference.
+The Gateway stages the token encrypted in its cache outside operation records for at most 30 minutes while startup waits. `cache:clear` drops staged tokens. If the token expires during capacity or setup waits, provision continues without a worker. The driver mints a fresh token and starts the worker with `tasks.worker` afterwards. A dedicated worker operation fails with `tasks.worker_enrollment_expired` without ending the group. Operation input keeps only the public worker settings and an opaque startup reference.
 
 API output, Activity, logs, queue jobs, operation steps, and results never contain the token. Idempotency fingerprints exclude the enrollment secret. Replays with a newly minted token return the same operation and do not replace its enrollment; use a new key for a new worker start.
 
-Systemd loads the secret from a mode-0600 startup file under `/run` into its runtime credential directory before starting the worker. Orbit then removes the startup file and the Gateway's staged copy. The running Swamp process retains the credential for reconnection; systemd removes its runtime copy when the service stops. No token is written to the image, checkout, unit text, command arguments, or persistent VM disk.
+Systemd loads the secret from a mode-0600 startup file under `/run` into its runtime credential directory before starting the worker. Orbit then removes the startup file and the Gateway's staged copy. The runtime credential at `%d/enrollment` stays readable to the `orbit` account, including code running in the VM, while the service runs. Its scope is one group. Swamp uses it for reconnection; systemd removes it when the service stops. No token is written to the image, checkout, unit text, command arguments, or persistent VM disk.
 
 The service reconnects across socket interruptions but does not restart after a process exit or VM reboot. Parking stays allowed and stops the worker with the VM. Use [start a group worker](#start-a-group-worker) with a fresh token after parking or process failure. Successful startup means systemd executed the process; it does not prove enrollment. The orchestrator confirms enrollment through Swamp before dispatching work.
 
-Orbit stops the worker and its children before ending its group or removing its workspace, ahead of head preservation, Project teardown, or VM deletion. A refused stop returns `tasks.worker_stop_failed` and leaves the group open and the workspace in place. A VM confirmed stopped or absent has no running worker. VM destruction remains the final cleanup boundary. Cancelled or failed startup removes its staged credential.
+Orbit stops the worker and its children before ending its group or removing its workspace, ahead of head preservation, Project teardown, or VM deletion. If the agent cannot confirm stop and the provider reports the VM running, Orbit powers it off and marks it parked. Cancellation ends that unreachable group and retains its workspace for cleanup. If power-off also fails, group ending returns `tasks.worker_stop_failed`; a deletion attempt still proceeds. VM deletion takes priority over unpublished work when the worker cannot be stopped. Cancelled or failed startup removes its staged credential.
 
 ##### Public provision identity
 
@@ -145,6 +145,8 @@ For example, this successful result names a starting commit on a divergent works
 ```
 
 The CLI follows the operation with the shared operation display. It accepts `--idempotency-key=KEY` and `--json`. The PHP SDK request accepts `idempotencyKey`, and the generated MCP tool `tasks-provision` accepts `Idempotency-Key`. A replay returns the same operation before claim validation and claims no second VM; see [Retry a start with a key](/reference/operations#retry-a-start-with-a-key).
+
+The MCP tools `tasks-provision` and `tasks-worker` take the enrollment token as an argument, so it reaches the caller transcript. Gateway redaction does not remove it from that transcript.
 
 To stop a waiting provision, use `tasks:cancel`. Group cancel and complete first cancel the group's open operation. Cancelling provision clears its claim reservation, so cleanup can remove what it created. Cancelling the operation alone does not end the group. Group cancellation keeps the existing rule for an unreachable Node without a possibly running worker: end the group, keep the workspace, and request removal assistance. A worker stop must be confirmed first.
 

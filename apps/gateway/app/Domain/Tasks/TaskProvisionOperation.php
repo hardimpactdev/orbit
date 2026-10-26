@@ -86,7 +86,6 @@ final readonly class TaskProvisionOperation implements OperationWaitingKind, Ope
 
                     return $this->leases->acquire($group, 'provision', 'operation:'.$run->operation()->id)->id;
                 }
-                $this->worker->requireEnrollment($run->operation());
                 if ($group->status !== TaskGroupStatus::Reserved) {
                     self::requireTodo($group);
                 }
@@ -151,7 +150,7 @@ final readonly class TaskProvisionOperation implements OperationWaitingKind, Ope
                 if (! $instance instanceof Instance) {
                     throw new LogicException('Provision has no workspace.');
                 }
-                $this->worker->start($operation, $instance);
+                $this->worker->start($operation, $instance, required: false);
                 $base = $run->remember('analysis_base', fn (): array => [
                     'base' => $this->analysis->initialAnalysisBase($instance),
                     'instance_id' => $instance->id,
