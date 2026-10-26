@@ -14,7 +14,6 @@ use std::{
     time::Duration,
 };
 
-const LIMIT: u64 = caddy::PEM_LIMIT;
 command_errors! {
     pub enum Error {
         Input {} => "caddy.certificate_input_invalid", "The certificate scope, filenames, service, or PEM input is invalid.";
@@ -128,7 +127,7 @@ impl Files {
             || meta.uid() != self.uid
             || meta.gid() != self.gid
             || meta.mode() & 0o7777 != 0o640
-            || meta.len() > LIMIT
+            || meta.len() > caddy::PEM_LIMIT
         {
             return Err(Error::Unsafe {});
         }
@@ -138,10 +137,10 @@ impl Files {
             .open(path)
             .map_err(|_| failed("read"))?;
         let mut bytes = Vec::new();
-        file.take(LIMIT + 1)
+        file.take(caddy::PEM_LIMIT + 1)
             .read_to_end(&mut bytes)
             .map_err(|_| failed("read"))?;
-        if bytes.len() as u64 > LIMIT {
+        if bytes.len() as u64 > caddy::PEM_LIMIT {
             return Err(Error::Unsafe {});
         }
         Ok(bytes)

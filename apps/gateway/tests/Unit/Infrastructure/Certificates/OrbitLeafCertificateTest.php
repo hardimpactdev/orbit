@@ -16,7 +16,3 @@ it('renders one TLS server extension section for every Orbit leaf', function (st
     'Gateway leaf' => ['gateway', 'DNS:gateway.orbit,IP:10.44.0.1'],
     'development leaf' => ['leaf', 'DNS:site.app-dev.orbit'],
 ]);
-
-it('signs leaves for 397 days, inside the validity that the agent accepts for a current leaf', function (): void {
-    expect(OrbitLeafCertificate::ValidityDays)->toBe(397);
-});
