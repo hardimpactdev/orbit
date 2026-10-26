@@ -453,6 +453,9 @@ describe('wake', function (): void {
 
             public function synchronized(int $groupId, Closure $operation, bool $wait = true): mixed
             {
+                if (in_array($groupId, $this->test->locked, true)) {
+                    return $operation();
+                }
                 $this->test->locked[] = $groupId;
                 try {
                     return $operation();
