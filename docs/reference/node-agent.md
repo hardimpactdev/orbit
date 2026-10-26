@@ -451,7 +451,9 @@ Each Gateway release pins one agent build: the delivery in its commit's [release
 
 The Gateway reads it from `apps/agent/delivery/manifest.json` in its checkout, or from the path in `ORBIT_AGENT_DELIVERY`. Git does not track the file. The Gateway picks a Node's artifact by its platform and recorded architecture. It uses the file beside the manifest when it exists, and otherwise downloads the URL once into `ORBIT_HOME/agent-artifacts/<sha256>`. It checks the SHA-256 before every use. An existing local artifact with the wrong digest refuses; only an absent local file uses the published URL. `apps/agent/scripts/build-delivery` writes the same layout for CI and for a topology.
 
-[Preparing a Gateway release](/reference/gateway-recovery#prepare-a-release) takes the manifest from the commit's published release, in PHP and without the agent. It checks every digest against the release's `SHA256SUMS` before any agent command. It then writes the manifest into the release and installs the pin on the Gateway's own Node; for a release the Gateway already holds, that also comes before any agent command. Preparation, including adoption, refuses without it. The release's private configuration cache selects this checkout's manifest, so a shared environment override cannot keep the previous release's pin. Repeating preparation verifies the existing manifest.
+[Preparing a Gateway release](/reference/gateway-recovery#prepare-a-release) takes the manifest from the commit's published release, in PHP and without the agent. It first verifies the release's [provenance](/reference/gateway-recovery#release-provenance): a Sigstore bundle that proves the release workflow on `main` signed the manifest and `SHA256SUMS`. It then checks every digest against `SHA256SUMS` before any agent command.
+
+Prepare then writes the manifest into the release and installs the pin on the Gateway's own Node; for a release the Gateway already holds, that also comes before any agent command. Preparation, including adoption, refuses without it. The release's private configuration cache selects this checkout's manifest, so a shared environment override cannot keep the previous release's pin. Repeating preparation verifies the existing manifest.
 
 The manifest also supplies the Linux pins in the [recipe identity](/reference/compute-drivers#recipe-identity). The recipe source carries no separate agent version or hashes.
 
@@ -571,7 +573,7 @@ The agent ships in the one public release that each green `main` commit gets, be
 | `orbit-agent-macos-x86_64` | Command binary for Intel Macs |
 | `manifest.json` | The delivery manifest, with each binary's URL in this release |
 
-The release's `SHA256SUMS` lists the agent binaries with the CLI binaries. A Gateway release of a commit waits for that commit's release, because [prepare](/reference/gateway-recovery#prepare-a-release) takes the agent from it.
+The release's `SHA256SUMS` lists the agent binaries with the CLI binaries, and its `provenance.sigstore.json` [signs](/reference/cli-binaries#provenance) the manifest and `SHA256SUMS` with the other files. A Gateway release of a commit waits for that commit's release, because [prepare](/reference/gateway-recovery#prepare-a-release) takes the agent from it.
 
 ## Limits
 
@@ -610,7 +612,7 @@ The agent runs on every Node, so memory matters. A Rust agent uses about 5 MB. P
 
 A workflow artifact needs a GitHub login and expires, so the commit's release publishes the tested artifact as release assets with permanent URLs, beside the CLI. One release per commit needs no separate tag, token, or App. Building on each Node would put a Rust toolchain on production hosts. Resolving the latest release at install time would let an unreviewed build reach Nodes. So each Gateway release pins the exact digests of its own commit's delivery, and every reader takes the pin from it.
 
-The Gateway fetches and installs that delivery itself in PHP, so installing the agent never needs the agent.
+The Gateway fetches and installs that delivery itself in PHP, so installing the agent never needs the agent. It verifies the release's provenance first, so only files that the release workflow on `main` signed reach a Node.
 
 ### The view in a file cache
 

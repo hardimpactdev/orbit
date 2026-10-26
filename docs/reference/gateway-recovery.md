@@ -5,7 +5,7 @@ covers:
   - apps/gateway/app/{Domain,Infrastructure}/Releases/**
   - apps/gateway/config/{app,logging,retention}.php
   - apps/gateway/app/Infrastructure/Logging/**
-  - apps/gateway/{app/Domain/Gateway/GatewayCacheStore.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
+  - apps/gateway/{app/Domain/Gateway/GatewayCacheStore.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,resources/sigstore/trusted_root.json}
   - apps/gateway/app/Infrastructure/Gateway/GatewayCheckoutAccessConverger.php
   - apps/gateway/app/**/GatewayReleases/**
   - apps/gateway/app/**/*GatewayRelease*.php
@@ -118,9 +118,10 @@ Name the commit by its hex SHA, 7 to 40 characters. Branch names, tags, and othe
 Prepare first takes the commit's agent, in PHP and before any agent command, so a commit without a release refuses before anything changes:
 
 1. It finds the commit's [published release](/reference/cli-binaries#published-releases). `git ls-remote` lists the `cli-v*` tags of `ORBIT_CLI_RELEASE_REPOSITORY`. The tag that points at the commit names the release, which also resolves a short SHA.
-2. It downloads `manifest.json`, `SHA256SUMS`, and the agent binary for the Gateway's platform, without authentication. It checks every digest, and the binary waits in `ORBIT_HOME/agent-artifacts`.
+2. It downloads `manifest.json`, `SHA256SUMS`, and `provenance.sigstore.json` without authentication, and [verifies the provenance](#release-provenance) of the first two.
+3. It checks the manifest against `SHA256SUMS`, then downloads the agent binary for the Gateway's platform and checks its digest. The binary waits in `ORBIT_HOME/agent-artifacts`.
 
-A commit without a release yet refuses here with `gateway.release_agent_delivery_unavailable`, before anything changes. An automatic release tries it again 10 minutes later, as for any [retryable failure](#what-a-tick-does).
+A commit without a release yet refuses here with `gateway.release_agent_delivery_unavailable`, before anything changes. An automatic release tries it again 10 minutes later, as for any [retryable failure](#what-a-tick-does). A release without a valid provenance bundle refuses with `gateway.release_provenance_invalid`, also before anything changes. A published release never changes, so that failure is final for the commit.
 
 Prepare then fetches the repository's branches through the [GitHub App](/reference/github-app) when the commit is not present yet, and fetches a full SHA directly when no branch holds it any more. Then it:
 
@@ -155,6 +156,8 @@ php /home/orbit/releases/<id>/apps/gateway/artisan gateway:release:deploy <SHA>
 
 The second command fills in the release's manifest and installs its agent before any agent command, then deploys as usual.
 
+A Gateway whose current release predates [release provenance](#release-provenance) needs no hand step. Its prepare reads only `manifest.json` and `SHA256SUMS`, and its CLI release catalog ignores an asset it does not expect, so the new bundle changes nothing for it. It deploys the first commit with the verifier as before. From then on, the running code verifies each newer release.
+
 Prepare refuses before it fetches or writes when the releases directory has less free space than `ORBIT_GATEWAY_RELEASE_MIN_FREE_MB`, 1024 MiB by default. Each release has its own `vendor/` directories. Releases share the Git objects in `shared/orbit.git`, so a release costs about the size of its source and its two `vendor/` directories, about 115 MB without development packages.
 
 The command prints one JSON object. Success exits 0 with `release`, `sha`, `path`, `reused`, and `duration_ms`. A refused commit exits 2. Every other failure exits 1 with `error_code`, `step`, and `message`.
@@ -177,7 +180,67 @@ The command prints one JSON object. Success exits 0 with `release`, `sha`, `path
 | `gateway.release_web_directory_missing`, `gateway.release_web_install_failed` | The web directory is missing, or the build cannot be written or given to the `caddy` group. The commit is tried again later. |
 | `gateway.release_agent_delivery_unavailable` | No published release holds the commit yet, or its agent cannot be downloaded or does not match its digest. Nothing changed. The commit is tried again later. |
 | `gateway.release_agent_delivery_invalid` | The release's manifest does not match its files or `SHA256SUMS`, or the release directory already holds another manifest. |
+| `gateway.release_provenance_invalid` | The release has no `provenance.sigstore.json`, or the bundle does not [verify](#release-provenance). Nothing changed. The commit is marked failed and is not tried again automatically. |
 | `gateway.release_agent_install_failed` | The release's agent could not be installed on the Gateway's own Node. The message names the installer's error code. |
+
+#### Release provenance
+
+CI signs each release with the workflow's own identity ([CLI binaries: Provenance](/reference/cli-binaries#provenance)). The Gateway checks that proof in two places. Prepare checks it before it installs a release's agent. The [desired fleet state](/reference/self-update#how-the-gateway-resolves-it) checks it before it names a CLI digest. Both use one step. It downloads `provenance.sigstore.json` from the release without authentication. It then verifies the bundle offline, with PHP's OpenSSL extension and no call to GitHub or Sigstore.
+
+##### What the Gateway checks
+
+The bundle must be a Sigstore bundle v0.3 with one certificate, one DSSE envelope with one signature, and one transparency log entry. The log entry must pass these checks:
+
+1. It is a Rekor v1 `dsse` 0.0.1 entry.
+2. Its log ID names an ECDSA P-256 Rekor key of the trust root. The key is valid at the entry's integrated time.
+3. The signed entry timestamp verifies with that key. It covers the entry's body, integrated time, log ID, and log index.
+4. The RFC 6962 inclusion proof leads from the body to the proof's root hash.
+5. The checkpoint holds the same tree size and root hash. Its signature verifies with the same key.
+6. The body records the SHA-256 of the envelope payload, the envelope signature, and the bundle certificate.
+
+The certificate and the statement must pass these checks:
+
+1. A Fulcio CA of the trust root signed the certificate.
+2. The integrated time lies inside the CA's validity and inside every certificate of its chain.
+3. The integrated time also lies inside the certificate's own validity, which Fulcio sets to 10 minutes.
+4. The certificate SAN is exactly `https://github.com/<owner>/<repo>/.github/workflows/orbit-cli-release.yml@refs/heads/main`. The repository is the one in `ORBIT_CLI_RELEASE_REPOSITORY`.
+5. Its OIDC issuer extension, OID `1.3.6.1.4.1.57264.1.8`, is exactly `https://token.actions.githubusercontent.com`.
+6. The DSSE signature over the payload verifies with the certificate key.
+7. The payload is an in-toto statement v1 with SLSA provenance v1.
+8. The statement names `SHA256SUMS` with the SHA-256 of the bytes the Gateway downloaded. For prepare, it also names `manifest.json` that way.
+
+The binaries chain through those two files as before. A bundle that fails any check refuses. So does a Rekor v2 entry, an entry without a signed entry timestamp, or a bundle with only RFC 3161 timestamps. A missing bundle refuses too. A bundle that cannot be downloaded because of a network or server error waits, as a missing release does.
+
+##### Trust root
+
+The trust root is `apps/gateway/resources/sigstore/trusted_root.json`. It is the Sigstore public-good `trusted_root.json` from Sigstore's TUF repository, `https://tuf-repo-cdn.sigstore.dev`. It was taken on 2026-10-26 as the first line of `gh attestation trusted-root` (GitHub CLI 2.89.0), which verifies it through TUF. The verifier uses only its Fulcio CAs and its ECDSA Rekor v1 log. `ORBIT_CLI_RELEASE_TRUSTED_ROOT` names another file. Leave it unset except during the recovery below.
+
+To refresh the trust root, run this command and merge the result:
+
+```bash
+gh attestation trusted-root | head -n 1 | jq . > apps/gateway/resources/sigstore/trusted_root.json
+```
+
+##### Failures and recovery
+
+| Situation | What happens | Recovery |
+| --- | --- | --- |
+| A release has no bundle, or a bundle that does not verify | Prepare refuses with `gateway.release_provenance_invalid`. The desired fleet state reports `release_unverified` | None for that commit, because its release never changes. Deploy a later commit |
+| A commit from before release provenance | Its release has no bundle, so a deploy of it refuses | [Roll back](#roll-back) to a retained release instead. Rollback prepares nothing and needs no network |
+| Sigstore adds a new Fulcio CA or Rekor key | Sigstore publishes new keys in its TUF root before it uses them | Refresh the trust root and release it while the old keys still sign |
+| A release is signed with a key that the trust root lacks | Prepare refuses every new release. The desired fleet state stays unavailable | Override the trust root once, as described below |
+| The attest action signs with Rekor v2 or with RFC 3161 timestamps only | Every new release refuses | Revert the action's pin change, as described below |
+
+To override the trust root once:
+
+1. On a trusted machine, take the new root with the refresh command, and copy the file to `ORBIT_HOME` on the Gateway.
+2. Set `ORBIT_CLI_RELEASE_TRUSTED_ROOT` to that file in the shared env file, and run [`gateway:release:configure`](#apply-an-env-change).
+3. Deploy the commit that refreshes the committed trust root.
+4. Remove the setting, and run `gateway:release:configure` again.
+
+The attest action is pinned by commit SHA, so its bundle format changes only when its pin changes. When a new pin signs in a format the verifier refuses, revert the pin. Teach the verifier the new format first and release that change. Change the pin after.
+
+Rolling back to a release from before provenance runs code without the verifier. Its later deploys check only `SHA256SUMS` until the Gateway deploys a release with the verifier again.
 
 #### Web build
 
