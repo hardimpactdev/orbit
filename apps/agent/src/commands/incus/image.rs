@@ -180,21 +180,29 @@ fn query(
     args.extend(["--", &path]);
     read(host, "query", &args)
 }
+pub(super) fn prepare_metadata(
+    host: &mut impl Host,
+    project: &str,
+    name: &str,
+) -> Result<(), Error> {
+    let path = format!("/1.0/instances/{name}/metadata");
+    let mut value: Value = serde_json::from_str(&query(host, project, "GET", &path, None)?)
+        .map_err(|_| invalid_output("metadata", "the metadata is not complete JSON"))?;
+    let templates = value
+        .get_mut("templates")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| invalid_output("metadata", "the image metadata has no templates"))?;
+    templates.retain(|path, _| !path.starts_with("/var/lib/cloud/seed/"));
+    query(host, project, "PUT", &path, Some(&value.to_string()))?;
+    Ok(())
+}
 fn change(host: &mut impl Host, input: &Input) -> Result<Changed, Error> {
     validate(input)?;
     let project = &input.project;
     let mut fingerprint = None;
     match &input.operation {
         Operation::PrepareMetadata { name } => {
-            let path = format!("/1.0/instances/{name}/metadata");
-            let mut value: Value = serde_json::from_str(&query(host, project, "GET", &path, None)?)
-                .map_err(|_| invalid_output("metadata", "the metadata is not complete JSON"))?;
-            let templates = value
-                .get_mut("templates")
-                .and_then(Value::as_object_mut)
-                .ok_or_else(|| invalid_output("metadata", "the image metadata has no templates"))?;
-            templates.retain(|path, _| !path.starts_with("/var/lib/cloud/seed/"));
-            query(host, project, "PUT", &path, Some(&value.to_string()))?;
+            prepare_metadata(host, project, name)?;
         }
         Operation::Publish {
             name,

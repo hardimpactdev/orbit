@@ -2615,20 +2615,6 @@
       ]
     },
     {
-      "name": "image.prepare-incus",
-      "summary": "Order the image's cloud-init after the Incus agent before publication.",
-      "mutates": true,
-      "timeout_seconds": 30,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "task_vm.image_identity_present",
-        "task_vm.image_clean_failed"
-      ]
-    },
-    {
       "name": "incus.instance-images",
       "summary": "Read the original image fingerprint of every instance in a project.",
       "mutates": false,

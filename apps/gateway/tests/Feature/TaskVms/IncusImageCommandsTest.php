@@ -34,7 +34,7 @@ it('sends builder preparation, publication, and alias intent through the selecte
     expect($image->instances($host, $node))->toBe(['builder' => $pin]);
 
     expect($guests->installs[0]->name)->toBe('builder');
-    expect(array_column($guests->calls, 'command'))->toBe(['image.owner', 'image.prepare-incus']);
+    expect(array_column($guests->calls, 'command'))->toBe(['image.owner']);
     expect($agents->calls[0])->toBe(['node' => 'host', 'command' => 'incus.image', 'input' => ['project' => $host->project, 'operation' => ['kind' => 'prepare_metadata', 'name' => 'builder']]]);
     expect($agents->calls[1]['input']['operation'])->toEqual(['kind' => 'publish', 'name' => 'builder', 'alias' => 'owned-build', 'properties' => (object) ['orbit.profile' => 'base']]);
     expect($agents->calls[2]['input']['operation'])->toBe(['kind' => 'promote', 'alias' => $host->imageAlias, 'fingerprint' => $pin]);

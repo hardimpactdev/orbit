@@ -254,24 +254,3 @@ fn refuses_to_confirm_when_incus_identity_reappears_after_services_stop() {
         matches!(clean(&fixture.root, &mut host), Err(Error::Failed { stage, .. }) if stage == "verify")
     );
 }
-
-#[test]
-fn prepares_cloud_init_order_atomically_and_repeats() {
-    use std::os::unix::fs::PermissionsExt;
-    let fixture = Fixture::new();
-    for _ in 0..2 {
-        assert!(prepare_incus(&fixture.root).unwrap().ready);
-        let path = at(&fixture.root, INCUS_DROP_IN);
-        assert_eq!(fs::read(&path).unwrap(), INCUS_ORDER);
-        assert_eq!(
-            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
-            0o644
-        );
-        assert_eq!(entries(path.parent().unwrap()).unwrap().len(), 1);
-    }
-    let blocked = Fixture::new();
-    blocked.file("/etc/systemd/system/cloud-init-main.service.d");
-    assert!(
-        matches!(prepare_incus(&blocked.root),Err(Error::Failed { stage, .. }) if stage=="cloud-init drop-in")
-    );
-}
