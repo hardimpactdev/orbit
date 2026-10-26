@@ -12,15 +12,12 @@ use App\Domain\Metrics\MetricsReconcileComponent;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Firewall\UfwRuleOwnership;
+use App\Infrastructure\Metrics\AgentMetricsExporterRuntime;
+use App\Infrastructure\Metrics\MetricsExporterCommands;
 use App\Infrastructure\Metrics\MetricsExporterRuntime;
-use App\Infrastructure\Metrics\MetricsExporterSshExecutor;
 use App\Infrastructure\Metrics\MetricsExporterState;
 use App\Infrastructure\Metrics\NativeMetricsExporterLifecycle;
 use App\Infrastructure\Metrics\NativeMetricsExporterProjection;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use App\Models\NodeRole;
 
@@ -58,10 +55,8 @@ it('returns stable targets from explicit defaults and prospective roles', functi
     $preferences->put($disabled->id, ExporterPreference::Disabled);
     $preferences->put($roleless->id, ExporterPreference::Enabled);
     $lifecycle = new NativeMetricsExporterLifecycle(
-        executor: new MetricsExporterSshExecutor(
-            ssh: app(SshExecutor::class),
-            keys: app(SshKeyProvider::class),
-            knownHosts: app(KnownHostsStore::class),
+        executor: new AgentMetricsExporterRuntime(
+            commands: app(MetricsExporterCommands::class),
         ),
         projection: new NativeMetricsExporterProjection(new ExporterSelector, $preferences),
         degradations: app(ExporterDegradationRepository::class),
@@ -92,10 +87,8 @@ it('does not project a selected node without managed identity', function (): voi
             'status' => LifecycleStatus::Active,
         ]);
     $lifecycle = new NativeMetricsExporterLifecycle(
-        executor: new MetricsExporterSshExecutor(
-            ssh: app(SshExecutor::class),
-            keys: app(SshKeyProvider::class),
-            knownHosts: app(KnownHostsStore::class),
+        executor: new AgentMetricsExporterRuntime(
+            commands: app(MetricsExporterCommands::class),
         ),
         projection: new NativeMetricsExporterProjection(
             new ExporterSelector,
@@ -122,10 +115,8 @@ it('fails closed with a bounded error for an eligible exporter with an invalid a
         'status' => LifecycleStatus::Active,
     ]);
     $lifecycle = new NativeMetricsExporterLifecycle(
-        executor: new MetricsExporterSshExecutor(
-            ssh: app(SshExecutor::class),
-            keys: app(SshKeyProvider::class),
-            knownHosts: app(KnownHostsStore::class),
+        executor: new AgentMetricsExporterRuntime(
+            commands: app(MetricsExporterCommands::class),
         ),
         projection: new NativeMetricsExporterProjection(
             new ExporterSelector,
@@ -239,7 +230,7 @@ it('reports exporter rollback failures with the node whose state could not be re
 
         public function snapshot(Node $node, Node $metricsNode): MetricsExporterState
         {
-            return new MetricsExporterState(null, false, UfwRuleOwnership::Missing);
+            return new MetricsExporterState(null, false, null);
         }
 
         public function converge(Node $node, Node $metricsNode): void
@@ -482,7 +473,7 @@ final class MetricsExporterFleetRuntimeFake implements MetricsExporterRuntime
     {
         $this->events[] = "snapshot:{$node->name}";
 
-        return new MetricsExporterState(null, false, UfwRuleOwnership::Missing);
+        return new MetricsExporterState(null, false, null);
     }
 
     public function converge(Node $node, Node $metricsNode): void
@@ -536,7 +527,7 @@ final class MetricsExporterDegradingRuntimeFake implements MetricsExporterRuntim
 
         $this->events[] = "snapshot:{$node->name}";
 
-        return new MetricsExporterState(null, false, UfwRuleOwnership::Missing);
+        return new MetricsExporterState(null, false, null);
     }
 
     public function converge(Node $node, Node $metricsNode): void

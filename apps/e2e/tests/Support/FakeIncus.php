@@ -250,6 +250,13 @@ final class FakeIncus
         }
         $answer = $this->responder === null ? null : ($this->responder)($instance, $argv, $stdin);
 
+        if ($answer === null && $argv === ['dpkg', '--print-architecture']) {
+            return Process::result("amd64\n");
+        }
+        if ($answer === null && ($argv[2] ?? null) === 'recipe.install-javascript') {
+            return Process::result('{"ok":true,"data":{"changed":false,"retired":[]}}');
+        }
+
         return $answer === null ? Process::result() : Process::result($answer[0], $answer[1], $answer[2]);
     }
 

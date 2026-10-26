@@ -28,7 +28,7 @@ function renderingArtisan(): string
         foreach ($roles as $role) {
             $programs[] = ['name' => $role.'-prerequisites', 'arguments' => ['sudo', 'bash', '-seu'], 'input' => $role];
         }
-        echo json_encode(['programs' => array_map(static fn (array $p): array => $p + ['fingerprint' => hash('sha256', json_encode(['arguments' => $p['arguments'], 'input' => $p['input']], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE))], $programs)]), "\n";
+        echo json_encode(['agent' => ['path' => dirname(__DIR__, 2).'/apps/agent/delivery/orbit-agent', 'sha256' => str_repeat('a', 64)], 'programs' => array_map(static fn (array $p): array => $p + ['fingerprint' => hash('sha256', json_encode(['arguments' => $p['arguments'], 'input' => $p['input']], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE))], $programs)]), "\n";
         PHP;
 }
 
@@ -45,18 +45,19 @@ describe('TopologyNodePrograms', function () {
 
     it('renders the Gateway purpose roles for convergence without the SSH bootstrap program', function (): void {
         $root = topologyNodeProgramsRoot(renderingArtisan());
-        $programs = new TopologyNodePrograms($root)->for(TopologyRecipe::fromOption(null)->node('gateway'));
-        $rendered = json_decode((string) file_get_contents($root.'/rendered.json'), true, 8, JSON_THROW_ON_ERROR);
+        $rendered = new TopologyNodePrograms($root)->for(TopologyRecipe::fromOption(null)->node('gateway'), 'aarch64');
+        $call = json_decode((string) file_get_contents($root.'/rendered.json'), true, 8, JSON_THROW_ON_ERROR);
 
-        expect($rendered['argv'])->toBe(['orbit:node-programs', 'gateway', 'vpn', '--json', '--no-interaction'])
-            ->and(array_column($programs, 'name'))->toBe(['gateway-prerequisites', 'vpn-prerequisites'])
-            ->and(array_unique(array_column($programs, 'user')))->toBe(['orbit']);
+        expect($call['argv'])->toBe(['orbit:node-programs', 'gateway', 'vpn', '--architecture=aarch64', '--json', '--no-interaction'])
+            ->and(array_column($rendered['programs'], 'name'))->toBe(['gateway-prerequisites', 'vpn-prerequisites'])
+            ->and(array_unique(array_column($rendered['programs'], 'user')))->toBe(['orbit'])
+            ->and($rendered['agent'])->toBe(['path' => '/home/orbit/orbit/apps/agent/delivery/orbit-agent', 'sha256' => str_repeat('a', 64)]);
     });
 
     it('keeps the SSH bootstrap program for a workload Node', function (): void {
         $programs = new TopologyNodePrograms(topologyNodeProgramsRoot(renderingArtisan()))->for(TopologyRecipe::fromOption('app-prod+ingress')->node('app-prod'));
 
-        expect(array_column($programs, 'name'))->toBe(['bootstrap', 'app-prod-prerequisites', 'ingress-prerequisites']);
+        expect(array_column($programs['programs'], 'name'))->toBe(['bootstrap', 'app-prod-prerequisites', 'ingress-prerequisites']);
     });
 
     it('renders with a throwaway Orbit home and SSH key and none of the harness environment', function () {
@@ -64,7 +65,7 @@ describe('TopologyNodePrograms', function () {
         new TopologyNodePrograms($root)->for(TopologyRecipe::fromOption(null)->node('app-prod'));
         $rendered = json_decode((string) file_get_contents($root.'/rendered.json'), true, 8, JSON_THROW_ON_ERROR);
 
-        expect($rendered['argv'])->toBe(['orbit:node-programs', 'app-prod', '--json', '--no-interaction'])
+        expect($rendered['argv'])->toBe(['orbit:node-programs', 'app-prod', '--architecture=x86_64', '--json', '--no-interaction'])
             ->and($rendered['orbit_home'])->toBe($rendered['home'])
             ->and($rendered['orbit_home'])->toStartWith(sys_get_temp_dir().'/orbit-e2e-programs-')
             ->and($rendered['key'])->toBe(TopologyNodePrograms::PLACEHOLDER_KEY."\n")
@@ -79,9 +80,11 @@ describe('TopologyNodePrograms', function () {
     })->with([
         'command failure' => ["<?php fwrite(STDERR, 'Unknown role [app-dev].'); exit(1);", 'orbit:node-programs app-dev failed: Unknown role [app-dev].'],
         'invalid JSON' => ['<?php echo "not json";', 'returned invalid JSON'],
-        'no programs' => ['<?php echo json_encode(["programs" => []]);', 'returned no programs'],
-        'bad name' => ['<?php echo json_encode(["programs" => [["name" => "Bad Name", "arguments" => ["true"], "input" => null]]]);', 'returned an invalid program'],
-        'a fingerprint in another format' => ['<?php echo json_encode(["programs" => [["name" => "ok", "arguments" => ["true"], "input" => null, "fingerprint" => hash("sha256", "other")]]]);', 'fingerprints [ok] differently from the harness'],
-        'extra key' => ['<?php echo json_encode(["programs" => [["name" => "ok", "arguments" => ["true"], "input" => null, "protected" => true]]]);', 'returned an invalid program'],
+        'no agent' => ['<?php echo json_encode(["programs" => []]);', 'returned no agent inside the worktree'],
+        'an agent outside the worktree' => ['<?php echo json_encode(["agent" => ["path" => "/usr/bin/orbit-agent", "sha256" => str_repeat("a", 64)], "programs" => []]);', 'returned no agent inside the worktree'],
+        'no programs' => ['<?php echo json_encode(["agent" => ["path" => dirname(__DIR__, 2)."/a", "sha256" => str_repeat("a", 64)], "programs" => []]);', 'returned no programs'],
+        'bad name' => ['<?php echo json_encode(["agent" => ["path" => dirname(__DIR__, 2)."/a", "sha256" => str_repeat("a", 64)], "programs" => [["name" => "Bad Name", "arguments" => ["true"], "input" => null]]]);', 'returned an invalid program'],
+        'a fingerprint in another format' => ['<?php echo json_encode(["agent" => ["path" => dirname(__DIR__, 2)."/a", "sha256" => str_repeat("a", 64)], "programs" => [["name" => "ok", "arguments" => ["true"], "input" => null, "fingerprint" => hash("sha256", "other")]]]);', 'fingerprints [ok] differently from the harness'],
+        'extra key' => ['<?php echo json_encode(["agent" => ["path" => dirname(__DIR__, 2)."/a", "sha256" => str_repeat("a", 64)], "programs" => [["name" => "ok", "arguments" => ["true"], "input" => null, "protected" => true]]]);', 'returned an invalid program'],
     ]);
 });

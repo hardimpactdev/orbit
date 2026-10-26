@@ -9,8 +9,6 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleBaseline;
 use App\Domain\Nodes\RoleName;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 use App\Models\NodeRole;
 
@@ -22,8 +20,7 @@ use App\Models\NodeRole;
 final readonly class IngressRoleBaseline implements RoleBaseline
 {
     public function __construct(
-        private NodeRolePrerequisiteCommandFactory $commands,
-        private DevelopmentSshExecutor $ssh,
+        private RolePrerequisites $prerequisites,
         private AppDevCaddyManager $caddy,
         private ManagedUserAccountResolver $accounts,
         private NodeRoleFirewallManager $firewall,
@@ -32,17 +29,7 @@ final readonly class IngressRoleBaseline implements RoleBaseline
     public function converge(Node $node, NodeRole $assignment): void
     {
         $account = $this->accounts->resolve($node);
-        $caddyPackage = $this->commands->caddyPackage($node, RoleName::Ingress);
-        if ($caddyPackage instanceof RemoteCommand) {
-            $this->ssh->execute($node, $caddyPackage, 'caddy-package-source', 'ingress.prerequisite_failed', failureLabel: CaddyRoleFailure::sshLabel(RoleName::Ingress));
-        }
-        $this->ssh->execute(
-            $node,
-            $this->commands->make($node, RoleName::Ingress, $account),
-            'role-prerequisites',
-            'ingress.prerequisite_failed',
-            failureLabel: CaddyRoleFailure::sshLabel(RoleName::Ingress),
-        );
+        $this->prerequisites->converge($node, RoleName::Ingress, $account, 'ingress.prerequisite_failed', CaddyRoleFailure::sshLabel(RoleName::Ingress));
         $this->caddy->converge($node, RoleName::Ingress);
     }
 

@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { mergeOperation, type Operation, type OperationStep } from "../api/operations";
-import { LIVE_READ_SECONDS, OperationFollow, operationChannel } from "./operation";
+import {
+    addLine,
+    LIVE_LINES,
+    LIVE_READ_SECONDS,
+    OperationFollow,
+    type OperationOutput,
+    operationChannel,
+} from "./operation";
 import type { RealtimeSocket } from "./socket";
 
 const step = (
@@ -144,4 +151,43 @@ it("reads on its own schedule when no event arrives: every 15 seconds live, ever
     await vi.advanceTimersByTimeAsync(4000);
     expect(reads).toHaveLength(2);
     polling.stop();
+});
+
+it("hands each live output line of the channel to onOutput and keeps the newest lines per step", async () => {
+    const { socket, handlers } = fakeSocket();
+    const outputs: OperationOutput[] = [];
+    const follow = new OperationFollow(
+        42,
+        () => {},
+        socket,
+        async () => operation(),
+        (output) => outputs.push(output),
+    );
+
+    follow.start();
+    handlers.get("client-output")?.({
+        step: "migrate",
+        stream: "stdout",
+        sequence: 1,
+        line: "Migrating",
+    });
+    handlers.get("client-output")?.({ line: "no step" });
+
+    expect(outputs).toEqual([
+        { step: "migrate", stream: "stdout", sequence: 1, line: "Migrating" },
+    ]);
+    follow.stop();
+
+    let lines: Record<string, string[]> = {};
+    for (let n = 0; n <= LIVE_LINES; n++) {
+        lines = addLine(lines, {
+            step: "migrate",
+            stream: "stdout",
+            sequence: n,
+            line: `line ${n}`,
+        });
+    }
+
+    expect(lines.migrate).toHaveLength(LIVE_LINES);
+    expect(lines.migrate?.[0]).toBe("line 1");
 });

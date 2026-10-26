@@ -23,8 +23,7 @@ final readonly class PlausibleProcess
 
     public const int PORT = 8000;
 
-    /** Plausible creates and migrates its PostgreSQL database before it serves, so a fresh server needs no preparation. */
-    private const string COMMAND = '/entrypoint.sh db createdb && /entrypoint.sh db migrate && /entrypoint.sh run';
+    private const string AgentBinary = '/usr/local/bin/orbit-agent';
 
     public static function data(
         Node $node,
@@ -55,7 +54,7 @@ final readonly class PlausibleProcess
             targetId: $node->id,
             name: self::NAME,
             runtime: ProcessRuntime::Docker,
-            command: ['sh', '-c', self::COMMAND],
+            command: [self::AgentBinary, 'service', 'plausible'],
             image: self::IMAGE.':v'.$version,
             workingDirectory: null,
             environment: [
@@ -67,7 +66,7 @@ final readonly class PlausibleProcess
             // WireGuard only: the Node's own Caddy site serves the dashboard, and the Router
             // reaches the tracking paths over WireGuard.
             ports: ["{$node->wireguard_ip}:".self::PORT.':'.self::PORT.'/tcp'],
-            volumes: [],
+            volumes: [['source' => self::AgentBinary, 'target' => self::AgentBinary, 'read_only' => true]],
             restartPolicy: 'unless-stopped',
             start: true,
         );

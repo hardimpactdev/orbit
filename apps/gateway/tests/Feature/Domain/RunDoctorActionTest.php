@@ -23,11 +23,9 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\Doctor\SharedInstalledPackageInventory;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
@@ -39,8 +37,7 @@ use App\Models\ToolManagerRecord;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
-use Symfony\Component\Process\Exception\ProcessTimedOutException;
-use Symfony\Component\Process\Process;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\UnsupportedPackageInventory;
 
 describe('RunDoctorAction', function (): void {
@@ -391,20 +388,9 @@ describe('RunDoctorAction', function (): void {
         $node = run_doctor_node('inventory-timeout');
         $consumer->accessibleNodes()->attach($node->id);
         bind_run_doctor_inspector();
-        $ssh = new class implements SshExecutor
-        {
-            public int $calls = 0;
-
-            public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-            {
-                $this->calls++;
-                $process = new Process(['true']);
-                $process->setTimeout(30);
-
-                throw new ProcessTimedOutException($process, ProcessTimedOutException::TYPE_GENERAL);
-            }
-        };
-        app()->instance(SshExecutor::class, $ssh);
+        $agent = new FakeAgentCommandRunner()->answer('tools.homebrew-scan', static fn (): array => throw new AgentRunnerFailure('tools.homebrew-scan', AgentRunnerFailure::Timeout, 'Timed out.'))
+            ->answer('tools.vp-inventory', ['packages' => [], 'scan_complete' => true]);
+        app()->instance(AgentCommandRunner::class, $agent);
         app()->instance(InstalledPackageInventory::class, app(SharedInstalledPackageInventory::class));
         $toolsBefore = Tool::query()->count();
         $managersBefore = ToolManagerRecord::query()->count();
@@ -428,9 +414,9 @@ describe('RunDoctorAction', function (): void {
             ->and($families[1]->status)->toBe(DoctorFamilyStatus::Unverifiable)
             ->and($families[1]->checked)->toBe(0)
             ->and($families[1]->issues)->toHaveCount(1)
-            ->and($families[1]->issues[0]->code)->toBe('tool.inspection_failed')
+            ->and($families[1]->issues[0]->code)->toBe('tool.inventory_scan')
             ->and($families[1]->issues[0]->resourceId)->toBe("node:{$node->id}:inventory")
-            ->and($ssh->calls)->toBe(1)
+            ->and($agent->commands())->toBe(['tools.homebrew-scan', 'tools.vp-inventory'])
             ->and(Tool::query()->count())->toBe($toolsBefore)
             ->and(ToolManagerRecord::query()->count())->toBe($managersBefore);
         foreach (DB::getQueryLog() as $query) {

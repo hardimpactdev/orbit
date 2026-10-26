@@ -19,6 +19,7 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\WireGuardPeerDnsRepairer;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentPhpFpmConfigRenderer;
@@ -31,11 +32,9 @@ use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevTldRouteManager;
+use App\Infrastructure\AppProd\RemoteAppProdCaddyManager;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
-use App\Infrastructure\Caddy\CaddyPublicationLock;
-use App\Infrastructure\MachineSoftware\MachineRecipe;
-use App\Infrastructure\MachineSoftware\PhpBuild;
-use App\Infrastructure\MachineSoftware\RecipeLoader;
+use App\Infrastructure\Nodes\AgentManagedUserAccountResolver;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
@@ -43,7 +42,6 @@ use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Cluster;
@@ -57,12 +55,10 @@ use Illuminate\Support\Str;
 use Symfony\Component\Process\ExecutableFinder;
 use Tests\Support\AppDevFakeProcessRunner;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeNodeCaddyBuilds;
-use Tests\Support\FixtureProcessRunner;
-use Tests\Support\FpmPublishHarness;
-use Tests\Support\RootCaFixture;
-
-beforeAll(fn () => RootCaFixture::prepare('app-dev', '/CN=Orbit Test Root', 3650, ['basicConstraints=critical,CA:TRUE', 'keyUsage=critical,keyCertSign,cRLSign']));
+use Tests\Support\PhpBuildAnswers;
+use Tests\Support\SharedPhpPoolAnswers;
 
 function app_dev_account_resolver(
     ManagedUserAccount $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
@@ -79,6 +75,13 @@ function app_dev_account_resolver(
         }
     };
 }
+
+beforeEach(function (): void {
+    $this->phpAgents = SharedPhpPoolAnswers::register(new FakeAgentCommandRunner);
+    (new PhpBuildAnswers)->register($this->phpAgents);
+    $this->phpAgents->answer('php.configure-runtime', ['changed' => false, 'reloaded' => false]);
+    app()->instance(AgentCommandRunner::class, $this->phpAgents);
+});
 
 it('uses shared peer DNS repair for app development TLD convergence', function (): void {
     $node = Node::query()->create(['name' => 'app-dev-route', 'tld' => 'test', 'public_ssh_host' => '192.0.2.10']);
@@ -234,601 +237,174 @@ it('hydrates only Instance Route sites and never reads leftover Instance or Work
         ->not->toContain('acme.app-dev.orbit.legacy', 'feature.acme.app-dev.orbit');
 });
 
-it('retires previous app-dev pools before activating their lower PHP version', function (): void {
+it('sends all desired shared pools in one command after installing the inspected versions', function (): void {
     [$node, $project] = app_dev_runtime_models();
-    $moving = app_dev_supported_app_instance($node, $project->id, 'moving');
-    app_dev_supported_route($moving, 'moving.app-dev.orbit');
-    $stable = app_dev_supported_app_instance($node, $project->id, 'stable');
-    app_dev_supported_route($stable, 'stable.app-dev.orbit');
-    $sites = new DevelopmentSiteRepository;
-    $renderer = new DevelopmentPhpFpmConfigRenderer;
-    $previousConfiguration = $renderer->render(
-        $sites->forNode($node),
-        new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
-    );
-    $moving->update(['selected_php_version' => '8.4']);
-    $transitionConfiguration = $renderer->render(
-        $sites->forNode($node)->where('phpVersion', '8.5')->values(),
-        new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
-    );
-    $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(0, "8.5\t".base64_encode($previousConfiguration)."\n", '', 1, false),
-    ]);
-    $manager = new RemoteAppDevPhpFpmManager(
-        sites: $sites,
-        renderer: $renderer,
-        ssh: app_dev_ssh($ssh),
-        accounts: app_dev_account_resolver(),
-        packages: new RemotePhpPackageManager,
-    );
+    foreach (['8.4', '8.5'] as $version) {
+        $instance = app_dev_supported_app_instance($node, $project->id, 'php'.str_replace('.', '', $version), $version);
+        app_dev_supported_route($instance, $instance->name.'.app-dev.orbit');
+    }
+    $manager = new RemoteAppDevPhpFpmManager(new DevelopmentSiteRepository, new DevelopmentPhpFpmConfigRenderer, $this->phpAgents, app_dev_account_resolver(), new RemotePhpPackageManager);
 
     $manager->converge($node);
 
-    $publishCalls = collect($ssh->commands)
-        ->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf') && ($command->arguments[4] ?? null) !== 'php.install-build')
-        ->values();
-
-    expect($ssh->commands[0]->input)
-        ->toContain('base64 --wrap=0 -- "$path"')
-        ->and($publishCalls->map(static fn (RemoteCommand $command): string => $command->arguments[4])->all())
-        ->toBe(['8.5', '8.4'])
-        ->and($publishCalls->first()?->input)
-        ->toContain(base64_encode($transitionConfiguration))
-        ->not->toContain(base64_encode($previousConfiguration));
+    expect($this->phpAgents->commands())->toBe(['php.inspect-shared-pools', 'php.install-build', 'php.configure-runtime', 'php.configure-runtime', 'php.converge-shared-pools']);
+    $configurations = (array) $this->phpAgents->calls[0]['input']['configurations'];
+    expect(array_keys($configurations))->toBe(['8.4', '8.5'])
+        ->and($this->phpAgents->calls[4]['input']['configurations'])->toEqual((object) $configurations)
+        ->and(array_keys($this->phpAgents->calls[1]['input']['versions']))->toBe(['8.4', '8.5']);
 });
 
-it('restores the previous app-dev pools when lower PHP activation fails', function (): void {
-    [$node, $project] = app_dev_runtime_models();
-    $moving = app_dev_supported_app_instance($node, $project->id, 'moving');
-    app_dev_supported_route($moving, 'moving.app-dev.orbit');
-    $stable = app_dev_supported_app_instance($node, $project->id, 'stable');
-    app_dev_supported_route($stable, 'stable.app-dev.orbit');
-    $sites = new DevelopmentSiteRepository;
-    $renderer = new DevelopmentPhpFpmConfigRenderer;
-    $previousConfiguration = $renderer->render(
-        $sites->forNode($node),
-        new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
-    );
-    $moving->update(['selected_php_version' => '8.4']);
-    $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(0, "8.5\t".base64_encode($previousConfiguration)."\n", '', 1, false),
-        new CommandResult(0, '', '', 1, false),
-        new CommandResult(0, '', '', 1, false),
-        new CommandResult(0, '', '', 1, false),
-        new CommandResult(0, '', '', 1, false),
-        new CommandResult(1, '', 'activation failed', 1, false),
-    ]);
-    $manager = new RemoteAppDevPhpFpmManager(
-        sites: $sites,
-        renderer: $renderer,
-        ssh: app_dev_ssh($ssh),
-        accounts: app_dev_account_resolver(),
-        packages: new RemotePhpPackageManager,
-    );
-
-    expect(fn () => $manager->converge($node))
-        ->toThrow(function (RuntimeConvergenceException $exception): void {
-            expect($exception->errorCode)->toBe('app-dev.php_fpm_config_failed');
-        });
-
-    $publishCalls = collect($ssh->commands)
-        ->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf') && ($command->arguments[4] ?? null) !== 'php.install-build')
-        ->values();
-
-    expect($publishCalls->map(static fn (RemoteCommand $command): string => $command->arguments[4])->all())
-        ->toBe(['8.5', '8.4', '8.5'])
-        ->and($publishCalls->last()?->input)
-        ->toContain(base64_encode($previousConfiguration));
-});
-
-it('removes a newly activated app-dev pool when later PHP activation fails', function (): void {
-    [$node, $project] = app_dev_runtime_models();
-    $lower = app_dev_supported_app_instance($node, $project->id, 'lower');
-    app_dev_supported_route($lower, 'lower.app-dev.orbit');
-    $higher = app_dev_supported_app_instance($node, $project->id, 'higher');
-    app_dev_supported_route($higher, 'higher.app-dev.orbit');
-    $sites = new DevelopmentSiteRepository;
-    $renderer = new DevelopmentPhpFpmConfigRenderer;
-    $previousConfiguration = $renderer->render(
-        $sites->forNode($node),
-        new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
-    );
-    $lower->update(['selected_php_version' => '8.4']);
-    $higher->update(['selected_php_version' => '8.6']);
-    $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(0, "8.5\t".base64_encode($previousConfiguration)."\n", '', 1, false),
-        new CommandResult(0, '', '', 1, false),
-        new CommandResult(0, '', '', 1, false),
-        new CommandResult(0, '', '', 1, false),
-        new CommandResult(0, '', '', 1, false),
-        new CommandResult(0, '', '', 1, false),
-        new CommandResult(1, '', 'activation failed', 1, false),
-    ]);
-    $manager = new RemoteAppDevPhpFpmManager(
-        sites: $sites,
-        renderer: $renderer,
-        ssh: app_dev_ssh($ssh),
-        accounts: app_dev_account_resolver(),
-        packages: new RemotePhpPackageManager(app_dev_recipe_with_php_86()),
-    );
-
-    expect(fn () => $manager->converge($node))
-        ->toThrow(function (RuntimeConvergenceException $exception): void {
-            expect($exception->errorCode)->toBe('app-dev.php_fpm_config_failed');
-        });
-
-    $publishCalls = collect($ssh->commands)
-        ->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf') && ($command->arguments[4] ?? null) !== 'php.install-build')
-        ->values();
-
-    expect($publishCalls->map(static fn (RemoteCommand $command): string => $command->arguments[4])->all())
-        ->toBe(['8.5', '8.4', '8.6', '8.4', '8.5'])
-        ->and($publishCalls->get(3)?->input)
-        ->toContain("printf '%s' '' | base64 --decode")
-        ->and($publishCalls->last()?->input)
-        ->toContain(base64_encode($previousConfiguration));
-});
-
-it('installs selected PHP versions and validates a complete staged FPM configuration before publication', function (): void {
-    [$node, $project] = app_dev_runtime_models();
-    $php84 = app_dev_supported_app_instance($node, $project->id, 'php84', '8.4');
-    app_dev_supported_route($php84, 'php84.app-dev.orbit');
-    $php85 = app_dev_supported_app_instance($node, $project->id, 'php85', '8.5');
-    app_dev_supported_route($php85, 'php85.app-dev.orbit');
-    $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(0, "8.5\n", '', 1, false),
-        new CommandResult(0, '', '', 1, false),
-        new CommandResult(0, '', '', 1, false),
-    ]);
-    $manager = new RemoteAppDevPhpFpmManager(
-        sites: new DevelopmentSiteRepository,
-        renderer: new DevelopmentPhpFpmConfigRenderer,
-        ssh: app_dev_ssh($ssh),
-        accounts: app_dev_account_resolver(),
-        packages: new RemotePhpPackageManager,
-    );
+it('retires the last shared pools without account or package preflights', function (): void {
+    [$node] = app_dev_runtime_models();
+    $agents = new FakeAgentCommandRunner()->answer('php.converge-shared-pools', ['changed' => true, 'missing_pools' => []]);
+    $manager = new RemoteAppDevPhpFpmManager(new DevelopmentSiteRepository, new DevelopmentPhpFpmConfigRenderer, $agents, new AgentManagedUserAccountResolver($agents), new RemotePhpPackageManager(agents: $agents));
 
     $manager->converge($node);
 
-    $publishCalls = collect($ssh->commands)
-        ->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf') && ($command->arguments[4] ?? null) !== 'php.install-build')
-        ->values();
-
-    expect($ssh->commands)
-        ->toHaveCount(6)
-        ->and($ssh->commands[1]->arguments[4])
-        ->toBe('php.install-build')
-        ->and($ssh->commands[1]->input)
-        ->toContain('"name":"php8.4-fpm"', '"name":"php8.4-pcov"', '"name":"php8.4-opcache"', '"extras":"keep"')
-        ->and($publishCalls)
-        ->toHaveCount(2)
-        ->and($publishCalls->first()?->arguments)
-        ->toContain('/run/lock/orbit')
-        ->and($publishCalls->first()?->input)
-        ->toContain(
-            'if [ "$lock_directory" = /run/lock/orbit ]; then',
-            'test "$(stat -c %u:%g:%a -- "$lock_directory")" = 0:0:700',
-            'lock="$lock_directory/orbit-php-fpm-$version.lock"',
-            'flock -w 30 9',
-            'cp -- "$pool" "$temporary_directory/pool.d/"',
-            'sudo "php-fpm$version" -y "$temporary_directory/php-fpm.conf" -t',
-            'cmp -s -- "$candidate" "$managed_configuration"',
-            'cp -a -- "$managed_configuration" "$backup"',
-            'sudo mv -fT -- "$staged" "$managed_configuration"',
-            'if ! sudo systemctl enable "php$version-fpm" || ! sudo systemctl reload-or-restart "php$version-fpm"; then',
-            'cp -a -- "$backup" "$rollback"',
-            'sudo mv -fT -- "$rollback" "$managed_configuration"',
-            'sudo systemctl reload-or-restart "php$version-fpm" || true',
-        );
-
-    $script = $publishCalls->first()->input ?? '';
-    expect($script)
-        ->toContain('exec 9>>"$lock"')
-        ->not->toContain('exec 9>"$lock"', '/run/lock/orbit-php-fpm-');
-    $setup = mb_strpos(haystack: $script, needle: 'umask 0077');
-    $open = mb_strpos(haystack: $script, needle: 'exec 9>>"$lock"');
-    $lock = mb_strpos(haystack: $script, needle: 'flock -w 30 9');
-    $snapshot = mb_strpos(haystack: $script, needle: 'for pool in "$pool_directory"/*.conf');
-    $validation = mb_strpos(
-        haystack: $script,
-        needle: 'php-fpm$version" -y "$temporary_directory/php-fpm.conf" -t',
-    );
-    $switch = mb_strpos(
-        haystack: $script,
-        needle: 'sudo mv -fT -- "$staged" "$managed_configuration"',
-    );
-    $activation = mb_strpos(haystack: $script, needle: 'if ! sudo systemctl enable');
-    $rollback = mb_strpos(
-        haystack: $script,
-        needle: 'sudo mv -fT -- "$rollback" "$managed_configuration"',
-    );
-
-    expect($setup)
-        ->toBeInt()
-        ->toBeLessThan($open)
-        ->and($open)
-        ->toBeInt()
-        ->toBeLessThan($lock)
-        ->and($lock)
-        ->toBeInt()
-        ->toBeLessThan($snapshot)
-        ->and($validation)
-        ->toBeInt()
-        ->toBeLessThan($switch)
-        ->and($switch)
-        ->toBeInt()
-        ->toBeLessThan($activation)
-        ->and($activation)
-        ->toBeInt()
-        ->toBeLessThan($rollback);
+    expect($agents->commands())->toBe(['php.converge-shared-pools']);
+    expect($agents->calls[0]['input'])->toEqual(['configurations' => (object) []]);
 });
 
-it('renders and publishes AppDev FPM pools with the nondefault managed account', function (): void {
+it('renders shared pools for the nondefault managed account', function (): void {
     $account = new ManagedUserAccount('nckrtl', 'nckrtl', '/srv/users/nckrtl');
     [$node, $project] = app_dev_runtime_models(account: $account);
     $instance = app_dev_supported_app_instance($node, $project->id);
     app_dev_supported_route($instance, 'acme.app-dev.orbit');
-    $sites = new DevelopmentSiteRepository()->forNode($node);
-    $rendered = new DevelopmentPhpFpmConfigRenderer()->render($sites, $account);
-    $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(0, "8.5\n", '', 1, false),
-        new CommandResult(0, '', '', 1, false),
-    ]);
-    $manager = new RemoteAppDevPhpFpmManager(
-        sites: new DevelopmentSiteRepository,
-        renderer: new DevelopmentPhpFpmConfigRenderer,
-        ssh: app_dev_ssh($ssh),
-        accounts: app_dev_account_resolver($account),
-        packages: new RemotePhpPackageManager,
-    );
+    $manager = new RemoteAppDevPhpFpmManager(new DevelopmentSiteRepository, new DevelopmentPhpFpmConfigRenderer, $this->phpAgents, app_dev_account_resolver($account), new RemotePhpPackageManager);
 
     $manager->converge($node);
 
-    $publishCall = collect($ssh->commands)
-        ->first(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf') && ($command->arguments[4] ?? null) !== 'php.install-build');
-
-    expect($rendered)
-        ->toContain(
-            'user = nckrtl',
-            'group = nckrtl',
-            'listen.owner = nckrtl',
-            'listen.group = caddy',
-        )
-        ->and($publishCall)
-        ->not
-        ->toBeNull()
-        ->and($publishCall->input ?? '')
-        ->toContain(base64_encode($rendered))
-        ->toContain('sudo install -o root -g root -m 0644 -- "$candidate" "$staged"')
-        ->and($publishCall->arguments ?? [])
-        ->toContain('8.5');
+    expect(((array) $this->phpAgents->calls[0]['input']['configurations'])['8.5'])
+        ->toContain('user = nckrtl', 'group = nckrtl', 'listen.owner = nckrtl', 'listen.group = caddy');
 });
 
-it('restores the exact AppDev FPM file before the recovery reload when activation fails', function (): void {
+it('reports missing pools after native publication and installs only the inspected versions', function (): void {
     [$node, $project] = app_dev_runtime_models();
     $instance = app_dev_supported_app_instance($node, $project->id);
     app_dev_supported_route($instance, 'acme.app-dev.orbit');
-    $harness = new FpmPublishHarness;
-    $managed = $harness->prepare('8.5', 'orbit-scopes.conf', "previous app-dev pool\n");
-    $ssh = new AppDevFakeSshExecutor([new CommandResult(0, "8.5\n", '', 1, false)]);
+    $missing = [['pool' => 'orbit-app-instance-'.$instance->id, 'version' => '8.5', 'directory' => '/home/orbit/apps/acme/main', 'installed' => false]];
+    $this->phpAgents->answer('php.inspect-shared-pools', ['versions' => [], 'missing_pools' => $missing])
+        ->answer('php.converge-shared-pools', ['changed' => true, 'missing_pools' => $missing]);
+    $manager = new RemoteAppDevPhpFpmManager(new DevelopmentSiteRepository, new DevelopmentPhpFpmConfigRenderer, $this->phpAgents, app_dev_account_resolver(), new RemotePhpPackageManager);
 
-    try {
-        $manager = new RemoteAppDevPhpFpmManager(
-            sites: new DevelopmentSiteRepository,
-            renderer: new DevelopmentPhpFpmConfigRenderer,
-            ssh: app_dev_ssh($ssh),
-            accounts: app_dev_account_resolver(),
-            packages: new RemotePhpPackageManager,
-            phpRoot: $harness->phpRoot(),
-            lockDirectory: $harness->lockDirectory(),
-        );
-        $manager->converge($node);
-        $result = $harness->run($ssh->commands[3]);
-
-        expect($result->succeeded())
-            ->toBeFalse($result->stderr)
-            ->and(file_get_contents($managed))
-            ->toBe("previous app-dev pool\n")
-            ->and(fileperms($managed) & 0o777)
-            ->toBe(0o600)
-            ->and($harness->serviceCalls())
-            ->toBe(
-                [
-                    'enable php8.5-fpm',
-                    'reload-or-restart php8.5-fpm',
-                    'reload-or-restart php8.5-fpm',
-                ],
-                $result->stderr,
-            );
-    } finally {
-        $harness->cleanup();
-    }
+    expect(fn () => $manager->converge($node))->toThrow(function (RuntimeConvergenceException $error): void {
+        expect($error->errorCode)->toBe(RemoteAppDevPhpFpmManager::PoolDirectoryMissing)
+            ->and($error->getMessage())->toContain('/home/orbit/apps/acme/main');
+    });
+    expect($this->phpAgents->commands())->toBe(['php.inspect-shared-pools', 'php.converge-shared-pools']);
 });
 
-it('keeps the previous AppDev FPM file and service untouched when the candidate fails php-fpm -t', function (): void {
+it('maps shared pool command refusals without retrying a mutation', function (string $command, string $code, string $expected): void {
     [$node, $project] = app_dev_runtime_models();
     $instance = app_dev_supported_app_instance($node, $project->id);
     app_dev_supported_route($instance, 'acme.app-dev.orbit');
-    $harness = new FpmPublishHarness;
-    $managed = $harness->prepare('8.5', 'orbit-scopes.conf', "previous app-dev pool\n");
-    $harness->failConfigTest();
-    $ssh = new AppDevFakeSshExecutor([new CommandResult(0, "8.5\n", '', 1, false)]);
+    $this->phpAgents->refuse($command, $code);
+    $manager = new RemoteAppDevPhpFpmManager(new DevelopmentSiteRepository, new DevelopmentPhpFpmConfigRenderer, $this->phpAgents, app_dev_account_resolver(), new RemotePhpPackageManager);
 
-    try {
-        $manager = new RemoteAppDevPhpFpmManager(
-            sites: new DevelopmentSiteRepository,
-            renderer: new DevelopmentPhpFpmConfigRenderer,
-            ssh: app_dev_ssh($ssh),
-            accounts: app_dev_account_resolver(),
-            packages: new RemotePhpPackageManager,
-            phpRoot: $harness->phpRoot(),
-            lockDirectory: $harness->lockDirectory(),
-        );
-        $manager->converge($node);
-        $result = $harness->run($ssh->commands[3]);
+    expect(fn () => $manager->converge($node))->toThrow(function (RuntimeConvergenceException $error) use ($expected): void {
+        expect($error->errorCode)->toBe($expected);
+    });
+    expect(array_count_values($this->phpAgents->commands())[$command])->toBe(1);
+})->with([
+    ['php.inspect-shared-pools', 'php.shared_pool_unsafe', 'app-dev.php_fpm_discovery_failed'],
+    ['php.converge-shared-pools', 'php.shared_pool_failed', 'app-dev.php_fpm_config_failed'],
+    ['php.converge-shared-pools', 'php.shared_pool_recovery_failed', 'app-dev.php_fpm_config_failed'],
+]);
 
-        expect($result->succeeded())
-            ->toBeFalse()
-            ->and(file_get_contents($managed))
-            ->toBe("previous app-dev pool\n")
-            ->and($harness->serviceCalls())
-            ->toBe([]);
-    } finally {
-        $harness->cleanup();
-    }
-});
-
-it('publishes the other pools, then fails, when a desired pool names a missing working directory', function (): void {
-    [$node, $project] = app_dev_runtime_models();
-    $present = app_dev_supported_app_instance($node, $project->id, 'present');
-    app_dev_supported_route($present, 'present.app-dev.orbit');
-    $missing = app_dev_supported_app_instance($node, $project->id, 'missing');
-    app_dev_supported_route($missing, 'missing.app-dev.orbit');
-    $sites = new DevelopmentSiteRepository()->forNode($node);
-    $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
-    $renderer = new DevelopmentPhpFpmConfigRenderer;
-    $missingSite = $sites->first(static fn (DevelopmentSite $site): bool => $site->domain === 'missing.app-dev.orbit');
-    $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(0, "8.5\t".base64_encode($renderer->render($sites, $account))."\nmissing-directory\t/home/orbit/apps/acme/missing\n", '', 1, false),
-    ]);
-    $manager = new RemoteAppDevPhpFpmManager(
-        sites: new DevelopmentSiteRepository,
-        renderer: $renderer,
-        ssh: app_dev_ssh($ssh),
-        accounts: app_dev_account_resolver(),
-        packages: new RemotePhpPackageManager,
-    );
-
-    expect(fn () => $manager->converge($node))
-        ->toThrow(function (RuntimeConvergenceException $exception) use ($missing): void {
-            expect($exception->errorCode)
-                ->toBe(RemoteAppDevPhpFpmManager::PoolDirectoryMissing)
-                ->and($exception->getMessage())
-                ->toContain('orbit-app-instance-'.$missing->id, '/home/orbit/apps/acme/missing');
-        });
-
-    $publishCall = collect($ssh->commands)
-        ->first(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf') && ($command->arguments[4] ?? null) !== 'php.install-build');
-    $kept = $renderer->render($sites->reject(static fn (DevelopmentSite $site): bool => $site === $missingSite)->values(), $account);
-
-    expect($ssh->commands[0]->arguments)
-        ->toContain('/home/orbit/apps/acme/present', '/home/orbit/apps/acme/missing')
-        ->and($kept)
-        ->toContain('[orbit-app-instance-'.$present->id.']')
-        ->not->toContain('[orbit-app-instance-'.$missing->id.']')
-        ->and($publishCall?->input)
-        ->toContain(base64_encode($kept));
-});
-
-it('rolls back to the previous pools without the pool whose working directory is gone', function (): void {
-    [$node, $project] = app_dev_runtime_models();
-    $moving = app_dev_supported_app_instance($node, $project->id, 'moving');
-    app_dev_supported_route($moving, 'moving.app-dev.orbit');
-    $stable = app_dev_supported_app_instance($node, $project->id, 'stable');
-    app_dev_supported_route($stable, 'stable.app-dev.orbit');
-    $renderer = new DevelopmentPhpFpmConfigRenderer;
-    $current = $renderer->render(new DevelopmentSiteRepository()->forNode($node), new ManagedUserAccount('orbit', 'orbit', '/home/orbit'));
-    $previous = $current."[orbit-app-instance-342]\nchdir = /fast/apps/orbit-website/task-1172\n";
-    $moving->update(['selected_php_version' => '8.4']);
-    $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(0, "8.5\t".base64_encode($previous)."\nmissing-directory\t/fast/apps/orbit-website/task-1172\n", '', 1, false),
-        new CommandResult(0, '', '', 1, false),
-        new CommandResult(0, '', '', 1, false),
-        new CommandResult(0, '', '', 1, false),
-        new CommandResult(0, '', '', 1, false),
-        new CommandResult(1, '', 'activation failed', 1, false),
-    ]);
-    $manager = new RemoteAppDevPhpFpmManager(
-        sites: new DevelopmentSiteRepository,
-        renderer: $renderer,
-        ssh: app_dev_ssh($ssh),
-        accounts: app_dev_account_resolver(),
-        packages: new RemotePhpPackageManager,
-    );
-
-    expect(fn () => $manager->converge($node))
-        ->toThrow(function (RuntimeConvergenceException $exception): void {
-            expect($exception->errorCode)->toBe('app-dev.php_fpm_config_failed');
-        });
-
-    $publishCalls = collect($ssh->commands)
-        ->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf') && ($command->arguments[4] ?? null) !== 'php.install-build')
-        ->values();
-
-    expect($publishCalls->map(static fn (RemoteCommand $command): string => $command->arguments[4])->all())
-        ->toBe(['8.5', '8.4', '8.5'])
-        ->and($publishCalls->last()?->input)
-        ->toContain(base64_encode($current))
-        ->not->toContain(base64_encode($previous));
-});
-
-it('reports the installed and desired pools whose working directory is missing, checked as root on the Node', function (): void {
-    [$node, $project] = app_dev_runtime_models();
-    $harness = new FpmPublishHarness;
-    $present = app_dev_supported_app_instance($node, $project->id, 'present');
-    $present->update(['checkout_path' => $harness->phpRoot().'/../apps/present']);
-    app_dev_supported_route($present, 'present.app-dev.orbit');
-    $missing = app_dev_supported_app_instance($node, $project->id, 'missing');
-    $missing->update(['checkout_path' => $harness->phpRoot().'/../apps/missing']);
-    app_dev_supported_route($missing, 'missing.app-dev.orbit');
-    $removed = $harness->phpRoot().'/../apps/task-1172';
-    $presentDirectory = $harness->phpRoot().'/../apps/present';
-    $missingDirectory = $harness->phpRoot().'/../apps/missing';
-    $harness->prepare('8.5', 'orbit-scopes.conf', implode("\n", [
-        '[orbit-app-instance-'.$present->id.']',
-        "chdir = {$presentDirectory}",
-        '[orbit-app-instance-342]',
-        "chdir = {$removed}",
-        '',
-    ]));
-    mkdir($presentDirectory, recursive: true);
-    $discovery = new AppDevFakeSshExecutor;
-
-    try {
-        $manager = static fn (AppDevFakeSshExecutor $ssh): RemoteAppDevPhpFpmManager => new RemoteAppDevPhpFpmManager(
-            sites: new DevelopmentSiteRepository,
-            renderer: new DevelopmentPhpFpmConfigRenderer,
-            ssh: app_dev_ssh($ssh),
-            accounts: app_dev_account_resolver(),
-            packages: new RemotePhpPackageManager,
-            phpRoot: $harness->phpRoot(),
-        );
-        $manager($discovery)->poolsWithMissingDirectories($node);
-        $result = $harness->run($discovery->commands[0]);
-        $pools = $manager(new AppDevFakeSshExecutor([$result]))->poolsWithMissingDirectories($node);
-
-        expect($result->succeeded())
-            ->toBeTrue($result->stderr)
-            ->and($discovery->commands[0]->arguments[0])
-            ->toBe('bash')
-            ->and($discovery->commands[0]->input)
-            ->toContain('| sudo xargs -0 -r -n 1 sh -c')
-            ->and($pools)
-            ->toBe([
-                ['pool' => 'orbit-app-instance-342', 'version' => '8.5', 'directory' => $removed, 'installed' => true],
-                ['pool' => 'orbit-app-instance-'.$missing->id, 'version' => '8.5', 'directory' => $missingDirectory, 'installed' => false],
-            ]);
-    } finally {
-        $harness->cleanup();
-    }
-});
-
-it('installs PHP without starting FPM and replaces a stale pool while FPM is failed', function (): void {
+it('refuses malformed shared pool responses before package installation', function (array $report): void {
     [$node, $project] = app_dev_runtime_models();
     $instance = app_dev_supported_app_instance($node, $project->id);
     app_dev_supported_route($instance, 'acme.app-dev.orbit');
-    $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
-    $current = new DevelopmentPhpFpmConfigRenderer()->render(new DevelopmentSiteRepository()->forNode($node), $account);
-    $stale = $current."[orbit-app-instance-342]\nchdir = /fast/apps/orbit-website/task-1172\n";
-    $harness = new FpmPublishHarness;
-    $managed = $harness->prepare('8.5', 'orbit-scopes.conf', $stale);
-    $harness->stopService();
-    $harness->allowActivation();
-    $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(0, "8.5\t".base64_encode($stale)."\nmissing-directory\t/fast/apps/orbit-website/task-1172\n", '', 1, false),
-    ]);
+    $this->phpAgents->answerMalformed('php.inspect-shared-pools', $report);
+    $manager = new RemoteAppDevPhpFpmManager(new DevelopmentSiteRepository, new DevelopmentPhpFpmConfigRenderer, $this->phpAgents, app_dev_account_resolver(), new RemotePhpPackageManager);
 
-    try {
-        $manager = new RemoteAppDevPhpFpmManager(
-            sites: new DevelopmentSiteRepository,
-            renderer: new DevelopmentPhpFpmConfigRenderer,
-            ssh: app_dev_ssh($ssh),
-            accounts: app_dev_account_resolver(),
-            packages: new RemotePhpPackageManager,
-            phpRoot: $harness->phpRoot(),
-            lockDirectory: $harness->lockDirectory(),
-        );
-        $manager->converge($node);
-        $install = $ssh->commands[2]->input ?? '';
-        $result = $harness->run($ssh->commands[3]);
-
-        expect($install)
-            ->toContain('sudo systemctl enable "php$version-fpm.service"')
-            ->not->toContain('enable --now')
-            ->and(mb_substr($install, (int) mb_strpos($install, 'sudo systemctl enable "php$version-fpm.service"')))
-            ->not->toContain('is-active')
-            ->and($result->succeeded())
-            ->toBeTrue($result->stderr)
-            ->and(file_get_contents($managed))
-            ->toBe($current)
-            ->and($harness->serviceCalls())
-            ->toBe(['enable php8.5-fpm', 'reload-or-restart php8.5-fpm'])
-            ->and($harness->serviceActive())
-            ->toBeTrue();
-    } finally {
-        $harness->cleanup();
-    }
-});
-
-it('starts a failed PHP-FPM whose Orbit pools are already current', function (): void {
-    [$node, $project] = app_dev_runtime_models();
-    $instance = app_dev_supported_app_instance($node, $project->id);
-    app_dev_supported_route($instance, 'acme.app-dev.orbit');
-    $current = new DevelopmentPhpFpmConfigRenderer()->render(
-        new DevelopmentSiteRepository()->forNode($node),
-        new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
-    );
-    $harness = new FpmPublishHarness;
-    $managed = $harness->prepare('8.5', 'orbit-scopes.conf', $current);
-    $harness->stopService();
-    $harness->allowActivation();
-    $ssh = new AppDevFakeSshExecutor([new CommandResult(0, "8.5\t".base64_encode($current)."\n", '', 1, false)]);
-
-    try {
-        $manager = new RemoteAppDevPhpFpmManager(
-            sites: new DevelopmentSiteRepository,
-            renderer: new DevelopmentPhpFpmConfigRenderer,
-            ssh: app_dev_ssh($ssh),
-            accounts: app_dev_account_resolver(),
-            packages: new RemotePhpPackageManager,
-            phpRoot: $harness->phpRoot(),
-            lockDirectory: $harness->lockDirectory(),
-        );
-        $manager->converge($node);
-        $result = $harness->run($ssh->commands[3]);
-
-        expect($result->succeeded())
-            ->toBeTrue($result->stderr)
-            ->and(file_get_contents($managed))
-            ->toBe($current)
-            ->and($harness->serviceCalls())
-            ->toBe(['enable php8.5-fpm', 'is-active --quiet php8.5-fpm', 'restart php8.5-fpm'])
-            ->and($harness->serviceActive())
-            ->toBeTrue();
-    } finally {
-        $harness->cleanup();
-    }
-});
+    expect(fn () => $manager->converge($node))->toThrow(function (RuntimeConvergenceException $error): void {
+        expect($error->errorCode)->toBe('app-dev.php_fpm_discovery_failed');
+    });
+    expect($this->phpAgents->commands())->toBe(['php.inspect-shared-pools']);
+})->with([
+    'missing versions' => [[]],
+    'invalid version' => [['versions' => [false], 'missing_pools' => []]],
+    'missing pools' => [['versions' => []]],
+    'invalid pool' => [['versions' => [], 'missing_pools' => [['pool' => 'secret']]]],
+]);
 
 it('rejects an unsupported PHP version before target discovery or installation', function (): void {
     [$node, $project] = app_dev_runtime_models();
-    $unsupported = app_dev_supported_app_instance($node, $project->id, 'unsupported', '8.3');
-    app_dev_supported_route($unsupported, 'unsupported.app-dev.orbit');
-    $ssh = new AppDevFakeSshExecutor;
-    $manager = new RemoteAppDevPhpFpmManager(
-        sites: new DevelopmentSiteRepository,
-        renderer: new DevelopmentPhpFpmConfigRenderer,
-        ssh: app_dev_ssh($ssh),
-        accounts: app_dev_account_resolver(),
-        packages: new RemotePhpPackageManager,
-    );
+    $instance = app_dev_supported_app_instance($node, $project->id, 'unsupported', '8.3');
+    app_dev_supported_route($instance, 'unsupported.app-dev.orbit');
+    $manager = new RemoteAppDevPhpFpmManager(new DevelopmentSiteRepository, new DevelopmentPhpFpmConfigRenderer, $this->phpAgents, app_dev_account_resolver(), new RemotePhpPackageManager);
 
-    expect(fn () => $manager->converge($node))
-        ->toThrow(function (RuntimeConvergenceException $exception): void {
-            expect($exception->errorCode)->toBe('app-dev.php_version_unsupported');
-        })
-        ->and($ssh->commands)
-        ->toBeEmpty();
+    expect(fn () => $manager->converge($node))->toThrow(function (RuntimeConvergenceException $error): void {
+        expect($error->errorCode)->toBe('app-dev.php_version_unsupported');
+    });
+    expect($this->phpAgents->calls)->toBeEmpty();
 });
 
-it('keeps leaf private keys on the target while publishing a gateway-signed certificate', function (): void {
+it('signs the request of the Node and publishes the leaf without the key leaving the Node', function (): void {
     [$node, $project] = app_dev_runtime_models();
     $instance = app_dev_supported_app_instance($node, $project->id);
     $route = app_dev_supported_route($instance, 'acme.app-dev.orbit');
-    $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(0, 'CSR FROM TARGET', '', 1, false),
-    ]);
-    $signer = new class implements LeafCertificateSigner
+    $agents = new FakeAgentCommandRunner()
+        ->answer('certificates.request-leaf', ['state' => 'request', 'request' => 'CSR FROM TARGET'])
+        ->answer('certificates.publish-leaf', []);
+    $signer = app_dev_test_signer();
+    $manager = new RemoteAppDevCertificateManager($agents, $signer, app_dev_account_resolver());
+
+    $manager->convergeInstance($instance, $route);
+
+    $leaf = $agents->calls[0]['input'];
+    expect($agents->commands())->toBe(['certificates.request-leaf', 'certificates.publish-leaf'])
+        ->and($leaf)->toMatchArray([
+            'scope' => "app-instance-{$instance->id}",
+            'domain' => 'acme.app-dev.orbit',
+            'root_hash' => hash('sha256', "ROOT CERTIFICATE\n"),
+            'user' => 'orbit',
+            'home' => '/home/orbit',
+        ])
+        ->and($signer->calls)->toBe([['domain' => 'acme.app-dev.orbit', 'csr' => 'CSR FROM TARGET']])
+        ->and($agents->calls[1]['input'])->toBe([...$leaf, 'certificate' => "LEAF CERTIFICATE\n", 'root_certificate' => "ROOT CERTIFICATE\n"]);
+});
+
+it('reuses a current leaf without signing', function (): void {
+    [$node, $project] = app_dev_runtime_models();
+    $instance = app_dev_supported_app_instance($node, $project->id);
+    $route = app_dev_supported_route($instance, 'acme.app-dev.orbit');
+    $agents = new FakeAgentCommandRunner()->answer('certificates.request-leaf', ['state' => 'current']);
+    $signer = app_dev_test_signer();
+
+    new RemoteAppDevCertificateManager($agents, $signer, app_dev_account_resolver())->convergeInstance($instance, $route);
+
+    expect($agents->commands())->toBe(['certificates.request-leaf'])
+        ->and($signer->calls)->toBe([]);
+});
+
+it('uses a nondefault managed home for app-dev certificate converge and removal', function (): void {
+    $account = new ManagedUserAccount('nckrtl', 'nckrtl', '/srv/users/nckrtl');
+    [$node, $project] = app_dev_runtime_models(account: $account);
+    $instance = app_dev_supported_app_instance($node, $project->id);
+    $route = app_dev_supported_route($instance, 'acme.app-dev.orbit');
+    $agents = new FakeAgentCommandRunner()
+        ->answer('certificates.request-leaf', ['state' => 'request', 'request' => 'CSR'])
+        ->answer('certificates.publish-leaf', [])
+        ->answer('certificates.remove-leaf', []);
+    $manager = new RemoteAppDevCertificateManager($agents, app_dev_test_signer(), app_dev_account_resolver($account));
+
+    $manager->convergeInstance($instance, $route);
+    // Removal withdraws the Route's sites before it removes their certificate.
+    $route->update(['status' => RouteStatus::Retiring, 'sites_published' => false]);
+    $manager->removeInstance($instance);
+
+    expect($agents->calls[0]['input'])->toMatchArray(['user' => 'nckrtl', 'home' => '/srv/users/nckrtl'])
+        ->and($agents->calls[2])->toMatchArray([
+            'command' => 'certificates.remove-leaf',
+            'input' => ['scope' => "app-instance-{$instance->id}", 'home' => '/srv/users/nckrtl'],
+        ]);
+});
+
+function app_dev_test_signer(): LeafCertificateSigner
+{
+    return new class implements LeafCertificateSigner
     {
         /** @var list<array{domain: string, csr: string}> */
         public array $calls = [];
@@ -845,173 +421,7 @@ it('keeps leaf private keys on the target while publishing a gateway-signed cert
             return "ROOT CERTIFICATE\n";
         }
     };
-    $manager = new RemoteAppDevCertificateManager(app_dev_ssh($ssh), $signer, app_dev_account_resolver());
-
-    $manager->convergeInstance($instance, $route);
-
-    expect($ssh->commands)
-        ->toHaveCount(2)
-        ->and($ssh->commands[0]->input)
-        ->toContain(
-            'openssl genrsa -out "$candidate/key.pem" 2048',
-            'cat "$candidate/request.pem"',
-            'openssl verify -CAfile "$current/root.pem" "$current/cert.pem"',
-            'openssl x509 -in "$current/cert.pem" -noout -checkend 2592000',
-            "grep -Eq '^(RSA )?Public-Key: \\(2048 bit\\)'",
-            'not_before_epoch=$(date -d "$not_before" +%s)',
-            '[ "$validity_seconds" -ge 34214400 ]',
-            '[ "$validity_seconds" -le 34387200 ]',
-            'sha256sum "$current/root.pem"',
-            'trust_anchor=/usr/local/share/ca-certificates/orbit-managed-root-ca.crt',
-            'sudo update-ca-certificates',
-        )
-        ->and($ssh->commands[0]->arguments)
-        ->toContain(hash(algo: 'sha256', data: "ROOT CERTIFICATE\n"))
-        ->and($signer->calls)
-        ->toBe([['domain' => 'acme.app-dev.orbit', 'csr' => 'CSR FROM TARGET']])
-        ->and($ssh->commands[1]->input)
-        ->toBe("LEAF CERTIFICATE\nROOT CERTIFICATE\n")
-        ->and($ssh->commands[1]->arguments[2])
-        ->toContain(
-            'head -c "$certificate_length"',
-            "grep -Eq '^(RSA )?Public-Key: \\(2048 bit\\)'",
-            'openssl verify -CAfile',
-            'test "$(sha256sum "$candidate/root.pem" | cut -d \' \' -f 1)" = "$expected_root_hash"',
-            'sudo install -o root -g root -m 0644',
-            'sudo install -o root -g caddy -m 0640 -- "$published/key.pem"',
-            'sudo mv -fT -- "$caddy_link" "$caddy_root/current"',
-            "if sudo systemctl is-active --quiet caddy; then\n    sudo bash -ceu \"\$locked_reload\"\nfi",
-        )
-        ->not
-        ->toContain('PRIVATE KEY')
-        ->and(mb_strpos($ssh->commands[1]->arguments[2], 'sudo bash -ceu "$locked_reload"'))
-        ->toBeGreaterThan((int) mb_strpos(
-            $ssh->commands[1]->arguments[2],
-            'sudo mv -fT -- "$caddy_link" "$caddy_root/current"',
-        ))
-        ->and($ssh->commands[1]->arguments[array_key_last($ssh->commands[1]->arguments)])
-        ->toBe(CaddyPublicationLock::script(CaddyPublicationLock::Path)."\nsystemctl reload-or-restart caddy\n");
-});
-
-it('uses a nondefault managed home for app-dev certificate converge and removal', function (): void {
-    $account = new ManagedUserAccount('nckrtl', 'nckrtl', '/srv/users/nckrtl');
-    [$node, $project] = app_dev_runtime_models(account: $account);
-    $instance = app_dev_supported_app_instance($node, $project->id);
-    $route = app_dev_supported_route($instance, 'acme.app-dev.orbit');
-    $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(0, 'CSR FROM TARGET', '', 1, false),
-        new CommandResult(0, '', '', 1, false),
-    ]);
-    $signer = new class implements LeafCertificateSigner
-    {
-        public function sign(string $domain, string $certificateRequest): string
-        {
-            return "LEAF CERTIFICATE\n";
-        }
-
-        public function rootCertificate(): string
-        {
-            return "ROOT CERTIFICATE\n";
-        }
-    };
-    $manager = new RemoteAppDevCertificateManager(app_dev_ssh($ssh), $signer, app_dev_account_resolver($account));
-
-    $manager->convergeInstance($instance, $route);
-    // Removal withdraws the Route's sites before it removes their certificate.
-    $route->update(['status' => RouteStatus::Retiring, 'sites_published' => false]);
-    $manager->removeInstance($instance);
-
-    expect($ssh->commands)
-        ->toHaveCount(3)
-        ->and($ssh->commands[0]->arguments)
-        ->toContain("app-instance-{$instance->id}", 'acme.app-dev.orbit', 'nckrtl', '/srv/users/nckrtl')
-        ->and($ssh->commands[0]->input)
-        ->toContain('managed_home=$7', 'root="$managed_home/.orbit/certificates/$scope"')
-        ->not->toContain('/home/orbit/.orbit/certificates')->and($ssh->commands[2]->arguments)->toBe([
-            'bash',
-            '-seu',
-            '--',
-            "app-instance-{$instance->id}",
-            'nckrtl',
-            'nckrtl',
-            '/srv/users/nckrtl',
-        ])->and($ssh->commands[2]->input)->toContain(
-            'managed_user=$2',
-            'managed_group=$3',
-            'managed_home=$4',
-            'rm -rf -- "$managed_home/.orbit/certificates/$scope"',
-        )
-        ->not->toContain('/home/orbit/.orbit/certificates');
-});
-
-it('reuses only current app-dev leaves with the exact RSA extension policy', function (
-    string $keyUsage,
-    string $keyAlgorithm,
-    string $expectedDecision,
-): void {
-    [$node, $project] = app_dev_runtime_models();
-    $instance = app_dev_supported_app_instance($node, $project->id);
-    $route = app_dev_supported_route($instance, 'acme.app-dev.orbit');
-    $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(0, "CURRENT\n", '', 1, false),
-    ]);
-    $filesystem = new Filesystem;
-    $root = sys_get_temp_dir().'/orbit-app-dev-certificate-policy-'.(string) Str::uuid();
-    $rootCertificate = create_app_dev_certificate_reuse_fixture(
-        root: $root,
-        scope: "app-instance-{$instance->id}",
-        domain: $route->domain,
-        keyUsage: $keyUsage,
-        keyAlgorithm: $keyAlgorithm,
-    );
-    new Filesystem()->ensureDirectoryExists($root.'/usr/local/share/ca-certificates', recursive: true);
-    file_put_contents($root.'/usr/local/share/ca-certificates/orbit-managed-root-ca.crt', "STALE\n");
-    $signer = new class($rootCertificate) implements LeafCertificateSigner
-    {
-        public function __construct(
-            private readonly string $rootCertificate,
-        ) {}
-
-        public function sign(string $domain, string $certificateRequest): string
-        {
-            return "unused\n";
-        }
-
-        public function rootCertificate(): string
-        {
-            return $this->rootCertificate;
-        }
-    };
-    $manager = new RemoteAppDevCertificateManager(app_dev_ssh($ssh), $signer, app_dev_account_resolver());
-
-    try {
-        $manager->convergeInstance($instance, $route);
-        $result = run_app_dev_certificate_probe_locally($ssh->commands[0], $root);
-        $decision = trim($result->stdout) === 'CURRENT' ? 'reuse' : 'reissue';
-
-        expect($result->succeeded())->toBeTrue($result->stderr);
-        expect($decision)->toBe($expectedDecision);
-
-        if ($expectedDecision === 'reuse') {
-            expect(file_get_contents($root.'/usr/local/share/ca-certificates/orbit-managed-root-ca.crt'))
-                ->toBe($rootCertificate)
-                ->and(is_file($root.'/usr/local/share/ca-certificates/orbit-managed-root-ca.crt.updated'))
-                ->toBeTrue();
-        }
-
-        if ($expectedDecision === 'reissue') {
-            expect($result->stdout)
-                ->toContain('BEGIN CERTIFICATE REQUEST')
-                ->not->toContain("CURRENT\n");
-        }
-    } finally {
-        $filesystem->deleteDirectory($root);
-    }
-})->with([
-    'RSA with the approved usages' => ['digitalSignature,keyEncipherment', 'RSA', 'reuse'],
-    'RSA without key encipherment' => ['digitalSignature', 'RSA', 'reissue'],
-    'Ed25519 with the approved usages' => ['digitalSignature,keyEncipherment', 'ED25519', 'reissue'],
-]);
+}
 
 it('requests a Node Caddy build for Route sites and publishes DNS through its preserved validation aggregate', function (): void {
     [$node, $project] = app_dev_runtime_models();
@@ -1025,7 +435,7 @@ it('requests a Node Caddy build for Route sites and publishes DNS through its pr
     $builds->onBuild = function (Node $node) use (&$rendered): void {
         $rendered[] = app(NodeCaddyfileRenderer::class)->render($node)->content;
     };
-    $caddy = new RemoteAppDevCaddyManager(builds: $builds, ssh: app_dev_ssh($ssh));
+    $caddy = new RemoteAppDevCaddyManager(builds: $builds, agents: new FakeAgentCommandRunner);
     $processes = new AppDevFakeProcessRunner;
     $dns = new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class)));
 
@@ -1306,10 +716,14 @@ it('waits within the command deadline and continues after the current owner rele
 it('enters projection ownership before app-dev Caddy and DNS host publication', function (): void {
     [$node] = app_dev_runtime_models();
     $owner = new AppDevProjectionOwnerSpy;
-    $ssh = new AppDevFakeSshExecutor;
+    $agents = new FakeAgentCommandRunner()->answer('caddy.order-after-vpn', static function () use ($owner): array {
+        expect($owner->active)->toBeTrue();
+
+        return ['changed' => false];
+    });
     $caddy = new RemoteAppDevCaddyManager(
         builds: new FakeNodeCaddyBuilds,
-        ssh: app_dev_ssh($ssh),
+        agents: $agents,
         projection: $owner,
     );
     $processes = new class($owner) implements ProcessRunner
@@ -1339,40 +753,21 @@ it('enters projection ownership before app-dev Caddy and DNS host publication', 
         ->toBe(3)
         ->and($owner->active)
         ->toBeFalse()
-        ->and($ssh->commands)
+        ->and($agents->calls)
         ->toHaveCount(1);
 });
 
-it('orders the app-dev Caddy unit after the managed WireGuard interface before it builds the Node', function (): void {
+it('orders the app-dev Caddy unit through the agent before it builds the Node', function (): void {
     [$node] = app_dev_runtime_models();
-    $ssh = new AppDevFakeSshExecutor;
+    $agents = new FakeAgentCommandRunner()->answer('caddy.order-after-vpn', ['changed' => false]);
     $builds = new FakeNodeCaddyBuilds;
-    $builds->onBuild = fn () => expect($ssh->commands)->toHaveCount(1);
-    $manager = new RemoteAppDevCaddyManager(builds: $builds, ssh: app_dev_ssh($ssh));
+    $builds->onBuild = fn () => expect($agents->commands())->toBe(['caddy.order-after-vpn']);
+    $manager = new RemoteAppDevCaddyManager(builds: $builds, agents: $agents);
 
     $manager->converge($node);
 
-    expect($builds->built)->toBe([$node->name])
-        ->and($ssh->commands)
-        ->toHaveCount(1)
-        ->and($ssh->commands[0]->arguments)
-        ->toBe(['sudo', 'bash', '-seu', '--', 'caddy', '/etc/systemd/system'])
-        ->and($ssh->commands[0]->input)
-        ->toContain(
-            'managed=$directory/orbit-vpn.conf',
-            'install -d -o root -g root -m 0755 -- "$directory"',
-            'if [ -f "$managed" ] && cmp -s -- "$staged" "$managed"; then',
-            'if systemctl is-active --quiet "$service"; then',
-            'install -o root -g root -m 0644 -- "$staged" "$candidate"',
-            'mv -fT -- "$candidate" "$managed"',
-            'systemctl daemon-reload',
-            'systemctl restart "$service"',
-        )
-        ->and(base64_decode(
-            Str::match('/\x27([A-Za-z0-9+\/=]+)\x27 \| base64 --decode/', $ssh->commands[0]->input ?? ''),
-            strict: true,
-        ))
-        ->toBe("# Managed by Orbit.\n[Unit]\nAfter=wg-quick@orbit.service\nWants=wg-quick@orbit.service\n");
+    expect($builds->built)->toBe([$node->name]);
+    expect($agents->calls)->toBe([['node' => $node->name, 'command' => 'caddy.order-after-vpn', 'input' => []]]);
 });
 
 it('keeps its error code and records the build stage and Caddy message when the build fails', function (): void {
@@ -1380,7 +775,7 @@ it('keeps its error code and records the build stage and Caddy message when the 
     $ssh = new AppDevFakeSshExecutor;
     $builds = new FakeNodeCaddyBuilds;
     $builds->failNext($node->name, 'validate', 'Error: adapting config using caddyfile: unrecognized directive');
-    $manager = new RemoteAppDevCaddyManager(builds: $builds, ssh: app_dev_ssh($ssh));
+    $manager = new RemoteAppDevCaddyManager(builds: $builds, agents: new FakeAgentCommandRunner);
 
     expect(fn () => $manager->build($node))
         ->toThrow(function (RuntimeConvergenceException $exception) use ($node): void {
@@ -1587,141 +982,12 @@ function orb173_dns_projection_route(
     return $route;
 }
 
-function run_app_dev_certificate_probe_locally(RemoteCommand $command, string $root): CommandResult
-{
-    $arguments = array_map(
-        static fn (string $argument): string => str_replace(
-            ['/home/orbit', '/etc/caddy'],
-            [$root, $root.'/etc/caddy'],
-            $argument,
-        ),
-        $command->arguments,
-    );
-    $input = str_replace(
-        [
-            '/home/orbit',
-            '/etc/caddy',
-            '/usr/local/share/ca-certificates',
-            '/etc/ssl/certs/ca-certificates.crt',
-            'sudo update-ca-certificates',
-            'install -o root -g root ',
-            'sudo ',
-            'openssl ',
-        ],
-        [
-            $root,
-            $root.'/etc/caddy',
-            $root.'/usr/local/share/ca-certificates',
-            $root.'/usr/local/share/ca-certificates/orbit-managed-root-ca.crt',
-            '{ printf "Updating certificates\\n"; touch "$trust_anchor.updated"; }',
-            'install ',
-            '',
-            app_dev_test_openssl_binary().' ',
-        ],
-        $command->input ?? '',
-    );
-
-    return new FixtureProcessRunner()->run(new ProcessInvocation(
-        arguments: $arguments,
-        input: $input,
-    ));
-}
-
-function create_app_dev_certificate_reuse_fixture(
-    string $root,
-    string $scope,
-    string $domain,
-    string $keyUsage,
-    string $keyAlgorithm,
-): string {
-    $processes = new FixtureProcessRunner;
-    $ca = "{$root}/ca";
-    $current = "{$root}/.orbit/certificates/{$scope}/current";
-    $caddyCurrent = "{$root}/etc/caddy/orbit-certificates/{$scope}/current";
-    $filesystem = new Filesystem;
-    $filesystem->makeDirectory($ca, mode: 0o700, recursive: true);
-    $filesystem->makeDirectory($current, mode: 0o700, recursive: true);
-    $filesystem->makeDirectory($caddyCurrent, mode: 0o700, recursive: true);
-
-    $openssl = app_dev_test_openssl_binary();
-    $leafKeyArguments = [$openssl, 'genpkey', '-algorithm', $keyAlgorithm];
-
-    if ($keyAlgorithm === 'RSA') {
-        $leafKeyArguments = [...$leafKeyArguments, '-pkeyopt', 'rsa_keygen_bits:2048'];
-    }
-
-    $leafKeyArguments = [...$leafKeyArguments, '-out', "{$current}/key.pem"];
-    RootCaFixture::install($ca, 'app-dev');
-    $rootKey = openssl_pkey_get_private(file_get_contents("{$ca}/root.key"));
-    expect($rootKey)->not->toBeFalse();
-    expect(openssl_pkey_get_details($rootKey)['bits'])->toBe(4096)
-        ->and(openssl_x509_check_private_key(file_get_contents("{$ca}/root.pem"), $rootKey))->toBeTrue();
-    $commands = [
-        $leafKeyArguments,
-        [
-            $openssl,
-            'req',
-            '-new',
-            '-key',
-            "{$current}/key.pem",
-            '-out',
-            "{$current}/request.pem",
-            '-subj',
-            "/CN={$domain}",
-        ],
-    ];
-
-    foreach ($commands as $arguments) {
-        $result = $processes->run(new ProcessInvocation($arguments));
-        expect($result->succeeded())->toBeTrue($result->stderr);
-    }
-
-    file_put_contents("{$current}/leaf.ext", implode("\n", [
-        'basicConstraints=critical,CA:FALSE',
-        "keyUsage=critical,{$keyUsage}",
-        'extendedKeyUsage=serverAuth',
-        "subjectAltName=DNS:{$domain}",
-    ]));
-    $signed = $processes->run(new ProcessInvocation([
-        $openssl,
-        'x509',
-        '-req',
-        '-in',
-        "{$current}/request.pem",
-        '-CA',
-        "{$ca}/root.pem",
-        '-CAkey',
-        "{$ca}/root.key",
-        '-set_serial',
-        '0x01',
-        '-out',
-        "{$current}/cert.pem",
-        '-days',
-        '397',
-        '-extfile',
-        "{$current}/leaf.ext",
-    ]));
-    expect($signed->succeeded())->toBeTrue($signed->stderr);
-    $rootCertificate = file_get_contents("{$ca}/root.pem");
-    expect($rootCertificate)->toBeString();
-    file_put_contents("{$current}/root.pem", $rootCertificate);
-    copy("{$current}/key.pem", "{$caddyCurrent}/key.pem");
-    copy("{$current}/cert.pem", "{$caddyCurrent}/cert.pem");
-
-    return is_string($rootCertificate) ? $rootCertificate : '';
-}
-
-function app_dev_test_openssl_binary(): string
-{
-    return is_executable('/opt/homebrew/bin/openssl') ? '/opt/homebrew/bin/openssl' : 'openssl';
-}
-
 it('builds the Node on role removal, so the build keeps every Route site stored state still places there', function (): void {
     [$node] = app_dev_runtime_models();
     $ssh = new AppDevFakeSshExecutor;
     $builds = new FakeNodeCaddyBuilds;
 
-    new RemoteAppDevCaddyManager(builds: $builds, ssh: app_dev_ssh($ssh))->remove($node);
+    new RemoteAppDevCaddyManager(builds: $builds, agents: new FakeAgentCommandRunner)->remove($node);
 
     expect($builds->built)->toBe([$node->name])
         ->and($ssh->commands)->toBe([]);
@@ -1773,18 +1039,20 @@ function app_dev_ssh(SshExecutor $ssh): DevelopmentSshExecutor
     return new DevelopmentSshExecutor($ssh, $keys, $knownHosts);
 }
 
-/** The repository recipe plus a PHP 8.6 build, so a test can select a third PHP version. */
-function app_dev_recipe_with_php_86(): MachineRecipe
-{
-    $recipe = new RecipeLoader()->load();
-    $tools = $recipe->tools;
-    $packages = [];
-    foreach ($recipe->php('8.5')->packages as $name) {
-        $renamed = str_starts_with($name, 'php8.5-') ? 'php8.6-'.substr($name, 7) : $name;
-        $tools[$renamed] = $recipe->tools[$name];
-        $packages[] = $renamed;
-    }
+it('orders production Caddy before building and stops on an ordering refusal', function (): void {
+    [$node] = app_dev_runtime_models();
+    $agents = new FakeAgentCommandRunner()->answer('caddy.order-after-vpn', ['changed' => false]);
+    $builds = new FakeNodeCaddyBuilds;
+    $builds->onBuild = fn () => expect($agents->commands())->toBe(['caddy.order-after-vpn']);
+    $manager = new RemoteAppProdCaddyManager($builds, $agents);
 
-    return new MachineRecipe($recipe->identity, $recipe->snapshot, $recipe->architectures, $tools, $recipe->profiles, $recipe->canonicalJson, $recipe->json,
-        [...$recipe->php, '8.6' => new PhpBuild('8.6', '8.6.0', $packages, $recipe->php('8.5')->extensions)], $recipe->ciPhp);
-}
+    $manager->converge($node);
+
+    expect($builds->built)->toBe([$node->name]);
+    $agents->refuse('caddy.order-after-vpn', 'services.ordering_failed', ['stage' => 'restart']);
+    expect(fn () => $manager->converge($node))->toThrow(function (RuntimeConvergenceException $exception): void {
+        expect($exception->errorCode)->toBe('app-prod.caddy_config_failed')
+            ->and($exception->step)->toBe('app-prod-caddy-service-ordering');
+    });
+    expect($builds->built)->toBe([$node->name]);
+});

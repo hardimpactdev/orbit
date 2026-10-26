@@ -3,67 +3,68 @@
 declare(strict_types=1);
 
 use App\Domain\Nodes\NodeProvisioningException;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
+use App\Infrastructure\AppProd\RemoteAppProdCaddyManager;
 use App\Infrastructure\Gateway\NativeGatewayCaddyInstaller;
-use App\Infrastructure\Nodes\CaddyPackageProgram;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessInvocation;
+use App\Infrastructure\Nodes\AgentCaddyPackage;
 use App\Infrastructure\Processes\ProcessRunner;
-use App\Infrastructure\Processes\SystemdVpnOrderingDropIn;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshExecutor;
+use App\Models\Node;
+use Tests\Support\FakeAgentCommandRunner;
 
 describe('Gateway Caddy installer', function (): void {
-    it('runs the pinned source program and then the WireGuard ordering drop-in as root', function (): void {
-        $processes = gateway_caddy_installer_processes();
+    it('requests the pinned package and then WireGuard ordering on the Gateway Node', function (): void {
+        $node = new Node(['name' => 'gateway']);
+        $agents = new FakeAgentCommandRunner()->answer('caddy.install-package', ['changed' => false, 'version' => '2.10.2'])->answer('caddy.order-after-vpn', ['changed' => false]);
 
-        new NativeGatewayCaddyInstaller($processes)->install();
+        new NativeGatewayCaddyInstaller($agents)->install($node);
 
-        $dropIn = new SystemdVpnOrderingDropIn;
-
-        expect($processes->calls)->toHaveCount(2)
-            ->and($processes->calls[0]->arguments)
-            ->toBe(['sudo', 'bash', '-seu', '--', ...CaddyPackageProgram::arguments()])
-            ->and($processes->calls[0]->input)
-            ->toBe(CaddyPackageProgram::render())
-            ->and($processes->calls[1]->arguments)
-            ->toBe($dropIn->arguments('caddy'))
-            ->and($processes->calls[1]->input)
-            ->toBe($dropIn->script());
+        expect($agents->calls)->toBe([
+            ['node' => 'gateway', 'command' => 'caddy.install-package', 'input' => AgentCaddyPackage::input()],
+            ['node' => 'gateway', 'command' => 'caddy.order-after-vpn', 'input' => []],
+        ]);
     });
 
-    it('maps each failed step to its step name and error code', function (int $failingCall, string $step, string $errorCode, int $calls): void {
-        $processes = gateway_caddy_installer_processes(failingCall: $failingCall);
+    it('maps each refusal and stops at the failed step', function (string $command, string $refusal, string $step, string $errorCode, int $calls): void {
+        $agents = new FakeAgentCommandRunner()->answer('caddy.install-package', ['changed' => false, 'version' => '2.10.2'])->refuse($command, $refusal);
+        $node = new Node;
 
-        expect(fn () => new NativeGatewayCaddyInstaller($processes)->install())
+        expect(fn () => new NativeGatewayCaddyInstaller($agents)->install($node))
             ->toThrow(function (NodeProvisioningException $exception) use ($step, $errorCode): void {
                 expect($exception->step)->toBe($step)
                     ->and($exception->errorCode)->toBe($errorCode)
                     ->and($exception->result?->exitCode)->toBe(1);
-            })
-            ->and($processes->calls)->toHaveCount($calls);
+            });
+        expect($agents->calls)->toHaveCount($calls);
     })->with([
-        'package source or install' => [0, 'gateway-caddy-install', 'gateway.caddy_install_failed', 1],
-        'unit ordering' => [1, 'gateway-caddy-ordering', 'gateway.caddy_start_failed', 2],
+        'package' => ['caddy.install-package', 'caddy.package_failed', 'gateway-caddy-install', 'gateway.caddy_install_failed', 1],
+        'ordering' => ['caddy.order-after-vpn', 'services.ordering_failed', 'gateway-caddy-ordering', 'gateway.caddy_start_failed', 2],
     ]);
 });
 
-function gateway_caddy_installer_processes(?int $failingCall = null): ProcessRunner
-{
-    return new class($failingCall) implements ProcessRunner
-    {
-        /** @var list<ProcessInvocation> */
-        public array $calls = [];
+arch('Caddy installation and ordering use only typed agent commands')
+    ->expect([
+        NativeGatewayCaddyInstaller::class,
+        RemoteAppDevCaddyManager::class,
+        RemoteAppProdCaddyManager::class,
+    ])->not->toUse([
+        ProcessRunner::class,
+        SshExecutor::class,
+        RemoteCommand::class,
+        DevelopmentSshExecutor::class,
+    ]);
 
-        public function __construct(
-            private readonly ?int $failingCall,
-        ) {}
+it('maps transport failure at the Caddy ordering step', function (): void {
+    $failure = new AgentRunnerFailure('caddy.order-after-vpn', AgentRunnerFailure::Transport, 'Connection lost.');
+    $agents = new FakeAgentCommandRunner()->answer('caddy.install-package', ['changed' => false, 'version' => '2.10.2'])
+        ->answer('caddy.order-after-vpn', static fn (): never => throw $failure);
 
-        public function run(ProcessInvocation $invocation): CommandResult
-        {
-            $index = count($this->calls);
-            $this->calls[] = $invocation;
-
-            return $index === $this->failingCall
-                ? new CommandResult(1, '', 'failed', 2, false)
-                : new CommandResult(0, '', '', 2, false);
-        }
-    };
-}
+    expect(fn () => new NativeGatewayCaddyInstaller($agents)->install(new Node))
+        ->toThrow(function (NodeProvisioningException $exception) use ($failure): void {
+            expect($exception->errorCode)->toBe('gateway.caddy_start_failed')
+                ->and($exception->getPrevious())->toBe($failure);
+        });
+});

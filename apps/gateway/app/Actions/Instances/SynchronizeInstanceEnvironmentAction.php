@@ -7,7 +7,6 @@ namespace App\Actions\Instances;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
-use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
 use App\Domain\Instances\Environment\InstanceEnvironmentResult;
 use App\Domain\Instances\Environment\InstanceEnvironmentRouteDomain;
@@ -35,7 +34,6 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
         private InstanceEnvironmentWriter $writer,
         private ?InstanceTestEnvironment $testing = null,
         private ?InstanceTestEnvironmentWriter $testingWriter = null,
-        private ?InstanceEnvironmentReader $reader = null,
     ) {}
 
     public function execute(Instance $instance, bool $forClone = false): InstanceEnvironmentResult
@@ -86,12 +84,23 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
         ?RefreshInstanceEnvironmentRuntimeAction $runtime = null,
     ): InstanceEnvironmentResult {
         $requiredCapacity = $this->store->synchronizationCapacity($context);
-        $this->preflight->assertEnvironmentWritable($context, $requiredCapacity);
+        $existing = null;
+        if ($keepWorkloadKeys) {
+            try {
+                $existing = $this->preflight->readWritableEnvironment($context, $requiredCapacity);
+            } catch (ResourceOperationException $exception) {
+                if ($exception->errorCode !== 'env.import_source_missing') {
+                    throw $exception;
+                }
+            }
+        } else {
+            $this->preflight->assertEnvironmentWritable($context, $requiredCapacity);
+        }
         $snapshot = $this->store->synchronizationSnapshot($context);
         $contents = $this->renderer->render($context, $snapshot->values());
 
-        if ($keepWorkloadKeys) {
-            $this->assertKeepsWorkloadKeys($context, $snapshot);
+        if ($existing !== null) {
+            $this->assertKeepsWorkloadKeys($existing, $snapshot);
         }
 
         $environmentChanged = $changed = $this->confirmed($this->writer->write($context, $contents));
@@ -138,19 +147,9 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
      * wrote or detached those keys itself. A file that `env:import` never read keeps its keys.
      */
     private function assertKeepsWorkloadKeys(
-        InstanceEnvironmentContext $context,
+        #[\SensitiveParameter] string $contents,
         InstanceEnvironmentSynchronizationSnapshot $snapshot,
     ): void {
-        try {
-            $contents = ($this->reader ?? app(InstanceEnvironmentReader::class))->read($context);
-        } catch (ResourceOperationException $exception) {
-            if ($exception->errorCode === 'env.import_source_missing') {
-                return;
-            }
-
-            throw $exception;
-        }
-
         $unowned = $snapshot->unownedKeysIn(self::fileKeys($contents));
 
         if ($unowned !== []) {

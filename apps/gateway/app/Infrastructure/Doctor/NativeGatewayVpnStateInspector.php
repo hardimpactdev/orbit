@@ -8,47 +8,23 @@ use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\GatewayVpnInspectionData;
 use App\Domain\Doctor\GatewayVpnStateInspector;
 use App\Domain\Nodes\RoleName;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\Processes\CommandDeadline;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProtectedInput;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
 use App\Models\Node;
 use App\Models\NodeRole;
 use Throwable;
 
+/**
+ * Reads the `vpn` Node's interface state and the digests of its hub and VPN DNS record files through
+ * `wireguard.inspect-hub`, and compares them with what the Gateway renders now.
+ */
 final readonly class NativeGatewayVpnStateInspector implements GatewayVpnStateInspector
 {
-    private const string ACTIVE_SCRIPT = "if systemctl is-active --quiet wg-quick@orbit; then printf '1\\n'; else printf '0\\n'; fi";
-
-    private const string COMPARE_SCRIPT = <<<'BASH'
-        if ! sudo test -f "$1"; then
-            cat > /dev/null
-            printf '0\n'
-            exit 0
-        fi
-        if sudo cmp -s -- "$1" -; then
-            printf '1\n'
-        else
-            status=$?
-            if [ "$status" -eq 1 ]; then
-                printf '0\n'
-            else
-                exit "$status"
-            fi
-        fi
-        BASH;
-
     public function __construct(
-        private SshExecutor $ssh,
-        private SshKeyProvider $keys,
-        private KnownHostsStore $knownHosts,
+        private AgentCommandRunner $agents,
         private VpnConfigurationRepository $configuration,
         private WireGuardServerConfigRenderer $serverRenderer,
         private DevelopmentDnsConfigRenderer $dnsRenderer,
@@ -59,21 +35,21 @@ final readonly class NativeGatewayVpnStateInspector implements GatewayVpnStateIn
     {
         try {
             $server = $this->server($role);
-            $connection = $this->connection($server);
             $vpn = $this->configuration->forPeer($server);
             $serverConfig = $this->serverRenderer->render(
                 $vpn,
                 Node::query()->whereNotNull('wireguard_public_key')->get(),
             );
             $dnsConfig = $this->dnsRenderer->render();
+            $state = $this->agents->run($server, 'wireguard.inspect-hub', [], $this->deadline->cap(30.0));
+            if (! is_bool($state['active'] ?? null)) {
+                throw new DoctorInspectionException;
+            }
 
             return new GatewayVpnInspectionData(
-                $this->booleanResult($this->ssh->execute(
-                    $connection,
-                    new RemoteCommand(['bash', '-ceu', self::ACTIVE_SCRIPT]),
-                )),
-                $this->compare($connection, '/etc/wireguard/orbit.conf', $serverConfig),
-                $this->compare($connection, '/etc/dnsmasq.d/orbit-records.conf', $dnsConfig),
+                $state['active'],
+                $this->matches($state, 'config_sha256', $serverConfig),
+                $this->matches($state, 'dns_records_sha256', $dnsConfig),
             );
         } catch (DoctorInspectionException $exception) {
             throw $exception;
@@ -87,50 +63,28 @@ final readonly class NativeGatewayVpnStateInspector implements GatewayVpnStateIn
         $role->loadMissing('node');
         $node = $role->node;
 
-        if ($role->role !== RoleName::Vpn || $role->node_id !== $node->id) {
+        if ($role->role !== RoleName::Vpn || $role->node_id !== $node->id || $node->platform !== 'linux') {
             throw new DoctorInspectionException;
         }
 
         return $node;
     }
 
-    private function connection(Node $node): SshConnection
+    /**
+     * Whether the file's digest is the expected content's. A missing file is a mismatch.
+     *
+     * @param  array<string, mixed>  $state
+     */
+    private function matches(array $state, string $field, string $expected): bool
     {
-        $host = $node->wireguard_ip;
-        if ($node->platform !== 'linux' || ! is_string($host) || $host === '') {
+        if (! array_key_exists($field, $state)) {
             throw new DoctorInspectionException;
         }
+        $digest = $state[$field];
 
-        return new SshConnection(
-            $host,
-            $node->user,
-            22,
-            $this->keys->privateKeyPath(),
-            $this->knownHosts->path(),
-            commandTimeout: $this->deadline->cap(30.0),
-        );
-    }
-
-    private function compare(SshConnection $connection, string $path, string $expected): bool
-    {
-        return $this->booleanResult($this->ssh->execute(
-            $connection,
-            new RemoteCommand(
-                ['bash', '-ceu', self::COMPARE_SCRIPT, '--', $path],
-                protectedInput: ProtectedInput::fromString($expected),
-            ),
-        ));
-    }
-
-    private function booleanResult(CommandResult $result): bool
-    {
-        if (! $result->succeeded() || $result->truncated) {
-            throw new DoctorInspectionException;
-        }
-
-        return match ($result->stdout) {
-            "1\n" => true,
-            "0\n" => false,
+        return match (true) {
+            $digest === null => false,
+            is_string($digest) => hash_equals($digest, hash('sha256', $expected)),
             default => throw new DoctorInspectionException,
         };
     }

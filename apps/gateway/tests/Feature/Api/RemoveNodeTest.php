@@ -32,7 +32,6 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\WebSocket\WebSocketPublicationManager;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
-use App\Infrastructure\Firewall\UfwRuleOwnership;
 use App\Infrastructure\Metrics\MetricsCadvisorRuntime;
 use App\Infrastructure\Metrics\MetricsExporterRuntime;
 use App\Infrastructure\Metrics\MetricsExporterState;
@@ -1366,7 +1365,7 @@ final class RemoveNodeUnreachableExporterRuntime implements MetricsCadvisorRunti
         $this->events[] = "snapshot:{$node->name}";
         $this->guard($node);
 
-        return new MetricsExporterState(null, false, UfwRuleOwnership::Missing);
+        return new MetricsExporterState(null, false, null);
     }
 
     public function converge(Node $node, Node $metricsNode): void

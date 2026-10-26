@@ -7,7 +7,6 @@ import io
 import json
 import os
 from pathlib import Path
-import runpy
 import shutil
 import subprocess
 import sys
@@ -184,30 +183,23 @@ class CiCacheRefTest(CiCacheRefFixture):
         ref = self.publish_ref()
         # CI may initialize bare repositories with a different default branch.
         git(self.remote, 'symbolic-ref', 'HEAD', 'refs/heads/master')
-        resources = Path(refs.__file__).resolve().parent.parent / 'apps/gateway/resources/task-vms'
-        packages = runpy.run_path(str(resources / 'package-cache.py'))
-        seed = runpy.run_path(str(resources / 'package-cache-seed.py'))['seed']
         archive = Path(self.temporary.name) / 'demo.zip'
         with zipfile.ZipFile(archive, 'w') as output:
             output.writestr('demo/composer.json', json.dumps({'name': 'acme/demo', 'version': '1.0.0'}))
             output.writestr('demo/proof.txt', 'installed')
         data = archive.read_bytes()
         url = 'https://api.github.com/repos/acme/demo/zipball/' + 'a' * 40
-        artifact = dict(manager='composer', package='acme/demo', version='1.0.0', url=url,
-                        integrity='sha1-' + hashlib.sha1(data).hexdigest(),
-                        key='composer/acme/demo/' + hashlib.sha1(url.encode()).hexdigest() + '.zip')
-        shared = Path(self.temporary.name) / 'shared'
-        packages['fill'](shared, [artifact], 100000, lambda source: io.BytesIO(data))
-        for path in shared.rglob('*'):
-            path.chmod(0o555 if path.is_dir() else 0o444)
-        shared.chmod(0o555)
-        self.addCleanup(lambda: [path.chmod(0o755) for path in [shared, *shared.rglob('*')] if path.is_dir()])
         workspace = Path(self.temporary.name) / ('warm' if present else 'cold')
         git(self.root, 'clone', '--depth', '1', '--branch', 'main', self.remote.as_uri(), str(workspace))
         self.assertEqual('true', git(workspace, 'rev-parse', '--is-shallow-repository'))
         self.assertEqual(self.commit, git(workspace, 'rev-parse', 'HEAD'))
         home = workspace / '.private-home'
-        seed(shared, home, [artifact] if present else [])
+        # Rust package_cache::seed tests own seeding. This fixture proves that
+        # importing quality caches preserves an already-warm private Composer cache.
+        if present:
+            cached = home / '.cache/composer/files/acme/demo' / (hashlib.sha1(url.encode()).hexdigest() + '.zip')
+            cached.parent.mkdir(parents=True)
+            cached.write_bytes(data)
         if present:
             git(workspace, 'fetch', 'origin', ref + ':' + ref)
         output = self.import_ref(root=workspace)
@@ -225,7 +217,8 @@ class CiCacheRefTest(CiCacheRefFixture):
         self.assertEqual(0, result.returncode, result.stderr.decode())
         self.assertEqual('installed', (setup / 'vendor/acme/demo/proof.txt').read_text())
         self.assertEqual(present, (workspace / self.project / 'vendor/pint.cache').exists())
-        self.assertEqual(data, (shared / artifact['key']).read_bytes())
+        if present:
+            self.assertEqual(data, cached.read_bytes())
 
     def test_fresh_clone_setup_imports_the_ci_ref_and_uses_the_private_package_cache(self):
         self.fresh_clone_setup(present=True)

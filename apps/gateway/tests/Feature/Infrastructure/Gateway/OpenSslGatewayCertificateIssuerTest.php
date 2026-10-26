@@ -13,9 +13,11 @@ use App\Infrastructure\Metrics\MetricsCertificatePublisher;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\ExecutableFinder;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FixtureProcessRunner;
 use Tests\Support\RootCaFixture;
 
@@ -210,40 +212,10 @@ it('keeps an issued generation stable while later certificates are published', f
         $firstCertificate = file_get_contents($first->certificatePath);
         $firstPrivateKey = file_get_contents($first->privateKeyPath);
         $second = $issuer->issue('gateway.orbit', '10.44.0.2');
-        $publications = new class implements ProcessRunner
-        {
-            /** @var list<ProcessInvocation> */
-            public array $invocations = [];
-
-            public function run(ProcessInvocation $invocation): CommandResult
-            {
-                $this->invocations[] = $invocation;
-                $stdout = ($invocation->arguments[1] ?? null) === 'bash'
-                    ? "orbit-metrics-publication:created\n"
-                    : 'PUBLIC KEY';
-
-                return new CommandResult(0, $stdout, '', 1, false);
-            }
-        };
-
-        new NativeGatewayCertificatePublisher($publications, $orbitHome)->publish($first);
-        new MetricsCertificatePublisher($publications)->publish($first);
-
-        $copySources = array_values(array_map(
-            static function (ProcessInvocation $invocation): string {
-                $separator = array_search('--', $invocation->arguments, strict: true);
-
-                return is_int($separator) ? $invocation->arguments[$separator + 1] : '';
-            },
-            array_filter(
-                $publications->invocations,
-                static fn (ProcessInvocation $invocation): bool => (
-                    ($invocation->arguments[1] ?? null) === 'install'
-                    && in_array('--', $invocation->arguments, strict: true)
-                ),
-            ),
-        ));
-        $metricsPublication = $publications->invocations[array_key_last($publications->invocations)];
+        $publications = new FakeAgentCommandRunner()->answer('gateway.publish-certificate', ['changed' => true]);
+        new NativeGatewayCertificatePublisher($publications, $orbitHome)->publish(new Node(['name' => 'gateway']), $first);
+        $agents = new FakeAgentCommandRunner()->answer('metrics.certificate', ['change' => 'created', 'previous' => null]);
+        new MetricsCertificatePublisher($agents)->publish(new Node(['name' => 'gateway']), $first);
 
         expect($first->certificatePath)
             ->toStartWith($orbitHome.'/ca/gateway-versions/')
@@ -255,9 +227,8 @@ it('keeps an issued generation stable while later certificates are published', f
             ->toBe($firstCertificate);
         expect(file_get_contents($first->privateKeyPath))
             ->toBe($firstPrivateKey);
-        expect($copySources)->toBe([$first->certificatePath, $first->privateKeyPath, $orbitHome.'/ca/root.pem']);
-        expect(array_slice($metricsPublication->arguments, 5, 2))
-            ->toBe([$first->certificatePath, $first->privateKeyPath]);
+        expect($publications->calls[0]['input'])->toBe(['certificate' => $firstCertificate, 'key' => $firstPrivateKey, 'root_certificate' => file_get_contents($orbitHome.'/ca/root.pem')]);
+        expect($agents->calls[0]['input'])->toMatchArray(['certificate' => $firstCertificate, 'key' => $firstPrivateKey]);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }

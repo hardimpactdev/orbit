@@ -57,9 +57,7 @@ use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmState;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Jobs\TaskVms\ParkTaskVm;
 use App\Jobs\TaskVms\ResumeTaskVm;
@@ -79,7 +77,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\AgentCommandDispatcher;
 use Tests\Support\AgentSnapshotReader;
-use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskPullRequestReviewWatcher;
 use Tests\Support\FakeTaskTurnReceipts;
@@ -1458,9 +1456,8 @@ describe('park failure recovery', function (): void {
         $vm = TaskVm::forGroup($group);
         $vm->update(['state' => TaskVmState::Parked]);
         rm_runtime();
-        mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/keys/private');
-        mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/keys/known_hosts');
-        app()->instance(SshExecutor::class, new AppDevFakeSshExecutor);
+        $agents = new FakeAgentCommandRunner()->answer('agent.status', ['version' => '0.5.0', 'sha256' => str_repeat('a', 64), 'platform' => 'linux', 'architecture' => 'x86_64', 'observer' => 'active']);
+        app()->instance(AgentCommandRunner::class, $agents);
         $provider = new RecordingTaskVmProvider;
         app()->instance(TaskVmProvider::class, $provider);
         Http::fake(['http://10.44.0.90:3774/capabilities' => Http::response(['models' => []], 200)]);
@@ -1476,6 +1473,7 @@ describe('park failure recovery', function (): void {
         expect($group->fresh())->status->toBe(TaskGroupStatus::Running)->assistance_requested->toBeFalse();
         expect($todo->fresh()?->status)->toBe(TaskStatus::Running);
         expect($provider->calls)->toBe(['start']);
+        expect($agents->commands())->toBe(['agent.status']);
     });
 
     it('still merges a reviewed green head while its waiting group has a park error', function (): void {

@@ -776,7 +776,7 @@ final class AddNodeRoleNodeConvergerFake implements NodeConverger, RecoverableNo
 
     public string $dnsMode = 'operator';
 
-    public function converge(Node $node, NodeProvisioningIdentity $identity, ?string $expectedSshHostFingerprint = null, bool $rolelessOperator = false): NodeObservation
+    public function converge(Node $node, NodeProvisioningIdentity $identity, ?string $expectedSshHostFingerprint = null, bool $rolelessOperator = false, ?Closure $recordObservation = null): NodeObservation
     {
         $this->events[] = 'peer:'.($rolelessOperator ? 'operator' : 'managed').':'.$node->roles()->count();
         $this->identities[] = [$identity->bootstrapUser, $identity->managedUser];
@@ -785,12 +785,15 @@ final class AddNodeRoleNodeConvergerFake implements NodeConverger, RecoverableNo
             throw $this->failure;
         }
 
-        return new NodeObservation('x86_64');
+        $observation = new NodeObservation('x86_64');
+        $recordObservation?->__invoke($observation);
+
+        return $observation;
     }
 
-    public function convergeRecoverably(Node $node, NodeProvisioningIdentity $identity, ?string $expectedSshHostFingerprint, Closure $completion, bool $rolelessOperator = false): void
+    public function convergeRecoverably(Node $node, NodeProvisioningIdentity $identity, ?string $expectedSshHostFingerprint, Closure $completion, bool $rolelessOperator = false, ?Closure $recordObservation = null): void
     {
-        $observation = $this->converge($node, $identity, $expectedSshHostFingerprint, $rolelessOperator);
+        $observation = $this->converge($node, $identity, $expectedSshHostFingerprint, $rolelessOperator, $recordObservation);
         $oldMode = $this->dnsMode;
         $this->dnsMode = $rolelessOperator ? 'operator' : 'managed';
 

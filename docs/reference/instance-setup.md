@@ -2,13 +2,13 @@
 title: "Instance setup and teardown"
 description: "How a Project stores named setup and teardown commands, and when Orbit runs them for a development Instance."
 covers:
-  - apps/gateway/app/Domain/Projects/{LifecyclePhase,LifecycleStep,ProjectLifecycleRunner,ProjectLifecycleStepStore,CiCacheSetup}.php
+  - apps/gateway/app/Domain/Projects/{LifecyclePhase,LifecycleStep,ProjectLifecycleRunner,ProjectLifecycleStepStore,GatewaySetupSteps}.php
   - apps/gateway/app/Actions/*/{Create*InstanceAction,CopyInstanceDependenciesAction,RegisterInstanceAction,RunInstanceSetupAction}.php
   - apps/gateway/app/Infrastructure/{*/NativeDevelopment*Provisioner,Instances/{RemoteDevelopmentInstanceConfigurator,RemoteDevelopmentInstanceSourceLifecycle,RemoteRegistrationSourceManager,RemoteInstanceDestinationGuard,RemoteInstanceDependencyCopier},AppDev/DevelopmentSshExecutor,AppProd/ProductionSshExecutor}.php
   - apps/gateway/app/Domain/Instances/{DevelopmentInstanceProvisioner,InstanceSourceProfileGuard,DependencyCopy/InstanceDependencyCopier}.php
   - apps/gateway/app/Http/Controllers/Api/ProjectLifecycleStepsController.php
   - apps/gateway/{app/Models/ProjectLifecycleStep.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - apps/gateway/resources/instances/{lifecycle.py,ci-caches.sh}
+  - apps/agent/src/commands/{ci_caches.sh,dev_source.rs,dev_source_tests.rs}
   - apps/cli/app/Commands/Instances/{SetupInstanceCommand,*SetupStepCommand,*TeardownStepCommand}.php
 ---
 
@@ -70,7 +70,7 @@ Authorized reads return the commands. [Activity](/cli/activity) records no input
 
 ## Checkout access
 
-The Gateway prepares a development checkout as the Node's managed user. The checkout and the files in it stay owned by that user and group. Every Gateway Git command on the checkout runs as the managed user. Production releases are unchanged.
+The Gateway prepares a development checkout as the Node's managed user. The checkout and the files in it stay owned by that user and group. Every Gateway Git command on the checkout runs as the managed user. The [agent commands](/reference/node-agent#commands) `instances.prepare-development-source`, `instances.inspect-development-source`, and `instances.resolve-development-source` run these steps, and each one first checks that every parent of the checkout is a real directory under the apps root. Production releases are unchanged.
 
 Every Gateway Git call sets `core.hooksPath=/dev/null` and `core.fsmonitor=false`, so a hook path or a filesystem monitor in `.git/config` never runs. A linked worktree is added without a checkout; the branch checkout at resolve writes its files. Caddy can read only the web root and the public storage target; [Caddy access](/reference/routes#caddy-access) describes the walk.
 
@@ -84,7 +84,7 @@ The managed user writes task metadata under `$(git rev-parse --git-path orbit)`.
 
 On a task VM none of this runs: the Gateway fetches and pushes in its own mirror and sends no token to the VM. See [Git on a task VM](/reference/compute-drivers#git-on-a-task-vm). The rest of this section covers development checkouts on other Nodes.
 
-A fetch and `ls-remote` carry a GitHub token. `ls-remote` runs outside the checkout. A fetch runs in the checkout as the managed user, against the Project repository URL with explicit refspecs, never against a configured remote. It sets `credential.helper` empty, `http.followRedirects` to `false`, and `core.alternateRefsCommand` to `true`, besides the hook and fsmonitor overrides above. Only HTTPS may carry the fetch: `protocol.allow` is `never`, and each transport is set on the command line, so `ssh`, `ext`, `file`, and `git` stay off. The token exists only in the environment of that one `git` command. It travels on the standard input of the SSH process, never in an argument or a file.
+A fetch and `ls-remote` carry a GitHub token. `ls-remote` runs outside the checkout. A fetch runs in the checkout as the managed user, against the Project repository URL with explicit refspecs, never against a configured remote. It sets `credential.helper` empty, `http.followRedirects` to `false`, and `core.alternateRefsCommand` to `true`, besides the hook and fsmonitor overrides above. Only HTTPS may carry the fetch: `protocol.allow` is `never`, and each transport is set on the command line, so `ssh`, `ext`, `file`, and `git` stay off. The token exists only in the environment of that one `git` command. It travels in the command's input on the standard input of the SSH process, never in an argument or a file.
 
 The checkout's `.git/config` is not trusted. The operator writes it, and so does every program that runs as the managed user: setup steps, development Processes, and any agent working in the checkout. Command-line settings outrank that file, so a planted credential helper, hook, `url.*.insteadOf`, or transport setting cannot run a command or move the fetch off HTTPS while the token is in the environment.
 
@@ -117,7 +117,7 @@ That root is the checkout. A `default` Instance deploys in its checkout too, so 
 
 Setup and teardown export `VP_HOME` to the Node's [resolved Vite+ store](/reference/tools#tool-managers). Project-local `vp` processes inherit that value even in these non-login shells, rather than using the default `~/.vite-plus`.
 
-Commands read no input. Orbit discards their stdout and retains only a bounded 1 KiB stderr tail internally; public errors do not include command output. When a step ends, for any reason, Orbit kills its process group, so background processes do not survive the step. Each run holds a lifecycle lock on the Instance: an exclusive `flock` on its checkout directory, so the lock leaves no file behind. If another operation holds that lock during `instance:create`, Orbit keeps the active Instance and records `error_code: instance.lifecycle_busy`.
+The agent's `instances.run-lifecycle-step` runs each step. Commands read no input. Orbit retains only a bounded 1 KiB stderr tail internally; public errors do not include command output. When a step ends, for any reason, Orbit kills its process group, so background processes do not survive the step. Each run holds a lifecycle lock on the Instance: an exclusive `flock` on its checkout directory, so the lock leaves no file behind. If another operation holds that lock during `instance:create`, Orbit keeps the active Instance and records `error_code: instance.lifecycle_busy`.
 
 An identical create retry then reports that setup must run; use `instance:setup` to retry the list. A busy lock never removes the Instance.
 
@@ -227,7 +227,7 @@ A setup list whose timeouts cannot fit is cut with `command.deadline_exceeded`. 
 
 ## Gateway-owned setup steps
 
-A setup step whose command is `@orbit/ci-caches` runs a Gateway-owned operation, not a shell command. The Gateway renders its command right before the step runs, within the step's timeout. Development Instance setup and the task baseline setup list run it the same way. Teardown rejects it. Its errors name the step. The check log shows at most the first 4096 characters of a setup command, so an operation's payload does not fill the log.
+A setup step whose command is `@orbit/ci-caches` runs a Gateway-owned operation, not a shell command. For development Instances, the Rust agent selects the baseline and invokes the checkout's `bin/ci-cache-ref` importer with fixed arguments, within the step's timeout. It sends no shell source. The task workspace setup list applies the same baseline rule through its workspace tooling. Teardown rejects it. Its errors name the step. The check log shows at most the first 4096 characters of a setup command, so an operation's payload does not fill the log.
 
 ## Import CI main caches
 

@@ -17,30 +17,24 @@ use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\Deployment\SharedPaths;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionRepositoryBinding;
+use App\Domain\Logs\LogRedactor;
 use App\Domain\Routes\RouteWebRoot;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitCommitSha;
-use App\Infrastructure\AppProd\ProductionSshExecutor;
-use App\Infrastructure\GitHub\GitReadScript;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentStep;
 use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessOutput;
-use App\Infrastructure\Processes\ProcessOutputStream;
-use App\Infrastructure\Processes\ProtectedInput;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 use Closure;
 
 final readonly class RemoteProductionDeployment implements ProductionDeployment
 {
-    /** Exit status of release preparation when the branch does not contain the requested commit. */
-    private const int CommitNotOnBranch = 5;
-
     /** @var Closure(): string */
     private Closure $releaseName;
 
     /** @param (Closure(): string)|null $releaseName */
     public function __construct(
-        private ProductionSshExecutor $ssh,
+        private AgentCommandRunner $agents,
         private RepositoryReadAccess $access,
         private PrepareVpEnvironmentAction $environments,
         ?Closure $releaseName = null,
@@ -54,94 +48,21 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         if ($commit !== null) {
             GitCommitSha::validate($commit);
         }
-        [$repository, $user, $home, $root] = $this->identity($instance);
+        [$input, $home] = $this->releaseHome($instance);
         $name = ($this->releaseName)();
         $this->assertReleaseName($name);
-        $served = $this->servedWebRoots($instance);
-
-        $script = GitReadScript::for($this->access->for($repository, $instance->loadMissing('project')->project->source_access), ProductionApplicationPaths::render(self::withServedWebRoots(str_replace('__CHECKOUT__', self::checkout($commit), <<<'BASH'
-                    repository=$1
-                    user=$2
-                    home=$3
-                    instance=$4
-                    branch=$5
-                    name=$6
-                    relative_root=$7
-                    __SERVED_WEB_ROOTS__
-                    state_directory="/var/lib/orbit/app-instance-sources/$instance"
-                    marker="$state_directory/release-layout"
-                    releases="$home/releases"
-                    release="$releases/$name"
-                    environment="$home/.env"
-                    release_environment="$release__APPLICATION_SUFFIX__/.env"
-                    current="$home/current"
-
-                    test "$home" = "/home/$user"
-                    printf '%s' "$name" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
-                    case "$relative_root" in ''|/*|..|../*|*/../*|*/..) exit 1 ;; esac
-                    sudo test -d "$state_directory"
-                    sudo test ! -L "$state_directory"
-                    test "$(sudo stat -c %U:%G:%a -- "$state_directory")" = root:root:700
-                    sudo test -f "$marker"
-                    sudo test ! -L "$marker"
-                    test "$(sudo stat -c %U:%G:%a -- "$marker")" = root:root:600
-                    actual=$(sudo base64 --wrap=0 -- "$marker")
-                    expected=$(printf '%s\0%s\0%s\0%s\0' "$repository" "$user" "$home" initial | base64 --wrap=0)
-                    test "$actual" = "$expected"
-                    sudo -u "$user" -H test -d "$home"
-                    sudo -u "$user" -H test ! -L "$home"
-                    test "$(sudo -u "$user" -H realpath -e -- "$home")" = "$home"
-                    sudo -u "$user" -H test -d "$releases"
-                    sudo -u "$user" -H test ! -L "$releases"
-                    sudo -u "$user" -H test -f "$environment"
-                    sudo -u "$user" -H test ! -L "$environment"
-                    sudo -u "$user" -H test ! -e "$release"
-                    sudo -u "$user" -H test ! -L "$release"
-
-                    git_read sudo $git_read_sudo -u "$user" -H git clone --no-checkout --origin origin -- "$repository" "$release" >/dev/null 2>&1
-                    source_ref="refs/remotes/origin/$branch"
-                    git_read sudo $git_read_sudo -u "$user" -H git -C "$release" fetch --prune -- origin >/dev/null 2>&1
-                    sudo -u "$user" -H git -C "$release" show-ref --verify --quiet "$source_ref"
-                    __CHECKOUT__
-                    test "$(sudo -u "$user" -H realpath -e -- "$release__APPLICATION_SUFFIX__")" = "$release__APPLICATION_SUFFIX__"
-                    sudo -u "$user" -H ln -s __ENVIRONMENT_TARGET__ "$release_environment"
-                    test "$(sudo -u "$user" -H realpath -e -- "$release_environment")" = "$environment"
-                    __SHARED_PATHS__
-                    __SERVED_LINKS__
-                    selected_root=$(sudo -u "$user" -H realpath -m -- "$release/$relative_root")
-                    case "$selected_root" in "$release"|"$release"/*) ;; *) exit 1 ;; esac
-                    sudo -u "$user" -H test -d "$selected_root"
-                    check_web_root_links "$release" "$selected_root"
-                    unexpected_user=$(sudo find -P "$release" -xdev ! -user "$user" -print -quit)
-                    test -z "$unexpected_user"
-                    unexpected_group=$(sudo find -P "$release" -xdev ! -group "$user" -print -quit)
-                    test -z "$unexpected_group"
-                    commit=$(sudo -u "$user" -H git -C "$release" rev-parse --verify HEAD)
-                    printf '%s\t%s\n' "$name" "$commit"
-                    BASH), $served, ['__SERVED_LINKS__' => 'link_served_environments "$release"']), $root, SharedPaths::forInstance($instance)));
-        $command = new RemoteCommand(
-            arguments: [
-                'bash',
-                '-seu',
-                '--',
-                $repository,
-                $user,
-                $home,
-                (string) $instance->id,
-                $branch,
-                $name,
-                $root,
-                ...$served,
-            ],
-            input: $script->input,
-            protectedInput: $script->protectedInput,
-            maxOutputBytes: 4096,
-        );
 
         try {
-            $result = $this->execute($instance, $command, 'deployment-prepare', 'deployment.prepare_failed');
+            $result = $this->run($instance, 'instances.prepare-release', [
+                ...$input,
+                'name' => $name,
+                'branch' => $branch,
+                'commit' => $commit,
+                'shared_paths' => SharedPaths::forInstance($instance),
+                'git_read' => $this->access->for($input['repository'], $instance->project->source_access),
+            ], 'deployment-prepare', 'deployment.prepare_failed');
         } catch (RuntimeConvergenceException $exception) {
-            if ($commit !== null && $exception->result?->exitCode === self::CommitNotOnBranch) {
+            if (AgentStep::refusal($exception)?->errorCode === 'instances.commit_not_on_branch') {
                 throw new ResourceOperationException(
                     'deployment.commit_not_on_branch',
                     "The branch [{$branch}] does not contain the commit [{$commit}].",
@@ -153,30 +74,13 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
             throw $this->bindingFailure($instance, $exception) ?? $exception;
         }
 
-        [$reportedName, $reportedCommit] = $this->parseReleaseResult($result);
+        [$reportedName, $reportedCommit] = $this->releaseIdentity($result);
 
         if ($reportedName !== $name || ($commit !== null && $reportedCommit !== $commit)) {
             throw $this->invalidReceipt();
         }
 
         return new DeploymentRelease($name, "{$home}/releases/{$name}", $reportedCommit);
-    }
-
-    /**
-     * The checkout of a new release: the branch's newest commit, or a given commit that the branch contains. The
-     * commit is validated hexadecimal before it enters the program.
-     */
-    private static function checkout(?string $commit): string
-    {
-        if ($commit === null) {
-            return 'sudo -u "$user" -H git -C "$release" checkout --detach "$source_ref" >/dev/null 2>&1';
-        }
-
-        return implode("\n", [
-            'pinned_commit='.GitCommitSha::validate($commit),
-            'sudo -u "$user" -H git -C "$release" merge-base --is-ancestor "$pinned_commit" "$source_ref" >/dev/null 2>&1 || exit '.self::CommitNotOnBranch,
-            'sudo -u "$user" -H git -C "$release" checkout --detach "$pinned_commit" >/dev/null 2>&1',
-        ]);
     }
 
     public function executeStep(
@@ -187,195 +91,53 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
     ): CommandResult {
         [, $user, $home] = $this->identity($instance);
         $this->assertRelease($release, $home);
-        $stepName = $step->name;
-        $command = $this->environments->command($instance, $release->path, $stepName, $step->command);
-        $protectedInput = ProtectedInput::fromString(str_replace(
-            '__COMMAND__',
-            base64_encode($command),
-            <<<'BASH'
-                user=$1
-                home=$2
-                release=$3
-                test "$home" = "/home/$user"
-                releases="$home/releases"
-                case "$release" in "$releases"/*) ;; *) exit 1 ;; esac
-                sudo -u "$user" -H test -d "$release"
-                sudo -u "$user" -H test ! -L "$release"
-                test "$(sudo -u "$user" -H realpath -e -- "$release")" = "$release"
-                command_file=$(sudo -u "$user" -H mktemp "$home/.orbit-deploy.XXXXXXXX")
-                supervisor=
-                process_group=
-                watchdog=
-                expected_uid=$(id -u "$user")
-                discover_process_group() {
-                    for attempt in $(seq 1 100); do
-                        candidate=$(pgrep -P "$supervisor" 2>/dev/null || true)
-                        case "$candidate" in ''|*[!0-9]*) ;; *)
-                            identity=$(ps -o ppid=,pgid=,uid= -p "$candidate" 2>/dev/null || true)
-                            set -- $identity
-                            if [ "$#" -eq 3 ] && [ "$1" = "$supervisor" ] && [ "$2" = "$candidate" ] && [ "$3" = "$expected_uid" ]; then
-                                printf '%s' "$candidate"
-                                return 0
-                            fi
-                        esac
-                        if ! kill -0 "$supervisor" 2>/dev/null; then return 1; fi
-                        sleep 0.01
-                    done
-                    return 1
-                }
-                terminate_step() {
-                    if [ -z "$process_group" ]; then return; fi
-                    sudo -u "$user" -H kill -TERM -- "-$process_group" 2>/dev/null || true
-                    sleep 0.1
-                    sudo -u "$user" -H kill -KILL -- "-$process_group" 2>/dev/null || true
-                }
-                cleanup() {
-                    status=$?
-                    terminate_step
-                    if [ -n "$supervisor" ]; then
-                        wait "$supervisor" 2>/dev/null || true
-                    fi
-                    if [ -n "$watchdog" ]; then
-                        wait "$watchdog" 2>/dev/null || true
-                    fi
-                    sudo -u "$user" -H rm -f -- "$command_file"
-                    exit "$status"
-                }
-                trap cleanup EXIT HUP INT TERM
-                printf '%s' '__COMMAND__' | base64 --decode | sudo -u "$user" -H tee "$command_file" >/dev/null
-                sudo -u "$user" -H chmod 0600 -- "$command_file"
-                owner=$PPID
-                sudo -u "$user" -H setsid --wait bash -eu -c 'umask 077; cd -- "$1"; exec bash -eu "$2"' bash "$release" "$command_file" &
-                supervisor=$!
-                (
-                    watched_group=$(discover_process_group) || exit 0
-                    while kill -0 "$owner" 2>/dev/null && kill -0 "$supervisor" 2>/dev/null; do sleep 0.1; done
-                    if kill -0 "$owner" 2>/dev/null; then exit 0; fi
-                    sudo -u "$user" -H kill -TERM -- "-$watched_group" 2>/dev/null || true
-                    sleep 0.1
-                    sudo -u "$user" -H kill -KILL -- "-$watched_group" 2>/dev/null || true
-                ) &
-                watchdog=$!
-                process_group=$(discover_process_group) || true
-                if wait "$supervisor"; then status=0; else status=$?; fi
-                supervisor=
-                process_group=
-                wait "$watchdog" 2>/dev/null || true
-                watchdog=
-                exit "$status"
-                BASH,
-        ));
+        $instance->loadMissing('environmentValues');
+        $stepName = "deployment-step-{$step->name}";
+        // The Node publishes each line live on the operation's channel; the result keeps the output for the record.
+        $result = AgentStep::run($this->agents, $instance->node, 'instances.run-deploy-step', [
+            'user' => $user,
+            'home' => $home,
+            'release' => $release->name,
+            'script' => $step->command,
+            'vp_environment' => $this->environments->prepare($instance, $release->path, $step->name, $step->command)?->input(),
+            'operation' => $request->operation,
+            'step' => $step->name,
+            'timeout_seconds' => $step->timeoutSeconds,
+            'secrets' => app(LogRedactor::class)->valuesFor($instance),
+            // The agent stops the step at its timeout; the rest leaves time for that stop and the result.
+        ], $stepName, 'deployment.step_failed', 'App production', deadlineSeconds: $step->timeoutSeconds + 30);
+        $streams = ['stdout' => '', 'stderr' => ''];
 
-        return $this->execute(
-            $instance,
-            new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $user, $home, $release->path],
-                protectedInput: $protectedInput,
-                output: static function (ProcessOutput $output) use ($request, $stepName): void {
-                    $request->emit(new DeploymentEvent(
-                        step: $stepName,
-                        stream: $output->stream === ProcessOutputStream::Stdout
-                            ? DeploymentOutputStream::Stdout
-                            : DeploymentOutputStream::Stderr,
-                        value: $output->value,
-                    ));
-                },
-                timeout: $step->timeoutSeconds,
-            ),
-            "deployment-step-{$stepName}",
-            'deployment.step_failed',
-        );
+        foreach (is_array($result['output'] ?? null) ? $result['output'] : [] as $chunk) {
+            $stream = is_array($chunk) ? ($chunk['stream'] ?? null) : null;
+            $value = is_array($chunk) ? ($chunk['value'] ?? null) : null;
+            if (! is_string($value) || ! in_array($stream, ['stdout', 'stderr'], true)) {
+                throw $this->invalidReceipt();
+            }
+            $streams[$stream] .= $value;
+            $request->emit(new DeploymentEvent(
+                step: $step->name,
+                stream: $stream === 'stdout' ? DeploymentOutputStream::Stdout : DeploymentOutputStream::Stderr,
+                value: $value,
+            ));
+        }
+
+        $exitCode = is_int($result['exit_code'] ?? null) ? $result['exit_code'] : throw $this->invalidReceipt();
+        $output = new CommandResult($exitCode, $streams['stdout'], $streams['stderr'], 0, ($result['truncated'] ?? false) === true);
+
+        if ($exitCode !== 0) {
+            throw AgentStep::failed($instance->node, $stepName, 'deployment.step_failed', 'App production', $output);
+        }
+
+        return $output;
     }
 
     public function activate(Instance $instance, DeploymentRelease $release): DeploymentRelease
     {
-        [$repository, $user, $home, $root] = $this->identity($instance);
+        [$input, $home] = $this->releaseHome($instance);
         $this->assertRelease($release, $home);
-        $served = $this->servedWebRoots($instance);
-
-        $result = $this->executeBound(
-            $instance,
-            new RemoteCommand(
-                arguments: [
-                    'bash',
-                    '-seu',
-                    '--',
-                    $repository,
-                    $user,
-                    $home,
-                    (string) $instance->id,
-                    $release->name,
-                    $release->commit,
-                    $root,
-                    ...$served,
-                ],
-                input: ProductionApplicationPaths::render(self::withServedWebRoots(<<<'BASH'
-                    repository=$1
-                    user=$2
-                    home=$3
-                    instance=$4
-                    name=$5
-                    expected_commit=$6
-                    relative_root=$7
-                    __SERVED_WEB_ROOTS__
-                    state_directory="/var/lib/orbit/app-instance-sources/$instance"
-                    marker="$state_directory/release-layout"
-                    releases="$home/releases"
-                    release="$releases/$name"
-                    current="$home/current"
-                    environment="$home/.env"
-                    release_environment="$release__APPLICATION_SUFFIX__/.env"
-                    printf '%s' "$name" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
-                    case "$relative_root" in ''|/*|..|../*|*/../*|*/..) exit 1 ;; esac
-                    sudo test -f "$marker"
-                    sudo test ! -L "$marker"
-                    test "$(sudo stat -c %U:%G:%a -- "$marker")" = root:root:600
-                    actual_marker=$(sudo base64 --wrap=0 -- "$marker")
-                    expected_marker=$(printf '%s\0%s\0%s\0%s\0' "$repository" "$user" "$home" initial | base64 --wrap=0)
-                    test "$actual_marker" = "$expected_marker"
-                    sudo -u "$user" -H test -d "$release/.git"
-                    sudo -u "$user" -H test ! -L "$release"
-                    test "$(sudo -u "$user" -H realpath -e -- "$release")" = "$release"
-                    actual_repository=$(sudo -u "$user" -H git -C "$release" config --null --get remote.origin.url | base64 --wrap=0)
-                    expected_repository=$(printf '%s\0' "$repository" | base64 --wrap=0)
-                    test "$actual_repository" = "$expected_repository"
-                    test "$(sudo -u "$user" -H git -C "$release" rev-parse --verify HEAD)" = "$expected_commit"
-                    sudo -u "$user" -H test -L "$release_environment"
-                    test "$(sudo -u "$user" -H realpath -e -- "$release_environment")" = "$environment"
-                    selected_root=$(sudo -u "$user" -H realpath -m -- "$release/$relative_root")
-                    case "$selected_root" in "$release"|"$release"/*) ;; *) exit 1 ;; esac
-                    sudo -u "$user" -H test -d "$selected_root"
-                    check_web_root_links "$release" "$selected_root"
-                    unexpected_user=$(sudo find -P "$release" -xdev ! -user "$user" -print -quit)
-                    test -z "$unexpected_user"
-                    unexpected_group=$(sudo find -P "$release" -xdev ! -group "$user" -print -quit)
-                    test -z "$unexpected_group"
-                    ancestor=$(dirname -- "$selected_root")
-                    while [ "$ancestor" != "$release" ]; do
-                        case "$ancestor" in "$release"/*) ;; *) exit 1 ;; esac
-                        sudo test -d "$ancestor"
-                        sudo test ! -L "$ancestor"
-                        sudo setfacl -m u:caddy:--x "$ancestor"
-                        ancestor=$(dirname -- "$ancestor")
-                    done
-                    sudo setfacl -m u:caddy:--x "$release"
-                    sudo setfacl -P -R -m u:caddy:r-X "$selected_root"
-                    sudo find -P "$selected_root" -type d -exec setfacl -m d:u:caddy:r-x -- {} +
-                    grant_public_storage "$release" "$selected_root"
-                    __SERVED_ACTIVATION__
-                    temporary="$home/.current.$$.tmp"
-                    trap 'sudo -u "$user" -H rm -f -- "$temporary"' EXIT
-                    sudo -u "$user" -H ln -s "releases/$name" "$temporary"
-                    sudo -u "$user" -H mv -Tf -- "$temporary" "$current"
-                    trap - EXIT
-                    printf '%s\t%s\n' "$name" "$expected_commit"
-                    BASH, $served, ['__SERVED_ACTIVATION__' => "# Each Route with a web root needs its directory, .env link, and Caddy access in the selected\n# release, also in an older release that a rollback selects.\nlink_served_environments \"\$release\"\ngrant_served_web_roots \"\$release\""]), $root),
-                maxOutputBytes: 4096,
-            ),
-            'deployment-activate',
-            'deployment.activation_failed',
-        );
-        [$name, $commit] = $this->parseReleaseResult($result);
+        $result = $this->runBound($instance, 'instances.activate-release', [...$input, 'name' => $release->name, 'commit' => $release->commit], 'deployment-activate', 'deployment.activation_failed');
+        [$name, $commit] = $this->releaseIdentity($result);
 
         if ($name !== $release->name || $commit !== $release->commit) {
             throw $this->invalidReceipt();
@@ -386,195 +148,71 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
 
     public function selected(Instance $instance): ?DeploymentRelease
     {
-        [$repository, $user, $home, $root] = $this->identity($instance);
-        $result = $this->executeBound(
-            $instance,
-            new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $repository, $user, $home, (string) $instance->id, $root],
-                input: ProductionApplicationPaths::render($this->inspectionScript(selectCurrent: true), $root),
-                maxOutputBytes: 4096,
-            ),
-            'deployment-selected-release',
-            'deployment.selection_invalid',
-        );
+        [$input, $home] = $this->releaseHome($instance);
+        $release = $this->runBound($instance, 'instances.inspect-release', $input, 'deployment-selected-release', 'deployment.selection_invalid')['release'] ?? null;
 
-        if (! $result->truncated && $result->stderr === '' && $result->stdout === "NONE\n") {
-            return null;
-        }
-
-        return $this->releaseFromResult($result, $home);
+        return $release === null ? null : $this->releaseFrom($release, $home);
     }
 
     public function retained(Instance $instance, string $name): DeploymentRelease
     {
         $this->assertReleaseName($name);
-        [$repository, $user, $home, $root] = $this->identity($instance);
-        $result = $this->executeBound(
-            $instance,
-            new RemoteCommand(
-                arguments: [
-                    'bash',
-                    '-seu',
-                    '--',
-                    $repository,
-                    $user,
-                    $home,
-                    (string) $instance->id,
-                    $root,
-                    $name,
-                ],
-                input: ProductionApplicationPaths::render($this->inspectionScript(selectCurrent: false), $root),
-                maxOutputBytes: 4096,
-            ),
-            'rollback-retained-release',
-            'rollback.release_invalid',
-        );
+        [$input, $home] = $this->releaseHome($instance);
+        $release = $this->runBound($instance, 'instances.inspect-release', [...$input, 'name' => $name], 'rollback-retained-release', 'rollback.release_invalid')['release'] ?? null;
 
-        return $this->releaseFromResult($result, $home);
+        return $this->releaseFrom($release, $home);
     }
 
     public function releases(Instance $instance): DeploymentReleaseState
     {
-        [$repository, $user, $home, $root] = $this->identity($instance);
-        $result = $this->executeBound(
-            $instance,
-            new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $repository, $user, $home, (string) $instance->id, $root],
-                input: ProductionApplicationPaths::render($this->inventoryScript().<<<'BASH'
+        [$input] = $this->releaseHome($instance);
+        $result = $this->runBound($instance, 'instances.list-releases', $input, 'deployment-release-list', 'deployment.release_inspection_failed');
+        $selected = $result['selected'] ?? null;
+        $listed = $result['releases'] ?? null;
+        if (! is_array($listed)) {
+            throw $this->invalidReceipt();
+        }
+        $releases = [];
 
-                    printf 'SELECTED\t%s\n' "$selected"
-                    while IFS= read -r -d '' name; do
-                        if receipt=$(inspect_release "$name"); then
-                            printf '%s\n' "$receipt"
-                        fi
-                    done < <(sudo -u "$user" -H find -P "$releases" -mindepth 1 -maxdepth 1 -type d -printf '%f\0' | sort -z)
-                    BASH, $root),
-                maxOutputBytes: 65536,
-            ),
-            'deployment-release-list',
-            'deployment.release_inspection_failed',
-        );
+        foreach ($listed as $release) {
+            [$name] = $this->releaseIdentity(is_array($release) ? $release : []);
+            $releases[] = $name;
+        }
 
-        return $this->releaseStateFromResult($result);
+        if (count($releases) !== count(array_unique($releases)) || ($selected !== null && (! is_string($selected) || ! in_array($selected, $releases, strict: true)))) {
+            throw $this->invalidReceipt();
+        }
+
+        sort($releases);
+
+        return new DeploymentReleaseState($releases, $selected);
     }
 
     public function prune(Instance $instance, DeploymentRelease $selected, ?DeploymentRelease $previous): array
     {
-        [$repository, $user, $home, $root] = $this->identity($instance);
+        [$input, $home] = $this->releaseHome($instance);
         $this->assertRelease($selected, $home);
 
         if ($previous !== null) {
             $this->assertRelease($previous, $home);
         }
 
-        $result = $this->execute(
-            $instance,
-            new RemoteCommand(
-                arguments: [
-                    'bash',
-                    '-seu',
-                    '--',
-                    $repository,
-                    $user,
-                    $home,
-                    (string) $instance->id,
-                    $root,
-                    (string) DeploymentRelease::RETAINED_PER_HOME,
-                    $selected->name,
-                    $previous->name ?? '',
-                ],
-                input: ProductionApplicationPaths::render($this->inventoryScript().<<<'BASH'
-
-                    limit=$6
-                    expected_selected=$7
-                    previous=$8
-                    test "$selected" = "$expected_selected"
-                    declare -A found=()
-                    names=()
-                    # A release that fails inspection is never removed, so its messages do not matter here.
-                    while IFS= read -r -d '' name; do
-                        if inspect_release "$name" >/dev/null 2>&1; then
-                            found["$name"]=1
-                            names+=("$name")
-                        fi
-                    done < <(sudo -u "$user" -H find -P "$releases" -mindepth 1 -maxdepth 1 -type d -printf '%f\0' | sort -z)
-                    test -n "${found[$selected]:-}"
-                    # A Process can opt out of restart or leave children that still use an older release.
-                    # Keep every release that is the working directory, root, or executable of a process of the user.
-                    # When a live process cannot be read, nothing is removed.
-                    declare -A busy=()
-                    if pids=$(pgrep -u "$user"); then :; else test "$?" = 1; pids=; fi
-                    for pid in $pids; do
-                        for link in cwd root exe; do
-                            if target=$(sudo readlink -- "/proc/$pid/$link" 2>/dev/null); then
-                                case "$target" in "$releases"/*) used=${target#"$releases"/}; busy["${used%%/*}"]=1 ;; esac
-                            elif sudo test -e "/proc/$pid" && ! sudo grep -q '^State:[[:space:]]*Z' "/proc/$pid/status" 2>/dev/null; then
-                                # A process that ended in the meantime, or a zombie, has no paths to keep.
-                                exit 1
-                            fi
-                        done
-                    done
-                    # The first release is `initial`. Every later name starts with its UTC creation time, so it sorts by age.
-                    newest_first=()
-                    for (( index = ${#names[@]} - 1; index >= 0; index-- )); do
-                        if [ "${names[index]}" != initial ]; then newest_first+=("${names[index]}"); fi
-                    done
-                    if [ -n "${found[initial]:-}" ]; then newest_first+=(initial); fi
-                    declare -A keep=()
-                    kept=0
-                    for name in "$selected" "$previous" "${newest_first[@]}"; do
-                        if [ "$kept" -ge "$limit" ]; then break; fi
-                        if [ -z "$name" ] || [ -z "${found[$name]:-}" ] || [ -n "${keep[$name]:-}" ]; then continue; fi
-                        keep["$name"]=1
-                        kept=$((kept + 1))
-                    done
-                    # A rename takes a release out of the set at once. A removal that stops leaves only a `.pruned-` folder,
-                    # which no listing or rollback accepts and the next prune removes.
-                    for name in "${names[@]}"; do
-                        if [ -n "${keep[$name]:-}" ]; then continue; fi
-                        if [ -n "${busy[$name]:-}" ]; then
-                            printf 'IN_USE\t%s\n' "$name"
-                            continue
-                        fi
-                        sudo -u "$user" -H mv -T -- "$releases/$name" "$releases/.pruned-$name"
-                        printf 'PRUNED\t%s\n' "$name"
-                    done
-                    # The renames above already took the releases out of the set. A folder that cannot be deleted now is
-                    # deleted by a later prune, so its failure does not hide which releases were removed.
-                    while IFS= read -r -d '' pruned; do
-                        if [ -n "${busy[${pruned##*/}]:-}" ]; then continue; fi
-                        # A folder without write permission, such as a read-only cache, would stop the removal halfway.
-                        sudo -u "$user" -H find -P "$pruned" -type d ! -perm -u=w -exec chmod u+w -- {} + 2>/dev/null || true
-                        sudo -u "$user" -H rm -rf --one-file-system -- "$pruned" || true
-                    done < <(sudo -u "$user" -H find -P "$releases" -mindepth 1 -maxdepth 1 -type d -name '.pruned-*' -print0)
-                    BASH, $root),
-                maxOutputBytes: 65536,
-            ),
-            'deployment-prune',
-            'deployment.prune_failed',
-        );
-
-        // The script exits zero once it has decided, so its output names every release it took out, even when a
-        // command wrote a message on the way.
-        if ($result->truncated) {
-            throw $this->invalidReceipt();
-        }
-
+        $result = $this->run($instance, 'instances.prune-releases', [
+            ...$input,
+            'limit' => DeploymentRelease::RETAINED_PER_HOME,
+            'selected' => $selected->name,
+            'previous' => $previous?->name,
+        ], 'deployment-prune', 'deployment.prune_failed');
         $outcome = ['removed' => [], 'in_use' => []];
 
-        foreach (explode("\n", rtrim($result->stdout, "\n")) as $line) {
-            if ($line === '') {
-                continue;
+        foreach (['removed', 'in_use'] as $key) {
+            foreach (is_array($result[$key] ?? null) ? $result[$key] : [] as $name) {
+                if (! is_string($name)) {
+                    throw $this->invalidReceipt();
+                }
+                $this->assertReleaseName($name);
+                $outcome[$key][] = $name;
             }
-
-            $parts = explode("\t", $line);
-
-            if (count($parts) !== 2 || ! in_array($parts[0], ['PRUNED', 'IN_USE'], true)) {
-                throw $this->invalidReceipt();
-            }
-
-            $this->assertReleaseName($parts[1]);
-            $outcome[$parts[0] === 'PRUNED' ? 'removed' : 'in_use'][] = $parts[1];
         }
 
         $this->environments->releaseRemoved($instance, array_map(
@@ -586,104 +224,27 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
     }
 
     /**
-     * Checks the release home and defines `inspect_release`, which prints the name and commit of a release that passes
-     * every check. It sets `selected` to the release `current` names, or to an empty string.
-     */
-    private function inventoryScript(): string
-    {
-        return ProductionWebRootProgram::linkChecks()."\n".<<<'BASH'
-            # find must restore its working directory after sudo changes users.
-            cd /
-            repository=$1
-            user=$2
-            home=$3
-            instance=$4
-            relative_root=$5
-            state_directory="/var/lib/orbit/app-instance-sources/$instance"
-            marker="$state_directory/release-layout"
-            releases="$home/releases"
-            environment="$home/.env"
-            current="$home/current"
-            test "$home" = "/home/$user"
-            case "$relative_root" in ''|/*|..|../*|*/../*|*/..) exit 1 ;; esac
-            sudo test -f "$marker"
-            sudo test ! -L "$marker"
-            test "$(sudo stat -c %U:%G:%a -- "$marker")" = root:root:600
-            actual_marker=$(sudo base64 --wrap=0 -- "$marker")
-            expected_marker=$(printf '%s\0%s\0%s\0%s\0' "$repository" "$user" "$home" initial | base64 --wrap=0)
-            test "$actual_marker" = "$expected_marker"
-            sudo -u "$user" -H test -d "$releases"
-            sudo -u "$user" -H test ! -L "$releases"
-
-            selected=
-            if sudo -u "$user" -H test -e "$current" || sudo -u "$user" -H test -L "$current"; then
-                sudo -u "$user" -H test -L "$current"
-                selected_path=$(sudo -u "$user" -H realpath -e -- "$current")
-                case "$selected_path" in "$releases"/*) ;; *) exit 1 ;; esac
-                selected=${selected_path#"$releases"/}
-                case "$selected" in */*) exit 1 ;; esac
-                printf '%s' "$selected" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
-            fi
-
-            inspect_release() {
-                local name=$1
-                local release="$releases/$name"
-                local actual_repository expected_repository release_environment selected_root
-                local unexpected_symlink unexpected_user unexpected_group commit
-
-                printf '%s' "$name" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$' || return 1
-                sudo -u "$user" -H test -d "$release/.git" || return 1
-                sudo -u "$user" -H test ! -L "$release" || return 1
-                test "$(sudo -u "$user" -H realpath -e -- "$release")" = "$release" || return 1
-                actual_repository=$(sudo -u "$user" -H git -C "$release" config --null --get remote.origin.url | base64 --wrap=0) || return 1
-                expected_repository=$(printf '%s\0' "$repository" | base64 --wrap=0)
-                test "$actual_repository" = "$expected_repository" || return 1
-                release_environment="$release__APPLICATION_SUFFIX__/.env"
-                sudo -u "$user" -H test -L "$release_environment" || return 1
-                test "$(sudo -u "$user" -H realpath -e -- "$release_environment")" = "$environment" || return 1
-                selected_root=$(sudo -u "$user" -H realpath -m -- "$release/$relative_root") || return 1
-                case "$selected_root" in "$release"|"$release"/*) ;; *) return 1 ;; esac
-                sudo -u "$user" -H test -d "$selected_root" || return 1
-                check_web_root_links "$release" "$selected_root" || return 1
-                unexpected_user=$(sudo find -P "$release" -xdev ! -user "$user" -print -quit) || return 1
-                test -z "$unexpected_user" || return 1
-                unexpected_group=$(sudo find -P "$release" -xdev ! -group "$user" -print -quit) || return 1
-                test -z "$unexpected_group" || return 1
-                commit=$(sudo -u "$user" -H git -C "$release" rev-parse --verify HEAD) || return 1
-                printf 'RELEASE\t%s\t%s\n' "$name" "$commit"
-            }
-
-            BASH;
-    }
-
-    /**
-     * The web roots of the Instance's Routes with a web root, as one more script argument. An Instance
-     * without such a Route passes no argument, so its commands are unchanged.
+     * The home every release command checks, and its path.
      *
-     * @return list<string>
+     * @return array{array{repository: string, user: string, home: string, instance: int, relative_root: string, application_suffix: string, served: list<array{web_root: string, directory: string}>}, string}
      */
-    private function servedWebRoots(Instance $instance): array
+    private function releaseHome(Instance $instance): array
     {
-        $entries = ProductionWebRootProgram::entries(RouteWebRoot::servedApplications($instance));
+        [$repository, $user, $home, $root] = $this->identity($instance);
+        $served = array_map(
+            static fn (array $application): array => ['web_root' => $application['web_root'], 'directory' => $application['directory']],
+            RouteWebRoot::servedApplications($instance),
+        );
 
-        return $entries === '' ? [] : [$entries];
-    }
-
-    /**
-     * Adds link checks to each release program, and Route web-root work when the Instance serves such Routes.
-     *
-     * @param  list<string>  $served
-     * @param  array<string, string>  $calls  Placeholder line to the command that replaces it.
-     */
-    private static function withServedWebRoots(string $program, array $served, array $calls): string
-    {
-        $replacements = ["__SERVED_WEB_ROOTS__\n" => $served === [] ? '' : "served_web_roots=\$8\n"];
-
-        foreach ($calls as $placeholder => $command) {
-            $replacements["{$placeholder}\n"] = $served === [] ? '' : "{$command}\n";
-        }
-
-        return ($served === [] ? ProductionWebRootProgram::linkChecks() : ProductionWebRootProgram::functions())."\n".strtr($program, $replacements);
+        return [[
+            'repository' => $repository,
+            'user' => $user,
+            'home' => $home,
+            'instance' => $instance->id,
+            'relative_root' => $root,
+            'application_suffix' => ProductionApplicationPaths::suffix($root),
+            'served' => $served,
+        ], $home];
     }
 
     /** @return array{string, string, string, string} */
@@ -714,94 +275,26 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         return [$repository, $user, $home, $root];
     }
 
-    private function inspectionScript(bool $selectCurrent): string
+    /**
+     * @param  array<string, mixed>  $input
+     * @return array<string, mixed>
+     */
+    private function run(Instance $instance, string $command, array $input, string $step, string $errorCode): array
     {
-        $selection = $selectCurrent
-            ? <<<'BASH'
-                current="$home/current"
-                if ! sudo -u "$user" -H test -e "$current" && ! sudo -u "$user" -H test -L "$current"; then
-                    printf 'NONE\n'
-                    exit 0
-                fi
-                sudo -u "$user" -H test -L "$current"
-                release=$(sudo -u "$user" -H realpath -e -- "$current")
-                case "$release" in "$releases"/*) ;; *) exit 1 ;; esac
-                name=${release#"$releases"/}
-                case "$name" in */*) exit 1 ;; esac
-                BASH
-            : <<<'BASH'
-                name=$6
-                printf '%s' "$name" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
-                release="$releases/$name"
-                BASH;
-
-        $script = <<<'BASH'
-            repository=$1
-            user=$2
-            home=$3
-            instance=$4
-            relative_root=$5
-            state_directory="/var/lib/orbit/app-instance-sources/$instance"
-            marker="$state_directory/release-layout"
-            releases="$home/releases"
-            environment="$home/.env"
-            test "$home" = "/home/$user"
-            case "$relative_root" in ''|/*|..|../*|*/../*|*/..) exit 1 ;; esac
-            sudo test -f "$marker"
-            sudo test ! -L "$marker"
-            test "$(sudo stat -c %U:%G:%a -- "$marker")" = root:root:600
-            actual_marker=$(sudo base64 --wrap=0 -- "$marker")
-            expected_marker=$(printf '%s\0%s\0%s\0%s\0' "$repository" "$user" "$home" initial | base64 --wrap=0)
-            test "$actual_marker" = "$expected_marker"
-            sudo -u "$user" -H test -d "$releases"
-            sudo -u "$user" -H test ! -L "$releases"
-            __SELECTION__
-            printf '%s' "$name" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
-            sudo -u "$user" -H test -d "$release/.git"
-            sudo -u "$user" -H test ! -L "$release"
-            test "$(sudo -u "$user" -H realpath -e -- "$release")" = "$release"
-            actual_repository=$(sudo -u "$user" -H git -C "$release" config --null --get remote.origin.url | base64 --wrap=0)
-            expected_repository=$(printf '%s\0' "$repository" | base64 --wrap=0)
-            test "$actual_repository" = "$expected_repository"
-            release_environment="$release__APPLICATION_SUFFIX__/.env"
-            sudo -u "$user" -H test -L "$release_environment"
-            test "$(sudo -u "$user" -H realpath -e -- "$release_environment")" = "$environment"
-            selected_root=$(sudo -u "$user" -H realpath -m -- "$release/$relative_root")
-            case "$selected_root" in "$release"|"$release"/*) ;; *) exit 1 ;; esac
-            sudo -u "$user" -H test -d "$selected_root"
-            check_web_root_links "$release" "$selected_root"
-            unexpected_user=$(sudo find -P "$release" -xdev ! -user "$user" -print -quit)
-            test -z "$unexpected_user"
-            unexpected_group=$(sudo find -P "$release" -xdev ! -group "$user" -print -quit)
-            test -z "$unexpected_group"
-            commit=$(sudo -u "$user" -H git -C "$release" rev-parse --verify HEAD)
-            printf '%s\t%s\n' "$name" "$commit"
-            BASH;
-
-        return ProductionWebRootProgram::linkChecks()."\n".str_replace('__SELECTION__', $selection, $script);
-    }
-
-    private function execute(
-        Instance $instance,
-        RemoteCommand $command,
-        string $step,
-        string $errorCode,
-    ): CommandResult {
-        return $this->ssh->execute($instance->node, $command, $step, $errorCode);
+        return AgentStep::run($this->agents, $instance->node, $command, $input, $step, $errorCode, 'App production');
     }
 
     /**
-     * Runs a command that checks the repository binding. When it fails because the home
-     * records another URL, the error names the repair instead of the failed check.
+     * Runs a command that checks the repository binding. When it fails because the home records another URL, the
+     * error names the repair instead of the failed check.
+     *
+     * @param  array<string, mixed>  $input
+     * @return array<string, mixed>
      */
-    private function executeBound(
-        Instance $instance,
-        RemoteCommand $command,
-        string $step,
-        string $errorCode,
-    ): CommandResult {
+    private function runBound(Instance $instance, string $command, array $input, string $step, string $errorCode): array
+    {
         try {
-            return $this->execute($instance, $command, $step, $errorCode);
+            return $this->run($instance, $command, $input, $step, $errorCode);
         } catch (RuntimeConvergenceException $exception) {
             throw $this->bindingFailure($instance, $exception) ?? $exception;
         }
@@ -812,7 +305,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         $repository = $instance->project->repository_url;
 
         try {
-            $record = ($this->repositories ?? new RemoteProductionRepositoryBinding($this->ssh))->inspect($instance);
+            $record = ($this->repositories ?? new RemoteProductionRepositoryBinding($this->agents))->inspect($instance);
         } catch (\Throwable) {
             return null;
         }
@@ -838,33 +331,27 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         );
     }
 
-    /** @return array{string, string} */
-    private function parseReleaseIdentity(string $receipt): array
+    /**
+     * @param  array<array-key, mixed>  $release
+     * @return array{string, string}
+     */
+    private function releaseIdentity(array $release): array
     {
-        $parts = explode("\t", trim($receipt), 2);
+        $name = $release['name'] ?? null;
+        $commit = $release['commit'] ?? null;
 
-        if (count($parts) !== 2 || preg_match('/\A[0-9a-f]{40,64}\z/', $parts[1]) !== 1) {
+        if (! is_string($name) || ! is_string($commit) || preg_match('/\A[0-9a-f]{40,64}\z/', $commit) !== 1) {
             throw $this->invalidReceipt();
         }
 
-        $this->assertReleaseName($parts[0]);
+        $this->assertReleaseName($name);
 
-        return [$parts[0], $parts[1]];
+        return [$name, $commit];
     }
 
-    /** @return array{string, string} */
-    private function parseReleaseResult(CommandResult $result): array
+    private function releaseFrom(mixed $release, string $home): DeploymentRelease
     {
-        if ($result->truncated || $result->stderr !== '') {
-            throw $this->invalidReceipt();
-        }
-
-        return $this->parseReleaseIdentity($result->stdout);
-    }
-
-    private function releaseFromResult(CommandResult $result, string $home): DeploymentRelease
-    {
-        [$name, $commit] = $this->parseReleaseResult($result);
+        [$name, $commit] = $this->releaseIdentity(is_array($release) ? $release : []);
 
         return new DeploymentRelease($name, "{$home}/releases/{$name}", $commit);
     }
@@ -891,56 +378,6 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                 422,
             );
         }
-    }
-
-    private function releaseStateFromResult(CommandResult $result): DeploymentReleaseState
-    {
-        if ($result->truncated || $result->stderr !== '') {
-            throw $this->invalidReceipt();
-        }
-
-        $lines = explode("\n", rtrim($result->stdout, "\n"));
-        $selection = array_shift($lines);
-
-        if (! str_starts_with($selection, "SELECTED\t")) {
-            throw $this->invalidReceipt();
-        }
-
-        $selected = substr($selection, strlen("SELECTED\t"));
-        $selected = $selected === '' ? null : $selected;
-
-        if ($selected !== null) {
-            $this->assertReleaseName($selected);
-        }
-
-        $releases = [];
-
-        foreach ($lines as $line) {
-            $parts = explode("\t", $line);
-
-            if (
-                count($parts) !== 3
-                || $parts[0] !== 'RELEASE'
-                || preg_match('/\A[0-9a-f]{40,64}\z/', $parts[2]) !== 1
-            ) {
-                throw $this->invalidReceipt();
-            }
-
-            $this->assertReleaseName($parts[1]);
-            $releases[] = $parts[1];
-        }
-
-        if (count($releases) !== count(array_unique($releases))) {
-            throw $this->invalidReceipt();
-        }
-
-        sort($releases);
-
-        if ($selected !== null && ! in_array($selected, $releases, strict: true)) {
-            throw $this->invalidReceipt();
-        }
-
-        return new DeploymentReleaseState($releases, $selected);
     }
 
     private function invalidReceipt(): ResourceOperationException

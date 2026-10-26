@@ -56,7 +56,7 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Instances\NativeInstanceRemovalProjector;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceConfigurator;
 use App\Infrastructure\Metrics\NativeMetricsFleetReconciler;
@@ -67,12 +67,6 @@ use App\Infrastructure\Metrics\ServiceMetricsRuntime;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessRunner;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Activity;
 use App\Models\Cluster;
 use App\Models\Instance;
@@ -93,8 +87,10 @@ use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\ListInstancesRequest;
 use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
-use Tests\Support\AppDevFakeSshExecutor;
-use Tests\Support\LifecycleSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\FakesEnvironmentSyncInspection;
+use Tests\Support\LifecycleAgent;
+use Tests\Support\SharedPhpPoolAnswers;
 use Tests\TestCase;
 
 beforeEach(function (): void {
@@ -572,46 +568,14 @@ beforeEach(function (): void {
 
 describe('development Instance rename', function (): void {
     beforeEach(function (): void {
-        $this->renameTransport = new class implements SshExecutor
-        {
-            public int $exitCode = 0;
-
-            public int $calls = 0;
-
-            public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-            {
-                $this->calls++;
-
-                $branch = $command->arguments[array_key_last($command->arguments)];
-                $output = base64_encode('https://github.com/acme/site.git')."\n".base64_encode($branch)."\n";
-
-                return new CommandResult($this->exitCode, $output, '', 1, false);
-            }
-        };
-        app()->instance(DevelopmentSshExecutor::class, new DevelopmentSshExecutor(
-            $this->renameTransport,
-            new class implements SshKeyProvider
-            {
-                public function privateKeyPath(): string
-                {
-                    return '/tmp/test-key';
-                }
-
-                public function publicKey(): string
-                {
-                    return 'ssh-ed25519 test';
-                }
-            },
-            new class implements KnownHostsStore
-            {
-                public function path(): string
-                {
-                    return '/tmp/test-hosts';
-                }
-
-                public function put(string $host, int $port, HostKey $key): void {}
-            },
-        ));
+        // The agent's Rust tests prove how the checkout is read; here it reports the HEAD a test chooses.
+        $this->renameHead = 't3code/login';
+        $this->renameAgents = new FakeAgentCommandRunner()->answer('instances.inspect-development-source', fn (): array => [
+            'origin' => 'https://github.com/acme/site.git',
+            'branch' => $this->renameHead,
+            'commit' => null,
+        ]);
+        app()->instance(AgentCommandRunner::class, $this->renameAgents);
         $this->routeProjection = Mockery::mock(RouteDomainProjector::class)->shouldIgnoreMissing();
         app()->instance(RouteDomainProjector::class, $this->routeProjection);
         $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'dev'])->assertCreated();
@@ -644,14 +608,21 @@ describe('development Instance rename', function (): void {
         'both' => [['branch' => 't3code/login', 'domain' => 'login.acme.test']],
     ]);
 
-    it('refuses wrong or detached HEAD and remote lifecycle contention before changing either field', function (int $exit, string $code): void {
-        $this->renameTransport->exitCode = $exit;
+    it('refuses wrong or detached HEAD and remote lifecycle contention before changing either field', function (?string $head, string $code): void {
+        $this->renameHead = $head;
+        if ($code === 'instance.lifecycle_busy') {
+            $this->renameAgents->refuse('instances.inspect-development-source', 'instances.source_busy');
+        }
         $before = $this->renameInstance->getAttributes();
         $this->postJson('/api/v1/instances/'.$this->renameInstance->id.'/rename', ['branch' => 't3code/login', 'domain' => 'login.acme.test'])
             ->assertConflict()->assertJsonPath('error.code', $code);
         expect($this->renameInstance->refresh()->getAttributes())->toBe($before)
             ->and(Route::query()->sole()->domain)->toBe('dev.acme.test');
-    })->with([[42, 'instance.branch_not_checked_out'], [75, 'instance.lifecycle_busy']]);
+    })->with([
+        'another branch' => ['main', 'instance.branch_not_checked_out'],
+        'detached HEAD' => [null, 'instance.branch_not_checked_out'],
+        'busy checkout' => ['t3code/login', 'instance.lifecycle_busy'],
+    ]);
 
     it('refuses a domain conflict before recording the checked-out branch', function (): void {
         Route::query()->create(['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'domain' => 'occupied.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
@@ -673,7 +644,7 @@ describe('development Instance rename', function (): void {
     it('validates presence, types and branch names', function (array $payload): void {
         $this->postJson('/api/v1/instances/'.$this->renameInstance->id.'/rename', $payload)
             ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
-        expect($this->renameTransport->calls)->toBe(0);
+        expect($this->renameAgents->calls)->toBe([]);
     })->with([[[]], [['branch' => null]], [['domain' => '']], [['branch' => 7]], [['branch' => '-invalid']]]);
 
     it('maps environment-owner contention to lifecycle busy', function (): void {
@@ -695,6 +666,7 @@ describe('development Instance rename', function (): void {
     });
 
     it('keeps the existing override when recording the current branch again', function (): void {
+        $this->renameHead = 'dev';
         $this->postJson('/api/v1/instances/'.$this->renameInstance->id.'/rename', ['branch' => 'dev'])->assertOk();
         expect($this->renameInstance->refresh()->branch_override)->toBeNull();
     });
@@ -794,7 +766,7 @@ describe('development Instance rename', function (): void {
         $this->renameInstance->update(['status' => InstanceState::SourceResolved]);
         $this->postJson('/api/v1/instances/'.$this->renameInstance->id.'/rename', ['branch' => 't3code/login'])
             ->assertConflict()->assertJsonPath('error.code', 'instance.rename_inactive');
-        expect($this->renameTransport->calls)->toBe(0);
+        expect($this->renameAgents->calls)->toBe([]);
     });
 
     it('refuses production and linked-worktree Instances', function (string $layout): void {
@@ -807,7 +779,7 @@ describe('development Instance rename', function (): void {
         }
         $this->postJson('/api/v1/instances/'.$instance->id.'/rename', ['branch' => 't3code/login'])
             ->assertConflict()->assertJsonPath('error.code', 'instance.rename_unsupported');
-        expect($this->renameTransport->calls)->toBe(0);
+        expect($this->renameAgents->calls)->toBe([]);
     })->with(['production', 'worktree']);
 
     it('requires an own Route only for domain changes', function (): void {
@@ -1687,7 +1659,7 @@ it('removes interrupted pre-activation checkouts with no failure record without 
     $instance->update(['status' => $state, 'failed_step' => null, 'error_code' => null, 'starting_commit' => $state === 'source_resolved' ? $instance->starting_commit : null, 'branch' => $state === 'source_resolved' ? $instance->branch : null]);
     expect($instance->source_prepare_id)->not->toBeNull();
     ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'teardown', 'name' => 'must-not-run', 'command' => 'exit 1', 'timeout_seconds' => 30, 'position' => 0]);
-    $transport = new LifecycleSshExecutor;
+    $transport = new LifecycleAgent;
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
     $this->deleteJson('/api/v1/instances/'.$instance->id, ['force' => $force])->assertOk();
     expect(Instance::query()->count())->toBe(0)->and(Route::query()->count())->toBe(0)->and($transport->inputs)->toBe([]);
@@ -2536,7 +2508,8 @@ it('rejects repository execution and unsupported transport keys', function (): v
 
 it('completes Instance removal while another Node service metrics snapshot fails', function (): void {
     // The creation request resolves singletons used by the native removal projector.
-    app()->instance(SshExecutor::class, new AppDevFakeSshExecutor);
+    $poolAgents = SharedPhpPoolAnswers::register(new FakeAgentCommandRunner()->answer('firewall.route-lan', ['matches' => false])->answer('certificates.remove-leaf', []));
+    app()->instance(AgentCommandRunner::class, $poolAgents);
     $processes = Mockery::mock(ProcessRunner::class);
     $processes->shouldReceive('run')->twice()->andReturn(new CommandResult(0, '', '', 1, false));
     app()->instance(ProcessRunner::class, $processes);
@@ -2591,6 +2564,8 @@ it('completes Instance removal while another Node service metrics snapshot fails
     expect(app(ExporterDegradationRepository::class)->get($failed->id))->toBe(ExporterDegradationReason::ReconcileFailed);
     expect(app(ExporterDegradationRepository::class)->step($failed->id))->toBe('snapshot');
     expect(app(MetricsReconcileDegradationRepository::class)->errorCode($failed->id))->toBe('metrics.service_convergence_failed');
+    expect($poolAgents->commands())->toContain('php.converge-shared-pools')->not->toContain('php.inspect-shared-pools');
+    expect(collect($poolAgents->calls)->where('command', 'certificates.remove-leaf')->pluck('input.scope')->unique()->values()->all())->toBe(["app-instance-{$id}"]);
 });
 
 it('removes an active Instance through every durable checkpoint', function (bool $force): void {
@@ -3272,6 +3247,8 @@ function orb182_api_removal_graph(TestCase $test): array
 
 final class RecoveredSourceProfileEnvironmentAccess implements InstanceEnvironmentReader, InstanceEnvironmentWriter, InstanceOperationPreflight
 {
+    use FakesEnvironmentSyncInspection;
+
     public function assertEnvironmentReadable(
         InstanceEnvironmentContext $context,
     ): void {}
@@ -3306,7 +3283,7 @@ it('creates or resumes an unrouted monorepo default and runs setup once', functi
         'timeout_seconds' => 30,
         'position' => 0,
     ]);
-    $transport = new LifecycleSshExecutor;
+    $transport = new LifecycleAgent;
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
 
     if ($resume) {
@@ -3353,7 +3330,7 @@ it('creates or resumes an unrouted monorepo default and runs setup once', functi
 
 it('runs setup once on create and skips it for an already active instance', function (): void {
     ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'install', 'command' => 'install', 'timeout_seconds' => 30, 'position' => 0]);
-    $transport = new LifecycleSshExecutor;
+    $transport = new LifecycleAgent;
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
     $input = ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'setup', 'branch' => 'dev'];
     $this->postJson('/api/v1/instances', $input)->assertCreated();
@@ -3364,7 +3341,7 @@ it('runs setup once on create and skips it for an already active instance', func
 it('busy setup retry points to instance:setup instead of treating the Instance as complete', function (): void {
     ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'install', 'command' => 'install', 'timeout_seconds' => 30, 'position' => 0]);
     ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
-    $transport = new LifecycleSshExecutor(result: static fn (): int => 75);
+    $transport = new LifecycleAgent(result: static fn (): int => 75);
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
 
     $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'busy', 'branch' => 'dev'])
@@ -3412,7 +3389,7 @@ it('keeps setup pending when create is interrupted after activation before the b
             throw new RuntimeException('Simulated interruption before setup result persistence.');
         }
     });
-    $transport = new LifecycleSshExecutor;
+    $transport = new LifecycleAgent;
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
     $data = new CreateInstanceData(
         projectId: $this->orbitApp->id,
@@ -3447,7 +3424,7 @@ it('keeps the Instance when rollback teardown encounters a busy lifecycle lock',
     foreach (['setup', 'teardown'] as $position => $phase) {
         ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => $phase, 'name' => $phase, 'command' => $phase, 'timeout_seconds' => 30, 'position' => $position]);
     }
-    $transport = new LifecycleSshExecutor(result: static fn (array $input): int => $input['command'] === 'setup' ? 1 : 75);
+    $transport = new LifecycleAgent(result: static fn (array $input): int => $input['command'] === 'setup' ? 1 : 75);
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
 
     $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'busy-rollback', 'branch' => 'dev'])
@@ -3468,7 +3445,7 @@ it('tears down and removes a newly created instance after confirmed setup failur
     foreach (['setup', 'teardown'] as $phase) {
         ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => $phase, 'name' => $phase, 'command' => $phase, 'timeout_seconds' => 30, 'position' => 0]);
     }
-    $transport = new LifecycleSshExecutor(result: static fn (array $input): int => $input['command'] === 'setup' ? 1 : $teardownExit);
+    $transport = new LifecycleAgent(result: static fn (array $input): int => $input['command'] === 'setup' ? 1 : $teardownExit);
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
     $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'failed-setup', 'branch' => 'dev'])
         ->assertUnprocessable()->assertJsonPath('error.code', 'instance.setup_step_failed');
@@ -3482,7 +3459,7 @@ it('preserves unavailable setup commands through create rollback', function (int
     ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'install-dependencies', 'command' => $command, 'timeout_seconds' => 30, 'position' => 0]);
     ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
     // The real-runner tests establish Bash's 126/127 results; this exercises the create wrappers.
-    $transport = new LifecycleSshExecutor(result: static fn (array $input): int => $input['command'] === $command ? $setupExit : ($cleanup === 'unconfirmed' ? 255 : 0));
+    $transport = new LifecycleAgent(result: static fn (array $input): int => $input['command'] === $command ? $setupExit : ($cleanup === 'unconfirmed' ? 255 : 0));
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
 
     if ($cleanup === 'incomplete') {
@@ -3529,7 +3506,7 @@ it('stops setup early enough in a create that the rollback still fits the reques
     app()->instance(CommandDeadline::class, $deadline);
     $now = 300.0;
     // Both lists run until their timeout, as a remote `sleep` would.
-    $transport = new LifecycleSshExecutor(result: static function (array $input) use (&$now): int {
+    $transport = new LifecycleAgent(result: static function (array $input) use (&$now): int {
         $now += $input['timeout'];
 
         return $input['command'] === 'setup' ? 124 : 0;
@@ -3555,7 +3532,7 @@ it('names the forced destroy that finishes a create rollback whose removal did n
     foreach (['setup', 'teardown'] as $phase) {
         ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => $phase, 'name' => $phase, 'command' => $phase, 'timeout_seconds' => 30, 'position' => 0]);
     }
-    $transport = new LifecycleSshExecutor(result: static fn (array $input): int => $input['command'] === 'setup' ? 1 : 0);
+    $transport = new LifecycleAgent(result: static fn (array $input): int => $input['command'] === 'setup' ? 1 : 0);
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
     // The Instance this create makes is the next id; its source removal is interrupted.
     $this->removalSource->failPrepareFor = (int) Instance::query()->max('id') + 1;
@@ -3581,7 +3558,7 @@ it('names the forced destroy that finishes a create rollback whose removal did n
 
 it('retains the checkout when setup execution cannot be confirmed', function (): void {
     ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'install', 'command' => 'install', 'timeout_seconds' => 30, 'position' => 0]);
-    $transport = new LifecycleSshExecutor(result: static fn (): int => 255);
+    $transport = new LifecycleAgent(result: static fn (): int => 255);
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
     $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'unconfirmed', 'branch' => 'dev'])
         ->assertUnprocessable()->assertJsonPath('error.code', 'instance.setup_step_failed');

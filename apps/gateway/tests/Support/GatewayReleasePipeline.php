@@ -33,24 +33,24 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskTickClock;
 use App\Infrastructure\GatewayReleases\GatewayReleaseAlerts;
 use App\Infrastructure\GatewayReleases\GatewayReleaseBuilder;
+use App\Infrastructure\GatewayReleases\GatewayReleaseCommands;
 use App\Infrastructure\GatewayReleases\GatewayReleaseGuard;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GatewayReleases\GatewayReleasePromoter;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
+use App\Infrastructure\GatewayReleases\GatewayReleaseRecovery;
+use App\Infrastructure\GatewayReleases\GatewayReleaseRestore;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSource;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSupersession;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSwitcher;
 use App\Infrastructure\GatewayReleases\GatewayReleaseTickConfirmation;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessRunner;
 use DateTimeImmutable;
 use Illuminate\Support\Facades\Config;
 
 /**
- * The whole Gateway release pipeline on a {@see GatewayReleaseFixture}: real layout, Git, lock, and
- * records; fake runtime handoff, verifier, smoke, GitHub resolver, and alert notifier. A test sets
+ * The whole Gateway release pipeline on a {@see GatewayReleaseFixture}: scripted agent answers, and the real
+ * lock and records; fake runtime handoff, verifier, smoke, GitHub resolver, and alert notifier. A test sets
  * `$failVerify`, `$failSnapshot`, or `$green` to steer one release.
  */
 final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDatabase, GatewayReleaseRuntime, GatewayReleaseSmoke, GatewayReleaseUnitStarter, GatewayReleaseVerifier, GatewayReleaseWebBuild, GreenCommitResolver, ReleaseAlertNotifier
@@ -58,6 +58,11 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
     public readonly GatewayReleaseFixture $fixture;
 
     public readonly string $home;
+
+    public readonly FakeAgentCommandRunner $recoveryAgents;
+
+    /** @var array<string, array<string, mixed>> */
+    private array $receipts = [];
 
     /** @var list<string> */
     public array $steps = [];
@@ -95,38 +100,38 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
         $this->home = $this->fixture->base.'/home';
         mkdir($this->home, 0700, true);
         config(['orbit.home' => $this->home]);
+        $this->recoveryAgents = new FakeAgentCommandRunner()
+            ->answer('gateway.verify-release-recovery', ['verified' => true])
+            ->answer('gateway.write-release-receipt', function (array $input): array {
+                $this->receipts[$input['identity']['record'].':'.$input['identity']['sha']] = $input['attributes'];
+
+                return ['changed' => true];
+            })
+            ->answer('gateway.read-release-receipt', fn (array $input): array => ['attributes' => $this->receipts[$input['record'].':'.$input['sha']] ?? []]);
+        $this->answerRecoveryCopy();
     }
 
     /** Builds the first release and makes it current, as `gateway:release:adopt` would. */
     public function adopt(): string
     {
         if ($this->adopted) {
-            return trim($this->fixture->git($this->fixture->layout->currentPath(), 'rev-parse', 'HEAD'));
+            return (string) $this->fixture->preparedSha($this->fixture->currentId());
         }
         $sha = $this->fixture->commit('Adopted release');
-        $this->fixture->builder()->prepare($sha);
-        $current = $this->fixture->layout->currentPath();
-        exec('rm -rf '.escapeshellarg($current));
-        symlink($this->fixture->layout->linkTarget(substr($sha, 0, 12)), $current);
+        $this->fixture->select($this->fixture->builder()->prepare($sha)->id);
 
         return $sha;
     }
 
     public function lock(): GatewayReleaseLock
     {
-        return new GatewayReleaseLock($this->home.'/gateway-release.lock');
+        return new GatewayReleaseLock($this->home.'/gateway-release.lock', $this->fixture->releaseCommands());
     }
 
     public function source(): GatewayReleaseSource
     {
         return new GatewayReleaseSource(
-            processes: new class implements ProcessRunner
-            {
-                public function run(ProcessInvocation $invocation): CommandResult
-                {
-                    return new CommandResult(0, "https://github.com/hardimpactdev/orbit.git\n", '', 1, false);
-                }
-            },
+            commands: $this->fixture->releaseCommands(new FakeAgentCommandRunner()->answer('gateway.inspect-release-source', ['origin' => 'https://github.com/hardimpactdev/orbit.git'])),
             branch: 'main',
             checkName: 'Required checks',
             layout: $this->fixture->layout,
@@ -135,7 +140,9 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
 
     public function recorder(): GatewayReleaseRecorder
     {
-        return new GatewayReleaseRecorder($this->home, new GatewayReleaseAlerts($this, $this->source()), $this->automation(), $this);
+        $recovery = $this->recovery();
+
+        return new GatewayReleaseRecorder($recovery, new GatewayReleaseRestore($recovery, $this->fixture->releaseCommands($this->recoveryAgents)), $this->home, new GatewayReleaseAlerts($this, $this->source()), $this->automation(), $this);
     }
 
     public function automation(): GatewayReleaseAutomation
@@ -160,7 +167,7 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
 
     public function guard(): GatewayReleaseGuard
     {
-        return new GatewayReleaseGuard($this->fixture->layout, $this->fixture);
+        return new GatewayReleaseGuard($this->fixture->layout, $this->fixture->releaseCommands());
     }
 
     public function automatic(): RunAutomaticGatewayReleaseAction
@@ -188,6 +195,7 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
     /** Binds the pipeline into the container, for commands and API requests. */
     public function bind(): void
     {
+        $this->bindRecovery();
         app()->instance(GatewayReleaseLayout::class, $this->fixture->layout);
         app()->instance(GatewayReleaseLock::class, $this->lock());
         app()->instance(GatewayReleaseRecorder::class, $this->recorder());
@@ -205,13 +213,15 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
      */
     public function bindLeaves(): void
     {
+        $this->bindRecovery();
         app()->instance(GatewayReleaseExecutionOwner::class, new ReleaseTestOwner);
         app()->instance(GatewayReleaseLayout::class, $this->fixture->layout);
         app()->instance(GatewayReleaseLock::class, $this->lock());
         app()->instance(GatewayReleaseBuilder::class, $this->fixture->builder($this));
-        app()->instance(GatewayReleaseSwitcher::class, new GatewayReleaseSwitcher($this->fixture->layout, $this->fixture));
+        app()->instance(GatewayReleaseSwitcher::class, new GatewayReleaseSwitcher($this->fixture->layout, $this->fixture->releaseCommands()));
         app()->instance(GatewayReleaseSource::class, $this->source());
         app()->instance(GatewayReleaseGuard::class, $this->guard());
+        app()->instance(GatewayReleaseCommands::class, $this->fixture->releaseCommands());
 
         foreach ([
             GatewayReleaseDatabase::class, GatewayReleaseRuntime::class, GatewayReleaseVerifier::class, GatewayReleaseWebBuild::class,
@@ -235,15 +245,37 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
                 return null;
             }
         };
-        $origin = new class implements ProcessRunner
-        {
-            public function run(ProcessInvocation $invocation): CommandResult
-            {
-                return new CommandResult(0, "https://github.com/hardimpactdev/orbit.git\n", '', 1, false);
-            }
-        };
+        $origin = new GatewayReleaseCommands(new FakeAgentCommandRunner()->answer('gateway.inspect-release-source', ['origin' => 'https://github.com/hardimpactdev/orbit.git']));
 
         return new GatewayReleaseSupersession(new GatewayReleaseSource($origin, 'main', 'Required checks', new GatewayReleaseLayout('/home/orbit/orbit/apps/gateway')), $resolver);
+    }
+
+    /** Produce the sample file that the real PHP restore transaction compares; Rust tests own copy checks. */
+    public function answerRecoveryCopy(): void
+    {
+        $this->recoveryAgents->answer('gateway.protect-release-recovery', function (array $input): array {
+            $directory = $this->home.'/recovery';
+            if (! is_dir($directory)) {
+                mkdir($directory, 0700);
+            }
+            $path = $directory.'/stage-'.$input['identity']['record'].'-'.$input['identity']['sha'].'.sqlite';
+            copy($input['source'], $path);
+            chmod($path, 0600);
+
+            return ['path' => $path, 'sha256' => hash_file('sha256', $path)];
+        });
+    }
+
+    private function recovery(): GatewayReleaseRecovery
+    {
+        return new GatewayReleaseRecovery($this->fixture->releaseCommands($this->recoveryAgents));
+    }
+
+    private function bindRecovery(): void
+    {
+        $recovery = $this->recovery();
+        app()->instance(GatewayReleaseRecovery::class, $recovery);
+        app()->instance(GatewayReleaseRestore::class, new GatewayReleaseRestore($recovery, $this->fixture->releaseCommands($this->recoveryAgents)));
     }
 
     public function cleanup(): void
@@ -407,7 +439,7 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
 
         return new GatewayReleasePromoter(
             $this->fixture->layout,
-            new GatewayReleaseSwitcher($this->fixture->layout, $this->fixture),
+            new GatewayReleaseSwitcher($this->fixture->layout, $this->fixture->releaseCommands()),
             $this,
             $this,
             $this,

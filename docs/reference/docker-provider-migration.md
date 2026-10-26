@@ -4,8 +4,8 @@ description: "Planned-window migration of Beast and Shark to Ubuntu docker.io."
 covers:
   - apps/gateway/app/Console/Commands/MigrateDockerCommand.php
   - apps/gateway/app/Actions/Fleet/MigrateDockerAction.php
-  - apps/gateway/resources/remote/docker/migrate.py
-  - apps/gateway/resources/remote/lib/recipe.py
+  - apps/agent/src/commands/{docker_migration.rs,docker_migration/**}
+  - apps/agent/src/commands/recipe/{apt.rs,sources.rs}
 ---
 
 # Docker CE migration
@@ -31,9 +31,9 @@ The dry-run `space` report shows required archive/commit bytes, the 2 GiB apt ma
 
 The command records complete Docker inspect documents for every container, image, network and volume in `/var/lib/orbit/docker-migration/inventory.json`, with a root-only directory and files. This includes environment secrets: never attach the journal to a task or copy it into logs. The public report exposes names, state and Process IDs, not inspect data. The journal pins the recipe identity; resume using the same checkout. Run the same command with `--yes` after a failure.
 
-The prepare phase runs in a transient systemd unit, independent of the SSH session. Its `RuntimeMaxSec=2400` limit sends termination to the whole unit, including apt/dpkg, even while Python ignores termination signals during the swap. A long download or package transaction can therefore strand the Node with no engine.
+The Gateway calls typed native commands: `docker.plan-migration`, `docker.prepare-migration`, `docker.restore-migration-policies`, and `docker.report-migration`. The agent owns inventory, package changes and the private recovery journal. The Gateway supplies recorded Process specs and reconciles Processes after preparation.
 
-`TimeoutStopSec=900` and `SendSIGKILL=no` avoid a forced kill but do not protect apt from that first termination signal; a unit may also linger. Check the `orbit-docker-migration-prepare-*` unit with `systemctl` and `journalctl` after a timeout; do not assume the SSH result means the transaction completed. Wait for the old worker to exit and release its journal lock before resuming. Resume with the same recipe and command to repair dpkg before retrying.
+Mutations run under the agent's transient systemd supervisor and shared package lock. Their time limit is one hour, including child processes and lock waits. Termination stops the whole control group. A timeout or lost result does not prove that the transaction completed. Check the `orbit-command-docker-*` unit with `systemctl` and `journalctl`, wait for it to exit, then resume with the same recipe. Resume repairs interrupted dpkg before retrying.
 
 The journal records each stage, including `swapping` before apt removes anything. Resume repairs interrupted dpkg configuration and dependencies before retrying the swap. Only loaded Docker and containerd units are stopped. Apt uses the normal locks, configuration and logs with recipe snapshot sources. It retains the original inventory and checks the current state rather than taking a new baseline. Do not delete the journal or run Docker prune.
 
@@ -70,6 +70,14 @@ Orbit containers need matching stored Process specs. Every data mount must appea
 A custom Docker `data-root` in daemon.json is supported in place: Ubuntu docker.io reads the same file, and the command verifies that its effective root stays the same. Daemon `hosts` and `containerd` overrides, foreign Docker or containerd systemd drop-ins, and service unit overrides outside the vendor directories refuse with `docker-migration:custom-daemon`. An invalid or mismatched data root refuses with `docker-migration:storage-root`; an unreadable containerd root refuses with `docker-migration:containerd-root`. Resolve a refusal rather than bypassing it.
 
 The NVIDIA runtime registration, container `Runtime` and `DeviceRequests`, and toolkit configuration stay unchanged. NVIDIA's runtime wraps an OCI runtime, so the provider swap does not require a new NVIDIA configuration. The package guard refuses removal of the toolkit or other unrelated packages. The fallback config preserves the NVIDIA registration as well as logging and storage settings. Check the runtime listing and unchanged daemon configuration as described in the window procedure.
+
+## Native verification
+
+Rust tests cover inventory refusals, package guards, interrupted transactions, repeat execution, and secret-free reports. Run `cargo test --locked docker_migration` from `apps/agent`.
+
+The real-engine bridge test is opt-in. On a disposable Linux test machine with Docker API 1.52, iproute2, ping and util-linux, run the compiled agent test binary as root with `--exact commands::docker_migration::network_test::bridge_remains_reachable_after_fresh_root_and_resume --ignored --nocapture`. It creates private network, mount and PID namespaces before starting Docker. It proves packet reachability through the original bridge after fallback and resume, then checks the original data root. It never uses the host's Docker socket or networks.
+
+The plan and report commands are read-only. Reporting requires an existing private inventory; it does not start a migration or create a journal.
 
 ## Why it works this way
 

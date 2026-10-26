@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\TaskVms;
 
-/** What `resources/task-vms/topology.sh status RUN` says about one preparation unit. */
+/** What `task-vms.topology-status` says about one preparation unit. */
 enum TaskVmTopologyRunState: string
 {
     /** The unit runs. */

@@ -11,7 +11,6 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
-use App\Infrastructure\Instances\DependencyUpdateSupervisorHost;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -28,11 +27,8 @@ use Illuminate\Foundation\Testing\WithCachedConfig;
 use Illuminate\Foundation\Testing\WithCachedRoutes;
 use Illuminate\Support\Facades\File;
 use Tests\Support\FeatureTestEnvironment;
-use Tests\Support\GatewayReleaseFixture;
 use Tests\Support\GuardsSudo;
-use Tests\Support\LocalInstanceTransferTransport;
 use Tests\Support\TestToolchain;
-use Tests\Support\WithSharedGitFixtureCleanup;
 use Tests\TestCase;
 
 require_once __DIR__.'/Support/FakeNodeAgentRuntime.php';
@@ -48,6 +44,7 @@ require_once __DIR__.'/Support/WebSocketWriteClock.php';
 require_once __DIR__.'/Helpers/MetricsRoleFixtures.php';
 require_once __DIR__.'/Helpers/WebSocketRoleFixtures.php';
 require_once __DIR__.'/Helpers/AgentViewFixtures.php';
+require_once __DIR__.'/Helpers/ProductionReleaseFixtures.php';
 require_once __DIR__.'/Helpers/AnalyticsRoleFixtures.php';
 require_once __DIR__.'/Helpers/AnalyticsConnectionFixtures.php';
 require_once __DIR__.'/Helpers/InstanceAnalyticsFixtures.php';
@@ -68,27 +65,6 @@ uses(TestCase::class, LazilyRefreshDatabase::class, WithCachedConfig::class, Wit
         $this->featureEnvironment->finish();
     })
     ->in('Feature');
-
-uses(WithSharedGitFixtureCleanup::class)
-    ->beforeAll(fn () => GatewayReleaseFixture::prepare())
-    ->in('Feature/GatewayReleases');
-
-uses()
-    ->beforeAll(fn () => GatewayReleaseFixture::prepareAdopted())
-    ->in(
-        'Feature/GatewayReleases/AbandonGatewayReleaseTest.php',
-        'Feature/GatewayReleases/FinalizeGatewayReleaseTest.php',
-        'Feature/GatewayReleases/GatewayReleaseExecutionOwnerTest.php',
-        'Feature/GatewayReleases/GatewayReleaseOperationsWiringTest.php',
-        'Feature/GatewayReleases/GatewayReleaseProcessDeclarationTest.php',
-        'Feature/GatewayReleases/GatewayReleaseTickConfirmationTest.php',
-        'Feature/GatewayReleases/GatewayReleaseFixtureTest.php',
-        'Feature/GatewayReleases/SystemdGatewayReleaseDrainTest.php',
-    );
-
-uses(WithSharedGitFixtureCleanup::class)
-    ->beforeAll(fn () => LocalInstanceTransferTransport::prepare())
-    ->in('Feature/Api/TransferInstanceTest.php', 'Feature/Infrastructure/Instances/TransferEnvironmentModeTest.php', 'Feature/Infrastructure/Instances/RemoteInstanceTransferSourceTest.php');
 
 // Each moved extension's tests run with its switch on (docs/reference/extensions.md#the-runtime-switch).
 uses()
@@ -192,16 +168,6 @@ function deployment_api_fixture(): array
     ]);
 
     return [$caller, $owner, $project, $instance->fresh()];
-}
-
-/**
- * Returns the host variant for running a dependency update supervisor program in a test. Linux runs the exact
- * Node program. Other hosts, such as macOS, have no /proc, so they run the same program logic with the
- * Portable variant, which reads process state with ps.
- */
-function dependency_update_supervisor_host(): DependencyUpdateSupervisorHost
-{
-    return PHP_OS_FAMILY === 'Linux' ? DependencyUpdateSupervisorHost::Node : DependencyUpdateSupervisorHost::Portable;
 }
 
 /**

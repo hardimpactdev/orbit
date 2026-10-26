@@ -9,16 +9,13 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleBaseline;
 use App\Domain\Nodes\RoleName;
-use App\Infrastructure\AppProd\ProductionSshExecutor;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 use App\Models\NodeRole;
 
 final readonly class ProductionRoleBaseline implements RoleBaseline
 {
     public function __construct(
-        private NodeRolePrerequisiteCommandFactory $commands,
-        private ProductionSshExecutor $ssh,
+        private RolePrerequisites $prerequisites,
         private AppProdCaddyManager $caddy,
         private NodeRoleFirewallManager $firewall,
         private ManagedUserAccountResolver $accounts,
@@ -27,16 +24,7 @@ final readonly class ProductionRoleBaseline implements RoleBaseline
     public function converge(Node $node, NodeRole $assignment): void
     {
         $account = $this->accounts->resolve($node);
-        $caddyPackage = $this->commands->caddyPackage($node, RoleName::AppProd);
-        if ($caddyPackage instanceof RemoteCommand) {
-            $this->ssh->execute($node, $caddyPackage, 'caddy-package-source', 'app-prod.prerequisite_failed');
-        }
-        $this->ssh->execute(
-            $node,
-            $this->commands->make($node, RoleName::AppProd, $account),
-            'role-prerequisites',
-            'app-prod.prerequisite_failed',
-        );
+        $this->prerequisites->converge($node, RoleName::AppProd, $account, 'app-prod.prerequisite_failed', 'App production');
         $this->caddy->converge($node);
         $this->firewall->converge($node, RoleName::AppProd, $node->user);
     }

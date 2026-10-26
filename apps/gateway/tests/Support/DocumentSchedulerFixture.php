@@ -23,7 +23,7 @@ final class DocumentSchedulerFixture
     public function __construct(string $home, string $command, ?string $staleToken)
     {
         $bootstrap = self::$bootstrap;
-        $socket = $home.'/scheduler-'.bin2hex(random_bytes(4)).'.sock';
+        $socket = sys_get_temp_dir().'/scheduler-'.bin2hex(random_bytes(8)).'.sock';
         if ($command === 'schedule:work') {
             $this->server = stream_socket_server('unix://'.$socket);
             if ($this->server === false) {

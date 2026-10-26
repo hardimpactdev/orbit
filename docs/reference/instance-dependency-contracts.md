@@ -4,7 +4,7 @@ description: "The graph values, lockfile reader rules, collection limits, stored
 covers:
   - apps/gateway/app/Domain/Instances/Dependencies/**
   - apps/gateway/app/Actions/Instances/Dependencies/**
-  - apps/gateway/app/Infrastructure/Instances/{*DependencyUpdate*Program,DependencyFilesProgram,DependencyUpdateSupervisorHost}.php
+  - apps/agent/src/commands/{dependencies,dependencies_tests}.rs
   - apps/gateway/app/Models/{DependencyPackage,InstanceDependencyObservation,InstanceDependencyResolution,InstanceDependencyEdge,InstanceDependencyScanAttempt}.php
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - packages/php-sdk/src/Support/{DependencyInventoryDecoder,InstanceResolutionDecoder}.php
@@ -80,7 +80,7 @@ No signal at all means pnpm, which still needs `pnpm-lock.yaml`.
 
 ## Collection
 
-`CollectInstanceDependencyFilesAction` reads the recorded checkout, or `current` of a production Instance, over SSH. A fixed Python program runs as the Node's user in development and as the production user in production. Non-monorepo types retain their existing single-directory behavior. When `source_is_laravel` is true or the Project type is web-serving (`laravel-app` or `symfony-app`), collection reads manifests, lockfiles, and manager signals only in the [application directory](/reference/projects#application-directory) derived from the effective web root. Root `apps/site/public` selects `apps/site` inside the checkout or selected release, not the repository-root manifests. Other non-monorepo Instances keep repository-root collection.
+`CollectInstanceDependencyFilesAction` reads the recorded checkout, or `current` of a production Instance, through the [Node agent](/reference/node-agent#commands). `instances.read-dependency-files` reads a checkout as the managed account. `instances.read-release-dependency-files` reads a production home's `current` release as root, because only the production user may enter that home; neither runs project code. Non-monorepo types retain their existing single-directory behavior. When `source_is_laravel` is true or the Project type is web-serving (`laravel-app` or `symfony-app`), collection reads manifests, lockfiles, and manager signals only in the [application directory](/reference/projects#application-directory) derived from the effective web root. Root `apps/site/public` selects `apps/site` inside the checkout or selected release, not the repository-root manifests. Other non-monorepo Instances keep repository-root collection.
 
 ### Monorepo discovery
 
@@ -92,7 +92,7 @@ Collection skips candidates that do not qualify and records nothing for them. If
 
 Each qualifying candidate is read as a separate dependency source. Its inventory and attempts are scoped by the Instance, sub-project identity (its repository-relative path, such as `apps/gateway`), and ecosystem. Resolution IDs are local to each source's graph. Collection does not combine manifests or rewrite locks into a workspace graph. The reader and manager-selection rules above apply unchanged within each candidate, including refusals for unsupported layouts and formats.
 
-Discovery and file reads are batched for the Instance, not performed with a new SSH request per candidate. The existing collection and source-confirmation flow is retained; where a collector uses one SSH round trip per Instance, discovery and reads stay in that round trip. The scan remains read-only and runs no package manager, project script, or registry request.
+Discovery and file reads are batched for the Instance, not performed with a new SSH request per candidate. The existing collection and source-confirmation flow is retained; discovery and reads stay in the one agent command of the Instance. The scan remains read-only and runs no package manager, project script, or registry request.
 
 ### Limits and source safety
 
@@ -103,11 +103,13 @@ These limits apply to single-directory scans and monorepo collection alike.
 | A manifest or configuration file | 1 MiB |
 | A lockfile | 8 MiB |
 | All files | 32 MiB |
-| SSH run | 30 seconds, 48 MiB of output |
+| One read | 120 seconds |
 
-Symlinks, non-regular files, and paths that are not canonical fail. Production collection validates and pins the selected release before opening dependency directories. Monorepo discovery and candidate reads obey the same canonical-path, regular-file, symlink, per-file size, total-size, and SSH limits; discovery does not authorize reads outside the recorded checkout or pinned release. The program reads twice and compares the repository or release identity, dependency directories, file metadata, and hashes. A difference returns `dependencies.source_changed`.
+Symlinks, non-regular files, and paths that are not canonical fail. Production collection validates and pins the selected release before opening dependency directories. Monorepo discovery and candidate reads obey the same canonical-path, regular-file, symlink, per-file size, total-size, and time limits; discovery does not authorize reads outside the recorded checkout or pinned release. The agent reads twice and compares the repository or release identity, dependency directories, file metadata, and hashes. A difference returns `dependencies.source_changed`.
 
 `ScanInstanceDependenciesAction` holds the Instance operation lock, and for development the Node source lock, from collection through publication. It checks the Instance again inside each publication transaction. Its source snapshot retains the effective root and Laravel classification, so directory selection does not fall back to the repository root when the Instance is copied into a snapshot.
+
+An update inspects each ecosystem with `instances.probe-dependency-update` and runs the package manager with `instances.update-dependencies`, both as the managed account. Composer runs itself; npm, pnpm, and Bun run through a verified Vite+. The package manager runs in its own session with its output discarded.
 
 Development updates do not iterate over discovered monorepo candidates: `instance:dependencies:update` stays repository-root-only for monorepos. Non-monorepo updates still use their existing dependency directory for manager-presence inspection, source-safety checks, package commands, and the final scan. Collection receipt validation accepts only the selected single dependency directory or discovered qualifying monorepo directories within the recorded checkout or selected release, not an arbitrary caller-supplied path. Git identity and CLI directory-to-Instance resolution still use the whole repository. Reader rules, package-manager refusals, and collection limits stay unchanged; neither a nested Laravel app nor monorepo discovery enables workspace or multi-importer support.
 
@@ -147,8 +149,7 @@ An update returns `instance_id`, `succeeded`, `error_code`, `may_have_mutated`, 
 | `dependencies.unsafe_source` | The recorded identity or layout is not safe to update. |
 | `dependencies.unsupported_delegation` | Vite+ is missing or not a verified version. |
 | `dependencies.update_failed` | A package command failed. |
-| `dependencies.update_cancelled` | The command was cancelled after it started. |
-| `dependencies.update_timeout` | The command passed its 600-second deadline. |
+| `dependencies.update_timeout` | The command passed its 600-second deadline. The agent then stops its process group. |
 
 The SDK rejects a whole response that breaks the shape. It accepts at most 32 MiB of JSON, 50,000 resolutions and 200,000 requirements per ecosystem, 64 file hashes, and 16 KiB per text field. It checks collection bounds before scanning the JSON for duplicate object keys, so oversized inventories do not pay for a full token scan. Accepted responses still require unique keys, including equivalent escaped names.
 

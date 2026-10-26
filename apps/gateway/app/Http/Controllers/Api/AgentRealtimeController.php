@@ -16,6 +16,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\AgentRealtimeAuthRequest;
 use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Models\Node;
+use App\Models\Operation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -79,15 +80,25 @@ final class AgentRealtimeController extends Controller
         $id = $node->id;
         $channel = $request->channelName();
 
-        // The Node's own presence channel or its own log channel (ADR 0153).
-        if (! in_array($channel, ["presence-node.{$id}", "presence-node-logs.{$id}"], strict: true)) {
-            throw new ResourceOperationException('agent.channel_forbidden', 'Agent may only join its own presence channels.', 403);
-        }
-
         $connection = $realtime->resolve();
 
         if ($connection === null) {
             throw new ResourceOperationException('realtime.not_configured', 'Realtime is not configured.', 404);
+        }
+
+        // The channel of an operation that runs on this Node, where its commands publish live output.
+        if (preg_match('/\Aprivate-operation\.([1-9][0-9]*)\z/D', $channel, $match) === 1) {
+            $running = Operation::query()->whereKey((int) $match[1])->where('node_id', $id)->whereIn('status', ['running', 'waiting'])->exists();
+            if (! $running) {
+                throw new ResourceOperationException('agent.channel_forbidden', 'Agent may only join the channel of an operation that runs on its Node.', 403);
+            }
+
+            return response()->json(['auth' => $connection->key.':'.hash_hmac('sha256', "{$request->socketId()}:{$channel}", $connection->secret)]);
+        }
+
+        // The Node's own presence channel or its own log channel (ADR 0153).
+        if (! in_array($channel, ["presence-node.{$id}", "presence-node-logs.{$id}"], strict: true)) {
+            throw new ResourceOperationException('agent.channel_forbidden', 'Agent may only join its own presence channels.', 403);
         }
 
         $version = $request->version();

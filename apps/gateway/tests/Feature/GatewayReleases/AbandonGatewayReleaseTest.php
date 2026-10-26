@@ -5,8 +5,6 @@ declare(strict_types=1);
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseDrain;
 use App\Domain\GatewayReleases\GatewayReleaseException;
-use App\Infrastructure\GatewayReleases\SqliteGatewayReleaseDatabase;
-use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Models\GatewayRelease;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -37,6 +35,7 @@ beforeEach(function (): void {
     chmod($this->databasePath, 0600);
     $this->oldDefault = config('database.default');
     config(['database.default' => 'abandon_test', 'database.connections.abandon_test' => ['driver' => 'sqlite', 'database' => $this->databasePath, 'foreign_key_constraints' => true]]);
+    $this->pipeline->fixture->releaseCommands();
     DB::statement('PRAGMA journal_mode=WAL');
     DB::statement('PRAGMA wal_autocheckpoint=0');
     DB::statement("UPDATE recovery_annotations SET body = X'0001FF'");
@@ -56,13 +55,13 @@ beforeEach(function (): void {
         }
     };
     app()->instance(GatewayReleaseDrain::class, $this->drain);
-    $this->database = new class(new SqliteGatewayReleaseDatabase(new NativeProcessRunner, $this->pipeline->home, keptSnapshots: 1, minimumFreeBytes: 0)) implements GatewayReleaseDatabase
+    $this->database = new class($this->pipeline->fixture->database($this->pipeline->home)) implements GatewayReleaseDatabase
     {
         public string $effect = 'none';
 
         public bool $fail = true;
 
-        public function __construct(private GatewayReleaseDatabase $real) {}
+        public function __construct(private readonly GatewayReleaseDatabase $real) {}
 
         public function snapshot(string $id): string
         {
@@ -151,10 +150,9 @@ it('refuses altered identities and a lost drain without changing restored data o
     } elseif ($fault === 'drain') {
         $this->drain->refuse = true;
     } elseif ($fault === 'source') {
-        unlink($this->pipeline->fixture->layout->currentPath());
-        symlink($this->pipeline->fixture->layout->linkTarget(substr($this->target, 0, 12)), $this->pipeline->fixture->layout->currentPath());
+        $this->pipeline->fixture->select(substr($this->target, 0, 12));
     } elseif ($fault === 'recovery') {
-        file_put_contents($record->phases['recovery']['path'], 'corrupt');
+        $this->pipeline->recoveryAgents->refuse('gateway.verify-release-recovery', 'gateway.release_recovery_invalid');
     } elseif ($fault === 'automatic') {
         $this->pipeline->automation()->enable();
     } elseif ($fault === 'partial-restore') {
@@ -201,16 +199,14 @@ it('repeats only an exact completed abandonment when its marker removal was inte
 });
 
 it('reports foreign-key violations before migration and leaves source data available for repair', function (): void {
-    DB::statement('PRAGMA foreign_keys=OFF');
-    DB::statement('UPDATE recovery_annotations SET owner_id=99');
-    DB::statement('PRAGMA foreign_keys=ON');
+    $this->pipeline->recoveryAgents->refuse('gateway.protect-release-recovery', 'gateway.release_recovery_foreign_keys', ['violations' => [['table' => 'recovery_annotations', 'rowid' => 1, 'parent' => 'recovery_owners', 'fkid' => 0]], 'limit' => 20]);
     expect(Artisan::call('gateway:release:stage', ['commit' => $this->target]))->toBe(1);
     $output = json_decode(Artisan::output(), true);
     expect($output['error_code'])->toBe('gateway.release_recovery_foreign_keys')
         ->and($output['detail']['violations'][0])->toBe(['table' => 'recovery_annotations', 'rowid' => 1, 'parent' => 'recovery_owners', 'fkid' => 0])
         ->and(is_file($this->pipeline->home.'/gateway-release.paused'))->toBeFalse()
         ->and(GatewayRelease::query()->sole()->migrations_ran)->toBeFalse();
-    DB::statement('UPDATE recovery_annotations SET owner_id=3');
+    $this->pipeline->answerRecoveryCopy();
     $this->database->fail = false;
     expect(Artisan::call('gateway:release:stage', ['commit' => $this->target]))->toBe(0, Artisan::output());
 });

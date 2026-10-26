@@ -22,7 +22,7 @@ The Tasks fixtures also cover [group assistance](/reference/tasks#group-assistan
 
 This page tells a contributor how a Gateway response change reaches the CLI tests. A fixture is one recorded Gateway response under `packages/php-sdk/fixtures/<family>/<command>/<case>.json`. The Gateway test suite records it and the [API reference](/api/overview) validates it. The CLI test suite replays it through a Saloon mock and compares the complete command output with a stored expectation.
 
-Repository URLs in fixtures name `hardimpactdev/orbit`. Recipe artifact pins keep their recorded URLs.
+Repository URLs in fixtures name `hardimpactdev/orbit`. Recipe artifact pins keep their recorded URLs. Fleet and Node convergence fixtures include footprint digests bound to the delivered agent pin; re-record them when that identity changes. See [Node provisioning](/reference/node-provisioning) for the footprint rule.
 
 Task group fixtures include nullable `vm_power`, separately from task status. CLI tests cover the **VM power** label for known states and omit the label and JSON field when power is null. The SDK accepts a missing power field and ignores unknown optional response fields, so a field rename does not make an older client reject the task group.
 
@@ -42,7 +42,7 @@ Instance create, list, and show fixtures include `routes`, every Route of the In
 
 Gateway fixtures record the [desired fleet state](/reference/self-update#desired-fleet-state) with an available, a fallback, and a pending CLI release, and `gateway:status` as an active peer sees it. The Gateway test serves the release-shaped GitHub responses under `apps/gateway/tests/Fixtures/GitHub/CliRelease`. The `self-update` contract downloads the stand-in binaries under `apps/cli/tests/Fixtures/SelfUpdate`, whose checksums those fixtures name.
 
-An Agent pin change updates the Gateway and Fleet fixtures with the released version, asset URLs, and verified checksums. Update the SDK checksum expectations, CLI download stand-ins, and matching CLI output together. The Agent release checksums remain separate from the local stand-in checksums used by `self-update` tests.
+An Agent pin change updates the Gateway and Fleet fixtures with the version, source commit, asset URLs, and verified checksums from its delivery manifest. Update the SDK checksum expectations, CLI download stand-ins, and matching CLI output together. The Agent release checksums remain separate from the local stand-in checksums used by `self-update` tests.
 
 Gateway release fixtures under `gateway-releases` record one release record at each point the CLI can see it: queued, running, live, switched back, paused, and rolled back. `gateway:release:deploy` and `gateway:release:rollback` replay the queued response and then a sequence of record reads, so their expected output shows how the progress tree follows a release. The automatic release fixtures record the state disabled, enabled, paused, and resumed.
 

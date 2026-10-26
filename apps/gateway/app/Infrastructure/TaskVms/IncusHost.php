@@ -6,72 +6,128 @@ namespace App\Infrastructure\TaskVms;
 
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
-use App\Domain\TaskVms\TaskVmSize;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProtectedInput;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Domain\TaskVms\VmObservation;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Node;
-use JsonException;
 
-/**
- * Runs `sudo -n incus --project <project> …` on a task VM host Node over SSH, as the host's managed
- * user. `IncusTaskVmProvider` and `IncusTaskVmImageBuilder` share it, and it validates the image list
- * they both read. Every instance name follows `--`, so no name can be read as an option.
- */
+/** Typed Incus host intent; the agent owns execution and validates host output. */
 final readonly class IncusHost
 {
-    public function __construct(
-        private SshExecutor $ssh,
-        private SshKeyProvider $keys,
-        private KnownHostsStore $knownHosts,
-    ) {}
+    public function __construct(private AgentCommandRunner $agents) {}
 
-    /**
-     * @param  list<string>  $arguments  the arguments after `incus --project <project>`
-     * @param  string|ProtectedInput|null  $input  stdin; a file goes as `ProtectedInput`, so it is streamed
-     */
-    public function run(TaskVmHost $host, Node $node, array $arguments, string|ProtectedInput|null $input = null, float $timeout = 900.0): CommandResult
+    public function prepare(TaskVmHost $host, Node $node): void
     {
-        return $this->execute($node, ['incus', '--project', $host->project, ...$arguments], $input, $timeout);
+        try {
+            $result = $this->agents->run($node, 'incus.prepare-host', [
+                'project' => $host->project, 'network' => $host->network, 'cidr' => $host->cidr,
+                'pool' => $host->pool, 'zfs_dataset' => $host->zfsDataset,
+            ]);
+        } catch (AgentCommandRefused $error) {
+            if ($error->errorCode !== 'task_vm.setup_failed') {
+                throw $error;
+            }
+            $reason = is_string($error->details['reason'] ?? null) ? $error->details['reason'] : $error->getMessage();
+            throw new TaskVmException('task_vm.setup_failed', "Task VM host setup failed on Node [{$node->name}]: {$reason}");
+        }
+        if (($result['ready'] ?? null) !== true) {
+            throw new TaskVmException('task_vm.setup_failed', "Task VM host setup did not confirm readiness on Node [{$node->name}].");
+        }
     }
 
-    /** Sends one API request with `incus query`, which refuses `--project`: the path names the project. */
-    public function query(TaskVmHost $host, Node $node, string $method, string $path, string $data): CommandResult
+    /** @return list<string> */
+    public function volumeNames(TaskVmHost $host, Node $node): array
     {
-        return $this->execute($node, ['incus', 'query', '-X', $method, '--data', $data, '--', $path.'?project='.rawurlencode($host->project)], null, 120.0);
+        $result = $this->observe($node, 'incus.volumes', ['project' => $host->project, 'pool' => $host->pool], "the storage volumes of Node [{$node->name}]");
+
+        return self::strings($result['names'] ?? null);
     }
 
-    /**
-     * Launches `$image` as the VM `$name` on the host's bridge, with port isolation on its NIC, and the CPU, memory, disk
-     * and QEMU configuration of its size ({@see TaskVmSize::resources()}). Incus can set the QEMU configuration only
-     * before the VM first starts. `$topologySeed`, a volume in the host's pool, becomes the disk
-     * {@see TaskVmVolumes::SeedDevice}. `incus launch` reads instance config and devices as YAML from a stdin that is
-     * not a terminal. JSON is YAML, but YAML knows no `\/` escape.
-     */
-    public function launch(TaskVmHost $host, Node $node, string $name, string $image, string $userData, TaskVmSize $size = TaskVmSize::Normal, ?string $topologySeed = null): CommandResult
+    /** @param array<string, mixed> $operation */
+    public function volume(TaskVmHost $host, Node $node, array $operation): string
     {
-        $resources = $size->resources();
-        $config = ['cloud-init.user-data' => $userData];
-        if ($resources->qemuConfig !== null) {
-            $config['raw.qemu.conf'] = $resources->qemuConfig;
-        }
-        $instance = ['config' => $config];
-        if ($topologySeed !== null) {
-            $instance['devices'] = [TaskVmVolumes::SeedDevice => ['type' => 'disk', 'pool' => $host->pool, 'source' => $topologySeed]];
+        $result = $this->observe($node, 'incus.volume', [
+            'location' => ['project' => $host->project, 'pool' => $host->pool], 'operation' => $operation,
+        ], "the storage volumes of Node [{$node->name}]");
+        $name = $result['name'] ?? null;
+        if (! is_string($name)) {
+            throw self::invalid('the agent volume result', 'the volume name is missing');
         }
 
-        return $this->run($host, $node, [
-            'launch', '--vm',
-            '--config', 'limits.cpu='.$resources->cpusOn($host),
-            '--config', 'limits.memory='.$resources->memoryOn($host),
-            '--device', 'root,size='.$resources->diskOn($host),
-            '--device', "eth0,network={$host->network}", '--device', 'eth0,security.port_isolation=true',
-            '--', $image, $name,
-        ], json_encode($instance, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+        return $name;
+    }
+
+    public function vmState(TaskVmHost $host, Node $node, string $name): ?VmObservation
+    {
+        $result = $this->observe($node, 'incus.vm-state', ['project' => $host->project, 'name' => $name, 'cidr' => $host->cidr], "task VM [{$name}]");
+        if (! array_key_exists('observation', $result)) {
+            throw self::invalid("task VM [{$name}]", 'the agent observation is missing');
+        }
+        $state = $result['observation'];
+        if ($state === null) {
+            return null;
+        }
+        if (! is_array($state) || ! is_bool($state['running'] ?? null)
+            || ! array_key_exists('address', $state) || (! is_null($state['address']) && ! is_string($state['address']))
+            || ! array_key_exists('image_fingerprint', $state) || (! is_null($state['image_fingerprint']) && ! is_string($state['image_fingerprint']))) {
+            throw self::invalid("task VM [{$name}]", 'the agent observation is invalid');
+        }
+
+        return new VmObservation($state['running'], $state['address'], $state['image_fingerprint']);
+    }
+
+    /** @param array<string, mixed> $operation */
+    public function changeVm(TaskVmHost $host, Node $node, string $name, array $operation): void
+    {
+        try {
+            $result = $this->observe($node, 'incus.vm', [
+                'vm' => ['project' => $host->project, 'name' => $name, 'cidr' => $host->cidr],
+                'operation' => $operation,
+            ], "task VM [{$name}]");
+        } catch (AgentCommandRefused $error) {
+            throw match ($error->errorCode) {
+                'task_vm.vm_missing' => new TaskVmException($error->errorCode, "Task VM [{$name}] is gone from its host.", 502),
+                'task_vm.image_mismatch' => new TaskVmException($error->errorCode, 'The task VM did not launch its claimed recipe image.'),
+                'task_vm.topology_seed_missing' => new TaskVmException($error->errorCode, "The host of task VM [{$name}] has no topology seed for its base image. Build it with task-vms:build-image."),
+                'task_vm.base_image_missing' => new TaskVmException($error->errorCode, "The Incus project [{$host->project}] on the host of task VM [{$name}] has no base image [{$host->imageAlias}]. Build it with task-vms:build-image."),
+                default => $error,
+            };
+        }
+        if (($result['ready'] ?? null) !== true) {
+            throw self::invalid("task VM [{$name}]", 'the agent did not confirm the change');
+        }
+    }
+
+    /** @return array<string, ?string> */
+    public function instanceImages(TaskVmHost $host, Node $node): array
+    {
+        $result = $this->observe($node, 'incus.instance-images', ['project' => $host->project], "the instances of Node [{$node->name}]");
+        $instances = $result['instances'] ?? null;
+        if (! is_array($instances)) {
+            throw self::invalid('the agent instance inventory', 'instance images are missing or invalid');
+        }
+
+        $validated = [];
+        foreach ($instances as $name => $fingerprint) {
+            if (! is_string($name) || ($fingerprint !== null && ! is_string($fingerprint))) {
+                throw self::invalid('the agent instance inventory', 'an instance image is invalid');
+            }
+            $validated[$name] = $fingerprint;
+        }
+
+        return $validated;
+    }
+
+    /** @param array<string, mixed> $operation */
+    public function image(TaskVmHost $host, Node $node, array $operation): ?string
+    {
+        $result = $this->observe($node, 'incus.image', ['project' => $host->project, 'operation' => $operation], "the images of Node [{$node->name}]");
+        if (($result['ready'] ?? null) !== true || ! array_key_exists('fingerprint', $result)
+            || ($result['fingerprint'] !== null && ! is_string($result['fingerprint']))) {
+            throw self::invalid('the agent image result', 'the change was not confirmed');
+        }
+
+        return $result['fingerprint'];
     }
 
     /**
@@ -81,29 +137,17 @@ final readonly class IncusHost
      */
     public function images(TaskVmHost $host, Node $node, float $timeout = 900.0): array
     {
-        $result = $this->run($host, $node, ['image', 'list', '--format', 'json'], timeout: $timeout);
-        if (! $result->succeeded()) {
-            throw self::failed("the images of Node [{$node->name}]", 'image list', $result);
+        $result = $this->observe($node, 'incus.images', ['project' => $host->project], "the images of Node [{$node->name}]", $timeout);
+        $images = $result['images'] ?? null;
+        if (! is_array($images)) {
+            throw self::invalid('the agent image inventory', 'images are missing');
+        }
+        $validated = [];
+        foreach ($images as $fingerprint => $aliases) {
+            $validated[(string) $fingerprint] = self::strings($aliases);
         }
 
-        $list = self::json("the images of Node [{$node->name}]", $result);
-        if (! array_is_list($list)) {
-            throw self::invalid("the images of Node [{$node->name}]", 'the image list is not a JSON list');
-        }
-        $images = [];
-        foreach ($list as $image) {
-            $fingerprint = is_array($image) ? $image['fingerprint'] ?? null : null;
-            $aliases = is_array($image) ? $image['aliases'] ?? null : null;
-            if (! is_string($fingerprint) || preg_match('/\A[a-f0-9]{64}\z/D', $fingerprint) !== 1 || ! is_array($aliases) || ! array_is_list($aliases)) {
-                throw self::invalid("the images of Node [{$node->name}]", 'an image has no fingerprint or aliases');
-            }
-            $images[$fingerprint] = array_values(array_filter(array_map(
-                static fn (mixed $alias): mixed => is_array($alias) ? $alias['name'] ?? null : null,
-                $aliases,
-            ), is_string(...)));
-        }
-
-        return $images;
+        return $validated;
     }
 
     /**
@@ -115,28 +159,9 @@ final readonly class IncusHost
      */
     public function instanceNames(TaskVmHost $host, Node $node): array
     {
-        $subject = "the instances of Node [{$node->name}]";
-        $project = $this->run($host, $node, ['project', 'show', '--', $host->project], timeout: 120.0);
-        if (! $project->succeeded()) {
-            throw self::failed("the Incus project [{$host->project}] of Node [{$node->name}]", 'project show', $project);
-        }
+        $result = $this->observe($node, 'incus.instances', ['project' => $host->project], "the instances of Node [{$node->name}]");
 
-        $result = $this->run($host, $node, ['list', '--format', 'csv', '--columns', 'n'], timeout: 120.0);
-        if (! $result->succeeded()) {
-            throw self::failed($subject, 'list', $result);
-        }
-        if ($result->truncated) {
-            throw self::invalid($subject, 'the output is not complete');
-        }
-
-        $names = array_values(array_filter(explode("\n", trim($result->stdout)), static fn (string $line): bool => $line !== ''));
-        foreach ($names as $name) {
-            if (preg_match('/\A[A-Za-z0-9][A-Za-z0-9-]{0,62}\z/D', $name) !== 1) {
-                throw self::invalid($subject, 'an instance name is invalid');
-            }
-        }
-
-        return $names;
+        return self::strings($result['names'] ?? null);
     }
 
     /**
@@ -148,21 +173,29 @@ final readonly class IncusHost
      */
     public function inventory(Node $node): array
     {
-        $instances = array_map(
-            fn (string $url): array => $this->resource($node, $url, '/1.0/instances/'),
-            $this->urls($node, '/1.0/instances?all-projects=true'),
-        );
-        $volumes = [];
-        foreach ($this->urls($node, '/1.0/storage-pools') as $poolUrl) {
-            $pool = $this->resource($node, $poolUrl, '/1.0/storage-pools/')['name'];
-            $prefix = '/1.0/storage-pools/'.rawurlencode($pool).'/volumes/custom/';
-            foreach ($this->urls($node, '/1.0/storage-pools/'.rawurlencode($pool).'/volumes/custom?all-projects=true') as $url) {
-                ['project' => $project, 'name' => $name] = $this->resource($node, $url, $prefix);
-                $volumes[] = ['project' => $project, 'pool' => $pool, 'name' => $name];
-            }
+        $result = $this->observe($node, 'incus.inventory', [], "the Incus resources of Node [{$node->name}]");
+        $instances = $result['instances'] ?? null;
+        $volumes = $result['volumes'] ?? null;
+        if (! is_array($instances) || ! array_is_list($instances) || ! is_array($volumes) || ! array_is_list($volumes)) {
+            throw self::invalid('the agent host inventory', 'resource lists are missing');
         }
 
-        return ['instances' => $instances, 'volumes' => $volumes];
+        return [
+            'instances' => array_map(static function (mixed $row): array {
+                if (! is_array($row) || ! is_string($row['project'] ?? null) || ! is_string($row['name'] ?? null)) {
+                    throw self::invalid('the agent host inventory', 'an instance is invalid');
+                }
+
+                return ['project' => $row['project'], 'name' => $row['name']];
+            }, $instances),
+            'volumes' => array_map(static function (mixed $row): array {
+                if (! is_array($row) || ! is_string($row['project'] ?? null) || ! is_string($row['pool'] ?? null) || ! is_string($row['name'] ?? null)) {
+                    throw self::invalid('the agent host inventory', 'a volume is invalid');
+                }
+
+                return ['project' => $row['project'], 'pool' => $row['pool'], 'name' => $row['name']];
+            }, $volumes),
+        ];
     }
 
     /** The fingerprint that `$alias` names in the host's project, or null when no image has it. */
@@ -177,103 +210,41 @@ final readonly class IncusHost
         return null;
     }
 
-    /**
-     * The decoded JSON of a complete Incus answer.
-     *
-     * @return array<mixed>
-     */
-    public static function json(string $subject, CommandResult $result): array
-    {
-        try {
-            $value = $result->truncated ? null : json_decode($result->stdout, true, 64, JSON_THROW_ON_ERROR);
-        } catch (JsonException) {
-            $value = null;
-        }
-
-        return is_array($value) ? $value : throw self::invalid($subject, 'the output is not complete JSON');
-    }
-
     public static function invalid(string $subject, string $reason): TaskVmException
     {
         return new TaskVmException('task_vm.invalid_host_output', "Incus returned invalid output for {$subject}: {$reason}.", 502);
     }
 
-    public static function failed(string $subject, string $operation, CommandResult $result): TaskVmException
+    /**
+     * @param  array<string, mixed>  $input
+     * @return array<string, mixed>
+     */
+    private function observe(Node $node, string $command, array $input, string $subject, ?float $timeout = null): array
     {
-        $detail = mb_substr(implode("\n", array_slice(explode("\n", trim($result->stderr)), -5)), 0, 2000);
+        try {
+            return $this->agents->run($node, $command, $input, $timeout);
+        } catch (AgentCommandRefused $error) {
+            if ($error->errorCode === 'task_vm.invalid_host_output') {
+                throw self::invalid($subject, is_string($error->details['reason'] ?? null) ? $error->details['reason'] : $error->getMessage());
+            }
+            if ($error->errorCode === 'task_vm.host_command_failed') {
+                $operation = is_string($error->details['operation'] ?? null) ? $error->details['operation'] : $command;
+                $code = is_int($error->details['exit_code'] ?? null) ? $error->details['exit_code'] : -1;
+                $detail = is_string($error->details['stderr'] ?? null) ? $error->details['stderr'] : '';
+                throw new TaskVmException($error->errorCode, "`incus {$operation}` for {$subject} failed with exit code [{$code}].".($detail === '' ? '' : "\n{$detail}"), 502);
+            }
 
-        return new TaskVmException('task_vm.host_command_failed', "`incus {$operation}` for {$subject} failed with exit code [{$result->exitCode}].".($detail === '' ? '' : "\n{$detail}"), 502);
+            throw $error;
+        }
     }
 
-    /**
-     * Runs `sudo -n <arguments>` on the host without a project: the host-wide Incus settings, its trust store,
-     * and the image copy, which names its own projects.
-     *
-     * @param  list<string>  $arguments
-     */
-    public function root(Node $node, array $arguments, string|ProtectedInput|null $input = null, float $timeout = 120.0): CommandResult
+    /** @return list<string> */
+    private static function strings(mixed $value): array
     {
-        return $this->execute($node, $arguments, $input, $timeout);
-    }
-
-    /**
-     * The URLs that one `incus query` GET of `$path` lists.
-     *
-     * @return list<string>
-     */
-    private function urls(Node $node, string $path): array
-    {
-        $subject = "the Incus resources of Node [{$node->name}]";
-        $result = $this->execute($node, ['incus', 'query', '--', $path], null, 120.0);
-        $list = self::json($subject, $result->succeeded() ? $result : throw self::failed($subject, 'query', $result));
-        if (! array_is_list($list) || ! array_all($list, static fn (mixed $url): bool => is_string($url))) {
-            throw self::invalid($subject, 'the answer is not a list of URLs');
+        if (! is_array($value) || ! array_is_list($value) || ! array_all($value, static fn (mixed $item): bool => is_string($item))) {
+            throw self::invalid('the agent inventory', 'a string list is invalid');
         }
 
-        return $list;
-    }
-
-    /**
-     * The project and name of the resource that `$url` names below `$prefix`.
-     *
-     * @return array{project: string, name: string}
-     */
-    private function resource(Node $node, string $url, string $prefix): array
-    {
-        $path = parse_url($url, PHP_URL_PATH);
-        parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
-        $name = is_string($path) && str_starts_with($path, $prefix) ? rawurldecode(substr($path, strlen($prefix))) : '';
-        $project = $query['project'] ?? 'default';
-        if ($name === '' || str_contains($name, '/') || ! is_string($project) || $project === '') {
-            throw self::invalid("the Incus resources of Node [{$node->name}]", "the URL [{$url}] names no resource");
-        }
-
-        return ['project' => $project, 'name' => $name];
-    }
-
-    /** @param  list<string>  $arguments */
-    private function execute(Node $node, array $arguments, string|ProtectedInput|null $input, float $timeout): CommandResult
-    {
-        // `incus exec` would hand the credential to a task VM or a template builder, and the host itself needs none.
-        if ($input instanceof ProtectedInput && $input->carriesGitCredential()) {
-            throw TaskVmCredentialGuard::refused();
-        }
-
-        return $this->ssh->execute(
-            new SshConnection(
-                host: $node->wireguard_ip ?? throw new TaskVmException('task_vm.unknown_host', "Host Node [{$node->name}] has no WireGuard address."),
-                user: $node->user,
-                port: 22,
-                identityFile: $this->keys->privateKeyPath(),
-                knownHostsFile: $this->knownHosts->path(),
-                commandTimeout: $timeout,
-            ),
-            new RemoteCommand(
-                ['sudo', '-n', ...$arguments],
-                is_string($input) ? $input : null,
-                $input instanceof ProtectedInput ? $input : null,
-                maxOutputBytes: 1_048_576,
-            ),
-        );
+        return $value;
     }
 }

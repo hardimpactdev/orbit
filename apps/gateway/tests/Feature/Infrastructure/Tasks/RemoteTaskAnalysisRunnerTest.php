@@ -7,8 +7,8 @@ use App\Infrastructure\Tasks\TaskUnitProgram;
 use App\Models\Instance;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
-use Tests\Support\ForkedPythonPrograms;
 use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\PythonPrograms;
 
 require_once __DIR__.'/../../../Support/TaskCheckRunnerFixtures.php';
 
@@ -72,22 +72,18 @@ it('captures complete evidence through the real owned profile and fences a repor
         with open(scope['RESULT']) as result:
             print(result.read())
         PYTHON;
-    $programs = new ForkedPythonPrograms;
-    try {
-        $capture = $programs->run($bootstrap, 'analysis-owned-profile', TaskUnitProgram::read('tasks/check')."\0".json_encode(['script' => $script, 'checkout' => $instance->checkout_path, 'input' => $input], JSON_THROW_ON_ERROR), ['ORBIT_SECRET_TEST' => 'never-inherit']);
-        expect($capture->exitCode)->toBe(0, $capture->stderr);
-        $result = json_decode($capture->stdout, true, flags: JSON_THROW_ON_ERROR);
-        $bytes = base64_decode($result['report_base64'], true);
-        expect($result['exit_code'])->toBe(0)->and(strlen($bytes))->toBeGreaterThan(8192)->and(strlen($bytes))->toBe($result['report_bytes'])
-            ->and($result['tree_after'])->toBe($before['tree'])->and($result['duration_ms'])->toBeGreaterThanOrEqual(0)
-            ->and(TaskAnalysisReport::validate($bytes, $input)['status'])->toBe('ready');
-        $recovered = $runner->recoverStart($instance, $id);
-        expect($recovered)->not->toBeNull()
-            ->and($runner->readAnalysis($instance, $recovered)['state'])->toBe('running')
-            ->and(file_get_contents($instance->checkout_path.'/.git/analysis-invocations'))->toBe("1\n");
-    } finally {
-        $programs->close();
-    }
+    $programs = new PythonPrograms;
+    $capture = $programs->run($bootstrap, 'analysis-owned-profile', TaskUnitProgram::read('tasks/check')."\0".json_encode(['script' => $script, 'checkout' => $instance->checkout_path, 'input' => $input], JSON_THROW_ON_ERROR), ['ORBIT_SECRET_TEST' => 'never-inherit']);
+    expect($capture->exitCode)->toBe(0, $capture->stderr);
+    $result = json_decode($capture->stdout, true, flags: JSON_THROW_ON_ERROR);
+    $bytes = base64_decode($result['report_base64'], true);
+    expect($result['exit_code'])->toBe(0)->and(strlen($bytes))->toBeGreaterThan(8192)->and(strlen($bytes))->toBe($result['report_bytes'])
+        ->and($result['tree_after'])->toBe($before['tree'])->and($result['duration_ms'])->toBeGreaterThanOrEqual(0)
+        ->and(TaskAnalysisReport::validate($bytes, $input)['status'])->toBe('ready');
+    $recovered = $runner->recoverStart($instance, $id);
+    expect($recovered)->not->toBeNull()
+        ->and($runner->readAnalysis($instance, $recovered)['state'])->toBe('running')
+        ->and(file_get_contents($instance->checkout_path.'/.git/analysis-invocations'))->toBe("1\n");
 });
 
 it('rejects an altered untracked-mode or symlinked fixed entrypoint before any dispatch', function (): void {

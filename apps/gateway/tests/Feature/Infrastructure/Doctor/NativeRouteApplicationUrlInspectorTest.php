@@ -6,109 +6,71 @@ use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Doctor\NativeRouteApplicationUrlInspector;
 use App\Infrastructure\Processes\CommandDeadline;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
-use Illuminate\Support\Facades\File;
-use Symfony\Component\Process\Process;
-use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
 
-it('checks APP_URL in each application directory with one read-only command', function (): void {
-    $checkout = sys_get_temp_dir().'/orbit-doctor-app-url-'.bin2hex(random_bytes(4));
-    $application = static function (string $directory, ?string $environment) use ($checkout): void {
-        File::ensureDirectoryExists($checkout.'/'.$directory);
-        file_put_contents($checkout.'/'.$directory.'/artisan', '#!/usr/bin/env php');
-        if ($environment !== null) {
-            file_put_contents($checkout.'/'.$directory.'/.env', $environment);
-        }
-    };
-    $application('apps/docs', "APP_NAME=Docs\nAPP_URL=https://docs.shop.test\n");
-    $application('apps/quoted', "APP_URL=\"https://quoted.shop.test\"\n");
-    $application('apps/stale', "APP_URL=https://old.shop.test\n");
-    $application('apps/twice', "APP_URL=https://twice.shop.test\nAPP_URL=https://twice.shop.test\n");
-    $application('apps/missing', null);
-    File::ensureDirectoryExists($checkout.'/apps/static');
-    file_put_contents($checkout.'/apps/static/.env', "APP_URL=https://other.shop.test\n");
+it('checks the selected application directories with one agent command', function (): void {
+    $instance = route_application_url_instance('/srv/apps/shop/');
+    $agents = new FakeAgentCommandRunner()->answer('doctor.inspect-application-urls', ['matches' => [true, false]]);
+    $expected = ['apps/docs' => 'https://docs.shop.test', 'apps/admin' => 'https://admin.shop.test'];
 
-    $expected = [
-        'apps/docs' => 'https://docs.shop.test',
-        'apps/quoted' => 'https://quoted.shop.test',
-        'apps/stale' => 'https://stale.shop.test',
-        'apps/twice' => 'https://twice.shop.test',
-        'apps/missing' => 'https://missing.shop.test',
-        'apps/static' => 'https://static.shop.test',
-        'apps/absent' => 'https://absent.shop.test',
-    ];
-    $instance = route_application_url_instance($checkout.'/');
-    $before = route_application_url_tree($checkout);
-    $capture = new AppDevFakeSshExecutor([new CommandResult(0, '', '', 1, false)]);
+    $matches = route_application_url_inspector($agents)->inspect($instance, $expected);
 
-    try {
-        try {
-            route_application_url_inspector($capture)->inspect($instance, $expected);
-        } catch (DoctorInspectionException) {
-            // The empty answer only captures the command.
-        }
-        $command = $capture->commands[0];
-        $output = route_application_url_execute($command);
-        $after = route_application_url_tree($checkout);
-    } finally {
-        File::deleteDirectory($checkout);
-    }
-    $ssh = new AppDevFakeSshExecutor([new CommandResult(0, $output, '', 1, false)]);
-    $matches = route_application_url_inspector($ssh)->inspect($instance, $expected);
-
-    expect($output)
-        ->toBe("0=1\n1=1\n2=0\n3=0\n4=0\n5=1\n6=1\n")
-        ->and($matches)
-        ->toBe([
-            'apps/docs' => true,
-            'apps/quoted' => true,
-            'apps/stale' => false,
-            'apps/twice' => false,
-            'apps/missing' => false,
-            'apps/static' => true,
-            'apps/absent' => true,
-        ])
-        ->and($after)
-        ->toBe($before)
-        ->and($ssh->commands)
-        ->toHaveCount(1)
-        ->and(array_slice($command->arguments, 0, 5))
-        ->toBe(['sudo', 'bash', '-seu', '--', $checkout]);
+    expect($matches)->toBe(['apps/docs' => true, 'apps/admin' => false]);
+    expect($agents->calls)->toBe([[
+        'node' => $instance->node->name,
+        'command' => 'doctor.inspect-application-urls',
+        'input' => ['checkout' => '/srv/apps/shop', 'applications' => [
+            ['directory' => 'apps/docs', 'url' => 'https://docs.shop.test'],
+            ['directory' => 'apps/admin', 'url' => 'https://admin.shop.test'],
+        ]],
+    ]]);
 });
 
 it('checks the checkout itself when a Route serves it', function (): void {
     $instance = route_application_url_instance('/srv/apps/shop');
-    $ssh = new AppDevFakeSshExecutor([new CommandResult(0, "0=0\n", '', 1, false)]);
+    $agents = new FakeAgentCommandRunner()->answer('doctor.inspect-application-urls', ['matches' => [false]]);
 
-    $matches = route_application_url_inspector($ssh)->inspect($instance, ['' => 'https://root.shop.test']);
-
-    expect($matches)
-        ->toBe(['' => false])
-        ->and(array_slice($ssh->commands[0]->arguments, 4))
-        ->toBe(['/srv/apps/shop', '', 'https://root.shop.test']);
+    expect(route_application_url_inspector($agents)->inspect($instance, ['' => 'https://root.shop.test']))->toBe(['' => false]);
+    expect($agents->calls[0]['input']['applications'])->toBe([['directory' => '', 'url' => 'https://root.shop.test']]);
 });
 
-it('fails closed on a failed, short, or malformed observation and on an invalid directory', function (array $expected, CommandResult $result): void {
+it('fails closed on an incomplete or malformed observation', function (array $output): void {
     $instance = route_application_url_instance('/srv/apps/shop');
+    $agents = new FakeAgentCommandRunner()->answerMalformed('doctor.inspect-application-urls', $output);
 
-    expect(fn (): array => route_application_url_inspector(new AppDevFakeSshExecutor([$result]))->inspect($instance, $expected))
+    expect(fn () => route_application_url_inspector($agents)->inspect($instance, ['apps/docs' => 'https://docs.test']))
         ->toThrow(DoctorInspectionException::class);
 })->with([
-    'failed command' => [['apps/docs' => 'https://docs.test'], new CommandResult(1, '', 'permission denied', 1, false)],
-    'short output' => [['apps/docs' => 'https://docs.test', 'apps/admin' => 'https://admin.test'], new CommandResult(0, "0=1\n", '', 1, false)],
-    'malformed output' => [['apps/docs' => 'https://docs.test'], new CommandResult(0, "0=yes\n", '', 1, false)],
-    'invalid directory' => [['../docs' => 'https://docs.test'], new CommandResult(0, "0=1\n", '', 1, false)],
+    'missing' => [[]],
+    'short' => [['matches' => []]],
+    'long' => [['matches' => [true, false]]],
+    'wrong type' => [['matches' => ['yes']]],
+    'not a list' => [['matches' => ['apps/docs' => true]]],
 ]);
+
+it('maps an invalid directory refusal without exposing agent details', function (): void {
+    $instance = route_application_url_instance('/srv/apps/shop');
+    $agents = new FakeAgentCommandRunner()->refuse('doctor.inspect-application-urls', 'doctor.projection_invalid');
+
+    expect(fn () => route_application_url_inspector($agents)->inspect($instance, ['../docs' => 'https://docs.test']))
+        ->toThrow(DoctorInspectionException::class);
+});
+
+it('skips Node execution when no directory needs a check', function (): void {
+    $agents = new FakeAgentCommandRunner;
+    expect(route_application_url_inspector($agents)->inspect(new Instance, []))->toBe([]);
+    expect($agents->calls)->toBe([]);
+});
+
+it('keeps application URL inspection behind agent commands', function (): void {
+    $source = file_get_contents(app_path('Infrastructure/Doctor/NativeRouteApplicationUrlInspector.php'));
+    expect($source)->not->toContain('SshExecutor', 'ProcessRunner', 'RemoteCommand', 'bash', '<<<');
+});
 
 function route_application_url_instance(string $checkout): Instance
 {
@@ -142,61 +104,7 @@ function route_application_url_instance(string $checkout): Instance
     ])->fresh(['node', 'project']);
 }
 
-/** Runs the remote script locally without `sudo`, as the Node would run it. */
-function route_application_url_execute(RemoteCommand $command): string
+function route_application_url_inspector(FakeAgentCommandRunner $agents): NativeRouteApplicationUrlInspector
 {
-    $process = new Process(['bash', ...array_slice($command->arguments, 2)], timeout: 30);
-    $process->setInput($command->input);
-    $process->mustRun();
-
-    return $process->getOutput();
-}
-
-/** @return array<string, string> */
-function route_application_url_tree(string $root): array
-{
-    $tree = [];
-    foreach (File::allFiles($root, true) as $file) {
-        $tree[$file->getRelativePathname()] = (string) file_get_contents($file->getPathname());
-    }
-    ksort($tree);
-
-    return $tree;
-}
-
-function route_application_url_inspector(AppDevFakeSshExecutor $ssh): NativeRouteApplicationUrlInspector
-{
-    return new NativeRouteApplicationUrlInspector(
-        new DevelopmentSshExecutor($ssh, route_application_url_keys(), route_application_url_hosts()),
-        new CommandDeadline,
-    );
-}
-
-function route_application_url_keys(): SshKeyProvider
-{
-    return new class implements SshKeyProvider
-    {
-        public function privateKeyPath(): string
-        {
-            return '/tmp/doctor-key';
-        }
-
-        public function publicKey(): string
-        {
-            return 'ssh-ed25519 AAAA';
-        }
-    };
-}
-
-function route_application_url_hosts(): KnownHostsStore
-{
-    return new class implements KnownHostsStore
-    {
-        public function path(): string
-        {
-            return '/tmp/doctor-known-hosts';
-        }
-
-        public function put(string $host, int $port, HostKey $key): void {}
-    };
+    return new NativeRouteApplicationUrlInspector($agents, new CommandDeadline);
 }

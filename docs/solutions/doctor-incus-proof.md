@@ -21,7 +21,7 @@ Informational tool discoveries may appear in a healthy baseline. They do not cha
 
 Doctor reports one finding per inspector that fails, so a fixture must break exactly one inspector. The Node inspector also reads the free space and free inodes for root and the managed user's home filesystem, including on the Gateway. Low disk space can therefore spoil a baseline even when the intended fixture affects another family.
 
-The production Instance inspector runs `sudo bash`. The role inspector runs `sudo ufw`. The firewall inspector also runs it when the selected Node has a persisted or synthetic firewall target. The public Route edge inspector, in the `instance` family, runs `sudo ufw status numbered` on a Node that serves a public Route edge. Doctor checks current projections only. The proof does not need to fixture local DNS snippet compatibility checks.
+The production Instance inspector calls the Node agent. Role and firewall checks call `firewall.inspect`, which runs UFW with fixed arguments inside the agent. The public Route edge inspector also reads firewall state on a Node that serves a public Route edge. Doctor checks current projections only. The proof does not need to fixture local DNS snippet compatibility checks.
 
 The public Route edge inspector checks the certificate actually served by the ingress against Mozilla roots, the Route hostname, and a 30-day expiry window. A certificate finding is distinct from the proof's declared drift and must be absent in the healthy baseline. A file inventory of the Gateway home also sees changes that are not Doctor writes. SQLite creates and removes its `-wal` and `-shm` sidecars for any connection, including a read-only one. The Caddy build check creates a lock file under the Orbit home's `locks/caddy-build/` directory, and the file stays.
 
@@ -97,17 +97,17 @@ Do not edit `pm.max_children`. That line is in `local.conf`, and Doctor checks o
 
 ### Unverifiable condition
 
-Add a sudoers drop-in on `app-prod` that keeps `NOPASSWD: ALL` for the `orbit` user and denies `/usr/sbin/ufw`. The command checks the file with `visudo` before it installs it, because a broken drop-in stops every `sudo` call.
+Add a sudoers drop-in on `app-prod` that keeps `NOPASSWD: ALL` for the `orbit` user and denies `/usr/local/bin/orbit-agent command firewall.inspect`. The command checks the file with `visudo` before it installs it, because a broken drop-in stops every `sudo` call.
 
 ```bash
-bin/e2e-topology exec ISSUE app-prod --argv='["sudo","sh","-c","echo \"orbit ALL=(ALL) NOPASSWD: ALL, !/usr/sbin/ufw\" > /tmp/zz-doctor-deny-ufw && visudo -cf /tmp/zz-doctor-deny-ufw && install -m 0440 -o root -g root /tmp/zz-doctor-deny-ufw /etc/sudoers.d/zz-doctor-deny-ufw"]' --record="deny ufw on app-prod"
+bin/e2e-topology exec ISSUE app-prod --argv='["sudo","sh","-c","echo \"orbit ALL=(ALL) NOPASSWD: ALL, !/usr/local/bin/orbit-agent command firewall.inspect\" > /tmp/zz-doctor-deny-firewall-inspect && visudo -cf /tmp/zz-doctor-deny-firewall-inspect && install -m 0440 -o root -g root /tmp/zz-doctor-deny-firewall-inspect /etc/sudoers.d/zz-doctor-deny-firewall-inspect"]' --record="deny firewall inspection on app-prod"
 bin/e2e-topology exec ISSUE gateway --argv='["orbit","doctor","--node=<node-id>","--family=role","--json"]' --record="doctor app-prod unverifiable"
 ```
 
 The role request reports exactly one `role.inspection_failed`. A full-family request isolates the same failure only when the selected Node has no persisted firewall rules, no synthetic Metrics firewall targets, and no public Route edge. Remove the file and record the restored report.
 
 ```bash
-bin/e2e-topology exec ISSUE app-prod --argv='["sudo","rm","/etc/sudoers.d/zz-doctor-deny-ufw"]' --record="allow ufw on app-prod"
+bin/e2e-topology exec ISSUE app-prod --argv='["sudo","rm","/etc/sudoers.d/zz-doctor-deny-firewall-inspect"]' --record="allow firewall inspection on app-prod"
 bin/e2e-topology exec ISSUE gateway --argv='["orbit","doctor","--node=<node-id>","--family=role","--json"]' --record="doctor app-prod unverifiable restored"
 ```
 

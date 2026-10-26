@@ -2437,13 +2437,16 @@ function bind_route_reconciliation_provisioning(?Closure $onConverge = null): vo
             Node $node,
             NodeProvisioningIdentity $identity,
             ?string $expectedSshHostFingerprint = null,
-            bool $rolelessOperator = false,
+            bool $rolelessOperator = false, ?Closure $recordObservation = null,
         ): NodeObservation {
             if ($this->onConverge instanceof Closure) {
                 ($this->onConverge)($node);
             }
 
-            return new NodeObservation('x86_64');
+            $observation = new NodeObservation('x86_64');
+            $recordObservation?->__invoke($observation);
+
+            return $observation;
         }
     });
     app()->instance(AppDevTldConverger::class, new class implements AppDevTldConverger

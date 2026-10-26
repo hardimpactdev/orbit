@@ -13,47 +13,28 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Domain\SourceControl\GitRepositoryOrigin;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentStep;
 use App\Models\Instance;
 use App\Models\Node;
 use Illuminate\Support\Facades\DB;
-use JsonException;
 
 final readonly class RemoteRegistrationSourceManager implements RegistrationSourceManager
 {
     public function __construct(
-        private DevelopmentSshExecutor $ssh,
+        private AgentCommandRunner $agents,
         private ManagedUserAccountResolver $accounts,
     ) {}
 
     public function inspect(Node $node, string $sourcePath, bool $includeWorktrees): array
     {
         $account = $this->account($node);
-        $result = $this->ssh->execute(
-            $node,
-            new RemoteCommand(
-                arguments: [
-                    'python3',
-                    '-Ic',
-                    self::inspectionScript(),
-                    $sourcePath,
-                    $includeWorktrees ? '1' : '0',
-                    $account->user,
-                    $account->group,
-                ],
-            ),
-            step: 'registration-source-inspect',
-            errorCode: 'instance.source_invalid',
-            commandTimeout: 60,
-        );
-
-        try {
-            $rows = json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR);
-        } catch (JsonException $exception) {
-            throw $this->invalidSource($exception);
-        }
+        $rows = $this->run($node, 'instances.inspect-registration-source', [
+            'path' => $sourcePath,
+            'include_worktrees' => $includeWorktrees,
+            'user' => $account->user,
+            'group' => $account->group,
+        ], step: 'registration-source-inspect', errorCode: 'instance.source_invalid')['rows'] ?? null;
 
         if (! is_array($rows) || $rows === []) {
             throw $this->invalidSource();
@@ -285,8 +266,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                 }
             });
 
-            $result = $this->runRelocation($node, 'prepare', $payload);
-            $identities = $this->preparationIdentities($result->stdout, $members);
+            $identities = $this->preparationIdentities($this->runRelocation($node, 'prepare', $payload), $members);
 
             DB::transaction(static function () use ($members, $identities): void {
                 foreach ($members as $member) {
@@ -343,19 +323,8 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
      * @param  list<array{instance: Instance, facts: RegistrationSourceFacts}>  $members
      * @return array<int, array{device: int|null, inode: int|null}>
      */
-    private function preparationIdentities(string $output, array $members): array
+    private function preparationIdentities(mixed $rows, array $members): array
     {
-        try {
-            $rows = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
-        } catch (JsonException $exception) {
-            throw new ResourceOperationException(
-                'instance.registration_incomplete',
-                'Registration relocation returned invalid cleanup evidence.',
-                502,
-                previous: $exception,
-            );
-        }
-
         if (! is_array($rows) || count($rows) !== count($members)) {
             throw new ResourceOperationException(
                 'instance.registration_incomplete',
@@ -408,22 +377,23 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
         return $identities;
     }
 
-    /** @param list<array<string, mixed>> $payload */
-    private function runRelocation(Node $node, string $operation, array $payload): CommandResult
+    /**
+     * Runs one relocation step and returns the identities that `prepare` reports.
+     *
+     * @param  list<array<string, mixed>>  $payload
+     */
+    private function runRelocation(Node $node, string $operation, array $payload): mixed
     {
-        return $this->ssh->execute(
-            $node,
-            new RemoteCommand([
-                'python3',
-                '-Ic',
-                self::relocationScript(),
-                $operation,
-                json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
-            ]),
-            step: 'registration-source-relocate',
-            errorCode: 'instance.registration_incomplete',
-            commandTimeout: 900,
-        );
+        return $this->run($node, 'instances.relocate-registration-source', ['operation' => $operation, 'members' => $payload], step: 'registration-source-relocate', errorCode: 'instance.registration_incomplete')['identities'] ?? null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     * @return array<string, mixed>
+     */
+    private function run(Node $node, string $command, array $input, string $step, string $errorCode): array
+    {
+        return AgentStep::run($this->agents, $node, $command, $input, $step, $errorCode, 'App development');
     }
 
     public function restoreOriginal(Instance $instance, RegistrationSourceFacts $facts): void
@@ -472,21 +442,12 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
     private function runLaravelReceipt(Instance $instance, string $operation): void
     {
         $instance->loadMissing('node');
-        $this->ssh->execute(
-            $instance->node,
-            new RemoteCommand([
-                'python3',
-                '-c',
-                self::laravelReceiptScript(),
-                $instance->checkout_path,
-                (string) $instance->id,
-                $operation,
-                $instance->applicationDirectory(),
-            ]),
-            step: 'registration-laravel-rollback',
-            errorCode: 'instance.laravel_rollback_failed',
-            commandTimeout: 30,
-        );
+        $this->run($instance->node, 'instances.laravel-registration-receipt', [
+            'checkout' => $instance->checkout_path,
+            'instance_id' => $instance->id,
+            'operation' => $operation,
+            'application' => $instance->applicationDirectory(),
+        ], step: 'registration-laravel-rollback', errorCode: 'instance.laravel_rollback_failed');
     }
 
     /** @param array<array-key, mixed> $row */
@@ -584,315 +545,5 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
             status: 422,
             previous: $previous,
         );
-    }
-
-    private static function contentStatusScript(): string
-    {
-        return <<<'PYTHON'
-            import subprocess
-
-            def content_status(path):
-                return subprocess.check_output(['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-C', path, 'status', '--porcelain=v2', '--untracked-files=all'], stderr=subprocess.DEVNULL, env=git_env)
-
-            PYTHON;
-    }
-
-    private static function inspectionScript(): string
-    {
-        return self::contentStatusScript().<<<'PYTHON'
-            import hashlib, json, os, pathlib, stat, subprocess, sys
-
-            requested = sys.argv[1]
-            include_worktrees = sys.argv[2] == '1'
-            managed_user = sys.argv[3]
-            managed_group = sys.argv[4]
-            git_env = dict(os.environ, GIT_OPTIONAL_LOCKS='0')
-
-            def git(path, *args):
-                return subprocess.check_output(['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-C', path, *args], stderr=subprocess.DEVNULL, env=git_env).decode().strip()
-
-            def digest(path):
-                root = pathlib.Path(path)
-                h = hashlib.sha256()
-                for args in [
-                    ('rev-parse', 'HEAD'),
-                    ('symbolic-ref', '-q', 'HEAD'),
-                    ('status', '--porcelain=v2', '--untracked-files=all'),
-                    ('config', '--local', '--null', '--list'),
-                    ('ls-files', '--stage', '-v'),
-                ]:
-                    if args[0] == 'status': value = content_status(path)
-                    else:
-                        try: value = subprocess.check_output(['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-C', path, *args], stderr=subprocess.DEVNULL, env=git_env)
-                        except subprocess.CalledProcessError as error: value = error.output
-                    h.update(b'git\0' + b'\0'.join(a.encode() for a in args) + b'\0' + value)
-                for current, dirs, files in os.walk(root, topdown=True, followlinks=False):
-                    if pathlib.Path(current) == root and '.git' in dirs: dirs.remove('.git')
-                    dirs.sort()
-                    for name in sorted(dirs + files):
-                        entry = pathlib.Path(current) / name
-                        relative = entry.relative_to(root).as_posix()
-                        if relative == '.git': continue
-                        info = entry.lstat()
-                        h.update(relative.encode() + b'\0' + str(stat.S_IMODE(info.st_mode)).encode() + b'\0')
-                        if entry.is_symlink(): h.update(b'L' + os.readlink(entry).encode())
-                        elif entry.is_file():
-                            h.update(b'F')
-                            with entry.open('rb') as stream:
-                                for block in iter(lambda: stream.read(1024 * 1024), b''): h.update(block)
-                        else: h.update(b'D')
-                return h.hexdigest()
-
-            def safe_metadata(path, directory):
-                import grp, pwd
-                entry = pathlib.Path(path)
-                if entry.is_symlink() or (directory and not entry.is_dir()) or (not directory and not entry.is_file()): raise SystemExit(42)
-                info = entry.stat()
-                if pwd.getpwuid(info.st_uid).pw_name != managed_user or grp.getgrgid(info.st_gid).gr_name != managed_group: raise SystemExit(42)
-                if stat.S_IMODE(info.st_mode) & 0o7002: raise SystemExit(42)
-
-            top = git(requested, 'rev-parse', '--show-toplevel')
-            if not os.path.isabs(top) or os.path.realpath(top) != top or not os.path.isdir(top): raise SystemExit(42)
-            origin = git(top, 'config', '--get', 'remote.origin.url')
-            common = os.path.realpath(git(top, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
-            listing = git(top, 'worktree', 'list', '--porcelain').splitlines()
-            worktrees = [line[9:] for line in listing if line.startswith('worktree ')]
-            paths = worktrees if include_worktrees else [top]
-            try:
-                ref = git(top, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD')
-                default_branch = ref.removeprefix('origin/')
-            except subprocess.CalledProcessError:
-                default_branch = None
-            repository_path = origin.split(':', 1)[1] if origin.startswith('git@') else __import__('urllib.parse').parse.urlparse(origin).path
-            slug = pathlib.PurePosixPath(repository_path.removesuffix('.git').rstrip('/')).name.lower()
-            rows = []
-            for path in paths:
-                canonical = git(path, 'rev-parse', '--show-toplevel')
-                if canonical != path or os.path.realpath(path) != path: raise SystemExit(42)
-                safe_metadata(path, True)
-                dot_git = pathlib.Path(path) / '.git'
-                layout = 'checkout' if dot_git.is_dir() and not dot_git.is_symlink() else 'worktree'
-                if layout == 'worktree' and (not dot_git.is_file() or dot_git.is_symlink()): raise SystemExit(42)
-                safe_metadata(dot_git, layout == 'checkout')
-                git_dir = os.path.realpath(git(path, 'rev-parse', '--absolute-git-dir'))
-                safe_metadata(git_dir, True)
-                safe_metadata(common, True)
-                try: branch = git(path, 'symbolic-ref', '--short', 'HEAD')
-                except subprocess.CalledProcessError: branch = None
-                rows.append({
-                    'path': path,
-                    'layout': layout,
-                    'repository_url': origin,
-                    'branch': branch,
-                    'detached': branch is None,
-                    'commit': git(path, 'rev-parse', '--verify', 'HEAD^{commit}'),
-                    'default_branch': default_branch,
-                    'inferred_slug': slug,
-                    'inferred_root': 'public' if (pathlib.Path(path, 'composer.json').is_file() and (pathlib.Path(path, 'artisan').is_file() or pathlib.Path(path, 'bin', 'console').is_file()) and pathlib.Path(path, 'public').is_dir()) else None,
-                    'common_repository_path': common,
-                    'worktree_paths': worktrees,
-                    'source_digest': digest(path),
-                })
-            print(json.dumps(rows, separators=(',', ':')))
-            PYTHON;
-    }
-
-    private static function relocationScript(): string
-    {
-        return self::contentStatusScript().<<<'PYTHON'
-            import errno, hashlib, json, os, pathlib, shutil, stat, subprocess, sys
-            operation = sys.argv[1]
-            members = json.loads(sys.argv[2])
-            git_env = dict(os.environ, GIT_OPTIONAL_LOCKS='0')
-
-            def git(path, *args): return subprocess.check_output(['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-C', path, *args], stderr=subprocess.DEVNULL, env=git_env).decode().strip()
-            def digest(path):
-                root = pathlib.Path(path); h = hashlib.sha256()
-                for args in [('rev-parse','HEAD'),('symbolic-ref','-q','HEAD'),('status','--porcelain=v2','--untracked-files=all'),('config','--local','--null','--list'),('ls-files','--stage','-v')]:
-                    if args[0] == 'status': value = content_status(path)
-                    else:
-                        try: value = subprocess.check_output(['git','-c','core.hooksPath=/dev/null','-c','core.fsmonitor=false','-C',path,*args], stderr=subprocess.DEVNULL, env=git_env)
-                        except subprocess.CalledProcessError as error: value = error.output
-                    h.update(b'git\0'+b'\0'.join(a.encode() for a in args)+b'\0'+value)
-                for current, dirs, files in os.walk(root, topdown=True, followlinks=False):
-                    if pathlib.Path(current) == root and '.git' in dirs: dirs.remove('.git')
-                    dirs.sort()
-                    for name in sorted(dirs+files):
-                        entry=pathlib.Path(current)/name; relative=entry.relative_to(root).as_posix()
-                        if relative == '.git': continue
-                        info=entry.lstat(); h.update(relative.encode()+b'\0'+str(stat.S_IMODE(info.st_mode)).encode()+b'\0')
-                        if entry.is_symlink(): h.update(b'L'+os.readlink(entry).encode())
-                        elif entry.is_file():
-                            h.update(b'F')
-                            with entry.open('rb') as stream:
-                                for block in iter(lambda: stream.read(1024*1024), b''): h.update(block)
-                        else: h.update(b'D')
-                return h.hexdigest()
-            def verify(path, member):
-                if not os.path.isdir(path) or os.path.realpath(path) != path: raise SystemExit(42)
-                if git(path,'rev-parse','--verify','HEAD^{commit}') != member['commit']: raise SystemExit(42)
-                try: branch=git(path,'symbolic-ref','--short','HEAD')
-                except subprocess.CalledProcessError: branch=None
-                if branch != member['branch'] or (branch is None) != member['detached']: raise SystemExit(42)
-                if digest(path) != member['digest']: raise SystemExit(42)
-            def remove_stage(path):
-                if os.path.islink(path) or os.path.isfile(path): os.unlink(path)
-                else: shutil.rmtree(path)
-            def source_identity(path):
-                if not os.path.isdir(path) or os.path.islink(path) or os.path.realpath(path) != path: raise SystemExit(42)
-                info=os.lstat(path)
-                return info.st_dev,info.st_ino
-            def prepare(member):
-                source=member['source']; destination=member['destination']; stage=destination+'.orbit-stage-'+str(member['id'])
-                if source == destination:
-                    verify(destination, member)
-                    return {'id':member['id'],'source_device':None,'source_inode':None}
-                pathlib.Path(destination).parent.mkdir(parents=True, exist_ok=True)
-                if os.path.exists(destination):
-                    verify(destination, member)
-                    if os.path.exists(source):
-                        verify(source, member)
-                        device,inode=source_identity(source)
-                    else: device,inode=None,None
-                    if os.path.lexists(stage): remove_stage(stage)
-                    return {'id':member['id'],'source_device':device,'source_inode':inode}
-                if os.path.lexists(stage):
-                    try: verify(stage, member)
-                    except SystemExit:
-                        if not os.path.exists(source): raise
-                        verify(source, member)
-                        remove_stage(stage)
-                    else:
-                        device,inode=source_identity(source) if os.path.exists(source) else (None,None)
-                        os.rename(stage, destination)
-                        verify(destination, member)
-                        return {'id':member['id'],'source_device':device,'source_inode':inode}
-                if os.path.exists(source): verify(source, member)
-                else: raise SystemExit(42)
-                device,inode=source_identity(source)
-                try: os.rename(source, destination)
-                except OSError as error:
-                    if error.errno != errno.EXDEV: raise
-                    if os.path.lexists(stage): shutil.rmtree(stage)
-                    shutil.copytree(source, stage, symlinks=True, copy_function=shutil.copy2)
-                    verify(stage, member)
-                    os.rename(stage, destination)
-                    verify(destination, member)
-                verify(destination, member)
-                return {'id':member['id'],'source_device':device,'source_inode':inode}
-            def repair():
-                mapping={m['source']:m['destination'] for m in members}
-                checkouts=[m for m in members if m['layout']=='checkout']
-                if checkouts:
-                    checkout=checkouts[0]
-                    retained=[mapping.get(path,path) for path in checkout['worktrees'] if path != checkout['source']]
-                    subprocess.check_call(['git','-c','core.hooksPath=/dev/null','-c','core.fsmonitor=false','-C',checkout['destination'],'worktree','repair',*retained], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                else:
-                    member=members[0]
-                    subprocess.check_call(['git','-c','core.hooksPath=/dev/null','-c','core.fsmonitor=false','--git-dir',member['common'],'worktree','repair',member['destination']], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            def cleanup(member):
-                source=member['source']; destination=member['destination']; stage=destination+'.orbit-stage-'+str(member['id'])
-                verify(destination, member)
-                if source != destination and os.path.exists(source):
-                    device,inode=source_identity(source)
-                    if device != member['source_device'] or inode != member['source_inode']: raise SystemExit(42)
-                if os.path.lexists(stage): remove_stage(stage)
-            def remove_original(member):
-                source=member['source']; destination=member['destination']
-                if source == destination or not os.path.exists(source): return
-                for current,dirs,files in os.walk(source, topdown=False, followlinks=False):
-                    for name in files: os.unlink(os.path.join(current,name))
-                    for name in dirs:
-                        path=os.path.join(current,name)
-                        if os.path.islink(path): os.unlink(path)
-                        else: os.rmdir(path)
-                os.rmdir(source)
-            ordered = sorted(members, key=lambda m: 1 if m['layout'] == 'checkout' else 0)
-            def close_environment():
-                # Other local users, the Node agent included, never read an Instance's environment.
-                for member in members:
-                    env=os.path.join(member['application'],'.env')
-                    if os.path.realpath(member['application']) != member['application']: raise SystemExit(42)
-                    if os.path.isfile(env) and not os.path.islink(env) and os.lstat(env).st_mode & 0o007:
-                        os.chmod(env, stat.S_IMODE(os.lstat(env).st_mode) & 0o770)
-            if operation == 'adopt':
-                if any(member['source'] != member['destination'] for member in members): raise SystemExit(42)
-                for member in members: verify(member['destination'], member)
-            elif operation == 'adopt-finalize':
-                for member in members:
-                    if member['source'] != member['destination']: raise SystemExit(42)
-                    source_identity(member['destination'])
-                close_environment()
-            elif operation == 'prepare':
-                identities=[prepare(member) for member in ordered]
-                repair()
-                for member in members: verify(member['destination'], member)
-                print(json.dumps(identities,separators=(',',':')))
-            elif operation == 'cleanup':
-                for member in members: cleanup(member)
-                for member in ordered: remove_original(member)
-                for member in members: verify(member['destination'], member)
-                close_environment()
-            else: raise SystemExit(42)
-            PYTHON;
-    }
-
-    private static function laravelReceiptScript(): string
-    {
-        return <<<'PYTHON'
-            import json, os, pathlib, shutil, sys
-            root=pathlib.Path(sys.argv[1]); instance=sys.argv[2]; operation=sys.argv[3]
-            receipt=root.parent/('.orbit-registration-url-'+instance)
-            application=pathlib.Path(sys.argv[4])
-            if application.resolve() != application: raise SystemExit(42)
-            paths=[application/'.env', application/'bootstrap'/'cache'/'config.php']
-            directories=[application, application/'bootstrap', application/'bootstrap'/'cache']
-            def validate_receipt():
-                if receipt.is_symlink() or not receipt.is_dir(): raise SystemExit(42)
-                manifest_path=receipt/'manifest'
-                if manifest_path.is_symlink() or not manifest_path.is_file(): raise SystemExit(42)
-                try: manifest=json.loads(manifest_path.read_text())
-                except (OSError,ValueError,TypeError): raise SystemExit(42)
-                if set(manifest) != {'files','directories'}: raise SystemExit(42)
-                if not isinstance(manifest['files'],list) or len(manifest['files']) != len(paths): raise SystemExit(42)
-                if any(type(value) is not bool for value in manifest['files']): raise SystemExit(42)
-                if not isinstance(manifest['directories'],list) or len(manifest['directories']) != len(directories): raise SystemExit(42)
-                for index,exists in enumerate(manifest['files']):
-                    backup=receipt/str(index)
-                    if exists != (backup.is_file() and not backup.is_symlink()): raise SystemExit(42)
-                return manifest
-            if operation == 'prepare':
-                if receipt.exists() or receipt.is_symlink():
-                    validate_receipt()
-                    raise SystemExit(0)
-                preparing=receipt.with_name(receipt.name+'.preparing')
-                if preparing.is_symlink() or preparing.exists() and not preparing.is_dir(): raise SystemExit(42)
-                if preparing.exists(): shutil.rmtree(preparing)
-                preparing.mkdir(mode=0o700)
-                manifest={'files': [], 'directories': []}
-                for index,path in enumerate(paths):
-                    exists=path.is_file() and not path.is_symlink()
-                    manifest['files'].append(exists)
-                    if exists: shutil.copy2(path, preparing/str(index))
-                for path in directories:
-                    info=path.stat() if path.is_dir() and not path.is_symlink() else None
-                    manifest['directories'].append(None if info is None else [info.st_atime_ns,info.st_mtime_ns])
-                (preparing/'manifest').write_text(json.dumps(manifest)); os.chmod(preparing/'manifest',0o600)
-                os.replace(preparing,receipt)
-                validate_receipt()
-            elif operation == 'restore':
-                manifest=validate_receipt()
-                for index,path in enumerate(paths):
-                    if manifest['files'][index]: path.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(receipt/str(index),path)
-                    elif path.exists() and not path.is_symlink(): path.unlink()
-                for path,times in reversed(list(zip(directories,manifest['directories']))):
-                    if times is not None and path.is_dir() and not path.is_symlink(): os.utime(path,ns=tuple(times))
-                shutil.rmtree(receipt)
-            elif operation == 'discard':
-                if receipt.exists() or receipt.is_symlink():
-                    validate_receipt()
-                    shutil.rmtree(receipt)
-            else: raise SystemExit(42)
-            PYTHON;
     }
 }

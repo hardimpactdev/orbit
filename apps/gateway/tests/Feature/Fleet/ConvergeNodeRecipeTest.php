@@ -6,18 +6,15 @@ use App\Actions\Fleet\ConvergeNodeRecipeAction;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Fleet\FleetNodeVerification;
 use App\Domain\Nodes\RoleName;
-use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolInspectionData;
 use App\Domain\Tools\ToolInspector;
-use App\Infrastructure\Fleet\NodeShell;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\MachineSoftware\NodeRecipeProgram;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
-use App\Infrastructure\MachineSoftware\RecipeProgramInput;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
-use App\Infrastructure\Nodes\NodeUpdateLock;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -25,13 +22,10 @@ use App\Models\TaskVm;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use Illuminate\Support\Facades\Artisan;
-use Symfony\Component\Process\Process;
-use Tests\Support\FakePhpBuildRunner;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\Fleet\FleetFixtures;
-use Tests\Support\Fleet\FleetTestSsh;
-use Tests\Support\Fleet\ScriptedSshExecutor;
 use Tests\Support\InspectsToolsIndividually;
-use Tests\Support\RecipeProgramPayload;
+use Tests\Support\PhpBuildAnswers;
 
 final class RecipeVerification implements FleetNodeVerification
 {
@@ -52,31 +46,78 @@ final class RecipeVerification implements FleetNodeVerification
     }
 }
 
-function recipeSsh(?CommandResult $application = null, ?Closure $inspection = null, ?CommandResult $incusPreflight = null): ScriptedSshExecutor
+function recipeAgents(array|AgentCommandRefused|null $application = null, ?Closure $inspection = null, ?AgentCommandRefused $incusPreflight = null): FakeAgentCommandRunner
 {
-    $ssh = new ScriptedSshExecutor;
-    $ssh->on('/^sudo timeout .* python3 - incus-preflight$/', $incusPreflight ?? ScriptedSshExecutor::ok('{}'));
-    $ssh->on('/^python3 - inspect$/', $inspection ?? static function (RemoteCommand $command): CommandResult {
-        $payload = RecipeProgramPayload::read($command->input);
+    $agents = new FakeAgentCommandRunner;
+    $agents->answer('recipe.inspect', $inspection ?? static function (array $payload): array {
         $versions = [];
         foreach ($payload['tools'] as $name => $pin) {
             $versions[$name] = ['source' => $pin['source'], 'version' => $pin['version'], 'installed' => $name === 'curl' ? '1.0.0' : $pin['version'], 'changed' => $name === 'curl', 'status' => $name === 'curl' ? 'older_than_recipe' : 'current'];
         }
 
-        return ScriptedSshExecutor::ok(json_encode($versions, JSON_THROW_ON_ERROR));
+        return ['_actions' => [], ...$versions];
     });
-    $ssh->on('/^sudo timeout .* python3 - apply$/', $application ?? ScriptedSshExecutor::ok('{"changed_packages":["curl"],"restarted_services":[],"changed_tools":["curl"],"healthy":true}'));
-    app()->instance(NodeShell::class, FleetTestSsh::shell($ssh));
-    app()->instance(RemoteProgramRunner::class, new FakePhpBuildRunner);
-    app()->instance(NodeUpdateLock::class, new NodeUpdateLock(FleetTestSsh::shell($ssh)));
+    if ($application instanceof AgentCommandRefused) {
+        $agents->refuse('recipe.apply', $application->errorCode, $application->details);
+    } else {
+        $agents->answer('recipe.apply', $application ?? ['changed_packages' => ['curl'], 'restarted_services' => [], 'changed_tools' => ['curl'], 'newer_than_recipe' => [], 'healthy' => true]);
+    }
+    if ($incusPreflight !== null) {
+        $agents->refuse('recipe.incus-preflight', $incusPreflight->errorCode, $incusPreflight->details);
+    } else {
+        $agents->answer('recipe.incus-preflight', ['ready' => true]);
+    }
+    FleetFixtures::recipeDelivery($agents);
+    app()->instance(AgentCommandRunner::class, $agents);
+    app()->instance(PhpBuildAnswers::class, (new PhpBuildAnswers)->register($agents));
 
-    return $ssh;
+    return $agents;
 }
+
+function recipeFailure(array $details): AgentCommandRefused
+{
+    return new AgentCommandRefused('recipe.apply', 'recipe.failed', 'Recipe failed.', $details);
+}
+
+it('refuses a recipe from another delivery before contacting the Node or changing its marker', function (): void {
+    $node = FleetFixtures::node('stale-delivery', [RoleName::AppProd]);
+    $node->update(['settings' => ['machine_recipe' => ['version' => 'previous']]]);
+    $agents = recipeAgents();
+    $document = json_decode(new RecipeLoader()->load()->json, true, flags: JSON_THROW_ON_ERROR);
+    $document['agent']['linux-x86_64'] = str_repeat('e', 64);
+    $recipe = new RecipeLoader()->decode(json_encode($document, JSON_THROW_ON_ERROR));
+
+    expect(fn () => app(ConvergeNodeRecipeAction::class)->execute($node, $recipe))
+        ->toThrow(ResourceOperationException::class, 'recipe agent pin differs');
+    expect($agents->calls)->toBe([]);
+    expect($node->refresh()->settings['machine_recipe']['version'])->toBe('previous');
+});
+
+it('keeps Node recipe execution behind the typed command boundary', function (): void {
+    $source = file_get_contents(app_path('Infrastructure/MachineSoftware/NodeRecipeProgram.php'));
+
+    foreach (['NodeShell', 'RemoteCommand', 'SshExecutor', 'RecipeProgramInput', 'resource_path(', 'Process::', 'python3', 'shell_exec'] as $forbidden) {
+        expect($source)->not->toContain($forbidden);
+    }
+});
+
+it('preserves runner refusals that are not recipe failures', function (): void {
+    $node = FleetFixtures::node('recipe-agent-refusal', [RoleName::AppProd]);
+    $agents = recipeAgents();
+    $agents->refuse('recipe.inspect', 'agent.identity_mismatch');
+    $recipe = new RecipeLoader()->load();
+    $program = app(NodeRecipeProgram::class);
+
+    expect(fn () => $program->inspect($node, $recipe, $program->tools($node, $recipe)))
+        ->toThrow(AgentCommandRefused::class);
+    expect($agents->commands())->toBe(['recipe.inspect'])
+        ->and($node->refresh()->settings['machine_recipe'] ?? null)->toBeNull();
+});
 
 it('plans only the production role pins and makes no remote or registry writes in dry-run', function (): void {
     $node = FleetFixtures::node('recipe-prod', [RoleName::AppProd]);
     $node->update(['settings' => ['machine_recipe' => ['version' => 'previous']]]);
-    $ssh = recipeSsh();
+    $agents = recipeAgents();
     $recipe = new RecipeLoader()->load();
 
     $result = app(ConvergeNodeRecipeAction::class)->execute($node, $recipe, dryRun: true);
@@ -88,8 +129,8 @@ it('plans only the production role pins and makes no remote or registry writes i
         ->not->toHaveKeys(['rust', 'pi', 'php8.4-pcov'])
         ->and($result['plan']->tools['curl'])->toBe(['source' => 'ubuntu', 'version' => $recipe->tools['curl']->version, 'installed' => '1.0.0', 'changed' => true, 'status' => 'older_than_recipe'])
         ->and($result['plan']->tools['caddy']['changed'])->toBeFalse()
-        ->and($ssh->commands)->toHaveCount(1)
-        ->and($ssh->commands[0]->arguments[0])->toBe('python3')
+        ->and($agents->calls)->toHaveCount(2)
+        ->and(array_column($agents->calls, 'command'))->toBe(['php.inspect-build', 'recipe.inspect'])
         ->and($node->refresh()->settings)->toBe(['machine_recipe' => ['version' => 'previous']]);
 });
 
@@ -97,7 +138,7 @@ it('does not add operator-only tools to a Node with a production role', function
     $node = FleetFixtures::node('recipe-operator-filter', [RoleName::AppProd]);
     $document = json_decode(file_get_contents(resource_path('machine-software/recipe.json')), true, flags: JSON_THROW_ON_ERROR);
     $document['roles']['operator'][] = 'rust';
-    $recipe = new RecipeLoader()->decode(json_encode($document, JSON_THROW_ON_ERROR));
+    $recipe = new RecipeLoader()->resolve(json_encode($document, JSON_THROW_ON_ERROR), app(AgentDelivery::class));
 
     $pins = app(NodeRecipeProgram::class)->tools($node, $recipe);
 
@@ -117,15 +158,15 @@ it('unions multiple role tool sets without including base-only tools', function 
 
 it('refuses a missing service role profile before SSH', function (): void {
     $node = FleetFixtures::node('recipe-vpn', [RoleName::Vpn]);
-    $ssh = recipeSsh();
+    $agents = recipeAgents();
     $document = json_decode(file_get_contents(resource_path('machine-software/recipe.json')), true, flags: JSON_THROW_ON_ERROR);
     unset($document['roles']['vpn']);
     $document['base'][] = 'dnsmasq';
-    $incomplete = new RecipeLoader()->decode(json_encode($document, JSON_THROW_ON_ERROR));
+    $incomplete = new RecipeLoader()->resolve(json_encode($document, JSON_THROW_ON_ERROR), app(AgentDelivery::class));
 
     expect(fn () => app(ConvergeNodeRecipeAction::class)->execute($node, $incomplete))
         ->toThrow(InvalidArgumentException::class, 'Unknown role/profile [vpn]');
-    expect($ssh->commands)->toBe([]);
+    expect($agents->calls)->toBe([]);
 });
 
 it('selects each service role prerequisite without development-only software', function (RoleName $role): void {
@@ -162,15 +203,14 @@ it('gives every role that runs PHP the whole recipe PHP 8.5 set', function (Role
 
 it('installs the PHP build with the one installer after the other tools, strictly and without PCOV on the Gateway', function (): void {
     $node = FleetFixtures::node('recipe-php-payload', [RoleName::Gateway]);
-    $ssh = recipeSsh();
-    $php = app(RemoteProgramRunner::class);
+    $agents = recipeAgents();
+    $php = app(PhpBuildAnswers::class);
     app()->instance(FleetNodeVerification::class, new RecipeVerification);
     $recipe = new RecipeLoader()->load();
 
     $result = app(ConvergeNodeRecipeAction::class)->execute($node, $recipe);
 
-    $apply = collect($ssh->commands)->first(fn (RemoteCommand $command): bool => in_array('apply', $command->arguments, true));
-    $payload = RecipeProgramPayload::read($apply->input);
+    $payload = collect($agents->calls)->firstWhere('command', 'recipe.apply')['input'];
     expect(array_keys($payload['tools']))->not->toContain('php8.5-fpm', 'php8.5-pcov', 'php-common')->toContain('caddy', 'dpkg-repack')
         ->and(array_column($php->inputs, 'mode'))->toBe(['plan', 'plan', 'apply'])
         ->and($php->inputs[2])->toMatchArray(['pcov' => false, 'extras' => 'refuse', 'fpm' => 'all'])
@@ -180,8 +220,8 @@ it('installs the PHP build with the one installer after the other tools, strictl
 
 it('applies the VPN FPM policy in both preflight and installation', function (array $roles, string $fpm): void {
     $node = FleetFixtures::node('recipe-vpn-policy', $roles);
-    recipeSsh();
-    $php = app(RemoteProgramRunner::class);
+    recipeAgents();
+    $php = app(PhpBuildAnswers::class);
     app()->instance(FleetNodeVerification::class, new RecipeVerification);
 
     app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load());
@@ -197,9 +237,9 @@ it('applies the VPN FPM policy in both preflight and installation', function (ar
 
 it('publishes private DNS after applying PHP only on a VPN Node', function (RoleName $role, string $outcome): void {
     $node = FleetFixtures::node('recipe-php-dns', [$role]);
-    recipeSsh();
-    $php = new FakePhpBuildRunner(['apply' => [$outcome, ['changed' => ['php8.5-cli']]]]);
-    app()->instance(RemoteProgramRunner::class, $php);
+    recipeAgents();
+    $php = new PhpBuildAnswers(['apply' => [$outcome, ['changed' => ['php8.5-cli']]]]);
+    $php->register(app(AgentCommandRunner::class));
     app()->instance(FleetNodeVerification::class, new RecipeVerification);
     $dns = Mockery::mock(PrivateDnsManager::class);
     $dns->shouldReceive('converge')->times($role === RoleName::Vpn && $outcome === 'applied' ? 1 : 0)
@@ -217,8 +257,8 @@ it('publishes private DNS after applying PHP only on a VPN Node', function (Role
 
 it('plans both pinned OpenTelemetry packages for an app-dev Node like Beast', function (): void {
     $node = FleetFixtures::node('recipe-beast', [RoleName::AppDev]);
-    $ssh = recipeSsh();
-    $php = app(RemoteProgramRunner::class);
+    $agents = recipeAgents();
+    $php = app(PhpBuildAnswers::class);
 
     $result = app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load(), dryRun: true);
 
@@ -230,24 +270,24 @@ it('plans both pinned OpenTelemetry packages for an app-dev Node like Beast', fu
         expect(array_column($php->inputs[0]['versions'][$version]['packages'], 'name'))->toContain("php{$version}-opentelemetry");
         expect($php->inputs[0]['versions'][$version]['extensions'])->not->toContain('opentelemetry');
     }
-    expect($ssh->commands)->toHaveCount(1);
+    expect($agents->calls)->toHaveCount(2);
 });
 
 it('refuses extra PHP packages or another PHP source before any change, also in a dry run', function (bool $dryRun): void {
     $node = FleetFixtures::node('recipe-php-extras', [RoleName::AppProd]);
-    $ssh = recipeSsh();
-    app()->instance(RemoteProgramRunner::class, new FakePhpBuildRunner(['plan' => ['extra_packages', ['packages' => ['php8.5-opentelemetry']]]]));
+    $agents = recipeAgents();
+    (new PhpBuildAnswers(['plan' => ['extra_packages', ['packages' => ['php8.5-opentelemetry']]]]))->register(app(AgentCommandRunner::class));
 
     expect(fn () => app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load(), dryRun: $dryRun))
         ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('node.recipe_php_refused')
             ->and($exception->getMessage())->toContain('php8.5-opentelemetry', 'Nothing was changed'));
-    expect(collect($ssh->commands)->contains(fn (RemoteCommand $command): bool => in_array('apply', $command->arguments, true)))->toBeFalse();
+    expect(collect($agents->calls)->contains('command', 'recipe.apply'))->toBeFalse();
 })->with(['apply' => [false], 'dry run' => [true]]);
 
 it('stops with the installer outcome when the PHP build rolls back and records no convergence', function (string $outcome, array $data, string $message): void {
     $node = FleetFixtures::node('recipe-php-rollback-'.$outcome, [RoleName::AppProd]);
-    recipeSsh();
-    app()->instance(RemoteProgramRunner::class, new FakePhpBuildRunner(['apply' => [$outcome, $data]]));
+    recipeAgents();
+    (new PhpBuildAnswers(['apply' => [$outcome, $data]]))->register(app(AgentCommandRunner::class));
     $verification = new RecipeVerification;
     app()->instance(FleetNodeVerification::class, $verification);
 
@@ -263,8 +303,8 @@ it('stops with the installer outcome when the PHP build rolls back and records n
 
 it('selects CI software and PCOV through roles without purging host PHP packages', function (): void {
     $sabre = FleetFixtures::node('recipe-php-sabre', [RoleName::CiRunner]);
-    recipeSsh();
-    $php = app(RemoteProgramRunner::class);
+    recipeAgents();
+    $php = app(PhpBuildAnswers::class);
     app()->instance(FleetNodeVerification::class, new RecipeVerification);
 
     app(ConvergeNodeRecipeAction::class)->execute($sabre, new RecipeLoader()->load());
@@ -280,7 +320,7 @@ it('selects CI role software and replaces a recorded profile with normal recipe 
     $this->freezeTime();
     $node = FleetFixtures::node('recipe-sabre', [RoleName::CiRunner]);
     $node->update(['settings' => ['machine_recipe' => ['profile' => 'ci-runner']]]);
-    recipeSsh();
+    recipeAgents();
     app()->instance(FleetNodeVerification::class, new RecipeVerification);
     $recipe = new RecipeLoader()->load();
 
@@ -296,7 +336,7 @@ it('selects CI role software and replaces a recorded profile with normal recipe 
 it('clears stale recipe profile state when convergence fails', function (): void {
     $node = FleetFixtures::node('recipe-sabre-fail', [RoleName::CiRunner]);
     $node->update(['settings' => ['machine_recipe' => ['version' => 'previous', 'profile' => 'ci-runner']]]);
-    recipeSsh(ScriptedSshExecutor::fail(stdout: 'recipe-stage:packages'));
+    recipeAgents(recipeFailure(['stage' => 'recipe-stage:packages']));
     app()->instance(FleetNodeVerification::class, new RecipeVerification);
 
     expect(fn () => app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load()))
@@ -316,10 +356,20 @@ it('records the complete identity only after inventory health and Doctor pass an
     $this->freezeTime();
     $node = FleetFixtures::node('recipe-pass');
     $node->update(['settings' => ['t3' => ['keep' => true], 'machine_recipe' => ['version' => 'previous']]]);
-    $ssh = recipeSsh();
+    $agents = recipeAgents();
     $verification = new RecipeVerification;
     app()->instance(FleetNodeVerification::class, $verification);
     $recipe = new RecipeLoader()->load();
+    $agents->answer('recipe.verify-delivery', static function (array $input) use ($verification, $node, $recipe): array {
+        expect($verification->calls)->toBe(1);
+        expect($node->refresh()->settings)->not->toHaveKey('machine_recipe');
+        expect($input)->toBe([
+            'user' => $node->user, 'identity' => $recipe->identity,
+            'agent_sha256' => app(AgentDelivery::class)->pin($node), 'cli_version' => '0.4681.0',
+        ]);
+
+        return ['agent_sha256' => $input['agent_sha256'], 'cli_version' => $input['cli_version'], 'identity' => $input['identity']];
+    });
 
     $result = app(ConvergeNodeRecipeAction::class)->execute($node, $recipe);
 
@@ -330,15 +380,51 @@ it('records the complete identity only after inventory health and Doctor pass an
             't3' => ['keep' => true],
             'machine_recipe' => ['version' => $recipe->identity, 'snapshot' => $recipe->snapshot, 'converged_at' => now()->toIso8601String()],
         ]);
-    expect($ssh->lines()[1])->toStartWith('sudo bash -seu')
-        ->and($ssh->lines()[2])->toStartWith('sudo timeout ')
-        ->and($ssh->lines()[3])->toContain('systemctl stop');
+    expect(array_column($agents->calls, 'command'))->toBe(['recipe.inspect', 'recipe.apply', 'recipe.verify-delivery']);
+});
+
+it('does not record a recipe when the final locked delivery check refuses', function (string $code): void {
+    $node = FleetFixtures::node('recipe-final-refusal');
+    $node->update(['settings' => ['machine_recipe' => ['version' => 'previous']]]);
+    $agents = recipeAgents();
+    $agents->refuse('recipe.verify-delivery', $code);
+    $verification = new RecipeVerification;
+    app()->instance(FleetNodeVerification::class, $verification);
+
+    expect(fn () => app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load()))
+        ->toThrow(ResourceOperationException::class, 'Final recipe delivery verification failed');
+    expect($node->refresh()->settings)->toBe([]);
+    expect($verification->calls)->toBe(1);
+    expect($agents->commands())->toBe(['recipe.inspect', 'recipe.apply', 'recipe.verify-delivery']);
+})->with(['recipe.update_busy', 'recipe.update_lock_failed', 'recipe.delivery_mismatch']);
+
+it('refuses an unavailable requested CLI release before application', function (): void {
+    $node = FleetFixtures::node('recipe-unpublished');
+    $node->update(['settings' => ['machine_recipe' => ['version' => 'previous']]]);
+    $agents = recipeAgents();
+    FleetFixtures::recipeDelivery($agents, available: false);
+
+    expect(fn () => app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load()))
+        ->toThrow(ResourceOperationException::class, 'requested CLI release to be available');
+    expect($agents->commands())->toBe(['recipe.inspect']);
+    expect($node->refresh()->settings['machine_recipe']['version'])->toBe('previous');
+});
+
+it('does not record an unexpected verification reply', function (): void {
+    $node = FleetFixtures::node('recipe-invalid-verification');
+    $agents = recipeAgents();
+    $agents->answerMalformed('recipe.verify-delivery', ['identity' => 'wrong']);
+    app()->instance(FleetNodeVerification::class, new RecipeVerification);
+
+    expect(fn () => app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load()))
+        ->toThrow(ResourceOperationException::class, 'returned another delivery');
+    expect($node->refresh()->settings)->toBe([]);
 });
 
 it('stops after health or package failure with no retry rollback Doctor or success marker', function (string $stage): void {
     $node = FleetFixtures::node('recipe-fail');
     $node->update(['settings' => ['machine_recipe' => ['version' => 'previous']]]);
-    $ssh = recipeSsh(ScriptedSshExecutor::fail(stdout: 'recipe-stage:'.$stage, stderr: 'raw manager output must stay private'));
+    $agents = recipeAgents(recipeFailure(['stage' => 'recipe-stage:'.$stage]));
     $verification = new RecipeVerification;
     app()->instance(FleetNodeVerification::class, $verification);
 
@@ -346,12 +432,12 @@ it('stops after health or package failure with no retry rollback Doctor or succe
         ->toThrow(ResourceOperationException::class, 'stopped at recipe-stage:'.$stage);
     expect($verification->calls)->toBe(0)
         ->and($node->refresh()->settings)->toBe([])
-        ->and($ssh->commands)->toHaveCount(4);
+        ->and($agents->calls)->toHaveCount(2);
 })->with(['packages', 'health', 'restart', 'inventory', 'download']);
 
 it('stops on Doctor failure without rollback or recording the recipe', function (): void {
     $node = FleetFixtures::node('recipe-doctor-fail');
-    $ssh = recipeSsh();
+    $agents = recipeAgents();
     $verification = new RecipeVerification(passed: false);
     app()->instance(FleetNodeVerification::class, $verification);
 
@@ -359,25 +445,25 @@ it('stops on Doctor failure without rollback or recording the recipe', function 
         ->toThrow(ResourceOperationException::class, 'stopped at Doctor');
     expect($node->refresh()->settings)->toBe([])
         ->and($verification->calls)->toBe(1)
-        ->and($ssh->commands)->toHaveCount(4);
+        ->and($agents->calls)->toHaveCount(2);
 });
 
 it('refuses conflicting managed apt intent before any SSH or mutation', function (): void {
     $node = FleetFixtures::node('recipe-conflict', [RoleName::AppProd]);
     $manager = ToolManagerRecord::query()->create(['node_id' => $node->id, 'name' => 'apt', 'status' => 'active']);
     Tool::query()->create(['node_id' => $node->id, 'tool_manager_id' => $manager->id, 'package' => 'git', 'version_constraint' => '<1.0', 'status' => 'installed']);
-    $ssh = recipeSsh();
+    $agents = recipeAgents();
 
     expect(fn () => app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load()))
         ->toThrow(ResourceOperationException::class, 'conflicts with managed Tool');
-    expect($ssh->commands)->toBe([]);
+    expect($agents->calls)->toBe([]);
 });
 
 it('checks the existing managed tool inventory before Doctor and leaves tool intent unchanged', function (): void {
     $node = FleetFixtures::node('recipe-tool-fail');
     $manager = ToolManagerRecord::query()->create(['node_id' => $node->id, 'name' => 'composer', 'status' => 'active']);
     $tool = Tool::query()->create(['node_id' => $node->id, 'tool_manager_id' => $manager->id, 'package' => 'vendor/tool', 'status' => 'installed']);
-    $ssh = recipeSsh();
+    $agents = recipeAgents();
     $inspector = new class implements ToolInspector
     {
         use InspectsToolsIndividually;
@@ -396,12 +482,12 @@ it('checks the existing managed tool inventory before Doctor and leaves tool int
     expect($tool->refresh()->status->value)->toBe('installed')
         ->and($node->refresh()->settings)->toBe([])
         ->and($verification->calls)->toBe(0)
-        ->and($ssh->commands)->toHaveCount(4);
+        ->and($agents->calls)->toHaveCount(2);
 });
 
 it('runs the command dry-run by Node name or ID without changing the Node', function (bool $useId): void {
     $node = FleetFixtures::node('recipe-command', [RoleName::AppProd]);
-    $ssh = recipeSsh();
+    $agents = recipeAgents();
 
     $exit = Artisan::call('node:converge-recipe', ['node' => $useId ? (string) $node->id : $node->name, '--dry-run' => true]);
     $output = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
@@ -409,7 +495,7 @@ it('runs the command dry-run by Node name or ID without changing the Node', func
     expect($exit)->toBe(0)
         ->and($output['applied'])->toBeFalse()
         ->and($output['plan']['tools']['curl']['changed'])->toBeTrue();
-    expect($ssh->commands)->toHaveCount(1)
+    expect($agents->calls)->toHaveCount(2)
         ->and($node->refresh()->settings)->toBeNull();
 })->with([false, true]);
 
@@ -431,26 +517,18 @@ it('lists mixed recipe identities from the registry without SSH', function (): v
         ->and($output[1]['machine_recipe'])->toBeNull();
 });
 
-it('runs the remote program regression tests without host mutations or network access', function (): void {
-    $process = new Process(['python3', base_path('tests/Fixtures/machine-software/converge_node_test.py'), resource_path('remote/lib/recipe.py')]);
-    $process->run();
-
-    expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
-});
-
 it('keeps newer Ubuntu versions visible in the plan result and recorded status', function (): void {
     $node = FleetFixtures::node('recipe-newer');
     $recipe = new RecipeLoader()->load();
     $installed = $recipe->tools['curl']->version.'+fixture1';
     $newer = ['curl' => ['installed' => $installed, 'version' => $recipe->tools['curl']->version]];
-    recipeSsh(ScriptedSshExecutor::ok(json_encode(['changed_packages' => [], 'healthy' => true, 'newer_than_recipe' => $newer], JSON_THROW_ON_ERROR)), static function (RemoteCommand $command) use ($installed): CommandResult {
-        $payload = RecipeProgramPayload::read($command->input);
+    recipeAgents(['changed_packages' => [], 'restarted_services' => [], 'changed_tools' => [], 'healthy' => true, 'newer_than_recipe' => $newer], static function (array $payload) use ($installed): array {
         $tools = [];
         foreach ($payload['tools'] as $name => $pin) {
             $tools[$name] = ['source' => $pin['source'], 'version' => $pin['version'], 'installed' => $name === 'curl' ? $installed : $pin['version'], 'changed' => false, 'status' => $name === 'curl' ? 'newer_than_recipe' : 'current'];
         }
 
-        return ScriptedSshExecutor::ok(json_encode($tools, JSON_THROW_ON_ERROR));
+        return ['_actions' => [], ...$tools];
     });
     app()->instance(FleetNodeVerification::class, new RecipeVerification);
 
@@ -463,12 +541,12 @@ it('keeps newer Ubuntu versions visible in the plan result and recorded status',
 
 it('retains redacted package command output in the failed convergence result', function (string $stage): void {
     $node = FleetFixtures::node('recipe-package-output');
-    recipeSsh(ScriptedSshExecutor::fail(stdout: json_encode(['failure' => [
+    recipeAgents(recipeFailure([
         'stage' => 'recipe-stage:'.$stage, 'packages' => ['curl=8.18.0-1ubuntu2.7'],
         'command' => ['apt-get', 'install', 'curl=8.18.0-1ubuntu2.7'], 'exit_code' => 100,
         'stdout' => 'curl: dependency conflict',
         'stderr' => 'Failed to fetch https://user:secret@example.test/pkg API_TOKEN=private-token',
-    ]], JSON_THROW_ON_ERROR)));
+    ]));
 
     $exit = Artisan::call('node:converge-recipe', ['node' => $node->name]);
     $result = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
@@ -483,10 +561,10 @@ it('retains redacted package command output in the failed convergence result', f
 
 it('retains a source validation reason without requiring command output', function (): void {
     $node = FleetFixtures::node('recipe-source-validation');
-    recipeSsh(ScriptedSshExecutor::fail(stdout: json_encode(['failure' => [
+    recipeAgents(recipeFailure([
         'stage' => 'recipe-stage:apt-source',
         'reason' => 'Backup [/etc/apt/ubuntu.sources.orbit-snapshot-backup] differs from the source. API_TOKEN=private-token',
-    ]], JSON_THROW_ON_ERROR)));
+    ]));
 
     $exit = Artisan::call('node:converge-recipe', ['node' => $node->name]);
     $result = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
@@ -501,9 +579,7 @@ it('retains a source validation reason without requiring command output', functi
 it('shows a source repair and an unsupported newer Ubuntu build as planned actions without applying them', function (?string $reason): void {
     $node = FleetFixtures::node('recipe-refused');
     $node->update(['settings' => ['machine_recipe' => ['version' => 'previous']]]);
-    $ssh = recipeSsh(inspection: static function (RemoteCommand $command) use ($reason): CommandResult {
-        expect($command->timeout)->toBe(900.0);
-        $payload = RecipeProgramPayload::read($command->input);
+    $agents = recipeAgents(inspection: static function (array $payload) use ($reason): array {
         $tools = [];
         foreach ($payload['tools'] as $name => $pin) {
             $tools[$name] = ['source' => $pin['source'], 'version' => $pin['version'], 'installed' => $name === 'curl' ? '99.0-foreign' : $pin['version'], 'changed' => false, 'status' => $name === 'curl' ? 'unsupported_newer' : 'current'];
@@ -512,7 +588,7 @@ it('shows a source repair and an unsupported newer Ubuntu build as planned actio
             $tools['curl']['refusal'] = 'origin:curl:'.$reason;
         }
 
-        return ScriptedSshExecutor::ok(json_encode([...$tools, '_actions' => ['repair_ubuntu_sources', 'retire_git_source', 'pin_git', 'remove_nodejs_package', 'retire_node_source', 'retire_node_config', 'remove_corepack_links']], JSON_THROW_ON_ERROR));
+        return [...$tools, '_actions' => ['repair_ubuntu_sources', 'retire_git_source', 'pin_git', 'remove_nodejs_package', 'retire_node_source', 'retire_node_config', 'remove_corepack_links']];
     });
 
     $exit = Artisan::call('node:converge-recipe', ['node' => $node->name, '--dry-run' => true]);
@@ -523,21 +599,8 @@ it('shows a source repair and an unsupported newer Ubuntu build as planned actio
         ->and($result['plan']['actions'])->toBe(['repair_ubuntu_sources', 'retire_git_source', 'pin_git', 'remove_nodejs_package', 'retire_node_source', 'retire_node_config', 'remove_corepack_links'])
         ->and($result['plan']['tools']['curl'])->toMatchArray(['status' => 'unsupported_newer', 'changed' => false, 'refusal' => 'origin:curl'.($reason === null ? '' : ':'.$reason)])
         ->and($node->refresh()->settings['machine_recipe']['version'])->toBe('previous');
-    expect(array_filter($ssh->lines(), static fn (string $line): bool => str_contains($line, ' apply ')))->toBe([]);
+    expect(collect($agents->calls)->contains('command', 'recipe.apply'))->toBeFalse();
 })->with([null, 'dpkg-log-missing', 'snapshot-unavailable', 'snapshot-unproved', 'snapshot-lookup-limit']);
-
-it('embeds and runs the account store publisher in recipe programs', function (): void {
-    $program = file_get_contents(resource_path('remote/lib/recipe.py'));
-    $program = str_replace("if __name__ == '__main__':\n    sys.exit(main())", '', $program);
-    $program .= "\ndef store_probe():\n    report = subprocess.run(['python3', '-I', '-c', VP_STORE_PROGRAM], input=json.dumps({'mode': 'inspect', 'store': '/nonexistent-orbit-store'}), text=True, capture_output=True, check=True)\n    print(report.stdout.strip())\n    return 0\n";
-    $source = RecipeProgramInput::source($program, [], 'store_probe');
-    $process = new Process(['python3', '-I', '-']);
-    $process->setInput($source);
-    $process->mustRun();
-
-    expect(json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR))
-        ->toBe(['outcome' => 'inspected', 'data' => ['version' => null]]);
-});
 
 it('includes the exact native Incus package set only on configured task VM hosts', function (string $architecture, string $artifactArchitecture): void {
     $node = FleetFixtures::node('recipe-incus-host', [RoleName::Database]);
@@ -557,24 +620,23 @@ it('includes the exact native Incus package set only on configured task VM hosts
     ['aarch64', 'arm64'],
 ]);
 
-function incusRecipeInspection(RemoteCommand $command, bool $phpChange = false): CommandResult
+function incusRecipeInspection(array $payload, bool $phpChange = false): array
 {
-    $payload = RecipeProgramPayload::read($command->input);
     $tools = [];
     foreach ($payload['tools'] as $name => $pin) {
         $changed = in_array($name, RecipeLoader::IncusPackages, true) || ($phpChange && $name === 'php8.5-cli');
         $tools[$name] = ['source' => $pin['source'], 'version' => $pin['version'], 'installed' => $changed ? 'previous-build' : $pin['version'], 'changed' => $changed, 'status' => $changed ? 'different' : 'current'];
     }
 
-    return ScriptedSshExecutor::ok(json_encode($tools, JSON_THROW_ON_ERROR));
+    return ['_actions' => [], ...$tools];
 }
 
 it('applies other pins automatically and records the held Incus pins without a full identity', function (): void {
     $node = FleetFixtures::node('incus-automatic', [RoleName::AppDev]);
     $node->update(['settings' => ['task_vms' => [], 'machine_recipe' => ['version' => 'previous']]]);
-    $ssh = recipeSsh(inspection: static fn (RemoteCommand $command): CommandResult => incusRecipeInspection($command, phpChange: true));
-    $php = new FakePhpBuildRunner(['apply' => ['applied', ['changed' => ['php8.5-cli']]]]);
-    app()->instance(RemoteProgramRunner::class, $php);
+    $agents = recipeAgents(inspection: static fn (array $input): array => incusRecipeInspection($input, phpChange: true));
+    $php = new PhpBuildAnswers(['apply' => ['applied', ['changed' => ['php8.5-cli']]]]);
+    $php->register(app(AgentCommandRunner::class));
     app()->instance(FleetNodeVerification::class, new RecipeVerification);
     $recipe = new RecipeLoader()->load();
 
@@ -585,9 +647,9 @@ it('applies other pins automatically and records the held Incus pins without a f
         ->and($node->settings['machine_recipe_incus_hold']['pins'])->toHaveKeys(RecipeLoader::IncusPackages);
     expect(array_column($php->inputs, 'mode'))->toBe(['plan', 'plan', 'apply']);
     expect(array_column($php->inputs[2]['versions']['8.5']['packages'], 'name'))->toContain('php8.5-cli');
-    foreach ($ssh->commands as $command) {
-        if (in_array('apply', $command->arguments, true)) {
-            expect(RecipeProgramPayload::read($command->input)['tools'])->toHaveKey('curl')->not->toHaveKeys(RecipeLoader::IncusPackages);
+    foreach ($agents->calls as $command) {
+        if ($command['command'] === 'recipe.apply') {
+            expect($command['input']['tools'])->toHaveKey('curl')->not->toHaveKeys(RecipeLoader::IncusPackages);
         }
     }
 });
@@ -596,24 +658,22 @@ it('names active instances in other projects and preserves settings on explicit 
     $node = FleetFixtures::node('incus-active');
     $settings = ['task_vms' => [], 'machine_recipe' => ['version' => 'previous']];
     $node->update(['settings' => $settings]);
-    $ssh = recipeSsh(inspection: incusRecipeInspection(...), incusPreflight: ScriptedSshExecutor::fail(stdout: json_encode([
-        'failure' => ['stage' => 'recipe-stage:incus:running', 'reason' => 'Drain active instances: orbit-ci/ci-shark-1 (container, Running), memory/normal (virtual-machine, Running)'],
-    ], JSON_THROW_ON_ERROR)));
+    $agents = recipeAgents(inspection: static fn (array $input): array => incusRecipeInspection($input), incusPreflight: recipeFailure(['stage' => 'recipe-stage:incus:running', 'reason' => 'Drain active instances: orbit-ci/ci-shark-1 (container, Running), memory/normal (virtual-machine, Running)']));
 
     expect(fn () => app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load()))
         ->toThrow(ResourceOperationException::class, 'orbit-ci/ci-shark-1');
 
     expect($node->refresh()->settings)->toBe($settings);
-    expect(collect($ssh->commands)->filter(fn (RemoteCommand $command): bool => in_array('apply', $command->arguments, true)))->toBeEmpty();
+    expect(collect($agents->calls)->where('command', 'recipe.apply'))->toBeEmpty();
 });
 
 it('refuses an Incus change while a task VM row can still resume or provision', function (string $state): void {
     $node = FleetFixtures::node('incus-live-row');
     $node->update(['settings' => ['task_vms' => []]]);
     $vm = TaskVm::query()->create(['host_node_id' => $node->id, 'provider' => 'incus', 'name' => 'live-test-vm', 'wireguard_ip' => '10.99.0.1', 'state' => $state]);
-    $ssh = recipeSsh(inspection: incusRecipeInspection(...));
+    $agents = recipeAgents(inspection: static fn (array $input): array => incusRecipeInspection($input));
 
     expect(fn () => app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load()))
         ->toThrow(ResourceOperationException::class, $vm->name.' ('.$state.')');
-    expect($ssh->lines())->toBe(['python3 - inspect']);
+    expect(array_column($agents->calls, 'command'))->toBe(['recipe.inspect']);
 })->with(['provisioning', 'ready', 'parked', 'destroying', 'failed']);

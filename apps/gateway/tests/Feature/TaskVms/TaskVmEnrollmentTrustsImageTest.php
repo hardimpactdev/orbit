@@ -14,10 +14,10 @@ use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\Tools\ToolManagerName;
+use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Nodes\NativeNodeConverger;
-use App\Infrastructure\Nodes\NodeBootstrapCommandFactory;
 use App\Infrastructure\Nodes\Roles\DevelopmentRoleBaseline;
-use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\HostKeyScanner;
@@ -33,11 +33,12 @@ use App\Infrastructure\WireGuard\WireGuardPeerConverger;
 use App\Models\Node;
 use App\Models\TaskVm;
 use Illuminate\Support\Facades\Log;
+use Tests\Support\FakeAgentCommandRunner;
 
 it('trusts only a linked task VM image and still applies VM-specific infrastructure', function (bool $taskVm): void {
     // The ordinary Node deliberately has a VM-looking name: identity is the row link, not a name convention.
     $node = Node::query()->create([
-        'name' => 'tvm-12', 'status' => LifecycleStatus::Provisioning, 'platform' => 'linux',
+        'name' => 'tvm-12', 'architecture' => 'x86_64', 'status' => LifecycleStatus::Provisioning, 'platform' => 'linux',
         'public_ssh_host' => '10.251.77.12', 'wireguard_ip' => '10.44.0.140', 'user' => 'orbit',
     ]);
     $assignment = $node->roles()->create(['role' => RoleName::AppDev, 'state' => LifecycleStatus::Provisioning]);
@@ -66,6 +67,21 @@ it('trusts only a linked task VM image and still applies VM-specific infrastruct
         }
     };
     app()->instance(SshExecutor::class, $ssh);
+    $agents = (new FakeAgentCommandRunner)->answer('caddy.install-package', ['changed' => false, 'version' => '2.10.2'])->answer('roles.install-prerequisites', [])->answer('recipe.install-javascript', ['changed' => false, 'retired' => []])
+        ->answer('nodes.bootstrap', [])->answer('agent.status', ['version' => '0.5.0', 'sha256' => str_repeat('a', 64), 'platform' => 'linux', 'architecture' => 'x86_64', 'observer' => 'active'])
+        ->answer('hibernation.prepare-directories', [])
+        ->answer('tools.materialize-composer', [])
+        ->answer('tools.materialize-vp', ['binary' => '/opt/orbit/vite-plus/bin/vp', 'changed' => false])
+        ->answer('tools.composer-version', ['version' => 'Composer version 2.9.0'])
+        ->answer('tools.vp-version', ['version' => 'vp v0.3.3'])
+        ->answer('tools.vp-install', [])->answer('tools.vp-update', [])
+        ->answer('tools.inspect-vp-scope', ['binary' => '/opt/orbit/vite-plus/bin/vp']);
+    app()->instance(AgentCommandRunner::class, $agents);
+    $admission = Mockery::mock(AdmissionAgentRunner::class);
+    $admission->shouldReceive('architectureOver')->once()->andReturn('x86_64');
+    $admission->shouldReceive('runOver')->andReturnUsing(fn (Node $target, SshConnection $connection, string $command, array $input = []) => $agents->run($target, $command, $input));
+    $admission->shouldReceive('installOver')->once()->with($node, Mockery::type(SshConnection::class))->andReturn(false);
+    app()->instance(AdmissionAgentRunner::class, $admission);
     $keys = Mockery::mock(SshKeyProvider::class);
     $keys->shouldReceive('privateKeyPath')->andReturn('/tmp/orbit-test-key');
     $keys->shouldReceive('publicKey')->andReturn('ssh-ed25519 TEST');
@@ -97,22 +113,14 @@ it('trusts only a linked task VM image and still applies VM-specific infrastruct
     $storage->shouldReceive('prepare')->once();
     app()->instance(NodeStorageRootPreparer::class, $storage);
 
-    $commands = app(NodeRolePrerequisiteCommandFactory::class);
-    $programs = [
-        'bootstrap' => app(NodeBootstrapCommandFactory::class)->makeWithPasswordlessSudo($node, 'orbit'),
-        'caddy-package' => $commands->caddyPackage($node, RoleName::AppDev),
-        'app-dev-prerequisites' => $commands->make($node, RoleName::AppDev, new ManagedUserAccount('orbit', 'orbit', '/home/orbit')),
-        'composer-manager' => app(ComposerToolManager::class)->materializeCommand($node),
-        'vp-manager' => app(VpToolManager::class)->materializeCommand($node),
-    ];
+    $agentPrograms = ['bootstrap' => 'nodes.bootstrap', 'caddy-package' => 'caddy.install-package', 'app-dev-prerequisites' => 'roles.install-prerequisites', 'vp-manager' => 'tools.materialize-vp', 'composer-manager' => 'tools.materialize-composer'];
 
     app(NativeNodeConverger::class)->converge($node, new NodeProvisioningIdentity('orbit', 'orbit'), 'SHA256:pinned');
     app(DevelopmentRoleBaseline::class)->converge($node, $assignment);
     app(NativeToolManagerMaterializer::class)->convergeWithFailureHandler($node, static function (): void {}, ToolManagerName::Composer, ToolManagerName::Vp);
 
-    foreach ($programs as $name => $program) {
-        $executed = array_filter($ssh->commands, static fn (RemoteCommand $command): bool => $command->arguments === $program->arguments && $command->input === $program->input);
-        expect($executed, $name)->toHaveCount($taskVm ? 0 : 1);
+    foreach ($agentPrograms as $name => $command) {
+        expect(array_keys($agents->commands(), $command, true), $name)->toHaveCount($taskVm ? 0 : 1);
         if ($taskVm) {
             Log::shouldHaveReceived('info')->with('Task VM program skipped: its image ran it.', ['task_vm' => $node->name, 'program' => $name])->once();
         }
@@ -123,20 +131,28 @@ it('trusts only a linked task VM image and still applies VM-specific infrastruct
     // Explicit manager install/update operations must not inherit enrollment's image trust.
     app(ComposerToolManager::class)->materialize($node);
     app(VpToolManager::class)->materialize($node);
-    foreach (['composer-manager', 'vp-manager'] as $name) {
-        $program = $programs[$name];
-        expect(array_filter($ssh->commands, static fn (RemoteCommand $command): bool => $command->arguments === $program->arguments && $command->input === $program->input))
-            ->toHaveCount($taskVm ? 1 : 2);
-    }
-    foreach ([app(ComposerToolManager::class), app(VpToolManager::class)] as $manager) {
-        $before = count($ssh->commands);
-        $package = $manager instanceof ComposerToolManager ? 'vendor/package' : '@vendor/package';
-        $manager->install($node, $package);
-        $manager->update($node, $package);
-        $operations = implode(' ', array_map(static fn (RemoteCommand $command): string => implode(' ', $command->arguments), array_slice($ssh->commands, $before)));
-        expect($operations)->toContain($manager instanceof ComposerToolManager ? 'require' : 'install', 'update', $package);
-    }
+    expect(array_keys($agents->commands(), 'tools.materialize-composer', true))->toHaveCount($taskVm ? 1 : 2);
+    expect(array_keys($agents->commands(), 'tools.materialize-vp', true))->toHaveCount($taskVm ? 1 : 2);
+    $agents->answer('tools.composer-install', []);
+    $agents->answer('tools.composer-update', []);
+    app(ComposerToolManager::class)->install($node, 'vendor/package');
+    app(ComposerToolManager::class)->update($node, 'vendor/package');
+    expect(array_slice($agents->calls, -2))->toBe([
+        ['node' => $node->name, 'command' => 'tools.composer-install', 'input' => ['package' => 'vendor/package']],
+        ['node' => $node->name, 'command' => 'tools.composer-update', 'input' => ['package' => 'vendor/package']],
+    ]);
+    app(VpToolManager::class)->install($node, '@vendor/package');
+    app(VpToolManager::class)->update($node, '@vendor/package');
+    expect(array_slice($agents->calls, -2))->toBe([
+        ['node' => $node->name, 'command' => 'tools.vp-install', 'input' => ['package' => '@vendor/package']],
+        ['node' => $node->name, 'command' => 'tools.vp-update', 'input' => ['package' => '@vendor/package']],
+    ]);
     expect($node->fresh()->ssh_host_fingerprint)->toBe('SHA256:pinned');
     // Hibernation directories are per-VM state, not part of the software skip.
-    expect(collect($ssh->commands)->contains(static fn (RemoteCommand $command): bool => in_array(RuntimeHibernation::MarkerDirectory, $command->arguments, true)))->toBeTrue();
+    expect(array_values(array_filter($agents->calls, static fn (array $call): bool => $call['command'] === 'hibernation.prepare-directories')))->toBe([
+        ['node' => $node->name, 'command' => 'hibernation.prepare-directories', 'input' => [
+            'marker_directory' => RuntimeHibernation::MarkerDirectory,
+            'log_directory' => RuntimeHibernation::AccessLogDirectory,
+        ]],
+    ]);
 })->with(['task VM without metadata' => true, 'ordinary app-dev Node' => false]);

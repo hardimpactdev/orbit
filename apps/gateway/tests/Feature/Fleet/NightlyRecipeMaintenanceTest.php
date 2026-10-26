@@ -8,14 +8,10 @@ use App\Domain\Fleet\FleetNodeVerification;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Releases\ReleaseAlertNotifier;
-use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageBuildStep;
-use App\Infrastructure\Fleet\NodeShell;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
-use App\Infrastructure\Nodes\NodeUpdateLock;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Jobs\MaintainMachineRecipe;
 use App\Jobs\TaskVms\ImageBuild\ImageBuildJob;
@@ -26,12 +22,10 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Tests\Support\FakePhpBuildRunner;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\Fleet\FleetFixtures;
-use Tests\Support\Fleet\FleetTestSsh;
 use Tests\Support\Fleet\RecordingReleaseAlertNotifier;
-use Tests\Support\Fleet\ScriptedSshExecutor;
-use Tests\Support\RecipeProgramPayload;
+use Tests\Support\PhpBuildAnswers;
 use Tests\Support\TaskVmSettingsBuilder;
 
 final class NightlyRecipeDoctor implements FleetNodeVerification
@@ -78,9 +72,8 @@ function nightlyRecipeFleet(bool $newerUbuntu = false): array
             'recipe_generation' => 1, 'state' => TaskVmImageBuildState::Succeeded, 'promoted_at' => now(),
             'images' => ['base' => ['project' => 'orbit-tasks', 'alias' => 'base', 'fingerprint' => str_repeat('a', 64), 'type' => 'virtual-machine']]]);
     }
-    $ssh = new ScriptedSshExecutor;
-    $ssh->on('/^python3 - inspect$/', static function (RemoteCommand $command) use ($newerUbuntu, $newerCurl): CommandResult {
-        $data = RecipeProgramPayload::read($command->input);
+    $agents = new FakeAgentCommandRunner;
+    $agents->answer('recipe.inspect', static function (array $data) use ($newerUbuntu, $newerCurl): array {
 
         $tools = [];
         foreach ($data['tools'] as $name => $pin) {
@@ -88,15 +81,15 @@ function nightlyRecipeFleet(bool $newerUbuntu = false): array
             $tools[$name] = ['source' => $pin['source'], 'version' => $pin['version'], 'installed' => $newer ? $newerCurl : $pin['version'], 'changed' => false, 'status' => $newer ? 'newer_than_recipe' : 'current'];
         }
 
-        return ScriptedSshExecutor::ok(json_encode($tools, JSON_THROW_ON_ERROR));
+        return ['_actions' => [], ...$tools];
     });
-    $ssh->on('/^sudo timeout .* python3 - apply$/', ScriptedSshExecutor::ok(json_encode([
+    $agents->answer('recipe.apply', [
         'changed_packages' => $newerUbuntu ? [] : ['curl'], 'restarted_services' => [], 'changed_tools' => $newerUbuntu ? [] : ['curl'], 'healthy' => true,
         'newer_than_recipe' => $newerUbuntu ? ['curl' => ['installed' => $newerCurl, 'version' => $recipe->tools['curl']->version]] : [],
-    ], JSON_THROW_ON_ERROR)));
-    app()->instance(NodeShell::class, FleetTestSsh::shell($ssh));
-    app()->instance(RemoteProgramRunner::class, new FakePhpBuildRunner);
-    app()->instance(NodeUpdateLock::class, new NodeUpdateLock(FleetTestSsh::shell($ssh)));
+    ]);
+    FleetFixtures::recipeDelivery($agents);
+    app()->instance(AgentCommandRunner::class, $agents);
+    app()->instance(PhpBuildAnswers::class, (new PhpBuildAnswers)->register($agents));
     $doctor = new NightlyRecipeDoctor;
     app()->instance(FleetNodeVerification::class, $doctor);
     $alerts = new RecordingReleaseAlertNotifier;
@@ -143,10 +136,11 @@ it('waits for both promoted current-generation hosts then visits one Node per ti
 
 it('skips Docker CE Nodes with the typed reason instead of halting fleet convergence', function (): void {
     [$record, $other, $doctor, $alerts] = nightlyRecipeFleet();
-    $ssh = new ScriptedSshExecutor;
-    $ssh->on('/^python3 - inspect$/', ScriptedSshExecutor::fail(stdout: 'recipe-stage:docker-provider:docker-ce'));
-    app()->instance(NodeShell::class, FleetTestSsh::shell($ssh));
-    app()->instance(NodeUpdateLock::class, new NodeUpdateLock(FleetTestSsh::shell($ssh)));
+    $agents = new FakeAgentCommandRunner;
+    $agents->refuse('recipe.inspect', 'recipe.failed', ['stage' => 'recipe-stage:docker-provider:docker-ce']);
+    (new PhpBuildAnswers)->register($agents);
+    FleetFixtures::recipeDelivery($agents);
+    app()->instance(AgentCommandRunner::class, $agents);
     $action = app(ConvergeFleetRecipeAction::class);
     $action->execute();
     $action->execute();
@@ -157,7 +151,7 @@ it('skips Docker CE Nodes with the typed reason instead of halting fleet converg
         ->and($record->fleet_convergence['nodes'][$other->host_node_id]['status'])->toBe('skipped')
         ->and($doctor->visited)->toBe([])
         ->and($alerts->alerts)->toBe([])
-        ->and($ssh->commands)->toHaveCount(2);
+        ->and(array_column($agents->calls, 'command'))->toBe(['php.inspect-build', 'recipe.inspect', 'php.inspect-build', 'recipe.inspect']);
 });
 
 it('halts at a Doctor failure without retrying or touching later Nodes and alerts once', function (): void {
@@ -432,22 +426,21 @@ it('converges non-Incus pins and alerts once per held version across fleet gener
     [$record, $other, $doctor, $alerts] = nightlyRecipeFleet();
     $node = $record->hostNode;
     $node->update(['settings' => ['task_vms' => []]]);
-    $ssh = new ScriptedSshExecutor;
-    $ssh->on('/^python3 - inspect$/', static function (RemoteCommand $command): CommandResult {
-        $payload = RecipeProgramPayload::read($command->input);
+    $agents = new FakeAgentCommandRunner;
+    $agents->answer('recipe.inspect', static function (array $payload): array {
         $tools = [];
         foreach ($payload['tools'] as $name => $pin) {
             $changed = in_array($name, ['incus', 'php8.5-cli'], true);
             $tools[$name] = ['source' => $pin['source'], 'version' => $pin['version'], 'installed' => $changed ? 'previous-build' : $pin['version'], 'changed' => $changed, 'status' => $changed ? 'different' : 'current'];
         }
 
-        return ScriptedSshExecutor::ok(json_encode($tools, JSON_THROW_ON_ERROR));
+        return ['_actions' => [], ...$tools];
     });
-    $ssh->on('/^sudo timeout .* python3 - apply$/', ScriptedSshExecutor::ok('{"healthy":true}'));
-    app()->instance(NodeShell::class, FleetTestSsh::shell($ssh));
-    app()->instance(NodeUpdateLock::class, new NodeUpdateLock(FleetTestSsh::shell($ssh)));
-    $php = new FakePhpBuildRunner(['apply' => ['applied', ['changed' => ['php8.5-cli']]]]);
-    app()->instance(RemoteProgramRunner::class, $php);
+    $agents->answer('recipe.apply', ['changed_packages' => [], 'restarted_services' => [], 'changed_tools' => [], 'newer_than_recipe' => [], 'healthy' => true]);
+    FleetFixtures::recipeDelivery($agents);
+    app()->instance(AgentCommandRunner::class, $agents);
+    $php = new PhpBuildAnswers(['apply' => ['applied', ['changed' => ['php8.5-cli']]]]);
+    $php->register(app(AgentCommandRunner::class));
 
     app(ConvergeFleetRecipeAction::class)->execute();
 
@@ -458,8 +451,8 @@ it('converges non-Incus pins and alerts once per held version across fleet gener
     expect($doctor->visited)->toBe([$node->id]);
     expect($node->refresh()->settings['machine_recipe'])->toHaveKey('partial_version', $record->recipe_identity)->not->toHaveKey('version');
     expect($node->settings['machine_recipe_incus_hold']['pins'])->toHaveKeys(RecipeLoader::IncusPackages);
-    $apply = collect($ssh->commands)->first(fn (RemoteCommand $command): bool => in_array('apply', $command->arguments, true));
-    expect(RecipeProgramPayload::read($apply->input)['tools'])->toHaveKey('curl')->not->toHaveKeys(RecipeLoader::IncusPackages);
+    $apply = collect($agents->calls)->first(fn (array $call): bool => $call['command'] === 'recipe.apply');
+    expect($apply['input']['tools'])->toHaveKey('curl')->not->toHaveKeys(RecipeLoader::IncusPackages);
     app(ConvergeFleetRecipeAction::class)->execute();
     expect($doctor->visited)->toBe([$node->id, $other->host_node_id]);
     expect($alerts->alerts)->toHaveCount(1);

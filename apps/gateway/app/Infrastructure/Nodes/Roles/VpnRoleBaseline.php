@@ -16,10 +16,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\MachineSoftware\NodeRecipeProgram;
 use App\Infrastructure\MachineSoftware\PhpBuildInstaller;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use App\Models\NodeRole;
 use Illuminate\Support\Facades\Log;
@@ -27,10 +23,7 @@ use Illuminate\Support\Facades\Log;
 final readonly class VpnRoleBaseline implements RoleBaseline
 {
     public function __construct(
-        private NodeRolePrerequisiteCommandFactory $commands,
-        private SshExecutor $ssh,
-        private SshKeyProvider $keys,
-        private KnownHostsStore $knownHosts,
+        private RolePrerequisites $prerequisites,
         private NodeRoleFirewallManager $firewall,
         private ManagedUserAccountResolver $accounts,
         private ?PhpBuildInstaller $php = null,
@@ -53,16 +46,7 @@ final readonly class VpnRoleBaseline implements RoleBaseline
 
         $wireguardIp = $node->wireguard_ip;
 
-        $result = $this->ssh->execute(
-            new SshConnection(
-                $wireguardIp,
-                $node->user,
-                22,
-                $this->keys->privateKeyPath(),
-                $this->knownHosts->path(),
-            ),
-            $this->commands->make($node, RoleName::Vpn, $account),
-        );
+        $result = $this->prerequisites->install($node, RoleName::Vpn, $account);
 
         if (! $result->succeeded()) {
             throw new NodeRoleOperationException(

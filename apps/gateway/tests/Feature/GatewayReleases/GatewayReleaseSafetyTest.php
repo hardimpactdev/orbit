@@ -10,7 +10,6 @@ use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\Releases\ReleaseAlertKind;
 use App\Infrastructure\GatewayReleases\GatewayReleaseAlerts;
 use App\Infrastructure\GatewayReleases\GatewayReleaseGuard;
-use App\Infrastructure\GatewayReleases\SqliteGatewayReleaseDatabase;
 use App\Models\GatewayRelease;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\GatewayReleasePipeline;
@@ -296,7 +295,7 @@ describe('Laravel migration discovery', function (): void {
             'batch' => 145,
         ]);
         $sha = $this->pipeline->fixture->commit('Regular Laravel deploy');
-        $database = new SqliteGatewayReleaseDatabase($this->pipeline->fixture, $this->pipeline->home, php: PHP_BINARY, connection: 'release_vendor', minimumFreeBytes: 0);
+        $database = $this->pipeline->fixture->database($this->pipeline->home, 'release_vendor');
         app()->instance(GatewayReleaseDatabase::class, $database);
         app()->forgetInstance(GatewayReleaseGuard::class);
 

@@ -13,7 +13,6 @@ use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Nodes\NodeLockLoss;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Firewall\UfwRuleOwnership;
 use App\Infrastructure\Metrics\MetricsCadvisorRuntime;
 use App\Infrastructure\Metrics\MetricsExporterRuntime;
 use App\Infrastructure\Metrics\MetricsExporterState;
@@ -241,7 +240,7 @@ it('keeps an unrecovered service failure through native exporter and cAdvisor sn
     $recovering->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
     $degraded = app(ExporterDegradationRepository::class);
     $degraded->recordReconcileFailure($recovering->id, 'restore', 'metrics.service_rollback_failed');
-    $state = new MetricsExporterState(null, false, UfwRuleOwnership::Missing);
+    $state = new MetricsExporterState(null, false, null);
     $exporterRuntime = Mockery::mock(MetricsExporterRuntime::class);
     $cadvisorRuntime = Mockery::mock(MetricsCadvisorRuntime::class);
     $exporterRuntime->shouldReceive('snapshot')->twice()->andReturn($state);
@@ -278,7 +277,7 @@ it('keeps service degradation after a retry publication rollback and clears it o
     $recovering->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
     $degraded = app(ExporterDegradationRepository::class);
     $degraded->recordReconcileFailure($recovering->id, 'snapshot', 'metrics.service_inspection_failed');
-    $state = new MetricsExporterState(null, false, UfwRuleOwnership::Missing);
+    $state = new MetricsExporterState(null, false, null);
     $exporterRuntime = Mockery::mock(MetricsExporterRuntime::class);
     $cadvisorRuntime = Mockery::mock(MetricsCadvisorRuntime::class);
     foreach ([$exporterRuntime, $cadvisorRuntime] as $runtime) {

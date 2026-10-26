@@ -3,7 +3,7 @@ title: "Migrate an unmanaged Executor hostname"
 description: "Replace a hand-placed Caddy fragment for a Node Process, such as executor.test, with a Gateway-owned custom proxy Route."
 covers:
   - apps/cli/app/Commands/Routes/CreateRouteCommand.php
-  - apps/gateway/app/Infrastructure/Caddy/Build/NodeCaddyPushScript.php
+  - apps/agent/src/commands/caddy_publication.rs
 ---
 
 # Migrate an unmanaged Executor hostname

@@ -6,6 +6,7 @@ covers:
   - apps/gateway/app/Http/Controllers/Api/InstanceLogsController.php
   - apps/gateway/app/Infrastructure/Instances/RemoteInstanceLogReader.php
   - apps/gateway/app/Domain/Logs/{LogReadLimit,LogRedactor}.php
+  - apps/agent/src/commands/application_log.rs
 ---
 
 # Instance logs
@@ -31,7 +32,7 @@ The Gateway reads one file under `storage/logs` in the Instance's [application d
 | 1 | `laravel.log` | The file exists. This is the `single` log channel. |
 | 2 | The newest `laravel-*.log` | `laravel.log` is absent. This is the `daily` log channel. |
 
-An Instance without either file has an empty log, and the request still succeeds. The caller never names a path. The Gateway reads only a regular file that sits directly in `storage/logs`, and it skips a symbolic link, so a link in the checkout cannot point the read at another file.
+An Instance without either file has an empty log, and the request still succeeds. The caller never names a path. The [Node agent](/reference/node-agent#commands)'s `instances.read-application-log` reads only a regular file that sits directly in a real `storage/logs`, and it skips a symbolic link, so a link in the checkout cannot point the read at another file. It returns at most the last 4 MiB of the file.
 
 ## Know what the Gateway redacts
 
@@ -47,5 +48,4 @@ A failed read returns an Orbit error with one of these codes. The log itself is 
 | --- | --- | --- |
 | 422 | `validation.failed` | `lines` is outside 1 through 1,000, or the request names `follow`. |
 | 422 | `instance.checkout_path_invalid` | The recorded checkout path is not a valid storage path. |
-| 422 | `instance.wireguard_ip_missing` | The owning Node has no WireGuard address. |
 | 502 | `instance.logs_failed` | The Node did not answer, or the read command failed. |

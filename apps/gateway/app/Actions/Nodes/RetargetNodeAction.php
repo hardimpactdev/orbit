@@ -12,12 +12,11 @@ use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeProvisioningLock;
 use App\Domain\Nodes\NodeProvisioningLockException;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\HostKeyScanner;
 use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\WireGuard\WireGuardPeerConverger;
 use App\Models\Node;
@@ -44,7 +43,7 @@ final readonly class RetargetNodeAction
         private HostKeyScanner $hostKeys,
         private KnownHostsStore $knownHosts,
         private SshKeyProvider $sshKeys,
-        private SshExecutor $ssh,
+        private AdmissionAgentRunner $agents,
         private WireGuardPeerConverger $wireGuard,
         private NodeProvisioningLock $provisioningLock,
         private ?RecordEventBroadcaster $broadcaster = null,
@@ -240,23 +239,24 @@ final readonly class RetargetNodeAction
 
     private function probeWireGuard(Node $node, string $address): void
     {
-        $private = $this->ssh->execute(
-            new SshConnection(
-                $address,
-                $node->user,
-                22,
-                $this->sshKeys->privateKeyPath(),
-                $this->knownHosts->path(),
-            ),
-            new RemoteCommand(['true']),
-        );
-
-        if (! $private->succeeded()) {
+        try {
+            $this->agents->runOver(
+                $node,
+                new SshConnection(
+                    $address,
+                    $node->user,
+                    22,
+                    $this->sshKeys->privateKeyPath(),
+                    $this->knownHosts->path(),
+                ),
+                'agent.status',
+            );
+        } catch (Throwable $exception) {
             throw new NodeProvisioningException(
                 'wireguard-ssh',
                 'vpn.peer_ssh_failed',
                 "Could not reach node [{$node->name}] through WireGuard.",
-                result: $private,
+                previous: $exception,
             );
         }
     }

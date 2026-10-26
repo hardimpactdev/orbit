@@ -17,7 +17,6 @@ final readonly class NodeCaddyBuilder implements NodeCaddyBuilds
         private NodeCaddyfileRenderer $renderer,
         private NodeCaddyBuildLock $lock,
         private NodeCaddyTransport $transport,
-        private NodeCaddyPushScript $script = new NodeCaddyPushScript,
     ) {}
 
     public function build(Node $node): NodeCaddyBuildResult
@@ -36,17 +35,14 @@ final readonly class NodeCaddyBuilder implements NodeCaddyBuilds
                 throw new NodeCaddyBuildException($current->name, 'render', implode(' ', $caddyfile->problems));
             }
 
-            $result = $this->transport->run($current, $this->script->command($caddyfile, CaddySiteRoles::nodeExpectsCaddy($current->id)));
+            $result = $this->transport->run($current, 'caddy.publish', [
+                'content' => $caddyfile->content,
+                'version' => $caddyfile->version,
+                'listen_addresses' => $caddyfile->listenAddresses,
+                'unserved' => $caddyfile->sites === [] || ! CaddySiteRoles::nodeExpectsCaddy($current->id),
+            ]);
 
-            if (! $result->succeeded()) {
-                throw new NodeCaddyBuildException(
-                    $current->name,
-                    self::stage($result->stderr),
-                    self::message($result->stderr),
-                );
-            }
-
-            return str_contains($result->stdout, 'orbit-caddy-build-result=unchanged')
+            return $result['result'] === 'unchanged'
                 ? NodeCaddyBuildResult::Unchanged
                 : NodeCaddyBuildResult::Published;
         });
@@ -64,33 +60,6 @@ final readonly class NodeCaddyBuilder implements NodeCaddyBuilds
             return;
         }
 
-        $result = $this->transport->run($node, $this->script->addressCheck($caddyfile));
-
-        if (! $result->succeeded()) {
-            throw new NodeCaddyBuildException($node->name, self::stage($result->stderr), self::message($result->stderr));
-        }
-    }
-
-    private static function stage(string $stderr): string
-    {
-        $found = preg_match_all('/^orbit-caddy-build-stage=([a-z-]+)$/m', $stderr, $matches);
-        if ($found === false || $found < 1) {
-            return 'connect';
-        }
-
-        return $matches[1][$found - 1];
-    }
-
-    /** The last lines Caddy or the script wrote, without the stage marker. */
-    private static function message(string $stderr): string
-    {
-        $lines = array_values(array_filter(
-            array_map(trim(...), explode("\n", $stderr)),
-            static fn (string $line): bool => $line !== '' && ! str_starts_with($line, 'orbit-caddy-build-stage='),
-        ));
-
-        $message = implode(' ', array_slice($lines, -5));
-
-        return $message === '' ? 'The push script failed without a message.' : $message;
+        $this->transport->run($node, 'caddy.check-addresses', ['listen_addresses' => $caddyfile->listenAddresses]);
     }
 }

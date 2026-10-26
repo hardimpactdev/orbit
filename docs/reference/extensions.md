@@ -5,7 +5,7 @@ covers:
   - apps/gateway/app/{Domain,Actions}/Extensions/**
   - apps/gateway/app/Providers/{ExtensionServiceProvider,TasksServiceProvider}.php
   - apps/gateway/app/Domain/{Projects/ProjectRemovalHook,GatewayReleases/GatewayReleaseCleanup,Activity/ActivityInputRedaction,Gateway/GatewayServiceStartHook,Gateway/ExactRequestBody,Fleet/NodeFootprintArtifact,Routes/ContributedPrivateHostnames,Routes/RouteKind,Routes/InstanceTrackingPublication,Nodes/RoleName,Nodes/ContributedNodeRole,Nodes/NodeRoleRemovalGuard,Processes/ProcessRemovalGuard,DatabaseConnections/DatabaseConnectionUpdateHook,DatabaseConnections/DatabaseConnectionRemovalGuard}.php
-  - apps/gateway/{app/Infrastructure/GatewayReleases/GatewayCleanupHandoff.php,app/Infrastructure/Caddy/Build/ContributedCaddySiteSource.php,app/Infrastructure/Gateway/NativeGatewayFpmConverger.php,app/Infrastructure/Firewall/NodeFirewallRuleCatalog.php,app/Infrastructure/Firewall/ContributedRoleFirewallRules.php,app/Http/Middleware/RequireEnabledExtension.php,app/Http/Middleware/ValidateRequestBodySize.php,resources/remote/gateway/install-start-hooks.sh}
+  - apps/gateway/{app/Infrastructure/GatewayReleases/GatewayCleanupHandoff.php,app/Infrastructure/Caddy/Build/ContributedCaddySiteSource.php,app/Infrastructure/Gateway/NativeGatewayFpmConverger.php,app/Infrastructure/Firewall/NodeFirewallRuleCatalog.php,app/Infrastructure/Firewall/ContributedRoleFirewallRules.php,app/Http/Middleware/RequireEnabledExtension.php,app/Http/Middleware/ValidateRequestBodySize.php}
   - apps/gateway/{bootstrap/providers.php,tests/Unit/Domain/Extensions/**}
   - apps/gateway/extensions/*/src/*ServiceProvider.php
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
@@ -64,6 +64,8 @@ The provider registers what the extension owns: its routes with `loadRoutesFrom(
 
 ## Add a plug-in point
 
+Compiled Node services use the shared Rust `Service` trait in `orbit-agent-contract`. An extension registers its service through the same composition call as its commands. Core dispatches `orbit-agent service <name>` to that contribution, with its declared platform gate; the extension owns configuration validation and the service loop. The AI router contributes `ai-router-collector`, supervised by its existing Process. Disabling the Gateway extension preserves that Process; teardown stops it. Core contains no AI router behavior. Rust composition and service-dispatch tests enforce this boundary.
+
 Use this checklist when core adds a place for extensions to contribute:
 
 - Define a small typed interface and tag each implementation with the interface name in its provider.
@@ -94,7 +96,7 @@ Core receives tagged implementations through constructor parameters marked with 
 | `App\Infrastructure\Caddy\Build\ContributedCaddySiteSource` | The [Node Caddy build](/reference/caddy-configuration#node-caddy-build) | `sites()` and `certificateSlug()` |
 | `App\Domain\Fleet\NodeFootprintArtifact` | [`node:converge`](/reference/node-provisioning#converge-the-orbit-footprint) and the fleet rollout | `name()`, `applies()`, `digest()`, and `apply()` |
 | `App\Domain\Routes\ContributedPrivateHostnames` | Route and analytics hostname checks, and private DNS publication | `hostnames()` returns each reserved hostname with its current address, or `null` when it must not be published |
-| `App\Domain\Gateway\GatewayServiceStartHook` | Gateway [web convergence](/reference/web-app#web-directory) and the [release handoff](/reference/gateway-recovery#runtime-handoff) | `name()`, `dropIn()`, `description()`, and `renderHook()` |
+| `App\Domain\Gateway\GatewayServiceStartHook` | Gateway [web convergence](/reference/web-app#web-directory) and the [release handoff](/reference/gateway-recovery#runtime-handoff) | `command()` and `input()` |
 | `App\Domain\Processes\ProcessRemovalGuard` | [`process:destroy`](/cli/process#orbit-processdestroy) | `assertRemovable()` |
 | `App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook` | [`database:update`](/cli/database#orbit-databaseupdate) | `validate()` and `afterCommit()` |
 | `App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard` | [`database:destroy`](/cli/database#orbit-databasedestroy) | `assertRemovable()` |
@@ -126,18 +128,15 @@ The digest of the `private-dns` [footprint artifact](/reference/node-provisionin
 
 The reserved hostnames are core's names, then the keys of each contribution's map. New Routes and Route domain changes cannot take a reserved name. Existing Routes remain published; Doctor reports them as `route.domain_reserved`. An operator must change or remove each conflicting Route. Analytics tracking hosts cannot use any name under `.orbit`. AI router reserves `collector.ai-router.orbit` even while it is off or not set up, and publishes it while setup holds the collector.
 
-`GatewayServiceStartHook` adds a program that runs as root each time the Gateway PHP-FPM service starts. Web convergence and the release handoff install every contributed hook with the [remote program](/reference/remote-programs) `gateway.install-start-hooks`. It writes the program as `/etc/orbit/<name>` and a `php8.5-fpm` drop-in that runs it in `ExecStartPre`. A file that already holds its bytes, owner, and mode stays as it is. Before either caller reloads the pool, it runs each program, because a reload skips `ExecStartPre`. The handoff reloads only when the pool changed. A failed program stops the activation, and the error names the hook. Documents uses the point to invalidate document-body cleanup on each start.
+`GatewayServiceStartHook` contributes a compiled startup command and its typed JSON input. The extension owns its Rust crate under `extensions/<name>/agent/`. Core composes it through one Cargo dependency and one registration call. The shared `orbit-agent-contract` crate defines commands, startup hooks, and registration without importing core or extension behavior.
 
-Core checks every hook before it changes anything:
+`gateway.converge-fpm` validates every startup hook contribution before publication. The command must be registered as a Linux root startup hook. Its compiled metadata owns a unique name ending in `-start`, an `orbit-*.conf` drop-in other than `orbit-vpn.conf`, and a printable description. Callers cannot supply executable paths or source. The command writes root-owned JSON at `/etc/orbit/<name>.json`; the drop-in runs `orbit-agent service <command>` in `ExecStartPre`. That service loads only its registered configuration and uses the normal command supervisor, deadline, identity checks, and locks.
 
-- A name ends in `-start`. No core path in `/etc/orbit` does, so a hook cannot take a core file or directory.
-- A drop-in is `orbit-*.conf`, which systemd reads, and not `orbit-vpn.conf`, which core writes. Its name need not share the program's stem.
-- A description is one printable line, so it cannot add a directive to the drop-in.
-- No two hooks share a name or a drop-in.
+Web convergence and the release handoff install the hooks before activating the pool. A reload skips `ExecStartPre`, so they ask the agent to run each hook before reloading. A matching pool in the release handoff only updates hook configuration. Hook failure prevents activation. Documents uses this point to invalidate document-body cleanup even while the extension is disabled.
 
-The program replaces a file with `mv -fT`, so it never moves a hook into a directory that holds its name. It creates a missing directory and leaves the mode of an existing one, such as the 0711 of a shared `/etc/orbit`. It holds a lock on `/etc/orbit` while it reads and writes, so two convergences never interleave.
+Unchanged bytes, ownership, and modes preserve the file and its modification time. Existing directories keep their modes, including a shared `/etc/orbit` at 0711. A shared command lock serializes installation and hook execution. Unsafe files or malformed ownership records refuse before publication.
 
-The program records the hooks it installed in `/etc/orbit/php-fpm-start-hooks`. Each run removes a listed hook that no extension contributes: its drop-in first, then one `daemon-reload`, then its program. A hook stays listed until a run finishes, so a retry after a failed reload still reloads before it removes the program. The program also reloads when systemd reports that the unit changed on disk. Core removes only the files its manifest lists. A Gateway without a manifest keeps every file it has, and the first run records the current hooks. So the next convergence after an extension is deleted removes its hooks.
+The agent records ownership in `/etc/orbit/php-fpm-start-hooks`. It records the union of old and desired hooks before publishing, removes stale drop-ins, reloads systemd, and only then removes each deleted hook’s configuration and installed program. Failed reloads retain the ownership records for retry. It also reloads when systemd reports a changed unit. Without a manifest, unrelated files stay in place. No delivered hook program is executed.
 
 `ExactRequestBody::matches()` receives the request path, never the body. For a matching path, the Gateway skips PHP's `post_max_size` check and does not trim strings or turn empty strings into null. The body stays exact and is not parsed before authorization, so the route must bound it after authorization. Contribute a matcher only for a route that bounds its body itself after authorization. Core keeps the two MCP envelopes exact itself. Documents matches its document routes, which accept up to 15 MiB of JSON. The Gateway asks the matchers once per request.
 

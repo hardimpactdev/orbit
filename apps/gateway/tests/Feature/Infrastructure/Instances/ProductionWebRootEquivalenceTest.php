@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Tools\PrepareVpEnvironmentAction;
+use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\Deployment\DeploymentRelease;
 use App\Domain\Instances\InstanceState;
@@ -10,28 +11,23 @@ use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
-use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Instances\ProductionApplicationPaths;
 use App\Infrastructure\Instances\ProductionPhpRuntimeConfigRenderer;
 use App\Infrastructure\Instances\RemoteProductionDeployment;
 use App\Infrastructure\Instances\RemoteProductionPhpRuntimeManager;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
-use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\PhpBuildAnswers;
 
 /*
  * Production Instances that existed before Routes with a web root reached production have no such
  * Route. The fixture records their current production release layout: the workload Caddy
  * file, every PHP-FPM file, the release `.env` link, and each command, with its arguments, standard
- * input, and protected input, that deploys, activates, converges, monitors, removes, or refreshes the
- * runtime on the Node. Shared paths update only the deployment command baseline.
+ * input, and protected input, that converges, monitors, removes, or refreshes the runtime on the Node, and the agent
+ * command and input that deploys and activates a release. Shared paths update only the deployment command baseline.
  */
 it('renders existing production Instances against the release layout baseline', function (): void {
     $node = Node::query()->create([
@@ -126,77 +122,37 @@ function prod_equivalence_render(Node $node, array $instances): array
             }
         }
 
-        $ssh = new AppDevFakeSshExecutor(array_fill(0, 4, new CommandResult(0, "20261009-a1\t".str_repeat('b', 40)."\n", '', 1, false)));
-        $executor = prod_equivalence_executor($ssh);
-        $deployment = new RemoteProductionDeployment($executor, app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class), static fn (): string => '20261009-a1');
+        $agents = new FakeAgentCommandRunner()
+            ->answer('instances.prepare-release', ['name' => '20261009-a1', 'commit' => str_repeat('b', 40)])
+            ->answer('instances.activate-release', ['name' => '20261009-a1', 'commit' => str_repeat('b', 40)]);
+        $deployment = new RemoteProductionDeployment($agents, app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class), static fn (): string => '20261009-a1');
         $release = $deployment->prepare($instance, 'main');
         $deployment->activate($instance, new DeploymentRelease($release->name, $release->path, $release->commit));
-        $runtime = static function (Closure $operation, array $results = []): array {
-            $fake = new AppDevFakeSshExecutor($results);
-            $operation(new RemoteProductionPhpRuntimeManager(new ProductionPhpRuntimeConfigRenderer, prod_equivalence_executor($fake), '/run/lock/orbit'));
+        // Both the PHP build and runtime use typed agent commands.
+        $runtime = static function (Closure $operation): array {
+            $agents = new FakeAgentCommandRunner()
+                ->answer('php.install-build', PhpBuildAnswers::result())->answer('php.converge-production-runtime', ['published' => true])
+                ->answer('php.remove-production-runtime', ['removed' => true])
+                ->answer('php.refresh-production-cache', ['complete' => true]);
+            $operation(new RemoteProductionPhpRuntimeManager(new ProductionPhpRuntimeConfigRenderer, $agents));
 
-            return array_map(prod_equivalence_command(...), $fake->commands);
+            return array_map(static fn (array $call): array => ['command' => $call['command'], 'input' => $call['command'] === 'php.install-build' ? null : $call['input']], $agents->calls);
         };
 
         $rendered[$instance->production_user] = [
             'php_fpm' => $files,
             'release_environment_link' => ProductionApplicationPaths::render('__APPLICATION_SUFFIX__|__ENVIRONMENT_TARGET__|__ENVIRONMENT_PATH__', $instance->root),
-            'deployment_commands' => array_map(prod_equivalence_command(...), $ssh->commands),
+            // The agent commands and their typed input; the agent's Rust tests prove what each one does.
+            'deployment_commands' => array_map(static fn (array $call): array => [
+                'command' => $call['command'],
+                'input' => array_map(static fn (mixed $value): mixed => $value instanceof GitReadEnvironment ? $value->variables : $value, $call['input']),
+            ], $agents->calls),
             'php_fpm_converge_commands' => $runtime(static fn (RemoteProductionPhpRuntimeManager $manager) => $manager->converge($instance)),
             'php_fpm_monitor_commands' => $runtime(static fn (RemoteProductionPhpRuntimeManager $manager) => $manager->convergeMonitoring($instance, true)),
             'php_fpm_remove_commands' => $runtime(static fn (RemoteProductionPhpRuntimeManager $manager) => $manager->remove($instance)),
-            'php_fpm_refresh_commands' => $runtime(
-                static fn (RemoteProductionPhpRuntimeManager $manager) => $manager->refreshCache($instance),
-                [new CommandResult(0, "COMPLETE\n", '', 1, false)],
-            ),
+            'php_fpm_refresh_commands' => $runtime(static fn (RemoteProductionPhpRuntimeManager $manager) => $manager->refreshCache($instance)),
         ];
     }
 
     return $rendered;
-}
-
-/** @return array{arguments: list<string>, input: ?string, protected_input: ?string} */
-function prod_equivalence_command(RemoteCommand $command): array
-{
-    $protected = $command->protectedInput?->stream();
-
-    // The PHP build installer carries the recipe's pins and its own source, which a PHP bump changes. Web roots do not
-    // reach it, so the fixture records only that the step ran.
-    if (($command->arguments[4] ?? null) === 'php.install-build') {
-        return ['arguments' => ['php.install-build'], 'input' => null, 'protected_input' => null];
-    }
-
-    return [
-        'arguments' => $command->arguments,
-        'input' => $command->input,
-        'protected_input' => $protected === null ? null : (string) stream_get_contents($protected),
-    ];
-}
-
-function prod_equivalence_executor(AppDevFakeSshExecutor $ssh): ProductionSshExecutor
-{
-    return new ProductionSshExecutor(
-        $ssh,
-        new class implements SshKeyProvider
-        {
-            public function privateKeyPath(): string
-            {
-                return '/tmp/orbit-test-key';
-            }
-
-            public function publicKey(): string
-            {
-                return 'ssh-ed25519 test';
-            }
-        },
-        new class implements KnownHostsStore
-        {
-            public function path(): string
-            {
-                return '/tmp/orbit-test-known-hosts';
-            }
-
-            public function put(string $host, int $port, HostKey $key): void {}
-        },
-    );
 }

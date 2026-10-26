@@ -17,6 +17,8 @@ The `analytics` role runs Plausible Community Edition for the fleet. An Instance
 
 Analytics currently lives in core and has no extension switch. The proposed [Analytics transition contract](/decisions/0210-give-each-extension-its-own-code-boundary#analytics-transition-contract) moves it behind an extension boundary only after explicit Process ownership and metadata-only adoption. That proposal does not enable, adopt, migrate, restart or remove anything. The operating instructions below describe the current implementation, not the proposed switch or adoption command.
 
+The Gateway publishes and removes Analytics certificates through the shared [Node agent](/reference/node-agent#commands) Caddy commands. The agent also runs the HTTP readiness probe; the Gateway owns placement and publication intent.
+
 ## Prepare the database Processes
 
 The role keeps its data in two Docker Processes. Create them first on an active Node with the `database` role.
@@ -60,7 +62,11 @@ The role then converges in this order.
 | Run Plausible | The `plausible` Docker Process at the pinned version, published on the Node's WireGuard address. Its environment holds the two connection URLs and a stored `SECRET_KEY_BASE`. |
 | Publish the dashboard | After Plausible answers `/api/health`: an Orbit CA certificate, a Caddy site on the role's Node, and a private DNS record for `analytics.orbit`. |
 
-Plausible creates and migrates its PostgreSQL database each time it starts. The storage passwords, the two connection URLs, and `SECRET_KEY_BASE` reach Plausible through the Process environment. The API hides and log reads redact that environment, but the Gateway database stores it unencrypted. The `plausible` container reaches a storage Process on its own Node through the Docker bridge, not through WireGuard. That is why the local rule exists.
+The Gateway waits for Plausible with the agent's `http.await-healthy`: up to 90 requests to `/api/health` on the Node's WireGuard address, 2 seconds apart. The command takes only an `http://` or `https://` URL. It refuses any other URL with `http.url_invalid` before it runs curl.
+
+Plausible creates and migrates its PostgreSQL database each time it starts. Its Process runs the compiled `plausible` agent service from a read-only bind of the installed static Linux agent. The service runs the image's fixed `/entrypoint.sh db createdb` and `/entrypoint.sh db migrate` steps in order, then replaces itself with `/entrypoint.sh run`. A failed step stops startup. It keeps the image's non-root account and forwards stop signals during initialization. Agent installation restarts running managed containers that use a registered compiled service and that read-only binary mount, so the next start uses the new pin. Stopped containers stay stopped.
+
+The storage passwords, the two connection URLs, and `SECRET_KEY_BASE` reach Plausible through the Process environment. The API hides and log reads redact that environment, but the Gateway database stores it unencrypted. The `plausible` container reaches a storage Process on its own Node through the Docker bridge, not through WireGuard. That is why the local rule exists.
 
 You can read the logs of `plausible` and restart it like any other Process. You cannot remove it, or either storage Process, while the role is assigned (`process.required_by_analytics`). The core feature registers this check as a [Process removal guard](/reference/extensions#plug-in-points).
 
@@ -72,7 +78,7 @@ The current lifecycle identifies Plausible by its Node and the name `plausible`,
 
 ClickHouse's defaults assume a large server. On a small Node, its system log tables grow and its background merges run out of memory. So each role convergence applies the four ClickHouse files that Plausible Community Edition ships, unchanged.
 
-The role writes each file on the Node that runs the ClickHouse Process, owned by root with mode `0644`. It writes a file only when the content differs. It mounts each file read-only into the ClickHouse Process at the path that Plausible's own setup uses.
+The role calls `analytics.configure-clickhouse` on the Node that runs the ClickHouse Process. The Rust agent carries Plausible's four files and publishes them as root with mode `0644`. It refuses symlinks, foreign ownership, and writable shared paths before publication. It writes a file only when its content differs and restores earlier files if a later publication fails. Failed restoration reports `analytics.clickhouse_recovery_failed`. The Gateway mounts each file read-only into the ClickHouse Process at the path that Plausible's own setup uses, then applies the Process restart rules below.
 
 | Host file | Container path |
 | --- | --- |

@@ -10,12 +10,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
-use App\Infrastructure\Nodes\CaddyPackageProgram;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Nodes\AgentCaddyPackage;
 use App\Models\Node;
 use App\Models\Route;
 use Orbit\Extensions\AiRouter\Domain\AiRouterPublicationManager;
@@ -27,9 +22,7 @@ final readonly class NativeAiRouterPublicationManager implements AiRouterPublica
         private AiRouterCertificatePublisher $certificatePublisher,
         private NodeCaddyBuilds $builds,
         private PrivateDnsManager $dns,
-        private SshExecutor $ssh,
-        private SshKeyProvider $keys,
-        private KnownHostsStore $knownHosts,
+        private AgentCaddyPackage $caddyPackage,
         private ?AiRouterRouteTakeover $takeover = null,
         private ?CaddySiteCertificates $siteCertificates = null,
     ) {}
@@ -37,17 +30,13 @@ final readonly class NativeAiRouterPublicationManager implements AiRouterPublica
     public function converge(Node $node, ?Route $takeover = null): void
     {
         $address = $this->address($node);
-        $this->ensureCaddy($node, $address);
+        $this->ensureCaddy($node);
         $certificate = $this->certificates->issue(AiRouterFootprint::Hostname, $address);
         $certificatePem = $this->read($certificate->certificatePath);
         $privateKeyPem = $this->read($certificate->privateKeyPath);
-        $this->run(
-            $node,
-            $address,
-            $this->certificatePublisher->command($certificatePem, $privateKeyPem),
-            'ai_router.certificate_publication_failed',
-            "ai-router certificate publication failed on node [{$node->name}].",
-        );
+        if (! $this->certificatePublisher->publish($node, $certificatePem, $privateKeyPem)->succeeded()) {
+            throw new ResourceOperationException('ai_router.certificate_publication_failed', "ai-router certificate publication failed on node [{$node->name}].", 422);
+        }
         $this->certificateRecords()->record($node->id, AiRouterCaddySiteSource::CertificateSlug);
 
         if (! $takeover instanceof Route) {
@@ -65,10 +54,10 @@ final readonly class NativeAiRouterPublicationManager implements AiRouterPublica
 
     public function remove(Node $node): void
     {
-        $address = $this->address($node);
+        $this->address($node);
         // The extension is already disabled, so the build withdraws the collector site before its certificate.
         $this->build($node);
-        $this->ssh->execute($this->connection($node, $address), $this->certificatePublisher->removeCommand());
+        $this->certificatePublisher->remove($node);
         $this->certificateRecords()->forget($node->id, AiRouterCaddySiteSource::CertificateSlug);
         $this->dns->converge();
     }
@@ -94,40 +83,11 @@ final readonly class NativeAiRouterPublicationManager implements AiRouterPublica
         }
     }
 
-    private function ensureCaddy(Node $node, string $address): void
+    private function ensureCaddy(Node $node): void
     {
-        $this->run(
-            $node,
-            $address,
-            CaddyPackageProgram::command(),
-            'ai_router.caddy_publication_failed',
-            "The Caddy package step failed on node [{$node->name}].",
-        );
-    }
-
-    private function run(
-        Node $node,
-        string $address,
-        RemoteCommand $command,
-        string $errorCode,
-        string $message,
-    ): void {
-        $result = $this->ssh->execute($this->connection($node, $address), $command);
-
-        if (! $result->succeeded()) {
-            throw new ResourceOperationException($errorCode, $message, 422);
+        if (! $this->caddyPackage->install($node)->succeeded()) {
+            throw new ResourceOperationException('ai_router.caddy_publication_failed', "The Caddy package step failed on node [{$node->name}].", 422);
         }
-    }
-
-    private function connection(Node $node, string $address): SshConnection
-    {
-        return new SshConnection(
-            $address,
-            $node->user,
-            22,
-            $this->keys->privateKeyPath(),
-            $this->knownHosts->path(),
-        );
     }
 
     private function address(Node $node): string

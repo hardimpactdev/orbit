@@ -1,40 +1,29 @@
 #!/usr/bin/env python3
-"""Install the runner's JavaScript tools with the shared Node/image recipe installer."""
-import importlib.util
+"""Install the runner's JavaScript tools through the source-built native agent."""
 import json
-import os
 from pathlib import Path
-import pwd
+import runpy
 import subprocess
-import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 def install(root=ROOT):
-    resources = root / 'apps/gateway/resources'
-    spec = importlib.util.spec_from_file_location('runner_recipe', resources / 'remote/lib/recipe.py')
-    recipe = importlib.util.module_from_spec(spec)
-    exec(compile((resources / 'remote/lib/artifacts.py').read_text(), 'artifacts.py', 'exec'), recipe.__dict__)
-    spec.loader.exec_module(recipe)
-    recipe.VP_STORE_PROGRAM = '\n'.join((resources / 'remote' / name).read_text() for name in (
-        'lib/program.py', 'lib/vp-store.py', 'tools/install-vp-environment.py'))
-    document = json.loads((resources / 'machine-software/recipe.json').read_text())
-    tools = {name: document['tools'][name] for name in ('node', 'vp', 'vp-cli', 'pnpm')}
-    lock = (resources / 'machine-software/vite-plus-package-lock.json').read_text()
-    account = pwd.getpwnam('runner')
-    architecture = subprocess.check_output(['dpkg', '--print-architecture'], text=True).strip()
-    os.environ['SUDO_USER'] = 'runner'
-    with tempfile.TemporaryDirectory(prefix='orbit-ci-javascript-') as directory:
-        work = Path(directory)
-        downloads = {name: recipe.download(pin, architecture, work / (name + '.archive'))
-                     for name, pin in tools.items() if name != 'vp'}
-        recipe.install_javascript(tools, downloads, work, account, lock)
-    observed = recipe.inspect(tools)
-    if any(observed[name] != pin['version'] for name, pin in tools.items()):
-        raise RuntimeError('Runner JavaScript tools do not match the recipe')
-    recipe.consolidate_node(tools, apply=True)
+    resources = root / 'apps/gateway/resources/machine-software'
+    document = json.loads((resources / 'recipe.json').read_text())
+    payload = {
+        'user': 'runner',
+        'snapshot': document['ubuntu']['snapshot'],
+        'architecture': subprocess.check_output(['dpkg', '--print-architecture'], text=True).strip(),
+        'tools': {name: document['tools'][name] for name in ('node', 'vp', 'vp-cli', 'pnpm')},
+        'vp_lock': (resources / 'vite-plus-package-lock.json').read_text(),
+    }
+    agent = runpy.run_path(str(root / 'tools/agent_command.py'))
+    result, _log = agent['run'](root / 'apps/agent/target/release/orbit-agent',
+                              'recipe.install-javascript', payload, 900)
+    if type(result.get('changed')) is not bool or not isinstance(result.get('retired'), list):
+        raise RuntimeError('recipe.install-javascript returned an invalid result')
 
 
 if __name__ == '__main__':

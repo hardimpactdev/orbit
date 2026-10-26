@@ -11,8 +11,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SCOPE = 'apps/gateway'
-# ADR 0213: explicitly requested stock CI host program while ADR 0225's command runtime is unbuilt.
-CI_HOST = SCOPE + '/resources/remote/ci-runners/host.py'
 DATA_LABELS = frozenset({
     'SQL', 'CADDY', 'CADDYFILE', 'FPM', 'INI', 'UNIT', 'SYSTEMD', 'CONF',
     'EXTENSIONS', 'TEXT', 'MARKDOWN', 'HTML', 'REGEX',
@@ -61,6 +59,9 @@ def inventory(files):
             len(parts) > 2 and parts[0] == 'extensions' and parts[2] == 'tests'
         ):
             continue
+        compiled_rust = len(parts) >= 4 and parts[0] == 'extensions' and parts[2] == 'agent' and (
+            path.suffix == '.rs' or parts[3:] == ('Cargo.toml',)
+        )
         in_resources = 'resources' in parts
         is_php = path.suffix == '.php' or content.lstrip().startswith(b'<?php')
         is_data = name.endswith(DATA_SUFFIXES) or (path.name == '.gitkeep' and not content.strip())
@@ -70,7 +71,7 @@ def inventory(files):
             except (ValueError, ET.ParseError):
                 is_data = False
         if name != OPCACHE_RESET and (
-            (not is_data and (not is_php or in_resources)) or content.startswith(b'#!')
+            (not is_data and not compiled_rust and (not is_php or in_resources)) or content.startswith(b'#!')
         ):
             counts['files'][name] = 1
         if is_php:
@@ -105,12 +106,10 @@ def base_files(base):
 
 
 def growth(before, after):
-    # The one addition is charged normally once present in the base; no reusable headroom remains.
-    allowances = {'inline': 0, 'files': int(CI_HOST not in before['files'] and CI_HOST in after['files'])}
     return [
         f'{kind}: {sum(before[kind].values())} -> {sum(after[kind].values())}'
         for kind in before
-        if sum(after[kind].values()) > sum(before[kind].values()) + allowances[kind]
+        if sum(after[kind].values()) > sum(before[kind].values())
     ]
 
 
@@ -122,8 +121,6 @@ def main():
     after = inventory(checkout_files())
     for kind in before:
         print(f'{kind}: {sum(before[kind].values())} -> {sum(after[kind].values())}', flush=True)
-    if CI_HOST not in before['files'] and CI_HOST in after['files']:
-        print('ADR 0213: allow the explicitly requested stock ci-runners.host program once.', flush=True)
     if growth(before, after):
         raise SystemExit('Gateway script totals may only decrease. Use a named Rust agent command.')
 

@@ -12,23 +12,21 @@ use App\Infrastructure\Tasks\TaskWorkspaceMetadata;
 use LogicException;
 use RuntimeException;
 
-/** Shares only metadata imports and compilation; native turn commands remain native. */
+/** Runs metadata in isolated Python processes; native turn commands remain native. */
 final class TurnMetadataSshExecutor implements SshExecutor
 {
     /** @var array<string, string|false> */
     public array $environment = [];
 
-    private static ?ForkedPythonPrograms $python = null;
+    private static ?PythonPrograms $python = null;
 
     public static function prepare(): void
     {
-        self::$python = new ForkedPythonPrograms;
-        self::$python->run('pass', '<remote-command>', self::source(__DIR__.'/../../resources/tasks/metadata')."\0");
+        self::$python = new PythonPrograms;
     }
 
     public static function forget(): void
     {
-        self::$python?->close();
         self::$python = null;
     }
 
@@ -50,7 +48,7 @@ final class TurnMetadataSshExecutor implements SshExecutor
         if ($input === false || base64_encode($input) !== $matches[1]) {
             throw new LogicException('The turn metadata fixture requires canonical base64 input.');
         }
-        $python = self::$python ?? throw new LogicException('Prepare the metadata fixture host in beforeAll.');
+        $python = self::$python ?? throw new LogicException('Prepare the metadata fixture in beforeAll.');
 
         return $python->runCommand(
             self::source(resource_path('tasks/metadata')),

@@ -18,7 +18,7 @@ final readonly class RecipeImagePruning
     /** Retired images still exist on hosts; retain these names only for cleanup. */
     private const array RetiredProfiles = ['gateway', 'app-dev', 'app-prod', 'operator'];
 
-    public function __construct(private TaskVmSettings $settings, private IncusHost $incus, private IncusTaskVmBaseImage $image, private TaskVmVolumes $volumes) {}
+    public function __construct(private TaskVmSettings $settings, private IncusHost $incus) {}
 
     public function prune(TaskVmImageBuild $current): void
     {
@@ -28,8 +28,7 @@ final readonly class RecipeImagePruning
             ->orderByDesc('promoted_at')->orderByDesc('id')->get();
         $previous = $builds->first(static fn (TaskVmImageBuild $build): bool => $build->id !== $current->id && $build->state === TaskVmImageBuildState::Succeeded && $build->promoted_at !== null);
         $obsolete = [];
-        $inUse = array_values($this->image->instances($host, $node));
-        $protected = $inUse;
+        $protected = [];
         foreach ($builds as $build) {
             $running = $build->id !== $current->id && $build->state === TaskVmImageBuildState::Running;
             $keepBase = $build->id === $current->id || $build->id === $previous?->id || $running;
@@ -53,32 +52,11 @@ final readonly class RecipeImagePruning
                 $protected[] = $build->images['base']['fingerprint'];
             }
         }
-        foreach ($this->incus->images($host, $node) as $fingerprint => $aliases) {
-            // Unrelated aliases, including the current base alias, also protect a shared fingerprint.
-            if ($aliases === [] || array_diff($aliases, $obsolete) !== [] || in_array($fingerprint, $protected, true)) {
-                if (in_array($fingerprint, $inUse, true)) {
-                    continue;
-                }
-                foreach (array_intersect($aliases, $obsolete) as $alias) {
-                    // Keep protected images, but retire their obsolete role aliases.
-                    if (! array_any(self::RetiredProfiles, static fn (string $profile): bool => str_ends_with($alias, '-'.$profile))) {
-                        continue;
-                    }
-                    $result = $this->incus->run($host, $node, ['image', 'alias', 'delete', '--', $alias]);
-                    if (! $result->succeeded()) {
-                        throw IncusHost::failed("the retired recipe alias [{$alias}]", 'image alias delete', $result);
-                    }
-                }
-
-                continue;
-            }
-            // The seed goes first: a failed deletion keeps the image, so the next prune finds the seed again.
-            $this->volumes->delete($host, $node, TaskVmVolumes::seed($fingerprint));
-            $this->volumes->delete($host, $node, TaskVmVolumes::newSeed($fingerprint));
-            $result = $this->incus->run($host, $node, ['image', 'delete', '--', $fingerprint]);
-            if (! $result->succeeded()) {
-                throw IncusHost::failed("the recipe image [{$fingerprint}]", 'image delete', $result);
-            }
-        }
+        $obsolete = array_values(array_unique($obsolete));
+        $retired = array_values(array_filter($obsolete, static fn (string $alias): bool => array_any(self::RetiredProfiles, static fn (string $profile): bool => str_ends_with($alias, '-'.$profile))));
+        $this->incus->image($host, $node, [
+            'kind' => 'prune', 'pool' => $host->pool, 'obsolete_aliases' => $obsolete,
+            'retired_aliases' => $retired, 'protected_fingerprints' => array_values(array_unique($protected)),
+        ]);
     }
 }

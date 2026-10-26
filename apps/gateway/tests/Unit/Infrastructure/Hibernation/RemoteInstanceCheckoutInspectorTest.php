@@ -2,195 +2,116 @@
 
 declare(strict_types=1);
 
+use App\Domain\Hibernation\HibernationException;
 use App\Domain\Hibernation\LocalRuntimeDependencies;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Infrastructure\Hibernation\RemoteInstanceCheckoutInspector;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
-use Illuminate\Filesystem\Filesystem;
-use Illuminate\Support\Str;
-use Symfony\Component\Process\Process;
-use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\TestCase;
 
 uses(TestCase::class);
 
-it('classifies reconstructable vendor and node_modules from the remote checkout facts', function (): void {
-    $stdout = implode("\n", [
-        'composer_json=1',
-        'composer_lock=1',
-        'vendor_present=1',
-        'vendor_symlink=0',
-        'package_json=1',
-        'node_modules_present=1',
-        'node_modules_symlink=0',
-        'javascript_lock=package-lock.json',
-        'source_mtime=100',
-        '',
+it('classifies reconstructable vendor and node_modules from the agent checkout facts', function (): void {
+    $agents = new FakeAgentCommandRunner()->answer('hibernation.inspect-checkout', [
+        'composer_json' => true, 'composer_lock' => true, 'vendor_present' => true, 'vendor_symlink' => false,
+        'package_json' => true, 'node_modules_present' => true, 'node_modules_symlink' => false,
+        'javascript_locks' => ['package-lock.json'], 'source_mtime' => 100,
     ]);
-    $ssh = new AppDevFakeSshExecutor([new CommandResult(0, $stdout, '', 1, false)]);
-    $inspector = checkout_inspector($ssh);
-    $instance = checkout_instance();
 
-    $state = $inspector->inspect($instance);
+    $state = checkout_inspector($agents)->inspect(checkout_instance());
 
-    expect($state->prunableVendor())
-        ->toBeTrue()
-        ->and($state->prunableNodeModules())
-        ->toBeTrue()
-        ->and($state->sourceTreeLastActivityUnix)
-        ->toBe(100)
-        ->and($ssh->commands[0]->arguments)
-        ->toBe(['sudo', 'bash', '-seu', '--', '/home/orbit/apps/docs', '/home/orbit/apps/docs']);
+    expect($state->prunableVendor())->toBeTrue()
+        ->and($state->prunableNodeModules())->toBeTrue()
+        ->and($state->sourceTreeLastActivityUnix)->toBe(100)
+        ->and($agents->calls[0]['input'])->toBe(['repository' => '/home/orbit/apps/docs', 'checkout' => '/home/orbit/apps/docs']);
 });
 
-it('prunes only reconstructable dependency directories and leaves lockfiles', function (): void {
-    $ssh = new AppDevFakeSshExecutor([new CommandResult(0, '', '', 1, false)]);
-    $inspector = checkout_inspector($ssh);
+it('inspects and prunes the application directory of a nested Laravel app and dates edits by the whole checkout', function (): void {
+    $agents = new FakeAgentCommandRunner()
+        ->answer('hibernation.inspect-checkout', ['composer_json' => true, 'composer_lock' => true, 'vendor_present' => true, 'vendor_symlink' => false, 'package_json' => false, 'node_modules_present' => false, 'node_modules_symlink' => false, 'javascript_locks' => [], 'source_mtime' => 200])
+        ->answer('hibernation.prune-checkout', []);
+    $instance = checkout_instance();
+    $instance->forceFill(['root' => 'server/web/public']);
+    $inspector = checkout_inspector($agents);
+
+    $inspector->prune($instance, $inspector->inspect($instance));
+
+    expect($agents->calls[0]['input'])->toBe(['repository' => '/home/orbit/apps/docs', 'checkout' => '/home/orbit/apps/docs/server/web'])
+        ->and($agents->calls[1]['input'])->toBe(['checkout' => '/home/orbit/apps/docs/server/web', 'targets' => ['vendor']]);
+});
+
+it('prunes nothing that cannot be reconstructed', function (): void {
+    $agents = new FakeAgentCommandRunner;
     $state = LocalRuntimeDependencies::inspect(
         composerJsonFile: true,
-        composerLockFile: true,
+        composerLockFile: false,
         vendorPresent: true,
         vendorSymlink: false,
-        packageJsonFile: true,
-        javascriptLockFiles: ['package-lock.json'],
-        nodeModulesPresent: true,
+        packageJsonFile: false,
+        javascriptLockFiles: [],
+        nodeModulesPresent: false,
         nodeModulesSymlink: false,
+        sourceTreeLastActivityUnix: 100,
     );
 
-    $inspector->prune(checkout_instance(), $state);
+    checkout_inspector($agents)->prune(checkout_instance(), $state);
 
-    expect($ssh->commands[0]->arguments)
-        ->toBe(['sudo', 'bash', '-seu', '--', '/home/orbit/apps/docs', 'vendor', 'node_modules']);
+    expect($agents->calls)->toBe([]);
 });
 
-it('restores missing vendor with Composer and missing node_modules with frozen vp', function (): void {
-    $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(0, '', '', 1, false),
-        new CommandResult(0, '', '', 1, false),
-    ]);
-    $inspector = checkout_inspector($ssh, 1_800);
+it('restores missing dependencies as the managed user within the cold wake deadline', function (): void {
+    $agents = new FakeAgentCommandRunner()->answer('hibernation.restore-dependencies', []);
     $state = LocalRuntimeDependencies::inspect(
         composerJsonFile: true,
         composerLockFile: true,
         vendorPresent: false,
         vendorSymlink: false,
         packageJsonFile: true,
-        javascriptLockFiles: ['package-lock.json'],
+        javascriptLockFiles: ['pnpm-lock.yaml'],
         nodeModulesPresent: false,
         nodeModulesSymlink: false,
+        sourceTreeLastActivityUnix: 100,
     );
 
-    $inspector->restore(checkout_instance(), $state);
+    checkout_inspector($agents)->restore(checkout_instance(), $state);
 
-    expect($ssh->commands[0]->arguments)
-        ->toBe([
-            'sudo',
-            '-u',
-            'orbit',
-            '-H',
-            'env',
-            'COMPOSER_HOME=/opt/orbit/composer',
-            '/usr/bin/composer',
-            'install',
-            '--no-interaction',
-            '--prefer-dist',
-            '--working-dir=/home/orbit/apps/docs',
-        ])
-        ->and($ssh->commands[1]->arguments)
-        ->toBe([
-            'sudo',
-            '-u',
-            'orbit',
-            '-H',
-            'bash',
-            '-seu',
-            '--',
-            '/home/orbit/apps/docs',
-        ])
-        ->and($ssh->commands[1]->input)
-        ->toContain('vp install --frozen-lockfile')
-        ->and($ssh->connections[0]->commandTimeout)
-        ->toBe(1_800.0);
+    expect($agents->calls[0]['input'])->toBe(['user' => 'orbit', 'checkout' => '/home/orbit/apps/docs', 'composer' => true, 'javascript' => true]);
 });
 
-it('inspects and prunes only the application dependencies while tracking repository-wide edits', function (string $root, string $suffix): void {
-    $repository = sys_get_temp_dir().'/orbit-hibernation-'.Str::uuid();
-    $application = $repository.$suffix;
-    mkdir($application, 0o700, true);
-    foreach (['composer.json', 'composer.lock', 'package.json', 'pnpm-lock.yaml'] as $file) {
-        file_put_contents($application.'/'.$file, '{}');
-        touch($application.'/'.$file, 100);
-    }
-    mkdir($application.'/vendor');
-    mkdir($application.'/node_modules');
-    mkdir($repository.'/sibling');
-    file_put_contents($repository.'/sibling/edited.php', 'edited');
-    touch($repository.'/sibling/edited.php', 200);
-    mkdir($repository.'/sibling/vendor');
-    if ($suffix !== '') {
-        mkdir($repository.'/vendor');
-        mkdir($repository.'/node_modules');
-    }
-    $instance = checkout_instance();
-    $instance->forceFill(['root' => $root, 'checkout_path' => $repository]);
-    $ssh = new AppDevFakeSshExecutor;
-    $inspector = checkout_inspector($ssh);
+it('names the restore step that failed', function (): void {
+    $agents = new FakeAgentCommandRunner()->refuse('hibernation.restore-dependencies', 'hibernation.node_failed', ['step' => 'restore-javascript']);
+    $state = LocalRuntimeDependencies::inspect(
+        composerJsonFile: false,
+        composerLockFile: false,
+        vendorPresent: false,
+        vendorSymlink: false,
+        packageJsonFile: true,
+        javascriptLockFiles: ['pnpm-lock.yaml'],
+        nodeModulesPresent: false,
+        nodeModulesSymlink: false,
+        sourceTreeLastActivityUnix: 100,
+    );
 
-    try {
-        $inspector->inspect($instance);
-        $command = $ssh->commands[0];
-        $process = new Process(array_slice($command->arguments, 1));
-        $process->setInput($command->input);
-        $process->mustRun();
-        $state = checkout_inspector(new AppDevFakeSshExecutor([
-            new CommandResult(0, $process->getOutput(), '', 1, false),
-        ]))->inspect($instance);
+    expect(fn () => checkout_inspector($agents)->restore(checkout_instance(), $state))
+        ->toThrow(HibernationException::class, 'Checkout dependency restore step [restore-javascript] failed on Instance [main].');
+});
 
-        expect($state->prunableVendor())->toBeTrue();
-        expect($state->prunableNodeModules())->toBeTrue();
-        expect($state->sourceTreeLastActivityUnix)->toBe(200);
-        $inspector->prune($instance, $state);
-        $command = $ssh->commands[1];
-        $process = new Process(array_slice($command->arguments, 1));
-        $process->setInput($command->input);
-        $process->mustRun();
-
-        expect(is_dir($application.'/vendor'))->toBeFalse();
-        expect(is_dir($application.'/node_modules'))->toBeFalse();
-        expect(is_dir($repository.'/sibling/vendor'))->toBeTrue();
-        expect(is_file($application.'/composer.lock'))->toBeTrue();
-        if ($suffix !== '') {
-            expect(is_dir($repository.'/vendor'))->toBeTrue();
-            expect(is_dir($repository.'/node_modules'))->toBeTrue();
-        }
-
-        $cold = LocalRuntimeDependencies::inspect(true, true, false, false, true, ['pnpm-lock.yaml'], false, false);
-        $inspector->restore($instance, $cold);
-        expect($ssh->commands[2]->arguments)->toContain('--working-dir='.$application);
-        expect($ssh->commands[3]->arguments)->toContain($application);
-    } finally {
-        new Filesystem()->deleteDirectory($repository);
-    }
-})->with([
-    'root public' => ['public', ''],
-    'nested app' => ['apps/site/public', '/apps/site'],
-]);
-
-function checkout_inspector(AppDevFakeSshExecutor $ssh, int $timeout = 1_800): RemoteInstanceCheckoutInspector
+function checkout_inspector(FakeAgentCommandRunner $agents, int $timeout = 1_800): RemoteInstanceCheckoutInspector
 {
     return new RemoteInstanceCheckoutInspector(
-        ssh: $ssh,
-        keys: new CheckoutInspectorKeyProvider,
-        knownHosts: new CheckoutInspectorKnownHostsStore,
-        accounts: new CheckoutInspectorAccounts,
+        agents: $agents,
+        accounts: new class implements ManagedUserAccountResolver
+        {
+            public function resolve(Node $node): ManagedUserAccount
+            {
+                return new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
+            }
+        },
         restoreTimeoutSeconds: $timeout,
     );
 }
@@ -213,35 +134,4 @@ function checkout_instance(): Instance
     $instance->setRelation('node', $node);
 
     return $instance;
-}
-
-final class CheckoutInspectorKeyProvider implements SshKeyProvider
-{
-    public function privateKeyPath(): string
-    {
-        return '/orbit/ssh/id_ed25519';
-    }
-
-    public function publicKey(): string
-    {
-        return 'ssh-ed25519 test';
-    }
-}
-
-final class CheckoutInspectorKnownHostsStore implements KnownHostsStore
-{
-    public function path(): string
-    {
-        return '/orbit/ssh/known_hosts';
-    }
-
-    public function put(string $host, int $port, HostKey $key): void {}
-}
-
-final class CheckoutInspectorAccounts implements ManagedUserAccountResolver
-{
-    public function resolve(Node $node): ManagedUserAccount
-    {
-        return new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
-    }
 }

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\TaskVms;
 
 /**
- * The state of one topology preparation unit, as `resources/task-vms/topology.sh status` reports it, with the step it
+ * The state of one topology preparation unit, as `task-vms.topology-status` reports it, with the step it
  * ended at and the end of its log.
  */
 final readonly class TaskVmTopologyRun

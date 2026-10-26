@@ -7,7 +7,17 @@ use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Models\Node;
 use App\Models\Process;
 
-it('renders one collision-safe Orbit-owned Docker container with explicit runtime input', function (): void {
+function docker_renderer_target(bool $onDemand = false): ProcessTarget
+{
+    return new ProcessTarget(
+        node: new Node(['name' => 'dev']),
+        user: 'orbit',
+        checkoutPath: '/home/orbit/apps/docs',
+        onDemandHostStart: $onDemand,
+    );
+}
+
+it('renders one Orbit-owned Docker container definition with explicit runtime input', function (): void {
     $process = new Process([
         'name' => 'queue',
         'runtime_config' => [
@@ -24,119 +34,49 @@ it('renders one collision-safe Orbit-owned Docker container with explicit runtim
         'restart_policy' => 'unless-stopped',
     ]);
     $process->id = 41;
-    $target = new ProcessTarget(
-        node: new Node(['name' => 'dev']),
-        user: 'orbit',
-        checkoutPath: '/home/orbit/apps/docs',
-    );
 
     $renderer = new DockerProcessRenderer;
-    $arguments = $renderer->createArguments($process, $target);
-    $environmentInput = $renderer->environmentInput($process);
 
     expect($renderer->containerName($process))
         ->toBe('orbit-process-41-queue')
-        ->and($arguments)
+        ->and($renderer->containerInput($process, docker_renderer_target()))
         ->toBe([
-            'sudo',
-            'docker',
-            'container',
-            'create',
-            '--name',
-            'orbit-process-41-queue',
-            '--label',
-            'orbit.managed=true',
-            '--label',
-            'orbit.container.kind=process',
-            '--label',
-            'orbit.process.id=41',
-            '--label',
-            'orbit.process.spec='.$renderer->specHash($process, $target),
-            '--restart',
-            'unless-stopped',
-            '--workdir',
-            '/data',
-            '--publish',
-            '127.0.0.1:6380:6379/tcp',
-            '--mount',
-            'type=volume,source=redis-data,target=/data',
-            '--mount',
-            'type=bind,source=/home/orbit/redis.conf,target=/etc/redis.conf,readonly',
-            'redis:8-alpine',
-            'redis-server',
-            '--save',
-            '',
-        ])
-        ->and(implode("\0", $arguments))
-        ->not
-        ->toContain('critical jobs')
-        ->and(stream_get_contents($environmentInput->stream()))
-        ->toBe("QUEUE_NAME=critical jobs\n");
-
-    $environmentInput->close();
+            'image' => 'redis:8-alpine',
+            'command' => ['redis-server', '--save', ''],
+            'restart' => 'unless-stopped',
+            'working_directory' => '/data',
+            'ports' => ['127.0.0.1:6380:6379/tcp'],
+            'mounts' => [
+                ['source' => 'redis-data', 'target' => '/data', 'read_only' => false],
+                ['source' => '/home/orbit/redis.conf', 'target' => '/etc/redis.conf', 'read_only' => true],
+            ],
+            'environment' => ['QUEUE_NAME' => 'critical jobs'],
+        ]);
 });
 
-it('does not require the managed SSH user to belong to the Docker group', function (): void {
-    $process = new Process([
-        'name' => 'worker',
-        'runtime_config' => ['image' => 'busybox:1', 'command' => ['sleep', '60']],
-        'working_directory' => '/work',
-        'restart_policy' => 'never',
-    ]);
-    $process->id = 9;
-    $target = new ProcessTarget(
-        node: new Node(['name' => 'dev']),
-        user: 'orbit',
-        checkoutPath: '/home/orbit/apps/docs',
-    );
+it('uses canonical Docker environment order for the definition and specification hashes', function (): void {
+    $process = static function (array $environment): Process {
+        $process = new Process([
+            'name' => 'worker',
+            'runtime_config' => ['image' => 'busybox:1', 'command' => ['env'], 'environment' => $environment],
+            'working_directory' => '/work',
+            'restart_policy' => 'never',
+        ]);
+        $process->id = 9;
 
-    expect(array_slice(new DockerProcessRenderer()->createArguments($process, $target), offset: 0, length: 4))
-        ->toBe(['sudo', 'docker', 'container', 'create']);
-});
-
-it('uses canonical Docker environment order for arguments and specification hashes', function (): void {
-    $first = new Process([
-        'name' => 'worker',
-        'runtime_config' => [
-            'image' => 'busybox:1',
-            'command' => ['env'],
-            'environment' => ['ZEBRA' => 'last', 'ALPHA' => 'first'],
-        ],
-        'working_directory' => '/work',
-        'restart_policy' => 'never',
-    ]);
-    $first->id = 9;
-    $second = new Process([
-        'name' => 'worker',
-        'runtime_config' => [
-            'image' => 'busybox:1',
-            'command' => ['env'],
-            'environment' => ['ALPHA' => 'first', 'ZEBRA' => 'last'],
-        ],
-        'working_directory' => '/work',
-        'restart_policy' => 'never',
-    ]);
-    $second->id = 9;
-    $target = new ProcessTarget(
-        node: new Node(['name' => 'dev']),
-        user: 'orbit',
-        checkoutPath: '/home/orbit/apps/docs',
-    );
+        return $process;
+    };
+    $first = $process(['ZEBRA' => 'last', 'ALPHA' => 'first']);
+    $second = $process(['ALPHA' => 'first', 'ZEBRA' => 'last']);
     $renderer = new DockerProcessRenderer;
-    $firstInput = $renderer->environmentInput($first);
-    $secondInput = $renderer->environmentInput($second);
+    $target = docker_renderer_target();
 
     expect($renderer->specHash($first, $target))
         ->toBe($renderer->specHash($second, $target))
-        ->and($renderer->createArguments($first, $target))
-        ->toBe($renderer->createArguments($second, $target))
-        ->and(stream_get_contents($firstInput->stream()))
-        ->toBe("ALPHA=first\nZEBRA=last\n")
-        ->and(stream_get_contents($secondInput->stream()))
-        ->toBe("ALPHA=first\nZEBRA=last\n");
-
-    $firstInput->close();
-    $secondInput->close();
+        ->and($renderer->containerInput($first, $target))
+        ->toBe($renderer->containerInput($second, $target))
+        ->and(array_keys($renderer->containerInput($first, $target)['environment']))
+        ->toBe(['ALPHA', 'ZEBRA']);
 });
 
 it('rejects an option-like image from persisted runtime configuration', function (): void {
@@ -147,17 +87,12 @@ it('rejects an option-like image from persisted runtime configuration', function
         'restart_policy' => 'never',
     ]);
     $process->id = 10;
-    $target = new ProcessTarget(
-        node: new Node(['name' => 'dev']),
-        user: 'orbit',
-        checkoutPath: '/home/orbit/apps/docs',
-    );
 
-    expect(fn () => new DockerProcessRenderer()->createArguments($process, $target))
+    expect(fn () => new DockerProcessRenderer()->containerInput($process, docker_renderer_target()))
         ->toThrow(InvalidArgumentException::class, 'image');
 });
 
-it('rejects unsafe Docker environment input from persisted configuration', function (array $environment): void {
+it('rejects unsafe Docker environment input from persisted configuration', function (mixed $environment): void {
     $process = new Process([
         'name' => 'worker',
         'runtime_config' => [
@@ -170,7 +105,7 @@ it('rejects unsafe Docker environment input from persisted configuration', funct
     ]);
     $process->id = 10;
 
-    expect(fn () => new DockerProcessRenderer()->environmentInput($process))
+    expect(fn () => new DockerProcessRenderer()->containerInput($process, docker_renderer_target()))
         ->toThrow(InvalidArgumentException::class, 'environment');
 })->with([
     'unsafe name' => [['BAD-NAME' => 'value']],
@@ -179,24 +114,8 @@ it('rejects unsafe Docker environment input from persisted configuration', funct
     'line feed' => [['APP_KEY' => "first\nsecond"]],
     'carriage return' => [['APP_KEY' => "first\rsecond"]],
     'null byte' => [['APP_KEY' => "first\0second"]],
+    'not a map' => ['APP_KEY=unsafe-shape'],
 ]);
-
-it('rejects a non-map Docker environment from persisted configuration', function (): void {
-    $process = new Process([
-        'name' => 'worker',
-        'runtime_config' => [
-            'image' => 'busybox:1',
-            'command' => ['env'],
-            'environment' => 'APP_KEY=unsafe-shape',
-        ],
-        'working_directory' => '/work',
-        'restart_policy' => 'never',
-    ]);
-    $process->id = 10;
-
-    expect(fn () => new DockerProcessRenderer()->environmentInput($process))
-        ->toThrow(InvalidArgumentException::class, 'environment');
-});
 
 it('maps common restart policies to Docker restart policies', function (string $policy, string $expected): void {
     $process = new Process([
@@ -206,13 +125,8 @@ it('maps common restart policies to Docker restart policies', function (string $
         'restart_policy' => $policy,
     ]);
     $process->id = 2;
-    $target = new ProcessTarget(
-        node: new Node(['name' => 'dev']),
-        user: 'orbit',
-        checkoutPath: '/home/orbit/apps/docs',
-    );
 
-    expect(new DockerProcessRenderer()->createArguments($process, $target))->toContain($expected);
+    expect(new DockerProcessRenderer()->containerInput($process, docker_renderer_target())['restart'])->toBe($expected);
 })->with([
     'never' => ['never', 'no'],
     'on failure' => ['on-failure', 'on-failure'],
@@ -228,12 +142,6 @@ it('maps on-demand app-dev always to unless-stopped so an idle stop survives dae
         'restart_policy' => 'always',
     ]);
     $process->id = 3;
-    $target = new ProcessTarget(
-        node: new Node(['name' => 'dev']),
-        user: 'orbit',
-        checkoutPath: '/home/orbit/apps/docs',
-        onDemandHostStart: true,
-    );
 
-    expect(new DockerProcessRenderer()->createArguments($process, $target))->toContain('unless-stopped');
+    expect(new DockerProcessRenderer()->containerInput($process, docker_renderer_target(onDemand: true))['restart'])->toBe('unless-stopped');
 });

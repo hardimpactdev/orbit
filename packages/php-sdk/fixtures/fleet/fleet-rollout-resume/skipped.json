@@ -47,25 +47,26 @@
                         ]
                     },
                     "agent": {
-                        "version": "0.4.4",
+                        "version": "0.5.0",
+                        "commit": "0123456789abcdef0123456789abcdef01234567",
                         "assets": [
                             {
                                 "platform": "linux-x86_64",
-                                "name": "orbit-agent-0.4.4-linux-x86_64",
-                                "url": "https://github.com/hardimpactdev/orbit/releases/download/agent-v0.4.4/orbit-agent-0.4.4-linux-x86_64",
-                                "sha256": "b2abfa992720645087929f3fed83fbfa8e92fbdcb510d5b755a030b01f305fdf"
+                                "name": "orbit-agent-linux-x86_64",
+                                "url": "https://github.com/hardimpactdev/orbit/releases/download/agent-v0123456789abcdef0123456789abcdef01234567/orbit-agent-linux-x86_64",
+                                "sha256": "bdea47122857fc91744c5121856bff82dc6d3153339f539ce3ce07185eb6b9aa"
                             },
                             {
                                 "platform": "linux-aarch64",
-                                "name": "orbit-agent-0.4.4-linux-aarch64",
-                                "url": "https://github.com/hardimpactdev/orbit/releases/download/agent-v0.4.4/orbit-agent-0.4.4-linux-aarch64",
-                                "sha256": "b5a3ddbd25a4b8f546967f56e7d057fc110e880f526cf7fa97ca5409450c7632"
+                                "name": "orbit-agent-linux-aarch64",
+                                "url": "https://github.com/hardimpactdev/orbit/releases/download/agent-v0123456789abcdef0123456789abcdef01234567/orbit-agent-linux-aarch64",
+                                "sha256": "c74a22f1c7b269ad5b98c820bb2b44c7088df04f576174e458ac795ab9fd485c"
                             }
                         ]
                     },
                     "footprints": {
-                        "app-dev": "32e0a361717ab14b662bfc022d9d73402ae58bcda9dafca0265e63767307cba9",
-                        "app-prod": "32e0a361717ab14b662bfc022d9d73402ae58bcda9dafca0265e63767307cba9"
+                        "app-dev": "f840502f929b70a5b7f9990e2e5d7a4a2994c1d685403c895321ccd2ee9152d8",
+                        "app-prod": "f840502f929b70a5b7f9990e2e5d7a4a2994c1d685403c895321ccd2ee9152d8"
                     }
                 },
                 "nodes": [

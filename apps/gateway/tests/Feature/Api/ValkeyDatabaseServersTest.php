@@ -9,10 +9,9 @@ use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
-use App\Domain\RemotePrograms\RemoteProgramFailed;
-use App\Domain\RemotePrograms\RemoteProgramFailure;
-use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
@@ -21,7 +20,7 @@ use App\Models\Process;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\FakeDatabaseServerAdmin;
-use Tests\Support\FakeValkeyAclProgramRunner;
+use Tests\Support\FakeValkeyAclAgent;
 use Tests\Support\FakeValkeyServerAdmin;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
@@ -31,8 +30,8 @@ beforeEach(function (): void {
     app()->instance(DatabaseServerAdmin::class, new FakeDatabaseServerAdmin);
     $this->valkey = new FakeValkeyServerAdmin;
     app()->instance(ValkeyServerAdmin::class, $this->valkey);
-    $this->programs = new FakeValkeyAclProgramRunner;
-    app()->instance(RemoteProgramRunner::class, $this->programs);
+    $this->programs = new FakeValkeyAclAgent(app(AgentCommandRunner::class));
+    app()->instance(AgentCommandRunner::class, $this->programs);
 
     $gateway = Node::query()->create([
         'name' => 'gateway',
@@ -159,7 +158,7 @@ describe('database:server:create --driver=redis', function (): void {
             ->and($this->runtime->convergedProcessIds)->toHaveCount(1);
     });
 
-    it('records a failed ACL file with the program log and writes it again on a retry', function (RemoteProgramFailed|string $failure): void {
+    it('records a failed ACL file with the program log and writes it again on a retry', function (AgentRunnerFailure|string $failure): void {
         is_string($failure) ? $this->programs->outcome = $failure : $this->programs->failure = $failure;
 
         $response = $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))
@@ -189,7 +188,7 @@ describe('database:server:create --driver=redis', function (): void {
             ->and(DatabaseServer::query()->sole()->failed_step)->toBeNull();
     })->with([
         'a failed outcome' => ['failed'],
-        'a run without a result' => [new RemoteProgramFailed('database-servers.write-valkey-acl', RemoteProgramFailure::NoResult, 'docker: Error response from daemon: pull access denied', exitCode: 1)],
+        'a run without a result' => [new AgentRunnerFailure('databases.write-valkey-acl', AgentRunnerFailure::MissingResult, 'docker: Error response from daemon: pull access denied')],
     ]);
 
     it('continues with the Process after a failed start, without writing the ACL file again', function (): void {

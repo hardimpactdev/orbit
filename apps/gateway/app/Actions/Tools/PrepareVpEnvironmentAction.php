@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace App\Actions\Tools;
 
-use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerScopeLock;
 use App\Domain\Tools\ToolManagerScopeLockException;
 use App\Domain\Tools\VpEnvironment;
 use App\Domain\Tools\VpProjectRequirements;
-use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Tools\VpToolManager;
 use App\Models\Instance;
 use Illuminate\Support\Facades\DB;
@@ -22,15 +22,14 @@ final readonly class PrepareVpEnvironmentAction
 {
     public function __construct(
         private VpToolManager $vp,
-        private RemoteProgramRunner $programs,
+        private AgentCommandRunner $agents,
         private ToolManagerScopeLock $lock,
-        private RemoteProgramCatalog $catalog,
     ) {}
 
-    public function command(Instance $instance, string $path, string $name, string $command): string
+    public function prepare(Instance $instance, string $path, string $name, string $command): ?VpEnvironment
     {
         if ($name !== 'npm-build' && preg_match('/(?:^|[\s;&|\/])(vp|node|npm|npx|pnpm|yarn|bun|vite|corepack)(?:\s|$)/', $command) !== 1) {
-            return $command;
+            return null;
         }
         $previous = $this->checkoutReferences($instance->getAttribute('vp_environment'), $instance->checkout_path);
         try {
@@ -38,18 +37,22 @@ final readonly class PrepareVpEnvironmentAction
             if ($instance->placedOnAppProd() && (! is_string($user) || preg_match('/\Aorbit-app-[0-9]+\z/D', $user) !== 1)) {
                 throw new InvalidArgumentException('Invalid Instance account.');
             }
-            $result = $this->programs->run($instance->node, $this->catalog->program('tools.read-vp-project', user: $user), ['path' => $path]);
-            if ($result->outcome !== 'read') {
-                throw new InvalidArgumentException('Cannot read Project requirements.');
+            try {
+                $result = $this->agents->run($instance->node, 'tools.read-vp-project', ['path' => $path, 'user' => $user ?? $instance->node->user]);
+            } catch (AgentCommandRefused $exception) {
+                if ($exception->errorCode !== 'tools.project_invalid') {
+                    throw $exception;
+                }
+                throw new InvalidArgumentException('Cannot read Project requirements.', previous: $exception);
             }
-            $environment = (new VpProjectRequirements)->resolve($result->data, '/unresolved');
+            $environment = (new VpProjectRequirements)->resolve($result, '/unresolved');
             if ($environment === null) {
                 // Removing vp from a candidate does not retire the selected or retained releases.
                 if ($previous !== null) {
                     $this->referenceTransaction($instance, fn (): bool => $instance->update(['vp_environment' => $previous]));
                 }
 
-                return $command;
+                return null;
             }
             $store = dirname($this->vp->existingBinary($instance->node), 2);
             $environment = VpEnvironment::fromArray([...$environment->record('checking'), 'store' => $store]);
@@ -71,12 +74,12 @@ final readonly class PrepareVpEnvironmentAction
             if ($this->vp->environmentInstalled($instance->node, $environment)) {
                 $instance->update(['vp_environment' => [...$intent, 'status' => 'active']]);
 
-                return $environment->command($name, $command);
+                return $environment;
             }
             $this->blocking($instance, function () use ($instance, $environment, $result, $intent): void {
                 $instance->update(['vp_environment' => [...$intent, 'status' => 'installing']]);
                 if (! $this->vp->environmentInstalled($instance->node, $environment)) {
-                    $npmrc = $result->data['npmrc'] ?? '';
+                    $npmrc = $result['npmrc'] ?? '';
                     $this->vp->installEnvironment($instance->node, $environment, is_string($npmrc) ? $npmrc : '');
                 }
                 if (! $this->vp->environmentInstalled($instance->node, $environment)) {
@@ -86,7 +89,7 @@ final readonly class PrepareVpEnvironmentAction
                 $this->prune($instance, $environment->store);
             });
 
-            return $environment->command($name, $command);
+            return $environment;
         } catch (Throwable $exception) {
             $code = $exception instanceof InvalidArgumentException ? 'deployment.vp_requirements_invalid' : 'deployment.vp_store_failed';
             $record = $instance->getAttribute('vp_environment');

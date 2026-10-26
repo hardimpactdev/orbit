@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Tests\Support\Fleet;
 
 use App\Domain\Certificates\LeafCertificateSigner;
-use App\Infrastructure\Fleet\NodeShell;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
@@ -14,13 +13,6 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 final class FleetTestSsh implements KnownHostsStore, LeafCertificateSigner, SshKeyProvider
 {
     public const string RootCertificate = "-----BEGIN CERTIFICATE-----\nroot\n-----END CERTIFICATE-----\n";
-
-    public static function shell(ScriptedSshExecutor $ssh): NodeShell
-    {
-        $stand = new self;
-
-        return new NodeShell($ssh, $stand, $stand);
-    }
 
     public function privateKeyPath(): string
     {

@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\TaskVms;
 
-use App\Domain\RemotePrograms\RemoteProgramFailed;
-use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildStep;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
-use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use App\Models\TaskVmImageBuild;
@@ -26,24 +26,21 @@ use Throwable;
  */
 final readonly class RecipeImageBuildSteps
 {
-    /** The remote program that builds a topology seed in the smoke VM, as root on the host. */
-    public const string SeedProgram = 'task-vms.build-topology-seed';
-
     public function __construct(
         private TaskVmSettings $settings,
         private IncusHost $incus,
         private IncusTaskVmBaseImage $image,
         private IncusTaskVmImageBuilder $builder,
-        private TaskVmCloudInit $cloudInit,
+        private TaskVmImageRecipe $imageRecipe,
         private SshKeyProvider $keys,
         private RecipeImagePrograms $programs,
         private TaskVmVolumes $volumes,
-        private RemoteProgramRunner $runner,
-        private RemoteProgramCatalog $catalog,
+        private AgentCommandRunner $agents,
     ) {}
 
     public function run(TaskVmImageBuild $build, TaskVmImageBuildStep $step, ?string $program): bool
     {
+        $this->requireServingDelivery($build);
         $host = $this->settings->host($build->host_node_id);
         $node = $build->hostNode;
         $name = (string) $build->builder_vm_name;
@@ -79,7 +76,7 @@ final readonly class RecipeImageBuildSteps
                 }
                 $state = $build->steps[$index]['phase_state'] ?? [];
 
-                return $this->programs->poll($this->image->shell($host, $node, $name), $recipe, $profile, $phase, (string) $build->id, $state,
+                return $this->programs->poll($this->image->shell($host, $node, $name)->agentTarget(), $recipe, $profile, $phase, (string) $build->id, $state,
                     function (array $state) use ($build, $index): void {
                         $steps = $build->steps;
                         $entry = $steps[$index] ?? throw new \LogicException('The running image phase has no persisted build step.');
@@ -101,7 +98,7 @@ final readonly class RecipeImageBuildSteps
                     }
                     $source = $build->source_fingerprint ?? TaskVmHost::SourceImage;
                     if (! array_key_exists($name, $this->image->instances($host, $node))) {
-                        $this->image->launch($host, $node, $name, $source, $this->cloudInit->renderImageBuilder($this->keys->publicKey()));
+                        $this->image->launch($host, $node, $name, $source, $this->keys->publicKey(), builder: true);
                     }
                     break;
                 case 'boot':
@@ -109,11 +106,10 @@ final readonly class RecipeImageBuildSteps
                     break;
                 case 'prepare':
                     $this->builder->singleBoot($host, $node, $shell);
-                    $this->image->checked($name, 'lean boot', $shell->asRoot(['bash', '-ceu', TaskVmScripts::read('lean-boot.sh').TaskVmImageRecipe::Masks]));
+                    $this->imageRecipe->boot($shell->agentTarget(), lean: true);
                     break;
                 case 'clean':
-                    $this->image->checked($name, 'recipe marker', $shell->asRoot(['install', '-D', '-m', '0644', '/dev/stdin', '/etc/orbit-machine-recipe.json'],
-                        json_encode(['identity' => $recipe->identity, 'profile' => $profile], JSON_THROW_ON_ERROR)));
+                    $this->imageRecipe->mark($shell->agentTarget(), $recipe->identity, $profile);
                     $this->builder->clean($shell);
                     break;
                 case 'publish':
@@ -131,8 +127,7 @@ final readonly class RecipeImageBuildSteps
                     $this->ensureSmokeVm($host, $node, $smoke, $build->images[$profile]['fingerprint']);
                     $smokeShell = $this->image->shell($host, $node, $smoke)->forRecipePhase($profile, $phase);
                     $this->image->checkSmoke($smokeShell);
-                    $this->image->checked($smoke, 'image check', $smokeShell->asRoot(TaskVmImageRecipe::imageCheck(['--lean-boot'])));
-                    $this->programs->verify($smokeShell, $recipe, $profile);
+                    $this->programs->verify($smokeShell->agentTarget(), $recipe, $profile);
                     break;
                 case 'topology-seed':
                     $this->topologySeed($host, $node, $name.'-smoke', $build->images[$profile]['fingerprint']);
@@ -146,7 +141,7 @@ final readonly class RecipeImageBuildSteps
             if ($phase === 'publish') {
                 throw new TaskVmException('task_vm.image_build_failed', $detail."\nPublishing runs on Incus host [{$node->name}].", previous: $error);
             }
-            // The seed is built from the host, so no guest log in the smoke VM tells more than the program's log.
+            // The seed is built from the host, so no guest log in the smoke VM tells more than the agent diagnostic.
             if ($phase === 'topology-seed') {
                 throw $error instanceof TaskVmException && $error->errorCode === TaskVmError::TopologySeedFailed->value ? $error
                     : new TaskVmException('task_vm.image_build_failed', $detail."\nThe topology seed is built from Incus host [{$node->name}].", previous: $error);
@@ -170,8 +165,8 @@ final readonly class RecipeImageBuildSteps
 
     /**
      * Builds the topology seed of the base `$fingerprint` as {@see TaskVmVolumes::newSeed()} in the smoke VM `$smoke`
-     * with {@see self::SeedProgram}, then deletes the VM and renames the seed, so a seed with its final name is always
-     * finished. A finished seed is kept. The program creates the `-new` volume before it changes anything in the VM,
+     * with `incus.build-topology-seed`, then deletes the VM and renames the seed, so a seed with its final name is always
+     * finished. A finished seed is kept. The agent creates the `-new` volume before it changes anything in the VM,
      * so a VM beside a `-new` volume may hold the Incus state of an earlier attempt: it is replaced by a fresh one from
      * the published base, as a gone VM is.
      */
@@ -183,13 +178,19 @@ final readonly class RecipeImageBuildSteps
             }
             $this->ensureSmokeVm($host, $node, $smoke, $fingerprint);
             try {
-                $this->runner->run($node, $this->catalog->program(self::SeedProgram, user: 'root'), [
-                    'project' => $host->project, 'pool' => $host->pool, 'vm' => $smoke, 'device' => TaskVmVolumes::SeedDevice,
-                    'volume' => TaskVmVolumes::newSeed($fingerprint), 'size' => TaskVmVolumes::SeedSize, 'fingerprint' => $fingerprint,
+                $result = $this->agents->run($node, 'incus.build-topology-seed', [
+                    'project' => $host->project, 'pool' => $host->pool, 'vm' => $smoke,
+                    'size' => TaskVmVolumes::SeedSize, 'fingerprint' => $fingerprint,
                 ]);
-            } catch (RemoteProgramFailed $failure) {
-                $log = mb_substr(trim($failure->log), -3000);
-                throw new TaskVmException(TaskVmError::TopologySeedFailed, "Building the topology seed in [{$smoke}] failed: {$failure->reason->value}.".($log === '' ? '' : "\n{$log}"), 502, $failure);
+                if (($result['ready'] ?? null) !== true) {
+                    throw new TaskVmException(TaskVmError::TopologySeedFailed, "The topology seed in [{$smoke}] did not confirm completion.", 502);
+                }
+            } catch (AgentCommandRefused $failure) {
+                if ($failure->errorCode !== TaskVmError::TopologySeedFailed->value) {
+                    throw $failure;
+                }
+                $reason = is_string($failure->details['reason'] ?? null) ? $failure->details['reason'] : $failure->getMessage();
+                throw new TaskVmException(TaskVmError::TopologySeedFailed, "Building the topology seed in [{$smoke}] failed: {$reason}", 502, $failure);
             }
         }
         $this->image->delete($host, $node, $smoke);
@@ -200,13 +201,14 @@ final readonly class RecipeImageBuildSteps
     private function ensureSmokeVm(TaskVmHost $host, Node $node, string $smoke, string $fingerprint): void
     {
         if (! array_key_exists($smoke, $this->image->instances($host, $node))) {
-            $this->image->launch($host, $node, $smoke, $fingerprint, $this->cloudInit->render($this->keys->publicKey()));
+            $this->image->launch($host, $node, $smoke, $fingerprint, $this->keys->publicKey(), builder: false);
         }
         $this->image->awaitCloudInit($host, $node, $smoke);
     }
 
     public function promote(TaskVmImageBuild $build): void
     {
+        $this->requireServingDelivery($build);
         DB::transaction(function () use ($build): void {
             $current = DB::table('task_vm_image_recipe')->where('id', 1)->where('identity', $build->recipe_identity)
                 ->where('generation', $build->recipe_generation)->update(['identity' => $build->recipe_identity]);
@@ -222,6 +224,14 @@ final readonly class RecipeImageBuildSteps
             $build->promoted_at = now();
             $build->save();
         });
+    }
+
+    private function requireServingDelivery(TaskVmImageBuild $build): void
+    {
+        $recipe = new RecipeLoader()->decode((string) $build->recipe_json);
+        if ($recipe->agentDigest((string) $build->hostNode->architecture) !== app(AgentDelivery::class)->pin($build->hostNode)) {
+            throw new TaskVmException(TaskVmError::ImageRecipeSuperseded, 'The serving recipe delivery changed. This build cannot continue or promote.');
+        }
     }
 
     private function alias(TaskVmImageBuild $build, string $profile): string

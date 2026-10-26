@@ -9,30 +9,22 @@ use App\Domain\Firewall\RouterLanIngressPolicy;
 use App\Domain\Firewall\RouterLanIngressPublisher;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleName;
+use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Firewall\UfwManagedRule;
-use App\Infrastructure\Firewall\UfwRuleOwnership;
-use App\Infrastructure\Firewall\UfwStatusParser;
-use App\Infrastructure\Firewall\UfwStoredRuleParser;
-use App\Infrastructure\Firewall\UfwStoredRuleProbe;
 use App\Infrastructure\Nodes\NodeSshJump;
-use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
-use InvalidArgumentException;
 
 final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallManager, RouterLanIngressPublisher
 {
     public function __construct(
-        private SshExecutor $ssh,
+        private AdmissionAgentRunner $agents,
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
-        private UfwStatusParser $statusParser = new UfwStatusParser,
-        private UfwStoredRuleParser $storedParser = new UfwStoredRuleParser,
         private NodeFirewallRuleCatalog $catalog = new NodeFirewallRuleCatalog,
     ) {}
 
@@ -51,9 +43,8 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
     {
         $rules = $this->uniqueRules([$this->wireguardSshRule($node), ...$this->roleRules($node, $role)]);
 
-        $this->convergeRules($node, $rules, publicConnection: false, enable: false, managedUser: $managedUser);
-        $this->removeRules($node, [$this->publicSshRule($node)], $managedUser);
-        $this->removeRules($node, $this->catalog->retiredForRole($node, $role), $managedUser);
+        $this->convergeRules($node, $rules, publicConnection: false, enable: false, managedUser: $managedUser,
+            remove: $this->uniqueRules([$this->publicSshRule($node), ...$this->catalog->retiredForRole($node, $role)]));
 
         if ($role !== RoleName::Router) {
             return;
@@ -117,228 +108,41 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
         );
     }
 
-    /** @param non-empty-list<UfwManagedRule> $rules */
+    /** @param list<UfwManagedRule> $rules */
     private function removeRules(Node $node, array $rules, string $managedUser): void
     {
-        [$status, $inactive] = $this->status($node, publicConnection: false, managedUser: $managedUser);
-
-        if ($inactive) {
-            $this->fail($node, 'UFW is inactive during role-rule removal.', $status);
-        }
-
-        $numbers = [];
-
-        foreach ($rules as $rule) {
-            $ownership = $this->statusParser->ownership($status->stdout, $rule->shape);
-
-            if ($ownership === UfwRuleOwnership::Drift) {
-                $this->drift($node, $rule, $status);
-            }
-
-            if ($ownership === UfwRuleOwnership::Missing) {
-                continue;
-            }
-
-            array_push($numbers, ...$this->ruleNumbers($status->stdout, $rule->shape->comment));
-        }
-
-        rsort($numbers, SORT_NUMERIC);
-
-        foreach ($numbers as $number) {
-            $result = $this->execute(
-                $node,
-                new RemoteCommand(['sudo', 'ufw', '--force', 'delete', (string) $number]),
-                publicConnection: false,
-                managedUser: $managedUser,
-            );
-
-            if (! $result->succeeded()) {
-                $this->fail($node, "Could not delete owned UFW rule [{$number}].", $result);
-            }
-        }
-
-        [$verification, $inactive] = $this->status($node, publicConnection: false, managedUser: $managedUser);
-
-        if ($inactive) {
-            $this->fail($node, 'UFW became inactive after role-rule removal.', $verification);
-        }
-
-        foreach ($rules as $rule) {
-            if ($this->statusParser->ownership($verification->stdout, $rule->shape) === UfwRuleOwnership::Missing) {
-                continue;
-            }
-
-            $this->drift($node, $rule, $verification);
-        }
+        $this->convergeRules($node, [], false, false, $managedUser, remove: $rules);
     }
 
     /**
-     * @param  non-empty-list<UfwManagedRule>  $rules
+     * @param  list<UfwManagedRule>  $rules
+     * @param  list<UfwManagedRule>  $remove
      */
-    private function convergeRules(
-        Node $node,
-        array $rules,
-        bool $publicConnection,
-        bool $enable,
-        string $managedUser,
-    ): void {
-        [$status, $inactive] = $this->status($node, $publicConnection, $managedUser);
-
-        if ($inactive) {
-            if (! $enable) {
-                $this->fail($node, 'UFW is inactive during role-rule convergence.', $status);
-            }
-
-            $stored = $this->storedRules($node, $managedUser);
-            $this->guardStoredDrift($node, $stored, $rules);
-
-            if ($this->storedParser->ownership($stored->stdout, $rules[0]->shape) === UfwRuleOwnership::Missing) {
-                $this->apply($node, $rules[0], publicConnection: true, managedUser: $managedUser);
-                $stored = $this->storedRules($node, $managedUser);
-            }
-
-            if ($this->storedParser->ownership($stored->stdout, $rules[0]->shape) !== UfwRuleOwnership::Exact) {
-                $this->fail($node, 'Could not verify the exact stored public SSH recovery rule.', $stored);
-            }
-
-            $enabled = $this->execute(
-                $node,
-                new RemoteCommand(['sudo', 'ufw', '--force', 'enable']),
-                publicConnection: true,
-                managedUser: $managedUser,
-            );
-
-            if (! $enabled->succeeded()) {
-                $this->fail($node, 'Could not enable UFW.', $enabled);
-            }
-
-            [$status, $inactive] = $this->status($node, publicConnection: true, managedUser: $managedUser);
-
-            if ($inactive) {
-                $this->fail($node, 'UFW remained inactive after it was enabled.', $status);
-            }
-        }
-
-        $missing = [];
-        $numbers = [];
-
-        foreach ($rules as $rule) {
-            $ownership = $this->statusParser->ownership($status->stdout, $rule->shape);
-
-            if ($ownership === UfwRuleOwnership::Drift) {
-                if (! $this->statusParser->replaceablePort($status->stdout, $rule)) {
-                    $this->drift($node, $rule, $status);
-                }
-
-                array_push($numbers, ...$this->ruleNumbers($status->stdout, $rule->shape->comment));
-            }
-
-            if ($ownership !== UfwRuleOwnership::Exact) {
-                $missing[] = $rule;
-            }
-        }
-
-        rsort($numbers, SORT_NUMERIC);
-
-        foreach (array_unique($numbers) as $number) {
-            $result = $this->execute(
-                $node,
-                new RemoteCommand(['sudo', 'ufw', '--force', 'delete', (string) $number]),
-                $publicConnection,
-                $managedUser,
-            );
-
-            if (! $result->succeeded()) {
-                $this->fail($node, "Could not delete owned UFW rule [{$number}].", $result);
-            }
-        }
-
-        foreach ($missing as $rule) {
-            $this->apply($node, $rule, $publicConnection, $managedUser);
-        }
-
-        [$verification, $inactive] = $this->status($node, $publicConnection, $managedUser);
-
-        if ($inactive) {
-            $this->fail($node, 'UFW was inactive after convergence.', $verification);
-        }
-
-        foreach ($rules as $rule) {
-            if ($this->statusParser->ownership($verification->stdout, $rule->shape) === UfwRuleOwnership::Exact) {
-                continue;
-            }
-
-            $this->drift($node, $rule, $verification);
-        }
-    }
-
-    /** @return array{CommandResult, bool} */
-    private function status(Node $node, bool $publicConnection, string $managedUser): array
+    private function convergeRules(Node $node, array $rules, bool $publicConnection, bool $enable, string $managedUser, array $remove = []): void
     {
-        $result = $this->execute(
-            $node,
-            new RemoteCommand(['sudo', 'ufw', 'status', 'numbered']),
-            $publicConnection,
-            $managedUser,
-        );
-
-        if (! $result->succeeded()) {
-            $this->fail($node, 'Could not inspect UFW.', $result);
-        }
-
-        $inactive = preg_match('/^Status:\s+inactive$/mi', $result->stdout) === 1;
-
-        if (! $inactive && preg_match('/^Status:\s+active$/mi', $result->stdout) !== 1) {
-            $this->fail($node, 'UFW returned an unrecognized status.', $result);
-        }
-
-        return [$result, $inactive];
+        $this->run($node, $managedUser, $publicConnection, 'firewall.rules', [
+            'desired' => array_map(static fn (UfwManagedRule $rule): array => [
+                'shape' => $rule->shape->toAgentInput(), 'replace_port' => $rule->replacePort,
+            ], $rules),
+            'remove' => array_map(static fn (UfwManagedRule $rule): array => $rule->shape->toAgentInput(), $remove),
+            'enable' => $enable,
+        ]);
     }
 
-    private function storedRules(Node $node, string $managedUser): CommandResult
+    /** @param array<string, mixed> $input */
+    private function run(Node $node, string $managedUser, bool $publicConnection, string $command, array $input): void
     {
-        $result = $this->execute(
-            $node,
-            new RemoteCommand(UfwStoredRuleProbe::arguments()),
-            publicConnection: true,
-            managedUser: $managedUser,
-        );
-
-        if (! $result->succeeded()) {
-            $this->fail($node, 'Could not inspect protected stored UFW rules.', $result);
-        }
-
-        return $result;
-    }
-
-    /** @param non-empty-list<UfwManagedRule> $rules */
-    private function guardStoredDrift(Node $node, CommandResult $stored, array $rules): void
-    {
-        foreach ($rules as $rule) {
-            if ($this->storedParser->ownership($stored->stdout, $rule->shape) !== UfwRuleOwnership::Drift) {
-                continue;
+        $connection = $this->connection($node, $publicConnection, $managedUser);
+        try {
+            $result = $this->agents->runOver($node, $connection, $command, $input);
+            if (($result['matches'] ?? null) !== true) {
+                throw new \UnexpectedValueException('The managed firewall rules did not match.');
             }
-
-            $this->drift($node, $rule, $stored);
+        } catch (\Throwable $failure) {
+            $code = $failure instanceof AgentCommandRefused && $failure->errorCode === 'router.lan_ingress_recovery_failed'
+                ? $failure->errorCode : 'node.firewall_convergence_failed';
+            throw new FirewallOperationException('host-firewall', $code, "Could not preserve SSH access and converge UFW on node [{$node->name}].", previous: $failure);
         }
-    }
-
-    private function apply(Node $node, UfwManagedRule $rule, bool $publicConnection, string $managedUser): void
-    {
-        $result = $this->execute($node, new RemoteCommand($rule->arguments), $publicConnection, $managedUser);
-
-        if (! $result->succeeded()) {
-            $this->fail($node, "Could not apply [{$rule->shape->comment}].", $result);
-        }
-    }
-
-    private function execute(
-        Node $node,
-        RemoteCommand $command,
-        bool $publicConnection,
-        string $managedUser,
-    ): CommandResult {
-        return $this->ssh->execute($this->connection($node, $publicConnection, $managedUser), $command);
     }
 
     private function connection(Node $node, bool $publicConnection, string $managedUser): SshConnection
@@ -402,302 +206,14 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
         ));
     }
 
-    /**
-     * @param  list<UfwManagedRule>  $desired
-     */
-    private function reconcileFamily(
-        Node $node,
-        array $desired,
-        string $managedUser,
-        bool $expand,
-        bool $prune,
-    ): void {
-        if (! $expand && ! $prune) {
-            return;
-        }
-
-        [$status, $inactive] = $this->status($node, publicConnection: false, managedUser: $managedUser);
-
-        if ($inactive) {
-            $this->fail($node, 'UFW is inactive during Router LAN ingress reconciliation.', $status);
-        }
-
-        $snapshot = $this->familyRules($node, $status);
-        $desiredByComment = [];
-
-        foreach ($desired as $rule) {
-            $desiredByComment[$rule->shape->comment] = $rule;
-        }
-
-        $toAdd = [];
-        $toReplace = [];
-        $toRemove = [];
-
-        foreach ($desiredByComment as $comment => $rule) {
-            $ownership = $this->statusParser->ownership($status->stdout, $rule->shape);
-
-            if ($ownership === UfwRuleOwnership::Missing) {
-                $toAdd[] = $rule;
-            }
-
-            if ($ownership === UfwRuleOwnership::Drift) {
-                $toReplace[] = $rule;
-            }
-        }
-
-        foreach ($snapshot as $observed) {
-            if (array_key_exists($observed->shape->comment, $desiredByComment)) {
-                continue;
-            }
-
-            $toRemove[] = $observed;
-        }
-
-        $mutating = ($expand && ($toAdd !== [] || $toReplace !== []))
-            || ($prune && $toRemove !== []);
-
-        if (! $mutating) {
-            return;
-        }
-
-        foreach ($snapshot as $index => $rule) {
-            if (array_any(array_slice($snapshot, $index + 1), static fn (UfwManagedRule $other): bool => $rule->shape->matches($other->shape))) {
-                $this->fail($node, 'Identical owned Router LAN rules cannot be recreated separately by UFW.', $status);
-            }
-        }
-
-        try {
-            if ($expand) {
-                foreach ($toAdd as $rule) {
-                    $this->apply($node, $rule, publicConnection: false, managedUser: $managedUser);
-                }
-
-                if ($toReplace !== []) {
-                    $this->deleteOwnedComments(
-                        $node,
-                        array_map(static fn (UfwManagedRule $rule): string => $rule->shape->comment, $toReplace),
-                        $managedUser,
-                    );
-                }
-
-                foreach ($toReplace as $rule) {
-                    $this->apply($node, $rule, publicConnection: false, managedUser: $managedUser);
-                }
-            }
-
-            if ($prune && $toRemove !== []) {
-                $this->deleteOwnedComments(
-                    $node,
-                    array_map(static fn (UfwManagedRule $rule): string => $rule->shape->comment, $toRemove),
-                    $managedUser,
-                );
-            }
-
-            $this->assertFamily($node, $desired, $expand, $prune, $managedUser);
-        } catch (FirewallOperationException $exception) {
-            $this->restoreFamily($node, $snapshot, $managedUser, $exception);
-        }
-    }
-
-    /** @param non-empty-list<string> $comments */
-    private function deleteOwnedComments(Node $node, array $comments, string $managedUser): void
+    /** @param list<UfwManagedRule> $desired */
+    private function reconcileFamily(Node $node, array $desired, string $managedUser, bool $expand, bool $prune): void
     {
-        [$status, $inactive] = $this->status($node, publicConnection: false, managedUser: $managedUser);
-
-        if ($inactive) {
-            $this->fail($node, 'UFW is inactive during managed rule removal.', $status);
-        }
-
-        $numbers = [];
-
-        foreach (array_unique($comments) as $comment) {
-            array_push($numbers, ...$this->ruleNumbers($status->stdout, $comment));
-        }
-
-        $numbers = array_values(array_unique($numbers));
-        rsort($numbers, SORT_NUMERIC);
-
-        foreach ($numbers as $number) {
-            $result = $this->execute(
-                $node,
-                new RemoteCommand(['sudo', 'ufw', '--force', 'delete', (string) $number]),
-                publicConnection: false,
-                managedUser: $managedUser,
-            );
-
-            if (! $result->succeeded()) {
-                $this->fail($node, "Could not delete owned UFW rule [{$number}].", $result);
-            }
-        }
-    }
-
-    /**
-     * @param  list<UfwManagedRule>  $desired
-     */
-    private function assertFamily(
-        Node $node,
-        array $desired,
-        bool $expand,
-        bool $prune,
-        string $managedUser,
-    ): void {
-        [$verification, $inactive] = $this->status($node, publicConnection: false, managedUser: $managedUser);
-
-        if ($inactive) {
-            $this->fail($node, 'UFW became inactive after Router LAN ingress reconciliation.', $verification);
-        }
-
-        if ($expand) {
-            foreach ($desired as $rule) {
-                if ($this->statusParser->ownership($verification->stdout, $rule->shape) === UfwRuleOwnership::Exact) {
-                    continue;
-                }
-
-                $this->drift($node, $rule, $verification);
-            }
-        }
-
-        if (! $prune) {
-            return;
-        }
-
-        $desiredComments = array_map(
-            static fn (UfwManagedRule $rule): string => $rule->shape->comment,
-            $desired,
-        );
-
-        foreach ($this->familyRules($node, $verification) as $observed) {
-            if (in_array($observed->shape->comment, $desiredComments, strict: true)) {
-                continue;
-            }
-
-            $this->drift($node, $observed, $verification);
-        }
-    }
-
-    /**
-     * @param  list<UfwManagedRule>  $snapshot
-     */
-    private function restoreFamily(
-        Node $node,
-        array $snapshot,
-        string $managedUser,
-        FirewallOperationException $exception,
-    ): never {
-        try {
-            [$status, $inactive] = $this->status($node, publicConnection: false, managedUser: $managedUser);
-
-            if ($inactive) {
-                $this->fail($node, 'UFW is inactive during Router LAN ingress recovery.', $status);
-            }
-
-            $before = [];
-            $after = [];
-            foreach ($snapshot as $rule) {
-                $before[$rule->shape->comment][] = $rule;
-            }
-            foreach ($this->familyRules($node, $status) as $rule) {
-                $after[$rule->shape->comment][] = $rule;
-            }
-
-            $changed = [];
-            foreach (array_unique([...array_keys($before), ...array_keys($after)]) as $comment) {
-                if (! $this->sameFamilyRules($before[$comment] ?? [], $after[$comment] ?? [])) {
-                    $changed[] = $comment;
-                }
-            }
-
-            if ($changed !== []) {
-                $this->deleteOwnedComments($node, $changed, $managedUser);
-                foreach ($snapshot as $rule) {
-                    if (in_array($rule->shape->comment, $changed, strict: true)) {
-                        $this->apply($node, $rule, publicConnection: false, managedUser: $managedUser);
-                    }
-                }
-            }
-
-            [$verification, $inactive] = $this->status($node, publicConnection: false, managedUser: $managedUser);
-            if ($inactive || ! $this->sameFamilyRules($snapshot, $this->familyRules($node, $verification))) {
-                $this->fail($node, 'The preceding Router LAN rule inventory was not restored.', $verification);
-            }
-        } catch (FirewallOperationException $recovery) {
-            $message = "Could not restore the preceding Router LAN ingress policy on node [{$node->name}].";
-
-            throw new FirewallOperationException(step: 'host-firewall', errorCode: 'router.lan_ingress_recovery_failed', message: $message, result: $recovery->result, previous: $recovery);
-        }
-
-        throw $exception;
-    }
-
-    /**
-     * @param  list<UfwManagedRule>  $expected
-     * @param  list<UfwManagedRule>  $observed
-     */
-    private function sameFamilyRules(array $expected, array $observed): bool
-    {
-        if (count($expected) !== count($observed)) {
-            return false;
-        }
-
-        foreach ($expected as $rule) {
-            $index = array_find_key($observed, static fn (UfwManagedRule $other): bool => $rule->shape->matches($other->shape));
-            if ($index === null) {
-                return false;
-            }
-            unset($observed[$index]);
-        }
-
-        return true;
-    }
-
-    /** @return list<UfwManagedRule> */
-    private function familyRules(Node $node, CommandResult $status): array
-    {
-        $rules = [];
-        $policy = new RouterLanIngressPolicy;
-
-        $shapes = [];
-        try {
-            foreach (array_keys(RouterLanIngressPolicy::Families) as $prefix) {
-                array_push($shapes, ...$this->statusParser->familyShapes($status->stdout, $prefix, includeIpv6: true));
-            }
-        } catch (InvalidArgumentException) {
-            $this->fail($node, 'Unreadable owned Router LAN ingress inventory.', $status);
-        }
-
-        foreach ($shapes as $shape) {
-            if (! $policy->ownsComment($shape->comment)) {
-                continue;
-            }
-
-            $arguments = $shape->direction === 'fwd'
-                ? ['sudo', 'ufw', 'route', $shape->action]
-                : ['sudo', 'ufw', $shape->action, $shape->direction];
-
-            if ($shape->inInterface !== null) {
-                array_push($arguments, ...($shape->direction === 'fwd' ? ['in', 'on', $shape->inInterface] : ['on', $shape->inInterface]));
-            }
-
-            if ($shape->outInterface !== null) {
-                array_push($arguments, ...($shape->direction === 'fwd' ? ['out', 'on', $shape->outInterface] : ['on', $shape->outInterface]));
-            }
-
-            if ($shape->protocol !== 'any') {
-                array_push($arguments, 'proto', $shape->protocol);
-            }
-
-            $any = $shape->family === 'v6' ? '::/0' : '0.0.0.0/0';
-            array_push($arguments, 'from', $shape->source === 'any' ? $any : $shape->source, 'to', $shape->destination === 'any' ? $any : $shape->destination);
-
-            if ($shape->port !== 'any') {
-                array_push($arguments, 'port', $shape->port);
-            }
-
-            array_push($arguments, 'comment', $shape->comment);
-            $rules[] = new UfwManagedRule($shape, $arguments);
-        }
-
-        return $rules;
+        $this->run($node, $managedUser, false, 'firewall.router-lan', [
+            'desired' => array_map(static fn (UfwManagedRule $rule): array => $rule->shape->toAgentInput(), $desired),
+            'expand' => $expand,
+            'prune' => $prune,
+        ]);
     }
 
     /**
@@ -714,42 +230,5 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
         $values = array_values($unique);
 
         return $values;
-    }
-
-    /** @return list<int> */
-    private function ruleNumbers(string $output, string $comment): array
-    {
-        $numbers = [];
-
-        foreach (explode("\n", $output) as $line) {
-            $matches = [];
-
-            if (
-                preg_match(
-                    '/^\[\s*(\d+)\].*#\s*'.preg_quote(str: $comment, delimiter: '/').'\s*$/',
-                    trim($line),
-                    $matches,
-                ) === 1
-            ) {
-                $numbers[] = (int) $matches[1];
-            }
-        }
-
-        return $numbers;
-    }
-
-    private function drift(Node $node, UfwManagedRule $rule, CommandResult $result): never
-    {
-        $this->fail($node, "Managed UFW rule [{$rule->shape->comment}] did not match its exact shape.", $result);
-    }
-
-    private function fail(Node $node, string $reason, CommandResult $result): never
-    {
-        throw new FirewallOperationException(
-            step: 'host-firewall',
-            errorCode: 'node.firewall_convergence_failed',
-            message: "{$reason} Could not preserve SSH access and converge UFW on node [{$node->name}].",
-            result: $result,
-        );
     }
 }

@@ -347,8 +347,8 @@ it('publishes SQL servers only on explicit private addresses even with a public 
         ->assertCreated();
     $server = DatabaseServer::query()->sole();
     expect($server->process->runtime_config['ports'])->toBe(["10.44.0.80:{$port}:{$port}", "10.0.0.6:{$port}:{$port}"]);
-    $rendered = app(DockerProcessRenderer::class)->createArguments($server->process, app(ProcessTargetResolver::class)->forNodeAdmission($this->dbNode));
-    expect(implode(' ', $rendered))->not->toContain('0.0.0.0')
+    $rendered = app(DockerProcessRenderer::class)->containerInput($server->process, app(ProcessTargetResolver::class)->forNodeAdmission($this->dbNode));
+    expect(implode(' ', $rendered['ports']))->not->toContain('0.0.0.0')
         ->not->toContain('85.9.217.155')
         ->not->toContain('[::]');
 })->with([['mysql', 3306], ['pgsql', 5432]]);

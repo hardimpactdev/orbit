@@ -265,6 +265,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
                 $tips = $this->git->fetch($project, array_values(array_filter([is_string($default) && GitBranchName::isValid($default) ? $default : null, $branch], is_string(...))), $access, 'tasks.push_failed', $deadline);
                 $this->git->publish(
                     $project,
+                    $instance->node,
                     $instance->checkout_path,
                     $commit,
                     $branch,

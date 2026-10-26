@@ -7,14 +7,14 @@ use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Fleet\NodeFootprint;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Routes\RouteKind;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilder;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
-use App\Infrastructure\Fleet\NodeShell;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
-use App\Infrastructure\Nodes\CaddyPackageProgram;
+use App\Infrastructure\Nodes\AgentCaddyPackage;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -94,7 +94,7 @@ it('rehearses the automatic rename with native services and continuous held-key 
     $run(['sudo', 'ip', 'address', 'replace', '10.44.0.254/32', 'dev', 'lo']);
     $run(['valkey-cli', '-n', '1', 'FLUSHDB']);
     $run(['sudo', 'bash', '-seu'], "install -d /etc/dnsmasq.d\nprintf 'port=5354\nlisten-address=127.0.0.1\nbind-interfaces\nconf-dir=/etc/dnsmasq.d\n' > /etc/dnsmasq.conf\nsystemctl restart dnsmasq\n");
-    $upstream = new ChildProcess(['/usr/bin/python3', base_path('tests/Fixtures/ai-router/rehearsal.py'), $home.'/probe.json']);
+    $upstream = new ChildProcess([PHP_BINARY, '-S', '127.0.0.1:8317', base_path('tests/Fixtures/ai-router/rehearsal.php')]);
     $upstream->start();
     $wait = function (Closure $ready): void {
         $deadline = microtime(true) + 30;
@@ -106,10 +106,21 @@ it('rehearses the automatic rename with native services and continuous held-key 
         } while (microtime(true) < $deadline);
         throw new RuntimeException('Native rehearsal did not reach its observable readiness condition.');
     };
+    $probe = new ChildProcess([PHP_BINARY, base_path('tests/Fixtures/ai-router/probe.php'), $home.'/probe.json']);
     $newUnit = null;
     try {
+        $wait(function (): bool {
+            $socket = @stream_socket_client('tcp://127.0.0.1:8317', timeout: 1);
+            if ($socket === false) {
+                return false;
+            }
+            fclose($socket);
+
+            return true;
+        });
+        $probe->start();
         $wait(fn (): bool => is_file($home.'/probe.json'));
-        $node = Node::query()->create(['name' => 'rehearsal', 'status' => 'active', 'platform' => 'linux', 'user' => 'orbit', 'wireguard_ip' => $ip, 'public_ssh_host' => $ip]);
+        $node = Node::query()->create(['name' => 'rehearsal', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit', 'wireguard_ip' => $ip, 'public_ssh_host' => $ip]);
         $connection = DatabaseConnection::query()->create(['name' => 'Disposable Valkey', 'slug' => 'cache', 'driver' => 'redis', 'host' => '127.0.0.1', 'port' => 6379]);
         $cache = new ValkeyAiRouterCache($connection);
         app()->instance(AiRouterCache::class, $cache);
@@ -124,11 +135,12 @@ it('rehearses the automatic rename with native services and continuous held-key 
             $route->update(['status' => 'active']);
             $routes[$domain] = $route;
         }
-        $script = file_get_contents(base_path('tests/Fixtures/ai-router/old-collector.py'));
+        $script = file_get_contents(base_path('tests/Fixtures/ai-router/old-collector.php'));
         $run(['sudo', 'install', '-d', '-m', '0755', '/var/lib/orbit/proxycli']);
-        $run(['sudo', 'tee', '/var/lib/orbit/proxycli/server.py'], $script);
+        $run(['sudo', 'tee', '/var/lib/orbit/proxycli/server.php'], $script);
+        $collector->update(['runtime_config' => [...$collector->runtime_config, 'command' => [PHP_BINARY, '/var/lib/orbit/proxycli/server.php']]]);
         app(ProcessRuntimeManager::class)->converge($collector);
-        expect(app(NodeShell::class)->run($node, CaddyPackageProgram::command())->succeeded())->toBeTrue();
+        expect(app(AgentCaddyPackage::class)->install($node)->succeeded())->toBeTrue();
         app(NodeCaddyBuilds::class)->build($node);
         app(PrivateDnsManager::class)->converge();
         // Recorded pre-release site, not a Route: only the management Route existed on the Gateway.
@@ -149,7 +161,7 @@ it('rehearses the automatic rename with native services and continuous held-key 
         $oldUnit = 'orbit-process-163-cli-proxy-api-collector.service';
         expect(trim($run(['systemctl', 'is-active', $oldUnit])))->toBe('active');
         $started = microtime(true);
-        $footprint = new NodeFootprint([app(AiRouterFootprintArtifact::class)]);
+        $footprint = new NodeFootprint(app(AgentDelivery::class), [app(AiRouterFootprintArtifact::class)]);
         $footprint->converge($node);
         expect(trim($run(['systemctl', 'is-active', $oldUnit])))->toBe('active')
             ->and(file_exists('/etc/systemd/system/orbit-process-163-ai-router-collector.service'))->toBeFalse();
@@ -201,7 +213,7 @@ it('rehearses the automatic rename with native services and continuous held-key 
         expect(json_decode($curl, true, flags: JSON_THROW_ON_ERROR)['providers'])->not->toBeEmpty()
             ->and($snapshot['accounts'][0]['windows'])->not->toBeEmpty()
             ->and($replacement->name)->toBe('ai-router-collector')
-            ->and($replacement->runtime_config['command'][1])->toBe('/var/lib/orbit/ai-router/collector.py')
+            ->and($replacement->runtime_config['command'])->toBe(['/usr/local/bin/orbit-agent', 'service', 'ai-router-collector'])
             ->and($replacement->runtime_config['environment'])->toHaveKey('AI_ROUTER_READ_TOKEN')
             ->and(file_exists('/etc/systemd/system/'.$oldUnit))->toBeFalse()
             ->and(file_exists('/var/lib/orbit/'.$slug))->toBeFalse()
@@ -219,6 +231,7 @@ it('rehearses the automatic rename with native services and continuous held-key 
             ->and(trim($run(['dig', '@127.0.0.1', '-p', '5354', '+short', 'collector.cli-proxy-api.orbit'])))->toBe('');
         fwrite(STDOUT, '\nNative cutover evidence: '.json_encode(['migration_to_snapshot_seconds' => round($firstSnapshotSeconds, 3), 'model_requests_during_cutover' => $probeAfter['ok'] - $probeBefore['ok'], 'failed_model_requests' => $probeAfter['failed'], 'rollout_before_tick' => true, 'rollout_during_tick' => true])."\n");
     } finally {
+        $probe->stop();
         $upstream->stop();
         $units = array_filter(['orbit-process-163-cli-proxy-api-collector.service', $newUnit]);
         $runner->run(new ProcessInvocation(arguments: ['sudo', 'systemctl', 'stop', ...$units]));

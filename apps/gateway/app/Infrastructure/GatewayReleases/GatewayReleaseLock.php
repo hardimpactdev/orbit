@@ -15,7 +15,7 @@ use Closure;
  */
 final readonly class GatewayReleaseLock
 {
-    public function __construct(private string $path) {}
+    public function __construct(private string $path, private GatewayReleaseCommands $commands) {}
 
     /**
      * @template TResult
@@ -69,19 +69,13 @@ final readonly class GatewayReleaseLock
     private function assertNoStepRunning(): void
     {
         $step = $this->openPrivate($this->stepPath());
-
-        try {
-            if (! flock($step, LOCK_EX | LOCK_NB)) {
-                throw new GatewayReleaseException(
-                    step: 'lock',
-                    errorCode: 'gateway.release_in_progress',
-                    message: 'A command from an earlier release step still runs, such as a migration whose release process died. Wait for it to finish.',
-                );
-            }
-
-            flock($step, LOCK_UN);
-        } finally {
-            fclose($step);
+        fclose($step);
+        if ($this->commands->stepBusy($this->stepPath())) {
+            throw new GatewayReleaseException(
+                step: 'lock',
+                errorCode: 'gateway.release_in_progress',
+                message: 'A command from an earlier release step still runs, such as a migration whose release process died. Wait for it to finish.',
+            );
         }
     }
 

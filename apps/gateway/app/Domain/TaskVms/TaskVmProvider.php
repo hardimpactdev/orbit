@@ -4,18 +4,13 @@ declare(strict_types=1);
 
 namespace App\Domain\TaskVms;
 
-use App\Infrastructure\Processes\CommandResult;
 use App\Models\TaskVm;
 
-/**
- * Creates and removes task VMs on one kind of compute host, and runs the fixed guest commands in them. Every method
- * is idempotent by `$vm->name`. The implementation validates the output of its host, and `TaskVmGuest` the output
- * of the guest commands.
- */
+/** The lifecycle and guest observations of a task VM on its selected compute provider. */
 interface TaskVmProvider
 {
-    /** Create the VM with this cloud-init user-data. An existing VM with the name counts as created. */
-    public function create(TaskVm $vm, string $userData): void;
+    /** Create the VM with access for this Gateway public key. An existing VM with the name counts as created. */
+    public function create(TaskVm $vm, string $gatewayPublicKey): void;
 
     /** Returns null when the VM is absent. */
     public function observe(TaskVm $vm): ?VmObservation;
@@ -23,11 +18,8 @@ interface TaskVmProvider
     /** The `SHA256:…` fingerprint of the guest's ed25519 SSH host key, read through the trusted host. */
     public function sshHostFingerprint(TaskVm $vm): string;
 
-    /**
-     * Runs the guest command in the VM and returns its result. A guest that cannot run commands yet gives a failed
-     * result with nothing on stdout.
-     */
-    public function exec(TaskVm $vm, TaskVmGuestCommand $command): CommandResult;
+    /** True when cloud-init completed without errors; false while the guest is still booting. */
+    public function bootstrapReady(TaskVm $vm): bool;
 
     /** Start a stopped VM. A running VM counts as started. */
     public function start(TaskVm $vm): void;

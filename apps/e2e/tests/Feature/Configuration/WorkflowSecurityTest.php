@@ -25,7 +25,7 @@ it('defaults workflows to read-only tokens and grants writes only to named publi
     $writers = [];
     foreach (glob(base_path('../../.github/workflows/*.yml')) as $file) {
         $workflow = Yaml::parseFile($file);
-        expect($workflow['permissions'])->toBe(['contents' => 'read']);
+        expect($workflow['permissions'])->toBe(basename($file) === 'orbit-agent-release.yml' ? ['contents' => 'read', 'actions' => 'read'] : ['contents' => 'read']);
 
         foreach ($workflow['jobs'] as $name => $job) {
             $permissions = $job['permissions'] ?? $workflow['permissions'];
@@ -46,7 +46,6 @@ it('defaults workflows to read-only tokens and grants writes only to named publi
     expect($writers)->toBe([
         'ci.yml:publish-ci-cache' => ['actions' => 'read', 'contents' => 'write'],
         'git-build-watch.yml:publish' => ['issues' => 'write'],
-        'orbit-agent-release.yml:publish' => ['contents' => 'write'],
         'orbit-cli-release.yml:publish' => ['contents' => 'write'],
         'php-build-mirror.yml:mirror' => ['contents' => 'write'],
     ]);
@@ -82,47 +81,23 @@ it('publishes Git update issues only from the current main scheduled or manual r
     expect($publish['steps'])->toHaveCount(2);
 });
 
-it('compiles tagged agent releases read-only and transfers only assets to the write-enabled publisher', function (): void {
+it('publishes only the tested main agent delivery through its release App', function (): void {
     $workflow = Yaml::parseFile(base_path('../../.github/workflows/orbit-agent-release.yml'));
-    $build = $workflow['jobs']['build'];
     $publish = $workflow['jobs']['publish'];
-    $buildSteps = array_column($build['steps'], null, 'name');
-    $publishSteps = array_column($publish['steps'], null, 'name');
-
-    expect($workflow['on'])->toBe(['push' => ['tags' => ['agent-v*']]]);
-    expect($build)->not->toHaveKey('permissions');
-    expect($build['outputs'])->toBe(['version' => '${{ steps.version.outputs.value }}']);
-    expect($buildSteps['Validate tag version and release immutability']['env']['GH_TOKEN'])->toBe('${{ github.token }}');
-    expect($buildSteps['Build static x86_64 binary']['run'])->toContain('cross build --locked --release --target x86_64-unknown-linux-musl');
-    expect($buildSteps['Build static aarch64 binary']['run'])->toContain('cross build --locked --release --target aarch64-unknown-linux-musl');
-    expect($buildSteps['Upload release assets']['uses'])->toStartWith('actions/upload-artifact@');
-    expect($buildSteps['Upload release assets']['with'])->toMatchArray([
-        'name' => 'agent-release',
-        'path' => "apps/agent/orbit-agent-\${{ steps.version.outputs.value }}-linux-x86_64\n"
-            ."apps/agent/orbit-agent-\${{ steps.version.outputs.value }}-linux-aarch64\napps/agent/SHA256SUMS\n",
-        'if-no-files-found' => 'error',
-    ]);
-    expect($publish['needs'])->toBe('build');
-    expect($publishSteps['Download release assets']['uses'])->toStartWith('actions/download-artifact@');
-    expect($publishSteps['Download release assets']['with'])->toBe([
-        'name' => 'agent-release',
-        'path' => '${{ runner.temp }}/agent-release',
-    ]);
-    expect($publishSteps['Publish GitHub release']['working-directory'])->toBe('${{ runner.temp }}/agent-release');
-    expect($publishSteps['Publish GitHub release']['env']['VERSION'])->toBe('${{ needs.build.outputs.version }}');
-    expect($publishSteps['Publish GitHub release']['run'])->toBe(<<<'BASH'
-set -euo pipefail
-gh release create "$RELEASE_TAG" \
-  "orbit-agent-${VERSION}-linux-x86_64" \
-  "orbit-agent-${VERSION}-linux-aarch64" \
-  SHA256SUMS \
-  --repo "$REPOSITORY" \
-  --verify-tag \
-  --title "orbit-agent ${VERSION}" \
-  --notes "Static Linux binaries for orbit-agent ${VERSION}."
-
-BASH);
-    expect($publish['steps'])->toHaveCount(2);
+    $steps = array_column($publish['steps'], null, 'name');
+    expect(array_keys($workflow['jobs']))->toBe(['publish']);
+    expect($workflow['on']['workflow_run'])->toBe(['workflows' => ['CI'], 'types' => ['completed'], 'branches' => ['main']]);
+    expect($publish['environment'])->toBe('agent-release');
+    expect($steps['Check out the tested commit']['with'])->toMatchArray(['persist-credentials' => false, 'ref' => '${{ steps.run.outputs.head }}']);
+    expect($steps['Find the CI run']['run'])->toContain('.head_branch', '.conclusion', 'main', 'success');
+    expect($steps['Download the tested delivery']['with'])->toMatchArray(['name' => 'agent-delivery', 'run-id' => '${{ steps.run.outputs.id }}']);
+    expect($steps['Validate the delivery and its tag']['run'])->toContain('apps/agent/scripts/check-release-tag.sh', '"$HEAD_SHA"');
+    expect($steps['Mint the release App token']['with'])->toBe(['app-id' => '${{ secrets.ORBIT_RELEASE_APP_ID }}', 'private-key' => '${{ secrets.ORBIT_RELEASE_APP_PRIVATE_KEY }}']);
+    expect($steps['Tag the commit and publish the delivery']['env']['GH_TOKEN'])->toBe('${{ steps.app.outputs.token }}');
+    expect($steps['Tag the commit and publish the delivery']['run'])->toContain('orbit-agent-linux-* orbit-agent-macos-* SHA256SUMS manifest.json', '--target "$COMMIT"');
+    foreach ($steps as $step) {
+        expect($step['run'] ?? '')->not->toContain('cargo build', 'cross build');
+    }
 });
 
 it('limits the recipe mirror write token to main and never triggers it for pull requests', function (): void {

@@ -9,14 +9,17 @@ use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmPackageCacheMount;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProtectedInput;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentGitHubToken;
+use App\Infrastructure\AgentCommands\AgentGuest;
+use App\Infrastructure\AgentCommands\GuestAgentCommandRunner;
 use App\Models\Node;
 use App\Models\PackageCacheSnapshot;
 use App\Models\Project;
 use App\Models\TaskVm;
+use Closure;
 use Illuminate\Support\Facades\Config;
-use Illuminate\Support\Facades\File;
 
 final readonly class TaskVmPackageCache implements TaskVmPackageCacheMount
 {
@@ -26,7 +29,7 @@ final readonly class TaskVmPackageCache implements TaskVmPackageCacheMount
 
     public const string Device = 'package-cache';
 
-    public function __construct(private IncusHost $incus) {}
+    public function __construct(private AgentCommandRunner $agents, private GuestAgentCommandRunner $guests) {}
 
     /**
      * @param  list<array{manager: string, package: string, version: string, url: string, integrity: string|null, key: string}>  $artifacts
@@ -38,8 +41,7 @@ final readonly class TaskVmPackageCache implements TaskVmPackageCacheMount
         if ($maxBytes < 1) {
             throw new TaskVmException('task_vm.package_cache_invalid_limit', 'The package cache byte budget must be positive.');
         }
-        $result = $this->host($node, ['operation' => 'fill', 'artifacts' => $artifacts, 'max_bytes' => $maxBytes, 'github_token' => $githubToken]);
-        $response = IncusHost::json('package cache', $result);
+        $response = $this->request(fn () => $this->agents->run($node, 'package-cache.host', ['operation' => 'fill', 'artifacts' => $artifacts, 'max_bytes' => $maxBytes, 'github_token' => $githubToken === null ? null : new AgentGitHubToken($githubToken)]));
         $hashes = $response['hashes'] ?? null;
         $failures = $response['failures'] ?? null;
         if (! is_array($hashes) || ! is_array($failures) || array_diff(array_keys($hashes + $failures), array_column($artifacts, 'key')) !== []) {
@@ -67,41 +69,42 @@ final readonly class TaskVmPackageCache implements TaskVmPackageCacheMount
         }
         $host = app(TaskVmSettings::class)->host((int) $vm->host_node_id);
         $node = $vm->incusHostNode();
-        $this->host($node, ['operation' => 'initialize']);
-        $read = $this->incus->query($host, $node, 'GET', '/1.0/instances/'.rawurlencode($vm->name), '');
-        $this->checked($read, 'read device', self::GuestPath);
-        $config = IncusHost::json('package cache device', $read);
-        $devices = is_array($config['devices'] ?? null) ? $config['devices'] : [];
-        $expected = ['type' => 'disk', 'source' => self::HostPath, 'path' => self::GuestPath, 'readonly' => 'true'];
-        if (isset($devices[self::Device])) {
-            if (! is_array($devices[self::Device]) || count($devices[self::Device]) !== count($expected) || ! array_all($expected, static fn (string $value, string $key): bool => ($devices[self::Device][$key] ?? null) === $value)) {
-                throw new TaskVmException('task_vm.package_cache_mount_invalid', 'The package cache device is not the expected read-only host mount.');
-            }
-        } else {
-            $this->checked($this->incus->run($host, $node, ['project', 'set', '--', $host->project, 'restricted.devices.disk=allow', 'restricted.devices.disk.paths='.self::HostPath]), 'permit host mount', self::HostPath);
-            $this->checked($this->incus->run($host, $node, ['config', 'device', 'add', '--', $vm->name, self::Device, 'disk', 'source='.self::HostPath, 'path='.self::GuestPath, 'readonly=true']), 'attach mount', self::GuestPath);
-        }
-        $shell = new IncusGuestShell($this->incus, $host, $node, $vm->name);
+        $this->request(fn () => $this->agents->run($node, 'package-cache.host', ['operation' => 'initialize']));
+        $this->confirmed($this->request(fn () => $this->agents->run($node, 'incus.package-cache', ['project' => $host->project, 'name' => $vm->name])));
         $artifacts = PackageCacheSnapshot::query()->find($project->id)->artifacts ?? [];
-        $this->checked($shell->asUser(['python3', '-c', File::get(resource_path('task-vms/package-cache-seed.py')), self::GuestPath], json_encode($artifacts, JSON_THROW_ON_ERROR)), 'seed', self::GuestPath);
+        $this->confirmed($this->request(fn () => $this->guests->runGuest(AgentGuest::incus($node, $host->project, $vm->name), 'package-cache.seed', ['artifacts' => $artifacts])));
     }
 
-    /** @param array{operation: string, artifacts?: array<mixed>, max_bytes?: int, github_token?: string|null} $request */
-    private function host(Node $node, #[\SensitiveParameter] array $request): CommandResult
+    /** @param array<string, mixed> $result */
+    private function confirmed(array $result): void
     {
-        return $this->checked($this->incus->root($node, ['python3', '-c', File::get(resource_path('task-vms/package-cache.py'))], ProtectedInput::fromString(json_encode($request, JSON_THROW_ON_ERROR)), 1600.0), $request['operation'], self::HostPath);
+        if (($result['ready'] ?? null) !== true) {
+            throw new TaskVmException('task_vm.package_cache_invalid_result', 'The cache command did not confirm completion.');
+        }
     }
 
-    private function checked(CommandResult $result, string $operation, string $path): CommandResult
+    /**
+     * @param  Closure(): array<string, mixed>  $work
+     * @return array<string, mixed>
+     */
+    private function request(Closure $work): array
     {
-        if (! $result->succeeded()) {
-            $detail = new CommandActivityInputSanitizer()->redactText(mb_scrub($result->stderr, 'UTF-8'));
+        try {
+            return $work();
+        } catch (AgentCommandRefused $error) {
+            if ($error->errorCode === 'task_vm.package_cache_mount_invalid') {
+                throw new TaskVmException($error->errorCode, $error->getMessage(), 502, $error);
+            }
+            if ($error->errorCode !== 'task_vm.package_cache_failed') {
+                throw $error;
+            }
+            $reason = is_string($error->details['reason'] ?? null) ? $error->details['reason'] : $error->getMessage();
+            $operation = is_string($error->details['operation'] ?? null) ? $error->details['operation'] : $error->command;
+            $path = is_string($error->details['path'] ?? null) ? $error->details['path'] : self::GuestPath;
+            $detail = new CommandActivityInputSanitizer()->redactText(mb_scrub($reason, 'UTF-8'));
             $detail = preg_replace('/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/', '', $detail) ?? '';
             $tail = mb_substr(trim($detail), -1200);
-
-            throw new TaskVmException('task_vm.package_cache_failed', "The trusted package cache operation [{$operation}] failed for [{$path}] (exit {$result->exitCode}).".($tail === '' ? '' : "\n{$tail}"), 502);
+            throw new TaskVmException($error->errorCode, "The trusted package cache operation [{$operation}] failed for [{$path}].".($tail === '' ? '' : "\n{$tail}"), 502, $error);
         }
-
-        return $result;
     }
 }

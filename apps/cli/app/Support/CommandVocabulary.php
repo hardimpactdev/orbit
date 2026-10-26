@@ -70,11 +70,6 @@ final readonly class CommandVocabulary
         'tasks:agents',
     ];
 
-    /** @var list<string> */
-    public const array INTERNAL_COMMANDS = [
-        'internal:database-local',
-    ];
-
     public static function lastSegment(string $name): string
     {
         $position = strrpos($name, ':');
@@ -110,7 +105,7 @@ final readonly class CommandVocabulary
 
     public static function allowsCommand(string $name): bool
     {
-        if (in_array($name, self::INTERNAL_COMMANDS, true) || in_array($name, self::NOUN_ENDING_COMMANDS, true)) {
+        if (in_array($name, self::NOUN_ENDING_COMMANDS, true)) {
             return true;
         }
 

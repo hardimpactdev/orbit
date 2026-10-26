@@ -6,8 +6,7 @@ namespace App\Infrastructure\Fleet\Footprint;
 
 use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Fleet\NodeShell;
-use App\Infrastructure\Nodes\CaddyPackageProgram;
+use App\Infrastructure\Nodes\AgentCaddyPackage;
 use App\Models\Node;
 
 /**
@@ -19,7 +18,7 @@ final readonly class CaddyPackageFootprintArtifact implements NodeFootprintArtif
 {
     public function __construct(
         private CaddyFootprintArtifact $caddy,
-        private NodeShell $shell,
+        private AgentCaddyPackage $package,
     ) {}
 
     public function name(): string
@@ -41,14 +40,14 @@ final readonly class CaddyPackageFootprintArtifact implements NodeFootprintArtif
     public static function inputs(): array
     {
         return [
-            'app/Infrastructure/Nodes/CaddyPackageProgram.php',
+            'app/Infrastructure/Nodes/AgentCaddyPackage.php',
             'app/Domain/Nodes/CaddyRelease.php',
         ];
     }
 
     public function apply(Node $node): bool
     {
-        $result = $this->shell->run($node, CaddyPackageProgram::command());
+        $result = $this->package->install($node);
 
         if (! $result->succeeded()) {
             throw new ResourceOperationException(
@@ -58,6 +57,6 @@ final readonly class CaddyPackageFootprintArtifact implements NodeFootprintArtif
             );
         }
 
-        return str_contains($result->stdout, CaddyPackageProgram::Changed);
+        return str_contains($result->stdout, AgentCaddyPackage::Changed);
     }
 }

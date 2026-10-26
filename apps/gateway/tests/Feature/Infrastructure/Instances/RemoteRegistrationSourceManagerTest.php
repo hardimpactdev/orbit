@@ -3,1208 +3,440 @@
 declare(strict_types=1);
 
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\Registration\RegistrationSourceFacts;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\Instances\RemoteRegistrationSourceManager;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\NativeProcessRunner;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
-use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
-use Symfony\Component\Process\Process as SymfonyProcess;
-use Tests\Support\SeparateFilesystem;
+use Tests\Support\FakeAgentCommandRunner;
 
-pest()->group('privileged');
+describe('registration source facts', function (): void {
+    it('sends the managed account and maps agent rows to repository facts', function (): void {
+        [$manager, $agents, $instance] = registrationFixture();
+        $row = registrationRow();
+        $agents->answer('instances.inspect-registration-source', ['rows' => [$row]]);
 
-it('resumes relocation from each durable cross-filesystem checkpoint', function (string $checkpoint): void {
-    $fixture = orb105_relocation_fixture();
+        $facts = $manager->inspect($instance->node, '/incoming/site', true);
 
-    try {
-        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
-        $gitBefore = orb105_git_state($fixture['source']);
-        $manifestBefore = orb105_complete_manifest($fixture['source']);
-        $stage = $fixture['destination'].'.orbit-stage-'.$fixture['instance']->id;
-
-        if ($checkpoint === 'incomplete-stage') {
-            orb105_copy_tree($fixture['source'], $stage);
-            file_put_contents($stage.'/README.md', "partial stage\n");
-        } elseif ($checkpoint === 'complete-stage') {
-            orb105_copy_tree($fixture['source'], $stage);
-        } else {
-            orb105_copy_tree($fixture['source'], $fixture['destination']);
-
-            if ($checkpoint === 'destination-only') {
-                new Filesystem()->deleteDirectory($fixture['source']);
-            }
-        }
-
-        $fixture['manager']->relocate($fixture['instance'], $facts);
-
-        expect(file_exists($fixture['source']))
-            ->toBeFalse()
-            ->and(file_exists($stage))
-            ->toBeFalse()
-            ->and(orb105_git_state($fixture['destination']))
-            ->toBe($gitBefore)
-            ->and(orb105_complete_manifest($fixture['destination']))
-            ->toBe($manifestBefore)
-            ->and(
-                $fixture['instance']
-                    ->refresh()
-                    ->only([
-                        'registration_relocation_state',
-                        'registration_authoritative_path',
-                    ]),
-            )
-            ->toBe([
-                'registration_relocation_state' => 'relocated',
-                'registration_authoritative_path' => $fixture['destination'],
-            ]);
-    } finally {
-        orb105_remove_relocation_fixture($fixture);
-    }
-})->with([
-    'incomplete stage with the verified original' => 'incomplete-stage',
-    'complete verified stage with the verified original' => 'complete-stage',
-    'verified destination with a duplicate original' => 'destination-and-original',
-    'verified destination after original removal before the database checkpoint' => 'destination-only',
-]);
-
-describe('in-place registration with shared refs', function (): void {
-    it('adopts a managed worktree while unrelated refs change', function (): void {
-        $fixture = orb918_in_place_fixture();
-
-        try {
-            $facts = $fixture['manager']->inspect($fixture['node'], $fixture['destination'], false)[0];
-            $identity = stat($fixture['destination']);
-            $gitLink = file_get_contents($fixture['destination'].'/.git');
-            $transport = new Orb918ConcurrentRefsSshExecutor;
-            $manager = orb105_registration_manager($transport);
-
-            $manager->relocate($fixture['instance'], $facts);
-
-            expect($fixture['instance']->refresh()->registration_relocation_state)->toBe('relocated')
-                ->and(stat($fixture['destination'])['ino'])->toBe($identity['ino'])
-                ->and(file_get_contents($fixture['destination'].'/.git'))->toBe($gitLink)
-                ->and($fixture['manager']->inspect($fixture['node'], $fixture['destination'], false)[0]->sourceDigest)->toBe($facts->sourceDigest)
-                ->and(trim(orb105_git($fixture['source'], ['rev-parse', 'refs/t3/test/918/1'])->stdout))->toBe($facts->commit)
-                ->and($transport->operations)->not->toContain('prepare', 'cleanup');
-        } finally {
-            orb105_remove_relocation_fixture($fixture);
-        }
+        expect($facts)->toEqual([registrationFacts()]);
+        expect($agents->calls)->toBe([[
+            'node' => $instance->node->name,
+            'command' => 'instances.inspect-registration-source',
+            'input' => ['path' => '/incoming/site', 'include_worktrees' => true, 'user' => 'orbit', 'group' => 'orbit'],
+        ]]);
     });
 
-    it('resumes an interrupted adoption after unrelated refs change', function (string $checkpoint): void {
-        $fixture = orb918_in_place_fixture();
-        file_put_contents($fixture['destination'].'/.env', "APP_KEY=private\n");
-        chmod($fixture['destination'].'/.env', 0o644);
-        $transport = new Orb918InterruptAdoptionSshExecutor($checkpoint);
-        $manager = orb105_registration_manager($transport);
+    it('refuses invalid or mixed repository evidence from inspection', function (array $rows): void {
+        [$manager, $agents, $instance] = registrationFixture();
+        $agents->answerMalformed('instances.inspect-registration-source', ['rows' => $rows]);
 
-        try {
-            $facts = $manager->inspect($fixture['node'], $fixture['destination'], false)[0];
-            expect(fn () => $manager->relocate($fixture['instance'], $facts))->toThrow(RuntimeConvergenceException::class);
-            orb105_git($fixture['source'], ['update-ref', 'refs/t3/test/retry', $facts->commit]);
+        expect(fn () => $manager->inspect($instance->node, '/incoming/site', false))
+            ->toThrow(function (ResourceOperationException $exception): void {
+                expect($exception->errorCode)->toBe('instance.source_invalid');
+            });
+    })->with([
+        'no sources' => [[]],
+        'invalid row' => [[null]],
+        'invalid layout' => [[registrationRow(['layout' => 'bare'])]],
+        'invalid commit' => [[registrationRow(['commit' => 'invalid'])]],
+        'invalid digest' => [[registrationRow(['source_digest' => 'invalid'])]],
+        'detached branch mismatch' => [[registrationRow(['detached' => true])]],
+        'invalid worktree paths' => [[registrationRow(['worktree_paths' => [1]])]],
+        'mixed repositories' => [[registrationRow(), registrationRow(['repository_url' => 'https://example.test/other.git'])]],
+    ]);
 
-            if ($checkpoint === 'adopt') {
-                $manager->validateRelocationRecovery($fixture['node'], $facts, $fixture['destination']);
-            } else {
-                $manager->validateRetained($fixture['node'], $facts, $fixture['destination']);
-            }
-            $manager->relocate($fixture['instance']->refresh(), $facts);
+    it('rejects a resolved account that differs from the Node before inspecting it', function (): void {
+        [$manager, $agents, $instance] = registrationFixture();
+        $instance->node->user = 'another';
 
-            expect($fixture['instance']->refresh()->registration_relocation_state)->toBe('relocated')
-                ->and(fileperms($fixture['destination'].'/.env') & 0o007)->toBe(0)
-                ->and($transport->operations)->not->toContain('prepare', 'cleanup');
-        } finally {
-            orb105_remove_relocation_fixture($fixture);
-        }
-    })->with(['adopt', 'adopt-finalize']);
+        expect(fn () => $manager->inspect($instance->node, '/incoming/site', false))
+            ->toThrow(function (ResourceOperationException $exception): void {
+                expect($exception->errorCode)->toBe('instance.source_owner_invalid');
+            });
+        expect($agents->calls)->toBe([]);
+    });
 
-    it('refuses changed source state before adoption', function (string $change): void {
-        $fixture = orb918_in_place_fixture();
+    it('maps inspection refusals to the registration source error', function (): void {
+        [$manager, $agents, $instance] = registrationFixture();
+        $agents->refuse('instances.inspect-registration-source', 'instances.registration_invalid');
 
-        try {
-            $facts = $fixture['manager']->inspect($fixture['node'], $fixture['destination'], false)[0];
-            if ($change === 'index') {
-                orb105_git($fixture['destination'], ['update-index', '--assume-unchanged', 'README.md']);
-            } elseif ($change === 'head') {
-                orb105_git($fixture['destination'], ['commit', '--allow-empty', '-m', 'Source changed']);
-            } else {
-                file_put_contents($fixture['destination'].'/README.md', 'changed');
-            }
-
-            expect(fn () => $fixture['manager']->validateRelocationRecovery($fixture['node'], $facts, $fixture['destination']))->toThrow(ResourceOperationException::class);
-            expect(fn () => $fixture['manager']->relocate($fixture['instance'], $facts))->toThrow(RuntimeConvergenceException::class)
-                ->and(is_dir($fixture['destination']))->toBeTrue();
-        } finally {
-            orb105_remove_relocation_fixture($fixture);
-        }
-    })->with(['head', 'index', 'working-tree']);
-});
-
-it('resumes a relocated checkout after unrelated repository refs change', function (): void {
-    $fixture = orb105_relocation_fixture(false);
-    $manager = orb105_registration_manager(new Orb105InterruptAfterPrepareSshExecutor);
-
-    try {
-        $facts = $manager->inspect($fixture['node'], $fixture['source'], false)[0];
-        expect(fn () => $manager->relocate($fixture['instance'], $facts))->toThrow(RuntimeConvergenceException::class);
-        orb105_git($fixture['destination'], ['update-ref', 'refs/t3/test/relocation-retry', $facts->commit]);
-
-        $manager->validateRelocationRecovery($fixture['node'], $facts, $fixture['destination']);
-        $manager->relocate($fixture['instance']->refresh(), $facts);
-
-        expect($fixture['instance']->refresh()->registration_relocation_state)->toBe('relocated')
-            ->and(is_dir($fixture['source']))->toBeFalse()
-            ->and(trim(orb105_git($fixture['destination'], ['rev-parse', 'HEAD'])->stdout))->toBe($facts->commit);
-    } finally {
-        orb105_remove_relocation_fixture($fixture);
-    }
-});
-
-it('refuses a relocated checkout whose own HEAD changes during the move', function (): void {
-    $fixture = orb105_relocation_fixture(false);
-
-    try {
-        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
-        $manager = orb105_registration_manager(new Orb918ChangeHeadAfterRenameSshExecutor);
-
-        expect(fn () => $manager->relocate($fixture['instance'], $facts))->toThrow(RuntimeConvergenceException::class)
-            ->and(is_dir($fixture['destination']))->toBeTrue()
-            ->and($fixture['instance']->refresh()->registration_relocation_state)->toBe('relocating');
-        expect(fn () => $manager->validateRelocationRecovery($fixture['node'], $facts, $fixture['destination']))->toThrow(ResourceOperationException::class);
-    } finally {
-        orb105_remove_relocation_fixture($fixture);
-    }
-});
-
-it('reports the configured origin, not the insteadOf rewrite Git applies', function (): void {
-    $fixture = orb105_relocation_fixture(false);
-    orb105_run(['git', '-C', $fixture['source'], 'config', 'url.git@example.test:.insteadOf', 'https://example.test/']);
-
-    try {
-        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
-
-        expect($facts->repositoryUrl)->toBe('https://example.test/acme.git');
-    } finally {
-        orb105_remove_relocation_fixture($fixture);
-    }
-});
-
-it('infers the public web root of a Laravel or Symfony checkout', function (?string $entryPoint, ?string $root): void {
-    $fixture = orb105_relocation_fixture(false);
-    mkdir($fixture['source'].'/public');
-    file_put_contents($fixture['source'].'/composer.json', "{}\n");
-
-    if (is_string($entryPoint)) {
-        file_put_contents($fixture['source'].'/'.$entryPoint, "#!/usr/bin/env php\n");
-    }
-
-    try {
-        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
-
-        expect($facts->inferredRoot)->toBe($root);
-    } finally {
-        orb105_remove_relocation_fixture($fixture);
-    }
-})->with([
-    'Laravel' => ['artisan', 'public'],
-    'Symfony' => ['bin/console', 'public'],
-    'plain Composer' => [null, null],
-]);
-
-it('fails closed when an incomplete stage has no verified original', function (): void {
-    $fixture = orb105_relocation_fixture();
-
-    try {
-        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
-        $stage = $fixture['destination'].'.orbit-stage-'.$fixture['instance']->id;
-        orb105_copy_tree($fixture['source'], $stage);
-        file_put_contents($stage.'/README.md', "partial stage\n");
-        new Filesystem()->deleteDirectory($fixture['source']);
-
-        expect(fn () => $fixture['manager']->relocate($fixture['instance'], $facts))
-            ->toThrow(function (RuntimeConvergenceException $exception): void {
-                expect($exception->errorCode)->toBe('instance.registration_incomplete');
-            })
-            ->and(is_dir($stage))
-            ->toBeTrue()
-            ->and(file_exists($fixture['destination']))
-            ->toBeFalse()
-            ->and(
-                $fixture['instance']
-                    ->refresh()
-                    ->only([
-                        'registration_relocation_state',
-                        'registration_authoritative_path',
-                    ]),
-            )
-            ->toBe([
-                'registration_relocation_state' => 'relocating',
-                'registration_authoritative_path' => $fixture['source'],
-            ]);
-    } finally {
-        orb105_remove_relocation_fixture($fixture);
-    }
-});
-
-it('resumes after an emitted same-filesystem rename outruns its database checkpoint', function (): void {
-    $fixture = orb105_relocation_fixture(crossFilesystem: false);
-
-    try {
-        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
-        $gitBefore = orb105_git_state($fixture['source']);
-        $manifestBefore = orb105_complete_manifest($fixture['source']);
-        $interruptingManager = orb105_registration_manager(new Orb105InterruptAfterPrepareSshExecutor);
-
-        expect(fn () => $interruptingManager->relocate($fixture['instance'], $facts))
-            ->toThrow(function (RuntimeConvergenceException $exception): void {
-                expect($exception->errorCode)->toBe('instance.registration_incomplete');
-            })
-            ->and(file_exists($fixture['source']))
-            ->toBeFalse()
-            ->and(orb105_git_state($fixture['destination']))
-            ->toBe($gitBefore)
-            ->and(orb105_complete_manifest($fixture['destination']))
-            ->toBe($manifestBefore)
-            ->and($fixture['instance']->refresh()->registration_relocation_state)
-            ->toBe('relocating')
-            ->and($fixture['instance']->registration_authoritative_path)
-            ->toBe($fixture['source']);
-
-        $fixture['manager']->validateRelocationRecovery(
-            $fixture['node'],
-            $facts,
-            $fixture['destination'],
-        );
-        $fixture['manager']->relocate($fixture['instance']->refresh(), $facts);
-
-        expect(file_exists($fixture['source']))
-            ->toBeFalse()
-            ->and(orb105_git_state($fixture['destination']))
-            ->toBe($gitBefore)
-            ->and(orb105_complete_manifest($fixture['destination']))
-            ->toBe($manifestBefore)
-            ->and($fixture['instance']->refresh()->registration_relocation_state)
-            ->toBe('relocated')
-            ->and($fixture['instance']->registration_authoritative_path)
-            ->toBe($fixture['destination']);
-    } finally {
-        orb105_remove_relocation_fixture($fixture);
-    }
-});
-
-it('resumes a partially renamed included worktree set from retained evidence', function (): void {
-    $fixture = orb105_relocation_fixture(crossFilesystem: false);
-
-    try {
-        $linkedSource = $fixture['source_root'].'/source/feature';
-        $linkedDestination = $fixture['destination_root'].'/managed/acme/feature';
-        orb105_run(['git', '-C', $fixture['source'], 'worktree', 'add', '-b', 'feature', $linkedSource]);
-        $files = new Filesystem;
-        $files->ensureDirectoryExists($linkedSource.'/many');
-        // The rename acknowledgement, not tree size, holds the partial-move checkpoint.
-        for ($index = 0; $index < 3; $index++) {
-            file_put_contents($linkedSource.'/many/'.$index, "retained\n");
-        }
-
-        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], true);
-        $requestId = $fixture['instance']->registration_request_id;
-        $linked = Instance::query()->create([
-            'project_id' => $fixture['instance']->project_id,
-            'node_id' => $fixture['node']->id,
-            'name' => 'feature',
-            'source_layout' => 'worktree',
-            'checkout_path' => $linkedDestination,
-            'branch' => 'feature',
-            'starting_commit' => collect($facts)->firstWhere('path', $linkedSource)?->commit,
-            'registration_original_path' => $linkedSource,
-            'registration_request_id' => $requestId,
-            'registration_repository_url' => 'https://example.test/acme.git',
-            'registration_repository_identity' => 'example.test/acme',
-            'registration_relocation_state' => 'reserved',
-            'registration_authoritative_path' => $linkedSource,
-            'status' => 'reserved',
-        ]);
-        $members = array_map(
-            static fn (RegistrationSourceFacts $fact): array => [
-                'instance' => $fact->path === $fixture['source'] ? $fixture['instance'] : $linked,
-                'facts' => $fact,
-            ],
-            $facts,
-        );
-        $manifests = [];
-        foreach ($facts as $fact) {
-            $manifests[$fact->path] = orb105_preserved_manifest($fact->path);
-        }
-        $interrupting = orb105_registration_manager(new Orb105InterruptPartialPrepareSshExecutor(
-            movedSource: $linkedSource,
-            unmovedSource: $fixture['source'],
-        ));
-
-        expect(fn () => $interrupting->relocateSet($members))
-            ->toThrow(function (RuntimeConvergenceException $exception): void {
-                expect($exception->errorCode)->toBe('instance.registration_incomplete');
-            })
-            ->and(file_exists($linkedSource))
-            ->toBeFalse()
-            ->and(is_dir($linkedDestination))
-            ->toBeTrue()
-            ->and(is_dir($fixture['source']))
-            ->toBeTrue()
-            ->and($fixture['instance']->refresh()->registration_relocation_state)
-            ->toBe('relocating')
-            ->and($linked->refresh()->registration_relocation_state)
-            ->toBe('relocating');
-
-        foreach ($facts as $fact) {
-            $fixture['manager']->validateRelocationRecovery(
-                $fixture['node'],
-                $fact,
-                $fact->path === $linkedSource ? $linkedDestination : $fixture['source'],
-            );
-        }
-
-        $fixture['manager']->relocateSet($members);
-
-        expect(file_exists($fixture['source']))
-            ->toBeFalse()
-            ->and(file_exists($linkedSource))
-            ->toBeFalse()
-            ->and(orb105_preserved_manifest($fixture['destination']))
-            ->toBe($manifests[$fixture['source']])
-            ->and(orb105_preserved_manifest($linkedDestination))
-            ->toBe($manifests[$linkedSource])
-            ->and($fixture['instance']->refresh()->registration_relocation_state)
-            ->toBe('relocated')
-            ->and($linked->refresh()->registration_relocation_state)
-            ->toBe('relocated');
-    } finally {
-        orb105_remove_relocation_fixture($fixture);
-    }
-});
-
-it('refuses unsafe checkout and Git administration modes before relocation', function (string $target): void {
-    $fixture = orb105_relocation_fixture();
-
-    try {
-        chmod($target === 'checkout' ? $fixture['source'] : $fixture['source'].'/.git', 0o777);
-
-        expect(fn () => $fixture['manager']->inspect($fixture['node'], $fixture['source'], false))
+        expect(fn () => $manager->inspect($instance->node, '/incoming/site', false))
             ->toThrow(function (RuntimeConvergenceException $exception): void {
                 expect($exception->errorCode)->toBe('instance.source_invalid');
-            })
-            ->and(is_dir($fixture['source']))
-            ->toBeTrue()
-            ->and(file_exists($fixture['destination']))
-            ->toBeFalse()
-            ->and($fixture['instance']->refresh()->registration_relocation_state)
-            ->toBe('reserved');
-    } finally {
-        orb105_remove_relocation_fixture($fixture);
-    }
-})->with(['checkout', 'Git administration']);
-
-it('refuses an invalid second non-Composer worktree before any included source moves', function (): void {
-    $fixture = orb105_relocation_fixture(crossFilesystem: false);
-
-    try {
-        $linkedSource = $fixture['source_root'].'/source/feature';
-        orb105_run(['git', '-C', $fixture['source'], 'worktree', 'add', '-b', 'feature', $linkedSource]);
-        chmod($linkedSource.'/.git', 0o666);
-
-        expect(fn () => $fixture['manager']->inspect($fixture['node'], $fixture['source'], true))
-            ->toThrow(function (RuntimeConvergenceException $exception): void {
-                expect($exception->errorCode)->toBe('instance.source_invalid');
-            })
-            ->and(is_dir($fixture['source']))
-            ->toBeTrue()
-            ->and(is_dir($linkedSource))
-            ->toBeTrue()
-            ->and(file_exists($fixture['destination']))
-            ->toBeFalse()
-            ->and(file_exists($fixture['destination_root'].'/managed/acme/feature'))
-            ->toBeFalse();
-    } finally {
-        orb105_remove_relocation_fixture($fixture);
-    }
+            });
+    });
 });
 
-it('refuses a non-Composer checkout outside the resolved managed group', function (): void {
-    $fixture = orb105_relocation_fixture();
-
-    try {
-        $manager = orb105_registration_manager(new Orb105LocalSshExecutor, managedGroup: 'root');
-
-        expect(fn () => $manager->inspect($fixture['node'], $fixture['source'], false))
-            ->toThrow(function (RuntimeConvergenceException $exception): void {
-                expect($exception->errorCode)->toBe('instance.source_invalid');
-            })
-            ->and(is_dir($fixture['source']))
-            ->toBeTrue()
-            ->and(file_exists($fixture['destination']))
-            ->toBeFalse();
-    } finally {
-        orb105_remove_relocation_fixture($fixture);
-    }
-});
-
-it('persists relocation checkpoints without publishing dirty migration fields', function (): void {
-    $fixture = orb105_relocation_fixture();
-
-    try {
-        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
-        Instance::query()
-            ->whereKey($fixture['instance']->id)
-            ->update([
-                'name' => 'main',
-                'checkout_path' => $fixture['source'],
-            ]);
-        $fixture['instance']->refresh();
-        $fixture['instance']->name = 'default';
-        $fixture['instance']->checkout_path = $fixture['destination'];
-
-        $fixture['manager']->relocate($fixture['instance'], $facts);
-
-        expect($fixture['instance']
-            ->refresh()
-            ->only([
-                'name',
-                'checkout_path',
-                'registration_relocation_state',
-                'registration_authoritative_path',
-            ]))->toBe([
-                'name' => 'main',
-                'checkout_path' => $fixture['source'],
-                'registration_relocation_state' => 'relocated',
-                'registration_authoritative_path' => $fixture['destination'],
-            ]);
-    } finally {
-        orb105_remove_relocation_fixture($fixture);
-    }
-});
-
-it('does not reapply source-digest relocation after the managed destination becomes authoritative', function (): void {
-    $fixture = orb105_relocation_fixture();
-
-    try {
-        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
-        $fixture['manager']->relocate($fixture['instance'], $facts);
-        file_put_contents($fixture['destination'].'/.env', "APP_URL=https://managed.test\n");
-        file_put_contents($fixture['destination'].'/README.md', "normal development edit\n", FILE_APPEND);
-        $afterEdits = orb105_complete_manifest($fixture['destination']);
-
-        $fixture['manager']->validateRetained($fixture['node'], $facts, $fixture['destination']);
-        $fixture['manager']->relocate($fixture['instance']->refresh(), $facts);
-
-        expect(orb105_complete_manifest($fixture['destination']))
-            ->toBe($afterEdits)
-            ->and(file_exists($fixture['source']))
-            ->toBeFalse()
-            ->and($fixture['instance']->refresh()->registration_relocation_state)
-            ->toBe('relocated')
-            ->and($fixture['instance']->registration_authoritative_path)
-            ->toBe($fixture['destination']);
-    } finally {
-        orb105_remove_relocation_fixture($fixture);
-    }
-});
-
-it('refuses a replacement repository at a retained authoritative destination', function (): void {
-    $fixture = orb105_relocation_fixture();
-
-    try {
-        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
-        $fixture['manager']->relocate($fixture['instance'], $facts);
-        orb105_run([
-            'git',
-            '-C',
-            $fixture['destination'],
-            'remote',
-            'set-url',
-            'origin',
-            'https://example.test/replacement.git',
+describe('retained registration evidence', function (): void {
+    it('permits normal edits after the destination becomes authoritative', function (): void {
+        [$manager, $agents, $instance] = registrationFixture();
+        $agents->answer('instances.inspect-registration-source', ['rows' => [registrationRow([
+            'path' => $instance->checkout_path,
+            'branch' => 'work', 'commit' => str_repeat('b', 40), 'source_digest' => str_repeat('c', 64),
+        ])]]);
+        $instance->update([
+            'registration_relocation_state' => 'relocated',
+            'registration_authoritative_path' => $instance->checkout_path,
         ]);
 
-        expect(fn () => $fixture['manager']->validateRetained(
-            $fixture['node'],
-            $facts,
-            $fixture['destination'],
-        ))->toThrow(function (ResourceOperationException $exception): void {
-            expect($exception->errorCode)->toBe('instance.registration_conflict');
+        $manager->validateRetained($instance->node, registrationFacts(), $instance->checkout_path);
+        $manager->relocate($instance, registrationFacts());
+
+        expect($agents->commands())->toBe(['instances.inspect-registration-source']);
+    });
+
+    it('refuses changed retained path layout or repository identity', function (array $change): void {
+        [$manager, $agents, $instance] = registrationFixture();
+        $agents->answer('instances.inspect-registration-source', ['rows' => [registrationRow($change)]]);
+
+        expect(fn () => $manager->validateRetained($instance->node, registrationFacts(), '/incoming/site'))
+            ->toThrow(function (ResourceOperationException $exception): void {
+                expect($exception->errorCode)->toBe('instance.registration_conflict');
+            });
+    })->with([
+        'path' => [['path' => '/other/site']],
+        'layout' => [['layout' => 'worktree']],
+        'repository' => [['repository_url' => 'https://example.test/replacement.git']],
+    ]);
+
+    it('requires the preserved branch commit and digest during relocation recovery', function (array $change): void {
+        [$manager, $agents, $instance] = registrationFixture();
+        $agents->answer('instances.inspect-registration-source', ['rows' => [registrationRow($change)]]);
+
+        expect(fn () => $manager->validateRelocationRecovery($instance->node, registrationFacts(), '/incoming/site'))
+            ->toThrow(function (ResourceOperationException $exception): void {
+                expect($exception->errorCode)->toBe('instance.registration_conflict');
+            });
+    })->with([
+        'branch' => [['branch' => 'other']],
+        'detached' => [['branch' => null, 'detached' => true]],
+        'commit' => [['commit' => str_repeat('b', 40)]],
+        'content' => [['source_digest' => str_repeat('c', 64)]],
+    ]);
+
+    it('accepts unchanged recovery evidence and maps failed inspection to a conflict', function (): void {
+        [$manager, $agents, $instance] = registrationFixture();
+        $agents->answer('instances.inspect-registration-source', ['rows' => [registrationRow()]]);
+        $manager->validateRelocationRecovery($instance->node, registrationFacts(), '/incoming/site');
+        $agents->refuse('instances.inspect-registration-source', 'instances.git_failed');
+
+        foreach (['validateRetained', 'validateRelocationRecovery'] as $method) {
+            expect(fn () => $manager->$method($instance->node, registrationFacts(), '/incoming/site'))
+                ->toThrow(function (ResourceOperationException $exception): void {
+                    expect($exception->errorCode)->toBe('instance.registration_conflict');
+                });
+        }
+    });
+});
+
+describe('registration relocation checkpoints', function (): void {
+    it('records intent before prepare and original identity before cleanup without saving unrelated dirty fields', function (): void {
+        [$manager, $agents, $instance] = registrationFixture();
+        $instance->update(['name' => 'main', 'checkout_path' => '/incoming/site']);
+        $instance->name = 'default';
+        $instance->checkout_path = '/srv/orbit/apps/site/default';
+        $agents->answer('instances.relocate-registration-source', function (array $input) use ($instance): array {
+            $stored = $instance->fresh();
+            expect($stored->name)->toBe('main')->and($stored->checkout_path)->toBe('/incoming/site');
+            if ($input['operation'] === 'prepare') {
+                expect($stored->registration_relocation_state)->toBe('relocating')
+                    ->and($stored->registration_authoritative_path)->toBe('/incoming/site')
+                    ->and($stored->registration_source_device)->toBeNull()
+                    ->and($stored->registration_source_inode)->toBeNull();
+            } else {
+                expect($input['operation'])->toBe('cleanup');
+                expect($stored->registration_relocation_state)->toBe('original_cleanup')
+                    ->and($stored->registration_authoritative_path)->toBe('/srv/orbit/apps/site/default')
+                    ->and($stored->registration_source_device)->toBe(12)
+                    ->and($stored->registration_source_inode)->toBe(34);
+            }
+
+            return ['identities' => [['id' => $instance->id, 'source_device' => 12, 'source_inode' => 34]]];
         });
-    } finally {
-        orb105_remove_relocation_fixture($fixture);
-    }
-});
 
-it('resumes an actual interruption during original cleanup from the verified destination', function (): void {
-    $fixture = orb105_relocation_fixture();
+        $manager->relocate($instance, registrationFacts());
 
-    try {
-        $files = new Filesystem;
-        $files->ensureDirectoryExists($fixture['source'].'/cleanup');
-        file_put_contents($fixture['source'].'/cleanup/00000-trigger', "trigger\n");
-        // The unlink acknowledgement holds cleanup before the remaining entries are removed.
-        for ($index = 1; $index <= 3; $index++) {
-            file_put_contents(
-                $fixture['source'].'/cleanup/'.str_pad((string) $index, 5, '0', STR_PAD_LEFT),
-                "retained\n",
-            );
-        }
-        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
-        $manifestBefore = orb105_complete_manifest($fixture['source']);
-        $interruptingManager = orb105_registration_manager(
-            new Orb105InterruptingCleanupSshExecutor(
-                $fixture['source'],
-                $fixture['source'].'/cleanup/00000-trigger',
-            ),
-        );
+        $member = [
+            'id' => $instance->id, 'source' => '/incoming/site', 'destination' => '/srv/orbit/apps/site/default',
+            'application' => '/srv/orbit/apps/site/default', 'layout' => 'checkout', 'commit' => str_repeat('a', 40),
+            'branch' => 'main', 'detached' => false, 'digest' => str_repeat('b', 64),
+            'common' => '/incoming/site/.git', 'worktrees' => ['/incoming/site'],
+            'source_device' => null, 'source_inode' => null,
+        ];
+        expect(array_column($agents->calls, 'input'))->toBe([
+            ['operation' => 'prepare', 'members' => [$member]],
+            ['operation' => 'cleanup', 'members' => [[...$member, 'source_device' => 12, 'source_inode' => 34]]],
+        ]);
+        expect($instance->refresh()->only(['name', 'checkout_path', 'registration_relocation_state', 'registration_authoritative_path']))->toBe([
+            'name' => 'main', 'checkout_path' => '/incoming/site', 'registration_relocation_state' => 'relocated',
+            'registration_authoritative_path' => '/srv/orbit/apps/site/default',
+        ]);
+    });
 
-        expect(fn () => $interruptingManager->relocate($fixture['instance'], $facts))
+    it('repeats only the unfinished phase after a lost response', function (string $lost, string $state, array $operations): void {
+        [$manager, $agents, $instance] = registrationFixture();
+        $interrupted = false;
+        $agents->answer('instances.relocate-registration-source', function (array $input) use ($instance, $lost, &$interrupted): array {
+            if (! $interrupted && $input['operation'] === $lost) {
+                $interrupted = true;
+                throw new AgentRunnerFailure('instances.relocate-registration-source', AgentRunnerFailure::MissingResult, 'Connection lost.');
+            }
+
+            return ['identities' => [['id' => $instance->id, 'source_device' => 12, 'source_inode' => 34]]];
+        });
+        expect(fn () => $manager->relocate($instance, registrationFacts()))->toThrow(RuntimeConvergenceException::class);
+        expect($instance->refresh()->registration_relocation_state)->toBe($state);
+
+        $manager->relocate($instance, registrationFacts());
+
+        expect(array_column(array_column($agents->calls, 'input'), 'operation'))->toBe($operations);
+        expect($instance->refresh()->registration_relocation_state)->toBe('relocated');
+    })->with([
+        'prepare response lost' => ['prepare', 'relocating', ['prepare', 'prepare', 'cleanup']],
+        'cleanup response lost' => ['cleanup', 'original_cleanup', ['prepare', 'cleanup', 'cleanup']],
+    ]);
+
+    it('keeps cleanup evidence when the agent refuses a replaced original', function (): void {
+        [$manager, $agents, $instance] = registrationFixture();
+        $instance->update([
+            'registration_relocation_state' => 'destination_verified',
+            'registration_authoritative_path' => $instance->checkout_path,
+            'registration_source_device' => 12, 'registration_source_inode' => 34,
+        ]);
+        $agents->refuse('instances.relocate-registration-source', 'instances.registration_invalid');
+
+        expect(fn () => $manager->relocate($instance, registrationFacts()))
             ->toThrow(function (RuntimeConvergenceException $exception): void {
                 expect($exception->errorCode)->toBe('instance.registration_incomplete');
             });
+        expect($instance->refresh()->registration_relocation_state)->toBe('original_cleanup')
+            ->and($instance->registration_source_device)->toBe(12)
+            ->and($instance->registration_source_inode)->toBe(34);
+        expect(array_column(array_column($agents->calls, 'input'), 'operation'))->toBe(['cleanup']);
+    });
 
-        $partialCount = count(glob($fixture['source'].'/cleanup/*') ?: []);
-        $checkpoint = $fixture['instance']->refresh();
-        expect(is_dir($fixture['source']))
-            ->toBeTrue()
-            ->and($partialCount)
-            ->toBeLessThan(4)
-            ->toBeGreaterThan(0)
-            ->and(orb105_complete_manifest($fixture['source']))
-            ->not
-            ->toBe($manifestBefore)
-            ->and(orb105_complete_manifest($fixture['destination']))
-            ->toBe($manifestBefore)
-            ->and($checkpoint->registration_relocation_state)
-            ->toBe('original_cleanup')
-            ->and($checkpoint->registration_authoritative_path)
-            ->toBe($fixture['destination'])
-            ->and($checkpoint->registration_source_device)
-            ->toBeInt()
-            ->and($checkpoint->registration_source_inode)
-            ->toBeInt();
+    it('refuses incomplete preparation identities before asking for cleanup', function (array $identities): void {
+        [$manager, $agents, $instance] = registrationFixture();
+        $agents->answerMalformed('instances.relocate-registration-source', ['identities' => $identities]);
 
-        $instanceId = $checkpoint->id;
-        $fixture['manager']->relocate($checkpoint, $facts);
-
-        expect(file_exists($fixture['source']))
-            ->toBeFalse()
-            ->and(orb105_complete_manifest($fixture['destination']))
-            ->toBe($manifestBefore)
-            ->and($fixture['instance']->refresh()->id)
-            ->toBe($instanceId)
-            ->and($fixture['instance']->registration_relocation_state)
-            ->toBe('relocated')
-            ->and($fixture['instance']->registration_authoritative_path)
-            ->toBe($fixture['destination']);
-    } finally {
-        orb105_remove_relocation_fixture($fixture);
-    }
-});
-
-it('refuses cleanup when the original path was replaced after destination verification', function (): void {
-    $fixture = orb105_relocation_fixture();
-
-    try {
-        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
-        $sourceIdentity = stat($fixture['source']);
-        orb105_copy_tree($fixture['source'], $fixture['destination']);
-        $fixture['instance']->update([
-            'registration_relocation_state' => 'original_cleanup',
-            'registration_authoritative_path' => $fixture['destination'],
-            'registration_source_device' => $sourceIdentity['dev'],
-            'registration_source_inode' => $sourceIdentity['ino'],
-        ]);
-        new Filesystem()->deleteDirectory($fixture['source']);
-        new Filesystem()->ensureDirectoryExists($fixture['source']);
-        file_put_contents($fixture['source'].'/unrelated.txt', "unrelated\n");
-
-        expect(fn () => $fixture['manager']->relocate($fixture['instance']->refresh(), $facts))
-            ->toThrow(function (RuntimeConvergenceException $exception): void {
+        expect(fn () => $manager->relocate($instance, registrationFacts()))
+            ->toThrow(function (ResourceOperationException $exception): void {
                 expect($exception->errorCode)->toBe('instance.registration_incomplete');
-            })
-            ->and(file_get_contents($fixture['source'].'/unrelated.txt'))
-            ->toBe("unrelated\n")
-            ->and(is_dir($fixture['destination']))
-            ->toBeTrue();
-    } finally {
-        orb105_remove_relocation_fixture($fixture);
-    }
+            });
+        expect($instance->refresh()->registration_relocation_state)->toBe('relocating');
+        expect(array_column(array_column($agents->calls, 'input'), 'operation'))->toBe(['prepare']);
+    })->with([
+        'missing identity' => [[]],
+        'different set' => [[['id' => -1, 'source_device' => 12, 'source_inode' => 34]]],
+        'partial identity' => [[['id' => 1, 'source_device' => 12, 'source_inode' => null]]],
+    ]);
+
+    it('retries the complete included set after a partial prepare loses its response', function (): void {
+        [$manager, $agents, $first] = registrationFixture();
+        $second = $first->replicate();
+        $second->fill([
+            'name' => 'other', 'checkout_path' => '/srv/orbit/apps/site/other', 'source_layout' => 'worktree',
+            'registration_original_path' => '/incoming/other', 'registration_authoritative_path' => '/incoming/other',
+            'registration_primary' => false,
+        ])->save();
+        $facts = new RegistrationSourceFacts(
+            path: '/incoming/other', layout: InstanceSourceLayout::Worktree,
+            repositoryUrl: 'https://example.test/site.git', repositoryIdentity: 'example.test/site',
+            branch: 'other', detached: false, commit: str_repeat('a', 40), defaultBranch: 'main',
+            inferredSlug: 'site', inferredRoot: null, commonRepositoryPath: '/incoming/site/.git',
+            worktreePaths: ['/incoming/site', '/incoming/other'], sourceDigest: str_repeat('c', 64),
+        );
+        $interrupted = false;
+        $agents->answer('instances.relocate-registration-source', function (array $input) use ($first, $second, &$interrupted): array {
+            expect(array_column($input['members'], 'id'))->toBe([$first->id, $second->id]);
+            $state = $input['operation'] === 'prepare' ? 'relocating' : 'original_cleanup';
+            expect($first->fresh()->registration_relocation_state)->toBe($state)
+                ->and($second->fresh()->registration_relocation_state)->toBe($state);
+            if (! $interrupted) {
+                $interrupted = true;
+                throw new AgentRunnerFailure('instances.relocate-registration-source', AgentRunnerFailure::MissingResult, 'Connection lost after one source moved.');
+            }
+            if ($input['operation'] === 'cleanup') {
+                expect(array_column($input['members'], 'source_inode'))->toBe([34, 56]);
+            }
+
+            return ['identities' => [
+                ['id' => $second->id, 'source_device' => 12, 'source_inode' => 56],
+                ['id' => $first->id, 'source_device' => 12, 'source_inode' => 34],
+            ]];
+        });
+        $members = [['instance' => $first, 'facts' => registrationFacts()], ['instance' => $second, 'facts' => $facts]];
+        expect(fn () => $manager->relocateSet($members))->toThrow(RuntimeConvergenceException::class);
+        $first->refresh();
+        $second->refresh();
+
+        $manager->relocateSet($members);
+
+        expect(array_column(array_column($agents->calls, 'input'), 'operation'))->toBe(['prepare', 'prepare', 'cleanup']);
+        expect($first->refresh()->registration_relocation_state)->toBe('relocated')
+            ->and($second->refresh()->registration_relocation_state)->toBe('relocated');
+    });
+
+    it('requires complete set checkpoints and one Node before a mutation', function (string $change): void {
+        [$manager, $agents, $first] = registrationFixture();
+        $second = $first->replicate();
+        $second->name = 'other';
+        $second->checkout_path = '/srv/orbit/apps/site/other';
+        $second->registration_original_path = '/incoming/other';
+        $second->registration_authoritative_path = '/incoming/other';
+        $second->registration_primary = false;
+        $second->save();
+        if ($change === 'node') {
+            $second->node_id = $first->node_id + 100;
+        } elseif ($change === 'relocated') {
+            $second->registration_relocation_state = 'relocated';
+            $second->registration_authoritative_path = $second->checkout_path;
+        } else {
+            $second->registration_relocation_state = 'destination_verified';
+            $second->registration_authoritative_path = $second->checkout_path;
+            $second->registration_source_device = 12;
+            $second->registration_source_inode = 34;
+        }
+
+        expect(fn () => $manager->relocateSet([
+            ['instance' => $first, 'facts' => registrationFacts()],
+            ['instance' => $second, 'facts' => registrationFacts()],
+        ]))->toThrow(function (ResourceOperationException $exception) use ($change): void {
+            expect($exception->errorCode)->toBe($change === 'node' ? 'instance.source_conflict' : 'instance.registration_evidence_invalid');
+        });
+        expect($agents->calls)->toBe([]);
+        expect($first->refresh()->registration_relocation_state)->toBe('reserved');
+    })->with(['node', 'relocated', 'cleanup']);
 });
 
-it('restores Laravel URL files and the stable directory timestamps they touch', function (string $relative): void {
-    $fixture = orb105_relocation_fixture();
+describe('in-place registration', function (): void {
+    it('adopts and finalizes without moving sources and resumes only the unfinished phase', function (?string $lost, array $operations): void {
+        [$manager, $agents, $instance] = registrationFixture();
+        $instance->update(['checkout_path' => '/incoming/site']);
+        $interrupted = false;
+        $agents->answer('instances.inspect-registration-source', ['rows' => [registrationRow([
+            'source_digest' => str_repeat('c', 64),
+        ])]]);
+        $agents->answer('instances.relocate-registration-source', function (array $input) use ($instance, $lost, &$interrupted): array {
+            expect($instance->fresh()->registration_relocation_state)
+                ->toBe($input['operation'] === 'adopt' ? 'relocating' : 'destination_verified');
+            if (! $interrupted && $input['operation'] === $lost) {
+                $interrupted = true;
+                throw new AgentRunnerFailure('instances.relocate-registration-source', AgentRunnerFailure::MissingResult, 'Connection lost.');
+            }
 
-    try {
-        $files = new Filesystem;
-        $application = $fixture['source'].$relative;
-        $files->ensureDirectoryExists($application.'/bootstrap/cache');
-        file_put_contents($application.'/.env', "APP_URL=https://before.test\n");
-        file_put_contents($application.'/bootstrap/cache/config.php', "<?php return ['url' => 'before'];\n");
-        $fixture['instance']->update(['checkout_path' => $fixture['source'], 'root' => ltrim($relative.'/public', '/')]);
-        $before = orb105_complete_manifest($fixture['source']);
+            return ['identities' => []];
+        });
+        if ($lost !== null) {
+            expect(fn () => $manager->relocate($instance, registrationFacts()))->toThrow(RuntimeConvergenceException::class);
+            $instance->refresh();
+        }
 
-        $fixture['manager']->prepareLaravelRollback($fixture['instance']);
-        file_put_contents($application.'/.env.next', "APP_URL=https://after.test\n");
-        rename($application.'/.env.next', $application.'/.env');
-        file_put_contents($application.'/bootstrap/cache/config.php.next', "<?php return ['url' => 'after'];\n");
-        rename(
-            $application.'/bootstrap/cache/config.php.next',
-            $application.'/bootstrap/cache/config.php',
-        );
-        $fixture['manager']->prepareLaravelRollback($fixture['instance']);
-        $fixture['manager']->restoreLaravelConfiguration($fixture['instance']);
+        $manager->relocate($instance, registrationFacts());
 
-        expect(orb105_complete_manifest($fixture['source']))->toBe($before);
-    } finally {
-        orb105_remove_relocation_fixture($fixture);
-    }
-})->with(['root public' => '', 'nested Laravel' => '/server/web']);
+        $mutations = array_filter($agents->calls, static fn (array $call): bool => $call['command'] === 'instances.relocate-registration-source');
+        expect(array_column(array_column($mutations, 'input'), 'operation'))->toBe($operations);
+        expect($instance->refresh()->registration_relocation_state)->toBe('relocated')
+            ->and($instance->registration_source_device)->toBeNull()
+            ->and($instance->registration_source_inode)->toBeNull();
+    })->with([
+        'successful adoption' => [null, ['adopt', 'adopt-finalize']],
+        'lost adoption response' => ['adopt', ['adopt', 'adopt', 'adopt-finalize']],
+        'lost finalization response with changed digest' => ['adopt-finalize', ['adopt', 'adopt-finalize', 'adopt-finalize']],
+    ]);
+});
 
-it('refuses an incomplete Laravel rollback receipt without replacing it', function (): void {
-    $fixture = orb105_relocation_fixture();
+describe('Laravel rollback receipts', function (): void {
+    it('addresses the application directory for each receipt step', function (string $root, string $application): void {
+        [$manager, $agents, $instance] = registrationFixture();
+        $instance->root = $root;
+        $agents->answer('instances.laravel-registration-receipt', []);
 
-    try {
-        $receipt = dirname($fixture['source']).'/.orbit-registration-url-'.$fixture['instance']->id;
-        new Filesystem()->ensureDirectoryExists($receipt);
-        file_put_contents($receipt.'/0', "partial\n");
-        $fixture['instance']->update(['checkout_path' => $fixture['source']]);
+        $manager->prepareLaravelRollback($instance);
+        $manager->restoreLaravelConfiguration($instance);
+        $manager->discardLaravelRollback($instance);
 
-        expect(fn () => $fixture['manager']->prepareLaravelRollback($fixture['instance']))
+        expect(array_column($agents->calls, 'input'))->toBe(array_map(
+            static fn (string $operation): array => [
+                'checkout' => '/srv/orbit/apps/site/default', 'instance_id' => $instance->id,
+                'operation' => $operation, 'application' => $application,
+            ], ['prepare', 'restore', 'discard'],
+        ));
+    })->with([
+        'root Laravel' => ['public', '/srv/orbit/apps/site/default'],
+        'nested Laravel' => ['server/web/public', '/srv/orbit/apps/site/default/server/web'],
+    ]);
+
+    it('maps a refused rollback receipt to the Laravel error', function (): void {
+        [$manager, $agents, $instance] = registrationFixture();
+        $agents->refuse('instances.laravel-registration-receipt', 'instances.registration_invalid');
+
+        expect(fn () => $manager->prepareLaravelRollback($instance))
             ->toThrow(function (RuntimeConvergenceException $exception): void {
                 expect($exception->errorCode)->toBe('instance.laravel_rollback_failed');
-            })
-            ->and(file_get_contents($receipt.'/0'))
-            ->toBe("partial\n")
-            ->and(file_exists($receipt.'/manifest'))
-            ->toBeFalse();
-    } finally {
-        orb105_remove_relocation_fixture($fixture);
-    }
+            });
+    });
 });
 
-/**
- * @return array{manager: RemoteRegistrationSourceManager, node: Node, instance: Instance, source_root: string, destination_root: string, source: string, destination: string}
- */
-function orb105_relocation_fixture(bool $crossFilesystem = true): array
+/** @return array{RemoteRegistrationSourceManager, FakeAgentCommandRunner, Instance} */
+function registrationFixture(): array
 {
-    $token = (string) Str::uuid();
-    $sourceRoot = $crossFilesystem
-        ? SeparateFilesystem::path('orbit-orb105-'.$token)
-        : sys_get_temp_dir().'/orbit-orb105-'.$token;
-    $destinationRoot = $crossFilesystem
-        ? sys_get_temp_dir().'/orbit-orb105-'.$token
-        : $sourceRoot;
-    $source = $sourceRoot.($crossFilesystem ? '/acme' : '/source/acme');
-    $destination = $destinationRoot.'/managed/acme/default';
-    $files = new Filesystem;
-    $files->ensureDirectoryExists($source);
-    $files->ensureDirectoryExists(dirname($destination));
-
-    if ($crossFilesystem) {
-        expect(stat($sourceRoot)['dev'])->not->toBe(stat($destinationRoot)['dev']);
-    } else {
-        expect(stat($sourceRoot)['dev'])->toBe(stat($destinationRoot)['dev']);
-    }
-
-    orb105_run(['git', 'init', '--initial-branch=main', $source]);
-    orb105_run(['git', '-C', $source, 'config', 'user.email', 'orb105@example.test']);
-    orb105_run(['git', '-C', $source, 'config', 'user.name', 'ORB-105']);
-    orb105_run(['git', '-C', $source, 'config', 'orbit.fixture', 'preserved']);
-    file_put_contents($source.'/README.md', "initial\n");
-    $files->ensureDirectoryExists($source.'/bin');
-    file_put_contents($source.'/bin/run', "#!/bin/sh\nexit 0\n");
-    chmod($source.'/bin/run', 0o750);
-    symlink('README.md', $source.'/readme-link');
-    orb105_run(['git', '-C', $source, 'add', '.']);
-    orb105_run(['git', '-C', $source, 'commit', '-m', 'Initial']);
-    orb105_run(['git', '-C', $source, 'remote', 'add', 'origin', 'https://example.test/acme.git']);
-    file_put_contents($source.'/README.md', "dirty\n", FILE_APPEND);
-    file_put_contents($source.'/staged.txt', "staged\n");
-    orb105_run(['git', '-C', $source, 'add', 'staged.txt']);
-    file_put_contents($source.'/untracked.txt', "untracked\n");
-
     $node = Node::query()->create([
-        'name' => 'orb105-local',
-        'status' => LifecycleStatus::Active,
-        'platform' => 'linux',
-        'tld' => 'test',
-        'public_ssh_host' => '192.0.2.105',
-        'wireguard_ip' => '127.0.0.1',
-        'user' => orb105_effective_user(),
-        'settings' => ['apps' => ['path' => $destinationRoot.'/managed']],
+        'name' => 'registration-'.Str::uuid(), 'status' => LifecycleStatus::Active,
+        'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit',
+        'public_ssh_host' => '192.0.2.105', 'tld' => 'test',
     ]);
-    orbit_test_set_app_placement_role($node, production: false);
     $project = Project::query()->create([
-        'name' => 'Acme',
-        'slug' => 'acme',
-        'repository_url' => 'https://example.test/acme.git',
+        'name' => 'Site', 'slug' => 'site-'.Str::uuid(), 'repository_url' => 'https://example.test/site.git',
         'default_branch' => 'main',
-        'root' => null,
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $project->id,
-        'node_id' => $node->id,
-        'name' => 'default',
-        'source_layout' => 'checkout',
-        'checkout_path' => $destination,
-        'branch' => 'main',
-        'registration_original_path' => $source,
-        'registration_request_id' => (string) Str::uuid(),
-        'registration_primary' => true,
-        'registration_repository_url' => 'https://example.test/acme.git',
-        'registration_repository_identity' => 'example.test/acme',
-        'registration_relocation_state' => 'reserved',
-        'registration_authoritative_path' => $source,
-        'status' => 'reserved',
+        'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default',
+        'source_layout' => 'checkout', 'checkout_path' => '/srv/orbit/apps/site/default', 'branch' => 'main',
+        'registration_original_path' => '/incoming/site', 'registration_request_id' => (string) Str::uuid(),
+        'registration_primary' => true, 'registration_repository_url' => 'https://example.test/site.git',
+        'registration_repository_identity' => 'example.test/site', 'registration_relocation_state' => 'reserved',
+        'registration_authoritative_path' => '/incoming/site', 'status' => 'reserved',
     ]);
-    $manager = orb105_registration_manager(new Orb105LocalSshExecutor);
-
-    return
-        compact(
-            'manager',
-            'node',
-            'instance',
-            'sourceRoot',
-            'destinationRoot',
-            'source',
-            'destination',
-        )
-        + [
-            'source_root' => $sourceRoot,
-            'destination_root' => $destinationRoot,
-        ];
-}
-
-/** Returns the account that creates the fixture files, not the PHP script's owner. */
-function orb105_effective_user(): string
-{
-    $user = posix_getpwuid(posix_geteuid());
-
-    if (! is_array($user) || ! is_string($user['name'] ?? null)) {
-        throw new RuntimeException('The test process user is unavailable.');
-    }
-
-    return $user['name'];
-}
-
-/**
- * Returns the group that owns the fixture files: the test process's primary group.
- *
- * Ubuntu gives each managed account a private group with the account's name, but macOS puts users in staff.
- */
-function orb918_in_place_fixture(): array
-{
-    $fixture = orb105_relocation_fixture(false);
-    orb105_git($fixture['source'], ['worktree', 'add', '-b', 'task-918', $fixture['destination']]);
-    $fixture['instance']->update([
-        'source_layout' => 'worktree',
-        'branch' => 'task-918',
-        'registration_original_path' => $fixture['destination'],
-        'registration_authoritative_path' => $fixture['destination'],
-    ]);
-
-    return $fixture;
-}
-
-function orb105_primary_group(): string
-{
-    $group = posix_getgrgid(posix_getegid());
-
-    if (! is_array($group) || ! is_string($group['name'] ?? null)) {
-        throw new RuntimeException('The test process group is unavailable.');
-    }
-
-    return $group['name'];
-}
-
-function orb105_registration_manager(
-    SshExecutor $executor,
-    ?string $managedGroup = null,
-): RemoteRegistrationSourceManager {
-    $keys = new class implements SshKeyProvider
+    $agents = new FakeAgentCommandRunner;
+    $accounts = new class implements ManagedUserAccountResolver
     {
-        public function privateKeyPath(): string
-        {
-            return '/dev/null';
-        }
-
-        public function publicKey(): string
-        {
-            return 'unused';
-        }
-    };
-    $knownHosts = new class implements KnownHostsStore
-    {
-        public function path(): string
-        {
-            return '/dev/null';
-        }
-
-        public function put(string $host, int $port, HostKey $key): void {}
-    };
-    $accounts = new class($managedGroup) implements ManagedUserAccountResolver
-    {
-        public function __construct(
-            private readonly ?string $managedGroup,
-        ) {}
-
         public function resolve(Node $node): ManagedUserAccount
         {
-            return new ManagedUserAccount($node->user, $this->managedGroup ?? orb105_primary_group(), '/tmp');
+            return new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
         }
     };
-    $manager = new RemoteRegistrationSourceManager(
-        new DevelopmentSshExecutor($executor, $keys, $knownHosts),
-        $accounts,
-    );
 
-    return $manager;
+    return [new RemoteRegistrationSourceManager($agents, $accounts), $agents, $instance];
 }
 
-/** @param array{source_root: string, destination_root: string} $fixture */
-function orb105_remove_relocation_fixture(array $fixture): void
+/** @param array<string, mixed> $changes
+ * @return array<string, mixed>
+ */
+function registrationRow(array $changes = []): array
 {
-    $files = new Filesystem;
-    $files->deleteDirectory($fixture['source_root']);
-    $files->deleteDirectory($fixture['destination_root']);
+    return array_replace([
+        'path' => '/incoming/site', 'layout' => 'checkout', 'repository_url' => 'https://example.test/site.git',
+        'branch' => 'main', 'detached' => false, 'commit' => str_repeat('a', 40), 'default_branch' => 'main',
+        'inferred_slug' => 'site', 'inferred_root' => null, 'common_repository_path' => '/incoming/site/.git',
+        'worktree_paths' => ['/incoming/site'], 'source_digest' => str_repeat('b', 64),
+    ], $changes);
 }
 
-function orb105_copy_tree(string $source, string $destination): void
+function registrationFacts(): RegistrationSourceFacts
 {
-    $result = orb105_run(['cp', '-a', '--', $source, $destination]);
-    expect($result->succeeded())->toBeTrue($result->stderr);
-}
-
-/** @return array<string, string> */
-function orb105_git_state(string $path): array
-{
-    return [
-        'head' => trim(orb105_git($path, ['rev-parse', 'HEAD'])->stdout),
-        'branch' => trim(orb105_git($path, ['symbolic-ref', '-q', 'HEAD'])->stdout),
-        'index' => hash_file('sha256', $path.'/.git/index'),
-        'status' => orb105_git($path, ['status', '--porcelain=v2', '--untracked-files=all'])->stdout,
-        'config' => orb105_git($path, ['config', '--local', '--null', '--list'])->stdout,
-        'refs' => orb105_git($path, ['show-ref', '--head'])->stdout,
-    ];
-}
-
-/** @param non-empty-list<string> $arguments */
-function orb105_git(string $path, array $arguments): CommandResult
-{
-    return orb105_run(['env', 'GIT_OPTIONAL_LOCKS=0', 'git', '-C', $path, ...$arguments]);
-}
-
-/** @return list<array<string, int|string|null>> */
-function orb105_complete_manifest(string $path): array
-{
-    $script = <<<'PYTHON'
-        import hashlib, json, os, pathlib, stat, sys
-        root = pathlib.Path(sys.argv[1])
-        rows = []
-        for entry in [root, *sorted(root.rglob('*'))]:
-            info = entry.lstat()
-            relative = '.' if entry == root else entry.relative_to(root).as_posix()
-            kind = 'link' if entry.is_symlink() else 'file' if entry.is_file() else 'directory'
-            rows.append({
-                'path': relative,
-                'type': kind,
-                'mode': stat.S_IMODE(info.st_mode),
-                'uid': info.st_uid,
-                'gid': info.st_gid,
-                'size': info.st_size if kind != 'directory' else None,
-                'mtime_ns': info.st_mtime_ns,
-                'content': hashlib.sha256(entry.read_bytes()).hexdigest() if kind == 'file' else None,
-                'target': os.readlink(entry) if kind == 'link' else None,
-            })
-        print(json.dumps(rows, sort_keys=True, separators=(',', ':')))
-        PYTHON;
-    $result = orb105_run(['python3', '-c', $script, $path]);
-    expect($result->succeeded())->toBeTrue($result->stderr);
-
-    return json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR);
-}
-
-/** @return list<array<string, int|string|null>> */
-function orb105_preserved_manifest(string $path): array
-{
-    return array_values(array_filter(
-        orb105_complete_manifest($path),
-        static fn (array $entry): bool => $entry['path'] !== '.git'
-        && ! str_starts_with((string) $entry['path'], '.git/'),
-    ));
-}
-
-/** @param non-empty-list<string> $arguments */
-function orb105_run(array $arguments): CommandResult
-{
-    return new NativeProcessRunner(maxOutputBytes: 16_777_216)->run(new ProcessInvocation($arguments));
-}
-
-final readonly class Orb105LocalSshExecutor implements SshExecutor
-{
-    /** @param array<string, string> $environment */
-    public function __construct(private array $environment = []) {}
-
-    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-    {
-        return new NativeProcessRunner()->run(new ProcessInvocation(
-            arguments: $command->arguments,
-            input: $command->input,
-            protectedInput: $command->protectedInput,
-            environment: $this->environment,
-        ));
-    }
-}
-
-final class Orb918ConcurrentRefsSshExecutor implements SshExecutor
-{
-    /** @var list<string> */
-    public array $operations = [];
-
-    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-    {
-        $operation = $command->arguments[3] ?? '';
-        $this->operations[] = $operation;
-        if (in_array($operation, ['adopt', 'prepare'], true)) {
-            $arguments = $command->arguments;
-            $hook = <<<'PYTHON'
-                import json, subprocess, sys
-                concurrent_member = json.loads(sys.argv[2])[0]
-                original_check_output = subprocess.check_output
-                checkpoint = 0
-                def concurrent_refs(arguments, **kwargs):
-                    global checkpoint
-                    output = original_check_output(arguments, **kwargs)
-                    if arguments[0] == 'git':
-                        checkpoint += 1
-                        original_check_output(['git', '-C', concurrent_member['source'], 'update-ref', 'refs/t3/test/918/' + str(checkpoint), concurrent_member['commit']])
-                        original_check_output(['git', '-C', concurrent_member['source'], 'update-ref', 'refs/heads/another-agent', concurrent_member['commit']])
-                    return output
-                subprocess.check_output = concurrent_refs
-
-                PYTHON;
-            $arguments[2] = $hook.$arguments[2];
-            $command = new RemoteCommand(arguments: $arguments);
-        }
-
-        return new Orb105LocalSshExecutor()->execute($connection, $command);
-    }
-}
-
-final class Orb918InterruptAdoptionSshExecutor implements SshExecutor
-{
-    private bool $interrupted = false;
-
-    /** @var list<string> */
-    public array $operations = [];
-
-    public function __construct(private readonly string $checkpoint = 'adopt') {}
-
-    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-    {
-        $operation = $command->arguments[3] ?? '';
-        $this->operations[] = $operation;
-        $result = new Orb105LocalSshExecutor()->execute($connection, $command);
-        if (! $this->interrupted && ($operation === $this->checkpoint || $operation === 'prepare') && $result->succeeded()) {
-            $this->interrupted = true;
-
-            return new CommandResult(137, $result->stdout, 'Interrupted adoption', $result->durationMs, false);
-        }
-
-        return $result;
-    }
-}
-
-final readonly class Orb918ChangeHeadAfterRenameSshExecutor implements SshExecutor
-{
-    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-    {
-        if (($command->arguments[3] ?? null) === 'prepare') {
-            $arguments = $command->arguments;
-            $arguments[2] = str_replace(
-                'os.rename(source, destination)',
-                "os.rename(source, destination); subprocess.check_call(['git','-C',destination,'commit','--allow-empty','-m','Concurrent source change'], stdout=subprocess.DEVNULL)",
-                $arguments[2],
-            );
-            $command = new RemoteCommand(arguments: $arguments);
-        }
-
-        return new Orb105LocalSshExecutor()->execute($connection, $command);
-    }
-}
-
-final class Orb105InterruptAfterPrepareSshExecutor implements SshExecutor
-{
-    private bool $interrupted = false;
-
-    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-    {
-        $result = new Orb105LocalSshExecutor()->execute($connection, $command);
-
-        if (! $this->interrupted && ($command->arguments[3] ?? null) === 'prepare' && $result->succeeded()) {
-            $this->interrupted = true;
-
-            return new CommandResult(
-                exitCode: 137,
-                stdout: $result->stdout,
-                stderr: 'Simulated process stop after remote prepare completed.',
-                durationMs: $result->durationMs,
-                truncated: $result->truncated,
-            );
-        }
-
-        return $result;
-    }
-}
-
-final class Orb105InterruptPartialPrepareSshExecutor implements SshExecutor
-{
-    private bool $interrupted = false;
-
-    public function __construct(
-        private readonly string $movedSource,
-        private readonly string $unmovedSource,
-    ) {}
-
-    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-    {
-        if ($this->interrupted || ($command->arguments[3] ?? null) !== 'prepare') {
-            return new Orb105LocalSshExecutor()->execute($connection, $command);
-        }
-
-        $this->interrupted = true;
-        $pauseAfterRename = <<<'PYTHON'
-            import os, signal
-            original_rename = os.rename
-            def rename_and_pause(source, destination, *args, **kwargs):
-                original_rename(source, destination, *args, **kwargs)
-                if source == %s:
-                    print('relocation-checkpoint', flush=True)
-                    signal.pause()
-            os.rename = rename_and_pause
-            PYTHON;
-
-        return orb105_interrupt_at_checkpoint($command, sprintf(
-            $pauseAfterRename,
-            json_encode($this->movedSource, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
-        ), function (): void {
-            expect(file_exists($this->movedSource))->toBeFalse()
-                ->and(is_dir($this->unmovedSource))->toBeTrue();
-        });
-    }
-}
-
-final class Orb105InterruptingCleanupSshExecutor implements SshExecutor
-{
-    private bool $interrupted = false;
-
-    public function __construct(
-        private readonly string $source,
-        private readonly string $trigger,
-    ) {}
-
-    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-    {
-        if ($this->interrupted || ($command->arguments[3] ?? null) !== 'cleanup') {
-            return new Orb105LocalSshExecutor()->execute($connection, $command);
-        }
-
-        $this->interrupted = true;
-        // Pause after the real unlink so cleanup cannot finish before the observer sends SIGKILL.
-        $pauseAfterUnlink = <<<'PYTHON'
-            import os, signal
-            trigger = %s
-            original_walk = os.walk
-            def walk_with_trigger_first(*args, **kwargs):
-                for current, directories, files in original_walk(*args, **kwargs):
-                    if current == os.path.dirname(trigger):
-                        files.sort(key=lambda name: name != os.path.basename(trigger))
-                    yield current, directories, files
-            os.walk = walk_with_trigger_first
-            original_unlink = os.unlink
-            def unlink_and_pause(path, *args, **kwargs):
-                directory = kwargs.get('dir_fd')
-                absolute = os.path.join(os.readlink('/proc/self/fd/' + str(directory)), path) if directory is not None else path
-                original_unlink(path, *args, **kwargs)
-                if absolute == trigger:
-                    print('relocation-checkpoint', flush=True)
-                    signal.pause()
-            os.unlink = unlink_and_pause
-            PYTHON;
-
-        return orb105_interrupt_at_checkpoint($command, sprintf(
-            $pauseAfterUnlink,
-            json_encode($this->trigger, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
-        ), function (): void {
-            expect(file_exists($this->trigger))->toBeFalse()
-                ->and(is_dir($this->source))->toBeTrue();
-        });
-    }
-}
-
-/** Pause only after the real filesystem operation; the observer acknowledges it by killing the actual process. */
-function orb105_interrupt_at_checkpoint(RemoteCommand $command, string $hook, Closure $assertCheckpoint): CommandResult
-{
-    $arguments = $command->arguments;
-    $arguments[2] = $hook."\n".$arguments[2];
-    $process = new SymfonyProcess($arguments, timeout: 5);
-    $process->start();
-
-    try {
-        $acknowledged = $process->waitUntil(static fn (): bool => str_contains($process->getOutput(), "relocation-checkpoint\n"));
-        expect($acknowledged)->toBeTrue($process->getErrorOutput());
-        $assertCheckpoint();
-    } finally {
-        if ($process->isRunning()) {
-            $process->signal(SIGKILL);
-            $process->wait();
-        }
-    }
-
-    expect($process->getTermSignal())->toBe(SIGKILL);
-
-    return new CommandResult(
-        exitCode: $process->getExitCode(),
-        stdout: $process->getOutput(),
-        stderr: $process->getErrorOutput(),
-        durationMs: 0,
-        truncated: false,
+    return new RegistrationSourceFacts(
+        path: '/incoming/site', layout: InstanceSourceLayout::Checkout,
+        repositoryUrl: 'https://example.test/site.git', repositoryIdentity: 'example.test/site',
+        branch: 'main', detached: false, commit: str_repeat('a', 40), defaultBranch: 'main',
+        inferredSlug: 'site', inferredRoot: null, commonRepositoryPath: '/incoming/site/.git',
+        worktreePaths: ['/incoming/site'], sourceDigest: str_repeat('b', 64),
     );
 }
-
-it('closes a relocated Instance environment to other local users after the last verification', function (string $relative): void {
-    $fixture = orb105_relocation_fixture();
-
-    try {
-        $fixture['instance']->update(['root' => ltrim($relative.'/public', '/')]);
-        new Filesystem()->ensureDirectoryExists($fixture['source'].$relative);
-        file_put_contents($fixture['source'].$relative.'/.env', "APP_KEY=secret\n");
-        chmod($fixture['source'].$relative.'/.env', 0o664);
-        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
-
-        $fixture['manager']->relocate($fixture['instance'], $facts);
-
-        expect(fileperms($fixture['destination'].$relative.'/.env') & 0o777)->toBe(0o660)
-            ->and($fixture['instance']->refresh()->registration_relocation_state)->toBe('relocated');
-    } finally {
-        orb105_remove_relocation_fixture($fixture);
-    }
-})->with(['root public' => '', 'nested Laravel' => '/server/web']);

@@ -9,25 +9,30 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
-use App\Infrastructure\Fleet\NodeShell;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Tasks\TaskUnitProgram;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Node;
 use RuntimeException;
 
 /** Fixed recipe operations over the same pinned SSH transport as fleet convergence. */
 final readonly class NodeRecipeProgram
 {
-    public function __construct(private NodeShell $shell, private PhpBuildInstaller $php, private PrivateDnsManager $dns) {}
+    /** The tools `recipe.install-javascript` installs. */
+    public const array JavascriptTools = ['bun', 'node', 'pnpm', 'vp', 'vp-cli'];
+
+    public function __construct(private AgentCommandRunner $agents, private PhpBuildInstaller $php, private PrivateDnsManager $dns) {}
+
+    /** The recipe architecture of a Node; another architecture is refused. */
+    public static function architecture(Node $node): string
+    {
+        return MachineRecipe::architecture($node->architecture)
+            ?? throw new ResourceOperationException('node.recipe_architecture', 'The Node architecture is not supported by the recipe.', 422);
+    }
 
     /** @return array<string, ToolPin> */
     public function tools(Node $node, MachineRecipe $recipe): array
     {
-        $architecture = match ($node->architecture) {
-            'x86_64', 'amd64' => 'amd64',
-            'aarch64', 'arm64' => 'arm64',
-            default => throw new ResourceOperationException('node.recipe_architecture', 'The Node architecture is not supported by the recipe.', 422),
-        };
+        $architecture = self::architecture($node);
         $node->load('roles');
         $names = $node->roles->isEmpty() ? $recipe->profile('operator', $architecture) : [];
         foreach ($node->roles as $role) {
@@ -204,16 +209,14 @@ final readonly class NodeRecipeProgram
     }
 
     /**
+     * The typed recipe input for the selected tools. `recipe.inspect`, `recipe.apply`, and `recipe.install-javascript`
+     * take the same shape.
+     *
      * @param  array<string, ToolPin>  $tools
      * @return array<string, mixed>
      */
-    private function run(Node $node, MachineRecipe $recipe, array $tools, string $mode): array
+    public static function payload(Node $node, MachineRecipe $recipe, array $tools): array
     {
-        $program = file_get_contents(resource_path('remote/lib/recipe.py'));
-        if ($program === false) {
-            throw new RuntimeException('The recipe converge program is missing.');
-        }
-        $program = file_get_contents(resource_path('remote/lib/artifacts.py'))."\n".TaskUnitProgram::embed($program);
         $data = json_decode($recipe->json, true, flags: JSON_THROW_ON_ERROR);
         if (! is_array($data) || ! is_array($data['tools'] ?? null)) {
             throw new RuntimeException('The recipe document is invalid.');
@@ -224,56 +227,62 @@ final readonly class NodeRecipeProgram
             }
             $data['tools'][$name]['version'] = $pin->version;
         }
-        $payload = [
+
+        return [
+            'user' => $node->user,
             'snapshot' => $recipe->snapshot,
             'git_packages' => $recipe->gitPackages, 'artifact_mirror' => $recipe->artifactMirror,
-            'architecture' => in_array($node->architecture, ['x86_64', 'amd64'], true) ? 'amd64' : 'arm64',
+            'architecture' => self::architecture($node),
             'tools' => array_intersect_key($data['tools'], $tools),
             'vp_lock' => isset($tools['vp']) ? VitePlusRuntimeLock::read($tools['vp']) : null,
         ];
-        $result = $this->shell->run($node, new RemoteCommand(
-            $mode === 'inspect' ? ['python3', '-', $mode] : ['sudo', 'timeout', '--signal=TERM', '--kill-after=10', '840', 'python3', '-', $mode],
-            input: RecipeProgramInput::source($program, $payload, 'main'),
-            maxOutputBytes: 65536,
-            timeout: 900,
-        ));
-        if (! $result->succeeded() || $result->truncated) {
-            // The fixed recipe failure envelope exposes command diagnostics after redaction and bounding.
-            $stagePattern = '/\Arecipe-stage:[a-z-]+(?::[A-Za-z0-9@_.:-]+)?\z/';
-            $diagnostic = json_decode($result->stdout, true);
-            $failure = is_array($diagnostic) ? $diagnostic['failure'] ?? null : null;
-            if (is_array($failure) && is_string($failure['stage'] ?? null) && preg_match($stagePattern, $failure['stage']) === 1) {
-                if ($failure['stage'] === 'recipe-stage:incus:running') {
-                    throw new ResourceOperationException('node.recipe_incus_busy', 'Incus changes require a drained host. '.new CommandActivityInputSanitizer()->redactText(is_string($failure['reason'] ?? null) ? $failure['reason'] : '').' Nothing was changed.', 409);
-                }
-                $detail = new CommandActivityInputSanitizer()->redactText(json_encode($failure, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE));
-                throw new ResourceOperationException('node.recipe_failed', 'Recipe convergence stopped at '.$failure['stage'].'. '.mb_substr($detail, 0, 30000).' The Node may be partly changed. No automatic rollback was attempted; inspect the Node before retrying.', 502);
+    }
+
+    /**
+     * The `recipe.install-javascript` input for the JavaScript runtimes a role's recipe profile pins, or null when it
+     * pins none. Role convergence and image programs install them with the same verified archives and launchers as
+     * recipe convergence.
+     *
+     * @return array<string, mixed>|null
+     */
+    public static function javascript(Node $node, RoleName $role): ?array
+    {
+        $recipe = new RecipeLoader()->load();
+        $architecture = self::architecture($node);
+        $tools = [];
+        foreach (array_intersect($recipe->profile($role->value, $architecture), self::JavascriptTools) as $name) {
+            $tools[$name] = $recipe->tools[$name]->forArchitecture($architecture);
+        }
+
+        return $tools === [] ? null : self::payload($node, $recipe, $tools);
+    }
+
+    /**
+     * @param  array<string, ToolPin>  $tools
+     * @return array<string, mixed>
+     */
+    private function run(Node $node, MachineRecipe $recipe, array $tools, string $mode): array
+    {
+        $payload = self::payload($node, $recipe, $tools);
+        try {
+            return $this->agents->run($node, 'recipe.'.$mode, $payload);
+        } catch (AgentCommandRefused $error) {
+            if ($error->errorCode !== 'recipe.failed') {
+                throw $error;
             }
-            $stage = trim($result->stdout);
+            $failure = $error->details;
+            $stage = is_string($failure['stage'] ?? null) ? $failure['stage'] : 'recipe-stage:remote';
+            if ($stage === 'recipe-stage:incus:running') {
+                throw new ResourceOperationException('node.recipe_incus_busy', 'Incus changes require a drained host. '.new CommandActivityInputSanitizer()->redactText(is_string($failure['reason'] ?? null) ? $failure['reason'] : '').' Nothing was changed.', 409);
+            }
             if ($stage === 'recipe-stage:docker-provider:docker-ce') {
                 throw new ResourceOperationException('node.recipe_docker_provider', 'docker-provider:docker-ce: Docker CE requires an explicit planned-window migration. Run php artisan node:migrate-docker '.$node->id.' --dry-run on the Gateway. Nothing was changed by recipe convergence.', 409);
-            }
-            if (preg_match($stagePattern, $stage) !== 1) {
-                $stage = 'recipe-stage:remote';
             }
             if (preg_match('/^recipe-stage:platform:([A-Za-z0-9._-]+):([A-Za-z0-9._-]+)$/D', $stage, $platform) === 1) {
                 throw new ResourceOperationException('node.recipe_platform_unsupported', "Node operating system [{$platform[1]}/{$platform[2]}] is not supported.", 422);
             }
-            throw new ResourceOperationException('node.recipe_failed', "Recipe convergence stopped at {$stage}. The Node may be partly changed. No automatic rollback was attempted; inspect the Node before retrying.", 502);
+            $detail = new CommandActivityInputSanitizer()->redactText(json_encode($failure, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE));
+            throw new ResourceOperationException('node.recipe_failed', 'Recipe convergence stopped at '.$stage.'. '.mb_substr($detail, 0, 30000).' The Node may be partly changed. No automatic rollback was attempted; inspect the Node before retrying.', 502);
         }
-        $report = json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR);
-        if (! is_array($report)) {
-            throw new RuntimeException('Recipe convergence returned an invalid report.');
-        }
-
-        $fields = [];
-        foreach ($report as $key => $value) {
-            if (! is_string($key)) {
-                throw new RuntimeException('Recipe convergence returned an invalid report key.');
-            }
-            $fields[$key] = $value;
-        }
-
-        return $fields;
     }
 }

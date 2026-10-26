@@ -4,45 +4,20 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AppDev;
 
-use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentStep;
 use App\Models\Node;
 
+/** Removes the LAN firewall allowance owned by a Route. */
 final readonly class RemoteAppDevRouteFirewallManager
 {
-    public function __construct(
-        private DevelopmentSshExecutor $ssh,
-    ) {}
+    public function __construct(private AgentCommandRunner $agents) {}
 
     public function remove(Node $node, int $routeId): void
     {
-        $this->ssh->execute(
-            $node,
-            new RemoteCommand(
-                arguments: ['bash', '-seu', '--', "orbit:route-{$routeId}-lan"],
-                input: <<<'BASH'
-                    comment=$1
-                    status=$(sudo ufw status numbered)
-                    numbers=$(printf '%s\n' "$status" | awk -v suffix="# $comment" '
-                        index($0, suffix) == length($0) - length(suffix) + 1 {
-                            line=$0
-                            sub(/^\[[[:space:]]*/, "", line)
-                            sub(/\].*$/, "", line)
-                            print line
-                        }
-                    ')
-                    if [ -n "$numbers" ]; then
-                        printf '%s\n' "$numbers" | sort -rn | while read -r number; do
-                            case "$number" in
-                                ''|*[!0-9]*) exit 1 ;;
-                            esac
-                            sudo ufw --force delete "$number"
-                        done
-                    fi
-                    ! sudo ufw status numbered | grep -F -- "# $comment" >/dev/null
-                    BASH,
-            ),
-            step: 'route-firewall-remove',
-            errorCode: 'app-dev.route_firewall_failed',
-        );
+        AgentStep::run($this->agents, $node, 'firewall.route-lan', [
+            'operation' => 'remove',
+            'route_id' => $routeId,
+        ], 'route-firewall-remove', 'app-dev.route_firewall_failed', 'App development');
     }
 }

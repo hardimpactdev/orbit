@@ -244,7 +244,7 @@ Added to the home screen of an iPhone or iPad, the app stays in memory and navig
 
 ## Web directory
 
-The web directory is `/home/orbit/web`. `ORBIT_GATEWAY_WEB` can name another direct child of `/home/orbit`. The directory belongs to the `orbit` user and the `caddy` group.
+The web directory is `/home/orbit/web`. `ORBIT_GATEWAY_WEB` can name another direct child of `/home/orbit`. The Gateway calls `gateway.prepare-web-directory` through the agent runner. The command checks the path and existing directories before any change, refuses symlinks, and prepares the web directory and its `releases` child as `orbit:caddy` with mode `0750`. Repeating the command leaves matching directories unchanged.
 
 | Path | Contents |
 | --- | --- |
@@ -411,7 +411,9 @@ The page shows when each snapshot was observed and distinguishes unscanned, abse
 
 The Instance overview shows the latest 25 deployments, in the order returned by the Gateway.
 
-Its Deploy action starts an `instance.deploy` [operation](/reference/operations) with the same request as `instance:deploy`. A Deploy pane then shows each step's status and the running step's output tail. The pane subscribes to `private-operation.{id}`, reads the operation, and reads it again with `after_sequence` for each newer event, as [Follow an operation over Reverb](/reference/operations#follow-an-operation-over-reverb) describes. Without realtime it reads every `poll_after_seconds`. While a deploy or a rollback of the Instance runs, the overview shows it, also when another client started it. The pane's title names the kind: Deploy or Rollback.
+Its Deploy action starts an `instance.deploy` [operation](/reference/operations) with the same request as `instance:deploy`. A Deploy pane then shows each step's status and the running step's output: live from the Node agent's [`client-output`](/reference/events#deploy-step-output) lines while the step runs, and the record's output tail otherwise. It keeps the newest 1,000 live lines per step.
+
+The pane subscribes to `private-operation.{id}`, reads the operation, and reads it again with `after_sequence` for each newer event, as [Follow an operation over Reverb](/reference/operations#follow-an-operation-over-reverb) describes. Without realtime it reads every `poll_after_seconds`. While a deploy or a rollback of the Instance runs, the overview shows it, also when another client started it. The pane's title names the kind: Deploy or Rollback.
 
 ## Database tables
 

@@ -104,6 +104,7 @@ it('keeps the root candidate check away from an inherited caller database', func
         'DB_DATABASE' => $sentinel,
         'DB_URL' => 'sqlite:////'.ltrim($sentinel, '/'),
         'ORBIT_GATEWAY_ACTUAL_CHECK' => '1',
+        'PAO_DISABLE' => '1',
         'ORBIT_GATEWAY_SOURCE' => base_path('../../apps/gateway'),
         'ORBIT_REAL_COMPOSER' => $composer,
         'ORBIT_TEST_DATABASE' => false,

@@ -4,7 +4,7 @@ description: "Typed Node settings for the apps root and operator-owned task VM h
 covers:
   - apps/gateway/app/Domain/Nodes/Storage/**
   - apps/gateway/app/{Actions/Nodes/UpdateNodeSettingsAction,Providers/TaskVmServiceProvider}.php
-  - apps/gateway/app/Infrastructure/Nodes/RemoteNodeStorageRootPreparer.php
+  - apps/gateway/app/Infrastructure/Nodes/AgentNodeStorageRootPreparer.php
   - apps/gateway/app/Data/Nodes/{NodeSettingsData,NodeStorageAppsData,NodeTaskVmsData}.php
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/gateway/app/Http/Requests/Nodes/UpdateNodeSettingsRequest.php
@@ -111,7 +111,7 @@ The Gateway checks the path before it stores it. A path must:
 - not be inside a hidden directory of the managed user's home; and
 - not equal, or lie inside, an existing Instance checkout on the Node.
 
-The Gateway then checks the path on the Node. When the Node has an active `app-dev` role, it prepares the path: it creates each missing directory, owned by the managed user and group with mode `0755`. Otherwise the path must already exist. `app-dev` convergence prepares the apps root in the same way. Caddy must still reach each development Web root under the apps root; [Caddy access](/reference/routes#caddy-access) explains how.
+The Gateway then checks the path on the Node with the agent's `nodes.prepare-storage-root`. When the Node has an active `app-dev` role, it prepares the path: it creates each missing directory, owned by the managed user and group with mode `0755`. Otherwise the path must already exist. `app-dev` convergence prepares the apps root in the same way. Caddy must still reach each development Web root under the apps root; [Caddy access](/reference/routes#caddy-access) explains how.
 
 An existing directory must be a real directory, not a symlink, owned by the managed user and group. The owner must have read, write, and execute access, and group and others must not have write access. The Gateway never changes the owner or mode of an existing directory. When a check fails, the stored setting stays unchanged. A directory that the Gateway created before the failure can remain.
 

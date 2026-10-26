@@ -2,9 +2,10 @@
 title: "Remote file writes on uutils coreutils"
 description: "Why writing a remote file from standard input with install fails on uutils coreutils, and the write sequence that works."
 covers:
-  - apps/gateway/app/Infrastructure/Metrics/{MetricsSshExecutor,MetricsExporterSshExecutor}.php
+  - apps/agent/src/commands/metrics_runtime.rs
+  - apps/agent/src/commands/metrics_exporter.rs
   - apps/gateway/app/Infrastructure/Nodes/NodeAgentSshExecutor.php
-  - apps/gateway/app/Infrastructure/Processes/RemoteProcessRuntimeManager.php
+  - apps/agent/src/commands/processes.rs
 ---
 
 # Remote file writes on uutils coreutils
@@ -27,14 +28,14 @@ Creating a new file works, and overwriting from a regular file works. Only an ov
 
 ## Solution
 
-Never point a remote `install` from standard input at a live path. Remove any stale `<path>.orbit-candidate`, write the candidate, and then `mv -fT` it onto the target. The move is atomic, which running containers and systemd units need anyway. Metrics SSH publishers, `MetricsExporterSshExecutor::publishConfiguration()`, and `NodeAgentSshExecutor::publishFile()` use this sequence. `RemoteProcessRuntimeManager` writes each unit to `/etc/orbit/systemd-candidates`, verifies the candidate with `systemd-analyze`, and then moves it into place. Metrics exporter SSH lifecycle operations now delegate file publication to the shared publisher.
+Node commands publish files through Rust filesystem APIs. They create a fresh candidate, write it with the required mode and ownership, then rename it onto the live path. This avoids the uutils standard-input overwrite problem and makes each file replacement atomic. Metrics configuration and exporter commands use this sequence. The agent's `processes.stage-unit` writes each Process unit to `/etc/orbit/systemd-candidates` and verifies it with `systemd-analyze`; `processes.activate-unit` then renames it into place.
 
-Before staging a systemd candidate, `RemoteProcessRuntimeManager` reads the existing unit and checks its Process ownership marker. If its content matches a recorded successful activation, or belongs to a legacy Process with no pending activation, and its active or inactive state matches the desired state, convergence returns without writing a candidate, reloading systemd, or restarting the Process. Changed unit content still follows the candidate-and-verify sequence; an unchanged specification does not justify skipping recovery of an incomplete update.
+Before staging a systemd candidate, `processes.stage-unit` reads the existing unit and checks its Process ownership marker. If its content matches a recorded successful activation, or belongs to a legacy Process with no pending activation, and its active or inactive state matches the desired state, convergence returns without writing a candidate, reloading systemd, or restarting the Process. Changed unit content still follows the candidate-and-verify sequence; an unchanged specification does not justify skipping recovery of an incomplete update.
 
 ## Limits
 
-The problem affects only `/dev/stdin` sources. `install -d`, mode changes, and regular-file sources work. Node agent converge closes permissions on an existing Instance `.env` with a mode change, not file publication. For a nested Laravel app, that operation targets the [application directory](/reference/node-agent#install-and-upgrade), such as `<checkout>/apps/site/.env`; it does not need the candidate-and-move sequence. A numeric container identity, such as Grafana's `472`, also needs a separate `chown`, because `install -o` and `-g` refuse an identity without a `passwd` entry. The Node agent uses this sequence only on Linux. A macOS install or repair returns `node.agent_unsupported` before SSH, and removal returns without a remote command.
+The uutils problem affects only `/dev/stdin` sources. `install -d`, mode changes, and regular-file sources work. Rust publication sets numeric ownership directly, so Grafana's UID and GID `472` need no host account. The exporter and container commands are Linux-only; their platform declarations refuse macOS before mutation.
 
 ## Verification
 
-Converge the same role twice over existing configuration, which is the case that fails. Unit tests cover the sequence in `apps/gateway/tests/Unit/Infrastructure/Metrics/MetricsSshExecutorTest.php` and `MetricsExporterSshExecutorLifecycleTest.php`; `apps/gateway/tests/Feature/Infrastructure/Processes/RemoteProcessRuntimeManagerTest.php` checks candidate verification and atomic publication of systemd units, and checks that repeated convergence of an unchanged running or stopped Process writes no candidate and issues no restart.
+Converge the same role twice over existing configuration, which is the case that failed. The Rust Metrics runtime and exporter tests use temporary filesystems and cover repeated publication, ownership refusals, modes, and rollback. The `processes` tests check candidate verification and atomic unit publication. Gateway tests fake the agent runner and check intent rather than file-write arguments.

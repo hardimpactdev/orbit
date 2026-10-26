@@ -2,14 +2,14 @@
 title: "Compute drivers"
 description: "Task VMs for every Project and their UpCloud overflow."
 covers:
+  - apps/agent/src/commands/{image_recipe.rs,image_recipe/**,pi_artifact.rs,pi_artifact/**}
   - apps/gateway/app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**
   - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildTaskVmImageCommand.php,Console/Commands/BuildTaskVmRecipeCommand.php,Console/Commands/BuildUpCloudTaskVmImageCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
-  - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/php/**,resources/remote/lib/artifacts.py,resources/remote/task-vms/**}
+  - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/task-vms/**}
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - bin/{php-build,git-build-watch}
   - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,config/package_cache.php,config/task_vms.php}
-  - apps/gateway/resources/task-vms/**
-  - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
+  - apps/gateway/{resources/task-vms/**,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
 ---
 
 # Compute drivers
@@ -130,7 +130,9 @@ The base also holds the nested Incus packages, so a task VM [runs a topology](#p
 
 Zabbly bundles QEMU, qemu-img, virtiofsd, and firmware with Incus. No separate Ubuntu packages provide them. The recipe installs packages without recommended packages. The `base` profile is amd64 only, because Pi is. The topology Nodes start from the same base and carry these packages unused.
 
-After the packages, the image build adds `orbit` to `incus-admin`, because cloud-init adds groups only to a user it creates. Software verification checks the membership. `base-image-clean.sh` stops Incus and empties `/var/lib/incus`, and fails when it is not empty. So every VM and topology Node from the image creates its own Incus server certificate and database.
+After the packages, the image build adds `orbit` to `incus-admin`, because cloud-init adds groups only to a user it creates. Software verification checks the membership. `image.clean` stops Incus and empties `/var/lib/incus`, and fails when it is not empty. So every VM and topology Node from the image creates its own Incus server certificate and database.
+
+Builder cloud-init declares the `orbit` account with UID 1000 and its own primary group. It runs no account-creation script. Before preparing either an Incus or UpCloud builder, the Gateway installs the pinned agent and calls `image.owner`. That command requires both UID and GID 1000. A taken ID or a pre-existing account with different IDs fails the build; Orbit does not renumber accounts or accept another group. This check runs before recipe packages or workspace volumes can use the account. Image smoke checks require the same IDs again.
 
 ### PHP build
 
@@ -169,7 +171,11 @@ On a Node with both app-dev and app-prod, dedicated production FPM masters also 
 
 #### Install the PHP build
 
-`php.install-build`, a [remote program](/reference/remote-programs), is the one installer of the PHP build. Recipe convergence and the PHP step of an Instance send it to the Node. The image build runs it in the guest, and `bin/php-build install --profile=PROFILE` runs it on a bootstrap or CI machine. Install and `bin/php-build verify --profile=PROFILE` require a recipe profile. Both derive the packages and loaded CLI extensions from that profile, including PCOV and OpenTelemetry policy. A profile that does not declare the selected PHP version is refused.
+`php.install-build`, a native [agent command](/reference/node-agent#commands), is the one installer of the PHP build. `php.inspect-build` checks the same typed pins without changing the machine. Recipe convergence and the PHP step of an Instance call these commands through the agent runner. The image build runs it in the guest, and `bin/php-build install --profile=PROFILE` runs it on a bootstrap or CI machine.
+
+Build the checkout's agent first with `cargo build --release --locked` in `apps/agent`. The local adapter sends typed input with that binary's digest and refuses a missing binary or a failed command. Install and `bin/php-build verify --profile=PROFILE` require a recipe profile. Both derive the packages and loaded CLI extensions from that profile, including PCOV and OpenTelemetry policy. A profile that does not declare the selected PHP version is refused.
+
+After installation, an Instance PHP step calls `php.configure-runtime` to publish the Orbit FPM module. The Gateway supplies the selected version, supported release, and OPcache settings. The agent publishes and verifies the module, reloads a running shared master only when its configuration passes, and enables the service without starting it. A failed publication restores the previous file and module link.
 
 The installer owns `/etc/php/<version>/{fpm,cli}/conf.d/99-cve-2026-109618-upload-progress.ini` for every PHP version it installs. It writes `session.upload_progress.enabled = 0` to mitigate CVE-2026-109618 and CVE-2026-109619, which allow unauthenticated remote code execution through session upload progress in multipart requests. It replaces the operator's emergency file at the same path and repairs missing or changed files on later convergence.
 
@@ -285,7 +291,9 @@ The Gateway needs `python3`, `gpg`, and `gpgv`. Run `php artisan orbit:machine-r
 
 ### Recipe identity
 
-The recipe identity is `sha256:<digest>`, computed from the validated document's canonical JSON after removing internal-artifact filenames. Internal source commits and digests remain in the identity; relocating identical internal bytes does not change it. Canonicalization recursively sorts object keys by byte order, preserves array order, emits no insignificant whitespace, leaves slashes and Unicode unescaped, and adds no final newline. Only JSON integers, strings, arrays, objects, booleans, and null are permitted; schema fields further restrict their types. Duplicate keys are rejected before hashing. The identity is derived, not stored as a self-referential field in the recipe.
+The recipe identity is `sha256:<digest>`, computed from the validated document's canonical JSON after removing internal-artifact filenames. Loading a recipe resolves its `agent` field from the Gateway delivery manifest before hashing. This field contains the delivered Linux SHA-256 digests keyed by platform; the source recipe uses `null` and carries no agent version or artifact pins. Changing either Linux digest changes the identity. macOS artifacts and delivery storage locations do not. Stored build recipes retain the resolved map, so resuming a build cannot silently substitute another agent. A build or Node convergence refuses a missing or mismatched target pin before applying software.
+
+Internal source commits and digests remain in the identity; relocating identical internal bytes does not change it. Canonicalization recursively sorts object keys by byte order, preserves array order, emits no insignificant whitespace, leaves slashes and Unicode unescaped, and adds no final newline. Only JSON integers, strings, arrays, objects, booleans, and null are permitted; schema fields further restrict their types. Duplicate keys are rejected before hashing. The identity is derived, not stored as a self-referential field in the recipe.
 
 Whitespace and object-key order do not change the identity. Changing a snapshot, version pin, external artifact URL, `artifact_mirror`, source commit, digest, role assignment, schema version, or list order does. The identity covers all profiles together; there is no independent version counter for each role and no Git commit SHA masquerading as the recipe version. Git history provides provenance, while the content hash names the exact software intent even when the same recipe appears in another commit. [Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) records this complete identity after verification.
 
@@ -301,7 +309,7 @@ Add `--validate` to verify availability and integrity as well as structure. For 
 
 Online validation verifies that the exact snapshot exists for the release and architectures, and that every Ubuntu pin equals the newest version in its authenticated package indexes on all declared architectures. It also checks that every external or Gateway-local artifact is available and matches its recorded digest. Redirects or server fallback to another snapshot or a rolling archive must not turn an unavailable pin into success.
 
-Use `php artisan orbit:machine-recipe --validate-ubuntu` to check only Ubuntu snapshot pins, without fetching artifacts. CI runs this signed-index check when `recipe.json` changes or the event has no comparison base; a hand-edited snapshot date with stale pins fails Required checks. A handoff push compares with the branch's merge base with `origin/main`, not the previous handoff, so later handoffs keep checking recipe changes that have not merged.
+Use `php artisan orbit:machine-recipe --validate-ubuntu` to check only Ubuntu snapshot pins, without fetching artifacts. It reads `recipe.json` as written, with no agent pin, because Ubuntu pins do not depend on the release's agent. It therefore needs no agent delivery manifest, and its output shows the source recipe, not a release identity. CI runs this signed-index check when `recipe.json` changes or the event has no comparison base; a hand-edited snapshot date with stale pins fails Required checks. A handoff push compares with the branch's merge base with `origin/main`, not the previous handoff, so later handoffs keep checking recipe changes that have not merged.
 
 CI restores and stores verified InRelease files and compressed Packages indexes with stock `actions/cache` only when the recipe needs validation, keyed by snapshot identifier and architecture set. `ORBIT_RECIPE_SNAPSHOT_CACHE` selects the metadata directory. Cache reads repeat signature, release, architecture, size, and SHA-256 checks; a cache hit makes no network request. Cached metadata never substitutes for a missing pin.
 
@@ -358,6 +366,28 @@ A live PPA would be a second owner of Git, and an exact APT version alone does n
 
 A task VM is an Ubuntu 26.04 VM on an Incus host. It boots from the [base image](#build-the-base-image), which each host builds from the same recipe and which holds the `app-dev` tool set. The Gateway creates it for one group, enrolls it as an `app-dev` Node, and destroys it when the group ends. After enrollment, the group uses the normal Instance and task paths, pinned to that Node. Incus provides local capacity; [UpCloud](#upcloud-overflow) provides optional overflow.
 
+The host's image, instance-name, and host-wide resource inventories use the typed agent commands `incus.images`, `incus.instances`, and `incus.inventory`. Rust validates complete Incus output and returns fingerprints, aliases, and resource names. Instance-name reads first prove that the configured project exists; a missing project cannot count as an empty host. Host-wide inventory includes every project and storage pool so the Gateway can compare it with recorded ownership. These reads take no mutation lock. Invalid or incomplete output refuses with `task_vm.invalid_host_output`; a failed Incus call returns `task_vm.host_command_failed`.
+
+`task-vms:prepare-host` sends the configured project, bridge, subnet, pool, and optional ZFS dataset to `incus.prepare-host`. The command validates existing storage, project network scope, and bridge address before changing them. It refuses to create a pool on a dataset that already exists. Rust owns the ACL, isolated profile NIC, project restrictions, stock image copy, and UFW forwarding rule. Repeated calls converge the same resources under the host and firewall locks. A setup failure returns `task_vm.setup_failed`; it does not claim to undo a partly completed setup.
+
+`incus.volumes` reads the custom volumes in the configured project and pool. `incus.volume` clones a base image's topology seed for a VM, gives a completed seed its final name, or removes an explicitly selected volume. The agent derives seed names from the image fingerprint and clone names from the VM name. It preserves existing clones, refuses a missing source seed, and treats an absent removal target as removed. Volume changes share a host lock; the Gateway keeps the decision about which records and images still own each volume.
+
+`incus.vm-state` returns one VM's running state, guest bridge address, and original image fingerprint. `incus.vm` creates, starts, stops, or deletes that VM under one target lock. The agent owns exact-name matching, Incus output validation, clean shutdown followed by forced stop, and the observation after a failed mutation. Create intent supplies the Gateway public key, image claim, resource limits, and topology requirement. The agent renders the fixed cloud-init account and QEMU configuration, clones a required seed before launch, and refuses an existing VM with a different claimed image. Delete removes the VM before releasing its seed clone. The Gateway keeps placement and resource-size policy.
+
+Image builders and smoke VMs use the same `incus.vm` boundary. Their `create_image` intent selects the source image, account key, resource limits, and builder account mode. Rust renders cloud-init and launches the VM with NIC isolation. A repeat preserves a VM from the requested image and refuses a different image. `remove_instance` removes an exact VM without changing storage volumes; the Gateway's existing image and orphan sweep decides which names it may remove. An absent VM counts as removed.
+
+Before enrollment, guest commands use the same command runner, delivery manifest, and mismatch handling as managed Nodes. Incus carries them through its host's pinned transport with `incus exec`; UpCloud carries them through the guest's pinned SSH connection. The Incus adapter refuses source Git credentials before contacting the host, including for a builder with no task VM record. The transport stages only the pinned agent candidate. A builder has no Node row: an installation refusal fails its build, and never records a failed pin on the Incus host or creates a Node record.
+
+`incus.instance-images` reads the original image fingerprint of each instance. `incus.image` prepares single-boot metadata, stops and publishes a builder, promotes an alias, or prunes selected image candidates. Rust preserves metadata maps, removes only NoCloud seed templates, validates publication output, and protects images used by existing instances or unrelated aliases. The Gateway selects obsolete aliases and retained fingerprints from build records. Pruning removes the selected image’s seed volumes before its image. All image changes share the Incus volume lock. The guest command `image.prepare-incus` writes the fixed cloud-init ordering drop-in before metadata changes.
+
+`image.boot` applies the fixed first-boot and APT service masks. Incus images also receive the DHCPv4 network file and IPv4 wait-online drop-in. `image.owner` verifies the fixed `orbit` UID and GID. `image.check` verifies that account and its authorized key, plus the provider’s requested lean-boot or active-firewall checks. These commands replace delivered image-check and boot scripts.
+
+`guest.cloud-init` returns readiness from the guest’s complete cloud-init result and reports bootstrap errors as typed refusals. `guest.fingerprint` reads and validates the ed25519 host fingerprint through the trusted guest transport. Image builders install command mode before their first readiness check. A guest transport that cannot yet return output remains pending within the existing boot deadline; malformed or refused agent results fail the build. Incus smoke checks also prove a host key and one completed boot before promotion.
+
+Before an image builder can install command mode, its system bus must be available. Incus can reach a guest earlier in boot. The native supervisor returns `agent.supervisor_not_ready` for an absent bus socket; image boot polling waits within its deadline. This refusal records no failed agent pin. Other installation refusals still fail the build.
+
+Before publication, `image.clean` stops identity-writing services and removes the builder's machine, SSH, Incus, and service identities. It clears authorized keys, temporary files, Pi transfer artifacts, and logs, then verifies that the identities are absent. It preserves the installed Pi binary, package lists, and systemd private temporary directories. An agent secret or WireGuard configuration refuses cleanup before any change: an enrolled Node cannot become a base image.
+
 The workspace Instance has one durable [workspace lease](/reference/tasks#workspace-lease). Agent turns, detached checks, publication, and teardown share that ownership even when the Gateway restarts. VM readiness and a stopped check supervisor do not prove that checkout commands stopped. An uncertain teardown retains its lease until termination is proven.
 
 ### From claim to workspace
@@ -399,6 +429,8 @@ The job goes on when cloud-init reports `done` with no errors and the host repor
 Provisioning links the new Node to the row when it creates the Node record, before any convergence. So the Node is a task VM Node from the start: the fleet rollout skips it, and it gets no Orbit CLI. It never hosts a [Metrics exporter](/reference/metrics#exporter-selection), because the [hub filter](#limit-fleet-traffic-on-the-hub) keeps the Metrics Node out. So its enrollment skips the fleet Metrics reconcile, which converges exporters on every Node and took about 80 seconds on the live fleet.
 
 Each step of the jobs logs one line `Task VM step done.` in the Gateway log, with the VM name, the step, and its seconds. The steps are `create`, which counts from the claim, `boot`, `node-converge`, `apt-tool-manager`, `roles`, `router-lan-ingress`, `dns-selection`, `activate`, `agent`, `enrolled`, `model-key`, `pi-current` or `pi-upload`, `pi-files`, and `pi-server`. The last line, `claim-to-ready`, has the seconds from the claim to `ready`. The workspace creation then logs `workspace-package-cache`, `workspace-source`, `workspace-prepare` for a routed workspace, and `workspace`, which has the seconds of the whole creation. The baseline check starts after `workspace`. The Route then logs `workspace-route`, with the seconds of its projection, which runs while the check runs.
+
+Pi preparation uses `pi.inspect-artifact` to check the installed digest and executable mode. A missing or different binary goes through the bounded `pi.receive-artifact` receiver and `pi.install-artifact`. `pi.configure-runtime` writes the managed account's `models.json` and token under its private `.pi/agent` directory. It validates all input and existing paths before writing, publishes each file atomically with mode 0600, and repeats without rewriting unchanged files. Credentials enter only typed command input. The Gateway retains the model-key record and creates the normal `pi-server` Process. Resume checks `agent.status` before requesting Pi capabilities.
 
 #### Skip what the image holds
 
@@ -499,11 +531,13 @@ A subtask whose topology needs a larger VM than its group got waits before its f
 
 Each configured task VM host has one Gateway-owned package cache at `/var/lib/orbit/package-cache`. The Gateway reads hosts through `TaskVmSettings`; the cache does not select hosts by role or read the environment host list itself. Task VMs receive an Incus directory disk at `/opt/orbit/package-cache` with `readonly=true`. The restricted Incus project permits only this directory as a host disk source; host preparation and the first cache attach set that narrow exception. This host-enforced mount prevents a root agent in the guest from publishing bytes to another Project.
 
+The Gateway sends cache intent through the agent runner. `package-cache.host` initializes or fills the owned host cache; `incus.package-cache` attaches its fixed read-only directory; `package-cache.seed` runs as the guest account and copies verified archives into private manager caches. The Incus transport names its fixed `orbit` guest account for the native supervisor, which drops privilege before account mutations. Rust owns archive validation, download credentials, redirects, integrity checks, size limits, and extraction. No cache program source crosses the transport.
+
 Image installer services use `UMask=0022`, matching recipe execution on Nodes. Tool directories and package state must remain readable by the guest. The existing assessment owns version policy; Rust and Cargo must also report their pinned versions.
 
 Verification runs Node, pnpm, Bun, and Vite+ launchers only as `orbit` and compares their versions with inspection. Other guest-facing binaries must report the same version as root when run as `orbit`. Launcher caches remain owned by `orbit`. The cache-parent probe reads `/opt/orbit` as that user without writing to it.
 
-Cache failures name the operation, path, exit code, and a bounded, sanitized stderr tail; checking the mount marker preserves access errors instead of treating them as a missing mount.
+Cache failures carry a typed code, operation, path, and bounded, sanitized reason; checking the mount marker preserves access errors instead of treating them as a missing mount.
 
 Existing images and VMs retain their permissions. After an image-builder fix, use `task-vms:build-recipe --rebuild` to replace the images, then recreate affected VMs. Attaching the cache again does not repair an old VM.
 
@@ -564,11 +598,15 @@ A lock lets one operation at a time change the mirror of a Project. The lock cov
 #### Send branches to the VM
 
 1. The Gateway fetches the operation's branches into the mirror. Only `task-<id>` may be missing on GitHub.
-2. It reads the commit IDs of the refs in the VM's checkout. It keeps those that the mirror holds as commits.
+2. It calls `task-vms.read-git-refs` through the agent runner as the checkout account. The Gateway keeps IDs that the mirror holds as commits.
 3. It packs the objects of the branches that are not in the history of those commits.
-4. It sends the pack on the standard input of one SSH command. The VM indexes the pack and sets `refs/remotes/origin/<branch>` to the mirror's commit. A missing `task-<id>` loses its ref.
+4. It calls `task-vms.import-git-pack` through the agent runner and workspace executor. The command sets `refs/remotes/origin/<branch>` to the mirror's commit. A missing `task-<id>` loses its ref.
 5. When the default branch was sent, the VM points `refs/remotes/origin/HEAD` at it, as a clone does. The [`@orbit/ci-caches`](/reference/instance-setup#import-ci-main-caches) setup step reads the default branch there.
 6. In a separate optional transfer, it sends only the cache ref for the selected code SHA. Failure of this transfer does not undo source delivery.
+
+The imported pack follows the JSON envelope as bounded binary input, without a token, staging call, or script. The command validates the pack and approved ref names, then updates the refs in one Git transaction.
+
+The ref command returns at most 1,000 distinct ref object IDs, the worktree's recorded cache baseline, its branch, and its `HEAD`. Calls inside a Tasks lease retain the workspace executor and its remote operation journal, including an agent installation after a pin mismatch.
 
 [New task workspace selection](/reference/implementation-loop#ci-cache-refs) separates the starting code commit from the cache baseline. A main checkout uses its selected main commit. A task branch keeps its recorded main baseline in the worktree-private `refs/worktree/orbit/ci-baseline`. Another branch with no recorded baseline whose `HEAD` is a main commit, such as a fresh agent branch, uses that `HEAD` commit, not a newer main commit. [CI cache import](/reference/instance-setup#import-ci-main-caches) validates the ref and payload before using any cache files.
 
@@ -594,11 +632,14 @@ The job records its start on the row. A job that has not finished 40 minutes aft
 
 1. The Gateway fetches the default branch and `task-<id>` into the mirror.
 2. It asks the VM for a pack of the approved commit. The pack leaves out the history of the mirror's commits of those branches.
-3. The VM writes the pack to standard output, and the Gateway streams it to one file. A pack over 2 GiB stops the VM's command and fails the push with `The task VM sent a pack over 2 GiB`.
+3. The Gateway calls `task-vms.export-git-pack` through the agent runner and the workspace executor. The command streams the pack to a private Gateway file through [bounded binary output](/reference/node-agent#commands).
+
 4. The Gateway indexes the pack into a quarantine object directory with `git index-pack --strict`. That command checks every object. The quarantine reads the mirror's objects but changes nothing in the mirror.
 5. It checks that the approved commit is a commit there, and that its history is complete.
 6. Only then does the verified pack move into the mirror. A pack that fails a check leaves nothing behind.
 7. It pushes `<commit>:refs/heads/task-<id>` from the mirror with the write token, and records the branch in the mirror.
+
+Pack export accepts one approved commit and at most 1,000 known object IDs. It runs Git as the checkout account, uses only locally available commits to reduce the pack, and keeps the 2 GiB pack limit. A partial transfer, a missing final result, or an oversized pack fails publication before quarantine promotion or a push. The Gateway verifies the reported byte count against the received file.
 
 The job and each of its Git commands end within 1600 seconds. Only the commit ID that the Gateway approved names what it pushes. The VM's branch names, refs, and configuration play no part.
 
@@ -763,6 +804,8 @@ Create starts a VM that exists but is stopped, and fails with the `incus start` 
 Incus uses Zabbly's signed `lts-7.0` repository for Ubuntu 26.04. Each artifact records its exact Debian `version`, because architecture build timestamps differ. The tool `version` names their shared 7.0.x point release. The recipe pins `incus`, `incus-base`, and `incus-client` for amd64 and arm64. Zabbly bundles QEMU, qemu-img, virtiofsd, firmware, and the agent. Hosts remove the obsolete separate Ubuntu `incus-agent` package. Rebuilt images start from stock; their stock agent unit runs `/run/incus_agent/incus-agent`, supplied by the outer host. The installer does not replace that unit.
 
 `bin/recipe-artifacts bump` authenticates Sury and Zabbly indexes and updates their complete package sets together. It verifies the pinned signing key digests, `InRelease` signatures, package index hashes, and Incus Debian file digests. The nightly job opens one artifact bump PR under the [shared artifact update policy](#bump-the-php-build). Only changed Incus artifacts are downloaded; merge verification reads signed indexes without downloading Debian files. The existing [artifact mirror](#the-recipe-artifact-mirror) retains the same content-addressed Debian files used by Git and Sury. Managed machines have no rolling Zabbly APT source. Review the [7.0 release notes](https://discuss.linuxcontainers.org/t/incus-7-0-lts-has-been-released/26641) and [7.0.1 fixes](https://discuss.linuxcontainers.org/t/incus-7-0-1-lts-has-been-released/26942) for new requirements. The 7.0 line is supported until June 2031.
+
+The bump tests own fixed Incus versions and fake indexes, with distinct builds per architecture. Nightly artifact and snapshot updates therefore change no expected test result. Tests that decode or send the recipe compare with the document under test.
 
 The `ci-runner` role selects the complete Incus package set. Configured task VM hosts also add that set to their role-selected recipe tools. Other roles do not select Incus merely because it is installed; inventory those hosts separately before planning an upgrade.
 
@@ -967,7 +1010,7 @@ Restore the prior Gateway release with its loader and recipe, and select its ret
 
 ### Prepare an Incus host
 
-Run `task-vms:prepare-host {node}` once for each host. It sends `resources/task-vms/incus-host.sh` to the host over SSH and runs it with `sudo -n bash -s --`. The script is idempotent and prints `{"ok":true}`.
+Run `task-vms:prepare-host {node}` once for each host. It calls `incus.prepare-host` through the pinned agent runner. The command returns readiness after convergence.
 
 First it checks the ZFS storage pool that the host's `pool` names. It creates a missing pool from the host's `zfs_dataset`, such as `fast/orbit-tasks`. That dataset must not exist yet, and Incus creates it. The script refuses an existing dataset and calls no Incus command for it, because Incus would unmount that dataset and destroy it with the pool. Without `zfs_dataset`, a missing pool fails. An existing pool must use the `zfs` driver. With `zfs_dataset` set, the pool's source must be that dataset. Then it sets up these parts:
 
@@ -984,7 +1027,7 @@ Task VMs need nothing that the restrictions forbid, except low-level config: med
 
 The command takes these values from the host Node's typed `settings.task_vms`. See [Configure task VMs](#configure-task-vms). The script checks the form of each argument again before it passes it to Incus as root, and changes nothing when one is invalid. The bridge and the ACL live in the Incus project `default`, and the script names that project in every network and ACL command.
 
-Orbit reserves bridge names that start with `orbittask`. Every such bridge must carry its egress ACL, because the ufw rule accepts forwarded traffic from all of them. Only `incus-host.sh` creates these bridges, and it attaches the ACL at creation. Never create an `orbittask` bridge in another way.
+Orbit reserves bridge names that start with `orbittask`. Every such bridge must carry its egress ACL, because the ufw rule accepts forwarded traffic from all of them. Only `incus.prepare-host` creates these bridges, and it attaches the ACL at creation. Never create an `orbittask` bridge in another way.
 
 The restrictions forbid privileged and nested containers, host devices, backups, snapshots, and every network except the task bridge. Host disks are limited to the [read-only package-cache directory](#shared-package-cache). Low-level VM config is allowed for memory reporting.
 
@@ -1008,25 +1051,35 @@ Each host uses [ADR 0206's chain model](/decisions/0206-build-task-vm-images-as-
 
 Each phase is a separate queued job. No workspace or Project setup runs and neither package caches nor CI cache refs enter an image.
 
+The agent implements the image phases in Rust and reuses the Node recipe's package, archive, JavaScript, and PHP installers. Image APT uses only its recorded snapshot configuration. The agent installed before the first phase remains the Gateway delivery pin.
+
+Rust toolchain installation reads the verified archive's component manifests and copies their declared files; it executes no installer script from the archive. It assembles the complete toolchain in a temporary directory beside the installed prefix, then replaces that prefix. This removes obsolete files on an upgrade. It records the artifact pins only after publishing the binary links, and repairs those links on repeated execution.
+
+The Gateway records the image recipe identity with `image.recipe-marker`. It appends sanitized observations through `image.recipe-log`, which owns the fixed root-only log directory and validates the profile and phase before writing. Both commands use native file operations; no guest path or executable is supplied by the caller.
+
 Incus and UpCloud use one ordered list of recipe installer phases: `apt-source`, `packages`, `javascript`, `rust`, `agent`, and `pi`. Before any package install, `apt-source` prepares the recipe's Ubuntu snapshot source and refreshes only its indexes. The `packages` phase fails with an `apt-source` diagnostic if that configuration is missing or does not match the recipe. To restart a failed build after a phase is added, use `task-vms:build-recipe --retry`; it clears failed Incus step history and starts a new builder attempt, reusing any published immutable image.
 
-Each installer phase runs in a transient systemd service on the builder. Its stable name identifies the recipe, profile, phase, and Incus build. UpCloud uses the fixed unit key `upcloud`; each build gets a fresh server. On the first read after a resume, success advances the chain and an already failed unit restarts. A running unit belongs to the resumed attempt, so a later failure is reported without restarting it. The Gateway stages the existing installer with private input, starts the service, and polls its recorded result.
+Each installer phase runs in a transient systemd service on the builder. Its stable name identifies the recipe, profile, phase, and Incus build. UpCloud uses the fixed unit key `upcloud`; each build gets a fresh server. On the first read after a resume, success advances the chain and an already failed unit restarts. A running unit belongs to the resumed attempt, so a later failure is reported without restarting it. The Gateway sends typed recipe input and observes the result through the agent.
 
 Incus releases its queue job between polls. Incus reconnects to the same service after a lost SSH reply or queue-worker restart without starting another installer. UpCloud uses the same service protocol to reconnect after SSH loss while its existing template job survives; it does not resume the builder after that worker dies. No new Node program or inline script implements this supervision.
 
 Before issuing a start, the Gateway records the builder boot ID in the phase state. A missing unit on that boot can start; a changed boot ID fails with a builder-reboot diagnostic naming `task-vms:build-recipe --retry`. Completed services remain loaded. Unreadable status replies have an unknown outcome and share the SSH-loss observation bound.
 
-Each control delivery shares a 1,440-second budget, including staging and transfers. The Incus recipe job allows that budget plus a 60-second margin. Pi uploads use a 900-second transfer limit within that budget and disk-backed temporary files; digest verification and atomic rename publish only complete input. Failed transfers remove their temporary files.
+The native `image.inspect-phase`, `image.start-phase`, and `image.restart-phase` commands own the boot check, systemd state parsing, immutable phase input, and private log tail. The Gateway sends the recipe identity, profile, phase, and execution ID; Rust derives the unit and file names. A restart names the failed invocation already recorded by the build attempt. If another invocation has started, repeating that request only observes it. The service runs compiled agent code with typed recipe data and reports failures with a nonzero process exit.
+
+Pi delivery uses `pi.receive-artifact` to send bounded chunks of the pinned binary. The command stores them in its fixed private cache, accepts a repeated matching chunk, and verifies the complete SHA-256 before making the artifact available. It accepts no destination path. `pi.install-artifact` publishes the verified binary at the managed account's fixed Pi path; the image Pi phase uses that same implementation. A failed transfer leaves the installed binary unchanged. Image cleanup removes complete and partial transfer artifacts under the same Pi resource lock before publication.
+
+Each control delivery shares a 1,440-second budget, including staging and transfers. The Incus recipe job allows that budget plus a 60-second margin. Pi uploads use a 900-second transfer limit within that budget. The receiver retains partial bytes for a resumed transfer and rejects conflicting repeated chunks. It discards a complete artifact whose digest is wrong. Digest verification and atomic rename publish only complete input.
 
 The guest service bounds the whole process group to 1,440 seconds, with 30 seconds to stop its children. This covers the observed eight-minute cold package install with margin. One guest lock prevents two phases from changing the builder at once. The Gateway reports a lost SSH channel with its stderr and an unknown phase outcome, then reconnects. A confirmed systemd timeout is reported as a timeout. Strict package checks remain unchanged.
 
-The Python installer writes its private phase log once and does not echo it to stderr. Service stderr appends to the phase log, including Pi shell and Python startup errors. Direct verification reads the private log on failure.
+The native service writes bounded diagnostics to its private phase log. Observations return a redacted tail when a phase fails. Direct verification returns typed failure details.
 
-Every image package command, including assessment and the separate PHP installer during verification, inherits the same snapshot configuration through `APT_CONFIG`. Empty APT directory settings disable stock source parts and `/etc/apt/apt.conf.d` hooks. Stock template sources and stale live indexes cannot supply dependencies.
+Every image package command, including assessment and the shared PHP installer, inherits the same snapshot configuration through `APT_CONFIG`. Verification checks the PHP build and loaded modules without installing or repairing it. Empty APT directory settings disable stock source parts and `/etc/apt/apt.conf.d` hooks. Stock template sources and stale live indexes cannot supply dependencies. Image origin checks use only the selected snapshot's retained indexes and never fetch indexes from another snapshot.
 
 Image installs keep APT strict pinning and refuse Ubuntu downgrades. Every Ubuntu pin equals the newest version in the named snapshot, so the base phase's `full-upgrade` and exact installs select the same versions on Incus and UpCloud. The nightly snapshot bump updates these pins together through the authenticated indexes. `APT::Get::Always-Include-Phased-Updates "true"` makes non-pinned dependencies use the snapshot candidate on every builder, independent of machine-specific rollout percentages.
 
-The configuration stays under `/var/tmp` and image cleanup removes it; authenticated snapshot indexes remain in `/var/lib/apt/lists` for smoke verification. Verification recreates the same configuration temporarily without refreshing indexes.
+The configuration stays under `/var/tmp` and image cleanup removes it; authenticated snapshot indexes remain in `/var/lib/apt/lists` for smoke verification. Verification recreates the same configuration temporarily without refreshing indexes. Failure to prepare that temporary configuration reports the `verify` stage and stops before software checks. Git and Composer must report the same nonempty version output as root and as the guest account. This accepts a newer Ubuntu package that passed origin checks while refusing a broken guest executable.
 
 Images live in each host's configured Incus project. The base is a VM image. Its immutable alias uses `<image_alias>-recipe-<first 12 hex characters of the recipe SHA-256>-<profile>`, where the built profile is `base`. The shared alias helper shortens the configured prefix when needed to keep every alias within Incus’s 64-character limit. The database and image properties keep the full recipe identity. Every image records `orbit.recipe` and `orbit.profile` properties and `/etc/orbit-machine-recipe.json`. The build row's `images` field exposes project, alias, fingerprint, and instance type.
 
@@ -1034,7 +1087,7 @@ Images live in each host's configured Incus project. The base is a VM image. Its
 
 The `smoke` phase keeps its VM `<builder>-smoke`, which booted the published base. The next phase, `topology-seed`, builds the host's topology seed of that base in it. A medium or large task VM [boots with a clone](#incus-provider) of the seed, and its [topology preparation](#prepare-the-topology) adopts the clone.
 
-The Gateway runs the [remote program](/reference/remote-programs) `task-vms.build-topology-seed` as root on the host. Its input names the host's project and pool, the smoke VM, the disk device `topology-seed`, the volume, its size, and the base fingerprint. The volume must end in `-new`. It runs these steps:
+The Gateway calls `incus.build-topology-seed` through the agent runner as root on the host. Its typed input names the host project and pool, the smoke VM, the volume size, and the base fingerprint. Rust derives the temporary volume name from the fingerprint and owns the fixed disk device, pool, and template names. The command holds the Incus volume lock and runs these steps:
 
 1. It deletes the volume of an earlier run.
 2. It creates the block volume `orbit-topology-seed-<12 hex of the base fingerprint>-new`, 45 GiB, in the host's project and pool. ZFS volumes are thin, so the size costs nothing until Nodes write.
@@ -1045,9 +1098,9 @@ The Gateway runs the [remote program](/reference/remote-programs) `task-vms.buil
 7. In the VM, Incus deletes the image. The template never boots, so it holds no machine identity.
 8. In the VM, it checks that `node-template` is the one stopped VM, and stops Incus, which unmounts the pool.
 
-Every command of the program reads no standard input. Then the phase deletes the smoke VM and renames the volume to `orbit-topology-seed-<12 hex>`. So a seed with that name is always a finished one. A phase that finds a finished seed builds nothing and only deletes the smoke VM.
+Every child command reads no standard input. Then the phase deletes the smoke VM and renames the volume to `orbit-topology-seed-<12 hex>`. So a seed with that name is always a finished one. A phase that finds a finished seed builds nothing and only deletes the smoke VM.
 
-The program creates the `-new` volume before it changes anything in the smoke VM. So when a retry finds a `-new` volume, the smoke VM may hold the Incus state of the failed attempt: the phase deletes that VM and launches a fresh one from the published base. A retry also launches a smoke VM that is gone. Like `smoke` and `publish`, the phase runs even when the build already holds its base image.
+The agent creates the `-new` volume before it changes anything in the smoke VM. So when a retry finds a `-new` volume, the smoke VM may hold the Incus state of the failed attempt: the phase deletes that VM and launches a fresh one from the published base. A retry also launches a smoke VM that is gone. Like `smoke` and `publish`, the phase runs even when the build already holds its base image.
 
 The template's root disk keeps the size of the base image's disk. Each Node copies it, and a copy is a btrfs snapshot that uses only what the Node writes.
 
@@ -1135,7 +1188,9 @@ To remove a host, lower its capacity to stop new placements, wait until all its 
 
 This filter relies on the [Caddy guard](#refuse-task-vms-in-caddy). Reverb shares TCP 443 on the `websocket` Node with every other private Caddy site on that Node, such as `executor.orbit`, so an L4 rule cannot tell the sites apart. Run `task-vms:prepare-hub` only after you configure task VMs and rebuild Caddy on every Node that serves sites.
 
-Run `task-vms:prepare-hub` once, and again when one of the values below changes. It runs `resources/task-vms/hub.sh` on the `vpn` Node. The script installs the nft table `inet orbit_task_vms` and the oneshot unit `orbit-task-vms-hub.service`. The unit loads the table after `nftables.service` and before `wg-quick@orbit` starts. The tunnel pulls the unit in but does not depend on it, so a failed load never stops the fleet VPN. The script checks that the table is loaded, is idempotent, and prints `{"ok":true}`.
+Run `task-vms:prepare-hub` once, and again when one of the values below changes. The Gateway sends typed endpoints and the reserved range to `firewall.task-vm-hub` on the `vpn` Node. The agent renders and validates the nft table `inet orbit_task_vms`, atomically publishes `/etc/orbit/task-vms/hub.nft` and the oneshot unit `orbit-task-vms-hub.service`, and verifies activation. It refuses foreign files or an unowned table before changes. A failed activation restores the previous files, service state, and live table; a failed restoration reports `task_vm.setup_failed` with the `recovery` stage.
+
+The unit loads the table after `nftables.service` and before `wg-quick@orbit` starts. The tunnel pulls the unit in but does not depend on it, so a failed load never stops the fleet VPN. Repeated preparation converges the same filter under the shared firewall lock.
 
 The command takes every value from Gateway records and settings:
 
@@ -1229,7 +1284,7 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.job_failed` | 500 | A task VM job failed with an error that has no code of its own |
 | `task_vm.base_image_missing` | 409 | The host's project has no `orbit-task-base` image. Run `task-vms:build-image` |
 | `task_vm.topology_seed_missing` | 409 | The host has no topology seed for the base image of a medium or large VM. Run `task-vms:build-image` |
-| `task_vm.topology_seed_failed` | 502 | `task-vms.build-topology-seed` failed in the smoke VM. The error ends with the program's log |
+| `task_vm.topology_seed_failed` | 502 | `incus.build-topology-seed` refused the build. The error includes its bounded diagnostic |
 | `task_vm.image_build_failed` | 502 | A base image build failed. The build row records the step and error |
 | `task_vm.image_channel_lost` | 409 | The bounded observation period ended without a readable phase result. The guest outcome is unknown; inspect the retained builder before resuming |
 | `task_vm.image_build_running` | 409 | A recipe image build on the host is already running |
@@ -1301,6 +1356,8 @@ The server is named `tvm-<id>` in its title and hostname, and carries the label 
 
 The server clones the newest verified template for the claim's recorded recipe onto a disk with the storage tier of its plan, such as `standard` for a Starter plan. The default plan includes 30 GB of that storage, so the default disk costs nothing extra. It has one public IPv4 interface, and no utility or private network, so it reaches no private address of the account. Fleet traffic goes only through WireGuard and the hub filter. Console access is off. The UpCloud firewall stays off: it is stateless, so reply traffic needs source-port rules that open other ports too.
 
+The image builder calls `image.firewall` through the guest agent runner before identity cleanup. The command denies incoming traffic by default, allows public SSH on port 22 with the `orbit:public-ssh-recovery` comment, enables UFW, and verifies that it is active. A failed command or inactive firewall stops publication with `task_vm.image_check_failed`, mapped to the build failure at the Gateway. Repeated calls preserve the same fixed policy under the firewall lock.
+
 The server boots with ufw on, from the template. ufw denies all incoming traffic except public SSH on port 22, so Caddy and the other services in the image are not public before enrollment. The template holds the exact rule `orbit:public-ssh-recovery` that enrollment opens on a new Node. Enrollment finds it in place and changes nothing, then the `app-dev` role adds WireGuard trust and closes public SSH, as on any public `app-dev` Node.
 
 UpCloud has no trusted host that can read the guest's SSH host key, as Incus does. So the Gateway generates an ed25519 host key for each server, adds it to the user-data, and pins its fingerprint. No connection trusts a key on first use. Root login stays off. The Gateway reads cloud-init over SSH as `orbit` at the public address, and enrollment needs no jump Node.
@@ -1319,7 +1376,7 @@ A park stops the server cleanly, and a hard stop follows after 150 seconds. UpCl
 | `apt-source`, `packages`, `javascript`, `rust`, `agent`, `pi` | Prepares Ubuntu snapshot indexes, then installs the base profile through the shared recipe installer with exact versions and integrity pins |
 | `recipe-marker`, `verify`, `masks` | Writes the recipe identity and profile marker, verifies the recipe software, and masks the first-boot and apt timers |
 | `firewall` | Turns ufw on: incoming traffic denied, except the public SSH rule `orbit:public-ssh-recovery` on port 22 |
-| `clean` | Runs `base-image-clean.sh` |
+| `clean` | Runs the native `image.clean` command |
 | `templatize`, `delete-builder` | Stops the builder, turns its disk into the template `orbit-task-base-<time>-unverified`, and deletes the builder |
 | `smoke` | Boots a server from the template with the task VM user-data, and checks cloud-init, ufw, and the key, uid, and gid of `orbit` |
 | `promote`, `prune` | Records the `orbit.recipe` storage label, renames the template to `orbit-task-base-<time>`, and deletes older verified templates except those pinned by live VMs awaiting server creation |
@@ -1419,7 +1476,7 @@ Orbit prepares the group's topology in the VM after the group's baseline check, 
 
 Every other turn in the subtask follows one of these turns: a consult, a direction relay or review, a resolution, a deliverable correction, a nudge to continue, and the resume of an interrupted turn. These turns do not admit the topology again.
 
-To prepare the topology, Orbit starts the systemd unit `orbit-task-topology-<run>` as `orbit` and polls it on each tick. The subtask waits meanwhile with `Task VM: preparing the topology <nodes>.` The unit runs `resources/task-vms/topology.sh` from the workspace checkout:
+To prepare the topology, the Gateway calls `task-vms.start-topology` and polls `task-vms.topology-status` on each tick. The subtask waits meanwhile with `Task VM: preparing the topology <nodes>.` The Rust agent starts the systemd unit `orbit-task-topology-<run>` as the managed account, with its home and workspace checkout. The unit runs the compiled `task-topology` service:
 
 | Step | What happens |
 | --- | --- |
@@ -1436,13 +1493,15 @@ A VM can also restart on its own. So before each of the turns above in a subtask
 
 When the unit fails, or stops without a result, the subtask asks for assistance with the step and the end of its log. The row forgets the run, so a resolution prepares again. A unit runs for at most 75 minutes. A start stops the units of earlier runs first, so one preparation runs at a time. When the start call fails, Orbit reads the run's state: a unit that runs or finished is the run, and only a run without a unit fails. Host setup gets the Gateway's VPN subnet, so its input rule covers the VM's own address.
 
+The agent holds one start lock for the VM. A repeated start leaves an active, queued, or unreadable run alone. Without a result, status stays `running` until systemd and its cgroup prove the unit has stopped. The service writes its result atomically under the account's `.local/state/orbit/task-topology`, with the step, elapsed seconds, boot ID, and last 40 log lines. The returned log is bounded to 16 KiB. Project harness commands run as the managed account; only the existing host-setup command uses sudo.
+
 ### Prove work on a topology
 
 The implementer and the reviewer use the topology with `bin/e2e-topology`, as the [using-incus-topologies](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md) skill describes. Their prompts name the declared nodes. They never acquire or release it.
 
 The reviewer proves each deliverable on the declared nodes with `bin/e2e-topology exec TASK-<group> NODE --argv=JSON --record=LABEL`. The harness writes the node, the command, the exit code, and the output to the [evidence log](/reference/incus-topologies#evidence-log). When the reviewer approves a subtask that declares a topology, Orbit reads the newest MiB of the evidence. The approval passes only when the evidence holds, for each node the subtask declares, a record that counts. Otherwise Orbit reminds the reviewer with the nodes that lack evidence, and the subtask is not approved.
 
-The [evidence log](/reference/incus-topologies#evidence-log) defines the JSON record. Orbit reads the newest MiB of `.e2e/evidence.jsonl`, skipping partial or malformed lines. A record counts when:
+The [evidence log](/reference/incus-topologies#evidence-log) defines the JSON record. The Gateway sends the checkout path to `task-vms.read-topology-evidence`. The agent reads at most the newest MiB of the fixed `.e2e/evidence.jsonl` file as the managed account. A missing file supplies no evidence. The Gateway skips partial or malformed lines and applies the review rules. A record counts when:
 
 - its command exited 0;
 - it started after the implementer's last handoff and before Orbit reads the evidence;

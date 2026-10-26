@@ -10,16 +10,15 @@ use App\Domain\Analytics\PlausibleProcess;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Nodes\NodeRoleOperationException;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Caddy\Build\Sources\AnalyticsCaddySiteSource;
-use App\Infrastructure\Nodes\CaddyPackageProgram;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Nodes\AgentCaddyPackage;
+use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
 
 final readonly class NativeAnalyticsPublicationManager implements AnalyticsPublicationManager
@@ -29,9 +28,8 @@ final readonly class NativeAnalyticsPublicationManager implements AnalyticsPubli
         private AnalyticsCertificatePublisher $certificatePublisher,
         private NodeCaddyBuilds $builds,
         private PrivateDnsManager $dns,
-        private SshExecutor $ssh,
-        private SshKeyProvider $keys,
-        private KnownHostsStore $knownHosts,
+        private AgentCommandRunner $agents,
+        private AgentCaddyPackage $caddyPackage,
         private ?CaddySiteCertificates $siteCertificates = null,
     ) {}
 
@@ -39,15 +37,12 @@ final readonly class NativeAnalyticsPublicationManager implements AnalyticsPubli
     {
         $address = $this->address($node);
         $this->awaitPlausible($node, $address);
-        $this->ensureCaddy($node, $address);
+        $this->ensureCaddy($node);
         $certificate = $this->certificates->issue(AnalyticsHostname::Value, $address);
         $certificatePem = $this->read($certificate->certificatePath);
         $privateKeyPem = $this->read($certificate->privateKeyPath);
 
-        $certificateResult = $this->ssh->execute(
-            $this->connection($node, $address),
-            $this->certificatePublisher->command($certificatePem, $privateKeyPem),
-        );
+        $certificateResult = $this->certificatePublisher->publish($node, $certificatePem, $privateKeyPem);
 
         if (! $certificateResult->succeeded()) {
             throw new NodeRoleOperationException(
@@ -67,14 +62,11 @@ final readonly class NativeAnalyticsPublicationManager implements AnalyticsPubli
 
     /**
      * The analytics role has no package step of its own, so the dashboard host is the point where
-     * this Node needs a Caddy Orbit can render against. `CaddyPackageProgram` owns the pin and floor.
+     * this Node needs a Caddy Orbit can render against. `AgentCaddyPackage` owns the pin and floor.
      */
-    private function ensureCaddy(Node $node, string $address): void
+    private function ensureCaddy(Node $node): void
     {
-        $result = $this->ssh->execute(
-            $this->connection($node, $address),
-            CaddyPackageProgram::command(),
-        );
+        $result = $this->caddyPackage->install($node);
 
         if (! $result->succeeded()) {
             throw new NodeRoleOperationException(
@@ -94,23 +86,18 @@ final readonly class NativeAnalyticsPublicationManager implements AnalyticsPubli
      */
     private function awaitPlausible(Node $node, string $address): void
     {
-        $result = $this->ssh->execute(
-            $this->connection($node, $address),
-            new RemoteCommand(
-                ['bash', '-seu', '--', "http://{$address}:".PlausibleProcess::PORT.'/api/health'],
-                <<<'BASH'
-                    for attempt in $(seq 1 90); do
-                        if curl --fail --silent --show-error --max-time 3 --output /dev/null "$1"; then
-                            exit 0
-                        fi
-                        sleep 2
-                    done
-                    exit 1
-                    BASH,
-            ),
-        );
+        try {
+            $this->agents->run($node, 'http.await-healthy', [
+                'url' => "http://{$address}:".PlausibleProcess::PORT.'/api/health',
+                'attempts' => 90,
+                'interval_seconds' => 2,
+            ]);
+            $result = null;
+        } catch (AgentCommandRefused|AgentRunnerFailure $failure) {
+            $result = new CommandResult(1, '', $failure->getMessage(), 0, false);
+        }
 
-        if (! $result->succeeded()) {
+        if ($result !== null) {
             throw new NodeRoleOperationException(
                 'analytics-health',
                 'node_role.convergence_failed',
@@ -124,10 +111,9 @@ final readonly class NativeAnalyticsPublicationManager implements AnalyticsPubli
     /** The role is already `removing`, so the build withdraws its site before the certificate goes. */
     public function remove(Node $node): void
     {
-        $address = $this->address($node);
-
+        $this->address($node);
         $this->build($node);
-        $this->ssh->execute($this->connection($node, $address), $this->certificatePublisher->removeCommand());
+        $this->certificatePublisher->remove($node);
         $this->certificateRecords()->forget($node->id, AnalyticsCaddySiteSource::CertificateSlug);
         $this->dns->converge();
     }
@@ -158,17 +144,6 @@ final readonly class NativeAnalyticsPublicationManager implements AnalyticsPubli
                 $exception,
             );
         }
-    }
-
-    private function connection(Node $node, string $address): SshConnection
-    {
-        return new SshConnection(
-            $address,
-            $node->user,
-            22,
-            $this->keys->privateKeyPath(),
-            $this->knownHosts->path(),
-        );
     }
 
     private function address(Node $node): string

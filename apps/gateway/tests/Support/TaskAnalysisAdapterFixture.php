@@ -14,7 +14,7 @@ final class TaskAnalysisAdapterFixture
 {
     public readonly string $checkout;
 
-    private readonly ForkedPythonPrograms $programs;
+    private readonly PythonPrograms $programs;
 
     /** @var array<string, string> */
     private array $environment = [];
@@ -22,7 +22,7 @@ final class TaskAnalysisAdapterFixture
     public function __construct(string $mode)
     {
         $this->checkout = sys_get_temp_dir().'/orbit-analysis-adapter-'.bin2hex(random_bytes(6));
-        $this->programs = new ForkedPythonPrograms;
+        $this->programs = new PythonPrograms;
         $root = dirname(base_path(), 2);
         foreach (['bin/task-analyze', 'apps/gateway/app/Support/StrictJson.php', 'apps/gateway/app/Domain/Tasks/TaskAnalysisPlan.php', 'apps/gateway/app/Domain/Tasks/TaskAnalysisReport.php'] as $path) {
             File::ensureDirectoryExists(dirname($this->checkout.'/'.$path));
@@ -106,7 +106,6 @@ final class TaskAnalysisAdapterFixture
 
     public function close(): void
     {
-        $this->programs->close();
         File::deleteDirectory($this->checkout);
     }
 }

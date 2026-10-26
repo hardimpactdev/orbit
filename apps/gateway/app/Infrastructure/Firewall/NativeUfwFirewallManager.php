@@ -9,334 +9,61 @@ use App\Domain\Firewall\FirewallBackendStatus;
 use App\Domain\Firewall\FirewallManager;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\FirewallPort;
-use App\Domain\Firewall\FirewallSource;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\FirewallRule;
 use App\Models\Node;
+use Throwable;
 
 final readonly class NativeUfwFirewallManager implements FirewallManager
 {
-    public function __construct(
-        private SshExecutor $ssh,
-        private SshKeyProvider $keys,
-        private KnownHostsStore $knownHosts,
-        private UfwStatusParser $parser,
-        private UfwManagedCommentCounter $commentCounter = new UfwManagedCommentCounter,
-    ) {}
+    public function __construct(private AgentCommandRunner $agents) {}
 
     public function converge(FirewallRule $rule): FirewallBackendStatus
     {
         $node = $this->eligibleNode($rule);
         $this->guardRecoverySsh($rule, $node);
-        $status = $this->status($node);
 
-        if ($status['backend'] === FirewallBackendStatus::Inactive) {
-            return FirewallBackendStatus::Inactive;
-        }
-
-        $owned = $this->parser->ownedRules($status['output'], $this->comment($rule));
-        $this->guardUnsupportedOwnedShape($rule, $status['output'], $owned);
-        $this->guardCollision($rule, $owned);
-
-        if ($this->isComplete($rule, $owned)) {
-            return FirewallBackendStatus::Active;
-        }
-
-        if ($owned !== [] && ! $this->allMatch($rule, $owned)) {
-            $this->executeMutation(
-                $node,
-                $this->deleteObservedArguments($rule, $owned[0]),
-                'reconcile',
-                'firewall.reconcile_failed',
-            );
-        }
-
-        $this->executeMutation(
-            $node,
-            $this->applyArguments($rule),
-            'apply',
-            'firewall.apply_failed',
-        );
-
-        $verification = $this->status($node);
-        $verifiedRules = $this->parser->ownedRules($verification['output'], $this->comment($rule));
-        $this->guardUnsupportedOwnedShape($rule, $verification['output'], $verifiedRules);
-        $this->guardCollision($rule, $verifiedRules);
-
-        if ($verification['backend'] !== FirewallBackendStatus::Active || ! $this->isComplete($rule, $verifiedRules)) {
-            throw new FirewallOperationException(
-                step: 'verify',
-                errorCode: 'firewall.verify_failed',
-                message: "Firewall rule [{$rule->name}] did not match after UFW activation.",
-            );
-        }
-
-        return FirewallBackendStatus::Active;
+        return $this->run($rule, $node, 'converge');
     }
 
     public function remove(FirewallRule $rule): FirewallBackendStatus
     {
-        $node = $this->eligibleNode($rule);
-        $status = $this->status($node);
-
-        if ($status['backend'] === FirewallBackendStatus::Inactive) {
-            return FirewallBackendStatus::Inactive;
-        }
-
-        $owned = $this->parser->ownedRules($status['output'], $this->comment($rule));
-        $this->guardUnsupportedOwnedShape($rule, $status['output'], $owned);
-
-        if ($owned === []) {
-            return FirewallBackendStatus::Absent;
-        }
-
-        $this->guardCollision($rule, $owned);
-        $arguments = $this->allMatch($rule, $owned)
-            ? $this->deleteArguments($rule)
-            : $this->deleteObservedArguments($rule, $owned[0]);
-        $this->executeMutation($node, $arguments, 'remove', 'firewall.remove_failed');
-        $verification = $this->status($node);
-        $remaining = $this->parser->ownedRules($verification['output'], $this->comment($rule));
-        $this->guardUnsupportedOwnedShape($rule, $verification['output'], $remaining);
-
-        if ($remaining !== []) {
-            throw new FirewallOperationException(
-                step: 'verify-remove',
-                errorCode: 'firewall.remove_verify_failed',
-                message: "Firewall rule [{$rule->name}] remained after UFW removal.",
-            );
-        }
-
-        return FirewallBackendStatus::Absent;
+        return $this->run($rule, $this->eligibleNode($rule), 'remove');
     }
 
-    /** @return array{backend: FirewallBackendStatus, output: string} */
-    private function status(Node $node): array
+    private function run(FirewallRule $rule, Node $node, string $operation): FirewallBackendStatus
     {
-        $result = $this->ssh->execute(
-            $this->connection($node),
-            new RemoteCommand(['sudo', 'ufw', 'status', 'numbered']),
-        );
+        $this->requireAddress($node);
+        try {
+            $result = $this->agents->run($node, 'firewall.rule', [
+                'node_id' => $node->id,
+                'name' => $rule->name,
+                'action' => $rule->action->value,
+                'source' => $rule->source,
+                'port' => $rule->port,
+                'protocol' => $rule->protocol,
+                'operation' => $operation,
+            ]);
 
-        if (! $result->succeeded()) {
-            throw new FirewallOperationException(
-                step: 'status',
-                errorCode: 'firewall.status_failed',
-                message: "Could not inspect UFW on node [{$node->name}].",
-                result: $result,
-            );
-        }
-
-        if (preg_match('/\AStatus:\s+inactive\s*$/mi', $result->stdout) === 1) {
-            return ['backend' => FirewallBackendStatus::Inactive, 'output' => $result->stdout];
-        }
-
-        if (preg_match('/\AStatus:\s+active\s*$/mi', $result->stdout) !== 1) {
-            throw new FirewallOperationException(
-                step: 'status',
-                errorCode: 'firewall.status_unrecognized',
-                message: "UFW returned an unrecognized status on node [{$node->name}].",
-                result: $result,
-            );
-        }
-
-        return ['backend' => FirewallBackendStatus::Active, 'output' => $result->stdout];
-    }
-
-    /** @param list<array{action: string, source: string, port: string, protocol: string, family: string}> $owned */
-    private function guardCollision(FirewallRule $rule, array $owned): void
-    {
-        if ($owned === []) {
-            return;
-        }
-
-        if (count($owned) > 1 && ! $this->allMatch($rule, $owned)) {
-            throw new FirewallOperationException(
-                step: 'ownership',
-                errorCode: 'firewall.rule_collision',
-                message: "Firewall rule name [{$rule->name}] identifies conflicting UFW rules.",
-            );
-        }
-
-        $shapes = [];
-        $families = [];
-
-        foreach ($owned as $observed) {
-            $shapes[$this->shapeKey($observed)] = true;
-            $families[] = $observed['family'];
-        }
-
-        $maximumRules = FirewallSource::family($rule->source) === 'both' ? 2 : 1;
-        $familyCollision = count(array_unique($families)) !== count($families);
-
-        if (count($shapes) <= 1 && count($owned) <= $maximumRules && ! $familyCollision) {
-            return;
-        }
-
-        throw new FirewallOperationException(
-            step: 'ownership',
-            errorCode: 'firewall.rule_collision',
-            message: "Firewall rule name [{$rule->name}] identifies conflicting UFW rules.",
-        );
-    }
-
-    /** @param list<array{action: string, source: string, port: string, protocol: string, family: string}> $owned */
-    private function guardUnsupportedOwnedShape(FirewallRule $rule, string $output, array $owned): void
-    {
-        if (count($owned) === $this->commentCounter->count($output, $this->comment($rule))) {
-            return;
-        }
-
-        throw new FirewallOperationException(
-            step: 'ownership',
-            errorCode: 'firewall.rule_collision',
-            message: "Firewall rule name [{$rule->name}] identifies conflicting UFW rules.",
-        );
-    }
-
-    /** @param list<array{action: string, source: string, port: string, protocol: string, family: string}> $owned */
-    private function isComplete(FirewallRule $rule, array $owned): bool
-    {
-        if (! $this->allMatch($rule, $owned)) {
-            return false;
-        }
-
-        $expectedFamilies = FirewallSource::family($rule->source) === 'both'
-            ? ['v4', 'v6']
-            : [FirewallSource::family($rule->source)];
-        $observedFamilies = array_values(array_unique(array_column($owned, 'family')));
-        sort($expectedFamilies);
-        sort($observedFamilies);
-
-        return $observedFamilies === $expectedFamilies;
-    }
-
-    /** @param list<array{action: string, source: string, port: string, protocol: string, family: string}> $owned */
-    private function allMatch(FirewallRule $rule, array $owned): bool
-    {
-        foreach ($owned as $observed) {
-            if (
-                $observed['action'] !== $rule->action->value
-                || $observed['source'] !== $rule->source
-                || $observed['port'] !== $rule->port
-                || $observed['protocol'] !== $rule->protocol
-            ) {
-                return false;
+            if (! is_string($result['backend'] ?? null)) {
+                throw new \UnexpectedValueException('Invalid firewall observation.');
             }
+
+            return FirewallBackendStatus::from($result['backend']);
+        } catch (AgentCommandRefused $refusal) {
+            $step = match ($refusal->errorCode) {
+                'firewall.rule_collision' => 'ownership',
+                'firewall.status_failed', 'firewall.status_unrecognized' => 'status',
+                'firewall.reconcile_failed' => 'reconcile',
+                'firewall.verify_failed' => 'verify',
+                'firewall.remove_verify_failed' => 'verify-remove',
+                default => $operation === 'remove' ? 'remove' : 'apply',
+            };
+            throw new FirewallOperationException($step, $refusal->errorCode, $refusal->getMessage(), previous: $refusal);
+        } catch (Throwable $failure) {
+            throw new FirewallOperationException('status', 'firewall.status_failed', "Could not run the firewall command on node [{$node->name}].", previous: $failure);
         }
-
-        return $owned !== [];
-    }
-
-    /** @param array{action: string, source: string, port: string, protocol: string, family: string} $observed */
-    private function shapeKey(array $observed): string
-    {
-        return implode(':', [
-            $observed['action'],
-            $observed['source'],
-            $observed['port'],
-            $observed['protocol'],
-        ]);
-    }
-
-    /** @return non-empty-list<string> */
-    private function applyArguments(FirewallRule $rule): array
-    {
-        return [
-            'sudo',
-            'ufw',
-            ...($rule->action === FirewallAction::Allow ? ['prepend'] : []),
-            $rule->action->value,
-            'in',
-            'from',
-            $rule->source,
-            'to',
-            'any',
-            'port',
-            $rule->port,
-            'proto',
-            $rule->protocol,
-            'comment',
-            $this->comment($rule),
-        ];
-    }
-
-    /** @return non-empty-list<string> */
-    private function deleteArguments(FirewallRule $rule): array
-    {
-        return [
-            'sudo',
-            'ufw',
-            'delete',
-            $rule->action->value,
-            'in',
-            'from',
-            $rule->source,
-            'to',
-            'any',
-            'port',
-            $rule->port,
-            'proto',
-            $rule->protocol,
-            'comment',
-            $this->comment($rule),
-        ];
-    }
-
-    /**
-     * @param  array{action: string, source: string, port: string, protocol: string, family: string}  $observed
-     * @return non-empty-list<string>
-     */
-    private function deleteObservedArguments(FirewallRule $rule, array $observed): array
-    {
-        $source = match ([$observed['source'], $observed['family']]) {
-            ['any', 'v4'] => '0.0.0.0/0',
-            ['any', 'v6'] => '::/0',
-            default => $observed['source'],
-        };
-
-        return [
-            'sudo',
-            'ufw',
-            'delete',
-            $observed['action'],
-            'in',
-            'from',
-            $source,
-            'to',
-            $observed['family'] === 'v6' ? '::/0' : 'any',
-            'port',
-            $observed['port'],
-            'proto',
-            $observed['protocol'],
-            'comment',
-            $this->comment($rule),
-        ];
-    }
-
-    /** @param non-empty-list<string> $arguments */
-    private function executeMutation(
-        Node $node,
-        array $arguments,
-        string $step,
-        string $errorCode,
-    ): void {
-        $result = $this->ssh->execute($this->connection($node), new RemoteCommand($arguments));
-
-        if ($result->succeeded()) {
-            return;
-        }
-
-        throw new FirewallOperationException(
-            step: $step,
-            errorCode: $errorCode,
-            message: "UFW firewall step [{$step}] failed on node [{$node->name}].",
-            result: $result,
-        );
     }
 
     private function guardRecoverySsh(FirewallRule $rule, Node $node): void
@@ -368,7 +95,7 @@ final readonly class NativeUfwFirewallManager implements FirewallManager
         return $node;
     }
 
-    private function connection(Node $node): SshConnection
+    private function requireAddress(Node $node): void
     {
         $host = $node->wireguard_ip;
 
@@ -379,18 +106,5 @@ final readonly class NativeUfwFirewallManager implements FirewallManager
                 message: "Node [{$node->name}] has no WireGuard address.",
             );
         }
-
-        return new SshConnection(
-            host: $host,
-            user: $node->user,
-            port: 22,
-            identityFile: $this->keys->privateKeyPath(),
-            knownHostsFile: $this->knownHosts->path(),
-        );
-    }
-
-    private function comment(FirewallRule $rule): string
-    {
-        return "orbit:node:{$rule->node_id}:firewall:{$rule->name}";
     }
 }

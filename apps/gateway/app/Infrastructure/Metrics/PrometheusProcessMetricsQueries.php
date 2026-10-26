@@ -6,7 +6,7 @@ namespace App\Infrastructure\Metrics;
 
 /**
  * The two instant PromQL queries `PrometheusProcessUsageIndex` needs, one per cAdvisor metric kind
- * it keeps (see `MetricsFootprint::CadvisorDisabledMetrics`).
+ * it keeps (see the agent’s Metrics exporter configuration).
  *
  * cAdvisor labels the two runtimes differently, so each query has to ask for both. A container gets
  * a `name` label holding `DockerProcessRenderer::containerName()`, and its `id` is the opaque

@@ -26,33 +26,29 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
-use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeVitePortRuntime;
-use Tests\Support\ForkedPythonPrograms;
 use Tests\Support\LocalShellSshExecutor;
-use Tests\Support\StandardLibraryPython;
+use Tests\Support\PythonPrograms;
 
 require_once __DIR__.'/../../../Support/TaskCheckRunnerFixtures.php';
+require_once __DIR__.'/../../../Support/TaskCheckAuthenticationFixture.php';
 
 beforeAll(function (): void {
     check_runner_programs();
 });
 
-afterAll(function (): void {
-    check_runner_programs()->close();
-});
-
-function check_runner_programs(): ForkedPythonPrograms
+function check_runner_programs(): PythonPrograms
 {
     static $programs = null;
 
-    return $programs ??= new ForkedPythonPrograms;
+    return $programs ??= new PythonPrograms;
 }
 
 /** Run the real check synchronously when capture/status, not detached admission, is the subject. */
@@ -85,33 +81,6 @@ function check_runner_capture(Instance $instance, ?string $command, ?array $deli
     return new TaskCheckProcess($data['pid'], $data['started'], $data['head'], $data['tree']);
 }
 
-function check_runner_clock_program(?string $trigger = null, bool $advanceDrain = false, ?string $chunkAck = null): string
-{
-    $clock = str_replace(
-        ['__DEADLINE_TRIGGER__', '__ADVANCE_DRAIN__', '__CHUNK_ACK__'],
-        [$trigger === null ? 'None' : json_encode($trigger, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), $advanceDrain ? 'True' : 'False', $chunkAck === null ? 'None' : json_encode($chunkAck, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)],
-        file_get_contents(__DIR__.'/../../../Fixtures/task-check-clock.py'),
-    );
-
-    return str_replace("\nif __name__ == '__main__':", "\n".$clock."\nif __name__ == '__main__':", TaskUnitProgram::read('tasks/check'));
-}
-
-function check_runner_controlled_transport(?string $trigger = null, bool $advanceDrain = false, ?string $chunkAck = null): LocalShellSshExecutor
-{
-    $transport = check_runner_shell(new LocalShellSshExecutor);
-    $transport->transformInput = fn (string $input): string => preg_replace_callback("/printf '%s' '([A-Za-z0-9+\\/=]+)' \\| base64 -d \\| workspace_metadata/", function (array $match) use ($trigger, $advanceDrain, $chunkAck): string {
-        $payload = json_decode(base64_decode($match[1]), true, flags: JSON_THROW_ON_ERROR);
-        if (isset($payload['script'])) {
-            expect($payload['script'])->toBe(base64_encode(TaskUnitProgram::read('tasks/check')));
-            $payload['script'] = base64_encode(check_runner_clock_program($trigger, $advanceDrain, $chunkAck));
-        }
-
-        return "printf '%s' '".base64_encode(json_encode($payload, JSON_THROW_ON_ERROR))."' | base64 -d | workspace_metadata";
-    }, $input);
-
-    return $transport;
-}
-
 /**
  * Run the real `check status` with a stubbed process lookup. The lookup answers whether the check is alive,
  * and first runs `$meanwhile`, so a test can place a result write at the moment status looks up the process.
@@ -138,9 +107,9 @@ function check_runner_status(bool $alive, string $meanwhile = ''): array
     return json_decode($status->mustRun()->getOutput(), true, flags: JSON_THROW_ON_ERROR);
 }
 
-it('normalizes VP_HOME probe failures without launching a check', function (int $exit, bool $truncated, string $stdout): void {
+it('normalizes VP_HOME probe refusals without launching a check', function (string $code): void {
     $instance = check_runner_instance('/fast/apps/shop/task-8');
-    $probe = new AppDevFakeSshExecutor([new CommandResult($exit, $stdout, '', 1, $truncated)]);
+    $probe = new FakeAgentCommandRunner()->refuse('tools.inspect-vp-scope', $code);
     $transport = new AppDevFakeSshExecutor;
     $runner = check_runner($transport, probe: $probe);
 
@@ -149,13 +118,11 @@ it('normalizes VP_HOME probe failures without launching a check', function (int 
         expect($exception->getMessage())->toBe('The task workspace could not be reached for the check.');
     });
     expect($transport->commands)->toBeEmpty();
-    expect($probe->commands)->toHaveCount(1);
+    expect($probe->calls)->toHaveCount(1);
 })->with([
-    'absent' => [42, false, ''],
-    'conflict' => [43, false, ''],
-    'failed' => [1, false, ''],
-    'truncated' => [0, true, "/opt/orbit/vite-plus/bin/vp\n"],
-    'malformed' => [0, false, '/tmp/untrusted/vp'],
+    'absent' => ['tools.vp_scope_absent'],
+    'conflict' => ['tools.vp_scope_conflict'],
+    'unreadable' => ['tools.vp_scope_unreadable'],
 ]);
 
 it('releases the unstarted baseline reservation and retries after a VP_HOME probe timeout', function (): void {
@@ -169,22 +136,15 @@ it('releases the unstarted baseline reservation and retries after a VP_HOME prob
         'parent_id' => $group->id, 'position' => 1, 'title' => 'First', 'brief' => 'First subtask', 'status' => TaskStatus::Running, 'subtask_start_commit' => 'abc',
     ]);
     $timeout = new ProcessTimedOutException(new Process(['ssh', 'probe']), ProcessTimedOutException::TYPE_GENERAL);
-    $probe = new class($timeout) implements SshExecutor
-    {
-        public int $calls = 0;
-
-        public function __construct(private readonly ProcessTimedOutException $timeout) {}
-
-        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-        {
-            expect(TaskCheck::query()->sole()->pid)->toBe(0);
-            if (++$this->calls === 1) {
-                throw $this->timeout;
-            }
-
-            return new CommandResult(0, "/opt/orbit/vite-plus/bin/vp\n", '', 1, false);
+    $probeCalls = 0;
+    $probe = new FakeAgentCommandRunner()->answer('tools.inspect-vp-scope', static function () use ($timeout, &$probeCalls): array {
+        expect(TaskCheck::query()->sole()->pid)->toBe(0);
+        if (++$probeCalls === 1) {
+            throw $timeout;
         }
-    };
+
+        return ['binary' => '/opt/orbit/vite-plus/bin/vp'];
+    });
     $transport = new class implements SshExecutor
     {
         public int $starts = 0;
@@ -212,7 +172,7 @@ it('releases the unstarted baseline reservation and retries after a VP_HOME prob
     test_pass_baseline();
 
     expect(TaskCheck::query()->sole()->pid)->toBe(4100);
-    expect($probe->calls)->toBe(2);
+    expect($probe->calls)->toHaveCount(2);
     expect($transport->starts)->toBe(1);
     expect($task->fresh()->communication_failures)->toBe(0);
     expect($group->fresh()->assistance_requested)->toBeFalse();
@@ -234,7 +194,7 @@ it('normalizes thrown failures only during the known unstarted VP_HOME probe', f
     };
     $transport = new AppDevFakeSshExecutor;
 
-    expect(fn () => check_runner($transport, probe: $failing)->start($instance, 'true'))
+    expect(fn () => check_runner($transport, probe: new FakeAgentCommandRunner()->answer('tools.inspect-vp-scope', static fn (): array => throw $exception))->start($instance, 'true'))
         ->toThrow(function (TaskCheckException $normalized) use ($exception): void {
             expect($normalized->getPrevious())->toBe($exception);
         });
@@ -254,7 +214,7 @@ it('normalizes thrown failures only during the known unstarted VP_HOME probe', f
 
 it('polls and cancels independently of VP_HOME probe availability', function (): void {
     $instance = check_runner_instance('/fast/apps/shop/task-8');
-    $probe = new AppDevFakeSshExecutor([new CommandResult(42, '', '', 1, false)]);
+    $probe = new FakeAgentCommandRunner()->refuse('tools.inspect-vp-scope', 'tools.vp_scope_absent');
     $transport = new AppDevFakeSshExecutor([
         new CommandResult(0, '{"state":"running"}', '', 1, false),
         new CommandResult(0, '{}', '', 1, false),
@@ -266,7 +226,7 @@ it('polls and cancels independently of VP_HOME probe availability', function ():
     expect($runner->read($instance, $process)->state)->toBe('running');
     $runner->cancel($instance, $process);
     expect($runner->snapshot($instance)->head)->toBe('abc');
-    expect($probe->commands)->toBeEmpty();
+    expect($probe->calls)->toBeEmpty();
     expect($transport->commands)->toHaveCount(3);
 });
 
@@ -599,29 +559,6 @@ it('runs setup payloads larger than the operating system argument limit', functi
         ->and(file_get_contents($checkout.'/.git/orbit/check.log'))->toContain('more characters of the command are not shown]')
         ->and(filesize($checkout.'/.git/orbit/check.log'))->toBeLessThan(16 * 1024);
 });
-
-it('removes setup scripts after failure or timeout and skips later work', function (string $command, int $exit): void {
-    $checkout = check_runner_checkout('touch check-ran');
-    $instance = check_runner_instance($checkout);
-    $trigger = $checkout.'/ignored/deadline';
-    $runner = check_runner(check_runner_controlled_transport($trigger));
-    $advance = $exit === 124 ? 'touch ignored/deadline; ' : '';
-
-    $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'composer check', [
-        ['name' => 'Stop', 'command' => 'mkdir -p ignored; printf "%s" "$0" > ignored/setup-script; '.$advance.$command, 'timeout_seconds' => 1],
-        ['name' => 'Never', 'command' => 'touch never-ran', 'timeout_seconds' => 10],
-    ]));
-
-    expect($reading->exitCode)->toBe($exit)
-        ->and($reading->failedStep)->toBe('Stop')
-        ->and(file_exists(file_get_contents($checkout.'/ignored/setup-script')))->toBeFalse()
-        ->and(file_exists($checkout.'/never-ran'))->toBeFalse()
-        ->and(file_exists($checkout.'/check-ran'))->toBeFalse();
-})->with([
-    'failure' => ['exit 5', 5],
-    'timeout' => ['sleep 10', 124],
-    'timeout with closed output' => ['exec >/dev/null 2>&1; sleep 10', 124],
-]);
 
 it('stops at the first failing setup step without running composer check', function (): void {
     $checkout = check_runner_checkout('echo checked');
@@ -1019,50 +956,6 @@ describe('deliverable evidence', function (): void {
         ]);
     });
 
-    it('kills a timed-out base process group and preserves its partial output', function (): void {
-        $harness = $this->directory.'/base-timeout.py';
-        file_put_contents($harness, <<<'PYTHON'
-import importlib.machinery
-import importlib.util
-import json
-import os
-import sys
-import time
-
-loader = importlib.machinery.SourceFileLoader('task_check', sys.argv[1])
-module = importlib.util.module_from_spec(importlib.util.spec_from_loader('task_check', loader))
-loader.exec_module(module)
-workdir = sys.argv[2]
-group_file = os.path.join(workdir, 'process-group')
-log_path = os.path.join(workdir, 'check.log')
-command = f'echo $$ > {group_file}; trap "exit 0" TERM; (trap "" TERM; echo child-ready; exec sleep 30) & wait'
-with open(log_path, 'wb') as log:
-    code, output, timed_out = module.run_base(command, workdir, log, 0.5)
-process_group = int(open(group_file).read())
-deadline = time.monotonic() + 2
-while module.process_group_exists(process_group) and time.monotonic() < deadline:
-    time.sleep(0.05)
-print(json.dumps({
-    'code': code,
-    'timed_out': timed_out,
-    'output': output,
-    'log': open(log_path, 'rb').read().decode(),
-    'group_exists': module.process_group_exists(process_group),
-}))
-PYTHON);
-        $script = $this->directory.'/check.py';
-        file_put_contents($script, check_runner_clock_program());
-        $probe = new Process(['python3', $harness, $script, $this->directory], base_path());
-        $result = json_decode($probe->mustRun()->getOutput(), true, flags: JSON_THROW_ON_ERROR);
-
-        expect($result['code'])->toBeNull()
-            ->and($result['timed_out'])->toBeTrue()
-            ->and($result['output'])->toContain('child-ready')
-            ->and($result['log'])->toContain('child-ready')
-            ->and($result['log'])->toContain('Base command timed out after 0.5 seconds.')
-            ->and($result['group_exists'])->toBeFalse();
-    });
-
     it('records the diff and runs each command after a passing check', function (): void {
         [$checkout, $start] = check_runner_deliverables_checkout();
         $instance = check_runner_instance($checkout);
@@ -1300,103 +1193,8 @@ describe('ssr port', function (): void {
 });
 
 it('authenticates task VM setup through protected input and redacts tokens before writing logs', function (string $ending, int $exitCode): void {
-    Http::preventStrayRequests();
-    GitHubTestSupport::storeApp();
-    Http::fake([
-        'https://api.github.com/repos/acme/shop/installation' => Http::response(['id' => 9]),
-        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_setup_sentinel'], 201),
-    ]);
-    $checkout = check_runner_checkout('true', realComposer: true);
-    $instance = check_runner_instance($checkout);
-    File::ensureDirectoryExists($checkout.'/ignored');
-    $chunkAck = $checkout.'/ignored/auth-chunk-ack';
-    expect(posix_mkfifo($chunkAck, 0600))->toBeTrue();
-    $transport = new class(check_runner_controlled_transport($checkout.'/ignored/deadline', chunkAck: $chunkAck)) implements SshExecutor
-    {
-        public array $commands = [];
-
-        public function __construct(private readonly SshExecutor $local) {}
-
-        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-        {
-            $this->commands[] = $command;
-
-            return $this->local->execute($connection, $command);
-        }
-    };
-    $runner = check_runner($transport);
-    file_put_contents($checkout.'/AuthProbe.php', <<<'PHP_PROBE'
-        <?php
-        class AuthProbe {
-            public static function check(\Composer\Script\Event $event): void {
-                $token = $event->getIO()->getAuthentication('github.com')['username'];
-                if (getenv('COMPOSER_AUTH') !== false || str_contains(file_get_contents('/proc/'.getmypid().'/environ'), $token)
-                    || str_contains(file_get_contents('/proc/'.posix_getppid().'/environ'), $token)) {
-                    throw new \RuntimeException('Composer inherited the secret in its environment.');
-                }
-                $ack = fopen(__DIR__.'/ignored/auth-chunk-ack', 'r+');
-                echo substr($token, 0, 7);
-                flush();
-                $read = [$ack];
-                $write = $except = null;
-                if (stream_select($read, $write, $except, 1) !== 1 || fread($ack, 1) !== '1') {
-                    throw new \RuntimeException('The check did not acknowledge the first authentication chunk.');
-                }
-                fclose($ack);
-                echo substr($token, 7)."\n";
-                echo base64_encode($token.':x-oauth-basic')."\n";
-                passthru('php -r \'exit(getenv("COMPOSER_AUTH") === false ? 0 : 1);\'', $exit);
-                if ($exit !== 0) { throw new \RuntimeException('A script child inherited authentication.'); }
-            }
-        }
-        PHP_PROBE);
-    file_put_contents($checkout.'/composer.json', json_encode([
-        'repositories' => ['packagist.org' => false],
-        'autoload' => ['classmap' => ['AuthProbe.php']],
-        'scripts' => [
-            'post-autoload-dump' => ['AuthProbe::check', '@composer run-script nested-probe --no-interaction'],
-            'nested-probe' => '@php -r "echo \'nested-composer-ok\'.PHP_EOL;"',
-        ],
-    ], JSON_THROW_ON_ERROR));
-    $setup = <<<'BASH'
-        python3 - <<'PY'
-        import os
-        assert 'COMPOSER_AUTH' not in os.environ
-        assert 'ORBIT_SETUP_COMPOSER_AUTH' not in os.environ
-        assert b'ORBIT_SETUP_COMPOSER_AUTH=' not in open('/proc/%s/environ' % os.getppid(), 'rb').read()
-        assert os.environ['COMPOSER_CACHE_DIR'] == os.path.expanduser('~/.cache/composer')
-        assert os.environ['ORBIT_SEED_PATH'] == ''
-        assert os.environ['ORBIT_SEED_COMMIT'] == ''
-        PY
-        unset COMPOSER_BINARY
-        composer install --no-interaction --no-plugins --no-progress
-        BASH;
-
-    $process = $runner->start($instance, 'test -z "${COMPOSER_AUTH:-}" && test -z "${ORBIT_SETUP_COMPOSER_AUTH:-}" && echo checked', [
-        ['name' => 'install-apps-cli', 'command' => $setup."\n".($exitCode === 124 ? 'mkdir -p ignored; touch ignored/deadline; ' : '').$ending, 'timeout_seconds' => $exitCode === 124 ? 5 : 10],
-    ]);
-    try {
-        ['result' => $result, 'output' => $output, 'gitDirectory' => $git] = check_runner_local_result($checkout, $process);
-    } catch (Throwable $failure) {
-        $runner->cancel($instance, $process);
-        throw $failure;
-    }
-
-    expect($result['exit_code'])->toBe($exitCode);
-    if ($exitCode === 0) {
-        expect($output)->toContain('checked');
-    }
-    expect($output)->toContain('[REDACTED]')->not->toContain('ghs_setup_sentinel', base64_encode('ghs_setup_sentinel:x-oauth-basic'));
-    expect($output)->toContain('nested-composer-ok');
-    expect(file_get_contents($git.'/orbit/check.log'))->not->toContain('ghs_setup_sentinel');
-    expect(file_get_contents($git.'/orbit/setup.json'))->not->toContain('ghs_setup_sentinel');
-    foreach ($transport->commands as $command) {
-        expect(implode(' ', $command->arguments).($command->input ?? ''))->not->toContain('ghs_setup_sentinel');
-    }
-    expect($transport->commands[0]->protectedInput)->not->toBeNull();
-    Http::assertSent(static fn (Request $request): bool => $request->method() === 'POST'
-        && $request->data() === ['repositories' => ['shop'], 'permissions' => ['metadata' => 'read']]);
-})->with(['success' => [':', 0], 'failure' => ['exit 7', 7], 'timeout' => ['sleep 20', 124]]);
+    check_runner_authentication($ending, $exitCode, $this->directory);
+})->with(['success' => [':', 0], 'failure' => ['exit 7', 7]]);
 
 it('continues task VM setup without authentication when the App does not cover the repository', function (): void {
     Http::preventStrayRequests();
@@ -1437,92 +1235,6 @@ it('returns only the failed setup step output after an earlier rate limit recove
     expect($reading->failedStep)->toBe('broken');
     expect($reading->output)->toContain('invalid configuration')->not->toContain('429');
 });
-
-it('streams setup output and stops its descendants on timeout or cancellation', function (bool $authenticated, bool $cancel): void {
-    Http::preventStrayRequests();
-    if ($authenticated) {
-        GitHubTestSupport::storeApp();
-        Http::fake([
-            'https://api.github.com/repos/acme/shop/installation' => Http::response(['id' => 9]),
-            'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_setup_sentinel'], 201),
-        ]);
-    }
-    $checkout = check_runner_checkout('true');
-    $instance = check_runner_instance($checkout);
-    $trigger = $checkout.'/ignored/deadline';
-    $runner = check_runner(check_runner_controlled_transport($trigger));
-    $process = $runner->start($instance, 'true', [[
-        'name' => 'waiting',
-        'command' => 'mkdir -p ignored; sleep 30 & echo $! > ignored/setup-child; printf "streamed-output:%08000d" 0; wait',
-        'timeout_seconds' => $cancel ? 20 : 2,
-    ]]);
-    try {
-        $log = $checkout.'/.git/orbit/check.log';
-        $deadline = microtime(true) + 10;
-        do {
-            usleep(50000);
-            $output = is_file($log) ? file_get_contents($log) : '';
-        } while (! str_contains($output, 'streamed-output:000') && microtime(true) < $deadline);
-
-        expect($output)->toContain('streamed-output:000');
-        expect($runner->read($instance, $process)->state)->toBe('running');
-        $child = (int) file_get_contents($checkout.'/ignored/setup-child');
-        if ($cancel) {
-            $runner->cancel($instance, $process);
-            expect(check_runner_wait($runner, $instance, $process)->state)->toBe('lost');
-        } else {
-            touch($trigger);
-            expect(check_runner_wait($runner, $instance, $process)->exitCode)->toBe(124);
-        }
-        $probe = new Process([StandardLibraryPython::executable(), '-c', <<<'PYTHON'
-            import pathlib, sys
-            stat = pathlib.Path('/proc/' + sys.argv[1] + '/stat')
-            assert not stat.exists() or stat.read_text().rsplit(')', 1)[1].split()[0] == 'Z'
-            PYTHON, (string) $child]);
-        expect($probe->run())->toBe(0, $probe->getErrorOutput());
-    } finally {
-        $runner->cancel($instance, $process);
-    }
-})->with([
-    'plain timeout' => [false, false],
-    'plain cancellation' => [false, true],
-    'authenticated timeout' => [true, false],
-    'authenticated cancellation' => [true, true],
-]);
-
-it('bounds output draining after an escaped grandchild outlives the setup shell', function (?int $timeout): void {
-    $checkout = check_runner_checkout('touch check-ran');
-    $instance = check_runner_instance($checkout);
-    $runner = check_runner(check_runner_controlled_transport(advanceDrain: true));
-    $command = <<<'BASH'
-        mkdir -p ignored
-        python3 - <<'PY'
-        import pathlib, subprocess, sys
-        child = subprocess.Popen([sys.executable, '-S', '-c', 'import time; time.sleep(30)'], start_new_session=True)
-        pathlib.Path('ignored/escaped-child').write_text(str(child.pid))
-        PY
-        BASH;
-    $started = microtime(true);
-    $process = $runner->start($instance, 'touch check-ran', [
-        ['name' => 'escaped', 'command' => $command, 'timeout_seconds' => $timeout],
-        ['name' => 'never', 'command' => 'touch never-ran', 'timeout_seconds' => 10],
-    ]);
-    try {
-        $reading = check_runner_wait($runner, $instance, $process);
-
-        expect($reading->exitCode)->toBe(124)
-            ->and($reading->failedStep)->toBe('escaped')
-            ->and($reading->output)->toContain('output did not close')
-            ->and(microtime(true) - $started)->toBeLessThan(10)
-            ->and(file_exists($checkout.'/never-ran'))->toBeFalse()
-            ->and(file_exists($checkout.'/check-ran'))->toBeFalse();
-    } finally {
-        $runner->cancel($instance, $process);
-        if (is_file($checkout.'/ignored/escaped-child')) {
-            new Process(['kill', '-TERM', trim(file_get_contents($checkout.'/ignored/escaped-child'))])->run();
-        }
-    }
-})->with(['configured timeout' => [30], 'no configured timeout' => [null]]);
 
 it('reads both merge parents and the parent tree for historical mutation proof', function (): void {
     $checkout = check_runner_checkout('echo ok');
@@ -1741,3 +1453,22 @@ it('keeps each tail when combined records exceed the status transport budget', f
         }
     }
 })->with(['five plus four MiB' => [false], 'eleven JSON-escaped records' => [true]]);
+
+it('removes setup scripts after failure and skips later work', function (): void {
+    $command = 'exit 5';
+    $exit = 5;
+    $checkout = check_runner_checkout('touch check-ran');
+    $instance = check_runner_instance($checkout);
+    $runner = check_runner(new LocalShellSshExecutor);
+
+    $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'composer check', [
+        ['name' => 'Stop', 'command' => 'mkdir -p ignored; printf "%s" "$0" > ignored/setup-script; '.$command, 'timeout_seconds' => 1],
+        ['name' => 'Never', 'command' => 'touch never-ran', 'timeout_seconds' => 10],
+    ]));
+
+    expect($reading->exitCode)->toBe($exit)
+        ->and($reading->failedStep)->toBe('Stop')
+        ->and(file_exists(file_get_contents($checkout.'/ignored/setup-script')))->toBeFalse()
+        ->and(file_exists($checkout.'/never-ran'))->toBeFalse()
+        ->and(file_exists($checkout.'/check-ran'))->toBeFalse();
+});

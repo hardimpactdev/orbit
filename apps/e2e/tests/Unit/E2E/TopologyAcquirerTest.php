@@ -44,7 +44,7 @@ function acquirerWorktree(): string
     file_put_contents($root.'/apps/gateway/artisan', <<<'PHP'
 <?php
 $programs = [['name' => 'bootstrap', 'arguments' => ['true', 'bootstrap'], 'input' => null], ['name' => 'caddy-package', 'arguments' => ['true', 'caddy-package'], 'input' => null], ['name' => 'vpn-prerequisites', 'arguments' => ['true', 'vpn-prerequisites'], 'input' => null]];
-echo json_encode(['programs' => array_map(static fn (array $p): array => $p + ['fingerprint' => hash('sha256', json_encode(['arguments' => $p['arguments'], 'input' => $p['input']], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE))], $programs)]);
+echo json_encode(['agent' => ['path' => dirname(__DIR__, 2).'/apps/agent/orbit-agent', 'sha256' => str_repeat('a', 64)], 'programs' => array_map(static fn (array $p): array => $p + ['fingerprint' => hash('sha256', json_encode(['arguments' => $p['arguments'], 'input' => $p['input']], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE))], $programs)]);
 PHP);
     file_put_contents($root.'/apps/gateway/.env', "APP_KEY=base64:fixture\n");
     file_put_contents($root.'/.gitignore', "/.e2e/\n/apps/gateway/.env\nvendor/\n");
@@ -201,6 +201,9 @@ describe('TopologyAcquirer', function () {
         expect($dns[0]['argv'])->toBe(['bash', '-ceu', file_get_contents(dirname(__DIR__, 3).'/resources/guest/public-dns.sh')]);
         $programs = array_values(array_filter($incus->execs, static fn (array $exec): bool => in_array('true', $exec['argv'], true)));
         expect(array_map(static fn (array $exec): array => array_slice($exec['argv'], 10), $programs))->toBe([['true', 'caddy-package'], ['true', 'vpn-prerequisites']]);
+        $agent = array_find_key($incus->execs, static fn (array $exec): bool => $exec['argv'][0] === 'install' && end($exec['argv']) === '/usr/local/bin/orbit-agent');
+        expect($agent)->toBeInt()->toBeLessThan(array_search($programs[0], $incus->execs, true))
+            ->and($incus->execs[$agent]['argv'])->toBe(['install', '-D', '-m', '0755', '-o', 'root', '-g', 'root', '--', '/home/orbit/orbit/apps/agent/orbit-agent', '/usr/local/bin/orbit-agent']);
 
         $guests = [];
         foreach ($incus->guests() as $name => $guest) {
@@ -261,10 +264,10 @@ describe('TopologyAcquirer', function () {
     });
 
     it('reports recipe pnpm repair failure before enrollment and cleans its guests', function (): void {
-        extract(acquirerFixture(static fn (string $instance, array $argv, ?string $stdin): ?array => $argv[0] === 'python3' && str_contains($stdin ?? '', 'orbit-topology-pnpm-') ? ['', 'pinned artifact digest mismatch', 1] : null));
+        extract(acquirerFixture(static fn (string $instance, array $argv, ?string $stdin): ?array => in_array('recipe.install-javascript', $argv, true) ? [json_encode(['ok' => false, 'error' => ['code' => 'recipe.operation_failed', 'message' => 'pinned artifact digest mismatch', 'details' => []]], JSON_THROW_ON_ERROR), '', 0] : null));
 
         expect(fn () => $acquirer->acquire($request, TopologyRecipe::compose(['app-dev'])))
-            ->toThrow(RuntimeException::class, 'pinned artifact digest mismatch');
+            ->toThrow(RuntimeException::class, 'Recipe pnpm preparation failed');
         expect($incus->guests())->toBe([]);
     });
 

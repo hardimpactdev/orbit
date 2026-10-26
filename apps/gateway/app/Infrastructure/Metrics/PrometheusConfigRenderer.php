@@ -26,7 +26,7 @@ final readonly class PrometheusConfigRenderer
         $this->guardTargets($nodes);
 
         return
-            '# retention.time: '.MetricsRuntimeSpec::RetentionTime." (configured by the container CLI flag)\nglobal:\n  scrape_interval: ".self::ScrapeInterval."\n  evaluation_interval: ".self::ScrapeInterval."\nscrape_configs:\n"
+            "global:\n  scrape_interval: ".self::ScrapeInterval."\n  evaluation_interval: ".self::ScrapeInterval."\nscrape_configs:\n"
             .$this->job('orbit-node-exporter', $nodes, MetricsFootprint::ExporterPort, null)
             .$this->job('orbit-cadvisor', $nodes, MetricsFootprint::CadvisorPort, null)
             .$this->serviceJobs($services);

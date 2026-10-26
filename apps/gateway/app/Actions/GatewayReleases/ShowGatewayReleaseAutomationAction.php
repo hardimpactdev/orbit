@@ -79,13 +79,13 @@ final readonly class ShowGatewayReleaseAutomationAction
     public function current(): array
     {
         try {
-            $layout = GatewayReleaseLayout::fromConfig();
+            $inventory = GatewayReleaseLayout::fromConfig()->observe();
         } catch (GatewayReleaseException) {
             return [null, null];
         }
 
-        $id = $layout->currentReleaseId();
+        $id = $inventory->current;
 
-        return [$id, $id === null ? null : $layout->preparedCommit($id)];
+        return [$id, $id === null ? null : ($inventory->commits[$id] ?? null)];
     }
 }

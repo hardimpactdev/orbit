@@ -66,6 +66,7 @@ use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\TaskVmWorkspaceGuard;
 use App\Domain\TaskVms\VmObservation;
 use App\Domain\Tools\ToolManagerMaterializer;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Metrics\ServiceMetricsRuntime;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
@@ -106,6 +107,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Sleep;
 use Orbit\Extensions\AiRouter\Domain\AiRouterState;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeNodeAgentRuntime;
 use Tests\Support\FakeToolManagerMaterializer;
@@ -452,7 +454,7 @@ describe(ProvisionTaskVm::class, function (): void {
         app()->call([new ProvisionTaskVm($vm->id), 'handle']);
 
         expect($this->provider->calls)->toBe(['create'])
-            ->and($this->provider->userData)->toStartWith("#cloud-config\n")->toContain('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGatewayKey gateway');
+            ->and($this->provider->gatewayPublicKey)->toBe('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGatewayKey gateway');
         Queue::assertPushedOn('task-vms', EnrollTaskVm::class, fn (EnrollTaskVm $job): bool => $job->taskVmId === $vm->id && abs($job->launchedAt - now()->getTimestamp()) <= 5);
     });
 
@@ -530,7 +532,7 @@ describe(EnrollTaskVm::class, function (): void {
             /** @param list<array<string, mixed>> $converged */
             public function __construct(private array &$converged) {}
 
-            public function converge(Node $node, NodeProvisioningIdentity $identity, ?string $expectedSshHostFingerprint = null, bool $rolelessOperator = false): NodeObservation
+            public function converge(Node $node, NodeProvisioningIdentity $identity, ?string $expectedSshHostFingerprint = null, bool $rolelessOperator = false, ?Closure $recordObservation = null): NodeObservation
             {
                 $this->converged[] = [
                     'host' => $node->public_ssh_host, 'jump' => $node->ssh_jump_node_id, 'wireguard_ip' => $node->wireguard_ip,
@@ -538,7 +540,10 @@ describe(EnrollTaskVm::class, function (): void {
                     'linked' => TaskVm::query()->where('node_id', $node->id)->exists(),
                 ];
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         });
         app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
@@ -669,7 +674,7 @@ describe(EnrollTaskVm::class, function (): void {
     })->with([
         'absent' => [fn (RecordingTaskVmProvider $provider) => $provider->observations = [null], 'task_vm.vm_not_running'],
         'stopped' => [fn (RecordingTaskVmProvider $provider) => $provider->observations = [new VmObservation(false, null), new VmObservation(false, null)], 'task_vm.vm_not_running'],
-        'cloud-init error' => [fn (RecordingTaskVmProvider $provider) => $provider->cloudInitOutput = '{"status":"error","errors":["apt failed"]}', 'task_vm.bootstrap_failed'],
+        'cloud-init error' => [fn (RecordingTaskVmProvider $provider) => $provider->ready = new TaskVmException('task_vm.bootstrap_failed', 'Cloud-init failed: apt failed'), 'task_vm.bootstrap_failed'],
         'slow boot' => [function (RecordingTaskVmProvider $provider): int {
             $provider->ready = false;
 
@@ -1101,6 +1106,8 @@ describe(DestroyTaskVm::class, function (): void {
         mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/keys/private');
         mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/keys/known_hosts');
         app()->instance(SshExecutor::class, new AppDevFakeSshExecutor);
+        app()->instance(AgentCommandRunner::class,
+            new FakeAgentCommandRunner()->answer('agent.status', ['version' => '0.5.0', 'sha256' => str_repeat('a', 64), 'platform' => 'linux', 'architecture' => 'x86_64', 'observer' => 'active']));
         Http::fake(['http://10.44.0.129:3774/capabilities' => Http::response(['models' => []])]);
 
         app()->call([new DestroyTaskVm($vm->id), 'handle']);

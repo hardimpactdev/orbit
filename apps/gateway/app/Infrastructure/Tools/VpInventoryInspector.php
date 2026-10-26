@@ -13,8 +13,6 @@ use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
 use App\Models\Node;
 use App\Models\Tool;
-use JsonException;
-use stdClass;
 
 /**
  * Reads the enrolled account's Vite+ global root packages.
@@ -22,25 +20,12 @@ use stdClass;
  */
 final readonly class VpInventoryInspector
 {
-    public const int MAX_INVENTORY_BYTES = 1_048_576;
-
-    private const int JSON_DEPTH = 64;
-
-    private const int MAX_NAME_LENGTH = 255;
-
-    private const int MAX_VERSION_LENGTH = 255;
-
     private const string PROTECTED = 'pnpm';
 
-    private BoundedJsonObject $json;
-
     public function __construct(
-        private RemoteToolCommandRunner $commands,
         private VpToolManager $vp,
         private SemverVersionNormalizer $versions,
-    ) {
-        $this->json = new BoundedJsonObject(self::MAX_INVENTORY_BYTES, self::JSON_DEPTH);
-    }
+    ) {}
 
     public function inspect(Node $node): ToolInventoryScan
     {
@@ -51,71 +36,18 @@ final readonly class VpInventoryInspector
         $toolIds = $this->toolIds($node);
 
         try {
-            $binary = $this->vp->existingBinary($node);
+            $inventory = $this->vp->inventory($node);
         } catch (ToolManagerException $exception) {
             return $this->blank($this->stateFromScope($exception));
         }
-
-        try {
-            $result = $this->commands->execute(
-                $node,
-                $this->listCommand($binary),
-                maxOutputBytes: self::MAX_INVENTORY_BYTES,
-            );
-            $packages = $this->packages($result->stdout, $result->succeeded(), $toolIds);
-        } catch (ToolManagerException|JsonException) {
+        if (! $inventory['scan_complete']) {
             return $this->blank(ToolInventoryScanState::Incomplete);
         }
-
-        return new ToolInventoryScan(ToolManagerName::Vp, ToolInventoryScanState::Complete, $packages);
-    }
-
-    /** @return non-empty-list<string> */
-    private function listCommand(string $binary): array
-    {
-        return [
-            'env',
-            'VP_HOME='.dirname($binary, 2),
-            $binary,
-            'list',
-            '-g',
-            '--json',
-        ];
-    }
-
-    /**
-     * @param  array<string, int>  $toolIds
-     * @return list<ToolInventoryPackage>
-     */
-    private function packages(string $stdout, bool $succeeded, array $toolIds): array
-    {
-        if (! $succeeded) {
-            throw new JsonException('The Vite+ global inventory probe failed.');
-        }
-
-        $decoded = $this->json->decodeList($stdout);
         $packages = [];
-        $seen = [];
-
-        foreach ($decoded as $entry) {
-            if (! $entry instanceof stdClass) {
-                throw new JsonException('The Vite+ global inventory was malformed.');
-            }
-
-            $name = $entry->name ?? null;
-            $version = $entry->version ?? null;
-
-            if (! is_string($name) || ! $this->isSafeName($name) || isset($seen[$name])) {
-                throw new JsonException('The Vite+ global inventory was malformed.');
-            }
-
-            if (! is_string($version) || ! $this->isSafeVersion($version)) {
-                throw new JsonException('The Vite+ global inventory was malformed.');
-            }
-
-            $seen[$name] = true;
+        foreach ($inventory['packages'] as $entry) {
+            $name = $entry['name'];
             $manageable = $this->vp->validatePackage($name);
-            $normalized = $this->versions->normalize($version);
+            $normalized = $entry['version'] === null ? null : $this->versions->normalize($entry['version']);
             $toolId = $manageable ? ($toolIds[$name] ?? null) : null;
             $block = $this->block($name, $normalized, $manageable);
             $packages[] = new ToolInventoryPackage(
@@ -130,13 +62,9 @@ final readonly class VpInventoryInspector
                 adoptionBlock: $block,
             );
         }
+        usort($packages, static fn (ToolInventoryPackage $left, ToolInventoryPackage $right): int => $left->package <=> $right->package);
 
-        usort(
-            $packages,
-            static fn (ToolInventoryPackage $left, ToolInventoryPackage $right): int => $left->package <=> $right->package,
-        );
-
-        return $packages;
+        return new ToolInventoryScan(ToolManagerName::Vp, ToolInventoryScanState::Complete, $packages);
     }
 
     private function block(string $package, ?string $version, bool $manageable): ?string
@@ -154,20 +82,6 @@ final readonly class VpInventoryInspector
         }
 
         return null;
-    }
-
-    private function isSafeName(string $name): bool
-    {
-        return $name !== ''
-            && strlen($name) <= self::MAX_NAME_LENGTH
-            && preg_match('/[\x00-\x1F\x7F]/', $name) !== 1;
-    }
-
-    private function isSafeVersion(string $version): bool
-    {
-        return $version !== ''
-            && strlen($version) <= self::MAX_VERSION_LENGTH
-            && preg_match('/[\x00-\x1F\x7F]/', $version) !== 1;
     }
 
     private function stateFromScope(ToolManagerException $exception): ToolInventoryScanState

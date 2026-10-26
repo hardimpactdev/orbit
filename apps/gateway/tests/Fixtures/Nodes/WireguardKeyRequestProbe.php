@@ -5,15 +5,13 @@ declare(strict_types=1);
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Infrastructure\Files\ProtectedFileWriter;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\WireGuard\NativeGatewayPeerProjectionManager;
 use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
 use App\Models\Node;
 use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Http\Request;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\ForkedGatewayProcess;
 
 $configuration = app(VpnConfigurationRepository::class);
@@ -36,21 +34,13 @@ if ($mode === 'assign') {
     }
 }
 
-$processes = new class($home) implements ProcessRunner
-{
-    public function __construct(private readonly string $home) {}
+$agents = new FakeAgentCommandRunner()->answer('wireguard.project-hub', static function (array $input) use ($home): array {
+    file_put_contents($home.'/live.conf', $input['config']);
 
-    public function run(ProcessInvocation $invocation): CommandResult
-    {
-        if ($invocation->arguments === ['sudo', 'mv', '-f', '--', '/etc/wireguard/orbit-candidate.conf', '/etc/wireguard/orbit.conf']) {
-            copy($this->home.'/generated/wireguard/orbit.conf', $this->home.'/live.conf');
-        }
-
-        return new CommandResult(0, '', '', 1, false);
-    }
-};
+    return [];
+});
 $native = new NativeGatewayPeerProjectionManager(
-    $configuration, new WireGuardServerConfigRenderer, new ProtectedFileWriter, $processes, $home,
+    $configuration, new WireGuardServerConfigRenderer, new ProtectedFileWriter, $agents, $home,
 );
 $app->instance(GatewayPeerProjectionManager::class, new class($native, $mode) implements GatewayPeerProjectionManager
 {

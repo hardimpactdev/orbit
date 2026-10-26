@@ -12,11 +12,18 @@ export const operationChannel = (id: number): string => `private-operation.${id}
 
 type Read = (id: number, afterSequence: number | null) => Promise<Operation>;
 
+/** One output line of a running deploy step, which the Node agent publishes on the operation's channel. */
+export type OperationOutput = { step: string; stream: string; sequence: number; line: string };
+
+/** Live lines kept per step; the Gateway's record keeps the tail once the step ends. */
+export const LIVE_LINES = 1000;
+
 /**
  * Follows one operation (docs/reference/operations.md#follow-an-operation-over-reverb): it subscribes to the
  * operation's channel first, then reads the operation, then reads again with `after_sequence` for each event whose
  * sequence is newer than what it has. Without a socket it reads every `poll_after_seconds`. It stops once the
- * operation ends. `onChange` receives the merged operation after each read.
+ * operation ends. `onChange` receives the merged operation after each read, and `onOutput` each `client-output`
+ * line that the Node agent publishes while a deploy step runs.
  */
 export class OperationFollow {
     private operation: Operation | null = null;
@@ -30,23 +37,27 @@ export class OperationFollow {
     private readonly onChange: (operation: Operation) => void;
     private readonly socket: RealtimeSocket | null;
     private readonly read: Read;
+    private readonly onOutput: (output: OperationOutput) => void;
 
     constructor(
         id: number,
         onChange: (operation: Operation) => void,
         socket: RealtimeSocket | null,
         read: Read = readOperation,
+        onOutput: (output: OperationOutput) => void = () => {},
     ) {
         this.id = id;
         this.onChange = onChange;
         this.socket = socket;
         this.read = read;
+        this.onOutput = onOutput;
     }
 
     start(): void {
         if (this.socket !== null) {
             this.channel = this.socket.subscribe(operationChannel(this.id));
             this.channel.bind("operation.updated", (payload: unknown) => this.event(payload));
+            this.channel.bind("client-output", (payload: unknown) => this.output(payload));
         }
 
         void this.refresh();
@@ -73,6 +84,19 @@ export class OperationFollow {
         }
 
         void this.refresh();
+    }
+
+    private output(payload: unknown): void {
+        const output = payload as Partial<OperationOutput> | null;
+
+        if (typeof output?.step === "string" && typeof output.line === "string") {
+            this.onOutput({
+                step: output.step,
+                stream: typeof output.stream === "string" ? output.stream : "stdout",
+                sequence: typeof output.sequence === "number" ? output.sequence : 0,
+                line: output.line,
+            });
+        }
     }
 
     private async refresh(): Promise<void> {
@@ -127,23 +151,45 @@ export class OperationFollow {
     }
 }
 
-/** The followed state of one operation, or null before the first read. A new socket starts a new follow. */
-export function useOperation(id: number | null): Operation | null {
+/** Adds one live line to its step, keeping the newest `LIVE_LINES`. */
+export function addLine(
+    lines: Record<string, string[]>,
+    output: OperationOutput,
+): Record<string, string[]> {
+    return {
+        ...lines,
+        [output.step]: [...(lines[output.step] ?? []), output.line].slice(-LIVE_LINES),
+    };
+}
+
+/**
+ * The followed state of one operation, or null before the first read, and the live lines of its steps. A new
+ * socket starts a new follow.
+ */
+export function useOperation(id: number | null): {
+    operation: Operation | null;
+    lines: Record<string, string[]>;
+} {
     const socket = useRealtimeSocket();
     const [operation, setOperation] = useState<Operation | null>(null);
+    const [lines, setLines] = useState<Record<string, string[]>>({});
 
     useEffect(() => {
+        setLines({});
+
         if (id === null) {
             setOperation(null);
 
             return;
         }
 
-        const follow = new OperationFollow(id, setOperation, socket);
+        const follow = new OperationFollow(id, setOperation, socket, readOperation, (output) =>
+            setLines((current) => addLine(current, output)),
+        );
         follow.start();
 
         return () => follow.stop();
     }, [id, socket]);
 
-    return id === null || operation?.id !== id ? null : operation;
+    return { operation: id === null || operation?.id !== id ? null : operation, lines };
 }

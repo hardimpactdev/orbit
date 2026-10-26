@@ -78,7 +78,7 @@ Doctor reports `database_server.publication_mismatch`, `database_server.login_fa
 The Gateway creates a Valkey server in this order:
 
 1. It generates a random admin password and stores it encrypted on the server record.
-2. It writes the ACL file `/data/users.acl` into the volume `orbit-<slug>-data` with a short-lived container. The file has one line, `user default on #<sha256 of the admin password> ~* &* +@all`.
+2. The agent's `databases.write-valkey-acl` writes the ACL file `/data/users.acl` into the volume `orbit-<slug>-data` with a short-lived container, reading the file from standard input. The file has one line, `user default on #<sha256 of the admin password> ~* &* +@all`.
 3. It creates and starts a Docker Node Process named `<slug>` with image `valkey/valkey:<tag>`, the volume at `/data`, and no environment.
 4. It waits until the user `default` can log in with the admin password.
 
@@ -242,7 +242,7 @@ Application migrations create and alter logical publications and select their ta
 
 ## How Orbit runs admin commands
 
-On a MySQL server, every admin command runs `mysql` or `mysqldump` inside the server's container with `docker exec`, over SSH. The root password travels on protected standard input, and the remote script hands it to `docker exec` as `MYSQL_PWD` through the environment. The SQL follows it on standard input. Neither appears as an argument, in a file, or in a log.
+On a MySQL server, every admin command runs `mysql` or `mysqldump` inside the server's container with `docker exec`, through the [Node agent](/reference/node-agent#commands)'s `databases.server-admin`. The root password travels in the agent's protected input, and the agent hands it to `docker exec` as `MYSQL_PWD` through the environment. The SQL follows it on standard input. Neither appears as an argument, in a file, or in a log.
 
 On a Valkey server, the Gateway connects to the Node's WireGuard address and the server's port, as every client does, and logs in as `default`. A user's password goes to Valkey only as a SHA-256 hash. The only Node program writes the ACL file, when a server is created and when a [repair](#repair-a-valkey-server) rebuilds it. It receives the file on standard input and writes it through a short-lived container that mounts the volume. The file holds only password hashes.
 

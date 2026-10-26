@@ -54,7 +54,7 @@ use App\Models\Schedule;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Tests\Support\LifecycleSshExecutor;
+use Tests\Support\LifecycleAgent;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 use Tests\Support\Schedules\FakeScheduleRuntimeManager;
 
@@ -86,7 +86,7 @@ beforeEach(function (): void {
 it('refuses newly dirty teardown before acceptance and requires an explicit force retry', function (): void {
     $instance = orb181_coordinator_instance();
     ProjectLifecycleStep::query()->create(['project_id' => $instance->project_id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
-    $transport = new LifecycleSshExecutor(result: function () use ($instance): int {
+    $transport = new LifecycleAgent(result: function () use ($instance): int {
         expect($this->orb181Inspector->calls)->not->toBeEmpty();
         $this->orb181Inspector->normalUnsafeIds[] = $instance->id;
 
@@ -102,7 +102,7 @@ it('refuses newly dirty teardown before acceptance and requires an explicit forc
 it('refuses source identity changes made by teardown', function (): void {
     $instance = orb181_coordinator_instance();
     ProjectLifecycleStep::query()->create(['project_id' => $instance->project_id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
-    $transport = new LifecycleSshExecutor(result: function () use ($instance): int {
+    $transport = new LifecycleAgent(result: function () use ($instance): int {
         $this->orb181Inspector->observedCommits[$instance->id] = str_repeat('b', 40);
 
         return 0;
@@ -116,7 +116,7 @@ it('refuses source identity changes made by teardown', function (): void {
 it('keeps the route and checkout after a teardown command fails', function (): void {
     $instance = orb181_coordinator_instance();
     ProjectLifecycleStep::query()->create(['project_id' => $instance->project_id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
-    $transport = new LifecycleSshExecutor(result: static fn (): int => 1);
+    $transport = new LifecycleAgent(result: static fn (): int => 1);
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
     expect(fn () => $this->orb181Coordinator->execute($instance, false))->toThrow(ResourceOperationException::class)
         ->and(Instance::query()->whereKey($instance->id)->exists())->toBeTrue()

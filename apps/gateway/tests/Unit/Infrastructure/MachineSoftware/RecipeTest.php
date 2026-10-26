@@ -4,15 +4,17 @@ declare(strict_types=1);
 
 use App\Domain\Instances\InstancePhpVersionCatalog;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\MachineSoftware\ArtifactPin;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
+use App\Infrastructure\MachineSoftware\NodeRecipeProgram;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\MachineSoftware\RecipeValidator;
 use App\Infrastructure\MachineSoftware\SnapshotAvailability;
 use App\Infrastructure\MachineSoftware\ToolPin;
 use App\Infrastructure\MachineSoftware\VitePlusRuntimeLock;
-use App\Infrastructure\Nodes\CaddyPackageProgram;
-use App\Infrastructure\Nodes\NodeAgentFootprint;
+use App\Infrastructure\Nodes\AgentCaddyPackage;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\TaskVms\TaskVmCloudInit;
@@ -31,7 +33,7 @@ function machine_recipe_document(): array
 
 function machine_recipe_decode(array $document): MachineRecipe
 {
-    return new RecipeLoader()->decode(json_encode($document, JSON_THROW_ON_ERROR));
+    return new RecipeLoader()->resolve(json_encode($document, JSON_THROW_ON_ERROR), app(AgentDelivery::class));
 }
 
 function machine_recipe_snapshot_probe(?string $failure = null): SnapshotAvailability
@@ -66,6 +68,59 @@ function artifact_only_recipe(ToolPin $pin): MachineRecipe
 }
 
 describe('machine recipe structure and identity', function (): void {
+    it('binds loaded identity to Linux delivery bytes and preserves stored build snapshots', function (): void {
+        $loader = new RecipeLoader;
+        $original = $loader->load();
+        $manifest = ['commit' => str_repeat('f', 40), 'version' => '0.5.0', 'artifacts' => app(AgentDelivery::class)->artifacts()];
+        $path = tempnam(sys_get_temp_dir(), 'recipe-delivery-');
+        try {
+            foreach (['linux-x86_64', 'linux-aarch64'] as $platform) {
+                $changed = $manifest;
+                $changed['artifacts'][$platform]['sha256'] = str_repeat('e', 64);
+                file_put_contents($path, json_encode($changed, JSON_THROW_ON_ERROR));
+                $recipe = $loader->load(delivery: new AgentDelivery($path, '/unused'));
+
+                expect($recipe->identity)->not->toBe($original->identity);
+                expect($recipe->agentDigests[$platform])->toBe(str_repeat('e', 64));
+                expect($loader->decode($recipe->json)->identity)->toBe($recipe->identity);
+                expect($loader->decode($original->json)->agentDigests)->toBe($original->agentDigests);
+            }
+            $manifest['artifacts'] = array_reverse($manifest['artifacts'], true);
+            $manifest['artifacts']['linux-x86_64']['path'] = '/relocated/agent';
+            $manifest['artifacts']['macos-aarch64'] = ['sha256' => str_repeat('d', 64), 'path' => '/mac/agent'];
+            file_put_contents($path, json_encode($manifest, JSON_THROW_ON_ERROR));
+
+            expect($loader->load(delivery: new AgentDelivery($path, '/unused'))->identity)->toBe($original->identity);
+            expect($original->agentDigest('amd64'))->toBe($original->agentDigest('x86_64'));
+            expect($original->agentDigest('arm64'))->toBe($original->agentDigest('aarch64'));
+            expect($original->tools)->not->toHaveKey('orbit-agent');
+            expect(fn () => $loader->decode(file_get_contents(resource_path('machine-software/recipe.json')))->agentDigest('amd64'))
+                ->toThrow(InvalidArgumentException::class, 'no resolved agent digest');
+        } finally {
+            unlink($path);
+        }
+    });
+
+    it('rejects malformed stored delivery maps', function (mixed $agent): void {
+        $document = machine_recipe_document();
+        $document['agent'] = $agent;
+
+        expect(fn () => new RecipeLoader()->decode(json_encode($document, JSON_THROW_ON_ERROR)))
+            ->toThrow(InvalidArgumentException::class);
+    })->with(['empty' => [(object) []], 'list' => [[str_repeat('a', 64)]], 'bad digest' => [['linux-x86_64' => 'bad']],
+        'wrong platform' => [['macos-aarch64' => str_repeat('a', 64)]]]);
+
+    it('refuses a delivery without Linux artifacts', function (): void {
+        $path = tempnam(sys_get_temp_dir(), 'recipe-delivery-');
+        file_put_contents($path, json_encode(['commit' => 'test', 'version' => '0.5.0', 'artifacts' => []], JSON_THROW_ON_ERROR));
+        try {
+            expect(fn () => new RecipeLoader()->load(delivery: new AgentDelivery($path, '/unused')))
+                ->toThrow(InvalidArgumentException::class, 'no Linux artifacts');
+        } finally {
+            unlink($path);
+        }
+    });
+
     it('selects the exact architecture build of the complete Incus LTS set', function (): void {
         $document = machine_recipe_document();
         $versions = ['amd64' => '1:7.0.42-ubuntu26.04-202610010001', 'arm64' => '1:7.0.42-ubuntu26.04-202610010002'];
@@ -180,7 +235,6 @@ describe('machine recipe structure and identity', function (): void {
         $recipe = new RecipeLoader()->load();
         expect($recipe->identity)->toMatch('/^sha256:[a-f0-9]{64}$/')
             ->and($recipe->tools['caddy']->version)->toBe('2.11.7')
-            ->and($recipe->tools['orbit-agent']->version)->toBe('0.4.4')
             ->and($recipe->profile('operator'))->toContain('curl')->not->toContain('caddy', 'pi')
             ->and($recipe->profile('app-prod'))->not->toContain('rust', 'php8.4-pcov', 'pi')
             ->and($recipe->profile('base'))->toContain('php8.4-pcov', 'php8.5-pcov', 'rust', 'pi')
@@ -236,12 +290,11 @@ describe('machine recipe structure and identity', function (): void {
 
     it('seeds the existing enrollment and image-build packages without adding base-only software to roles', function (): void {
         $recipe = new RecipeLoader()->load();
-        $node = new Node;
+        $node = new Node(['platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit']);
         $packages = new NodeBootstrapPackageCatalog;
         $common = [...$packages->forNode($node), 'git', 'git-man'];
-        $programs = new RemotePhpPackageManager()->appDevPrograms(new InstancePhpVersionCatalog()->versions());
-        [, $json] = explode("\0", $programs['install']->input ?? '', 2);
-        $input = json_decode($json, true, flags: JSON_THROW_ON_ERROR);
+        $programs = new RemotePhpPackageManager()->appDevPrograms($node, new InstancePhpVersionCatalog()->versions());
+        $input = json_decode($programs['install']->input, true, flags: JSON_THROW_ON_ERROR)['input'];
         $php = [];
         foreach ($input['versions'] as $set) {
             $php = [...$php, ...array_column($set['packages'], 'name')];
@@ -258,7 +311,7 @@ describe('machine recipe structure and identity', function (): void {
         expect(array_values(array_intersect($document['base'], $topology)))->toBe($topology)
             ->and($recipe->tools['incus']->version)->toBe($document['tools']['incus']['version']);
         $imagePackages = ['openssh-server', ...TaskVmCloudInit::WorkspaceTools, ...$topology, ...TaskVmCloudInit::ChromiumLibraries];
-        $base = [...array_diff($development, ['php8.4-opentelemetry', 'php8.5-opentelemetry']), ...$imagePackages, 'rust', 'rust-std', 'cargo', 'clippy', 'rustfmt', 'orbit-agent', 'pi'];
+        $base = [...array_diff($development, ['php8.4-opentelemetry', 'php8.5-opentelemetry']), ...$imagePackages, 'rust', 'rust-std', 'cargo', 'clippy', 'rustfmt', 'pi'];
         $profiles = [
             'operator' => $common,
             'gateway' => [...$common, 'caddy', 'logrotate', ...$php85],
@@ -283,12 +336,9 @@ describe('machine recipe structure and identity', function (): void {
                 }
             }
         }
-        expect($recipe->tools['caddy']->version)->toBe(CaddyPackageProgram::RELEASE)
-            ->and($recipe->tools['caddy']->artifacts['amd64']->digest)->toBe(CaddyPackageProgram::AMD64_SHA512)
-            ->and($recipe->tools['caddy']->artifacts['arm64']->digest)->toBe(CaddyPackageProgram::ARM64_SHA512)
-            ->and($recipe->tools['orbit-agent']->version)->toBe(NodeAgentFootprint::Version)
-            ->and($recipe->tools['orbit-agent']->artifacts['amd64']->digest)->toBe(NodeAgentFootprint::checksum('x86_64'))
-            ->and($recipe->tools['orbit-agent']->artifacts['arm64']->digest)->toBe(NodeAgentFootprint::checksum('aarch64'));
+        expect($recipe->tools['caddy']->version)->toBe(AgentCaddyPackage::RELEASE)
+            ->and($recipe->tools['caddy']->artifacts['amd64']->digest)->toBe(AgentCaddyPackage::AMD64_SHA512)
+            ->and($recipe->tools['caddy']->artifacts['arm64']->digest)->toBe(AgentCaddyPackage::ARM64_SHA512);
     });
 
     it('names the rollback tool, the PCOV profiles and the mirror', function (): void {
@@ -397,7 +447,7 @@ describe('machine recipe structure and identity', function (): void {
         $reordered = array_reverse($document, true);
         $reordered['tools'] = array_reverse($document['tools'], true);
         expect(machine_recipe_decode($reordered)->identity)->toBe($first->identity);
-        expect(new RecipeLoader()->decode(json_encode($reordered, JSON_PRETTY_PRINT))->identity)->toBe($first->identity);
+        expect(new RecipeLoader()->resolve(json_encode($reordered, JSON_PRETTY_PRINT), app(AgentDelivery::class))->identity)->toBe($first->identity);
         $document['ubuntu']['snapshot'] = new DateTimeImmutable($first->snapshot)->modify('+1 day')->format('Ymd\THis\Z');
         expect(machine_recipe_decode($document)->identity)->not->toBe($first->identity);
         $document = machine_recipe_document();
@@ -628,6 +678,37 @@ describe('recipe availability and artifact integrity', function (): void {
     });
 });
 
+describe('machine recipe delivery validation', function (): void {
+    it('checks the resolved agent artifact before claiming complete integrity', function (string $case): void {
+        $directory = sys_get_temp_dir().'/recipe-agent-'.bin2hex(random_bytes(6));
+        mkdir($directory, 0o700);
+        $digest = hash('sha256', 'agent bytes');
+        file_put_contents($directory.'/agent', $case === 'corrupt' ? 'wrong bytes' : 'agent bytes');
+        file_put_contents($directory.'/manifest.json', json_encode(['commit' => str_repeat('c', 40), 'version' => '0.5.0',
+            'artifacts' => ['linux-x86_64' => ['sha256' => $digest, 'path' => 'agent']]], JSON_THROW_ON_ERROR));
+        app()->instance(AgentDelivery::class, new AgentDelivery($directory.'/manifest.json', '/unused'));
+        $recipe = new MachineRecipe('fixture', '20261014T000000Z', ['amd64'], [], [], '{}',
+            agentDigests: ['linux-x86_64' => $case === 'stale' ? str_repeat('e', 64) : $digest]);
+        $probe = machine_recipe_snapshot_probe();
+        $validator = new RecipeValidator($probe);
+        try {
+            if ($case === 'valid') {
+                $validator->validate($recipe, '/unused');
+                $validator->validate($recipe, '/unused');
+                expect($probe->called)->toBeTrue();
+            } else {
+                expect(fn () => $validator->validate($recipe, '/unused'))->toThrow(RuntimeException::class,
+                    $case === 'stale' ? 'pin differs' : 'does not match its pin');
+                expect($probe->called)->toBeFalse();
+            }
+        } finally {
+            unlink($directory.'/agent');
+            unlink($directory.'/manifest.json');
+            rmdir($directory);
+        }
+    })->with(['valid', 'corrupt', 'stale']);
+});
+
 describe('machine recipe command', function (): void {
     it('shows structure without implying availability or integrity and without any HTTP', function (): void {
         Http::preventStrayRequests();
@@ -645,7 +726,7 @@ describe('machine recipe command', function (): void {
         $output = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
         expect($output['validation'])->toBe('structure_only')
             ->and($output['identity'])->toBe(new RecipeLoader()->load()->identity)
-            ->and($output['recipe'])->toBe(machine_recipe_document())
+            ->and($output['recipe'])->toBe(json_decode(new RecipeLoader()->load()->json, true, flags: JSON_THROW_ON_ERROR))
             ->and($output['recipe']['tools']['pi']['source_commit'])->toBe('e5933d4c8696')
             ->and($output['recipe']['tools']['pi']['artifacts']['amd64']['sha256'])->toBe('286620c586b13b60fce4ce71f286d282da185fd95f7971c4109fb52bc8f0a78c')
             ->and($output['profiles']['base']['architectures'])->toBe(['amd64']);
@@ -732,6 +813,15 @@ describe('machine recipe command', function (): void {
         Http::assertNothingSent();
     });
 
+    it('checks the Ubuntu pins of the source recipe without an agent delivery manifest', function (): void {
+        $this->app->instance(SnapshotAvailability::class, machine_recipe_snapshot_probe());
+        $this->app->instance(AgentDelivery::class, new AgentDelivery(sys_get_temp_dir().'/orbit-missing-'.bin2hex(random_bytes(6)).'/manifest.json', sys_get_temp_dir()));
+
+        expect(Artisan::call('orbit:machine-recipe', ['--validate-ubuntu' => true, '--json' => true, '--role' => 'operator']))->toBe(0);
+        expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['recipe']['agent'])->toBeNull();
+        $this->artisan('orbit:machine-recipe', ['--role' => 'operator'])->expectsOutputToContain('manifest')->assertFailed();
+    });
+
     it('fails the CI validation mode when an Ubuntu pin does not match the snapshot', function (): void {
         $this->app->instance(SnapshotAvailability::class, machine_recipe_snapshot_probe('stale Ubuntu pin'));
 
@@ -757,9 +847,20 @@ it('accepts a native artifact version for any artifact package and rejects a cha
         $artifact['version'] = $document['tools']['git']['version'];
     }
     unset($artifact);
-    $recipe = new RecipeLoader()->decode(json_encode($document, JSON_THROW_ON_ERROR));
+    $recipe = new RecipeLoader()->resolve(json_encode($document, JSON_THROW_ON_ERROR), app(AgentDelivery::class));
 
     expect($recipe->tools['git']->forArchitecture('amd64')->version)->toBe($document['tools']['git']['version']);
     $document['tools']['git']['artifacts']['amd64']['version'] = 'stable';
-    expect(fn () => new RecipeLoader()->decode(json_encode($document, JSON_THROW_ON_ERROR)))->toThrow(InvalidArgumentException::class, 'expected an exact version');
+    expect(fn () => new RecipeLoader()->resolve(json_encode($document, JSON_THROW_ON_ERROR), app(AgentDelivery::class)))->toThrow(InvalidArgumentException::class, 'expected an exact version');
+});
+
+it('maps machine architectures to recipe architectures in one place and refuses others', function (): void {
+    expect(MachineRecipe::architecture('x86_64'))->toBe('amd64')
+        ->and(MachineRecipe::architecture('amd64'))->toBe('amd64')
+        ->and(MachineRecipe::architecture('aarch64'))->toBe('arm64')
+        ->and(MachineRecipe::architecture('arm64'))->toBe('arm64')
+        ->and(MachineRecipe::architecture('riscv64'))->toBeNull()
+        ->and(MachineRecipe::architecture(null))->toBeNull();
+    expect(fn () => NodeRecipeProgram::architecture(new Node(['architecture' => null])))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('node.recipe_architecture'));
 });

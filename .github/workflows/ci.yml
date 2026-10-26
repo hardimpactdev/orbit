@@ -30,6 +30,8 @@ env:
   # in its cache keys and change bases. The changes job selects projects; selected suites always run in full.
   HANDOFF_PUSH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') }}
   CHANGE_RUN: ${{ github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') }}
+  # Pest fits test names to the terminal width; a wide log names a failed or aborted test in full.
+  COLUMNS: '200'
 
 jobs:
   changes:
@@ -420,6 +422,19 @@ jobs:
         run: |
           cp .env.example .env
           composer install --no-interaction --prefer-dist
+      # Native Caddy and Valkey tests run the agent built from this commit.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - name: Restore Rust caches
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: apps/agent
+      - name: Build the agent
+        working-directory: apps/agent
+        run: cargo build --release --locked
+      - name: Test native Caddy access and Valkey ACL publication
+        working-directory: apps/agent
+        run: cargo test --release --locked --test caddy_access --test valkey_acl -- --ignored
       # Valkey tests pull their image on the first real docker run.
       - name: Run privileged tests
         env:
@@ -449,13 +464,13 @@ jobs:
           sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
           sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install --no-install-recommends --yes shellcheck
           python3 -m venv "$RUNNER_TEMP/ruff"
-          "$RUNNER_TEMP/ruff/bin/pip" install --quiet ruff==0.17.0 -r apps/gateway/tests/Programs/requirements.txt
+          "$RUNNER_TEMP/ruff/bin/pip" install --quiet ruff==0.17.0 -r tools/test-requirements.txt
           echo "$RUNNER_TEMP/ruff/bin" >> "$GITHUB_PATH"
       - name: Refuse Gateway script growth
         env:
           NODE_SCRIPTS_BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before || 'HEAD^1' }}
         run: |
-          pytest -n auto --dist=load -q tools/test_node_scripts_ratchet.py
+          pytest -n auto --dist=load -q tools/test_node_scripts_ratchet.py tools/test_agent_source_commit.py
           # A handoff push compares with where its branch left main: its event base is the previous handoff, or none.
           if [ "$HANDOFF_PUSH" = true ]; then NODE_SCRIPTS_BASE=$(git merge-base origin/main HEAD); fi
           bin/node-scripts-ratchet --base "$NODE_SCRIPTS_BASE"
@@ -463,14 +478,7 @@ jobs:
         run: |
           shellcheck tools/ci-runners/setup.sh
           python3 -m unittest discover -s tools/ci-runners -p 'test_*.py' -v
-      # ORBIT_TEST_DOCKER also starts Valkey from a bootstrapped ACL file in Docker.
-      - name: Pull the current Valkey test image
-        run: |
-          docker pull valkey/valkey:8.1
-          docker run --rm valkey/valkey:8.1 valkey-server --version
       - name: Lint and test the remote programs
-        env:
-          ORBIT_TEST_DOCKER: '1'
         run: bin/remote-programs-check
 
   api-reference:
@@ -665,6 +673,8 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
+          # The delivery names the last commit that changed the agent's sources.
+          fetch-depth: 0
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
@@ -676,32 +686,101 @@ jobs:
           workspaces: apps/agent
       - name: Install cross compiler
         run: command -v cross >/dev/null || cargo install cross --locked
+      - name: Set up PHP for native Composer cache tests
+        uses: ./.github/actions/php
+        with:
+          coverage: none
+      - name: Set up Node for native npm cache tests
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - name: Set up Bun for native cache tests
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      # Native tests run the fixed /usr/bin/wg and setfacl, and grant the caddy account, as every Linux Node has.
+      - name: Install native test prerequisites
+        run: |
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install --no-install-recommends --yes acl wireguard-tools
+          sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin caddy
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Run clippy
-        run: cargo clippy --locked --all-targets -- -D warnings
+        run: scripts/check-crates clippy --locked --all-targets -- -D warnings
       - name: Run tests
-        run: cargo test --locked
-      - name: Build static x86_64 binary
-        run: cross build --locked --release --target x86_64-unknown-linux-musl
-      - name: Build static aarch64 binary
-        run: cross build --locked --release --target aarch64-unknown-linux-musl
+        run: scripts/check-crates test --locked
+      # The delivery of this exact source: both static Linux binaries, SHA256SUMS, and manifest.json (ADR 0225).
+      # The release workflow publishes this artifact once main's required checks pass; it never rebuilds.
+      - name: Build the agent delivery
+        run: scripts/build-delivery "$RUNNER_TEMP/agent-delivery"
+      - name: Upload the agent delivery
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: agent-delivery-linux
+          path: ${{ runner.temp }}/agent-delivery
+          if-no-files-found: error
+          retention-days: 30
 
-      # Keep this after the builds so a version bump can prove its binaries before tagging.
-      # Shared recipe and delivery tooling select this job through bin/ci-changes.
-      - name: Install Python test tools
-        working-directory: .
-        run: |
-          python3 -m venv "$RUNNER_TEMP/agent-tests"
-          "$RUNNER_TEMP/agent-tests/bin/pip" install --quiet -r apps/gateway/tests/Programs/requirements.txt
-          echo "$RUNNER_TEMP/agent-tests/bin" >> "$GITHUB_PATH"
-      - name: Check agent release delivery
-        working-directory: .
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          pytest -n auto --dist=load -q tools/test_check_agent_release.py
-          python3 tools/check_agent_release.py
+  agent-macos:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.jobs).agent-macos
+    name: Rust agent on macOS
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: apps/agent
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - name: Restore Rust caches
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: apps/agent
+      - name: Build the macOS delivery
+        run: scripts/build-delivery "$RUNNER_TEMP/agent-delivery" --target aarch64-apple-darwin --target x86_64-apple-darwin
+      - name: Test command mode
+        run: 'cargo test --locked --lib command::'
+      - name: Test native Mac enrollment
+        run: cargo test --locked --lib macos_enrollment
+      - name: Upload the macOS delivery
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: agent-delivery-macos
+          path: ${{ runner.temp }}/agent-delivery
+          if-no-files-found: error
+          retention-days: 30
+
+  agent-delivery:
+    needs: [changes, agent, agent-macos]
+    if: fromJSON(needs.changes.outputs.jobs).agent-delivery
+    name: Combine agent delivery
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: agent-delivery-*
+          path: ${{ runner.temp }}/agent-parts
+      - name: Verify and combine the tested artifacts
+        run: python3 tools/combine_agent_delivery.py "$RUNNER_TEMP/agent-delivery" "$RUNNER_TEMP/agent-parts/agent-delivery-linux" "$RUNNER_TEMP/agent-parts/agent-delivery-macos"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: agent-delivery
+          path: ${{ runner.temp }}/agent-delivery
+          if-no-files-found: error
+          retention-days: 30
 
   desktop:
     needs: changes
@@ -788,7 +867,7 @@ jobs:
   required:
     name: Required checks
     if: always()
-    needs: [changes, project, gateway-shards, privileged, remote-programs, api-reference, web, pi-server, agent, desktop]
+    needs: [changes, project, gateway-shards, privileged, remote-programs, api-reference, web, pi-server, agent, agent-macos, agent-delivery, desktop]
     runs-on: ubuntu-26.04
     steps:
       - name: Require every selected project to pass

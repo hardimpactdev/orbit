@@ -7,17 +7,19 @@ namespace App\Infrastructure\Instances;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
 use App\Domain\Instances\Environment\InstanceEnvironmentRuntimeRefresher;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
-use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Instance;
 use Throwable;
 
+/**
+ * After an environment change, rebuilds a production Instance's cached configuration through the Node agent's
+ * `instances.refresh-config-cache`, then refreshes its PHP cache.
+ */
 final readonly class RemoteInstanceEnvironmentRuntimeRefresher implements InstanceEnvironmentRuntimeRefresher
 {
     public function __construct(
-        private RemoteProgramRunner $programs,
-        private RemoteProgramCatalog $catalog,
+        private AgentCommandRunner $agents,
         private ProductionPhpRuntimeManager $runtime,
     ) {}
 
@@ -34,25 +36,21 @@ final readonly class RemoteInstanceEnvironmentRuntimeRefresher implements Instan
         }
 
         try {
-            $result = $this->programs->run(
-                $context->node,
-                $this->catalog->program('instances.refresh-environment-config'),
-                [
-                    'user' => $context->executionUser,
-                    'home' => $context->path,
-                    'version' => $instance->selected_php_version,
-                    'application' => $instance->applicationDirectory(),
-                ],
-            );
+            $outcome = $this->agents->run($context->node, 'instances.refresh-config-cache', [
+                'user' => $context->executionUser,
+                'home' => $context->path,
+                'version' => $instance->selected_php_version,
+                'application' => $instance->applicationDirectory(),
+            ])['outcome'] ?? null;
         } catch (Throwable) {
             $this->configFailed();
         }
 
-        if ($result->outcome === 'no_current_release') {
+        if ($outcome === 'no_current_release') {
             return 'skipped_no_current_release';
         }
 
-        if (! in_array($result->outcome, ['config_cached', 'config_uncached'], true)) {
+        if (! in_array($outcome, ['config_cached', 'config_uncached'], true)) {
             $this->configFailed();
         }
 
@@ -66,7 +64,7 @@ final readonly class RemoteInstanceEnvironmentRuntimeRefresher implements Instan
             );
         }
 
-        return $result->outcome === 'config_cached' ? 'config_cache_and_opcache_refreshed' : 'opcache_refreshed_config_uncached';
+        return $outcome === 'config_cached' ? 'config_cache_and_opcache_refreshed' : 'opcache_refreshed_config_uncached';
     }
 
     private function configFailed(): never

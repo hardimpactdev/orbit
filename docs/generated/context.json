@@ -306,6 +306,7 @@
                 "Doctor",
                 "Gateway",
                 "Node",
+                "Node agent",
                 "Placement",
                 "Role",
                 "Route",
@@ -441,6 +442,8 @@
             "concepts": [
                 "Gateway",
                 "Instance",
+                "Node",
+                "Node agent",
                 "Process"
             ],
             "governing_adrs": []
@@ -739,9 +742,7 @@
                 "Task check",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0225"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/decisions/0182-start-tasks-from-project-task-definitions.md",
@@ -904,27 +905,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0211-ship-node-changes-as-remote-programs.md",
-            "title": "ADR 0211: Ship Node changes as remote programs",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Gateway",
-                "Instance",
-                "Node",
-                "Node agent",
-                "Process",
-                "Task"
-            ],
-            "governing_adrs": [
-                "0211",
-                "0225"
-            ]
-        },
-        {
             "path": "docs/decisions/0212-turn-proxycli-into-the-ai-router-extension.md",
             "title": "ADR 0212: Turn ProxyCli into the AI router extension",
             "kind": "decision",
@@ -977,8 +957,7 @@
             ],
             "governing_adrs": [
                 "0213",
-                "0223",
-                "0225"
+                "0223"
             ]
         },
         {
@@ -1075,7 +1054,6 @@
             ],
             "governing_adrs": [
                 "0209",
-                "0211",
                 "0212",
                 "0218",
                 "0229"
@@ -1107,7 +1085,6 @@
             "governing_adrs": [
                 "0209",
                 "0210",
-                "0211",
                 "0212",
                 "0218",
                 "0219",
@@ -1200,50 +1177,10 @@
             ],
             "governing_adrs": [
                 "0210",
-                "0211",
                 "0212",
                 "0218",
                 "0223",
                 "0224"
-            ]
-        },
-        {
-            "path": "docs/decisions/0225-make-node-changes-through-agent-commands.md",
-            "title": "ADR 0225: Make Node changes through agent commands",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Activity",
-                "Cluster",
-                "Deployment",
-                "Doctor",
-                "Extension",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Node agent",
-                "Placement",
-                "Process",
-                "Project",
-                "Role",
-                "Task"
-            ],
-            "governing_adrs": [
-                "0209",
-                "0210",
-                "0211",
-                "0212",
-                "0213",
-                "0218",
-                "0219",
-                "0224",
-                "0225",
-                "0229"
             ]
         },
         {
@@ -1284,6 +1221,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Pi server",
                 "Project",
                 "Role",
@@ -1299,7 +1237,6 @@
                 "0218",
                 "0223",
                 "0224",
-                "0225",
                 "0229"
             ]
         },
@@ -1355,7 +1292,6 @@
                 "0206",
                 "0209",
                 "0210",
-                "0211",
                 "0212",
                 "0213",
                 "0214",
@@ -1365,7 +1301,6 @@
                 "0221",
                 "0223",
                 "0224",
-                "0225",
                 "0226",
                 "0229"
             ]
@@ -1397,6 +1332,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Placement",
                 "Project",
                 "Role",
@@ -1487,6 +1423,7 @@
                 "Extension",
                 "Gateway",
                 "Node",
+                "Node agent",
                 "Placement",
                 "Process",
                 "Role",
@@ -1528,6 +1465,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Placement",
                 "Process",
                 "Project",
@@ -1617,6 +1555,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Route"
@@ -1644,9 +1583,11 @@
             "title": "Bun and Rust projects",
             "kind": "reference",
             "components": [
+                "apps/gateway",
                 "apps/web"
             ],
             "concepts": [
+                "Extension",
                 "Gateway",
                 "Node",
                 "Node agent",
@@ -1673,7 +1614,6 @@
                 "Instance",
                 "Node",
                 "Placement",
-                "Process",
                 "Project",
                 "Role",
                 "Route",
@@ -1808,7 +1748,6 @@
             "title": "Database connections",
             "kind": "reference",
             "components": [
-                "apps/cli",
                 "apps/gateway"
             ],
             "concepts": [
@@ -1821,6 +1760,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Role",
@@ -1839,6 +1779,7 @@
                 "Doctor",
                 "Gateway",
                 "Node",
+                "Node agent",
                 "Process",
                 "Role",
                 "Tool"
@@ -1862,6 +1803,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Role",
@@ -1913,6 +1855,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Placement",
                 "Process",
                 "Project",
@@ -1993,6 +1936,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Placement",
                 "Process",
                 "Project",
@@ -2295,7 +2239,9 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Placement",
+                "Process",
                 "Project",
                 "Role",
                 "Route"
@@ -2317,6 +2263,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Route",
@@ -2337,6 +2284,8 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
+                "Process",
                 "Project",
                 "Route"
             ],
@@ -2444,6 +2393,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Placement",
                 "Process",
                 "Project",
@@ -2536,19 +2486,25 @@
             "concepts": [
                 "Access grant",
                 "Activity",
+                "Cluster",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Node agent",
+                "Placement",
                 "Process",
                 "Project",
                 "Role",
+                "Schedule",
                 "Subtask",
                 "Task",
-                "Tool"
+                "Task workspace"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0219"
+            ]
         },
         {
             "path": "docs/reference/node-provisioning.md",
@@ -2632,6 +2588,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Role",
@@ -2661,6 +2618,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Role",
@@ -2721,6 +2679,7 @@
                 "Extension",
                 "Gateway",
                 "Node",
+                "Node agent",
                 "Placement",
                 "Process",
                 "Role",
@@ -2747,6 +2706,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Placement",
                 "Process",
                 "Project",
@@ -2819,25 +2779,15 @@
                 "apps/gateway"
             ],
             "concepts": [
-                "Activity",
-                "Database server",
-                "Deployment",
                 "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
-                "Project",
-                "Role",
-                "Route",
                 "Task",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0211",
-                "0213",
-                "0225"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/routes.md",
@@ -2856,6 +2806,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Placement",
                 "Process",
                 "Project",
@@ -2901,6 +2852,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Doctor",
                 "Gateway",
                 "Node",
                 "Node agent",
@@ -2924,6 +2876,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Role",
                 "Route"
@@ -2965,7 +2918,6 @@
                 "Turn receipt"
             ],
             "governing_adrs": [
-                "0225",
                 "0229"
             ]
         },
@@ -2981,6 +2933,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Project",
                 "Role",
                 "Task",
@@ -3120,6 +3073,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Role",
@@ -3151,8 +3105,7 @@
             "title": "Migrate an unmanaged Executor hostname",
             "kind": "solution",
             "components": [
-                "apps/cli",
-                "apps/gateway"
+                "apps/cli"
             ],
             "concepts": [
                 "Cluster",
@@ -3213,9 +3166,7 @@
             ],
             "concepts": [
                 "Gateway",
-                "Instance",
                 "Node",
-                "Node agent",
                 "Process",
                 "Role"
             ],

@@ -40,9 +40,11 @@ orbit process:create queue --instance=12 --runtime=systemd \
 
 A wake still starts every desired-running Process, including a keep-alive Process that is down. `process:stop` records `desired_state=stopped`, and a wake leaves that Process stopped. Keep-alive has no effect outside hibernation.
 
+The [Node agent](/reference/node-agent#commands) reads activity times, manages awake and cold markers, inspects checkout dependencies, and prunes eligible directories. The Gateway owns the idle thresholds and wake decisions.
+
 ## Idle window and sweep
 
-`orbit-runtime-hibernator.timer` runs on the Gateway host every 10 minutes. It reads the last HTTP activity of each Instance: the newer of the Instance's Caddy access log and its awake marker.
+`orbit-runtime-hibernator.timer` runs on the Gateway host every 10 minutes. `gateway.converge-hibernator` owns its fixed service and timer files and systemd activation. PHP sends the stable Gateway path, Orbit home, account and configured sweep interval; the root command installs a service that runs Gateway PHP as that account. It reads the last HTTP activity of each Instance: the newer of the Instance's Caddy access log and its awake marker.
 
 Set these values in the Gateway's environment, not an Instance's `.env`. They configure hibernation only; [task-agent effort](/reference/tasks#drivers) uses separate Gateway settings. `ORBIT_TASKS_PROVISIONING_FAILURE_THRESHOLD` counts [task workspace provisioning failures](/reference/tasks#claim-and-provision), not wake failures. The repository map that [trusts GitHub feedback](/reference/tasks#trusted-github-feedback), `orbit.tasks.github_reviewers`, also lives in Gateway configuration but changes no hibernation threshold, Process keep-alive setting, or wake behavior.
 
@@ -100,14 +102,14 @@ The awake markers live in `/dev/shm`, so a reboot clears them. Development Proce
 
 ## Host directories
 
-The `app-dev` role and each marker write create these directories before Caddy reloads or reads a marker.
+The `app-dev` role calls `hibernation.prepare-directories` through the Node agent before Caddy reloads. Each marker write uses the same native directory setup before Caddy reads a marker. The agent checks both directory paths and resolves the Caddy group before changing either directory.
 
 | Path | Owner | Mode | Use |
 | --- | --- | --- | --- |
 | `/dev/shm/orbit/hibernation` | `root:caddy` | `0755` | `app-instance-{id}.awake` markers. |
 | `/data/caddy/orbit/hibernation` | `root:caddy` | `2775` | `app-instance-{id}.log` access logs and `app-instance-{id}.cold` markers. |
 
-Orbit sets each parent directory to `0755` so the `caddy` user can reach them. The Gateway validates each Caddy build as the Caddy user, so new log files stay writable by the service.
+Orbit sets each parent directory below the protected host roots to `0755` so the `caddy` user can reach them. It leaves protected roots such as `/dev/shm` and `/tmp` unchanged. Awake markers belong in the marker directory; cold markers belong in the access-log directory. A marker outside those directories is refused before directory setup. The Gateway validates each Caddy build as the Caddy user, so new log files stay writable by the service.
 
 ## Docker Processes
 

@@ -10,12 +10,10 @@ use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseExecutionOwner;
 use App\Domain\GatewayReleases\GatewayReleaseHold;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
+use App\Infrastructure\GatewayReleases\GatewayReleaseCommands;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GatewayReleases\GatewayReleasePromoter;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecovery;
-use App\Infrastructure\GatewayReleases\ReleaseArtisan;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessRunner;
 use App\Models\GatewayRelease;
 
 /** Completes one staged record; never snapshots, migrates or switches source. */
@@ -27,7 +25,7 @@ final readonly class FinalizeGatewayReleaseAction
         private GatewayReleaseLayout $layout,
         private GatewayReleaseRecovery $recovery,
         private GatewayReleasePromoter $promoter,
-        private ProcessRunner $processes,
+        private GatewayReleaseCommands $commands,
     ) {}
 
     public function execute(string $sha, int $recordId): DeployedGatewayRelease
@@ -48,13 +46,7 @@ final readonly class FinalizeGatewayReleaseAction
                 || $this->layout->preparedCommit($record->release_id) !== $sha) {
                 throw new GatewayReleaseException('finalize', 'gateway.release_finalize_invalid', 'Finalize requires the original staged record, full SHA and current prepared target.', 422);
             }
-            $status = $this->processes->run(new ProcessInvocation(
-                ReleaseArtisan::command(PHP_BINARY, $this->layout->releaseApplicationPath($record->release_id).'/artisan', ['migrate:status', '--pending=3', '--no-interaction'], ['APP_CONFIG_CACHE' => $this->layout->releaseApplicationPath($record->release_id).'/bootstrap/cache/config.php']),
-                timeout: 120.0,
-            ));
-            if (! $status->succeeded() || $status->truncated) {
-                throw new GatewayReleaseException('finalize', 'gateway.release_schema_pending', 'Migration status is unavailable or migrations remain pending. Keep the hold.');
-            }
+            $this->commands->checkMigrations($this->layout, $record->release_id, $this->lock->stepPath());
             if ($record->outcome === 'verified') {
                 GatewayReleaseHold::assertNone();
                 $this->recovery->verify($record);

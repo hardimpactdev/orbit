@@ -23,7 +23,7 @@ use Throwable;
  * opens a new port or route.
  *
  * The Gateway already has a standing firewall path to Grafana on the Metrics Node's WireGuard
- * address, port 3000 (see `MetricsPublicationSshExecutor::converge()`; that is the same address
+ * address, port 3000 (see `MetricsPublicationFirewall::converge()`; that is the same address
  * and port `metrics.orbit`'s Caddy site reverse-proxies to), so this calls it directly instead of
  * going out through `metrics.orbit`: the Gateway host cannot resolve `*.orbit` names, and looping
  * back through its own published hostname would add a hop for no benefit.

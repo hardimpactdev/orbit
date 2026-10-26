@@ -27,17 +27,10 @@ it('renders only the orbit user and the Gateway key for a task VM, whose base im
         YAML);
 });
 
-it('pins orbit to uid and gid 1000 without installing packages in builder cloud-init', function (): void {
+it('declares the builder account for native UID and GID verification without running a script', function (): void {
     expect(new TaskVmCloudInit()->renderImageBuilder(CLOUD_INIT_KEY))->toBe(<<<'YAML'
         #cloud-config
         {
-            "bootcmd": [
-                [
-                    "sh",
-                    "-c",
-                    "getent group orbit >/dev/null || groupadd --gid 1000 orbit"
-                ]
-            ],
             "users": [
                 {
                     "name": "orbit",
@@ -48,8 +41,7 @@ it('pins orbit to uid and gid 1000 without installing packages in builder cloud-
                         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeGatewayPublicKeyMaterial0123456789abcd orbit@gateway"
                     ],
                     "uid": 1000,
-                    "primary_group": "orbit",
-                    "no_user_group": true
+                    "no_user_group": false
                 }
             ]
         }

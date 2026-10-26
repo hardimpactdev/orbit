@@ -27,6 +27,7 @@ use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\NodeCliInstaller;
 use App\Domain\Nodes\NodeUpdateBroadcaster;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\Fleet\Footprint\AgentFootprintArtifact;
@@ -38,9 +39,9 @@ use App\Infrastructure\Fleet\Footprint\RouteResidueFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
 use App\Infrastructure\Fleet\NativeFleetConvergeUnits;
 use App\Infrastructure\Fleet\StaticCliRelease;
+use App\Infrastructure\Gateway\GatewayServiceCommands;
+use App\Infrastructure\Nodes\AgentNodeCliInstaller;
 use App\Infrastructure\Nodes\NodeLocks;
-use App\Infrastructure\Nodes\SshNodeCliInstaller;
-use App\Infrastructure\Processes\ProcessRunner;
 use Illuminate\Cache\CacheManager;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Config;
@@ -52,13 +53,13 @@ final class FleetServiceProvider extends ServiceProvider
     #[\Override]
     public function register(): void
     {
-        $this->app->bind(NodeCliInstaller::class, SshNodeCliInstaller::class);
+        $this->app->bind(NodeCliInstaller::class, AgentNodeCliInstaller::class);
         $this->bindStaticCliRelease();
         $this->app->bind(FleetNodeVisitor::class, FleetNodeConverger::class);
         $this->app->bind(FleetNodeVerification::class, FleetNodeVerifier::class);
         $this->app->bind(
             FleetConvergeUnits::class,
-            static fn (Application $app): NativeFleetConvergeUnits => new NativeFleetConvergeUnits($app->make(ProcessRunner::class)),
+            static fn (Application $app): NativeFleetConvergeUnits => new NativeFleetConvergeUnits($app->make(GatewayServiceCommands::class)),
         );
         $this->app->bind(
             AgentReportedVersions::class,
@@ -106,6 +107,7 @@ final class FleetServiceProvider extends ServiceProvider
                 membership: $app->make(FleetRolloutMembership::class),
                 footprint: $app->make(NodeFootprint::class),
                 versions: $app->make(AgentReportedVersions::class),
+                delivery: $app->make(AgentDelivery::class),
                 enabled: Config::boolean('fleet.rollout'),
             ),
         );

@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\TaskVms;
 
-use App\Domain\TaskVms\TaskVmGuestCommand;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\VmObservation;
-use App\Infrastructure\Processes\CommandResult;
 use App\Models\TaskVm;
 
 /** The `TaskVmProvider` of every job: sends each row to the provider of its `provider` kind. */
@@ -19,9 +17,9 @@ final readonly class TaskVmProviders implements TaskVmProvider
         private UpCloudTaskVmProvider $upcloud,
     ) {}
 
-    public function create(TaskVm $vm, string $userData): void
+    public function create(TaskVm $vm, string $gatewayPublicKey): void
     {
-        $this->for($vm)->create($vm, $userData);
+        $this->for($vm)->create($vm, $gatewayPublicKey);
     }
 
     public function observe(TaskVm $vm): ?VmObservation
@@ -34,9 +32,9 @@ final readonly class TaskVmProviders implements TaskVmProvider
         return $this->for($vm)->sshHostFingerprint($vm);
     }
 
-    public function exec(TaskVm $vm, TaskVmGuestCommand $command): CommandResult
+    public function bootstrapReady(TaskVm $vm): bool
     {
-        return $this->for($vm)->exec($vm, $command);
+        return $this->for($vm)->bootstrapReady($vm);
     }
 
     public function start(TaskVm $vm): void

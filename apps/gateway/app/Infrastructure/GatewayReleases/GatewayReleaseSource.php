@@ -7,8 +7,6 @@ namespace App\Infrastructure\GatewayReleases;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GitHub\GitHubRepository;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessRunner;
 
 /**
  * Where automatic releases come from: the GitHub repository of the shared release repository's
@@ -18,7 +16,7 @@ use App\Infrastructure\Processes\ProcessRunner;
 final readonly class GatewayReleaseSource
 {
     public function __construct(
-        private ProcessRunner $processes,
+        private GatewayReleaseCommands $commands,
         public string $branch,
         public string $checkName,
         private ?GatewayReleaseLayout $layout = null,
@@ -28,11 +26,7 @@ final readonly class GatewayReleaseSource
     public function repository(): GitHubRepository
     {
         $layout = $this->layout ?? GatewayReleaseLayout::fromConfig();
-        $origin = $this->processes->run(new ProcessInvocation(
-            ['git', '-C', $layout->repositoryPath(), 'remote', 'get-url', 'origin'],
-            timeout: 30.0,
-        ));
-        $repository = $origin->succeeded() ? GitHubRepository::fromOrigin(trim($origin->stdout)) : null;
+        $repository = GitHubRepository::fromOrigin($this->commands->origin($layout));
 
         if (! $repository instanceof GitHubRepository) {
             throw new GatewayReleaseException(

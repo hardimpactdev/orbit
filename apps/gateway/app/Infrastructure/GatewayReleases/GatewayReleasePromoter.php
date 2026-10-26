@@ -362,8 +362,15 @@ final readonly class GatewayReleasePromoter
      */
     private function prune(string $current, ?string $previous): void
     {
-        $ids = $this->layout->retainedReleaseIds();
-        $protected = array_values(array_filter([$this->layout->currentReleaseId(), $current, $previous]));
+        try {
+            $inventory = $this->layout->observe();
+        } catch (GatewayReleaseException) {
+            Log::warning('Gateway release skipped pruning: the release inventory cannot be read.');
+
+            return;
+        }
+        $ids = $inventory->retained;
+        $protected = array_values(array_filter([$inventory->current, $current, $previous]));
         $keep = [
             ...$protected,
             ...array_slice(array_values(array_unique([...array_intersect($protected, $ids), ...$ids])), 0, max(2, $this->keptReleases)),
@@ -381,12 +388,19 @@ final readonly class GatewayReleasePromoter
             }
         }
 
-        $this->pruneIncomplete([$current, $previous, $this->layout->currentReleaseId()]);
-        $retained = $this->layout->retainedReleaseIds();
+        try {
+            $inventory = $this->layout->observe();
+            $this->pruneIncomplete([$current, $previous, $inventory->current], $inventory->incomplete);
+            $retained = $this->layout->observe()->retained;
+        } catch (GatewayReleaseException) {
+            Log::warning('Gateway release skipped pruning web builds: the release inventory cannot be read.');
+
+            return;
+        }
 
         // A verified release is retained, so an empty list means the releases directory could not be read. Pruning
         // the web builds against it would remove every build but the current one.
-        if ($retained === [] || ! is_readable($this->layout->releasesPath())) {
+        if ($retained === []) {
             Log::warning('Gateway release skipped pruning web builds: the releases directory cannot be read.', ['releases' => $this->layout->releasesPath()]);
 
             return;
@@ -405,13 +419,13 @@ final readonly class GatewayReleasePromoter
      * not a removal.
      *
      * @param  list<string|null>  $kept
+     * @param  array<string, int>  $incomplete
      */
-    private function pruneIncomplete(array $kept): void
+    private function pruneIncomplete(array $kept, array $incomplete): void
     {
-        foreach ($this->layout->incompleteReleaseIds() as $id) {
-            $modified = @filemtime($this->layout->releasePath($id));
-
-            if (in_array($id, $kept, true) || $modified === false || $modified > time() - self::IncompleteReleaseSeconds) {
+        foreach ($incomplete as $id => $modified) {
+            $id = (string) $id;
+            if (in_array($id, $kept, true) || $modified > time() - self::IncompleteReleaseSeconds) {
                 continue;
             }
 

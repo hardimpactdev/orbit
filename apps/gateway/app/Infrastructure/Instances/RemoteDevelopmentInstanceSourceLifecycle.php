@@ -14,23 +14,24 @@ use App\Domain\Instances\DevelopmentSourceResolution;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
-use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Projects\LifecycleStep;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Domain\SourceControl\GitRepositoryOrigin;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentStep;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessCancelledException;
-use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\TaskVms\TaskVmGit;
 use App\Models\Instance;
 use App\Models\ProjectLifecycleStep;
 use App\Models\Task;
 use App\Models\TaskVm;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 
@@ -38,6 +39,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
 {
     public function __construct(
         private DevelopmentSshExecutor $ssh,
+        private AgentCommandRunner $agents,
         private ManagedUserAccountResolver $accounts,
         private CheckoutRemovalBoundary $removal,
         private RepositoryReadAccess $access,
@@ -50,155 +52,45 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
         if ($instance->seed_commit !== null) {
             $instance->update(['source_layout' => InstanceSourceLayout::Worktree->value]);
         }
-        $context = $this->context($instance);
         $taskVm = $this->onTaskVm($instance);
-        $script = GitReadScript::for($this->readAccess($instance, $context['repository'], $taskVm), self::preparedRepositoryGuard($instance->source_prepare_id, $instance->seed_repository).<<<'BASH'
-                    repository=$1
-                    checkout=$2
-                    allowed_root=$3
-                    managed_user=$4
-                    managed_group=$5
-                    allow_existing=$6
-                    seed_repository=$7
-                    seed_commit=$8
-                    network=$9
-                    checkout_parent=$(dirname "$checkout")
-
-                    guard_parent_chain "$checkout_parent" "$allowed_root"
-                    create_directory "$allowed_root"
-                    create_directory "$checkout_parent"
-
-                    if [ -e "$checkout" ] || [ -L "$checkout" ]; then
-                        test "$allow_existing" = 1
-                        inspect_prepared_repository
-                        exit 0
-                    fi
-                    mkdir -m 0755 -- "$checkout"
-                    if [ -n "$seed_repository" ]; then
-                        test ! -L "$seed_repository"
-                        test "$(git -C "$seed_repository" config --get remote.origin.url)" = "$repository"
-                        git -c core.hooksPath=/dev/null -C "$seed_repository" worktree add --no-checkout --detach -- "$checkout" "$seed_commit"
-                    elif [ "$network" = 1 ]; then
-                        git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false clone --no-checkout --origin origin -- "$repository" "$checkout"
-                    else
-                        # A task VM gets no token. Resolve sends its branches from the Gateway's mirror.
-                        git init --quiet -- "$checkout"
-                        git -C "$checkout" remote add origin "$repository"
-                    fi
-                    git_directory=$(git -C "$checkout" rev-parse --absolute-git-dir)
-                    if [ -n "$prepare_id" ]; then
-                        (umask 077; set -C; printf '%s:%s\n' "$prepare_id" "$(stat -c '%d:%i' "$checkout")" > "$git_directory/orbit-source-prepare")
-                    fi
-                    inspect_prepared_repository
-                    BASH);
-        $this->ssh->execute(
-            $instance->node,
-            new RemoteCommand(
-                arguments: [...$this->arguments($instance, $context), $allowExisting ? '1' : '0', $instance->seed_repository ?? '', $instance->seed_commit ?? '', $taskVm ? '0' : '1'],
-                input: $script->input,
-                protectedInput: $script->protectedInput,
-            ),
-            step: 'app-instance-source-prepare',
-            errorCode: 'instance.clone_failed',
-        );
-
+        $this->run($instance, 'instances.prepare-development-source', [
+            ...$this->source($instance),
+            'allow_existing' => $allowExisting,
+            'seed_commit' => $instance->seed_commit,
+            'network' => ! $taskVm,
+            'git_read' => $this->readAccess($instance, $taskVm),
+        ], step: 'app-instance-source-prepare', errorCode: 'instance.clone_failed');
     }
 
     public function inspectPrepared(Instance $instance): void
     {
-        $context = $this->context($instance);
-        $this->ssh->execute(
-            $instance->node,
-            new RemoteCommand(
-                arguments: $this->arguments($instance, $context),
-                input: self::preparedRepositoryGuard($instance->source_prepare_id, $instance->seed_repository).<<<'BASH'
-                    repository=$1
-                    checkout=$2
-                    allowed_root=$3
-                    managed_user=$4
-                    managed_group=$5
-                    checkout_parent=$(dirname "$checkout")
-
-                    guard_parent_chain "$checkout_parent" "$allowed_root"
-                    inspect_prepared_repository
-                    BASH,
-            ),
-            step: 'app-instance-source-inspect',
-            errorCode: 'instance.source_identity_invalid',
-        );
+        $this->inspect($instance, 'app-instance-source-inspect');
     }
 
     public function resolve(Instance $instance): DevelopmentSourceResolution
     {
-        $context = $this->context($instance);
+        $source = $this->source($instance);
         $defaultBranch = $this->defaultBranch($instance);
         $taskVm = $this->onTaskVm($instance);
         if ($taskVm) {
             $this->sendToTaskVm($instance, $defaultBranch);
         }
-        $script = GitReadScript::for($this->readAccess($instance, $context['repository'], $taskVm), self::preparedRepositoryGuard($instance->source_prepare_id, $instance->seed_repository).WorkspaceGit::fetchPreamble().<<<'BASH'
-                    repository=$1
-                    checkout=$2
-                    allowed_root=$3
-                    managed_user=$4
-                    managed_group=$5
-                    instance_name=$6
-                    default_branch=$7
-                    branch_override=$8
-                    seed_commit=$9
-                    network=${10}
-                    checkout_parent=$(dirname "$checkout")
-
-                    guard_parent_chain "$checkout_parent" "$allowed_root"
-                    inspect_prepared_repository
-                    if [ "$network" = 1 ]; then
-                        checkout_fetch -C "$checkout" fetch --quiet --no-tags --prune -- "$repository" \
-                            '+refs/heads/*:refs/remotes/origin/*'
-                    fi
-
-                    branch=${branch_override:-$instance_name}
-                    if [ -n "$seed_commit" ]; then
-                        source_ref=$seed_commit
-                    elif [ "$instance_name" = default ] && [ -z "$branch_override" ]; then
-                        branch=$default_branch
-                        source_ref="refs/remotes/origin/$branch"
-                        git -C "$checkout" show-ref --verify --quiet "$source_ref"
-                    elif git -C "$checkout" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
-                        source_ref="refs/remotes/origin/$branch"
-                    elif git -C "$checkout" show-ref --verify --quiet "refs/heads/$branch"; then
-                        source_ref="refs/heads/$branch"
-                    else
-                        source_ref="refs/remotes/origin/$default_branch"
-                        git -C "$checkout" show-ref --verify --quiet "$source_ref"
-                    fi
-                    git -C "$checkout" checkout --quiet --force --no-track -B "$branch" "$source_ref"
-                    test "$(git -C "$checkout" symbolic-ref --short HEAD)" = "$branch"
-                    commit=$(git -C "$checkout" rev-parse --verify HEAD^{commit})
-                    printf '%s\n%s\n' "$branch" "$commit"
-                    BASH);
-        $result = $this->ssh->execute(
-            $instance->node,
-            new RemoteCommand(
-                arguments: [
-                    ...$this->arguments($instance, $context),
-                    $instance->name,
-                    $defaultBranch,
-                    $instance->branch_override ?? '',
-                    $instance->seed_commit ?? '',
-                    $taskVm ? '0' : '1',
-                ],
-                input: $script->input,
-                protectedInput: $script->protectedInput,
-            ),
-            step: 'app-instance-source-resolve',
-            errorCode: 'instance.branch_resolution_failed',
-        );
+        $result = $this->run($instance, 'instances.resolve-development-source', [
+            ...$source,
+            'instance_name' => $instance->name,
+            'default_branch' => $defaultBranch,
+            'branch_override' => $instance->branch_override,
+            'seed_commit' => $instance->seed_commit,
+            'network' => ! $taskVm,
+            'protocols' => array_values(array_filter(Config::array('orbit.git.checkout_protocols', ['https']), is_string(...))),
+            'git_read' => $this->readAccess($instance, $taskVm),
+        ], step: 'app-instance-source-resolve', errorCode: 'instance.branch_resolution_failed');
 
         if (! $taskVm && $this->importsCiCaches($instance)) {
             try {
                 $project = $instance->project;
-                $tips = $this->git->fetch($project, [$defaultBranch], $this->access->for($context['repository'], $project->source_access), 'instance.ci_caches_unavailable');
-                $this->git->send($project, $instance->checkout_path, $tips, fn (RemoteCommand $command): CommandResult => $this->ssh->execute($instance->node, $command, 'instance-ci-cache-transfer', 'instance.ci_caches_unavailable'), 'instance.ci_caches_unavailable', cachesOnly: true);
+                $tips = $this->git->fetch($project, [$defaultBranch], $this->access->for($source['repository'], $project->source_access), 'instance.ci_caches_unavailable');
+                $this->git->send($project, $instance->node, $instance->checkout_path, $tips, fn (RemoteCommand $command): CommandResult => $this->ssh->execute($instance->node, $command, 'instance-ci-cache-transfer', 'instance.ci_caches_unavailable'), 'instance.ci_caches_unavailable', cachesOnly: true);
             } catch (ProcessCancelledException $exception) {
                 throw $exception;
             } catch (\RuntimeException) {
@@ -206,63 +98,20 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
             }
         }
 
-        return $this->resolution($result->stdout, $instance);
+        return $this->resolution($result['branch'] ?? null, $result['commit'] ?? null, $instance);
     }
 
     public function assertBranchCheckedOut(Instance $instance, ?string $branch): void
     {
-        $context = $this->context($instance);
         try {
-            $result = $this->ssh->execute(
-                $instance->node,
-                new RemoteCommand(
-                    arguments: [...$this->arguments($instance, $context), $branch ?? ''],
-                    input: self::preparedRepositoryGuard($instance->source_prepare_id, $instance->seed_repository).<<<'BASH'
-                        repository=$1
-                        checkout=$2
-                        allowed_root=$3
-                        managed_user=$4
-                        managed_group=$5
-                        expected_branch=$6
-                        checkout_parent=$(dirname "$checkout")
-                        export GIT_OPTIONAL_LOCKS=0
-                        guard_parent_chain "$checkout_parent" "$allowed_root"
-                        inspect_prepared_repository identity
-                        test -d "$checkout" && test ! -L "$checkout" || exit 1
-                        flock -n -x -E 75 "$checkout" true
-                        current=$(git -C "$checkout" symbolic-ref --quiet --short HEAD || true)
-                        origin=$(git -C "$checkout" config --get remote.origin.url)
-                        printf '%s' "$origin" | base64 --wrap=0
-                        printf '\n'
-                        printf '%s' "$current" | base64 --wrap=0
-                        printf '\n'
-                        BASH,
-                ),
-                step: 'app-instance-rename-inspect',
-                errorCode: 'instance.source_identity_invalid',
-            );
-        } catch (RuntimeConvergenceException $exception) {
-            $code = match ($exception->result?->exitCode) {
-                42 => 'instance.branch_not_checked_out',
-                75 => 'instance.lifecycle_busy',
-                default => null,
-            };
-            if ($code !== null) {
-                throw new ResourceOperationException(
-                    $code,
-                    $code === 'instance.lifecycle_busy' ? 'The Instance is busy with another lifecycle operation.' : 'HEAD is not on the requested branch.',
-                    409,
-                    previous: $exception,
-                );
-            }
-            throw $exception;
+            $result = $this->inspect($instance, 'app-instance-rename-inspect', verifyOrigin: false, requireIdle: true);
+        } catch (AgentCommandRefused $busy) {
+            throw new ResourceOperationException('instance.lifecycle_busy', 'The Instance is busy with another lifecycle operation.', 409, previous: $busy);
         }
-        $lines = explode("\n", preg_replace('/\n\z/', '', $result->stdout) ?? $result->stdout);
-        $origin = count($lines) === 2 ? base64_decode($lines[0], true) : false;
-        $current = count($lines) === 2 ? base64_decode($lines[1], true) : false;
+        $origin = $result['origin'] ?? null;
+        $current = $result['branch'] ?? null;
         try {
-            $valid = is_string($origin) && is_string($current)
-                && GitRepositoryIdentity::derive($origin) === $instance->project->repository_identity;
+            $valid = is_string($origin) && GitRepositoryIdentity::derive($origin) === $instance->project->repository_identity;
         } catch (InvalidArgumentException) {
             $valid = false;
         }
@@ -276,49 +125,39 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
 
     public function inspectResolved(Instance $instance): DevelopmentSourceResolution
     {
-        $context = $this->context($instance);
-        $result = $this->ssh->execute(
-            $instance->node,
-            new RemoteCommand(
-                arguments: $this->arguments($instance, $context),
-                input: self::preparedRepositoryGuard($instance->source_prepare_id, $instance->seed_repository).<<<'BASH'
-                    repository=$1
-                    checkout=$2
-                    allowed_root=$3
-                    managed_user=$4
-                    managed_group=$5
-                    checkout_parent=$(dirname "$checkout")
+        $result = $this->inspect($instance, 'app-instance-source-inspect-resolved');
 
-                    guard_parent_chain "$checkout_parent" "$allowed_root"
-                    inspect_prepared_repository
-                    branch=$(git -C "$checkout" symbolic-ref --short HEAD)
-                    commit=$(git -C "$checkout" rev-parse --verify HEAD^{commit})
-                    printf '%s\n%s\n' "$branch" "$commit"
-                    BASH,
-            ),
-            step: 'app-instance-source-inspect-resolved',
-            errorCode: 'instance.source_identity_invalid',
-        );
-
-        return $this->resolution($result->stdout, $instance);
+        return $this->resolution($result['branch'] ?? null, $result['commit'] ?? null, $instance);
     }
 
     /**
-     * @param  array{repository: string, allowedRoot: string, root: StoragePath, managedUser: string, managedGroup: string}  $context
-     * @return non-empty-list<string>
+     * Checks the prepared checkout and reads its origin, branch, and commit. Only `requireIdle` lets a busy checkout
+     * through, as the refusal for its caller to map.
+     *
+     * @return array<string, mixed>
      */
-    private function arguments(Instance $instance, array $context): array
+    private function inspect(Instance $instance, string $step, bool $verifyOrigin = true, bool $requireIdle = false): array
     {
-        return [
-            'bash',
-            '-seu',
-            '--',
-            $context['repository'],
-            $instance->checkout_path,
-            $context['allowedRoot'],
-            $context['managedUser'],
-            $context['managedGroup'],
-        ];
+        $input = [...$this->source($instance), 'verify_origin' => $verifyOrigin, 'require_idle' => $requireIdle];
+
+        return $this->run($instance, 'instances.inspect-development-source', $input, $step, 'instance.source_identity_invalid', busy: $requireIdle);
+    }
+
+    /**
+     * Runs a development source command. With `busy`, a checkout another operation holds stays the refusal, for the
+     * caller to map.
+     *
+     * @param  array<string, mixed>  $input
+     * @return array<string, mixed>
+     */
+    private function run(Instance $instance, string $command, array $input, string $step, string $errorCode, bool $busy = false): array
+    {
+        try {
+            return AgentStep::run($this->agents, $instance->node, $command, $input, $step, $errorCode, 'App development');
+        } catch (RuntimeConvergenceException $exception) {
+            $refused = AgentStep::refusal($exception);
+            throw $busy && $refused?->errorCode === 'instances.source_busy' ? $refused : $exception;
+        }
     }
 
     /** A task VM gets no GitHub token: it fetches nothing itself, and resolve sends its branches from the Gateway's mirror. */
@@ -332,9 +171,9 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
         return ProjectLifecycleStep::query()->where('project_id', $instance->project_id)->where('command', LifecycleStep::ImportCiCaches)->exists();
     }
 
-    private function readAccess(Instance $instance, string $repository, bool $taskVm): GitReadEnvironment
+    private function readAccess(Instance $instance, bool $taskVm): GitReadEnvironment
     {
-        return $taskVm ? GitReadEnvironment::none() : $this->access->for($repository, $instance->project->source_access);
+        return $taskVm ? GitReadEnvironment::none() : $this->access->for($instance->project->repository_url, $instance->project->source_access);
     }
 
     /**
@@ -352,7 +191,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
         $selectBaseline = $owner instanceof Task && ! $owner->reviewsIncomingPullRequest()
             && $instance->seed_commit === null && $tips[$this->selectedBranch($instance)] === null
             && $this->importsCiCaches($instance);
-        $this->git->send($project, $instance->checkout_path, $tips, fn (RemoteCommand $command): CommandResult => $this->ssh->execute($instance->node, $command, 'app-instance-source-resolve', 'instance.branch_resolution_failed'), 'instance.branch_resolution_failed', selectBaseline: $selectBaseline);
+        $this->git->send($project, $instance->node, $instance->checkout_path, $tips, fn (RemoteCommand $command): CommandResult => $this->ssh->execute($instance->node, $command, 'app-instance-source-resolve', 'instance.branch_resolution_failed'), 'instance.branch_resolution_failed', selectBaseline: $selectBaseline);
     }
 
     private function defaultBranch(Instance $instance): string
@@ -370,8 +209,12 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
         return $defaultBranch;
     }
 
-    /** @return array{repository: string, allowedRoot: string, root: StoragePath, managedUser: string, managedGroup: string} */
-    private function context(Instance $instance): array
+    /**
+     * The checkout every source command works on, and the identity it must have.
+     *
+     * @return array{repository: string, checkout: string|null, root: string, user: string, group: string, prepare_id: string|null, seed_repository: string|null}
+     */
+    private function source(Instance $instance): array
     {
         $instance->loadMissing(['project', 'node']);
 
@@ -388,22 +231,21 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
 
         return [
             'repository' => GitRepositoryOrigin::validate($instance->project->repository_url),
-            'allowedRoot' => $root->value,
-            'root' => $root,
-            'managedUser' => $account->user,
-            'managedGroup' => $account->group,
+            'checkout' => $instance->checkout_path,
+            'root' => $root->value,
+            'user' => $account->user,
+            'group' => $account->group,
+            'prepare_id' => $instance->source_prepare_id,
+            'seed_repository' => $instance->seed_repository,
         ];
     }
 
-    private function resolution(string $stdout, Instance $instance): DevelopmentSourceResolution
+    private function resolution(mixed $branch, mixed $commit, Instance $instance): DevelopmentSourceResolution
     {
-        $lines = preg_split('/\R/', trim($stdout));
-
         if (
-            ! is_array($lines)
-            || count($lines) !== 2
-            || $lines[0] !== $this->selectedBranch($instance)
-            || preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $lines[1]) !== 1
+            $branch !== $this->selectedBranch($instance)
+            || ! is_string($commit)
+            || preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $commit) !== 1
         ) {
             throw new RuntimeConvergenceException(
                 step: 'app-instance-source-result',
@@ -412,7 +254,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
             );
         }
 
-        return new DevelopmentSourceResolution($lines[0], $lines[1]);
+        return new DevelopmentSourceResolution($branch, $commit);
     }
 
     private function selectedBranch(Instance $instance): string
@@ -430,80 +272,5 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
         }
 
         return $branch;
-    }
-
-    private static function preparedRepositoryGuard(?string $prepareId = null, ?string $seedRepository = null): string
-    {
-        return 'expected_common='.escapeshellarg($seedRepository === null ? '' : $seedRepository.'/.git')."\n".'prepare_id='.escapeshellarg($prepareId ?? '')."\n".WorkspaceGit::bashPreamble().<<<'BASH'
-            guard_parent_chain() {
-                parent=$1
-                root=$2
-                case "$parent" in
-                    "$root"|"$root"/*) ;;
-                    *) return 1 ;;
-                esac
-
-                current=
-                relative=${parent#/}
-                if [ -n "$relative" ]; then
-                    old_ifs=$IFS
-                    IFS=/
-                    for segment in $relative; do
-                        IFS=$old_ifs
-                        current="$current/$segment"
-                        if [ -e "$current" ] || [ -L "$current" ]; then
-                            test ! -L "$current"
-                            test -d "$current"
-                            test "$(realpath -e "$current")" = "$current"
-                        fi
-                        IFS=/
-                    done
-                    IFS=$old_ifs
-                fi
-            }
-            create_directory() {
-                if [ -e "$1" ] || [ -L "$1" ]; then
-                    test -d "$1"
-                    test ! -L "$1"
-                    return 0
-                fi
-                install -d -m 0755 -- "$1"
-            }
-            inspect_prepared_repository() {
-                test -d "$checkout"
-                test ! -L "$checkout"
-                test "$(realpath -e "$checkout")" = "$checkout"
-                test "$(stat -c '%U:%G' "$checkout")" = "$managed_user:$managed_group"
-                test ! -L "$checkout/.git"
-                test "$(git -C "$checkout" rev-parse --show-toplevel)" = "$checkout"
-                git_directory=$(git -C "$checkout" rev-parse --absolute-git-dir)
-                common_directory=$(git -C "$checkout" rev-parse --path-format=absolute --git-common-dir)
-                test -d "$git_directory" && test ! -L "$git_directory"
-                test -d "$common_directory" && test ! -L "$common_directory"
-                if [ -n "$expected_common" ]; then
-                    test "$common_directory" = "$expected_common"
-                fi
-                test "$(stat -c '%U:%G' "$git_directory")" = "$managed_user:$managed_group"
-                test "$(stat -c '%U:%G' "$common_directory")" = "$managed_user:$managed_group"
-                if [ -f "$checkout/.git" ]; then
-                    test -n "$expected_common"
-                    case "$git_directory" in "$common_directory/worktrees/"*) ;; *) return 1 ;; esac
-                    test "$(cat "$git_directory/gitdir")" = "$checkout/.git"
-                else
-                    test "$git_directory" = "$checkout/.git"
-                    test "$common_directory" = "$checkout/.git"
-                fi
-                if [ "${1:-verify}" = verify ]; then
-                    test "$(git -C "$checkout" config --get remote.origin.url)" = "$repository"
-                fi
-                if [ -n "$prepare_id" ]; then
-                    test -f "$git_directory/orbit-source-prepare"
-                    test ! -L "$git_directory/orbit-source-prepare"
-                    test "$(stat -c '%U:%G' "$git_directory/orbit-source-prepare")" = "$managed_user:$managed_group"
-                    test "$(cat "$git_directory/orbit-source-prepare")" = "$prepare_id:$(stat -c '%d:%i' "$checkout")"
-                fi
-            }
-
-            BASH;
     }
 }

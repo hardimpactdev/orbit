@@ -8,20 +8,13 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleBaseline;
 use App\Domain\Nodes\RoleName;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use App\Models\NodeRole;
 
 final readonly class DatabaseRoleBaseline implements RoleBaseline
 {
     public function __construct(
-        private NodeRolePrerequisiteCommandFactory $commands,
-        private SshExecutor $ssh,
-        private SshKeyProvider $keys,
-        private KnownHostsStore $knownHosts,
+        private RolePrerequisites $prerequisites,
         private ManagedUserAccountResolver $accounts,
     ) {}
 
@@ -37,16 +30,7 @@ final readonly class DatabaseRoleBaseline implements RoleBaseline
         }
 
         $account = $this->accounts->resolve($node);
-        $result = $this->ssh->execute(
-            new SshConnection(
-                $node->wireguard_ip,
-                $node->user,
-                22,
-                $this->keys->privateKeyPath(),
-                $this->knownHosts->path(),
-            ),
-            $this->commands->make($node, RoleName::Database, $account),
-        );
+        $result = $this->prerequisites->install($node, RoleName::Database, $account);
 
         if (! $result->succeeded()) {
             throw new NodeRoleOperationException(

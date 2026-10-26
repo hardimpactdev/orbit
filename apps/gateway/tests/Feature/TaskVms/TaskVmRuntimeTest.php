@@ -10,10 +10,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmState;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\TaskVms\TaskVmRuntime;
 use App\Models\Node;
 use App\Models\Process;
@@ -26,11 +23,9 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Orbit\Extensions\AiRouter\Domain\AiRouterState;
-use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 use Tests\Support\TaskVmSettingsBuilder;
-
-use function Pest\Laravel\mock;
 
 const TVM_RUNTIME_ORIGIN = 'http://10.44.0.3:8317';
 const TVM_RUNTIME_PI_TOKEN = 'task-vm-pi-token-with-more-than-32-characters';
@@ -90,10 +85,19 @@ function tvm_runtime_cliproxy(): ArrayObject
 }
 
 beforeEach(function (): void {
-    mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/keys/private');
-    mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/keys/known_hosts');
-    $this->transport = new AppDevFakeSshExecutor;
-    app()->instance(SshExecutor::class, $this->transport);
+    $installed = false;
+    $this->agents = new FakeAgentCommandRunner;
+    $this->agents->answer('pi.inspect-artifact', static function () use (&$installed): array {
+        return ['current' => $installed];
+    });
+    $this->agents->answer('pi.receive-artifact', static fn (array $input): array => ['received_bytes' => $input['total'], 'verified' => true]);
+    $this->agents->answer('pi.install-artifact', static function () use (&$installed): array {
+        $installed = true;
+
+        return ['changed' => true];
+    });
+    $this->agents->answer('pi.configure-runtime', ['changed' => true, 'binary' => '/home/orbit/.local/bin/pi-server', 'token_file' => '/home/orbit/.pi/agent/orbit-token']);
+    app()->instance(AgentCommandRunner::class, $this->agents);
     $this->processes = new ProcessesApiFakeRuntimeManager;
     app()->instance(ProcessRuntimeManager::class, $this->processes);
     app(AiRouterState::class)->enable(1, 'cache', TVM_RUNTIME_ORIGIN, 'management-key', 'read-token', 'control-token');
@@ -117,27 +121,13 @@ describe('prepare', function (): void {
         expect($key)->toMatch('/\A[a-f0-9]{64}\z/')
             ->and($keys->getArrayCopy())->toHaveCount(2)->toContain($key);
 
-        [$check, $install, $models, $token] = $this->transport->commands;
-        expect(array_map(static fn ($connection): array => [$connection->host, $connection->user], $this->transport->connections))
-            ->toBe(array_fill(0, 4, ['10.44.0.130', 'orbit']))
-            ->and([$check->arguments[0], $check->arguments[1], ...array_slice($check->arguments, 3)])
-            ->toBe(['bash', '-ceu', '--', hash_file('sha256', $this->artifact)])
-            ->and($check->arguments[2])->toContain('"$HOME/.local/bin/pi-server" | sha256sum --check --status')
-            ->and($check->protectedInput)->toBeNull()
-            ->and([$install->arguments[0], $install->arguments[1], ...array_slice($install->arguments, 3)])
-            ->toBe(['bash', '-ceu', '--', hash_file('sha256', $this->artifact)])
-            ->and($install->arguments[2])->toContain('sha256sum --check --status', 'mv -f -- "$staged" "$bin/pi-server"')
-            ->and(stream_get_contents($install->protectedInput?->stream()))->toBe('pi-server executable')
-            ->and(array_slice($models->arguments, 3))->toBe(['--', 'models.json'])
-            ->and($models->arguments[2])->toContain('install -d -m 0700 -- "$HOME/.pi" "$dir"')
-            ->and(json_decode((string) stream_get_contents($models->protectedInput?->stream()), true))->toBe(['providers' => ['orbit-task-vm' => [
-                'baseUrl' => TVM_RUNTIME_ORIGIN.'/v1', 'api' => 'openai-responses', 'apiKey' => $key,
-                'models' => [['id' => 'gpt-5.6-luna', 'reasoning' => true]],
-            ]]])
-            ->and(array_slice($token->arguments, 3))->toBe(['--', 'orbit-token'])
-            ->and(stream_get_contents($token->protectedInput?->stream()))->toBe(TVM_RUNTIME_PI_TOKEN)
-            ->and(implode(' ', array_map(static fn ($command): string => implode(' ', $command->arguments), $this->transport->commands)))
-            ->not->toContain($key, TVM_RUNTIME_PI_TOKEN);
+        expect($this->agents->commands())->toBe(['pi.inspect-artifact', 'pi.receive-artifact', 'pi.install-artifact', 'pi.configure-runtime']);
+        expect(array_column($this->agents->calls, 'node'))->toBe(array_fill(0, 4, 'tvm-1'));
+        expect($this->agents->calls[0]['input'])->toBe(['user' => 'orbit', 'sha256' => hash_file('sha256', $this->artifact)]);
+        expect(base64_decode($this->agents->calls[1]['input']['bytes'], true))->toBe('pi-server executable');
+        expect($this->agents->calls[2]['input'])->toBe($this->agents->calls[0]['input']);
+        expect($this->agents->calls[3]['input'])->toBe(['user' => 'orbit', 'origin' => TVM_RUNTIME_ORIGIN,
+            'model_key' => $key, 'token' => TVM_RUNTIME_PI_TOKEN, 'models' => ['gpt-5.6-luna']]);
 
         $process = Process::query()->sole();
         expect($process->owner_id)->toBe($vm->node_id)
@@ -164,20 +154,16 @@ describe('prepare', function (): void {
         expect($vm->fresh()?->model_key)->toBe($key)
             ->and($keys->getArrayCopy())->toHaveCount(2)
             ->and(Process::query()->count())->toBe(1)
-            ->and($this->transport->commands)->toHaveCount(8);
+            ->and($this->agents->calls)->toHaveCount(6);
     });
 
     it('skips the upload when the VM already has the pinned Pi executable from its base image', function (): void {
         tvm_runtime_cliproxy();
-        $this->transport = new AppDevFakeSshExecutor([new CommandResult(0, 'current', '', 1, false)]);
-        app()->instance(SshExecutor::class, $this->transport);
+        $this->agents->answer('pi.inspect-artifact', ['current' => true]);
 
         app(TaskVmRuntime::class)->prepare(tvm_runtime_vm());
 
-        expect(array_map(static fn ($command): ?string => $command->arguments[4] ?? null, $this->transport->commands))
-            ->toBe([hash_file('sha256', $this->artifact), 'models.json', 'orbit-token'])
-            ->and(array_filter($this->transport->commands, static fn ($command): bool => $command->protectedInput !== null
-                && stream_get_contents($command->protectedInput->stream()) === 'pi-server executable'))->toBe([])
+        expect($this->agents->commands())->toBe(['pi.inspect-artifact', 'pi.configure-runtime'])
             ->and(Process::query()->sole()->name)->toBe('pi-server');
     });
 
@@ -192,7 +178,7 @@ describe('prepare', function (): void {
 
         expect(fn () => app(TaskVmRuntime::class)->prepare($vm))
             ->toThrow(fn (TaskVmException $exception) => expect($exception->errorCode)->toBe($code));
-        expect($this->transport->commands)->toBe([])->and($vm->fresh()?->model_key)->toBeNull();
+        expect($this->agents->calls)->toBe([])->and($vm->fresh()?->model_key)->toBeNull();
         Http::assertNothingSent();
     })->with([
         ['node', 'task_vm.not_enrolled'],
@@ -203,12 +189,30 @@ describe('prepare', function (): void {
     it('names the task VM when a step fails on it', function (): void {
         tvm_runtime_cliproxy();
         $vm = tvm_runtime_vm();
-        $this->transport = new AppDevFakeSshExecutor([new CommandResult(1, '', 'sha256sum: WARNING: 1 computed checksum did NOT match', 1, false)]);
-        app()->instance(SshExecutor::class, $this->transport);
+        $this->agents->refuse('pi.inspect-artifact', 'pi.artifact_failed', ['reason' => 'Unreadable Pi executable.']);
 
         expect(fn () => app(TaskVmRuntime::class)->prepare($vm))
             ->toThrow(TaskVmException::class, 'Pi could not be prepared on task VM [tvm-1].');
-        expect($this->transport->commands)->toHaveCount(1)->and(Process::query()->count())->toBe(0);
+        expect($this->agents->calls)->toHaveCount(1)->and(Process::query()->count())->toBe(0);
+    });
+
+    it('creates no Process when Pi inspection or configuration returns an incomplete result', function (string $command): void {
+        tvm_runtime_cliproxy();
+        $vm = tvm_runtime_vm();
+        $this->agents->answerMalformed($command, []);
+
+        expect(fn () => app(TaskVmRuntime::class)->prepare($vm))->toThrow(TaskVmException::class, 'Pi could not be prepared');
+        expect(Process::query()->count())->toBe(0);
+    })->with(['pi.inspect-artifact', 'pi.configure-runtime']);
+
+    it('keeps model-key intent and creates no Process when native configuration refuses', function (): void {
+        tvm_runtime_cliproxy();
+        $vm = tvm_runtime_vm();
+        $this->agents->refuse('pi.configure-runtime', 'pi.runtime_failed', ['reason' => 'Pi path is not an owned regular file.']);
+
+        expect(fn () => app(TaskVmRuntime::class)->prepare($vm))->toThrow(TaskVmException::class, 'Pi could not be prepared');
+        expect($vm->fresh()->model_key)->not->toBeNull();
+        expect(Process::query()->count())->toBe(0);
     });
 
     it('fails with a model key error when CLIProxyAPI refuses the key', function (): void {
@@ -217,7 +221,7 @@ describe('prepare', function (): void {
 
         expect(fn () => app(TaskVmRuntime::class)->prepare($vm))
             ->toThrow(fn (TaskVmException $exception) => expect($exception->errorCode)->toBe('task_vm.model_key_failed'));
-        expect($this->transport->commands)->toBe([])
+        expect($this->agents->calls)->toBe([])
             ->and($vm->fresh()?->model_key)->toMatch('/\A[a-f0-9]{64}\z/');
     });
 });
@@ -233,7 +237,7 @@ describe('model router readiness', function (): void {
             ->toThrow(fn (TaskVmException $exception) => expect([$exception->errorCode, $exception->status])->toBe(['task_vm.model_key_failed', 409]));
         expect($vm->fresh()?->model_key)->toBeNull()
             ->and($vm->fresh()?->ai_router_origin)->toBeNull()
-            ->and($this->transport->commands)->toBe([])
+            ->and($this->agents->calls)->toBe([])
             ->and(Cache::lock(ModelKeyIssuer::Lock, 10)->get())->toBeTrue();
         Http::assertNothingSent();
     });
@@ -247,7 +251,7 @@ describe('model proxy origin', function (): void {
 
         expect(fn () => app(TaskVmRuntime::class)->prepare($vm))
             ->toThrow(fn (TaskVmException $exception) => expect($exception->errorCode)->toBe('task_vm.invalid_config'));
-        expect($vm->fresh()?->model_key)->toBeNull()->and($this->transport->commands)->toBe([]);
+        expect($vm->fresh()?->model_key)->toBeNull()->and($this->agents->calls)->toBe([]);
         Http::assertNothingSent();
     });
 

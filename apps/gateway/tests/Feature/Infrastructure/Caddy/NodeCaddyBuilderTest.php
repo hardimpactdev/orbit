@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\Caddy\Build\CaddyfileSiteDiff;
 use App\Infrastructure\Caddy\Build\CaddyListenerRule;
 use App\Infrastructure\Caddy\Build\CaddySite;
@@ -16,27 +16,16 @@ use App\Infrastructure\Caddy\Build\NodeCaddyBuildResult;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Caddy\Build\NodeCaddyfile;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
-use App\Infrastructure\Caddy\Build\NodeCaddyLiveReader;
 use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
 use App\Infrastructure\Caddy\Build\NodeCaddyTransport;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessRunner;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
-use Symfony\Component\Process\Process;
 use Tests\Support\CaddySiteCertificateFixtures;
+use Tests\Support\FakeAgentCommandRunner;
 
 beforeEach(function (): void {
     $this->lockDirectory = sys_get_temp_dir().'/orbit-caddy-build-lock-'.bin2hex(random_bytes(6));
-    $this->local = new NodeCaddyBuilderProcesses;
-    $this->ssh = new NodeCaddyBuilderSsh;
+    $this->agents = new FakeAgentCommandRunner()->answer('caddy.publish', ['result' => 'published'])->answer('caddy.check-addresses', []);
 });
 
 afterEach(function (): void {
@@ -44,80 +33,30 @@ afterEach(function (): void {
 });
 
 describe('building a Node', function (): void {
-    it('pushes the render over SSH to a Node that does not run the Gateway', function (): void {
-        $node = node_caddy_builder_node('app-dev', '10.44.0.3');
-        $this->ssh->results = [new CommandResult(0, "orbit-caddy-build-result=published\n", '', 1, false)];
+    it('sends the render and Node identity to the agent runner', function (bool $gateway): void {
+        $node = node_caddy_builder_node($gateway ? 'gateway' : 'app-dev', '10.44.0.3');
+        if ($gateway) {
+            $node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+            CaddySiteCertificateFixtures::recordAll($node);
+        }
 
-        $result = node_caddy_builder($this)->build($node);
+        expect(node_caddy_builder($this)->build($node))->toBe(NodeCaddyBuildResult::Published)
+            ->and($this->agents->calls)->toHaveCount(1)
+            ->and($this->agents->calls[0]['node'])->toBe($node->name)
+            ->and($this->agents->calls[0]['command'])->toBe('caddy.publish')
+            ->and($this->agents->calls[0]['input']['content'])->toBe(node_caddy_builder_render($node)->content);
+    })->with([false, true]);
 
-        expect($result)->toBe(NodeCaddyBuildResult::Published)
-            ->and($this->ssh->connections[0]->host)->toBe('10.44.0.3')
-            ->and($this->ssh->connections[0]->user)->toBe('orbit')
-            ->and($this->ssh->commands[0]->arguments[0])->toBe('sudo')
-            ->and($this->ssh->commands[0]->input)->toContain(base64_encode(node_caddy_builder_render($node)->content))
-            ->and($this->local->invocations)->toBe([]);
-    });
-
-    it('runs the same script through local sudo on the Node that holds the gateway role', function (): void {
-        $node = node_caddy_builder_node('gateway', '10.44.0.1');
-        $node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
-        CaddySiteCertificateFixtures::recordAll($node);
-        $this->local->results = [new CommandResult(0, "orbit-caddy-build-result=unchanged\n", '', 1, false)];
-
-        $result = node_caddy_builder($this)->build($node);
-
-        expect($result)->toBe(NodeCaddyBuildResult::Unchanged)
-            ->and($this->local->invocations[0]->arguments[0])->toBe('sudo')
-            ->and($this->ssh->commands)->toBe([]);
-    });
-
-    it('builds locally on the recorded serving Node even while its gateway role reconverges', function (): void {
-        $node = node_caddy_builder_node('gateway', '10.44.0.1');
-        $node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Failed, 'failed_step' => 'gateway-web']);
-        CaddySiteCertificateFixtures::recordAll($node);
-        app(GatewayServingHost::class)->remember($node);
-
-        node_caddy_builder($this)->build($node);
-
-        expect($this->local->invocations)->toHaveCount(1)
-            ->and($this->ssh->commands)->toBe([]);
-    });
-
-    it('builds over SSH on a Node with a gateway role that is not the recorded serving Node', function (): void {
-        $serving = node_caddy_builder_node('gateway', '10.44.0.1');
-        $candidate = node_caddy_builder_node('gateway-next', '10.44.0.5');
-        $candidate->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
-        CaddySiteCertificateFixtures::recordAll($candidate);
-        app(GatewayServingHost::class)->remember($serving);
-
-        node_caddy_builder($this)->build($candidate);
-
-        expect($this->ssh->connections[0]->host)->toBe('10.44.0.5')
-            ->and($this->local->invocations)->toBe([]);
-    });
-
-    it('builds locally during bootstrap, before a serving Node is recorded', function (): void {
-        $node = node_caddy_builder_node('gateway', '10.44.0.1');
-        $node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Provisioning]);
-        CaddySiteCertificateFixtures::recordAll($node);
-
-        node_caddy_builder($this)->build($node);
-
-        expect($this->local->invocations)->toHaveCount(1)
-            ->and($this->ssh->commands)->toBe([]);
-    });
-
-    it('tells the script whether a Caddy role on the Node expects Caddy', function (array $roles, string $expected): void {
+    it('tells the agent whether a Caddy role on the Node expects Caddy', function (array $roles, string $expected): void {
         $node = node_caddy_builder_node('app-prod', '10.44.0.4');
         foreach ($roles as [$role, $status, $failedStep]) {
             $node->roles()->create(['role' => $role, 'status' => $status, 'failed_step' => $failedStep]);
         }
-        $this->ssh->results = [new CommandResult(0, "orbit-caddy-build-result=unchanged\n", '', 1, false)];
+        $this->agents->answer('caddy.publish', ['result' => 'unchanged']);
 
         node_caddy_builder($this)->build($node);
 
-        // The script's tenth argument: 1 when nothing on the Node can be served without Caddy.
-        expect(array_slice($this->ssh->commands[0]->arguments, -1))->toBe([$expected]);
+        expect($this->agents->calls[0]['input']['unserved'])->toBe($expected === '1');
     })->with([
         'two Caddy roles failed before Caddy was installed' => [[
             [RoleName::AppProd, LifecycleStatus::Failed, 'converge:role-prerequisites'],
@@ -143,7 +82,7 @@ describe('building a Node', function (): void {
 
         node_caddy_builder($this)->build($stale);
 
-        expect($this->ssh->commands[0]->input)->toContain(base64_encode(node_caddy_builder_render($node->fresh() ?? $node)->content));
+        expect($this->agents->calls[0]['input']['content'])->toBe(node_caddy_builder_render($node->fresh() ?? $node)->content);
     });
 
     it('never contacts the Node when the render has a problem', function (): void {
@@ -157,7 +96,7 @@ describe('building a Node', function (): void {
                     'message' => 'The app-dev site one and the app-dev site two both serve shop.test:443 on 10.44.0.3.',
                 ]);
             });
-        expect($this->ssh->commands)->toBe([]);
+        expect($this->agents->calls)->toBe([]);
     });
 
     it('publishes a valid contribution alongside the existing route', function (): void {
@@ -166,7 +105,7 @@ describe('building a Node', function (): void {
         $builder = new NodeCaddyBuilder($renderer, new NodeCaddyBuildLock($this->lockDirectory), node_caddy_builder_transport($this));
 
         expect($builder->build($node))->toBe(NodeCaddyBuildResult::Published);
-        $content = node_caddy_builder_pushed($this->ssh->commands[0]);
+        $content = node_caddy_builder_pushed($this->agents->calls[0]);
         expect($content)->toContain('https://shop.test {', 'https://collector.test {', '# orbit: extension collector.test', 'bind 10.44.0.3');
     });
 
@@ -177,13 +116,12 @@ describe('building a Node', function (): void {
         $builder = new NodeCaddyBuilder($renderer, new NodeCaddyBuildLock($this->lockDirectory), node_caddy_builder_transport($this));
 
         expect(fn () => $builder->build($node))->toThrow(NodeCaddyBuildException::class)
-            ->and($this->ssh->commands)->toBe([])
-            ->and($this->local->invocations)->toBe([]);
+            ->and($this->agents->calls)->toBe([]);
 
         // No candidate was sent: the live configuration could not have changed. A later valid build still works.
         $node->update(['wireguard_ip' => '10.44.0.3']);
         expect(node_caddy_builder($this)->build($node))->toBe(NodeCaddyBuildResult::Published);
-        expect(node_caddy_builder_pushed($this->ssh->commands[0]))->toContain('https://shop.test {')->not->toContain('# orbit: extension');
+        expect(node_caddy_builder_pushed($this->agents->calls[0]))->toContain('https://shop.test {')->not->toContain('# orbit: extension');
     })->with([
         'collision with an existing route' => ['shop.test', 'extension', '10.44.0.3', false],
         'duplicate across contributions' => ['collector.test', 'extension', '10.44.0.3', true],
@@ -193,13 +131,10 @@ describe('building a Node', function (): void {
 
     it('reports the failed stage and the last Caddy message', function (): void {
         $node = node_caddy_builder_node('app-dev', '10.44.0.3');
-        $this->ssh->results = [new CommandResult(
-            1,
-            '',
-            "Error: loading certificate: open /etc/caddy/orbit-certificates/route-1/current/cert.pem: no such file\norbit-caddy-build-stage=validate\n",
-            1,
-            false,
-        )];
+        $this->agents->refuse('caddy.publish', 'caddy.publication_failed', [
+            'stage' => 'validate',
+            'message' => 'Error: loading certificate: open /etc/caddy/orbit-certificates/route-1/current/cert.pem: no such file',
+        ]);
 
         expect(fn () => node_caddy_builder($this)->build($node))
             ->toThrow(function (NodeCaddyBuildException $exception): void {
@@ -209,9 +144,9 @@ describe('building a Node', function (): void {
             });
     });
 
-    it('reports a connection failure when the script left no stage', function (): void {
+    it('maps an agent transport failure to the connect stage', function (): void {
         $node = node_caddy_builder_node('app-dev', '10.44.0.3');
-        $this->ssh->results = [new CommandResult(255, '', "ssh: connect to host 10.44.0.3 port 22: Connection refused\n", 1, false)];
+        $this->agents->answer('caddy.publish', static fn (): array => throw new AgentRunnerFailure('caddy.publish', 'transport', 'Connection refused'));
 
         expect(fn () => node_caddy_builder($this)->build($node))
             ->toThrow(fn (NodeCaddyBuildException $exception) => expect($exception->stage)->toBe('connect'));
@@ -285,7 +220,7 @@ describe('two publishers on one Node', function (): void {
             fclose($first);
         }
 
-        $secondPush = node_caddy_builder_pushed($this->ssh->commands[0]);
+        $secondPush = node_caddy_builder_pushed($this->agents->calls[0]);
 
         expect($waits)->toBeGreaterThanOrEqual(1)
             ->and($firstPush)->toContain('# orbit: websocket reverb.orbit')->not->toContain('analytics.orbit')
@@ -299,7 +234,7 @@ describe('two publishers on one Node', function (): void {
         foreach ($orders as $index => $order) {
             $node = node_caddy_builder_node("app-dev-{$index}", '10.44.0.3');
             $node->update(['name' => 'app-dev']);
-            $this->ssh->commands = [];
+            $this->agents->calls = [];
 
             foreach ($order as $role) {
                 $node->roles()->create(['role' => $role, 'status' => LifecycleStatus::Provisioning]);
@@ -307,7 +242,7 @@ describe('two publishers on one Node', function (): void {
                 new NodeCaddyBuilder(app(NodeCaddyfileRenderer::class), new NodeCaddyBuildLock($this->lockDirectory), node_caddy_builder_transport($this))->build($node);
             }
 
-            $finals[] = node_caddy_builder_pushed($this->ssh->commands[1]);
+            $finals[] = node_caddy_builder_pushed($this->agents->calls[1]);
             $node->roles()->delete();
             $node->delete();
         }
@@ -327,9 +262,9 @@ describe('build error details', function (): void {
             ->and($exception->details()['message'])->toBe($exception->detail);
     })->with(['render', 'validate']);
 
-    it('bounds a long Caddy message from the push script', function (): void {
+    it('bounds a long Caddy message from the agent', function (): void {
         $node = node_caddy_builder_node('app-dev', '10.44.0.3');
-        $this->ssh->results = [new CommandResult(1, '', 'Error: '.str_repeat('ü', 3000)."\norbit-caddy-build-stage=validate\n", 1, false)];
+        $this->agents->refuse('caddy.publish', 'caddy.publication_failed', ['stage' => 'validate', 'message' => 'Error: '.str_repeat('ü', 3000)]);
 
         expect(fn () => node_caddy_builder($this)->build($node))
             ->toThrow(function (NodeCaddyBuildException $exception): void {
@@ -345,20 +280,19 @@ describe('build error details', function (): void {
 });
 
 describe('the listen address check', function (): void {
-    it('runs the address stage over SSH without root and changes nothing', function (): void {
+    it('sends only the listen addresses to the read-only command', function (): void {
         $node = node_caddy_builder_node('app-dev', '10.44.0.3');
-        $this->ssh->results = [new CommandResult(0, '', '', 1, false)];
 
         node_caddy_builder($this)->checkListenAddresses($node);
 
-        expect($this->ssh->commands)->toHaveCount(1)
-            ->and($this->ssh->commands[0]->arguments)->toBe(['bash', '-seu', '--', '10.44.0.3'])
-            ->and($this->ssh->commands[0]->input)->not->toContain('orbit-versions');
+        expect($this->agents->calls)->toHaveCount(1)
+            ->and($this->agents->calls[0]['command'])->toBe('caddy.check-addresses')
+            ->and($this->agents->calls[0]['input'])->toBe(['listen_addresses' => ['10.44.0.3']]);
     });
 
     it('names the missing address at stage addresses', function (): void {
         $node = node_caddy_builder_node('app-dev', '10.44.0.3');
-        $this->ssh->results = [new CommandResult(1, '', "The build binds 10.44.0.3, which is not an address on this Node. Correct the stored WireGuard or LAN address of the Node, then build again.\norbit-caddy-build-stage=addresses\n", 1, false)];
+        $this->agents->refuse('caddy.check-addresses', 'caddy.publication_failed', ['stage' => 'addresses', 'message' => 'The build binds 10.44.0.3, which is not an address on this Node. Correct the stored WireGuard or LAN address of the Node, then build again.']);
 
         expect(fn () => node_caddy_builder($this)->checkListenAddresses($node))
             ->toThrow(function (NodeCaddyBuildException $exception): void {
@@ -373,7 +307,7 @@ describe('the listen address check', function (): void {
         expect(fn () => node_caddy_builder($this, duplicate: true)->checkListenAddresses($node))
             ->toThrow(fn (NodeCaddyBuildException $exception) => expect($exception->stage)->toBe('render'));
 
-        expect($this->ssh->commands)->toBe([]);
+        expect($this->agents->calls)->toBe([]);
     });
 });
 
@@ -441,13 +375,13 @@ describe('the build command', function (): void {
             ->expectsOutputToContain('Published a new Caddyfile on Node [app-dev] and reloaded Caddy.')
             ->assertSuccessful();
 
-        expect($this->ssh->commands)->toHaveCount(1)
-            ->and(node_caddy_builder_pushed($this->ssh->commands[0]))->toStartWith(NodeCaddyfileRenderer::Marker);
+        expect($this->agents->calls)->toHaveCount(1)
+            ->and(node_caddy_builder_pushed($this->agents->calls[0]))->toStartWith(NodeCaddyfileRenderer::Marker);
     });
 
     it('reports a build that changed nothing', function (): void {
         node_caddy_builder_node('app-dev', '10.44.0.3');
-        $this->ssh->results = [new CommandResult(0, "orbit-caddy-build-result=unchanged\n", '', 1, false)];
+        $this->agents->answer('caddy.publish', ['result' => 'unchanged']);
         app()->instance(NodeCaddyBuilds::class, node_caddy_builder($this));
 
         $this->artisan('orbit:caddy-build', ['node' => 'app-dev'])
@@ -457,7 +391,7 @@ describe('the build command', function (): void {
 
     it('fails and names the stage and Caddy message when the build fails', function (): void {
         node_caddy_builder_node('app-dev', '10.44.0.3');
-        $this->ssh->results = [new CommandResult(1, '', "Error: adapting config\norbit-caddy-build-stage=validate\n", 1, false)];
+        $this->agents->refuse('caddy.publish', 'caddy.publication_failed', ['stage' => 'validate', 'message' => 'Error: adapting config']);
         app()->instance(NodeCaddyBuilds::class, node_caddy_builder($this));
 
         $this->artisan('orbit:caddy-build', ['node' => 'app-dev'])
@@ -473,7 +407,7 @@ describe('the build command', function (): void {
             ->expectsOutputToContain('--diff only compares a render. Pass --dry-run --diff.')
             ->assertFailed();
 
-        expect($this->ssh->commands)->toBe([]);
+        expect($this->agents->calls)->toBe([]);
     });
 
     it('prints the render of a Node without contacting it', function (): void {
@@ -500,7 +434,7 @@ describe('the build command', function (): void {
         $node = node_caddy_builder_node('app-dev', '10.44.0.3');
         $node->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
         CaddySiteCertificateFixtures::recordAll($node);
-        $this->ssh->results = [new CommandResult(0, "{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\nold.test {\n    respond old\n}\n", '', 1, false)];
+        $this->agents->answer('caddy.read-live', ['content' => "{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\nold.test {\n    respond old\n}\n"]);
         app()->instance(NodeCaddyTransport::class, node_caddy_builder_transport($this));
 
         $this->artisan('orbit:caddy-build', ['node' => 'app-dev', '--dry-run' => true, '--diff' => true])
@@ -509,30 +443,9 @@ describe('the build command', function (): void {
             ->expectsOutputToContain('live only  old.test')
             ->assertSuccessful();
 
-        expect($this->ssh->commands[0]->arguments)->toBe(['sudo', 'bash', '-seu', '--', '/etc/caddy/Caddyfile']);
+        expect($this->agents->commands())->toBe(['caddy.read-live']);
     });
 
-    it('reads only the live file through its symlink and never the files it imports', function (): void {
-        $root = sys_get_temp_dir().'/orbit-caddy-live-'.bin2hex(random_bytes(6));
-        mkdir("{$root}/orbit-versions/0123456789abcdef/fragments", 0777, true);
-        file_put_contents("{$root}/orbit-versions/0123456789abcdef/Caddyfile", "import {$root}/orbit-versions/0123456789abcdef/fragments/*.caddy\n");
-        file_put_contents("{$root}/orbit-versions/0123456789abcdef/fragments/app-dev.caddy", "shop.test {\n}\n");
-        symlink("{$root}/orbit-versions/0123456789abcdef/Caddyfile", "{$root}/Caddyfile");
-        $command = new NodeCaddyLiveReader(node_caddy_builder_transport($this), $root)->command();
-
-        try {
-            $live = new Process(array_slice($command->arguments, 1), input: $command->input);
-            $live->mustRun();
-            unlink("{$root}/Caddyfile");
-            $missing = new Process(array_slice($command->arguments, 1), input: $command->input);
-            $missing->mustRun();
-        } finally {
-            new Filesystem()->deleteDirectory($root);
-        }
-
-        expect($live->getOutput())->toBe("import {$root}/orbit-versions/0123456789abcdef/fragments/*.caddy\n")
-            ->and($missing->getOutput())->toBe('');
-    });
 });
 
 function node_caddy_builder_node(string $name, ?string $wireguardIp): Node
@@ -598,11 +511,10 @@ function node_caddy_builder_contribution(string $host, string $source = 'extensi
     };
 }
 
-function node_caddy_builder_pushed(RemoteCommand $command): string
+/** @param array{input: array<string, mixed>} $call */
+function node_caddy_builder_pushed(array $call): string
 {
-    preg_match("/printf '%s' '([A-Za-z0-9+\\/=]+)' \\| base64 --decode > \"\\\$candidate\\/Caddyfile\"/", (string) $command->input, $match);
-
-    return (string) base64_decode($match[1] ?? '', true);
+    return $call['input']['content'];
 }
 
 function node_caddy_builder_render(Node $node): NodeCaddyfile
@@ -612,7 +524,7 @@ function node_caddy_builder_render(Node $node): NodeCaddyfile
 
 function node_caddy_builder_transport(object $test): NodeCaddyTransport
 {
-    return new NodeCaddyTransport($test->local, $test->ssh, new NodeCaddyBuilderKeys, new NodeCaddyBuilderKnownHosts, app(GatewayServingHost::class));
+    return new NodeCaddyTransport($test->agents);
 }
 
 function node_caddy_builder(object $test, bool $duplicate = false): NodeCaddyBuilder
@@ -622,63 +534,4 @@ function node_caddy_builder(object $test, bool $duplicate = false): NodeCaddyBui
         new NodeCaddyBuildLock($test->lockDirectory),
         node_caddy_builder_transport($test),
     );
-}
-
-final class NodeCaddyBuilderProcesses implements ProcessRunner
-{
-    /** @var list<ProcessInvocation> */
-    public array $invocations = [];
-
-    /** @var list<CommandResult> */
-    public array $results = [];
-
-    public function run(ProcessInvocation $invocation): CommandResult
-    {
-        $this->invocations[] = $invocation;
-
-        return array_shift($this->results) ?? new CommandResult(0, "orbit-caddy-build-result=published\n", '', 1, false);
-    }
-}
-
-final class NodeCaddyBuilderSsh implements SshExecutor
-{
-    /** @var list<RemoteCommand> */
-    public array $commands = [];
-
-    /** @var list<SshConnection> */
-    public array $connections = [];
-
-    /** @var list<CommandResult> */
-    public array $results = [];
-
-    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-    {
-        $this->connections[] = $connection;
-        $this->commands[] = $command;
-
-        return array_shift($this->results) ?? new CommandResult(0, "orbit-caddy-build-result=published\n", '', 1, false);
-    }
-}
-
-final readonly class NodeCaddyBuilderKeys implements SshKeyProvider
-{
-    public function privateKeyPath(): string
-    {
-        return '/tmp/key';
-    }
-
-    public function publicKey(): string
-    {
-        return 'ssh-ed25519 key';
-    }
-}
-
-final readonly class NodeCaddyBuilderKnownHosts implements KnownHostsStore
-{
-    public function path(): string
-    {
-        return '/tmp/known-hosts';
-    }
-
-    public function put(string $host, int $port, HostKey $key): void {}
 }

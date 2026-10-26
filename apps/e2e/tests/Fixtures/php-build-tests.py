@@ -8,6 +8,7 @@ import json
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -188,15 +189,89 @@ class BuildTest(unittest.TestCase):
 
     def test_the_installer_input_matches_the_gateway_contract(self):
         payload = build.installer_input(recipe(), ['8.5'], profile='ci-runner')
-        self.assertEqual(sorted(payload), ['extras', 'fpm', 'git_read', 'mirror', 'mode', 'opentelemetry', 'pcov', 'release', 'repack', 'versions'])
+        self.assertEqual(sorted(payload), ['extras', 'fpm', 'mirror', 'opentelemetry', 'pcov', 'release', 'repack', 'versions'])
         names = [pin['name'] for pin in payload['versions']['8.5']['packages']]
         self.assertEqual(names, ['libgd3', 'php-common', 'php8.5-cli', 'php8.5-common', 'php8.5-pcov'])
         self.assertEqual(payload['release'], {'id': 'ubuntu', 'codenames': ['resolute']})
 
-    def test_the_assembled_installer_is_the_program_the_gateway_sends(self):
-        source = build.assemble('php.install-build')
-        self.assertTrue(source.startswith('# Library: the runtime of every Python remote program.'))
-        self.assertIn('# Program: php.install-build', source)
+    def test_installer_sends_only_typed_input_to_the_exact_source_built_agent(self):
+        payload = build.installer_input(recipe(), ['8.5'], profile='ci-runner')
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Path(directory) / 'orbit-agent'
+            agent.write_bytes(b'agent fixture')
+            for outcome in ('current', 'applied'):
+                result = {'ok': True, 'data': {'outcome': outcome, 'data': {'changed': []}}}
+                with patch.object(build, 'AGENT', agent), patch.object(build.subprocess, 'run', return_value=
+                        subprocess.CompletedProcess([], 0, json.dumps(result).encode(), b'private log')) as run:
+                    self.assertEqual(build.run_installer(payload), (outcome, {'changed': []}, 'private log'))
+                run.assert_called_once()
+                self.assertEqual(run.call_args.args[0], [str(agent), 'command', 'php.install-build'])
+                self.assertEqual(json.loads(run.call_args.kwargs['input']), {
+                    'agent_sha256': hashlib.sha256(b'agent fixture').hexdigest(),
+                    'deadline_ms': 1800000, 'input': payload})
+
+    def test_agent_refusals_are_preserved_and_process_failures_never_retry(self):
+        cases = [
+            (0, {'ok': False, 'error': {'code': 'php.build_extra_packages', 'message': 'Extras',
+                                      'details': {'packages': ['php8.5-xdebug']}}}, 'extra_packages'),
+            (0, {'ok': False, 'error': {'code': 'agent.version_mismatch', 'message': 'Changed', 'details': {}}}, None),
+            (1, {'ok': True, 'data': {'outcome': 'applied', 'data': {}}}, None),
+            (0, {'ok': True, 'data': {'outcome': 'planned', 'data': {}}}, None),
+            (0, {'ok': True, 'data': {'outcome': 'applied', 'data': []}}, None),
+            (0, {}, None), (0, [], None), (0, 'not json', None),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Path(directory) / 'orbit-agent'
+            agent.write_bytes(b'agent fixture')
+            for code, result, outcome in cases:
+                raw = result.encode() if isinstance(result, str) else json.dumps(result).encode()
+                with self.subTest(result=result), patch.object(build, 'AGENT', agent), \
+                     patch.object(build.subprocess, 'run', return_value=subprocess.CompletedProcess([], code, raw, b'log')) as run:
+                    if outcome:
+                        self.assertEqual(build.run_installer({}), (outcome, {'packages': ['php8.5-xdebug']}, 'log'))
+                    else:
+                        with self.assertRaises(build.BuildError):
+                            build.run_installer({})
+                    run.assert_called_once()
+
+    def test_missing_source_binary_refuses_before_execution(self):
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(build, 'AGENT', Path(directory) / 'absent'), \
+             patch.object(build.subprocess, 'run') as run:
+            with self.assertRaisesRegex(build.BuildError, 'source-built agent'):
+                build.run_installer({})
+            run.assert_not_called()
+
+    def test_agent_timeout_refuses_without_repeating_the_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Path(directory) / 'orbit-agent'
+            agent.write_bytes(b'agent fixture')
+            with patch.object(build, 'AGENT', agent), patch.object(build.subprocess, 'run',
+                    side_effect=subprocess.TimeoutExpired([str(agent)], 1810)) as run:
+                with self.assertRaisesRegex(build.BuildError, 'exceeded its deadline'):
+                    build.run_installer({})
+                run.assert_called_once()
+
+    def test_javascript_adapter_sends_the_recipe_pins_and_lock_to_the_native_agent(self):
+        loader = importlib.machinery.SourceFileLoader('runner_javascript', str(build.ROOT / 'tools/ci-runners/javascript.py'))
+        javascript = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+        loader.exec_module(javascript)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            resources = root / 'apps/gateway/resources/machine-software'
+            resources.mkdir(parents=True)
+            document = build.load(build.RECIPE)
+            (resources / 'recipe.json').write_text(json.dumps(document))
+            (resources / 'vite-plus-package-lock.json').write_text('locked runtime')
+            with patch.object(javascript.subprocess, 'check_output', return_value='amd64\n'), \
+                 patch.object(javascript.runpy, 'run_path', return_value={'run': lambda *args: calls.append(args) or ({'changed': True, 'retired': []}, '')}):
+                calls = []
+                javascript.install(root)
+            self.assertEqual(calls, [(root / 'apps/agent/target/release/orbit-agent', 'recipe.install-javascript', {
+                'user': 'runner', 'snapshot': document['ubuntu']['snapshot'], 'architecture': 'amd64',
+                'tools': {name: document['tools'][name] for name in ('node', 'vp', 'vp-cli', 'pnpm')},
+                'vp_lock': 'locked runtime',
+            }, 900)])
 
     def test_pins_digest_changes_with_any_pin_and_not_with_extensions(self):
         first = build.pins_digest(recipe(), 'amd64', ['8.5'])
@@ -334,6 +409,163 @@ class RepositoryRecipeTest(unittest.TestCase):
         self.assertEqual(len({pin['version'] for name, pin in selected['pins'].items()
                               if pin['version'].startswith(selected['version'] + '.')}), 1)
         self.assertTrue(all(pin['url'].startswith(artifacts.SURY) for pin in selected['pins'].values()))
+
+
+class ArtifactMirrorTest(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.apt = Path(directory.name)
+        document = build.load(build.RECIPE)
+        self.tools = {name: document['tools'][name] for name in document['git']['packages']}
+
+    def test_mirror_skips_published_assets_and_mirrors_a_non_php_non_git_deb(self):
+        module = build
+        digest = hashlib.sha512(b'caddy').hexdigest()
+        seed = {'artifact_mirror': 'https://mirror.example', 'tools': {
+            'caddy': {'source': 'artifact', 'artifacts': {'amd64': {'url': 'https://origin.example/caddy.deb', 'sha512': digest}}},
+            'pi': {'source': 'internal', 'artifacts': {'amd64': {'filename': 'pi', 'sha256': 'a' * 64}}}}}
+        filename = 'caddy_' + digest + '.deb'
+        with patch.object(module, 'download') as download, patch('builtins.print'):
+            module.mirror(seed, self.apt / 'mirror', [filename])
+            download.assert_not_called()
+            module.mirror(seed, self.apt / 'mirror')
+            download.assert_called_once_with('https://mirror.example/' + filename, self.apt / 'mirror' / filename, digest, algorithm='sha512')
+
+    def test_mirror_command_falls_back_on_transport_errors_and_stops_on_corruption(self):
+        module = build
+        seed = {'artifact_mirror': 'https://mirror.example', 'tools': {'git': self.tools['git']}}
+        for error, calls in ((module.DownloadUnavailable('404'), 2), (module.BuildError('digest mismatch'), 1)):
+            with self.subTest(error=str(error)), patch.object(module, 'download', side_effect=[error, None]) as download, patch('builtins.print'):
+                if calls == 1:
+                    with self.assertRaises(module.BuildError):
+                        module.mirror(seed, self.apt / 'mirror')
+                else:
+                    # One architecture is sufficient to exercise the transport fallback.
+                    single = {**seed, 'tools': {'git': {**self.tools['git'], 'artifacts': {'amd64': self.tools['git']['artifacts']['amd64']}}}}
+                    module.mirror(single, self.apt / 'mirror')
+                self.assertEqual(download.call_count, calls)
+
+    def test_mirror_command_retains_git_files_with_content_addressed_names(self):
+        module = build
+        seed = build.load(build.RECIPE)
+        with patch.object(module, 'download') as download, patch('builtins.print'):
+            module.mirror(seed, self.apt / 'mirror')
+        for name, pin in self.tools.items():
+            for artifact in pin['artifacts'].values():
+                filename = name + '_' + artifact['sha256'] + '.deb'
+                self.assertTrue(any(call.args == (seed['artifact_mirror'] + '/' + filename,
+                                self.apt / 'mirror' / filename, artifact['sha256']) and call.kwargs == {'algorithm': 'sha256'} for call in download.call_args_list))
+
+
+def incus_document(version='7.0.1'):
+    builds = {'amd64': f'1:{version}-ubuntu26.04-202609250211',
+              'arm64': f'1:{version}-ubuntu26.04-202609250512'}
+    return {
+        'ubuntu': {'release': '26.04', 'snapshot': '20261014T000000Z'},
+        'architectures': list(builds),
+        'tools': {name: {'source': 'artifact', 'version': version, 'artifacts': {
+            arch: {'version': native,
+                   'url': f'https://pkgs.zabbly.com/incus/lts-7.0/pool/main/i/incus/{name}_{native[2:]}_{arch}.deb',
+                   'sha256': hashlib.sha256(f'{name}:{arch}:{native}'.encode()).hexdigest()}
+            for arch, native in builds.items()}} for name in artifacts.INCUS_PACKAGES},
+    }
+
+
+DOCUMENT = incus_document()
+
+
+class IncusBumpTest(unittest.TestCase):
+    def indexes(self, document=None):
+        document = DOCUMENT if document is None else document
+        indexes = {}
+        for arch in document['architectures']:
+            indexes[arch] = '\n\n'.join('\n'.join([
+                'Package: ' + name, 'Architecture: ' + arch,
+                'Version: ' + pin['artifacts'][arch]['version'],
+                'Filename: ' + pin['artifacts'][arch]['url'].split('lts-7.0/', 1)[1],
+                'SHA256: ' + pin['artifacts'][arch]['sha256']])
+                for name, pin in document['tools'].items() if name in artifacts.INCUS_PACKAGES)
+        return indexes
+
+    def test_selects_architecture_versions_and_ignores_feature_releases(self):
+        document = copy.deepcopy(DOCUMENT)
+        indexes = self.indexes()
+        for arch, feature in self.indexes(incus_document('7.1.0')).items():
+            indexes[arch] += '\n\n' + feature
+        self.assertEqual(vars(artifacts)['bump_incus_recipe'](document, indexes), [])
+        self.assertEqual(document['tools']['incus']['version'], '7.0.1')
+        self.assertEqual(document, DOCUMENT)
+
+    def test_new_lts_build_selects_each_architecture_and_updates_the_complete_set(self):
+        document = incus_document('7.0.0')
+        self.assertEqual(len(vars(artifacts)['bump_incus_recipe'](document, self.indexes())), 3)
+        self.assertEqual(document, DOCUMENT)
+
+    def test_partial_build_and_untrusted_paths_do_not_change_pins(self):
+        for damaged in (self.indexes()['arm64'].replace('Package: incus-client', 'Package: absent'),
+                        self.indexes()['arm64'].replace('pool/main/i/incus/', '../../')):
+            document = copy.deepcopy(DOCUMENT)
+            indexes = self.indexes()
+            indexes['arm64'] = damaged
+            with self.assertRaises(vars(artifacts)['BuildError']):
+                vars(artifacts)['bump_incus_recipe'](document, indexes)
+            self.assertEqual(document, DOCUMENT)
+
+    def test_signed_indexes_download_only_changed_artifacts_and_never_for_merge_proof(self):
+        indexes = self.indexes()
+        key = b'pinned test signing key'
+        hashes = 'SHA256:\n' + ''.join(f' {hashlib.sha256(data.encode()).hexdigest()} {len(data)} main/binary-{arch}/Packages\n'
+                                          for arch, data in indexes.items())
+        def fetch(url):
+            if url.endswith('/key.asc'):
+                return key
+            if url.endswith('/InRelease'):
+                return b'signed release'
+            return indexes['amd64' if 'binary-amd64/' in url else 'arm64'].encode()
+        for changed, indexes_only, expected in [(False, False, 0), (True, False, 1), (True, True, 0)]:
+            with self.subTest(changed=changed, indexes_only=indexes_only), tempfile.TemporaryDirectory() as directory:
+                document = copy.deepcopy(DOCUMENT)
+                if changed:
+                    document['tools']['incus']['artifacts']['amd64']['sha256'] = '0' * 64
+                path = Path(directory) / 'recipe.json'
+                path.write_text(json.dumps(document))
+                with patch.dict(vars(artifacts)['bump_incus'].__globals__, {'fetch': fetch, 'ZABBLY_KEY_SHA256': hashlib.sha256(key).hexdigest()}), \
+                     patch.object(vars(artifacts)['subprocess'], 'run', return_value=subprocess.CompletedProcess([], 0, hashes.encode(), b'')), \
+                     patch.dict(vars(artifacts)['bump_incus'].__globals__, download=unittest.mock.Mock()) as globals_, \
+                     redirect_stdout(io.StringIO()):
+                    vars(artifacts)['bump_incus'](path, indexes_only=indexes_only)
+                    self.assertEqual(globals_['download'].call_count, expected)
+                self.assertEqual(json.loads(path.read_text()), DOCUMENT)
+
+
+class ArtifactUpdateTest(unittest.TestCase):
+    def test_one_update_publishes_both_providers_atomically_and_dry_run_writes_nothing(self):
+        for dry_run, fail in [(False, False), (True, False), (False, True)]:
+            with self.subTest(dry_run=dry_run, fail=fail), tempfile.TemporaryDirectory() as directory:
+                target = Path(directory) / 'recipe.json'
+                original = '{"providers": []}\n'
+                target.write_text(original)
+                def sury(path):
+                    data = json.loads(Path(path).read_text())
+                    data['providers'].append('sury')
+                    Path(path).write_text(json.dumps(data))
+                def incus(path, *, indexes_only=False, fail=fail):
+                    if fail:
+                        raise vars(artifacts)['BuildError']('signature rejected')
+                    data = json.loads(Path(path).read_text())
+                    data['providers'].append('incus')
+                    Path(path).write_text(json.dumps(data))
+                arguments = ['recipe-artifacts', 'bump', '--recipe', str(target)] + (['--dry-run'] if dry_run else [])
+                with patch.object(sys, 'argv', arguments), \
+                     patch.dict(vars(artifacts)['main'].__globals__, {'bump': sury, 'bump_incus': incus}), \
+                     redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    status = vars(artifacts)['main']()
+                self.assertEqual(status, 1 if fail else 0)
+                if dry_run or fail:
+                    self.assertEqual(target.read_text(), original)
+                else:
+                    self.assertEqual(json.loads(target.read_text()), {'providers': ['sury', 'incus']})
 
 
 unittest.main()

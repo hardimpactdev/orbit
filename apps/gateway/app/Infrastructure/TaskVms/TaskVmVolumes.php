@@ -7,6 +7,7 @@ namespace App\Infrastructure\TaskVms;
 use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Models\Node;
 use App\Models\TaskVm;
 
@@ -75,29 +76,21 @@ final readonly class TaskVmVolumes
      */
     public function cloneSeed(TaskVmHost $host, Node $node, TaskVm $vm): string
     {
-        $clone = self::clone($vm);
-        $names = $this->names($host, $node);
-        if (in_array($clone, $names, true)) {
-            return $clone;
-        }
-        $fingerprint = $vm->image_fingerprint;
-        if ($fingerprint === null || ! in_array(self::seed($fingerprint), $names, true)) {
-            throw new TaskVmException(TaskVmError::TopologySeedMissing, "The host of task VM [{$vm->name}] has no topology seed for its base image. Build the image again with task-vms:build-image.");
-        }
-        $result = $this->incus->run($host, $node, ['storage', 'volume', 'copy', '--', $host->pool.'/'.self::seed($fingerprint), $host->pool.'/'.$clone], timeout: 120.0);
-        if (! $result->succeeded() && ! in_array($clone, $this->names($host, $node), true)) {
-            throw IncusHost::failed("the topology seed clone [{$clone}]", 'storage volume copy', $result);
-        }
+        try {
+            return $this->incus->volume($host, $node, ['kind' => 'clone_seed', 'vm' => $vm->name, 'fingerprint' => $vm->image_fingerprint]);
+        } catch (AgentCommandRefused $error) {
+            if ($error->errorCode === TaskVmError::TopologySeedMissing->value) {
+                throw new TaskVmException(TaskVmError::TopologySeedMissing, "The host of task VM [{$vm->name}] has no topology seed for its base image. Build the image again with task-vms:build-image.");
+            }
 
-        return $clone;
+            throw $error;
+        }
     }
 
     /** Deletes the clone of a VM whose instance is gone. Incus keeps it when it deletes the VM. */
     public function release(TaskVmHost $host, Node $node, TaskVm $vm): void
     {
-        if ($this->exists($host, $node, self::clone($vm))) {
-            $this->delete($host, $node, self::clone($vm));
-        }
+        $this->delete($host, $node, self::clone($vm));
     }
 
     /**
@@ -130,23 +123,13 @@ final readonly class TaskVmVolumes
     /** Renames the finished topology seed of `$fingerprint` from its build name. A seed with its final name stays. */
     public function finishSeed(TaskVmHost $host, Node $node, string $fingerprint): void
     {
-        $seed = self::seed($fingerprint);
-        if ($this->exists($host, $node, $seed)) {
-            return;
-        }
-        $result = $this->incus->run($host, $node, ['storage', 'volume', 'rename', '--', $host->pool, self::newSeed($fingerprint), $seed], timeout: 120.0);
-        if (! $result->succeeded() && ! $this->exists($host, $node, $seed)) {
-            throw IncusHost::failed("the topology seed [{$seed}]", 'storage volume rename', $result);
-        }
+        $this->incus->volume($host, $node, ['kind' => 'finish_seed', 'fingerprint' => $fingerprint]);
     }
 
     /** Deletes a volume; an absent volume counts as deleted. */
     public function delete(TaskVmHost $host, Node $node, string $name): void
     {
-        $result = $this->incus->run($host, $node, ['storage', 'volume', 'delete', '--', $host->pool, $name], timeout: 120.0);
-        if (! $result->succeeded() && $this->exists($host, $node, $name)) {
-            throw IncusHost::failed("the storage volume [{$name}]", 'storage volume delete', $result);
-        }
+        $this->incus->volume($host, $node, ['kind' => 'remove', 'name' => $name]);
     }
 
     /**
@@ -156,22 +139,6 @@ final readonly class TaskVmVolumes
      */
     private function names(TaskVmHost $host, Node $node): array
     {
-        $subject = "the storage volumes of Node [{$node->name}]";
-        $result = $this->incus->run($host, $node, ['storage', 'volume', 'list', '--format', 'json', '--', $host->pool], timeout: 60.0);
-        $list = IncusHost::json($subject, $result->succeeded() ? $result : throw IncusHost::failed($subject, 'storage volume list', $result));
-        if (! array_is_list($list)) {
-            throw IncusHost::invalid($subject, 'the volume list is not a JSON list');
-        }
-        $names = [];
-        foreach ($list as $volume) {
-            if (! is_array($volume) || ! is_string($volume['name'] ?? null) || ! is_string($volume['type'] ?? null)) {
-                throw IncusHost::invalid($subject, 'a volume has no name or type');
-            }
-            if ($volume['type'] === 'custom') {
-                $names[] = $volume['name'];
-            }
-        }
-
-        return $names;
+        return $this->incus->volumeNames($host, $node);
     }
 }

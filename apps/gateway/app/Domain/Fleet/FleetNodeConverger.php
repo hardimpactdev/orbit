@@ -10,12 +10,11 @@ use App\Domain\Nodes\NodeCliInstaller;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Fleet\Footprint\CaddyFootprintArtifact;
-use App\Infrastructure\Fleet\NodeShell;
-use App\Infrastructure\Nodes\NodeCliFootprint;
-use App\Infrastructure\Nodes\NodeUpdateLock;
 use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 use Closure;
 use Throwable;
@@ -26,7 +25,7 @@ use Throwable;
  * 1. Probe SSH. A Node that does not answer is `unreachable`, and nothing runs.
  * 2. Take the Node's role lock, the lock every role converge takes. A busy Node is `deferred`.
  * 3. Install the CLI if it is missing. A CLI Orbit did not install leaves the rollout set (`skipped`).
- * 4. Run `sudo orbit self-update --json`. A Gateway rollback retries once with `--allow-downgrade-to`.
+ * 4. Call `cli.self-update`. A Gateway rollback retries once with `--allow-downgrade-to`.
  * 5. Re-apply the Gateway-rendered footprint where its digest changed, and the artifacts that repair an
  *    owned issue the baseline shows.
  * 6. Verify with Doctor and the agent's reported version.
@@ -37,9 +36,6 @@ use Throwable;
  */
 final readonly class FleetNodeConverger implements FleetNodeVisitor
 {
-    /** How long `orbit self-update` may run on the Node: two downloads, a checksum each, and an agent restart. */
-    public const int SelfUpdateSeconds = 600;
-
     /** Error codes of a lock another operation holds. Nothing changed, so the catch-up tries again. */
     public const array BusyCodes = [
         'node_role.node_busy',
@@ -51,17 +47,14 @@ final readonly class FleetNodeConverger implements FleetNodeVisitor
         'tool.operation_locked',
     ];
 
-    /** The tail of self-update output that a failed record keeps. */
-    private const int EvidenceBytes = 4000;
-
     public function __construct(
         private NodeReachabilityProbe $reachability,
         private NodeRoleConvergeLock $lock,
         private NodeCliInstaller $cli,
-        private NodeShell $shell,
+        private AgentCommandRunner $agents,
         private NodeFootprint $footprint,
         private FleetNodeVerification $verifier,
-        private NodeUpdateLock $updateLock,
+        private AgentDelivery $delivery,
         private NodeCliState $cliState = new NodeCliState,
     ) {}
 
@@ -119,8 +112,8 @@ final readonly class FleetNodeConverger implements FleetNodeVisitor
             $baseline = $this->verifier->baseline($node);
 
             $step = 'cli';
-            // The Gateway's own steps hold the Node's update lock; self-update takes it itself, in between.
-            $installation = $this->retried($node, fn () => $this->updateLock->run($node, fn () => $this->cli->ensure($node, $desired->cli)));
+            // `cli.install` holds the Node's update lock itself; self-update takes it in between.
+            $installation = $this->retried($node, fn () => $this->cli->ensure($node, $desired->cli));
             $this->cliState->clear($node);
             $evidence['cli'] = $installation->toArray();
 
@@ -151,7 +144,7 @@ final readonly class FleetNodeConverger implements FleetNodeVisitor
 
             $step = 'footprint';
             $repairs = FleetNodeVerifier::repairs($baseline);
-            $footprint = $this->retried($node, fn () => $this->updateLock->run($node, fn () => $this->footprint->converge($node, $repairs === [] ? false : $repairs)));
+            $footprint = $this->retried($node, fn () => $this->footprint->converge($node, $repairs === [] ? false : $repairs));
             $evidence['footprint'] = $footprint->toArray();
 
             // Caddy refusing the Caddyfile on the first Node of a rollout, after Orbit's Caddy code changed, is more
@@ -165,7 +158,7 @@ final readonly class FleetNodeConverger implements FleetNodeVisitor
 
             $step = 'verify';
             $tolerated = isset($footprint->skipped['caddy']) ? ['role.caddy_build_drift'] : [];
-            $verification = $this->verifier->verify($node, $baseline, $desired->agent->version, $tolerated);
+            $verification = $this->verifier->verify($node, $baseline, $this->delivery->reportedVersion($node), $tolerated);
             $evidence['verify'] = $verification;
         } catch (NodeUnreachable) {
             return $this->unreachable($node, $step, $evidence);
@@ -195,7 +188,7 @@ final readonly class FleetNodeConverger implements FleetNodeVisitor
             $changed ? FleetNodeOutcome::Converged : FleetNodeOutcome::Unchanged,
             evidence: $evidence,
             cliVersion: $update['cli_version'] ?? $installation->version ?? $desired->cli->version,
-            agentVersion: $verification['agent_version'] ?? $desired->agent->version,
+            agentVersion: $verification['agent_version'] ?? $this->delivery->reportedVersion($node),
             footprintDigest: $footprint->digest,
         );
     }
@@ -259,20 +252,22 @@ final readonly class FleetNodeConverger implements FleetNodeVisitor
      */
     private function selfUpdate(Node $node, ?string $downgradeTo = null): array
     {
-        $result = $this->shell->run($node, new RemoteCommand(
-            NodeCliFootprint::selfUpdateCommand($downgradeTo),
-            timeout: self::SelfUpdateSeconds,
-        ));
-
         try {
-            $report = json_decode(trim($result->stdout), true, 64, JSON_THROW_ON_ERROR);
-        } catch (\JsonException) {
-            $report = null;
+            $result = $this->agents->run($node, 'cli.self-update', ['user' => $node->user, 'downgrade_to' => $downgradeTo]);
+        } catch (AgentCommandRefused $error) {
+            $code = $error->errorCode === 'cli.self_update_unavailable' && ($error->details['state'] ?? null) === 'foreign'
+                ? 'cli.foreign_binary' : 'fleet.self_update_failed';
+            throw new ResourceOperationException($code, $error->getMessage(), 502, $error, details: ['retry' => 'no']);
+        }
+        $outcome = $result['outcome'] ?? null;
+        $report = $result['report'] ?? null;
+        if (! in_array($outcome, ['updated', 'unchanged', 'pending', 'incomplete', 'failed'], true)
+            || ! is_int($result['exit_code'] ?? null) || ! is_string($result['stdout'] ?? null) || ! is_string($result['stderr'] ?? null)
+            || ($report !== null && ! is_array($report))) {
+            throw new ResourceOperationException('fleet.self_update_failed', 'The agent returned an invalid self-update result.', 502);
         }
 
-        $outcome = is_array($report) && is_string($report['outcome'] ?? null) ? $report['outcome'] : null;
-
-        if ($result->succeeded() && in_array($outcome, ['pending', 'incomplete'], true)) {
+        if (in_array($outcome, ['pending', 'incomplete'], true)) {
             return [
                 'changed' => false,
                 'pending' => true,
@@ -284,16 +279,16 @@ final readonly class FleetNodeConverger implements FleetNodeVisitor
             ];
         }
 
-        if (! $result->succeeded() || ! is_array($report) || $outcome === 'failed') {
-            $code = is_array($report) ? (self::errorCode($report) ?? 'fleet.self_update_failed') : 'fleet.self_update_failed';
+        if ($outcome === 'failed') {
+            $code = is_string($result['error_code'] ?? null) ? $result['error_code'] : 'fleet.self_update_failed';
             $error = new ResourceOperationException(
                 $code,
-                "orbit self-update failed on node [{$node->name}] with exit code {$result->exitCode}.",
+                "orbit self-update failed on node [{$node->name}] with exit code {$result['exit_code']}.",
                 502,
                 details: [
-                    'exit_code' => $result->exitCode,
-                    'stdout' => self::tail($result->stdout),
-                    'stderr' => self::tail($result->stderr),
+                    'exit_code' => $result['exit_code'],
+                    'stdout' => $result['stdout'],
+                    'stderr' => $result['stderr'],
                     // A JSON answer is self-update's verdict; only a run without one, such as a dropped SSH
                     // channel (exit 255), is worth a retry.
                     'retry' => is_array($report) ? 'no' : 'yes',
@@ -311,45 +306,11 @@ final readonly class FleetNodeConverger implements FleetNodeVisitor
             'changed' => $outcome === 'updated',
             'pending' => false,
             'waiting_code' => null,
-            'cli_version' => self::reportedCliVersion($report),
+            'cli_version' => is_string($result['cli_version'] ?? null) ? $result['cli_version'] : null,
             'report' => $report,
             'downgrade_refused' => false,
             'error' => null,
         ];
-    }
-
-    /**
-     * The error code of the failed step, or of the error envelope.
-     *
-     * @param  array<mixed>  $report
-     */
-    private static function errorCode(array $report): ?string
-    {
-        foreach (is_array($report['steps'] ?? null) ? $report['steps'] : [] as $step) {
-            if (is_array($step) && ($step['outcome'] ?? null) === 'failed' && is_array($step['error'] ?? null) && is_string($step['error']['code'] ?? null)) {
-                return $step['error']['code'];
-            }
-        }
-
-        $error = $report['error'] ?? null;
-
-        return match (true) {
-            is_array($error) && is_string($error['code'] ?? null) => $error['code'],
-            is_string($report['error_code'] ?? null) => $report['error_code'],
-            default => null,
-        };
-    }
-
-    /** @param array<mixed> $report */
-    private static function reportedCliVersion(array $report): ?string
-    {
-        foreach (is_array($report['steps'] ?? null) ? $report['steps'] : [] as $step) {
-            if (is_array($step) && ($step['step'] ?? null) === 'cli' && is_array($step['after'] ?? null) && is_string($step['after']['version'] ?? null)) {
-                return $step['after']['version'];
-            }
-        }
-
-        return null;
     }
 
     /** @param array{new_issues: list<array<string, mixed>>, presence: string, agent_version: ?string} $verification */
@@ -376,10 +337,5 @@ final readonly class FleetNodeConverger implements FleetNodeVisitor
             agentVersion: $agentVersion,
             footprintDigest: $footprintDigest,
         );
-    }
-
-    private static function tail(string $output): string
-    {
-        return strlen($output) > self::EvidenceBytes ? substr($output, -self::EvidenceBytes) : $output;
     }
 }

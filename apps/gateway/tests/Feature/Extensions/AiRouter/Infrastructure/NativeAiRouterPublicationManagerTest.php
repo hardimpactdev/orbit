@@ -8,20 +8,15 @@ use App\Domain\Certificates\GatewayCertificatePaths;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
-use App\Infrastructure\Nodes\CaddyPackageProgram;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Caddy\RoleCaddyCertificate;
+use App\Infrastructure\Nodes\AgentCaddyPackage;
 use App\Models\Node;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterCaddySiteRenderer;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterCaddySiteSource;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterCertificatePublisher;
 use Orbit\Extensions\AiRouter\Infrastructure\NativeAiRouterPublicationManager;
 use Tests\Support\RecordingNodeCaddyBuilds;
+use Tests\Support\RoleAgents;
 
 it('installs Caddy, publishes the certificate, requests a Node Caddy build, then converges DNS last', function (): void {
     $events = [];
@@ -121,7 +116,7 @@ function ai_router_publication_manager(
                 );
             }
         },
-        certificatePublisher: new AiRouterCertificatePublisher,
+        certificatePublisher: new AiRouterCertificatePublisher(new RoleCaddyCertificate($agents = RoleAgents::recording($events, $failCertificate))),
         builds: new RecordingNodeCaddyBuilds($events, $buildFailure),
         dns: new class($events) implements PrivateDnsManager
         {
@@ -132,58 +127,6 @@ function ai_router_publication_manager(
                 $this->events[] = $pendingNode instanceof Node ? 'dns:converge' : 'dns:converge-empty';
             }
         },
-        ssh: new class($events, $failCertificate) implements SshExecutor
-        {
-            public function __construct(
-                private array &$events,
-                private bool $failCertificate,
-            ) {}
-
-            public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-            {
-                if (in_array(CaddyPackageProgram::RELEASE_URL, $command->arguments, true)) {
-                    $this->events[] = 'ssh:caddy-source';
-
-                    return new CommandResult(0, '', '', 1, false);
-                }
-
-                if ($command->protectedInput !== null) {
-                    $this->events[] = 'ssh:certificate';
-
-                    return new CommandResult($this->failCertificate ? 1 : 0, '', '', 1, false);
-                }
-
-                if (in_array('rm', $command->arguments, true)) {
-                    $this->events[] = 'ssh:certificate-remove';
-
-                    return new CommandResult(0, '', '', 1, false);
-                }
-
-                $this->events[] = 'ssh:other';
-
-                return new CommandResult(0, '', '', 1, false);
-            }
-        },
-        keys: new class implements SshKeyProvider
-        {
-            public function privateKeyPath(): string
-            {
-                return '/tmp/orbit-test-key';
-            }
-
-            public function publicKey(): string
-            {
-                return 'ssh-ed25519 AAAA test';
-            }
-        },
-        knownHosts: new class implements KnownHostsStore
-        {
-            public function path(): string
-            {
-                return '/tmp/orbit-test-known-hosts';
-            }
-
-            public function put(string $host, int $port, HostKey $key): void {}
-        },
+        caddyPackage: new AgentCaddyPackage($agents),
     );
 }

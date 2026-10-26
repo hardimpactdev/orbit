@@ -3,935 +3,109 @@
 declare(strict_types=1);
 
 use App\Domain\Firewall\FirewallOperationException;
+use App\Domain\Nodes\NodeArchitectureMismatchException;
 use App\Domain\Nodes\NodeObservation;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\NodeRoleFirewallManager;
-use App\Domain\Nodes\RecoverableNodeConverger;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Nodes\UbuntuRelease;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\Nodes\NativeNodeConverger;
 use App\Infrastructure\Nodes\NodeBootstrapCommandFactory;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\HostKeyScanner;
 use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\WireGuard\RecoverableWireGuardPeerConverger;
 use App\Infrastructure\WireGuard\WireGuardPeerConverger;
 use App\Models\Node;
-use Illuminate\Filesystem\Filesystem;
-use Illuminate\Support\Str;
-use Symfony\Component\Process\Process;
+use Tests\Support\AgentSchemas;
+use Tests\Support\FakeAgentCommandRunner;
 
-it('fails closed before SSH when no host adapter supports the node platform', function (): void {
-    expect(interface_exists(NodeRoleFirewallManager::class))->toBeTrue();
+final class BaseAdmissionAgents implements AdmissionAgentRunner
+{
+    /** Answers may break their output schema, to test the converger's own guard against a malformed result. */
+    public bool $malformed = false;
 
-    $node = base_provisionable_node();
-    $node->update(['platform' => 'windows']);
-    $scans = 0;
-    $scanner = new class($scans) implements HostKeyScanner
+    public array $calls = [];
+
+    public ?Closure $answer = null;
+
+    public string $architecture = 'x86_64';
+
+    public function architectureOver(Node $node, SshConnection $connection): string
     {
-        public function __construct(
-            private int &$scans,
-        ) {}
+        $this->call($node, $connection, 'stage-architecture', []);
 
-        public function scan(string $host, int $port, ?SshConnection $via = null): HostKey
-        {
-            $this->scans++;
-
-            return new HostKey('ssh-ed25519', 'PUBLICKEY', 'SHA256:pinned');
-        }
-    };
-    $converger = base_node_converger(
-        scanner: $scanner,
-        ssh: new class implements SshExecutor
-        {
-            public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-            {
-                throw new LogicException('SSH must not run for an unsupported platform.');
-            }
-        },
-    );
-
-    expect(fn () => $converger->converge($node, base_identity(), 'SHA256:pinned'))
-        ->toThrow(function (NodeProvisioningException $exception): void {
-            expect($exception->step)
-                ->toBe('platform')
-                ->and($exception->errorCode)
-                ->toBe('node.platform_unsupported');
-        });
-    expect($scans)->toBe(0);
-});
-
-it('stops unsupported operating systems before the first bootstrap mutation', function (
-    ?string $release,
-    string $identifier,
-): void {
-    $result = run_base_bootstrap_preflight($release);
-
-    expect($result->isSuccessful())
-        ->toBeFalse()
-        ->and($result->getErrorOutput())
-        ->toBe(UbuntuRelease::unsupportedText(...explode('/', $identifier))."\n")
-        ->and($result->getOutput())
-        ->not->toContain('mutation-reached');
-})->with([
-    'missing release file' => [null, 'unknown/unknown'],
-    'unsupported Ubuntu release' => ["ID=ubuntu\nVERSION_CODENAME=unsupported\n", 'ubuntu/unsupported'],
-    'Debian' => ["ID=debian\nVERSION_CODENAME=resolute\n", 'debian/resolute'],
-    'malformed codename' => ["ID=ubuntu\nVERSION_CODENAME='resolute extra'\n", 'unknown/unknown'],
-]);
-
-it('does not execute commands from the remote os-release file', function (): void {
-    $marker = sys_get_temp_dir().'/orbit-os-release-sourced-'.Str::random(16);
-    $result = run_base_bootstrap_preflight("ID=ubuntu\nVERSION_CODENAME=$(touch __OS_RELEASE_MARKER__)\n", $marker);
-
-    expect($result->isSuccessful())
-        ->toBeFalse()
-        ->and($result->getErrorOutput())
-        ->toContain(UbuntuRelease::unsupportedText())
-        ->and($result->getErrorOutput())
-        ->not
-        ->toContain('__OS_RELEASE_MARKER__')
-        ->and(is_file($marker))
-        ->toBeFalse();
-});
-
-it('accepts matching quoted os-release values', function (string $release): void {
-    $result = run_base_bootstrap_preflight($release);
-
-    expect($result->isSuccessful())->toBeTrue()->and($result->getOutput())->toContain('mutation-reached');
-})->with([
-    'double quoted' => "ID=\"ubuntu\"\nVERSION_CODENAME=\"resolute\"\n",
-    'single quoted' => "ID='ubuntu'\nVERSION_CODENAME='resolute'\n",
-    'bare values without final newline' => "ID=ubuntu\nVERSION_CODENAME=resolute",
-]);
-
-it('rejects unsafe or incomplete os-release metadata before bootstrap mutation', function (string $release): void {
-    $payload = 'payload-'.Str::random(16);
-    $mutation = 'mutation-'.Str::random(16);
-    $result = run_base_bootstrap_preflight(
-        str_replace('__PAYLOAD_MARKER__', $payload, $release),
-        mutationMarker: $mutation,
-    );
-
-    expect($result->isSuccessful())
-        ->toBeFalse()
-        ->and($result->getErrorOutput())
-        ->toBe(UbuntuRelease::unsupportedText()."\n")
-        ->and($result->getOutput())
-        ->not->toContain($payload, $mutation);
-})->with([
-    'duplicate id with supported value first' => "ID=ubuntu\nID=__PAYLOAD_MARKER__\nVERSION_CODENAME=resolute\n",
-    'duplicate id with supported value last' => "ID=__PAYLOAD_MARKER__\nID=ubuntu\nVERSION_CODENAME=resolute\n",
-    'duplicate codename with supported value first' => "ID=ubuntu\nVERSION_CODENAME=resolute\nVERSION_CODENAME=__PAYLOAD_MARKER__\n",
-    'duplicate codename with supported value last' => "ID=ubuntu\nVERSION_CODENAME=__PAYLOAD_MARKER__\nVERSION_CODENAME=resolute\n",
-    'missing id' => "VERSION_CODENAME=resolute\n",
-    'empty codename' => "ID=ubuntu\nVERSION_CODENAME=\n",
-    'mismatched quotes' => "ID=ubuntu\nVERSION_CODENAME=\"__PAYLOAD_MARKER__'\n",
-    'unclosed quotes' => "ID=ubuntu\nVERSION_CODENAME='__PAYLOAD_MARKER__\n",
-    'command substitution' => "ID=ubuntu\nVERSION_CODENAME=\$(touch __PAYLOAD_MARKER__)\n",
-    'backticks' => "ID=ubuntu\nVERSION_CODENAME=`touch __PAYLOAD_MARKER__`\n",
-    'semicolon' => "ID=ubuntu\nVERSION_CODENAME=resolute; touch __PAYLOAD_MARKER__\n",
-]);
-
-it('keeps the base bootstrap role-neutral with one fixed shared package list', function (): void {
-    $command = base_bootstrap_command();
-    $script = $command->input ?? '';
-
-    expect($command->arguments)
-        ->toBe([
-            'bash',
-            '-seu',
-            '--',
-            'ubuntu',
-            UbuntuRelease::unsupportedText(),
-            '1',
-            'resolute',
-            'orbit',
-            'ssh-ed25519 GATEWAY',
-            'managed',
-            'ca-certificates',
-            'curl',
-            'gnupg',
-            'libnss-resolve',
-            'openssh-client',
-            'sudo',
-            'ufw',
-            'wireguard',
-        ])
-        ->and($script)
-        ->toContain(
-            'useradd --create-home --shell /bin/bash -- "$managed_user"',
-            'install -d -m 0700 -o "$managed_user" -g "$managed_group"',
-            'printf \'%s ALL=(ALL) NOPASSWD:ALL\\n\' "$managed_user"',
-        )
-        ->not->toContain(
-            '/home/orbit/apps',
-            '/home/orbit/.orbit/worktrees',
-            'setfacl',
-            '/opt/orbit/vite-plus',
-            '/opt/orbit/bun',
-            'https://vite.plus',
-            'https://bun.com/install',
-            '/usr/local/bin/node',
-            'caddy',
-            'dnsmasq',
-            'docker.io',
-            'openssl',
-        );
-});
-
-it('accepts each supported Ubuntu release before the first bootstrap mutation', function (string $release): void {
-    $result = run_base_bootstrap_preflight($release);
-
-    expect($result->isSuccessful())->toBeTrue()->and($result->getOutput())->toContain('mutation-reached');
-})->with([
-    'Ubuntu Resolute' => "ID=ubuntu\nVERSION_CODENAME=resolute\n",
-]);
-
-it('pins the host and converges only base node identity and connectivity', function (): void {
-    expect(interface_exists(NodeRoleFirewallManager::class))->toBeTrue();
-
-    $node = base_provisionable_node();
-    $node->roles()->delete();
-    $knownHosts = new class implements KnownHostsStore
-    {
-        /** @var list<string> */
-        public array $hosts = [];
-
-        public function path(): string
-        {
-            return '/tmp/orbit-known-hosts';
-        }
-
-        public function put(string $host, int $port, HostKey $key): void
-        {
-            $this->hosts[] = "{$host}:{$port}:{$key->fingerprint}";
-        }
-    };
-    $ssh = new BaseNodeSshExecutor;
-    $baseNodes = [];
-    $firewallRoles = [];
-    $trustedNodes = [];
-    $firewall = base_firewall_spy($baseNodes, $firewallRoles, $trustedNodes);
-    $wireGuard = new class implements WireGuardPeerConverger
-    {
-        public bool $converged = false;
-
-        public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void
-        {
-            $this->converged = true;
-        }
-    };
-    $converger = new NativeNodeConverger(
-        hostKeys: base_test_scanner(),
-        knownHosts: $knownHosts,
-        sshKeys: base_test_keys(),
-        ssh: $ssh,
-        bootstrapCommand: new NodeBootstrapCommandFactory(base_test_keys()),
-        wireGuard: $wireGuard,
-        firewall: $firewall,
-    );
-
-    $observation = $converger->converge($node, base_identity(), 'SHA256:pinned');
-
-    expect($node->refresh()->user)
-        ->toBe('root')
-        ->and($node->ssh_host_fingerprint)
-        ->toBe('SHA256:pinned')
-        ->and($knownHosts->hosts)
-        ->toBe([
-            '192.0.2.10:22:SHA256:pinned',
-            '10.44.0.2:22:SHA256:pinned',
-        ])
-        ->and($baseNodes)
-        ->toBe([$node->id])
-        ->and($firewallRoles)
-        ->toBe([])
-        ->and($trustedNodes)
-        ->toBe([$node->id])
-        ->and($wireGuard->converged)
-        ->toBeTrue()
-        ->and($observation->architecture)
-        ->toBe('x86_64')
-        ->and($ssh->calls)
-        ->toHaveCount(4)
-        ->and($ssh->calls[0]['connection']->user)
-        ->toBe('root')
-        ->and($ssh->calls[1]['connection']->user)
-        ->toBe('orbit')
-        ->and($ssh->calls[1]['command']->arguments)
-        ->toBe(['true'])
-        ->and($ssh->calls[2]['connection']->user)
-        ->toBe('orbit')
-        ->and($ssh->calls[2]['connection']->host)
-        ->toBe('192.0.2.10')
-        ->and($ssh->calls[2]['command']->arguments)
-        ->toBe(['uname', '-m'])
-        ->and($ssh->calls[3]['connection']->host)
-        ->toBe('10.44.0.2')
-        ->and($ssh->calls[3]['command']->arguments)
-        ->toBe(['true']);
-});
-
-it('reports a bounded failure when the machine architecture cannot be observed', function (CommandResult $result): void {
-    $node = base_provisionable_node();
-    $ssh = new class($result) implements SshExecutor
-    {
-        public int $calls = 0;
-
-        public function __construct(
-            private CommandResult $result,
-        ) {}
-
-        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-        {
-            $this->calls++;
-
-            return $command->arguments === ['uname', '-m']
-                ? $this->result
-                : new CommandResult(0, '', '', 1, false);
-        }
-    };
-    $wireGuard = new class implements WireGuardPeerConverger
-    {
-        public bool $converged = false;
-
-        public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void
-        {
-            $this->converged = true;
-        }
-    };
-    $converger = new NativeNodeConverger(
-        hostKeys: base_test_scanner(),
-        knownHosts: base_test_known_hosts(),
-        sshKeys: base_test_keys(),
-        ssh: $ssh,
-        bootstrapCommand: new NodeBootstrapCommandFactory(base_test_keys()),
-        wireGuard: $wireGuard,
-        firewall: base_firewall_spy(),
-    );
-
-    expect(fn () => $converger->converge($node, base_identity(), 'SHA256:pinned'))
-        ->toThrow(function (NodeProvisioningException $exception) use ($result): void {
-            expect($exception->step)
-                ->toBe('machine-architecture')
-                ->and($exception->errorCode)
-                ->toBe('node.architecture_unavailable')
-                ->and($exception->getMessage())
-                ->toBe('Could not observe the machine architecture of node [base-node].')
-                ->and($exception->result)
-                ->toBe($result);
-        });
-    expect($ssh->calls)->toBe(3)->and($wireGuard->converged)->toBeFalse();
-})->with([
-    'command failure' => [new CommandResult(1, '', 'uname: not found', 1, false)],
-    'empty output' => [new CommandResult(0, "\n", '', 1, false)],
-    'unsafe output' => [new CommandResult(0, "x86_64; touch /tmp/orbit\n", '', 1, false)],
-]);
-
-it('reprovisions active role-bearing nodes only through WireGuard', function (): void {
-    $node = base_provisionable_node();
-    $node->roles()->update(['status' => LifecycleStatus::Active]);
-    $node->update(['status' => LifecycleStatus::Active, 'ssh_host_fingerprint' => 'SHA256:pinned']);
-    $scans = [];
-    $scanner = new class($scans) implements HostKeyScanner
-    {
-        /** @param list<string> $scans */
-        public function __construct(
-            private array &$scans,
-        ) {}
-
-        public function scan(string $host, int $port, ?SshConnection $via = null): HostKey
-        {
-            $this->scans[] = "{$host}:{$port}";
-
-            return new HostKey('ssh-ed25519', 'PUBLICKEY', 'SHA256:pinned');
-        }
-    };
-    $ssh = new BaseNodeSshExecutor;
-    $wireGuardConnections = [];
-    $wireGuard = new class($wireGuardConnections) implements RecoverableWireGuardPeerConverger, WireGuardPeerConverger
-    {
-        /** @param list<string> $connections */
-        public function __construct(
-            private array &$connections,
-        ) {}
-
-        public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void {}
-
-        public function convergeRecoverably(
-            Node $node,
-            SshConnection $connection,
-            Closure $completion,
-            bool $rolelessOperator = false,
-        ): void {
-            $this->connections[] = "{$connection->host}:{$connection->port}";
-            $completion();
-        }
-    };
-    $baseFirewallNodes = [];
-    $firewallRoles = [];
-    $trustedNodes = [];
-    $converger = new NativeNodeConverger(
-        hostKeys: $scanner,
-        knownHosts: base_test_known_hosts(),
-        sshKeys: base_test_keys(),
-        ssh: $ssh,
-        bootstrapCommand: new NodeBootstrapCommandFactory(base_test_keys()),
-        wireGuard: $wireGuard,
-        firewall: base_firewall_spy($baseFirewallNodes, $firewallRoles, $trustedNodes),
-    );
-
-    $completed = false;
-
-    $converger->convergeRecoverably($node, base_identity(), null, static function () use (&$completed): void {
-        $completed = true;
-    });
-
-    expect($scans)->toBe(['10.44.0.2:22']);
-    expect($wireGuardConnections)->toBe([]);
-    expect($baseFirewallNodes)->toBe([]);
-    expect($firewallRoles)->toBe([]);
-    expect($trustedNodes)->toBe([$node->id]);
-    expect($completed)->toBeTrue();
-    expect(array_map(
-        static fn (array $call): string => "{$call['connection']->host}:{$call['connection']->port}",
-        $ssh->calls,
-    ))->toBe([
-        '10.44.0.2:22',
-        '10.44.0.2:22',
-        '10.44.0.2:22',
-        '10.44.0.2:22',
-    ]);
-});
-
-it('retries recoverable managed peer publication while no assigned role is active', function (bool $anotherFailedRole): void {
-    $node = base_provisionable_node();
-    $node->roles()->delete();
-    $node->roles()->create([
-        'role' => RoleName::Metrics,
-        'status' => LifecycleStatus::Failed,
-        'failed_step' => 'converge:baseline',
-        'error_code' => 'node.baseline_failed',
-    ]);
-    if ($anotherFailedRole) {
-        $node->roles()->create([
-            'role' => RoleName::AppDev,
-            'status' => LifecycleStatus::Failed,
-            'failed_step' => 'converge:baseline',
-            'error_code' => 'node.baseline_failed',
-        ]);
+        return $this->architecture;
     }
-    $node->update(['status' => LifecycleStatus::Active, 'ssh_host_fingerprint' => 'SHA256:pinned']);
-    $events = [];
-    $wireGuard = new class($events) implements RecoverableWireGuardPeerConverger, WireGuardPeerConverger
+
+    public function installOver(Node $node, SshConnection $connection): bool
     {
-        public function __construct(private array &$events) {}
+        $this->call($node, $connection, 'agent.install', []);
 
-        public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void
-        {
-            $this->events[] = 'nonrecoverable';
-        }
+        return false;
+    }
 
-        public function convergeRecoverably(Node $node, SshConnection $connection, Closure $completion, bool $rolelessOperator = false): void
-        {
-            $this->events[] = $rolelessOperator ? 'operator' : 'managed';
-            $completion();
-        }
-    };
-    $converger = new NativeNodeConverger(
-        hostKeys: base_test_scanner(),
-        knownHosts: base_test_known_hosts(),
-        sshKeys: base_test_keys(),
-        ssh: new BaseNodeSshExecutor,
-        bootstrapCommand: new NodeBootstrapCommandFactory(base_test_keys()),
-        wireGuard: $wireGuard,
-        firewall: base_firewall_spy(),
-    );
-
-    $converger->convergeRecoverably($node, base_identity(), null, static function () use (&$events): void {
-        $events[] = 'role';
-    });
-
-    expect($events)->toBe(['managed', 'role']);
-})->with(['one failed role' => false, 'two failed roles' => true]);
-
-it('commits recoverable peer publication before activating orbit SSH for active roleless reprovisioning', function (): void {
-    $node = base_provisionable_node();
-    $node->roles()->delete();
-    $node->update(['status' => LifecycleStatus::Active, 'ssh_host_fingerprint' => 'SHA256:pinned']);
-    $events = [];
-    $wireGuard = new class($events) implements RecoverableWireGuardPeerConverger, WireGuardPeerConverger
+    public function runOver(Node $node, SshConnection $connection, string $command, array $input = [], ?float $deadlineSeconds = null): array
     {
-        public function __construct(
-            private array &$events,
-        ) {}
-
-        public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void
-        {
-            $this->events[] = 'ordinary-wireguard';
+        FakeAgentCommandRunner::admit($node, $command, $input);
+        $result = $this->respond($node, $connection, $command, $input, $deadlineSeconds);
+        if (! $this->malformed) {
+            AgentSchemas::assertOutput($command, $result);
         }
 
-        public function convergeRecoverably(
-            Node $node,
-            SshConnection $connection,
-            Closure $completion,
-            bool $rolelessOperator = false,
-        ): void {
-            $this->events[] = 'wireguard-publish';
-            $completion(function (SshConnection $verified): void {
-                $this->events[] = "wireguard-finalize:{$verified->host}:{$verified->port}";
-            });
-            $this->events[] = 'wireguard-commit';
-        }
-    };
-    $ssh = new BaseNodeSshExecutor;
-    $converger = new NativeNodeConverger(
-        hostKeys: base_test_scanner(),
-        knownHosts: base_test_known_hosts(),
-        sshKeys: base_test_keys(),
-        ssh: $ssh,
-        bootstrapCommand: new NodeBootstrapCommandFactory(base_test_keys()),
-        wireGuard: $wireGuard,
-        firewall: base_firewall_spy(),
-    );
+        return $result;
+    }
 
-    expect($converger)->toBeInstanceOf(RecoverableNodeConverger::class);
-    $converger->convergeRecoverably(
-        $node,
-        base_identity(),
-        'SHA256:pinned',
-        function (NodeObservation $observation) use (&$events): void {
-            $events[] = "apt:{$observation->architecture}";
-        },
-    );
-
-    expect($events)->toBe([
-        'wireguard-publish',
-        'wireguard-finalize:10.44.0.2:22',
-        'apt:x86_64',
-        'wireguard-commit',
-    ]);
-    expect($ssh->calls)->toHaveCount(4);
-});
-
-it('rolls back recoverable peer publication when roleless private ssh verification fails', function (): void {
-    $node = base_provisionable_node();
-    $node->roles()->delete();
-    $node->update(['status' => LifecycleStatus::Active, 'ssh_host_fingerprint' => 'SHA256:pinned']);
-    $events = [];
-    $wireGuard = new class($events) implements RecoverableWireGuardPeerConverger, WireGuardPeerConverger
+    private function respond(Node $node, SshConnection $connection, string $command, array $input = [], ?float $deadlineSeconds = null): array
     {
-        public function __construct(
-            private array &$events,
-        ) {}
+        return $this->call($node, $connection, $command, $input);
+    }
 
-        public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void {}
-
-        public function convergeRecoverably(
-            Node $node,
-            SshConnection $connection,
-            Closure $completion,
-            bool $rolelessOperator = false,
-        ): void {
-            $this->events[] = 'wireguard-publish';
-
-            try {
-                $completion();
-            } catch (Throwable $throwable) {
-                $this->events[] = 'wireguard-rollback';
-
-                throw $throwable;
-            }
-        }
-    };
-    $ssh = new class implements SshExecutor
+    private function call(Node $node, SshConnection $connection, string $command, array $input): array
     {
-        public int $calls = 0;
-
-        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-        {
-            $this->calls++;
-
-            return match ($this->calls) {
-                1, 2 => new CommandResult(0, '', '', 1, false),
-                3 => new CommandResult(0, "x86_64\n", '', 1, false),
-                default => new CommandResult(1, '', 'no route', 1, false),
-            };
-        }
-    };
-    $converger = new NativeNodeConverger(
-        hostKeys: base_test_scanner(),
-        knownHosts: base_test_known_hosts(),
-        sshKeys: base_test_keys(),
-        ssh: $ssh,
-        bootstrapCommand: new NodeBootstrapCommandFactory(base_test_keys()),
-        wireGuard: $wireGuard,
-        firewall: base_firewall_spy(),
-    );
-
-    expect(fn () => $converger->convergeRecoverably(
-        $node,
-        base_identity(),
-        'SHA256:pinned',
-        static function (): void {},
-    ))
-        ->toThrow(function (NodeProvisioningException $exception): void {
-            expect($exception->step)->toBe('wireguard-ssh')->and($exception->errorCode)->toBe('vpn.peer_ssh_failed');
-        });
-
-    expect($events)->toBe(['wireguard-publish', 'wireguard-rollback']);
-});
-
-it('retries a transient private WireGuard SSH connection with bounded backoff', function (): void {
-    $node = base_provisionable_node();
-    $ssh = new class implements SshExecutor
-    {
-        public int $calls = 0;
-
-        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-        {
-            $this->calls++;
-
-            return match ($this->calls) {
-                3 => new CommandResult(0, "x86_64\n", '', 1, false),
-                4 => new CommandResult(
-                    255,
-                    '',
-                    'ssh: connect to host 10.44.0.7 port 22: Connection timed out',
-                    1,
-                    false,
-                ),
-                5 => new CommandResult(0, '', '', 1, false),
-                default => new CommandResult(0, '', '', 1, false),
-            };
-        }
-    };
-    $sleeps = [];
-    $converger = new NativeNodeConverger(
-        hostKeys: base_test_scanner(),
-        knownHosts: base_test_known_hosts(),
-        sshKeys: base_test_keys(),
-        ssh: $ssh,
-        bootstrapCommand: new NodeBootstrapCommandFactory(base_test_keys()),
-        wireGuard: new class implements WireGuardPeerConverger
-        {
-            public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void {}
-        },
-        firewall: base_firewall_spy(),
-        sleep: static function (int $delay) use (&$sleeps): int {
-            $sleeps[] = $delay;
-
-            return 0;
-        },
-    );
-
-    $converger->converge($node, base_identity(), 'SHA256:pinned');
-
-    expect($ssh->calls)->toBe(5)->and($sleeps)->toBe([1_000_000]);
-});
-
-it('preserves the final transient private SSH failure after retries', function (): void {
-    $node = base_provisionable_node();
-    $ssh = new class implements SshExecutor
-    {
-        public int $calls = 0;
-
-        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-        {
-            $this->calls++;
-
-            return match ($this->calls) {
-                1, 2 => new CommandResult(0, '', '', $this->calls, false),
-                3 => new CommandResult(0, "x86_64\n", '', 3, false),
-                4 => new CommandResult(255, '', 'ssh: connect to host 10.44.0.7 port 22: timeout-1', 4, false),
-                5 => new CommandResult(255, '', 'ssh: connect to host 10.44.0.7 port 22: timeout-2', 5, false),
-                default => new CommandResult(
-                    255,
-                    '',
-                    'ssh: connect to host 10.44.0.7 port 22: timeout-final',
-                    6,
-                    false,
-                ),
-            };
-        }
-    };
-    $sleeps = [];
-    $converger = new NativeNodeConverger(
-        hostKeys: base_test_scanner(),
-        knownHosts: base_test_known_hosts(),
-        sshKeys: base_test_keys(),
-        ssh: $ssh,
-        bootstrapCommand: new NodeBootstrapCommandFactory(base_test_keys()),
-        wireGuard: new class implements WireGuardPeerConverger
-        {
-            public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void {}
-        },
-        firewall: base_firewall_spy(),
-        sleep: static function (int $delay) use (&$sleeps): int {
-            $sleeps[] = $delay;
-
-            return 0;
-        },
-    );
-    expect(
-        fn () => $converger->converge($node, base_identity(), 'SHA256:pinned'),
-    )->toThrow(function (NodeProvisioningException $exception) use ($ssh, &$sleeps): void {
-        expect($exception->step)
-            ->toBe('wireguard-ssh')
-            ->and($exception->errorCode)
-            ->toBe('vpn.peer_ssh_failed')
-            ->and($exception->result?->durationMs)
-            ->toBe(6);
-        expect($exception->result?->exitCode)
-            ->toBe(255)
-            ->and($exception->result?->stderr)
-            ->toBe('ssh: connect to host 10.44.0.7 port 22: timeout-final')
-            ->and($exception->getMessage())
-            ->toBe('Could not reach node [base-node] through WireGuard.');
-        expect($ssh->calls)->toBe(6)->and($sleeps)->toBe([1_000_000, 2_000_000]);
-    });
-});
-
-it('does not retry semantic private SSH exit 255 failures', function (): void {
-    $node = base_provisionable_node();
-    $ssh = new class implements SshExecutor
-    {
-        public int $calls = 0;
-
-        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-        {
-            $this->calls++;
-
-            return match (true) {
-                $this->calls === 3 => new CommandResult(0, "x86_64\n", '', 1, false),
-                $this->calls < 3 => new CommandResult(0, '', '', 1, false),
-                default => new CommandResult(255, '', 'remote command failed', 3, false),
-            };
-        }
-    };
-    $sleeps = [];
-    $converger = new NativeNodeConverger(
-        hostKeys: base_test_scanner(),
-        knownHosts: base_test_known_hosts(),
-        sshKeys: base_test_keys(),
-        ssh: $ssh,
-        bootstrapCommand: new NodeBootstrapCommandFactory(base_test_keys()),
-        wireGuard: new class implements WireGuardPeerConverger
-        {
-            public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void {}
-        },
-        firewall: base_firewall_spy(),
-        sleep: static function (int $delay) use (&$sleeps): int {
-            $sleeps[] = $delay;
-
-            return 0;
-        },
-    );
-    expect(fn () => $converger->converge($node, base_identity(), 'SHA256:pinned'))
-        ->toThrow('Could not reach node')
-        ->and($ssh->calls)
-        ->toBe(4)
-        ->and($sleeps)
-        ->toBeEmpty();
-});
-
-it('uses passwordless sudo for the same fixed base command when reconnecting as orbit', function (): void {
-    expect(interface_exists(NodeRoleFirewallManager::class))->toBeTrue();
-
-    $node = base_provisionable_node();
-    $node->update(['user' => 'orbit', 'ssh_host_fingerprint' => 'SHA256:pinned']);
-    $ssh = new BaseNodeSshExecutor;
-    $factory = new NodeBootstrapCommandFactory(base_test_keys());
-    $expected = $factory->makeWithPasswordlessSudo($node, 'orbit');
-    $converger = new NativeNodeConverger(
-        hostKeys: base_test_scanner(),
-        knownHosts: base_test_known_hosts(),
-        sshKeys: base_test_keys(),
-        ssh: $ssh,
-        bootstrapCommand: $factory,
-        wireGuard: new class implements WireGuardPeerConverger
-        {
-            public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void {}
-        },
-        firewall: base_firewall_spy(),
-    );
-
-    $converger->converge($node, new NodeProvisioningIdentity('nckrtl', 'orbit'));
-
-    expect($ssh->calls[0]['command']->arguments)
-        ->toBe($expected->arguments)
-        ->and($ssh->calls[0]['command']->input)
-        ->toBe($expected->input);
-});
-
-it('reports a bounded base bootstrap failure before later convergence', function (): void {
-    expect(interface_exists(NodeRoleFirewallManager::class))->toBeTrue();
-
-    $node = base_provisionable_node();
-    $failure = new CommandResult(1, '', 'sudo failed', 10, false);
-    $ssh = new class($failure) implements SshExecutor
-    {
-        public function __construct(
-            private CommandResult $failure,
-        ) {}
-
-        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-        {
-            return $this->failure;
-        }
-    };
-    $converger = base_node_converger($ssh);
-
-    expect(fn () => $converger->converge($node, base_identity(), 'SHA256:pinned'))
-        ->toThrow(function (NodeProvisioningException $exception) use ($failure): void {
-            expect($exception->step)
-                ->toBe('base-host')
-                ->and($exception->errorCode)
-                ->toBe('node.bootstrap_failed')
-                ->and($exception->result)
-                ->toBe($failure);
-        });
-});
-
-it('translates base firewall failures to node provisioning failures', function (): void {
-    expect(interface_exists(NodeRoleFirewallManager::class))->toBeTrue();
-
-    $node = base_provisionable_node();
-    $node->roles()->delete();
-    $result = new CommandResult(1, '', 'ufw failed', 10, false);
-    $firewall = new class($result) implements NodeRoleFirewallManager
-    {
-        public function __construct(
-            private CommandResult $result,
-        ) {}
-
-        public function convergeBase(Node $node, string $managedUser): void
-        {
-            throw new FirewallOperationException(
-                step: 'host-firewall',
-                errorCode: 'node.firewall_convergence_failed',
-                message: 'Could not converge UFW.',
-                result: $this->result,
-            );
+        $this->calls[] = compact('connection', 'command', 'input');
+        if ($this->answer !== null) {
+            return ($this->answer)($node, $connection, $command, $input);
         }
 
-        public function converge(Node $node, RoleName $role, string $managedUser): void {}
-
-        public function remove(Node $node, RoleName $role, string $managedUser): void {}
-
-        public function trustWireGuardMembers(Node $node, string $managedUser): void {}
-
-        public function restorePublicSsh(Node $node, string $managedUser): void {}
-    };
-    $converger = base_node_converger(new BaseNodeSshExecutor, firewall: $firewall);
-
-    expect(fn () => $converger->converge($node, base_identity(), 'SHA256:pinned'))
-        ->toThrow(function (NodeProvisioningException $exception) use ($result): void {
-            expect($exception->step)
-                ->toBe('host-firewall')
-                ->and($exception->errorCode)
-                ->toBe('node.firewall_convergence_failed')
-                ->and($exception->result)
-                ->toBe($result);
-        });
-});
-
-it('guards first-contact and stored SSH fingerprints before remote effects', function (
-    ?string $stored,
-    ?string $expected,
-    string $observed,
-    string $code,
-): void {
-    expect(interface_exists(NodeRoleFirewallManager::class))->toBeTrue();
-
-    $node = base_provisionable_node();
-    $node->update(['ssh_host_fingerprint' => $stored]);
-    $calls = 0;
-    $ssh = new class($calls) implements SshExecutor
-    {
-        public function __construct(
-            private int &$calls,
-        ) {}
-
-        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-        {
-            $this->calls++;
-
-            return new CommandResult(0, '', '', 1, false);
-        }
-    };
-    $scanner = new class($observed) implements HostKeyScanner
-    {
-        public function __construct(
-            private string $observed,
-        ) {}
-
-        public function scan(string $host, int $port, ?SshConnection $via = null): HostKey
-        {
-            return new HostKey('ssh-ed25519', 'PUBLICKEY', $this->observed);
-        }
-    };
-    $converger = base_node_converger($ssh, scanner: $scanner);
-
-    expect(fn () => $converger->converge($node, base_identity(), $expected))
-        ->toThrow(function (NodeProvisioningException $exception) use ($code): void {
-            expect($exception->step)
-                ->toBe('ssh-host-key')
-                ->and($exception->errorCode)
-                ->toBe($code);
-        });
-    expect($calls)->toBe(0);
-})->with([
-    'expected fingerprint is required' => [null, null, 'SHA256:pinned', 'node.ssh_host_fingerprint_required'],
-    'first-contact mismatch' => [null, 'SHA256:expected', 'SHA256:other', 'node.ssh_host_key_mismatch'],
-    'stored key changed' => ['SHA256:stored', null, 'SHA256:other', 'node.ssh_host_key_changed'],
-]);
-
-function base_provisionable_node(): Node
-{
-    $node = Node::query()->create([
-        'name' => 'base-node',
-        'platform' => 'linux',
-        'public_ssh_host' => '192.0.2.10',
-        'public_ssh_port' => 22,
-        'user' => 'root',
-        'wireguard_ip' => '10.44.0.2',
-    ]);
-    $node->roles()->create(['role' => RoleName::AppDev]);
-
-    return $node;
+        return $command === 'agent.status' ? base_agent_status($this->architecture) : [];
+    }
 }
 
-function base_test_scanner(): HostKeyScanner
+final class BaseAdmissionScanner implements HostKeyScanner
 {
-    return new class implements HostKeyScanner
+    public array $scans = [];
+
+    public string $fingerprint = 'SHA256:pinned';
+
+    public function scan(string $host, int $port, ?Node $via = null): HostKey
     {
-        public function scan(string $host, int $port, ?SshConnection $via = null): HostKey
-        {
-            return new HostKey('ssh-ed25519', 'PUBLICKEY', 'SHA256:pinned');
-        }
-    };
+        $this->scans[] = compact('host', 'port', 'via');
+
+        return new HostKey('ssh-ed25519', 'PUBLICKEY', $this->fingerprint);
+    }
 }
 
-function base_test_known_hosts(): KnownHostsStore
+final class BaseAdmissionHosts implements KnownHostsStore
 {
-    return new class implements KnownHostsStore
-    {
-        public function path(): string
-        {
-            return '/tmp/orbit-known-hosts';
-        }
+    public array $hosts = [];
 
-        public function put(string $host, int $port, HostKey $key): void {}
-    };
+    public function path(): string
+    {
+        return '/tmp/orbit-known-hosts';
+    }
+
+    public function put(string $host, int $port, HostKey $key): void
+    {
+        $this->hosts[] = "{$host}:{$port}:{$key->fingerprint}";
+    }
 }
 
 function base_test_keys(): SshKeyProvider
@@ -950,9 +124,9 @@ function base_test_keys(): SshKeyProvider
     };
 }
 
-function base_bootstrap_command(): RemoteCommand
+function base_provisionable_node(): Node
 {
-    return new NodeBootstrapCommandFactory(base_test_keys())->make(new Node, 'orbit');
+    return Node::query()->create(['name' => 'base-node', 'platform' => 'linux', 'public_ssh_host' => '192.0.2.10', 'public_ssh_port' => 22, 'user' => 'root', 'wireguard_ip' => '10.44.0.2']);
 }
 
 function base_identity(): NodeProvisioningIdentity
@@ -960,354 +134,238 @@ function base_identity(): NodeProvisioningIdentity
     return new NodeProvisioningIdentity('root', 'orbit');
 }
 
-it('bootstraps a supplied nckrtl identity without orbit literals or package confusion', function (): void {
-    $factory = new NodeBootstrapCommandFactory(base_test_keys());
-    $command = $factory->makeWithPasswordlessSudo(new Node, 'nckrtl');
-    $script = $command->input ?? '';
-
-    expect($command->arguments)
-        ->toBe([
-            'sudo',
-            '-n',
-            '--',
-            'bash',
-            '-seu',
-            '--',
-            'ubuntu',
-            UbuntuRelease::unsupportedText(),
-            '1',
-            'resolute',
-            'nckrtl',
-            'ssh-ed25519 GATEWAY',
-            'managed',
-            'ca-certificates',
-            'curl',
-            'gnupg',
-            'libnss-resolve',
-            'openssh-client',
-            'sudo',
-            'ufw',
-            'wireguard',
-        ])
-        ->and($script)
-        ->toContain(
-            'managed_user=$1',
-            'orbit_key=$2',
-            'useradd --create-home --shell /bin/bash -- "$managed_user"',
-            'sudo -n -u "$managed_user" -- sudo -n true',
-            '[ ! -d "$managed_home/.ssh" ]',
-            '[ ! -d "$managed_home/.orbit" ]',
-            '[ -L "$managed_home/.ssh" ]',
-            '[ -L "$managed_home/.orbit" ]',
-            '[ -L "$managed_home" ]',
-            '[ -L "$authorized_keys" ]',
-            'chown "$managed_user:$managed_group" -- "$authorized_keys"',
-            'chmod 0600 -- "$authorized_keys"',
-            'trap \'rm -f -- "$sudoers"\' EXIT',
-        )
-        ->not->toContain('useradd orbit', '/home/orbit', '/etc/sudoers.d/orbit')->and(array_slice(
-            $command->arguments,
-            12,
-        ))
-        ->not->toContain('nckrtl');
-});
-
-it('reports the selected managed user when its SSH verification fails', function (): void {
-    $node = base_provisionable_node();
-    $ssh = new class implements SshExecutor
+function base_node_converger(BaseAdmissionAgents $agents, ?NodeRoleFirewallManager $firewall = null, ?WireGuardPeerConverger $wireGuard = null, ?BaseAdmissionScanner $scanner = null, ?BaseAdmissionHosts $hosts = null, ?Closure $sleep = null): NativeNodeConverger
+{
+    if ($firewall === null) {
+        $firewall = Mockery::mock(NodeRoleFirewallManager::class);
+        $firewall->shouldReceive('convergeBase', 'trustWireGuardMembers')->andReturnNull();
+    }
+    $wireGuard ??= new class implements WireGuardPeerConverger
     {
-        public int $calls = 0;
-
-        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-        {
-            $this->calls++;
-
-            return $this->calls === 1
-                ? new CommandResult(0, '', '', 1, false)
-                : new CommandResult(255, '', 'permission denied', 1, false);
-        }
+        public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void {}
     };
 
-    expect(fn () => base_node_converger($ssh)->converge(
-        $node,
-        new NodeProvisioningIdentity('nckrtl', 'nckrtl'),
-        'SHA256:pinned',
-    ))->toThrow(function (NodeProvisioningException $exception): void {
-        expect($exception->errorCode)
-            ->toBe('node.orbit_ssh_failed')
-            ->and($exception->getMessage())
-            ->toBe('Could not connect to node [base-node] as nckrtl.');
-    });
-});
+    return new NativeNodeConverger($scanner ?? new BaseAdmissionScanner, $hosts ?? new BaseAdmissionHosts, base_test_keys(), new NodeBootstrapCommandFactory(base_test_keys()), $wireGuard, $firewall, $agents, $sleep);
+}
 
-function run_base_bootstrap_preflight(
-    ?string $release,
-    ?string $marker = null,
-    string $mutationMarker = 'mutation-reached',
-): Process {
-    $filesystem = new Filesystem;
-    $directory = sys_get_temp_dir().'/orbit-node-bootstrap-'.Str::random(16);
-    $releasePath = "{$directory}/os-release";
-    $filesystem->makeDirectory($directory, 0o700);
-
-    if ($release !== null) {
-        if ($marker !== null) {
-            $release = str_replace('__OS_RELEASE_MARKER__', $marker, $release);
+it('pins the host and installs before native bootstrap using the selected login and managed identity', function (string $bootstrap, string $managed, bool $recoverable): void {
+    $node = base_provisionable_node();
+    $agents = new BaseAdmissionAgents;
+    $hosts = new BaseAdmissionHosts;
+    $recorded = false;
+    $agents->answer = function (Node $target, SshConnection $connection, string $command) use (&$recorded): array {
+        if ($command === 'agent.install') {
+            expect($recorded)->toBeTrue();
+            expect($target->fresh()->architecture)->toBe('x86_64');
         }
-        $filesystem->put($releasePath, $release);
-    }
 
-    $script = base_bootstrap_command()->input ?? '';
-    $preMutation = strstr(haystack: $script, needle: 'export DEBIAN_FRONTEND=noninteractive', before_needle: true);
-    $harness =
-        str_replace('/etc/os-release', $releasePath, is_string($preMutation) ? $preMutation : $script)
-        ."printf '{$mutationMarker}\\n'\n";
-    $process = new Process([
-        'bash',
-        '-seu',
-        '--',
-        'ubuntu',
-        UbuntuRelease::unsupportedText(),
-        '1',
-        'resolute',
-        'orbit',
-        'ssh-ed25519 TEST',
-        'managed',
-    ]);
-    $process->setInput($harness);
-    $process->run();
-    $filesystem->deleteDirectory($directory);
-
-    return $process;
-}
-
-function base_node_converger(
-    SshExecutor $ssh,
-    ?HostKeyScanner $scanner = null,
-    ?NodeRoleFirewallManager $firewall = null,
-): NativeNodeConverger {
-    return new NativeNodeConverger(
-        hostKeys: $scanner ?? base_test_scanner(),
-        knownHosts: base_test_known_hosts(),
-        sshKeys: base_test_keys(),
-        ssh: $ssh,
-        bootstrapCommand: new NodeBootstrapCommandFactory(base_test_keys()),
-        wireGuard: new class implements WireGuardPeerConverger
-        {
-            public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void {}
-        },
-        firewall: $firewall ?? base_firewall_spy(),
-    );
-}
-
-final class BaseNodeSshExecutor implements SshExecutor
-{
-    /** @var list<array{connection: SshConnection, command: RemoteCommand}> */
-    public array $calls = [];
-
-    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-    {
-        $this->calls[] = ['connection' => $connection, 'command' => $command];
-
-        return $command->arguments === ['uname', '-m']
-            ? new CommandResult(0, "x86_64\n", '', 1, false)
-            : new CommandResult(0, '', '', 1, false);
-    }
-}
-
-/**
- * @param  list<int>|null  $baseNodes
- * @param  list<RoleName>|null  $roles
- */
-function base_firewall_spy(?array &$baseNodes = null, ?array &$roles = null, ?array &$trusted = null): NodeRoleFirewallManager
-{
+        return $command === 'agent.status' ? base_agent_status('x86_64') : [];
+    };
     $firewall = Mockery::mock(NodeRoleFirewallManager::class);
-    $firewall
-        ->shouldReceive('convergeBase')
-        ->andReturnUsing(static function (Node $node) use (&$baseNodes): void {
-            if (is_array($baseNodes)) {
-                $baseNodes[] = $node->id;
+    $firewall->shouldReceive('convergeBase')->once()->andReturnUsing(function () use ($agents): void {
+        expect(array_column($agents->calls, 'command'))->toBe(['stage-architecture', 'agent.install', 'nodes.bootstrap', 'agent.status']);
+    });
+    $firewall->shouldReceive('trustWireGuardMembers')->once();
+    $converger = base_node_converger($agents, $firewall, hosts: $hosts);
+    $record = function (NodeObservation $observation) use ($node, &$recorded): void {
+        $node->update(['architecture' => $observation->architecture]);
+        $recorded = true;
+    };
+    $identity = new NodeProvisioningIdentity($bootstrap, $managed);
+    if ($recoverable) {
+        $converger->convergeRecoverably($node, $identity, 'SHA256:pinned', static function (): void {}, recordObservation: $record);
+    } else {
+        expect($converger->converge($node, $identity, 'SHA256:pinned', recordObservation: $record)->architecture)->toBe('x86_64');
+    }
+    expect($node->fresh()->ssh_host_fingerprint)->toBe('SHA256:pinned');
+    expect($hosts->hosts)->toBe(['192.0.2.10:22:SHA256:pinned', '10.44.0.2:22:SHA256:pinned']);
+    expect(array_column($agents->calls, 'command'))->toBe(['stage-architecture', 'agent.install', 'nodes.bootstrap', 'agent.status', 'agent.status']);
+    expect(array_map(fn (array $call) => $call['connection']->user, $agents->calls))->toBe([$bootstrap, $bootstrap, $bootstrap, $managed, $managed]);
+    expect($agents->calls[2]['input'])->toBe(new NodeBootstrapCommandFactory(base_test_keys())->input($node, $managed));
+    expect($agents->calls[4]['connection']->host)->toBe('10.44.0.2');
+    expect($agents->calls[0]['connection']->hostIdentity)->toBe('SHA256:pinned');
+})->with([['root', 'orbit', false], ['nckrtl', 'nckrtl', false], ['orbit', 'orbit', true]]);
+
+it('refuses unsupported platforms and untrusted host keys before agent work', function (?string $stored, ?string $expected, string $scanned, string $platform, string $code): void {
+    $node = base_provisionable_node();
+    $node->update(['platform' => $platform, 'ssh_host_fingerprint' => $stored]);
+    $agents = new BaseAdmissionAgents;
+    $scanner = new BaseAdmissionScanner;
+    $scanner->fingerprint = $scanned;
+    expect(fn () => base_node_converger($agents, scanner: $scanner)->converge($node, base_identity(), $expected))
+        ->toThrow(fn (NodeProvisioningException $e) => expect($e->errorCode)->toBe($code));
+    expect($agents->calls)->toBe([]);
+})->with([
+    [null, null, 'SHA256:pinned', 'linux', 'node.ssh_host_fingerprint_required'],
+    [null, 'SHA256:expected', 'SHA256:other', 'linux', 'node.ssh_host_key_mismatch'],
+    ['SHA256:stored', null, 'SHA256:other', 'linux', 'node.ssh_host_key_changed'],
+    [null, null, 'SHA256:pinned', 'windows', 'node.platform_unsupported'],
+]);
+
+it('stops before installation when architecture selection or its validation fails', function (bool $probeFails): void {
+    $node = base_provisionable_node();
+    $agents = new BaseAdmissionAgents;
+    if ($probeFails) {
+        $agents->answer = static fn () => throw new AgentRunnerFailure('agent.install', AgentRunnerFailure::Transport, 'No architecture.');
+    }
+    expect(fn () => base_node_converger($agents)->converge($node, base_identity(), 'SHA256:pinned', recordObservation: static function (): void {
+        throw new NodeArchitectureMismatchException('base-node', 'aarch64', 'x86_64');
+    }))->toThrow($probeFails ? NodeProvisioningException::class : NodeArchitectureMismatchException::class);
+    expect(array_column($agents->calls, 'command'))->toBe(['stage-architecture']);
+})->with([false, true]);
+
+it('maps native failures and stops before networking', function (string $command, string $code, string $step, string $publicCode): void {
+    $agents = new BaseAdmissionAgents;
+    $agents->answer = static function (Node $node, SshConnection $connection, string $called) use ($command, $code): array {
+        if ($called === $command) {
+            throw new AgentCommandRefused($command, $code, 'Refused.', ['id' => 'ubuntu', 'codename' => 'unsupported']);
+        }
+
+        return [];
+    };
+    $firewall = Mockery::mock(NodeRoleFirewallManager::class);
+    $firewall->shouldNotReceive('convergeBase', 'trustWireGuardMembers');
+    expect(fn () => base_node_converger($agents, $firewall)->converge(base_provisionable_node(), new NodeProvisioningIdentity('root', 'nckrtl'), 'SHA256:pinned'))
+        ->toThrow(function (NodeProvisioningException $e) use ($step, $publicCode, $code): void {
+            expect($e->step)->toBe($step)->and($e->errorCode)->toBe($publicCode);
+            if ($code === 'nodes.bootstrap_os_unsupported') {
+                expect($e->getMessage())->toBe('Node operating system [ubuntu/unsupported] is not supported.');
+            }
+            if ($publicCode === 'node.orbit_ssh_failed') {
+                expect($e->getMessage())->toContain('as nckrtl');
             }
         });
-    $firewall
-        ->shouldReceive('converge')
-        ->andReturnUsing(static function (Node $node, RoleName $role) use (&$roles): void {
-            if (is_array($roles)) {
-                $roles[] = $role;
-            }
-        });
-    $firewall
-        ->shouldReceive('trustWireGuardMembers')
-        ->andReturnUsing(static function (Node $node) use (&$trusted): void {
-            if (is_array($trusted)) {
-                $trusted[] = $node->id;
-            }
-        });
+})->with([
+    ['agent.install', 'agent.install_failed', 'agent-install', 'agent.install_failed'],
+    ['nodes.bootstrap', 'nodes.bootstrap_failed', 'base-host', 'node.bootstrap_failed'],
+    ['nodes.bootstrap', 'nodes.bootstrap_os_unsupported', 'base-host', 'node.bootstrap_failed'],
+    ['agent.status', 'agent.identity_mismatch', 'orbit-ssh', 'node.orbit_ssh_failed'],
+]);
 
-    return $firewall;
-}
-
-describe('jump nodes', function (): void {
-    it('keeps every connection and the host key scan direct for a Node without a jump node', function (): void {
-        $node = base_provisionable_node();
-        $node->roles()->delete();
-        $scanner = new JumpRecordingScanner;
-        $ssh = new BaseNodeSshExecutor;
-        $wireGuard = new JumpRecordingWireGuard;
-
-        jump_node_converger($ssh, $scanner, $wireGuard)->converge($node, base_identity(), 'SHA256:pinned');
-
-        expect($scanner->scans)
-            ->toBe([['target' => '192.0.2.10:22', 'via' => null]])
-            ->and(array_map(static fn (array $call): array => [
-                "{$call['connection']->host}:{$call['connection']->port}",
-                $call['connection']->proxyJump,
-                $call['connection']->shareConnection,
-            ], $ssh->calls))
-            ->toBe([
-                ['192.0.2.10:22', null, true],
-                ['192.0.2.10:22', null, true],
-                ['192.0.2.10:22', null, true],
-                ['10.44.0.2:22', null, true],
-            ])
-            ->and($wireGuard->connections[0]->proxyJump)
-            ->toBeNull();
-    });
-
-    it('bootstraps a Node through its jump node and verifies WireGuard directly', function (): void {
-        $jump = jump_host_node();
-        $node = base_provisionable_node();
-        $node->roles()->delete();
-        $node->update(['public_ssh_host' => '10.251.77.32', 'ssh_jump_node_id' => $jump->id]);
-        $scanner = new JumpRecordingScanner;
-        $ssh = new BaseNodeSshExecutor;
-        $wireGuard = new JumpRecordingWireGuard;
-
-        jump_node_converger($ssh, $scanner, $wireGuard)->converge($node, base_identity(), 'SHA256:pinned');
-
-        $viaJumpHost = static fn (?SshConnection $connection): ?string => $connection === null
-            ? null
-            : "{$connection->user}@{$connection->host}:{$connection->port}";
-
-        expect($scanner->scans)
-            ->toBe([['target' => '10.251.77.32:22', 'via' => 'nckrtl@10.44.0.7:22']])
-            ->and($scanner->via?->identityFile)
-            ->toBe('/tmp/orbit-key')
-            ->and($scanner->via?->knownHostsFile)
-            ->toBe('/tmp/orbit-known-hosts')
-            ->and(array_map(static fn (array $call): array => [
-                "{$call['connection']->user}@{$call['connection']->host}:{$call['connection']->port}",
-                $viaJumpHost($call['connection']->proxyJump),
-            ], $ssh->calls))
-            ->toBe([
-                ['root@10.251.77.32:22', 'nckrtl@10.44.0.7:22'],
-                ['orbit@10.251.77.32:22', 'nckrtl@10.44.0.7:22'],
-                ['orbit@10.251.77.32:22', 'nckrtl@10.44.0.7:22'],
-                ['orbit@10.44.0.2:22', null],
-            ])
-            ->and($viaJumpHost($wireGuard->connections[0]->proxyJump))
-            ->toBe('nckrtl@10.44.0.7:22');
-    });
-
-    it('ignores the jump node once the Node has an active role', function (): void {
-        $jump = jump_host_node();
-        $node = base_provisionable_node();
-        $node->roles()->update(['status' => LifecycleStatus::Active]);
-        $node->update([
-            'status' => LifecycleStatus::Active,
-            'ssh_host_fingerprint' => 'SHA256:pinned',
-            'ssh_jump_node_id' => $jump->id,
-        ]);
-        $scanner = new JumpRecordingScanner;
-        $ssh = new BaseNodeSshExecutor;
-
-        jump_node_converger($ssh, $scanner, new JumpRecordingWireGuard)->convergeRecoverably(
-            $node,
-            base_identity(),
-            null,
-            static function (): void {},
-        );
-
-        expect($scanner->scans)
-            ->toBe([['target' => '10.44.0.2:22', 'via' => null]])
-            ->and($ssh->calls)
-            ->not->toBeEmpty()
-            ->and(array_map(static fn (array $call): ?SshConnection => $call['connection']->proxyJump, $ssh->calls))
-            ->each->toBeNull();
-    });
-
-    it('fails before SSH when the jump node has no WireGuard address', function (): void {
-        $jump = jump_host_node();
-        $jump->update(['wireguard_ip' => null]);
-        $node = base_provisionable_node();
-        $node->roles()->delete();
-        $node->update(['public_ssh_host' => '10.251.77.32', 'ssh_jump_node_id' => $jump->id]);
-        $scanner = new JumpRecordingScanner;
-        $ssh = new BaseNodeSshExecutor;
-
-        expect(fn () => jump_node_converger($ssh, $scanner, new JumpRecordingWireGuard)->converge(
-            $node,
-            base_identity(),
-            'SHA256:pinned',
-        ))->toThrow(function (NodeProvisioningException $exception): void {
-            expect($exception->errorCode)->toBe('vpn.peer_address_missing');
-        });
-        expect($scanner->scans)->toBe([])->and($ssh->calls)->toBe([]);
-    });
+it('verifies the installed architecture before networking', function (): void {
+    $agents = new BaseAdmissionAgents;
+    $agents->malformed = true;
+    $agents->answer = static fn () => ['architecture' => 'invalid'];
+    expect(fn () => base_node_converger($agents)->converge(base_provisionable_node(), base_identity(), 'SHA256:pinned'))
+        ->toThrow(fn (NodeProvisioningException $e) => expect($e->errorCode)->toBe('node.architecture_unavailable'));
 });
 
-function jump_host_node(): Node
-{
-    return Node::query()->create([
-        'name' => 'jump-host',
-        'status' => LifecycleStatus::Active,
-        'platform' => 'linux',
-        'public_ssh_host' => '192.0.2.7',
-        'public_ssh_port' => 22,
-        'user' => 'nckrtl',
-        'wireguard_ip' => '10.44.0.7',
-    ]);
-}
+it('retries only connection failures on the private read with bounded backoff and preserves the final result', function (bool $connectError, bool $recovers): void {
+    $agents = new BaseAdmissionAgents;
+    $privateCalls = 0;
+    $result = new CommandResult(255, '', $connectError ? 'ssh: connect to host 10.44.0.2 port 22: timeout-final' : 'Permission denied (publickey).', 6, false);
+    $agents->answer = static function (Node $node, SshConnection $connection, string $command) use (&$privateCalls, $recovers, $result): array {
+        if ($connection->host === '10.44.0.2') {
+            $privateCalls++;
+            if (! $recovers || $privateCalls === 1) {
+                throw new AgentRunnerFailure($command, AgentRunnerFailure::Transport, 'SSH failed.', result: $result);
+            }
+        }
 
-function jump_node_converger(SshExecutor $ssh, HostKeyScanner $scanner, WireGuardPeerConverger $wireGuard): NativeNodeConverger
-{
-    return new NativeNodeConverger(
-        hostKeys: $scanner,
-        knownHosts: base_test_known_hosts(),
-        sshKeys: base_test_keys(),
-        ssh: $ssh,
-        bootstrapCommand: new NodeBootstrapCommandFactory(base_test_keys()),
-        wireGuard: $wireGuard,
-        firewall: base_firewall_spy(),
-    );
-}
-
-final class JumpRecordingScanner implements HostKeyScanner
-{
-    /** @var list<array{target: string, via: string|null}> */
-    public array $scans = [];
-
-    public ?SshConnection $via = null;
-
-    public function scan(string $host, int $port, ?SshConnection $via = null): HostKey
-    {
-        $this->via = $via;
-        $this->scans[] = [
-            'target' => "{$host}:{$port}",
-            'via' => $via === null ? null : "{$via->user}@{$via->host}:{$via->port}",
-        ];
-
-        return new HostKey('ssh-ed25519', 'PUBLICKEY', 'SHA256:pinned');
+        return base_agent_status('x86_64');
+    };
+    $sleeps = [];
+    $converger = base_node_converger($agents, sleep: function (int $delay) use (&$sleeps): void {
+        $sleeps[] = $delay;
+    });
+    $node = base_provisionable_node();
+    if ($recovers) {
+        $converger->converge($node, base_identity(), 'SHA256:pinned');
+    } else {
+        expect(fn () => $converger->converge($node, base_identity(), 'SHA256:pinned'))->toThrow(function (NodeProvisioningException $e) use ($result): void {
+            expect($e->errorCode)->toBe('vpn.peer_ssh_failed')->and($e->result)->toBe($result);
+        });
     }
-}
+    expect($sleeps)->toBe($connectError ? ($recovers ? [1_000_000] : [1_000_000, 2_000_000]) : []);
+    expect($privateCalls)->toBe(count($sleeps) + 1);
+})->with([[true, true], [true, false], [false, false]]);
 
-final class JumpRecordingWireGuard implements WireGuardPeerConverger
-{
-    /** @var list<SshConnection> */
-    public array $connections = [];
-
-    public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void
-    {
-        $this->connections[] = $connection;
+it('keeps peer publication recovery and skips it only for active roles', function (string $roleState, bool $failPrivate): void {
+    $node = base_provisionable_node();
+    if ($roleState !== 'none') {
+        $node->roles()->create(['role' => RoleName::AppDev, 'status' => $roleState]);
     }
+    $agents = new BaseAdmissionAgents;
+    $agents->answer = static function (Node $node, SshConnection $connection, string $command) use ($failPrivate): array {
+        if ($connection->host === '10.44.0.2' && $command === 'agent.status' && $failPrivate) {
+            throw new AgentCommandRefused($command, 'agent.identity_mismatch', 'Failed.');
+        }
+
+        return base_agent_status('x86_64');
+    };
+    $events = [];
+    $wireGuard = new class($events) implements RecoverableWireGuardPeerConverger, WireGuardPeerConverger
+    {
+        public function __construct(private array &$events) {}
+
+        public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void
+        {
+            throw new LogicException('Must use recovery.');
+        }
+
+        public function convergeRecoverably(Node $node, SshConnection $connection, Closure $completion, bool $rolelessOperator = false): void
+        {
+            $this->events[] = 'publish';
+            try {
+                $completion(function (SshConnection $verified): void {
+                    $this->events[] = 'finalize:'.$verified->host;
+                });
+                $this->events[] = 'commit';
+            } catch (Throwable $e) {
+                $this->events[] = 'rollback';
+                throw $e;
+            }
+        }
+    };
+    $run = function () use ($agents, $wireGuard, $node, &$events): void {
+        base_node_converger($agents, wireGuard: $wireGuard)->convergeRecoverably($node, base_identity(), 'SHA256:pinned', function () use (&$events): void {
+            $events[] = 'complete';
+        });
+    };
+    if ($failPrivate) {
+        expect($run)->toThrow(NodeProvisioningException::class);
+    } else {
+        $run();
+    }
+    expect($events)->toBe($roleState === 'active' ? ['complete'] : ($failPrivate ? ['publish', 'rollback'] : ['publish', 'finalize:10.44.0.2', 'complete', 'commit']));
+})->with([['none', false], ['failed', false], ['active', false], ['none', true]]);
+
+it('uses the jump node for public admission and direct WireGuard for managed reads', function (bool $activeRole, bool $missingJumpAddress): void {
+    $jump = Node::query()->create(['name' => 'jump', 'public_ssh_host' => '192.0.2.7', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'user' => 'nckrtl', 'wireguard_ip' => $missingJumpAddress ? null : '10.44.0.7']);
+    $node = base_provisionable_node();
+    $node->update(['ssh_jump_node_id' => $jump->id]);
+    if ($activeRole) {
+        $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    }
+    $agents = new BaseAdmissionAgents;
+    $scanner = new BaseAdmissionScanner;
+    $run = fn () => base_node_converger($agents, scanner: $scanner)->converge($node, base_identity(), 'SHA256:pinned');
+    if ($missingJumpAddress) {
+        expect($run)->toThrow(NodeProvisioningException::class);
+        expect($scanner->scans)->toBe([])->and($agents->calls)->toBe([]);
+
+        return;
+    }
+    $run();
+    expect($scanner->scans[0]['via']?->id)->toBe($activeRole ? null : $jump->id);
+    foreach ($agents->calls as $index => $call) {
+        $public = ! $activeRole && $index < 4;
+        expect($call['connection']->host)->toBe($public ? '192.0.2.10' : '10.44.0.2');
+        expect($call['connection']->proxyJump?->host)->toBe($public ? '10.44.0.7' : null);
+        expect($call['connection']->hostIdentity)->toBe('SHA256:pinned');
+    }
+})->with([[false, false], [true, false], [false, true]]);
+
+it('translates base firewall failures before peer convergence', function (): void {
+    $firewall = Mockery::mock(NodeRoleFirewallManager::class);
+    $firewall->shouldReceive('convergeBase')->once()->andThrow(new FirewallOperationException('base-firewall', 'firewall.failed', 'Failed.'));
+    $firewall->shouldNotReceive('trustWireGuardMembers');
+    expect(fn () => base_node_converger(new BaseAdmissionAgents, $firewall)->converge(base_provisionable_node(), base_identity(), 'SHA256:pinned'))
+        ->toThrow(fn (NodeProvisioningException $e) => expect($e->errorCode)->toBe('firewall.failed'));
+});
+
+/** @return array<string, string> */
+function base_agent_status(string $architecture): array
+{
+    return ['version' => '0.5.0', 'sha256' => str_repeat('a', 64), 'platform' => 'linux', 'architecture' => $architecture, 'observer' => 'active'];
 }

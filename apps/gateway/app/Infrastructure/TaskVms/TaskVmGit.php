@@ -10,15 +10,19 @@ use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
+use App\Infrastructure\AgentCommands\AgentBinaryInput;
+use App\Infrastructure\AgentCommands\AgentBinaryOutput;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
+use App\Infrastructure\AgentCommands\WorkspaceAgentCommandRunner;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessCancelledException;
 use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessOutput;
-use App\Infrastructure\Processes\ProcessOutputStream;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Jobs\TaskVms\PublishTaskVmCommit;
+use App\Models\Node;
 use App\Models\Project;
 use Closure;
 use Illuminate\Contracts\Cache\LockTimeoutException;
@@ -62,63 +66,13 @@ final readonly class TaskVmGit
     /** The automatic garbage collection threshold that {@see collectGarbage()} applies, Git's default. */
     private const int GcAutoObjects = 6700;
 
-    /** Prints the commit IDs of the checkout's refs. */
-    private const string ReadRefs = <<<'BASH'
-        command git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$1" for-each-ref --format='%(objectname)'
-        baseline=$(command git -C "$1" rev-parse --verify --quiet refs/worktree/orbit/ci-baseline || true)
-        printf 'baseline %s\n' "$baseline"
-        branch=$(command git -C "$1" symbolic-ref --quiet --short HEAD || true)
-        printf 'branch %s\n' "$branch"
-        head=$(command git -C "$1" rev-parse --verify --quiet HEAD || true)
-        printf 'head %s\n' "$head"
-        BASH;
-
-    /** Indexes the pack on stdin, then sets each `<ref> <commit>` pair, or deletes the ref for `-`. */
-    private const string Apply = <<<'BASH'
-        set -eu
-        checkout=$1
-        head=$2
-        shift 2
-        git() { command git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" "$@"; }
-        git index-pack --stdin --fix-thin >/dev/null
-        while [ "$#" -ge 2 ]; do
-            if [ "$2" = - ]; then
-                git update-ref -d "$1"
-            else
-                git update-ref "$1" "$2"
-            fi
-            shift 2
-        done
-        # origin/HEAD names the default branch, as a clone sets it. The @orbit/ci-caches setup step reads it.
-        if [ -n "$head" ] && git rev-parse --verify --quiet "refs/remotes/origin/$head" >/dev/null; then
-            git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$head"
-        fi
-        BASH;
-
-    /** Writes a pack of the commit to stdout, without the history of those of the following commits it has. */
-    private const string Emit = <<<'BASH'
-        set -euo pipefail
-        checkout=$1
-        commit=$2
-        shift 2
-        git() { command git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" "$@"; }
-        git cat-file -e "$commit^{commit}"
-        {
-            printf '%s\n' "$commit"
-            for have in "$@"; do
-                if git cat-file -e "$have^{commit}" 2>/dev/null; then
-                    printf '^%s\n' "$have"
-                fi
-            done
-        } | git pack-objects --revs --thin --stdout --delta-base-offset --quiet
-        BASH;
-
     /**
      * @param  list<string>  $protocols  the protocols the mirror may fetch and push with
      * @param  int  $maxPackBytes  the largest pack that a VM may send back
      */
     public function __construct(
         private ProcessRunner $processes,
+        private WorkspaceAgentCommandRunner $agents,
         private ?string $directory = null,
         private array $protocols = ['https'],
         private int $maxPackBytes = self::MaxPackBytes,
@@ -246,13 +200,13 @@ final readonly class TaskVmGit
      *
      * @throws RuntimeConvergenceException
      */
-    public function send(Project $project, string $checkout, array $tips, Closure $run, string $errorCode, bool $cachesOnly = false, bool $selectBaseline = false): void
+    public function send(Project $project, Node $node, string $checkout, array $tips, Closure $run, string $errorCode, bool $cachesOnly = false, bool $selectBaseline = false): void
     {
         if (! $cachesOnly) {
-            $this->transfer($project, $checkout, $tips, $run, $errorCode, false, false);
+            $this->transfer($project, $node, $checkout, $tips, $run, $errorCode, false, false);
         }
         try {
-            $this->transfer($project, $checkout, $tips, $run, $errorCode, true, $selectBaseline);
+            $this->transfer($project, $node, $checkout, $tips, $run, $errorCode, true, $selectBaseline);
         } catch (ProcessCancelledException $exception) {
             throw $exception;
         } catch (\RuntimeException) {
@@ -264,15 +218,19 @@ final readonly class TaskVmGit
      * @param  array<string, string|null>  $tips
      * @param  Closure(RemoteCommand): CommandResult  $run
      */
-    private function transfer(Project $project, string $checkout, array $tips, Closure $run, string $errorCode, bool $cachesOnly, bool $selectBaseline): void
+    private function transfer(Project $project, Node $node, string $checkout, array $tips, Closure $run, string $errorCode, bool $cachesOnly, bool $selectBaseline): void
     {
-        $state = $run(new RemoteCommand(['bash', '-c', self::ReadRefs, '--', $checkout]))->stdout;
-        $haves = $this->commitIds($state);
+        try {
+            $state = $this->agents->runInWorkspace($node, $run, 'task-vms.read-git-refs', ['checkout' => $checkout]);
+        } catch (AgentCommandRefused|AgentRunnerFailure $exception) {
+            throw new RuntimeConvergenceException('task-vm-git-refs', $errorCode, 'The checkout refs could not be read.', previous: $exception);
+        }
+        $haves = $this->commitIds(is_array($state['haves'] ?? null) ? $state['haves'] : []);
         $default = is_string($project->default_branch) ? $project->default_branch : '';
-        $recorded = preg_match('/^baseline ([0-9a-f]{40}(?:[0-9a-f]{24})?)$/m', $state, $match) === 1 ? $match[1] : null;
-        $head = preg_match('/^head ([0-9a-f]{40}(?:[0-9a-f]{24})?)$/m', $state, $match) === 1 ? $match[1] : null;
+        $recorded = $this->commitId($state['baseline'] ?? null);
+        $head = $this->commitId($state['head'] ?? null);
         $tip = $tips[$default] ?? null;
-        $onDefault = $head !== null && str_contains($state, "branch {$default}\n");
+        $onDefault = $head !== null && ($state['branch'] ?? null) === $default;
         $baseline = $onDefault ? ($tip ?? $recorded) : ($recorded ?? $tip);
         $scratch = $this->scratch($errorCode);
         try {
@@ -298,21 +256,23 @@ final readonly class TaskVmGit
             });
             $updates = [];
             foreach ($cachesOnly ? [] : $tips as $branch => $commit) {
-                $updates[] = 'refs/remotes/origin/'.$branch;
-                $updates[] = $commit ?? '-';
+                $updates[] = ['reference' => 'refs/remotes/origin/'.$branch, 'commit' => $commit];
             }
             if ($selectBaseline && $baseline === null) {
-                $updates[] = 'refs/worktree/orbit/ci-baseline';
-                $updates[] = '-';
+                $updates[] = ['reference' => 'refs/worktree/orbit/ci-baseline', 'commit' => null];
             }
             if ($cacheRef !== null && is_string($baseline)) {
-                $updates[] = $cacheRef;
-                $updates[] = $cacheCommit ?? '-';
-                $updates[] = 'refs/worktree/orbit/ci-baseline';
-                $updates[] = $baseline;
+                $updates[] = ['reference' => $cacheRef, 'commit' => $cacheCommit];
+                $updates[] = ['reference' => 'refs/worktree/orbit/ci-baseline', 'commit' => $baseline];
             }
             $head = is_string($project->default_branch) && GitBranchName::isValid($project->default_branch) && array_key_exists($project->default_branch, $tips) ? $project->default_branch : '';
-            $run(new RemoteCommand(['bash', '-c', self::Apply, '--', $checkout, $head, ...$updates], protectedInput: ProtectedInput::openFile($pack), timeout: 1800.0));
+            try {
+                $this->agents->runInWorkspace($node, $run, 'task-vms.import-git-pack', [
+                    'checkout' => $checkout, 'default_branch' => $head === '' ? null : $head, 'updates' => $updates,
+                ], binaryInput: AgentBinaryInput::fromFile($pack, self::MaxPackBytes));
+            } catch (AgentCommandRefused|AgentRunnerFailure $exception) {
+                throw new RuntimeConvergenceException('task-vm-git-import', $errorCode, 'The checkout pack could not be imported.', previous: $exception);
+            }
         } finally {
             File::deleteDirectory($scratch);
         }
@@ -332,7 +292,7 @@ final readonly class TaskVmGit
      *
      * @throws RuntimeConvergenceException `task-pull-request-push` with the push result when GitHub refuses the push
      */
-    public function publish(Project $project, string $checkout, string $commit, string $branch, array $haves, GitReadEnvironment $write, Closure $run, string $errorCode, ?float $deadline = null, bool $replace = false, bool $checkedPublish = false): void
+    public function publish(Project $project, Node $node, string $checkout, string $commit, string $branch, array $haves, GitReadEnvironment $write, Closure $run, string $errorCode, ?float $deadline = null, bool $replace = false, bool $checkedPublish = false): void
     {
         if (preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $commit) !== 1 || ! GitBranchName::isValid($branch)) {
             throw new RuntimeConvergenceException('task-vm-git-publish', $errorCode, 'The approved commit or its branch is invalid.');
@@ -346,7 +306,7 @@ final readonly class TaskVmGit
         $scratch = $this->scratch($errorCode);
         try {
             $pack = $scratch.'/receive.pack';
-            $this->receive($checkout, $commit, $haves, $pack, $run, $errorCode, $deadline);
+            $this->receive($node, $checkout, $commit, $haves, $pack, $run, $errorCode, $deadline);
             $quarantine = $scratch.'/objects';
             File::ensureDirectoryExists($quarantine.'/pack', 0700);
             $this->checked('task-vm-git-index-pack', $errorCode, $this->git($mirror, [
@@ -396,36 +356,29 @@ final readonly class TaskVmGit
      * @param  list<string>  $haves
      * @param  Closure(RemoteCommand): CommandResult  $run
      */
-    private function receive(string $checkout, string $commit, array $haves, string $pack, Closure $run, string $errorCode, ?float $deadline): void
+    private function receive(Node $node, string $checkout, string $commit, array $haves, string $pack, Closure $run, string $errorCode, ?float $deadline): void
     {
         $file = fopen($pack, 'xb');
         if ($file === false) {
             throw new RuntimeConvergenceException('task-vm-git-receive', $errorCode, 'The pack file could not be created.');
         }
-        $size = 0;
-        $max = $this->maxPackBytes;
         try {
-            $run(new RemoteCommand(
-                arguments: ['bash', '-c', self::Emit, '--', $checkout, $commit, ...$haves],
-                maxOutputBytes: 65_536,
-                output: static function (ProcessOutput $output) use ($file, $max): void {
-                    if ($output->stream === ProcessOutputStream::Stdout && ftell($file) <= $max) {
-                        fwrite($file, $output->value);
-                    }
-                },
-                cancelled: static fn (): bool => ftell($file) > $max,
-                timeout: $this->timeout($deadline, 1800.0, $errorCode),
-            ));
-        } catch (ProcessCancelledException $exception) {
-            if (ftell($file) <= $max) {
-                throw $exception;
+            $sink = new AgentBinaryOutput($file, $this->maxPackBytes);
+            $result = $this->agents->runInWorkspace($node, $run, 'task-vms.export-git-pack', [
+                'checkout' => $checkout, 'commit' => $commit, 'haves' => $this->commitIds($haves),
+            ], $this->timeout($deadline, 1800.0, $errorCode), $sink);
+            if (($result['bytes'] ?? null) !== $sink->bytes()) {
+                throw new RuntimeConvergenceException('task-vm-git-receive', $errorCode, 'The task VM pack byte count did not match its result.');
             }
+        } catch (AgentRunnerFailure|AgentCommandRefused $exception) {
+            $limit = $exception instanceof AgentRunnerFailure
+                ? $exception->kind === AgentRunnerFailure::OutputLimit
+                : $exception->errorCode === 'task_vm.git_pack_too_large';
+            throw new RuntimeConvergenceException('task-vm-git-receive', $errorCode,
+                $limit ? 'The task VM sent a pack over '.self::size($this->maxPackBytes).'.' : 'The task VM Git pack could not be received.',
+                previous: $exception);
         } finally {
-            $size = (int) ftell($file);
             fclose($file);
-        }
-        if ($size > $max) {
-            throw new RuntimeConvergenceException('task-vm-git-receive', $errorCode, 'The task VM sent a pack over '.self::size($max).'.');
         }
     }
 
@@ -474,13 +427,17 @@ final readonly class TaskVmGit
         return $pack;
     }
 
-    /** @return list<string> unique commit IDs in `$stdout`, at most {@see MaxHaves} */
-    private function commitIds(string $stdout): array
+    /**
+     * @param  array<mixed>  $haves
+     * @return list<string> unique commit IDs, at most {@see MaxHaves}
+     */
+    private function commitIds(array $haves): array
     {
         $ids = [];
-        foreach (preg_split('/\R/', trim($stdout)) ?: [] as $line) {
-            if (preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $line) === 1) {
-                $ids[$line] = true;
+        foreach ($haves as $value) {
+            $id = $this->commitId($value);
+            if ($id !== null) {
+                $ids[$id] = true;
             }
             if (count($ids) >= self::MaxHaves) {
                 break;
@@ -488,6 +445,11 @@ final readonly class TaskVmGit
         }
 
         return array_keys($ids);
+    }
+
+    private function commitId(mixed $value): ?string
+    {
+        return is_string($value) && preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $value) === 1 ? $value : null;
     }
 
     private function commit(string $mirror, string $ref, string $errorCode): string

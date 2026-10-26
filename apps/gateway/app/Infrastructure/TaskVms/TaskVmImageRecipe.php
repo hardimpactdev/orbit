@@ -4,37 +4,81 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\TaskVms;
 
+use App\Domain\TaskVms\TaskVmException;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentGuest;
+use App\Infrastructure\AgentCommands\GuestAgentCommandRunner;
+
 /** Common guest identity checks and cleanup for recipe-built task VM images. */
 final readonly class TaskVmImageRecipe
 {
     /** Names the builder and smoke VMs or servers, followed by the build's time stamp. */
     public const string WorkPrefix = 'tvm-image-';
 
-    private const string OwnerCheck = 'test "$(id -u -- "$2"):$(id -g -- "$2")" = "$1"';
+    public function __construct(private GuestAgentCommandRunner $agents) {}
 
-    /** Keep first-boot services and apt timers from interfering with tasks. */
-    public const string Masks = 'systemctl mask systemd-firstboot.service apt-daily.timer apt-daily-upgrade.timer motd-news.timer unattended-upgrades.service';
-
-    public const string CleanConfirmation = '{"ok":true}';
-
-    /** @return list<string> */
-    public static function ownerCheck(): array
+    public function owner(AgentGuest $guest): void
     {
-        return ['sh', '-euc', self::OwnerCheck, 'sh', TaskVmCloudInit::Owner, TaskVmCloudInit::User];
+        $this->agents->installGuest($guest);
+        $this->request($guest, 'image.owner');
     }
 
-    /**
-     * @param  list<string>  $checks
-     * @return list<string>
-     */
-    public static function imageCheck(array $checks): array
+    public function boot(AgentGuest $guest, bool $lean): void
     {
-        return TaskVmScripts::bash('image-check.sh', [TaskVmCloudInit::User, TaskVmCloudInit::Owner, ...$checks]);
+        $this->request($guest, 'image.boot', ['lean' => $lean]);
     }
 
-    /** The root cleanup program removes machine identity before publication. */
-    public function cleanScript(): string
+    public function firewall(AgentGuest $guest): void
     {
-        return TaskVmScripts::read('base-image-clean.sh');
+        $this->request($guest, 'image.firewall');
+    }
+
+    public function mark(AgentGuest $guest, string $identity, string $profile): void
+    {
+        $this->request($guest, 'image.recipe-marker', ['identity' => $identity, 'profile' => $profile]);
+    }
+
+    public function log(AgentGuest $guest, string $profile, string $phase, string $text): void
+    {
+        $this->request($guest, 'image.recipe-log', ['profile' => $profile, 'phase' => $phase, 'text' => mb_strcut($text, -65536, encoding: 'UTF-8')]);
+    }
+
+    public function check(AgentGuest $guest, bool $leanBoot = false, bool $firewall = false): void
+    {
+        $this->request($guest, 'image.check', ['lean_boot' => $leanBoot, 'firewall' => $firewall]);
+    }
+
+    /** @param array<string, mixed> $input */
+    private function request(AgentGuest $guest, string $command, array $input = []): void
+    {
+        try {
+            $result = $this->agents->runGuest($guest, $command, $input);
+        } catch (AgentCommandRefused $error) {
+            if (! in_array($error->errorCode, ['task_vm.image_check_failed', 'task_vm.image_build_failed'], true)) {
+                throw $error;
+            }
+            $reason = is_string($error->details['reason'] ?? null) ? $error->details['reason'] : $error->getMessage();
+            throw new TaskVmException('task_vm.image_build_failed', "Image command [{$command}] failed on [{$guest->name}]: ".$reason, 502);
+        }
+        if (($result['ready'] ?? null) !== true) {
+            throw new TaskVmException('task_vm.image_build_failed', "Image command [{$command}] did not confirm on [{$guest->name}].", 502);
+        }
+    }
+
+    /** Installs the pin explicitly, then removes only an unenrolled builder's identity. */
+    public function clean(AgentGuest $guest): void
+    {
+        $this->agents->installGuest($guest);
+        try {
+            $result = $this->agents->runGuest($guest, 'image.clean');
+        } catch (AgentCommandRefused $error) {
+            if (! in_array($error->errorCode, ['task_vm.image_clean_failed', 'task_vm.image_identity_present'], true)) {
+                throw $error;
+            }
+            throw new TaskVmException('task_vm.image_build_failed', "Image cleanup failed on [{$guest->name}]: ".$error->getMessage(), 502);
+        }
+        if (($result['ready'] ?? null) !== true) {
+            throw new TaskVmException('task_vm.image_build_failed', "Image cleanup did not confirm on [{$guest->name}].", 502);
+        }
     }
 }

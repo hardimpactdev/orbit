@@ -11,7 +11,6 @@ use App\Domain\Metrics\MetricsReconcileComponent;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Firewall\UfwRuleOwnership;
 use App\Infrastructure\Metrics\MetricsCadvisorRuntime;
 use App\Infrastructure\Metrics\MetricsExporterState;
 use App\Infrastructure\Metrics\NativeMetricsCadvisorLifecycle;
@@ -95,7 +94,7 @@ it('reports cadvisor rollback failures with the node whose state could not be re
 
         public function snapshot(Node $node, Node $metricsNode): MetricsExporterState
         {
-            return new MetricsExporterState(null, false, UfwRuleOwnership::Missing);
+            return new MetricsExporterState(null, false, null);
         }
 
         public function converge(Node $node, Node $metricsNode): void
@@ -216,7 +215,7 @@ final class CadvisorFleetRuntimeFake implements MetricsCadvisorRuntime
             throw new ResourceOperationException('metrics.cadvisor_configuration_inspection_failed', 'unreachable', 502);
         }
 
-        return new MetricsExporterState(null, false, UfwRuleOwnership::Missing);
+        return new MetricsExporterState(null, false, null);
     }
 
     public function converge(Node $node, Node $metricsNode): void

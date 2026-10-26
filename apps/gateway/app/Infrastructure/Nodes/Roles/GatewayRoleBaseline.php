@@ -15,9 +15,10 @@ use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleBaseline;
 use App\Domain\Nodes\RoleName;
 use App\Domain\WireGuard\VpnSettings;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentStep;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
-use App\Infrastructure\Processes\SystemdVpnOrderingDropIn;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -32,10 +33,10 @@ final readonly class GatewayRoleBaseline implements GatewayPrivateDnsRoute, Role
     public function __construct(
         private NodeRoleFirewallManager $firewall,
         private PrivateDnsManager $dns,
-        private NodeRolePrerequisiteCommandFactory $commands,
+        private RolePrerequisites $prerequisites,
         private DevelopmentSshExecutor $ssh,
+        private AgentCommandRunner $agents,
         private ?GrantGatewayRoleAccessAction $access = null,
-        private SystemdVpnOrderingDropIn $vpnOrdering = new SystemdVpnOrderingDropIn,
         private ?VpnSettings $vpnSettings = null,
         private GatewayPrivateDnsResolver $resolver = new GatewayPrivateDnsResolver,
         private ?NodeRoleFollowUpReport $followUps = null,
@@ -50,16 +51,29 @@ final readonly class GatewayRoleBaseline implements GatewayPrivateDnsRoute, Role
      */
     public function converge(Node $node, NodeRole $assignment): void
     {
-        $caddyPackage = $this->commands->caddyPackage($node, RoleName::Gateway);
-        if ($caddyPackage instanceof RemoteCommand) {
-            $this->run($node, $caddyPackage, 'caddy-package-source', 'gateway.caddy_install_failed');
-            $this->run(
-                $node,
-                new RemoteCommand($this->vpnOrdering->arguments('caddy'), $this->vpnOrdering->script()),
-                'caddy-ordering',
-                'gateway.caddy_start_failed',
-                60.0,
-            );
+        $caddy = $this->prerequisites->caddy($node, RoleName::Gateway);
+        if ($caddy !== null) {
+            if (! $caddy->succeeded()) {
+                throw new NodeRoleOperationException(
+                    step: 'caddy-package-source',
+                    errorCode: 'node_role.convergence_failed',
+                    underlyingErrorCode: 'gateway.caddy_install_failed',
+                    message: "Gateway role step [caddy-package-source] failed on node [{$node->name}].",
+                    result: $caddy,
+                );
+            }
+            try {
+                AgentStep::run($this->agents, $node, 'caddy.order-after-vpn', [], 'caddy-ordering', 'gateway.caddy_start_failed', 'Gateway role');
+            } catch (RuntimeConvergenceException $exception) {
+                throw new NodeRoleOperationException(
+                    step: $exception->step,
+                    errorCode: 'node_role.convergence_failed',
+                    underlyingErrorCode: $exception->errorCode,
+                    message: $exception->getMessage(),
+                    result: $exception->result,
+                    previous: $exception,
+                );
+            }
         }
         $this->firewall->converge($node, RoleName::Gateway, $node->user);
         $this->grants()->execute($node);

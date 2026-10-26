@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentBinaryInput;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
@@ -124,6 +125,21 @@ it('captures bounded command output and exit state', function (): void {
         ->toBeGreaterThanOrEqual(0);
 });
 
+it('streams output without retaining any bytes when the diagnostic bound is zero', function (): void {
+    $seen = ['stdout' => '', 'stderr' => ''];
+    $result = new NativeProcessRunner()->run(new ProcessInvocation(
+        [PHP_BINARY, '-r', 'fwrite(STDOUT, "private-pack"); fwrite(STDERR, "diagnostic");'],
+        maxOutputBytes: 0,
+        output: static function (ProcessOutput $output) use (&$seen): void {
+            $seen[$output->stream->value] .= $output->value;
+        },
+    ));
+
+    expect($seen)->toBe(['stdout' => 'private-pack', 'stderr' => 'diagnostic'])
+        ->and([$result->stdout, $result->stderr])->toBe(['', ''])
+        ->and($result->truncated)->toBeTrue();
+});
+
 it('streams protected input and removes its local file after the process exits', function (): void {
     $sensitiveValue = 'ALPHA=opaque-value';
     $input = ProtectedInput::fromString($sensitiveValue);
@@ -150,6 +166,29 @@ it('streams protected input and removes its local file after the process exits',
         ->toBeTrue()
         ->and(file_exists((string) $path))
         ->toBeFalse();
+});
+
+it('streams a binary envelope without a disk copy and can replay after an early exit', function (): void {
+    $source = tmpfile();
+    $bytes = str_repeat("PACK\0\xff\n", 20000);
+    fwrite($source, $bytes);
+    $binary = AgentBinaryInput::fromFile(stream_get_meta_data($source)['uri'], strlen($bytes));
+    $chunks = iterator_to_array($binary->envelope("header\n")->chunks());
+    expect(fstat($chunks[1])['ino'])->toBe(fstat($source)['ino']);
+    fclose($source);
+
+    $runner = new NativeProcessRunner;
+    // Symfony handles a closed input pipe. Respect its suppression of that expected EPIPE notice.
+    set_error_handler(static fn (int $severity, string $message): bool => (error_reporting() & $severity) === 0 && str_contains($message, 'Broken pipe'));
+    try {
+        $early = $runner->run(new ProcessInvocation([PHP_BINARY, '-r', 'exit(0);'], protectedInput: $binary->envelope("first\n")));
+    } finally {
+        restore_error_handler();
+    }
+    $retry = $runner->run(new ProcessInvocation([PHP_BINARY, '-r', 'echo hash("sha256", stream_get_contents(STDIN));'], protectedInput: $binary->envelope("retry\n")));
+
+    expect($early->succeeded())->toBeTrue()
+        ->and($retry->stdout)->toBe(hash('sha256', "retry\n".$bytes));
 });
 
 it('emits bounded ordered stream events at the exact byte boundary', function (int $bytes): void {

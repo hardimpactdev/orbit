@@ -10,68 +10,59 @@ use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\Processes\CommandResult;
+use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use App\Models\Process;
 use Orbit\Extensions\AiRouter\Domain\AiRouterProcess;
-use Orbit\Extensions\AiRouter\Infrastructure\AiRouterSourcePublisher;
 use Orbit\Extensions\AiRouter\Infrastructure\NativeAiRouterRuntimeLifecycle;
 use Orbit\Extensions\AiRouter\Models\AiRouterProcessSource;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
-final class CollectorActivationSsh implements SshExecutor
+final class CollectorActivationNode
 {
-    public string $source = 'previous script';
-
-    public bool $interruptPublication = false;
+    public bool $interruptRemoval = false;
 
     public string $unit = '';
 
     public string $candidate = '';
 
     public string $state = 'active';
+}
 
-    /** @var list<RemoteCommand> */
-    public array $commands = [];
-
-    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-    {
-        $this->commands[] = $command;
-        $stdout = '';
-        if (in_array('sha256sum', $command->arguments, true)) {
-            $stdout = hash('sha256', $this->source).'  /var/lib/orbit/ai-router/collector.py';
-        } elseif ($command->arguments === ['sudo', 'bash', '-seu']) {
-            $script = (string) file_get_contents(base_path('extensions/ai-router/resources/collector.py'));
-            $stdout = $script === $this->source ? AiRouterSourcePublisher::Unchanged : AiRouterSourcePublisher::Published;
-            $this->source = $script;
-            if ($this->interruptPublication) {
-                $this->interruptPublication = false;
-                throw new RuntimeException('response lost after publication');
+/** The fake runner holds only the state needed to test Gateway activation intent. */
+function collector_unit_agents(CollectorActivationNode $node): FakeAgentCommandRunner
+{
+    return new FakeAgentCommandRunner()
+        ->answer('ai-router.remove-source', static function () use ($node): array {
+            if ($node->interruptRemoval) {
+                $node->interruptRemoval = false;
+                throw new RuntimeException('response lost after source removal');
             }
-        } elseif (in_array('/dev/stdin', $command->arguments, true)) {
-            $this->candidate = $command->input ?? '';
-        } elseif (in_array('mv', $command->arguments, true)) {
-            $this->unit = $this->candidate;
-        } elseif ($command->arguments[1] === 'test' && $this->unit === '') {
-            return new CommandResult(1, '', '', 0, false);
-        } elseif (in_array('cat', $command->arguments, true)) {
-            if ($this->unit === '') {
-                return new CommandResult(1, '', '', 0, false);
-            }
-            $stdout = $this->unit;
-        } elseif (in_array('is-active', $command->arguments, true)) {
-            $stdout = $this->state;
-        }
 
-        return new CommandResult(0, $stdout, '', 0, false);
-    }
+            return ['removed' => false];
+        })
+        ->answer('processes.stage-unit', static function (array $input) use ($node): array {
+            if ($node->unit === $input['content']) {
+                return ['staged' => false, 'previous' => true, 'state' => $node->state];
+            }
+            $node->candidate = $input['content'];
+
+            return ['staged' => true, 'previous' => $node->unit !== '', 'state' => null];
+        })
+        ->answer('processes.activate-unit', static function (array $input) use ($node): array {
+            if ($input['change'] !== 'reload') {
+                $node->unit = $node->candidate;
+            }
+            $node->state = $input['desired'] === 'running' ? 'active' : 'inactive';
+
+            return ['backup_left' => false];
+        })
+        ->answer('processes.status', static fn (): array => ['state' => $node->unit === '' ? 'absent' : $node->state]);
 }
 
 beforeEach(function (): void {
@@ -79,7 +70,7 @@ beforeEach(function (): void {
     app()->instance(ProcessRuntimeManager::class, $this->runtime);
     $this->node = Node::query()->create([
         'name' => 'collector', 'status' => LifecycleStatus::Active,
-        'platform' => 'linux', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.8', 'public_ssh_host' => '192.0.2.8',
+        'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.8', 'public_ssh_host' => '192.0.2.8',
     ]);
     $this->environment = ['AI_ROUTER_CACHE_HOST' => '10.44.0.9', 'AI_ROUTER_CACHE_PASSWORD' => 'secret'];
     $this->process = app(CreateProcessAction::class)->execute(AiRouterProcess::data($this->node, $this->environment))['process'];
@@ -87,24 +78,19 @@ beforeEach(function (): void {
         'process_id' => $this->process->id,
         'source_revision' => hash('sha256', 'previous script'),
     ]);
-    $keys = Mockery::mock(SshKeyProvider::class);
-    $keys->shouldReceive('privateKeyPath')->andReturn('/tmp/test-key');
-    app()->instance(SshKeyProvider::class, $keys);
-    $hosts = Mockery::mock(KnownHostsStore::class);
-    $hosts->shouldReceive('path')->andReturn('/tmp/test-known-hosts');
-    app()->instance(KnownHostsStore::class, $hosts);
-    $this->ssh = new CollectorActivationSsh;
-    app()->instance(SshExecutor::class, $this->ssh);
+    $this->remote = new CollectorActivationNode;
+    app()->instance(AgentCommandRunner::class, collector_unit_agents($this->remote));
+    $this->pin = app(AgentDelivery::class)->pin($this->node);
 });
 
-it('recovers source publication with a lost response and leaves completed retries untouched', function (bool $legacy): void {
+it('recovers source removal with a lost response and leaves completed retries untouched', function (bool $legacy): void {
     if ($legacy) {
         $this->source->source_revision = null;
         $this->source->save();
         $this->process->systemd_activation_hash = null;
         $this->process->save();
     }
-    $this->ssh->interruptPublication = true;
+    $this->remote->interruptRemoval = true;
     $lifecycle = app(NativeAiRouterRuntimeLifecycle::class);
     expect(fn () => $lifecycle->converge($this->node, $this->environment))->toThrow(RuntimeException::class, 'response lost');
     expect($this->source->refresh()->source_revision)->toBeNull()
@@ -112,14 +98,14 @@ it('recovers source publication with a lost response and leaves completed retrie
         ->and($this->runtime->restarted)->toBeEmpty();
     $lifecycle->converge($this->node, $this->environment);
     expect($this->runtime->restarted)->toBeEmpty()
-        ->and($this->source->refresh()->source_revision)->toBe(hash('sha256', $this->ssh->source))
+        ->and($this->source->refresh()->source_revision)->toBe($this->pin)
         ->and($this->source->refresh()->activation_pending)->toBeFalse()
         ->and(Process::query()->where('name', AiRouterProcess::NAME)->sole()->id)->toBe($this->process->id);
     $lifecycle->converge($this->node, $this->environment);
     expect($this->runtime->restarted)->toBeEmpty();
 })->with([false, true]);
 
-it('retains pending source activation if publication succeeds but Process convergence is interrupted', function (): void {
+it('retains pending source activation if source removal succeeds but Process convergence is interrupted', function (): void {
     $lifecycle = app(NativeAiRouterRuntimeLifecycle::class);
     $this->runtime->failConverge = true;
     expect(fn () => $lifecycle->converge($this->node, $this->environment))->toThrow(ProcessOperationException::class);
@@ -145,7 +131,7 @@ it('retains source activation intent when unit convergence fails and retries it'
     expect($this->source->refresh()->source_revision)->toBeNull()
         ->and($this->source->refresh()->activation_pending)->toBeTrue();
     $lifecycle->converge($this->node, $this->environment);
-    expect($this->source->refresh()->source_revision)->toBe(hash('sha256', $this->ssh->source));
+    expect($this->source->refresh()->source_revision)->toBe($this->pin);
     $lifecycle->converge($this->node, $this->environment);
 });
 
@@ -155,14 +141,15 @@ it('records a stopped collectors source revision without starting it', function 
     $lifecycle->converge($this->node, $this->environment);
     $lifecycle->converge($this->node, $this->environment);
     expect($this->process->refresh()->desired_state->value)->toBe('stopped')
-        ->and($this->source->refresh()->source_revision)->toBe(hash('sha256', $this->ssh->source))
+        ->and($this->source->refresh()->source_revision)->toBe($this->pin)
         ->and($this->source->refresh()->activation_pending)->toBeFalse()
         ->and($this->runtime->restarted)->toBeEmpty()
         ->and($this->runtime->started)->toBeEmpty();
 });
 
-it('leaves an unchanged migrated collector untouched on upgrade', function (string $desired, string $state, bool $legacy): void {
-    $this->source->source_revision = $legacy ? null : hash_file('sha256', base_path('extensions/ai-router/resources/collector.py'));
+it('leaves an unchanged completed collector untouched', function (string $desired, string $state): void {
+    $legacy = false;
+    $this->source->source_revision = $legacy ? null : $this->pin;
     $this->source->save();
     $this->process->systemd_activation_hash = null;
     $this->process->desired_state = DesiredProcessState::from($desired);
@@ -176,20 +163,19 @@ it('leaves an unchanged migrated collector untouched on upgrade', function (stri
     $accounts->shouldReceive('resolve')->andReturn($account);
     app()->instance(ManagedUserAccountResolver::class, $accounts);
     $target = new ProcessTargetResolver()->forInstallation($this->process);
-    $this->ssh->unit = new SystemdProcessRenderer()->render($this->process, $target, $account);
-    $this->ssh->source = (string) file_get_contents(base_path('extensions/ai-router/resources/collector.py'));
-    $this->ssh->state = $state;
+    $this->remote->unit = new SystemdProcessRenderer()->render($this->process, $target, $account);
+    $this->remote->state = $state;
+    $agents = collector_unit_agents($this->remote);
+    app()->instance(AgentCommandRunner::class, $agents);
     app()->instance(ProcessRuntimeManager::class, app(RemoteProcessRuntimeManager::class));
     $lifecycle = app(NativeAiRouterRuntimeLifecycle::class);
     $lifecycle->converge($this->node, $this->environment);
     $lifecycle->converge($this->node, $this->environment);
     expect($this->process->refresh()->systemd_activation_hash)->toBeNull()
         ->and($this->process->systemd_activation_pending)->toBeFalse()
-        ->and($this->source->refresh()->activation_pending)->toBeFalse();
-    foreach ($this->ssh->commands as $command) {
-        expect(array_intersect($command->arguments, ['restart', 'daemon-reload', 'mv', 'install', 'disable', 'stop', 'start']))->toBeEmpty();
-    }
-})->with([['running', 'active', true], ['stopped', 'inactive', true], ['running', 'active', false], ['stopped', 'inactive', false]]);
+        ->and($this->source->refresh()->activation_pending)->toBeFalse()
+        ->and($agents->commands())->not->toContain('processes.activate-unit', 'processes.control');
+})->with([['running', 'active'], ['stopped', 'inactive']]);
 
 it('activates changed source once through unit convergence and leaves the next converge untouched', function (string $unit): void {
     $accounts = Mockery::mock(ManagedUserAccountResolver::class);
@@ -198,17 +184,40 @@ it('activates changed source once through unit convergence and leaves the next c
     app()->instance(ManagedUserAccountResolver::class, $accounts);
     $renderer = new SystemdProcessRenderer;
     $target = new ProcessTargetResolver()->forInstallation($this->process);
-    $this->ssh->unit = match ($unit) {
+    $this->remote->unit = match ($unit) {
         'matching' => $renderer->render($this->process, $target, $account),
         'changed' => $renderer->render($this->process, $target, $account)."# previous unit\n",
         'absent' => '',
     };
+    $agents = collector_unit_agents($this->remote);
+    app()->instance(AgentCommandRunner::class, $agents);
     app()->instance(ProcessRuntimeManager::class, app(RemoteProcessRuntimeManager::class));
     $lifecycle = app(NativeAiRouterRuntimeLifecycle::class);
     $lifecycle->converge($this->node, $this->environment);
     $lifecycle->converge($this->node, $this->environment);
-    $starts = array_filter($this->ssh->commands, fn (RemoteCommand $command): bool => $command->arguments === ['sudo', 'systemctl', 'restart', 'orbit-process-'.$this->process->id.'-ai-router-collector.service']);
+    $starts = array_filter($agents->calls, static fn (array $call): bool => $call['command'] === 'processes.activate-unit' && $call['input']['desired'] === 'running');
     expect($starts)->toHaveCount(1)
         ->and($this->source->refresh()->activation_pending)->toBeFalse()
         ->and($this->process->refresh()->systemd_activation_pending)->toBeFalse();
 })->with(['matching', 'changed', 'absent']);
+
+it('removes the owned Process before its source cleanup', function (): void {
+    $agents = new FakeAgentCommandRunner()->answer('ai-router.remove-source', function (array $input): array {
+        expect($input)->toBe(['retired' => false])
+            ->and(Process::query()->whereKey($this->process->id)->exists())->toBeFalse();
+
+        return ['removed' => false];
+    });
+    app()->instance(AgentCommandRunner::class, $agents);
+    app(NativeAiRouterRuntimeLifecycle::class)->remove($this->node);
+    expect($agents->commands())->toBe(['ai-router.remove-source']);
+});
+
+it('maps native source removal refusals and keeps activation pending', function (): void {
+    $agents = new FakeAgentCommandRunner()->refuse('ai-router.remove-source', 'ai-router.source_unsafe');
+    app()->instance(AgentCommandRunner::class, $agents);
+    expect(fn () => app(NativeAiRouterRuntimeLifecycle::class)->converge($this->node, $this->environment))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('ai_router.source_removal_failed'));
+    expect($this->source->refresh()->activation_pending)->toBeTrue()
+        ->and($this->source->source_revision)->toBeNull();
+});

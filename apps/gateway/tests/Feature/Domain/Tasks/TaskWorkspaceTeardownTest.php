@@ -35,7 +35,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
 use App\Models\Task;
-use Tests\Support\LifecycleSshExecutor;
+use Tests\Support\LifecycleAgent;
 
 beforeEach(function (): void {
     bind_task_node_reachability();
@@ -301,7 +301,7 @@ function task_teardown_instance(Project $project, Node $node, string $name, ?str
 function task_teardown_harness(): TaskTeardownHarness
 {
     $harness = new TaskTeardownHarness;
-    $harness->transport = new LifecycleSshExecutor(result: fn (): int => $harness->exit);
+    $harness->transport = new LifecycleAgent(result: fn (): int => $harness->exit);
     $harness->source = new TaskTeardownSource;
     $harness->routes = new TaskTeardownRoutes;
     app()->instance(InstanceRemover::class, new DestroyInstanceAction(
@@ -332,7 +332,7 @@ function task_teardown_expect_commands(TaskTeardownHarness $harness, array $chec
 
     expect($seen)->toBe($expected)
         ->and(array_values(array_unique(array_column($harness->transport->inputs, 'command'))))->toBe(['project-cleanup'])
-        ->and(implode("\n", $harness->transport->shells))->not->toContain('e2e-bridge')
+        ->and(array_column($harness->transport->inputs, 'command'))->not->toContain('e2e-bridge')
         ->and(array_values(array_unique($harness->source->forces)))->toBe([true])
         ->and($harness->routes->cleared)->toBe([]);
 }
@@ -349,7 +349,7 @@ final class TaskTeardownHarness
 {
     public int $exit = 0;
 
-    public LifecycleSshExecutor $transport;
+    public LifecycleAgent $transport;
 
     public TaskTeardownSource $source;
 

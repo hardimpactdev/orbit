@@ -8,14 +8,14 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\UbuntuRelease;
 use App\Domain\RemotePrograms\ProgramResult;
-use App\Domain\RemotePrograms\RemoteProgramFailed;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\AppProd\ProductionSshExecutor;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentInvocation;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
+use App\Infrastructure\AgentCommands\AgentStep;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\MachineSoftware\PhpBuildInstaller;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
-use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
-use App\Infrastructure\RemotePrograms\SshProgramRunner;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 use Illuminate\Support\Collection;
@@ -55,35 +55,34 @@ final readonly class RemotePhpPackageManager
 
     public function __construct(
         private ?MachineRecipe $recipe = null,
-        private RemoteProgramCatalog $catalog = new RemoteProgramCatalog,
+        private ?AgentCommandRunner $agents = null,
     ) {}
 
     /** @param Collection<int, string> $versions */
-    public function installForAppDev(Node $node, Collection $versions, DevelopmentSshExecutor $ssh): void
+    public function installForAppDev(Node $node, Collection $versions): void
     {
-        $this->install($node, $versions, $ssh, RoleName::AppDev, profile: 'app-dev');
+        $this->install($node, $versions, RoleName::AppDev, profile: 'app-dev');
     }
 
     /** @param Collection<int, string> $versions */
     public function installForInstance(
         Node $node,
         Collection $versions,
-        DevelopmentSshExecutor $ssh,
         RoleName $role,
     ): void {
         $profile = $role === RoleName::AppProd && ! $node->roles->pluck('role')->contains(RoleName::AppDev)
             ? 'app-prod'
             : 'app-dev';
 
-        $this->install($node, $versions, $ssh, $role, $profile);
+        $this->install($node, $versions, $role, $profile);
     }
 
     /** @param Collection<int, string> $versions */
-    public function installForAppProd(Node $node, Collection $versions, ProductionSshExecutor $ssh): void
+    public function installForAppProd(Node $node, Collection $versions): void
     {
         $profile = $node->roles->pluck('role')->contains(RoleName::AppDev) ? 'app-dev' : 'app-prod';
 
-        $this->install($node, $versions, $ssh, RoleName::AppProd, $profile);
+        $this->install($node, $versions, RoleName::AppProd, $profile);
     }
 
     /**
@@ -92,13 +91,13 @@ final readonly class RemotePhpPackageManager
      *
      * @param  Collection<int, string>  $versions
      */
-    public function installPackagesOnlyForAppProd(Node $node, Collection $versions, ProductionSshExecutor $ssh): void
+    public function installPackagesOnlyForAppProd(Node $node, Collection $versions): void
     {
         if ($versions->isEmpty()) {
             return;
         }
 
-        $this->runInstaller($node, array_values($versions->all()), $ssh, self::APP_PROD_FAILURE_CONTRACT, RoleName::AppProd, $this->pcov($node), fpm: 'none', opentelemetry: $this->opentelemetry($node));
+        $this->runInstaller($node, array_values($versions->all()), self::APP_PROD_FAILURE_CONTRACT, RoleName::AppProd, $this->pcov($node), fpm: 'none', opentelemetry: $this->opentelemetry($node));
     }
 
     /**
@@ -108,11 +107,11 @@ final readonly class RemotePhpPackageManager
      * @param  list<string>  $versions
      * @return array<string, RemoteCommand> keyed `install` and the version
      */
-    public function appDevPrograms(array $versions): array
+    public function appDevPrograms(Node $node, array $versions): array
     {
-        $programs = ['install' => $this->installerCommand($versions, RoleName::AppDev, pcov: true, fpm: 'shared', opentelemetry: in_array('app-dev', ($this->recipe ?? new RecipeLoader()->load())->phpPolicy->opentelemetryProfiles, true))];
+        $programs = ['install' => $this->installerCommand($node, $versions, RoleName::AppDev, pcov: true, fpm: 'shared', opentelemetry: in_array('app-dev', ($this->recipe ?? new RecipeLoader()->load())->phpPolicy->opentelemetryProfiles, true))];
         foreach (array_values(array_unique($versions)) as $version) {
-            $programs[$version] = $this->profileCommand($version, 'app-dev', RoleName::AppDev);
+            $programs[$version] = app(AgentInvocation::class)->command($node, 'php.configure-runtime', $this->profileInput($version, 'app-dev', RoleName::AppDev));
         }
 
         return $programs;
@@ -124,7 +123,6 @@ final readonly class RemotePhpPackageManager
     private function install(
         Node $node,
         Collection $versions,
-        DevelopmentSshExecutor|ProductionSshExecutor $ssh,
         RoleName $role,
         string $profile,
     ): void {
@@ -138,26 +136,23 @@ final readonly class RemotePhpPackageManager
         }
 
         $selected = array_values(array_unique($versions->all()));
-        $this->runInstaller($node, $selected, $ssh, $failure, $role, pcov: $this->pcov($node), fpm: 'shared', opentelemetry: $this->opentelemetry($node));
+        $this->runInstaller($node, $selected, $failure, $role, pcov: $this->pcov($node), fpm: 'shared', opentelemetry: $this->opentelemetry($node));
 
         foreach ($selected as $version) {
-            $ssh->execute(
-                $node,
-                $this->profileCommand($version, $profile, $role),
-                step: $failure['install_step'],
-                errorCode: $failure['install_error'],
-            );
+            AgentStep::run($this->agents ?? app(AgentCommandRunner::class), $node, 'php.configure-runtime',
+                $this->profileInput($version, $profile, $role),
+                step: $failure['install_step'], errorCode: $failure['install_error'], label: 'PHP runtime');
         }
     }
 
     /**
      * @param  list<string>  $versions
      * @param  array{source_step: string, source_error: string, install_step: string, install_error: string}  $failure
+     * @param  'none'|'shared'  $fpm
      */
     private function runInstaller(
         Node $node,
         array $versions,
-        DevelopmentSshExecutor|ProductionSshExecutor $ssh,
         array $failure,
         RoleName $role,
         bool $pcov,
@@ -174,18 +169,18 @@ final readonly class RemotePhpPackageManager
                 );
             }
         }
-        $command = $this->installerCommand($versions, $role, $pcov, $fpm, $opentelemetry);
-        $result = $ssh->execute($node, $command, step: $failure['source_step'], errorCode: $failure['source_error']);
-        $program = $this->catalog->program(PhpBuildInstaller::Program);
         try {
-            $outcome = SshProgramRunner::pythonResult($program, $result);
-        } catch (RemoteProgramFailed $exception) {
+            $outcome = new PhpBuildInstaller($this->agents ?? app(AgentCommandRunner::class))->run(
+                $node, $recipe, $versions, 'apply', $pcov, 'keep', $fpm, $opentelemetry, $this->release($role),
+            );
+        } catch (AgentRunnerFailure $exception) {
+            if ($exception->kind === AgentRunnerFailure::Timeout) {
+                throw $exception;
+            }
             throw new RuntimeConvergenceException(
-                step: $failure['install_step'],
-                errorCode: $failure['install_error'],
+                step: $failure['install_step'], errorCode: $failure['install_error'],
                 message: "The PHP build installer ended without a result on node [{$node->name}].",
-                previous: $exception,
-                result: $result,
+                previous: $exception, result: $exception->result,
             );
         }
         if (in_array($outcome->outcome, PhpBuildInstaller::Succeeded, true)) {
@@ -200,24 +195,17 @@ final readonly class RemotePhpPackageManager
             message: $outcome->outcome === 'platform_unsupported'
                 ? UbuntuRelease::unsupportedText($outcome->string('id') ?? '', $outcome->string('codename') ?? '')
                 : PhpBuildInstaller::describe($outcome),
-            result: $result,
+            result: AgentStep::output(new AgentCommandRefused('php.install-build', 'php.build_'.$outcome->outcome, PhpBuildInstaller::describe($outcome), $outcome->data)),
         );
     }
 
     /** @param  list<string>  $versions */
-    private function installerCommand(array $versions, RoleName $role, bool $pcov, string $fpm, bool $opentelemetry): RemoteCommand
+    private function installerCommand(Node $node, array $versions, RoleName $role, bool $pcov, string $fpm, bool $opentelemetry): RemoteCommand
     {
         $recipe = $this->recipe ?? new RecipeLoader()->load();
-        $release = [
-            'id' => self::EXPECTED_DISTRIBUTION,
-            'codenames' => array_map(static fn (UbuntuRelease $release): string => $release->value, UbuntuRelease::forRole($role)),
-        ];
+        $input = PhpBuildInstaller::input($recipe, $versions, $pcov, extras: 'keep', fpm: $fpm, release: $this->release($role), opentelemetry: $opentelemetry);
 
-        return SshProgramRunner::pythonCommand(
-            $this->catalog->program(PhpBuildInstaller::Program),
-            $this->catalog->bootstrap(),
-            PhpBuildInstaller::input($recipe, $versions, 'apply', $pcov, extras: 'keep', fpm: $fpm, release: $release, opentelemetry: $opentelemetry),
-        );
+        return app(AgentInvocation::class)->command($node, 'php.install-build', $input);
     }
 
     /**
@@ -255,126 +243,15 @@ final readonly class RemotePhpPackageManager
         }
     }
 
-    /**
-     * Publishes the Orbit runtime module of one version. Installation enables the shared FPM service but never starts
-     * it. The caller starts or reloads it after it publishes the pools, so a stale pool that stops FPM from starting
-     * cannot block the publication that removes it. A changed runtime module reloads a running FPM only when the
-     * installed configuration passes `php-fpm -t`; otherwise the pool publication reloads it.
-     */
-    private function profileCommand(string $version, string $profile, RoleName $role): RemoteCommand
+    /** @return array<string, mixed> */
+    private function profileInput(string $version, string $profile, RoleName $role): array
     {
-        return new RemoteCommand(
-            arguments: [
-                'bash',
-                '-seu',
-                '--',
-                $version,
-                $profile,
-                base64_encode(new PhpFpmRuntimeIniRenderer()->render($profile)),
-                ...$this->releaseArguments($role),
-            ],
-            input: <<<'BASH'
-                version=$1
-                profile=$2
-                runtime_ini=$3
-                shift 3
-                BASH."\n".OsReleaseParserProgram::render()."\n".<<<'BASH'
-                packages_changed=0
-                runtime_module=orbit-runtime
-                runtime_available="/etc/php/$version/mods-available/$runtime_module.ini"
-                runtime_enabled="/etc/php/$version/fpm/conf.d/99-$runtime_module.ini"
-                runtime_work=$(mktemp -d)
-                runtime_candidate="$runtime_work/candidate.ini"
-                runtime_backup="$runtime_work/previous.ini"
-                printf '%s' "$runtime_ini" | base64 --decode > "$runtime_candidate"
-                runtime_had_file=0
-                if [ -f "$runtime_available" ]; then
-                    cp -- "$runtime_available" "$runtime_backup"
-                    runtime_had_file=1
-                fi
-                runtime_had_link=0
-                if [ -L "$runtime_enabled" ]; then
-                    runtime_had_link=1
-                fi
-                runtime_changed=$packages_changed
-                restore_runtime() {
-                    status=$?
-                    trap - EXIT
-                    if [ "$status" -ne 0 ] && [ "$runtime_changed" = 1 ]; then
-                        if [ "$runtime_had_file" = 1 ]; then
-                            sudo install -o root -g root -m 0644 -- "$runtime_backup" "$runtime_available"
-                        else
-                            sudo rm -f -- "$runtime_available"
-                        fi
-                        if [ "$runtime_had_link" = 0 ]; then
-                            sudo rm -f -- "$runtime_enabled"
-                        fi
-                        if sudo systemctl is-active --quiet "php$version-fpm.service" \
-                            && sudo /usr/sbin/php-fpm"$version" -t >/dev/null 2>&1
-                        then
-                            sudo systemctl reload-or-restart "php$version-fpm.service" || true
-                        fi
-                    fi
-                    rm -rf -- "$runtime_work"
-                    exit "$status"
-                }
-                trap restore_runtime EXIT
-                if [ "$runtime_had_file" = 0 ] || ! cmp -s -- "$runtime_candidate" "$runtime_available"; then
-                    sudo install -o root -g root -m 0644 -- "$runtime_candidate" "$runtime_available"
-                    runtime_changed=1
-                fi
-                if [ "$runtime_had_link" = 0 ] || [ "$(readlink -f -- "$runtime_enabled")" != "$runtime_available" ]; then
-                    sudo phpenmod -v "$version" -s fpm "$runtime_module"
-                    runtime_changed=1
-                fi
-                test -L "$runtime_enabled"
-                test "$(readlink -f -- "$runtime_enabled")" = "$runtime_available"
-                fpm_ini=$(/usr/sbin/php-fpm"$version" -i)
-                printf '%s\n' "$fpm_ini" | grep -qF -- "$runtime_enabled"
-                while IFS= read -r runtime_line || [ -n "$runtime_line" ]; do
-                    case "$runtime_line" in ''|';'*) continue ;; esac
-                    runtime_key=${runtime_line%%=*}
-                    runtime_key=${runtime_key%"${runtime_key##*[! ]}"}
-                    runtime_value=${runtime_line#*=}
-                    runtime_value=${runtime_value#"${runtime_value%%[! ]*}"}
-                    if ! printf '%s\n' "$fpm_ini" | grep -qxF -- "$runtime_key => $runtime_value => $runtime_value"; then
-                        printf 'PHP %s fpm does not apply %s = %s from %s; an unmanaged ini overrides it.\n' \
-                            "$version" "$runtime_key" "$runtime_value" "$runtime_enabled" >&2
-                        exit 1
-                    fi
-                done < "$runtime_candidate"
-                if [ "$runtime_changed" = 1 ] \
-                    && sudo systemctl is-active --quiet "php$version-fpm.service" \
-                    && sudo /usr/sbin/php-fpm"$version" -t >/dev/null 2>&1
-                then
-                    sudo systemctl reload-or-restart "php$version-fpm.service"
-                fi
-                trap - EXIT
-                rm -rf -- "$runtime_work"
-                sudo systemctl enable "php$version-fpm.service"
-                /usr/bin/php"$version" -v >/dev/null
-                /usr/sbin/php-fpm"$version" -v >/dev/null
-                fpm_modules=$(/usr/sbin/php-fpm"$version" -m | tr '[:upper:]' '[:lower:]')
-                if printf '%s\n' "$fpm_modules" | grep -qxF pcov; then
-                    printf 'PHP %s FPM loads PCOV.\n' "$version" >&2
-                    exit 1
-                fi
-                sudo systemctl is-enabled --quiet "php$version-fpm.service"
-                BASH,
-        );
+        return ['version' => $version, 'runtime_ini' => new PhpFpmRuntimeIniRenderer()->render($profile), 'release' => $this->release($role)];
     }
 
-    /** @return list<string> */
-    private function releaseArguments(RoleName $role): array
+    /** @return array{id: string, codenames: list<string>} */
+    private function release(RoleName $role): array
     {
-        return [
-            self::EXPECTED_DISTRIBUTION,
-            UbuntuRelease::unsupportedText(),
-            (string) count(UbuntuRelease::forRole($role)),
-            ...array_map(
-                static fn (UbuntuRelease $release): string => $release->value,
-                UbuntuRelease::forRole($role),
-            ),
-        ];
+        return ['id' => self::EXPECTED_DISTRIBUTION, 'codenames' => array_map(static fn (UbuntuRelease $release): string => $release->value, UbuntuRelease::forRole($role))];
     }
 }

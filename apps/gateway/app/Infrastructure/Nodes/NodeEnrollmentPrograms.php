@@ -7,10 +7,11 @@ namespace App\Infrastructure\Nodes;
 use App\Domain\Instances\InstancePhpVersionCatalog;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\RoleName;
-use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
+use App\Infrastructure\AgentCommands\AgentInvocation;
+use App\Infrastructure\MachineSoftware\NodeRecipeProgram;
+use App\Infrastructure\Nodes\Roles\RolePrerequisites;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\TaskVms\TaskVmImageRecipe;
-use App\Infrastructure\Tools\ComposerToolManager;
 use App\Infrastructure\Tools\VpToolManager;
 use App\Models\Node;
 use InvalidArgumentException;
@@ -41,16 +42,17 @@ final readonly class NodeEnrollmentPrograms
 
     public function __construct(
         private NodeBootstrapCommandFactory $bootstrap,
-        private NodeRolePrerequisiteCommandFactory $roles,
+        private RolePrerequisites $roles,
+        private AgentInvocation $agent,
         private VpToolManager $vp,
-        private ComposerToolManager $composer,
         private RemotePhpPackageManager $php,
         private InstancePhpVersionCatalog $phpVersions,
     ) {}
 
     /**
      * The bootstrap program, then for each role in order its pinned Caddy package (once for all roles) and its
-     * prerequisites. An application role then materializes the Vite+ and Composer managers, and `app-dev` adds the
+     * prerequisites. An application role then installs its pinned JavaScript runtimes and materializes the Vite+ and
+     * Composer managers, and `app-dev` adds the
      * PHP packages of every PHP version an Instance can select. No roles renders the bootstrap of a roleless
      * operator Node. Each program runs as `orbit` and starts with `sudo`.
      *
@@ -59,12 +61,12 @@ final readonly class NodeEnrollmentPrograms
      *
      * @throws InvalidArgumentException for a repeated role or a role this cannot render
      */
-    public function render(array $roles): array
+    public function render(array $roles, string $architecture = 'x86_64'): array
     {
-        $node = new Node(['name' => 'node-programs', 'platform' => 'linux', 'user' => self::ManagedUser]);
+        $node = new Node(['name' => 'node-programs', 'platform' => 'linux', 'user' => self::ManagedUser, 'architecture' => $architecture]);
         $account = new ManagedUserAccount(self::ManagedUser, self::ManagedUser, '/home/'.self::ManagedUser);
 
-        $programs = [EnrollmentProgram::Bootstrap => $this->bootstrap->makeWithPasswordlessSudo($node, self::ManagedUser, rolelessOperator: $roles === [])];
+        $programs = [EnrollmentProgram::Bootstrap => $this->agent->command($node, 'nodes.bootstrap', $this->bootstrap->input($node, self::ManagedUser, rolelessOperator: $roles === []))];
         $rendered = [];
         foreach ($roles as $role) {
             if (in_array($role, $rendered, strict: true)) {
@@ -75,20 +77,23 @@ final readonly class NodeEnrollmentPrograms
             }
             $rendered[] = $role;
 
-            $caddy = $this->roles->caddyPackage($node, $role);
-            if ($caddy instanceof RemoteCommand) {
-                $programs[EnrollmentProgram::CaddyPackage] ??= $caddy;
+            if ($this->roles->needsCaddy($node, $role)) {
+                $programs[EnrollmentProgram::CaddyPackage] ??= $this->agent->command($node, 'caddy.install-package', AgentCaddyPackage::input());
             }
             // The gateway role has no prerequisites program; its Caddy follows the VPN through a role step.
             if ($role !== RoleName::Gateway) {
-                $programs[EnrollmentProgram::prerequisites($role)] = $this->roles->make($node, $role, $account);
+                $programs[EnrollmentProgram::prerequisites($role)] = $this->agent->command($node, 'roles.install-prerequisites', $this->roles->input($node, $role, $account));
+            }
+            $javascript = $role === RoleName::AppDev || $role === RoleName::AppProd ? NodeRecipeProgram::javascript($node, $role) : null;
+            if ($javascript !== null) {
+                $programs[EnrollmentProgram::JavascriptRuntime] ??= $this->agent->command($node, 'recipe.install-javascript', $javascript);
             }
             if ($role === RoleName::AppDev || $role === RoleName::AppProd) {
-                $programs[EnrollmentProgram::VpManager] ??= $this->vp->materializeCommand($node);
-                $programs[EnrollmentProgram::ComposerManager] ??= $this->composer->materializeCommand($node);
+                $programs[EnrollmentProgram::VpManager] ??= $this->agent->command($node, 'tools.materialize-vp', $this->vp->materializeInput($node));
+                $programs[EnrollmentProgram::ComposerManager] ??= $this->agent->command($node, 'tools.materialize-composer', ['user' => $node->user]);
             }
             if ($role === RoleName::AppDev) {
-                foreach ($this->php->appDevPrograms($this->phpVersions->versions()) as $name => $program) {
+                foreach ($this->php->appDevPrograms($node, $this->phpVersions->versions()) as $name => $program) {
                     $programs[EnrollmentProgram::AppDevPhp.'-'.str_replace('.', '-', (string) $name)] = $program;
                 }
             }

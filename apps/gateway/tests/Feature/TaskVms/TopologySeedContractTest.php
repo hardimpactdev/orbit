@@ -7,24 +7,19 @@ use Symfony\Component\Process\Process;
 
 /**
  * The names of the topology seed (ADR 0222) live in four places that never load each other: the Gateway, which attaches
- * the disk; the program that builds the seed; the harness, which copies Nodes; and host setup in the task VM, which
+ * the disk; the agent that builds the seed; the harness, which copies Nodes; and host setup in the task VM, which
  * adopts the clone. This test reads each one as its own runtime does and checks that they agree.
  */
-it('names the seed disk, pool, and template the same in the Gateway, the seed program, the harness, and host setup', function (): void {
+it('names the seed disk, pool, and template the same in the Gateway, the agent, the harness, and host setup', function (): void {
     $root = dirname(base_path(), 2);
 
-    // The program: its constants and its device path, evaluated by Python from the program's own source.
-    $program = new Process(['python3', '-I', '-c', <<<'PY'
-        import ast, json, sys
-        tree = ast.parse(open(sys.argv[1]).read())
-        kept = [node for node in tree.body if (isinstance(node, ast.Assign) and node.targets[0].id in ('GUEST_POOL', 'TEMPLATE'))
-                or (isinstance(node, ast.FunctionDef) and node.name == 'guest_device')]
-        scope = {}
-        exec(compile(ast.Module(body=kept, type_ignores=[]), 'program', 'exec'), scope)
-        print(json.dumps({'pool': scope['GUEST_POOL'], 'template': scope['TEMPLATE'], 'device': scope['guest_device'](sys.argv[2])}))
-        PY, resource_path('remote/task-vms/build-topology-seed.py'), TaskVmVolumes::SeedDevice]);
-    $program->mustRun();
-    $seed = json_decode($program->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+    // Rust owns these fixed names; compare them with the independent harness and disk attachment.
+    $source = (string) file_get_contents("{$root}/apps/agent/src/commands/incus/seed.rs");
+    preg_match_all('/const (POOL|TEMPLATE|DEVICE): &str =\s*"([^"]+)";/', $source, $constants, PREG_SET_ORDER);
+    $seed = [];
+    foreach ($constants as $constant) {
+        $seed[strtolower($constant[1])] = $constant[2];
+    }
 
     // Host setup: its assignments, evaluated by Bash.
     $setup = new Process(['bash', '-c', 'eval "$(grep -E "^(pool|template|seed_device|device)=" "$1")"; printf "%s\n" "$pool" "$template" "$seed_device" "$device"', 'host-setup', "{$root}/bin/e2e-topology-host-setup"]);

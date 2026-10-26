@@ -14,7 +14,6 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshHostKeyScanException;
-use App\Infrastructure\Ssh\SshHostKeyScanner;
 use App\Models\Node;
 use PHPUnit\Framework\AssertionFailedError;
 use Tests\Support\FakeHostKeyScanner;
@@ -42,7 +41,7 @@ it('fakes SSH execution by default in Feature tests', function (): void {
 it('fakes host key scans by default without reaching the host or its jump host', function (bool $jump): void {
     $scanner = app(HostKeyScanner::class);
     expect($scanner)->toBeInstanceOf(FakeHostKeyScanner::class);
-    $via = $jump ? new SshConnection('10.44.0.7', 'orbit', 22, '/keys/id', '/keys/known_hosts') : null;
+    $via = $jump ? new Node(['name' => 'jump', 'wireguard_ip' => '10.44.0.7', 'user' => 'orbit']) : null;
 
     expect(fn () => $scanner->scan('192.0.2.91', 2222, $via))
         ->toThrow(SshHostKeyScanException::class, 'Feature tests fake host key scans');
@@ -84,17 +83,12 @@ it('allows tests to opt into real SSH implementations with a recording process r
     };
     app()->instance(ProcessRunner::class, $runner);
     app()->bind(SshExecutor::class, NativeSshExecutor::class);
-    app()->bind(HostKeyScanner::class, SshHostKeyScanner::class);
 
     $result = app(SshExecutor::class)->execute(
         new SshConnection('192.0.2.91', 'orbit', 22, '/keys/id', '/keys/known_hosts', shareConnection: false),
         new RemoteCommand(['true']),
     );
-    expect(fn () => app(HostKeyScanner::class)->scan('192.0.2.91', 22))
-        ->toThrow(SshHostKeyScanException::class, 'Could not scan the SSH host key');
-
     expect($result->stderr)->toBe('recorded transport failure')
-        ->and($runner->calls)->toHaveCount(2)
-        ->and($runner->calls[0]->arguments[0])->toBe('ssh')
-        ->and($runner->calls[1]->arguments)->toBe(['ssh-keyscan', '-T', '10', '-p', '22', '--', '192.0.2.91']);
+        ->and($runner->calls)->toHaveCount(1)
+        ->and($runner->calls[0]->arguments[0])->toBe('ssh');
 });

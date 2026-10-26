@@ -15,20 +15,21 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerMaterializer;
+use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\HostKeyScanner;
 use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
+use Tests\Support\FakeMacAdmissionAgentRunner;
 use Tests\Support\FakeNodeAgentRuntime;
 use Tests\Support\FakeToolManagerMaterializer;
 
 beforeEach(function (): void {
-    $this->ssh = new EnrollmentSsh;
+    $this->ssh = new FakeMacAdmissionAgentRunner;
     $this->scanner = new EnrollmentScanner;
     $this->knownHosts = new EnrollmentKnownHosts;
     $this->agent = new FakeNodeAgentRuntime;
@@ -41,7 +42,7 @@ beforeEach(function (): void {
             Node $node,
             NodeProvisioningIdentity $identity,
             ?string $expectedSshHostFingerprint = null,
-            bool $rolelessOperator = false,
+            bool $rolelessOperator = false, ?Closure $recordObservation = null,
         ): NodeObservation {
             $this->calls++;
 
@@ -91,7 +92,7 @@ beforeEach(function (): void {
             $this->calls++;
         }
     };
-    app()->instance(SshExecutor::class, $this->ssh);
+    app()->instance(AdmissionAgentRunner::class, $this->ssh);
     app()->instance(HostKeyScanner::class, $this->scanner);
     app()->instance(SshKeyProvider::class, new EnrollmentKeys);
     app()->instance(KnownHostsStore::class, $this->knownHosts);
@@ -321,10 +322,10 @@ it('refuses a new mac enrollment that omits the account, mixes accounts, or omit
 
 it('leaves a new mac failed and unpinned when the account or platform check fails', function (string $kind, string $step, string $code): void {
     if ($kind === 'account') {
-        $this->ssh->accountOk = false;
+        $this->ssh->probeFailure = new AgentRunnerFailure('agent.install', AgentRunnerFailure::Transport, 'Permission denied', result: new CommandResult(255, '', '', 1, false));
     }
     if ($kind === 'platform') {
-        $this->ssh->platform = 'Linux';
+        $this->ssh->probeFailure = new AgentCommandRefused('agent.install', 'agent.platform_unsupported', 'Wrong platform');
     }
 
     try {
@@ -545,7 +546,7 @@ final class EnrollmentScanner implements HostKeyScanner
 
     public string $fingerprint = 'SHA256:pinned';
 
-    public function scan(string $host, int $port, ?SshConnection $via = null): HostKey
+    public function scan(string $host, int $port, ?Node $via = null): HostKey
     {
         $this->scans++;
 
@@ -572,31 +573,5 @@ final class EnrollmentKnownHosts implements KnownHostsStore
         }
 
         $this->puts[] = [$host, $port, $key->fingerprint];
-    }
-}
-
-final class EnrollmentSsh implements SshExecutor
-{
-    public string $platform = 'Darwin';
-
-    public string $architecture = 'arm64';
-
-    public bool $accountOk = true;
-
-    public bool $addressPresent = true;
-
-    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-    {
-        if ($command->arguments[0] === 'true') {
-            return new CommandResult($this->accountOk ? 0 : 255, '', '', 1, false);
-        }
-
-        return new CommandResult(
-            0,
-            $this->platform."\n".$this->architecture."\nok\n".($this->addressPresent ? '1' : '0')."\n",
-            '',
-            1,
-            false,
-        );
     }
 }

@@ -19,21 +19,17 @@ use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Project;
 use App\Models\Schedule;
 use Illuminate\Support\Carbon;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeInstanceCheckoutInspector;
 use Tests\Support\FakeInstanceRuntimeReadiness;
 use Tests\Support\FakeVitePortRuntime;
@@ -148,33 +144,20 @@ it('does not expose a ready Vite site when another Process fails during automati
     ]]);
     $viteRuntime = new FakeVitePortRuntime;
     app()->instance(VitePortRuntime::class, $viteRuntime);
-    $ssh = Mockery::mock(SshExecutor::class);
-    $ssh->shouldReceive('execute')->andReturnUsing(function (SshConnection $connection, RemoteCommand $command) use ($vite, $viteRuntime): CommandResult {
-        $arguments = implode(' ', $command->arguments);
-        if (str_contains($arguments, "orbit-process-{$vite->id}-vite.service") && in_array('start', $command->arguments, true)) {
+    $agents = new FakeAgentCommandRunner()->answer('processes.control', static function (array $input) use ($vite, $viteRuntime): array {
+        if ($input['name'] === "orbit-process-{$vite->id}-vite.service" && $input['operation'] === 'start') {
             $viteRuntime->events[] = 'vite-launch';
-        }
-        if ($command->arguments[0] === 'sudo' && $command->arguments[1] === 'test' && str_contains($arguments, 'queue.service')) {
-            $viteRuntime->events[] = 'queue-start-failed';
 
-            return new CommandResult(1, '', '', 1, false);
+            return [];
         }
-        if ($command->arguments[0] === 'sudo' && $command->arguments[1] === 'cat') {
-            return new CommandResult(0, "[Unit]\nX-Orbit-Process-ID={$vite->id}\n", '', 1, false);
-        }
+        $viteRuntime->events[] = 'queue-start-failed';
 
-        return new CommandResult(0, '', '', 1, false);
+        throw new AgentCommandRefused('processes.control', 'processes.not_found', 'Refused.', ['step' => 'start']);
     });
-    $keys = Mockery::mock(SshKeyProvider::class);
-    $keys->shouldReceive('privateKeyPath')->andReturn('/test/id');
-    $knownHosts = Mockery::mock(KnownHostsStore::class);
-    $knownHosts->shouldReceive('path')->andReturn('/test/known-hosts');
     $runtime = new RemoteProcessRuntimeManager(
         targets: new ProcessTargetResolver,
         accounts: Mockery::mock(ManagedUserAccountResolver::class),
-        ssh: $ssh,
-        keys: $keys,
-        knownHosts: $knownHosts,
+        agents: $agents,
         systemd: new SystemdProcessRenderer,
         docker: new DockerProcessRenderer,
     );

@@ -38,6 +38,8 @@ in_ct() { incus exec "$1" --project "$PROJECT" -- "${@:2}"; }
 
 container() {
   local name=$1
+  # Compile this checkout's installer before changing the container.
+  (cd "$REPOSITORY/apps/agent" && cargo build --release --locked)
   incus info "$name" --project "$PROJECT" >/dev/null 2>&1 || incus launch "$IMAGE" "$name" --project "$PROJECT" -c raw.apparmor="$APPARMOR"
   if [ "$(incus config get "$name" raw.apparmor --project "$PROJECT")" != "$APPARMOR" ]; then
     incus config set "$name" raw.apparmor="$APPARMOR" --project "$PROJECT"
@@ -47,19 +49,20 @@ container() {
   for _ in $(seq 90); do in_ct "$name" getent hosts archive.ubuntu.com >/dev/null 2>&1 && break; sleep 1; done
 
   # The recipe's exact PHP build (ADR 0216), the same one that CI publishes caches for. A rerun moves it to the recipe.
-  # bin/php-build runs php.install-build, the installer that Nodes run too, with the libraries it uses. The container
-  # gets the script, the recipe, and the whole remote program tree in the repository layout that bin/php-build reads.
+  # Both local adapters call this checkout's native agent with typed pins.
   local tree=/root/orbit-php-build
   in_ct "$name" rm -rf "$tree"
-  in_ct "$name" install -d -m 0700 "$tree/bin" "$tree/tools/ci-runners" "$tree/apps/gateway/resources/machine-software"
+  in_ct "$name" install -d -m 0700 "$tree/bin" "$tree/tools/ci-runners" "$tree/apps/gateway/resources/machine-software" "$tree/apps/agent/target/release"
+  incus file push "$REPOSITORY/apps/agent/target/release/orbit-agent" "$name$tree/apps/agent/target/release/orbit-agent" --project "$PROJECT"
+  in_ct "$name" chmod 0755 "$tree/apps/agent/target/release/orbit-agent"
   incus file push "$REPOSITORY/bin/php-build" "$name$tree/bin/php-build" --project "$PROJECT"
   incus file push "$REPOSITORY/apps/gateway/resources/machine-software/recipe.json" \
     "$name$tree/apps/gateway/resources/machine-software/recipe.json" --project "$PROJECT"
-  incus file push --recursive "$REPOSITORY/apps/gateway/resources/remote" "$name$tree/apps/gateway/resources/" --project "$PROJECT"
+  incus file push "$REPOSITORY/tools/agent_command.py" "$name$tree/tools/agent_command.py" --project "$PROJECT"
   incus file push "$REPOSITORY/tools/ci-runners/javascript.py" "$name$tree/tools/ci-runners/javascript.py" --project "$PROJECT"
   incus file push "$REPOSITORY/apps/gateway/resources/machine-software/vite-plus-package-lock.json" \
     "$name$tree/apps/gateway/resources/machine-software/vite-plus-package-lock.json" --project "$PROJECT"
-  # A recursive push keeps the host's owners; root runs this code, so root owns it.
+  # Root runs the adapters, so root owns them.
   in_ct "$name" chown -R root:root "$tree"
 
   in_ct "$name" env RUNNER_VERSION="$RUNNER_VERSION" RUNNER_SHA256="$RUNNER_SHA256" \

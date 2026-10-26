@@ -40,16 +40,17 @@ final class DesiredFleetStateData extends Data
         $cli = DesiredCliReleaseData::fromArray($value['cli'] ?? null);
         $agent = $value['agent'] ?? null;
         $agentVersion = is_array($agent) ? ($agent['version'] ?? null) : null;
+        $agentCommit = is_array($agent) ? ($agent['commit'] ?? null) : null;
         $agentAssets = is_array($agent) ? FleetReleaseAssetData::listFromArray($agent['assets'] ?? null) : null;
 
         if (
             ($commit !== null && (! is_string($commit) || preg_match('/\A[0-9a-f]{40}\z/D', $commit) !== 1))
             || ! $cli instanceof DesiredCliReleaseData
-            || ! is_string($agentVersion) || $agentAssets === null
+            || ! is_string($agentVersion) || ! is_string($agentCommit) || $agentAssets === null
         ) {
             return null;
         }
 
-        return new self($commit, $cli, new DesiredAgentData($agentVersion, $agentAssets));
+        return new self($commit, $cli, new DesiredAgentData($agentVersion, $agentCommit, $agentAssets));
     }
 }

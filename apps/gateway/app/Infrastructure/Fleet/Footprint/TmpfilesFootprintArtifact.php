@@ -8,8 +8,9 @@ use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Fleet\NodeShell;
-use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Models\Node;
 use App\Models\NodeRole;
 
@@ -30,7 +31,7 @@ final readonly class TmpfilesFootprintArtifact implements NodeFootprintArtifact
 
         CONF;
 
-    public function __construct(private NodeShell $shell) {}
+    public function __construct(private AgentCommandRunner $agents) {}
 
     public function name(): string
     {
@@ -51,29 +52,10 @@ final readonly class TmpfilesFootprintArtifact implements NodeFootprintArtifact
 
     public function apply(Node $node): bool
     {
-        $result = $this->shell->run($node, new RemoteCommand(
-            arguments: ['sudo', 'bash', '-seu', '--', self::Path, base64_encode(self::Rule)],
-            input: <<<'BASH'
-                path=$1
-                desired=$(printf '%s' "$2" | base64 --decode; printf x)
-                desired=${desired%x}
-                if [ -f "$path" ] && [ ! -L "$path" ] && [ "$(stat -c '%U:%G:%a' -- "$path")" = root:root:644 ] \
-                    && [ "$(cat -- "$path"; printf x)" = "${desired}x" ]; then
-                    exit 0
-                fi
-                candidate=$(mktemp "$path.XXXXXX")
-                trap 'rm -f -- "$candidate"' EXIT
-                printf '%s' "$desired" > "$candidate"
-                chmod 0644 -- "$candidate"
-                mv -f -- "$candidate" "$path"
-                printf 'changed\n'
-                BASH,
-        ));
-
-        if (! $result->succeeded()) {
-            throw new ResourceOperationException('node.footprint_tmpfiles_failed', 'The tmpfiles rule could not be published: '.trim($result->stderr), 502);
+        try {
+            return ($this->agents->run($node, 'nodes.publish-tmpfiles', ['rule' => self::Rule])['changed'] ?? false) === true;
+        } catch (AgentCommandRefused|AgentRunnerFailure $exception) {
+            throw new ResourceOperationException('node.footprint_tmpfiles_failed', 'The tmpfiles rule could not be published: '.$exception->getMessage(), 502, $exception);
         }
-
-        return str_contains($result->stdout, 'changed');
     }
 }

@@ -8,8 +8,8 @@ covers:
   - apps/gateway/app/Domain/Instances/Registration/**
   - apps/gateway/app/Infrastructure/Instances/{NativeDevelopmentInstanceProvisioner,RemoteDevelopmentInstanceSourceLifecycle,RemoteDevelopmentInstanceConfigurator,RemoteRegistrationSourceManager,RemoteInstanceDestinationGuard,RemoteInstanceSqliteCloner,RemoteInstanceDependencyCopier}.php
   - apps/gateway/{app/{Http/Controllers/Api/InstancesController.php,Http/Requests/Instances/**,Data/Instances/**,Models/Instance.php},database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - apps/cli/app/Commands/Instances/{CreateInstanceCommand,RegisterInstanceCommand,RenameInstanceCommand,ListInstancesCommand,ShowInstanceCommand,InstanceOutput}.php
-  - apps/cli/app/Services/Git/**
+  - apps/cli/app/{Commands/Instances/{CreateInstanceCommand,RegisterInstanceCommand,RenameInstanceCommand,ListInstancesCommand,ShowInstanceCommand,InstanceOutput}.php,Services/Git/**}
+  - apps/agent/src/commands/{registration,registration_tests}.rs
 ---
 
 # Applications
@@ -223,7 +223,7 @@ For Project types other than `laravel-package`, Orbit treats a source as Laravel
 | `composer.json` is a symlink, is not a regular file, or is not owned by the Node's managed user; or `artisan` exists without `composer.json` | `app-dev.source_metadata_unsafe` |
 | `composer.json` is invalid JSON, or no supported PHP version meets its constraint | `app-dev.php_version_unsupported` |
 
-Detection reads files only. It runs no Composer, Artisan, or application code, and it installs no dependencies.
+Detection reads files only. It runs no Composer, Artisan, or application code, and it installs no dependencies. The [Node agent](/reference/node-agent#commands) reads them as the managed user with `instances.inspect-development-profile`, and writes `APP_URL` with `instances.write-development-url`.
 
 ### Symfony applications
 
@@ -239,7 +239,7 @@ For a Laravel source, Orbit writes `APP_URL=https://<route-domain>`:
 
 Laravel cannot boot without `APP_KEY`, and a fresh `.env.example` often has an empty key and `APP_NAME=Laravel`. So a new `.env` takes the Instance's non-empty [stored](/reference/environment-variables) `APP_KEY`. Without one, it keeps a non-empty template key or gets a random 32-byte key with the `base64:` prefix. It takes the Instance's stored `APP_NAME` too. Without one, a missing, empty, or `Laravel` name becomes the Project name. An existing `.env` keeps its name and any non-empty key. The key reaches the Node as protected input, never as a command argument. Orbit leaves duplicate `APP_KEY` or `APP_NAME` lines as they are.
 
-A symlinked file, two `APP_URL` lines, or an unclear cached value stops provisioning with `app-dev.laravel_url_configuration_failed`. After activation, the [stored environment](/reference/environment-variables) owns `APP_URL`.
+A symlinked file or cache directory, two `APP_URL` lines, or an unclear cached value stops provisioning with `app-dev.laravel_url_configuration_failed`. Orbit validates both files and the cache directories before it changes either file or its permissions. Each file replacement is atomic. After activation, the [stored environment](/reference/environment-variables) owns `APP_URL`.
 
 ## Production Instances
 

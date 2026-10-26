@@ -8,11 +8,9 @@ use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmUpCloud;
-use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
+use App\Infrastructure\AgentCommands\AgentGuest;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
-use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\Node;
 use App\Models\TaskVm;
 use App\Models\UpCloudTaskVmImageBuild;
 use Closure;
@@ -24,7 +22,7 @@ use Throwable;
 /**
  * Builds the UpCloud template with the same base-profile installer as Incus ({@see RecipeImagePrograms}). A
  * builder server boots stock Ubuntu without package upgrades, installs and verifies the deployed recipe over SSH,
- * records its identity in the guest and the template's orbit.recipe label, turns ufw on, and `base-image-clean.sh`
+ * records its identity in the guest and the template's orbit.recipe label, turns ufw on, and `image.clean`
  * removes its identity. A server from the template boots with ufw on and only public SSH open, the exact rule that
  * enrollment's base firewall opens and its role closes, so no baked service is public before enrollment. Its stopped disk becomes the template `orbit-task-base-<time>-unverified`. A smoke server boots it with
  * the task VM user-data; only then does the title lose `-unverified`, so task VMs clone it. The two newest verified
@@ -57,6 +55,7 @@ final readonly class UpCloudTaskVmImageBuilder
         private TaskVmImageRecipe $recipe,
         private RecipeImagePrograms $programs,
         private RecipeImageBuilds $builds,
+        private GuestBootstrap $bootstrap,
     ) {}
 
     /**
@@ -69,6 +68,7 @@ final readonly class UpCloudTaskVmImageBuilder
     public function build(?Closure $progress = null, ?MachineRecipe $machineRecipe = null, ?int $afterAttemptId = null, ?int $generation = null): string
     {
         $machineRecipe ??= $this->builds->currentRecipe();
+        $this->requireServingDelivery($machineRecipe);
         $lock = Cache::lock(self::Lock, self::LockSeconds);
         if (! $lock->get()) {
             throw new TaskVmException('task_vm.image_build_running', 'An UpCloud task VM template build is already running.');
@@ -97,24 +97,22 @@ final readonly class UpCloudTaskVmImageBuilder
             });
             $this->stage($progress, 'sweep', fn () => $this->sweep());
             [$address, $hostKey] = $this->stage($progress, 'launch', fn (): array => $this->launch($builder, $stamp, $this->upcloud()->sourceTemplate, $this->cloudInit->renderImageBuilder($this->keys->publicKey())));
-            $shell = new UpCloudGuestShell($this->guest, $address, $hostKey);
-            $this->stage($progress, 'cloud-init', fn () => $this->awaitCloudInit($builder, $shell));
-            $this->stage($progress, 'orbit-user', fn () => $this->checked($builder, $shell->asUser(TaskVmImageRecipe::ownerCheck())));
+            $target = AgentGuest::ssh($address, 'x86_64', $this->guest->connection($address, $hostKey));
+            $this->stage($progress, 'cloud-init', fn () => $this->awaitCloudInit($builder, $target));
+            $this->stage($progress, 'orbit-user', fn () => $this->recipe->owner($target));
             foreach (RecipeImagePrograms::Phases as $phase) {
-                $this->stage($progress, $phase, fn () => $this->programs->apply($shell, $machineRecipe, 'base', $phase));
+                $this->stage($progress, $phase, fn () => $this->programs->apply($target, $machineRecipe, 'base', $phase));
             }
-            $this->stage($progress, 'recipe-marker', fn () => $this->checked($builder, $shell->asRoot(
-                ['install', '-D', '-m', '0644', '/dev/stdin', '/etc/orbit-machine-recipe.json'],
-                json_encode(['identity' => $machineRecipe->identity, 'profile' => 'base'], JSON_THROW_ON_ERROR),
-            )));
-            $this->stage($progress, 'verify', fn () => $this->programs->verify($shell, $machineRecipe, 'base'));
-            $this->stage($progress, 'masks', fn () => $this->checked($builder, $shell->asRoot(['sh', '-c', TaskVmImageRecipe::Masks])));
-            $this->stage($progress, 'firewall', fn () => $this->firewall($builder, $shell));
-            $this->stage($progress, 'clean', fn () => $this->clean($builder, $shell));
+            $this->stage($progress, 'recipe-marker', fn () => $this->recipe->mark($target, $machineRecipe->identity, 'base'));
+            $this->stage($progress, 'verify', fn () => $this->programs->verify($target, $machineRecipe, 'base'));
+            $this->stage($progress, 'masks', fn () => $this->recipe->boot($target, lean: false));
+            $this->stage($progress, 'firewall', fn () => $this->recipe->firewall($target));
+            $this->stage($progress, 'clean', fn () => $this->recipe->clean($target));
             $template = $this->stage($progress, 'templatize', fn (): string => $this->templatize($builder, $stamp, $title.TaskVmUpCloud::Unverified));
             $this->stage($progress, 'delete-builder', fn () => $this->servers->delete($builder, UpCloudServers::ImageLabel, $stamp, null));
             $this->stage($progress, 'smoke', fn () => $this->smoke($smoke, $stamp, $template, $machineRecipe));
             $this->stage($progress, 'promote', fn () => DB::transaction(function () use ($template, $title, $machineRecipe, $generation): void {
+                $this->requireServingDelivery($machineRecipe);
                 if ($generation !== null) {
                     $this->fence($machineRecipe, $generation);
                 }
@@ -155,6 +153,13 @@ final readonly class UpCloudTaskVmImageBuilder
             ->where('generation', $generation)->update(['generation' => $generation]);
         if ($matched !== 1) {
             throw new TaskVmException(TaskVmError::ImageBuildSuperseded, 'A newer recipe image generation is desired. This UpCloud build cannot continue or promote.');
+        }
+    }
+
+    private function requireServingDelivery(MachineRecipe $recipe): void
+    {
+        if ($this->builds->currentRecipe()->agentDigest('amd64') !== $recipe->agentDigest('amd64')) {
+            throw new TaskVmException(TaskVmError::ImageBuildSuperseded, 'The serving recipe delivery changed. This UpCloud build cannot continue or promote.');
         }
     }
 
@@ -220,31 +225,9 @@ final readonly class UpCloudTaskVmImageBuilder
     }
 
     /** Waits over SSH until cloud-init is done without errors. Until sshd has the key from the user-data, SSH fails. */
-    private function awaitCloudInit(string $name, UpCloudGuestShell $shell): void
+    private function awaitCloudInit(string $name, AgentGuest $target): void
     {
-        TaskVmGuest::awaitCloudInit("UpCloud server [{$name}]", self::CloudInitSeconds, static fn (array $command, float $timeout): CommandResult => $shell->asUser($command, timeout: $timeout));
-    }
-
-    /**
-     * Turns ufw on with incoming traffic denied, except the public SSH rule of a new Node on port 22 that enrollment
-     * opens itself. ufw keeps the SSH connection of the build, which that rule allows anyway.
-     */
-    private function firewall(string $name, UpCloudGuestShell $shell): void
-    {
-        $this->checked($name, $shell->asRoot(['ufw', 'default', 'deny', 'incoming']));
-        $this->checked($name, $shell->asUser((new NodeFirewallRuleCatalog)->publicSshRecovery(new Node(['public_ssh_port' => 22]))->arguments));
-        $this->checked($name, $shell->asRoot(['ufw', '--force', 'enable']));
-        if (preg_match('/^Status: active$/m', $this->checked($name, $shell->asRoot(['ufw', 'status']))->stdout) !== 1) {
-            throw new TaskVmException('task_vm.image_build_failed', 'ufw is not active after it was enabled.', 502);
-        }
-    }
-
-    private function clean(string $name, UpCloudGuestShell $shell): void
-    {
-        $result = $this->checked($name, $shell->asRoot(['bash', '-s'], $this->recipe->cleanScript()));
-        if (trim($result->stdout) !== TaskVmImageRecipe::CleanConfirmation) {
-            throw new TaskVmException('task_vm.image_build_failed', "base-image-clean.sh did not confirm on [{$name}].", 502);
-        }
+        $this->bootstrap->awaitReady($target, "UpCloud server [{$name}]", self::CloudInitSeconds);
     }
 
     /** Stops the builder cleanly and turns its disk into a template. */
@@ -264,10 +247,10 @@ final readonly class UpCloudTaskVmImageBuilder
     private function smoke(string $name, string $stamp, string $template, MachineRecipe $machineRecipe): void
     {
         [$address, $hostKey] = $this->launch($name, $stamp, $template, $this->cloudInit->render($this->keys->publicKey()));
-        $shell = new UpCloudGuestShell($this->guest, $address, $hostKey);
-        $this->awaitCloudInit($name, $shell);
-        $this->programs->verify($shell, $machineRecipe, 'base');
-        $this->checked($name, $shell->asUser(TaskVmImageRecipe::imageCheck(['--ufw']), timeout: 60));
+        $target = AgentGuest::ssh($address, 'x86_64', $this->guest->connection($address, $hostKey));
+        $this->awaitCloudInit($name, $target);
+        $this->programs->verify($target, $machineRecipe, 'base');
+        $this->recipe->check($target, firewall: true);
         $this->servers->delete($name, UpCloudServers::ImageLabel, $stamp, null);
     }
 
@@ -316,18 +299,6 @@ final readonly class UpCloudTaskVmImageBuilder
     private function stage(?Closure $progress, string $name, Closure $work): mixed
     {
         return TaskVmBuildStage::run('task_vm.image_build_failed', 'UpCloud template build', $name, $progress, $work);
-    }
-
-    /** Fails on a non-zero exit of a command on the build or smoke server `$name`. */
-    private function checked(string $name, CommandResult $result): CommandResult
-    {
-        if (! $result->succeeded()) {
-            $detail = mb_substr(implode("\n", array_slice(explode("\n", trim($result->stderr)), -5)), 0, 2000);
-
-            throw new TaskVmException('task_vm.image_build_failed', "A command on [{$name}] failed with exit code [{$result->exitCode}].".($detail === '' ? '' : "\n{$detail}"), 502);
-        }
-
-        return $result;
     }
 
     private function upcloud(): TaskVmUpCloud

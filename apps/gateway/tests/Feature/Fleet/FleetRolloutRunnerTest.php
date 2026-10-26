@@ -12,8 +12,8 @@ use App\Domain\Fleet\NodeFootprint;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Releases\ReleaseAlertKind;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\AgentReportedVersions;
-use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Models\FleetRollout;
 use App\Models\FleetRolloutNode;
 use App\Models\GatewayRelease;
@@ -53,7 +53,7 @@ describe('fleet rollout', function (): void {
             ->and($rollout->status)->toBe(FleetRolloutStatus::Completed)
             ->and($rollout->commit)->toBe(FleetFixtures::Commit)
             ->and($rollout->desired_state['cli']['version'])->toBe('0.4681.0')
-            ->and($rollout->desired_state['agent']['version'])->toBe(NodeAgentFootprint::Version)
+            ->and($rollout->desired_state['agent']['version'])->toBe(app(AgentDelivery::class)->version())
             ->and(array_keys($rollout->desired_state['footprints']))->toBe(['dev', 'mixed', 'db', 'prod'])
             ->and(fleetOutcomes())->toBe(['dev' => 'converged', 'mixed' => 'converged', 'db' => 'converged', 'prod' => 'converged']);
     });

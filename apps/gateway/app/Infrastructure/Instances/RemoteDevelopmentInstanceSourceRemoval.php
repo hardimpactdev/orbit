@@ -22,49 +22,41 @@ use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Projects\ProjectSourceAccess;
-use App\Domain\RemotePrograms\ProgramResult;
-use App\Domain\RemotePrograms\RemoteProgramFailed;
-use App\Domain\RemotePrograms\RemoteProgramFailure;
-use App\Domain\RemotePrograms\RemoteProgramRunner;
-use App\Domain\Schedules\ScheduleRenderer;
+use App\Domain\Schedules\ScheduleSpecification;
 use App\Domain\SourceControl\GitRepositoryIdentity;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentStep;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
-use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
 use App\Models\Node;
 use App\Models\Project;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
-use stdClass;
 
 final readonly class RemoteDevelopmentInstanceSourceRemoval implements DevelopmentInstanceSourceFinalizer, DevelopmentInstanceSourceRemoval
 {
     /**
-     * The outcomes with which `instances.inspect-source` and `instances.remove-source` name the identity check they
-     * refused ([Remote programs](/reference/remote-programs#programs)).
+     * The refusals with which `instances.inspect-source` and `instances.remove-source` name the identity check that
+     * failed ([Node agent](/reference/node-agent#commands)).
      *
      * @var array<string, InstanceSourceMismatch>
      */
-    private const array ProgramMismatches = [
-        'path_mismatch' => InstanceSourceMismatch::Path,
-        'ownership_mismatch' => InstanceSourceMismatch::Ownership,
-        'layout_mismatch' => InstanceSourceMismatch::Layout,
-        'origin_mismatch' => InstanceSourceMismatch::Origin,
-        'branch_mismatch' => InstanceSourceMismatch::Branch,
-        'worktrees_mismatch' => InstanceSourceMismatch::Worktrees,
+    private const array CommandMismatches = [
+        'instances.path_mismatch' => InstanceSourceMismatch::Path,
+        'instances.ownership_mismatch' => InstanceSourceMismatch::Ownership,
+        'instances.layout_mismatch' => InstanceSourceMismatch::Layout,
+        'instances.origin_mismatch' => InstanceSourceMismatch::Origin,
+        'instances.branch_mismatch' => InstanceSourceMismatch::Branch,
+        'instances.worktrees_mismatch' => InstanceSourceMismatch::Worktrees,
     ];
-
-    /** The outcomes of a program step that refused or failed. The step fails with its own error code. */
-    private const array FailedOutcomes = ['refused', 'failed', 'cross_device'];
 
     /** The fields of the inspection evidence, each base64 of the bytes the Node read. */
     private const array InspectionFields = ['top', 'common', 'origin', 'branch', 'commit', 'dirty', 'source_identity', 'worktrees'];
 
     public function __construct(
-        private RemoteProgramRunner $programs,
-        private RemoteProgramCatalog $catalog,
+        private AgentCommandRunner $agents,
         private ManagedUserAccountResolver $accounts,
         private CheckoutRemovalBoundary $boundaries,
         private AppDevSourceOperationLock $lock,
@@ -161,12 +153,8 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             force: $force,
         );
 
-        if ($result->outcome !== 'inspected') {
-            $this->invalidEvidence($instance, $force);
-        }
-
         [$top, $common, $origin, $branch, $commit, $dirty, $sourceIdentity, $worktrees] = array_map(
-            fn (string $field): string => $this->decode($result->string($field), $instance, $force),
+            fn (string $field): string => $this->decode(is_string($result[$field] ?? null) ? $result[$field] : null, $instance, $force),
             self::InspectionFields,
         );
         $branch = $branch === '' ? null : $branch;
@@ -295,7 +283,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
         $groupingDirectory = $this->boundaries
             ->instanceGroupingDirectory($instance)
             ->value;
-        $result = $this->runRefusable(
+        $this->runRefusable(
             $instance,
             'instances.remove-source',
             [
@@ -310,15 +298,11 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                 'repository_identity' => $inventory->repositoryIdentity,
                 'force' => $force,
                 'own_units' => self::ownUnits($instance),
+                'git_read' => $this->access->for($inventory->origin, $this->sourceAccess($instance->project_id)),
             ],
             step: 'app-instance-source-remove',
             force: $force,
-            gitRead: $this->access->for($inventory->origin, $this->sourceAccess($instance->project_id)),
         );
-
-        if ($result->outcome !== 'removed') {
-            $this->invalidEvidence($instance, $force);
-        }
     }
 
     public function prepare(
@@ -457,13 +441,23 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                     'unresolved' => $member->starting_commit === null && ! $member->runtime_published,
                     'independent_worktree' => $this->independentForcedWorktree($member),
                     'own_units' => self::ownUnits($instance),
+                    'git_read' => $failedCreation ? GitReadEnvironment::none() : $this->access->for($inventory->origin, $this->sourceAccess($member->project_id)),
                 ],
                 step: 'app-instance-source-finalization',
                 errorCode: 'instance.removal_incomplete',
-                gitRead: $failedCreation ? null : $this->access->for($inventory->origin, $this->sourceAccess($member->project_id)),
             );
 
-            if ($result->string('receipt') !== $receipt) {
+            if (($result['state'] ?? null) === 'cross_device') {
+                throw AgentStep::failed($node, 'app-instance-source-finalization', 'instance.removal_incomplete', 'App development', new CommandResult(
+                    exitCode: 1,
+                    stdout: json_encode(['state' => 'cross_device'], JSON_THROW_ON_ERROR)."\n",
+                    stderr: "cross-device: the checkout [{$member->checkout_path}] is on another filesystem than the removal state; Orbit does not move a checkout across a mount.\n",
+                    durationMs: 0,
+                    truncated: false,
+                ));
+            }
+
+            if (($result['receipt'] ?? null) !== $receipt) {
                 throw new RuntimeConvergenceException(
                     step: 'app-instance-source-finalization',
                     errorCode: 'instance.finalization_evidence_invalid',
@@ -640,7 +634,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             errorCode: 'instance.removal_incomplete',
         );
 
-        if ($result->string('receipt') !== $receipt) {
+        if (($result['receipt'] ?? null) !== $receipt) {
             throw new RuntimeConvergenceException(
                 step: 'app-instance-source-finalization',
                 errorCode: 'instance.finalization_evidence_invalid',
@@ -674,8 +668,10 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             errorCode: 'instance.removal_conflict',
         );
 
-        return match ($result->outcome) {
-            'complete', 'incomplete', 'intact' => $result->outcome,
+        $state = $result['state'] ?? null;
+
+        return match ($state) {
+            'complete', 'incomplete', 'intact' => $state,
             default => $this->recordedConflict(
                 $member,
                 'Instance removal returned invalid receipt-recovery evidence.',
@@ -706,7 +702,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             step: 'app-instance-removal-revalidation',
             errorCode: 'instance.removal_conflict',
         );
-        $state = InstanceSourceRevalidationState::tryFrom(str_replace('_', '-', $result->outcome));
+        $state = InstanceSourceRevalidationState::tryFrom(str_replace('_', '-', is_string($result['state'] ?? null) ? $result['state'] : ''));
 
         if (! $state instanceof InstanceSourceRevalidationState) {
             $this->recordedConflict($member, 'Instance removal returned invalid source-presence evidence.');
@@ -1045,13 +1041,12 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
         $result = $this->runStep(
             $instance->node,
             'instances.check-publication',
-            ['origin' => $origin, 'commit' => $commit],
+            ['origin' => $origin, 'commit' => $commit, 'git_read' => $this->access->for($origin, $this->sourceAccess($instance->project_id))],
             step: 'app-instance-source-removal-publication',
             errorCode: 'instance.remove_refused',
-            gitRead: $this->access->for($origin, $this->sourceAccess($instance->project_id)),
         );
 
-        return $result->outcome === 'published';
+        return ($result['published'] ?? null) === true;
     }
 
     private function decode(
@@ -1069,110 +1064,48 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
     }
 
     /**
-     * Run a program whose outcome names the check it refused, and turn that outcome into its error code.
+     * Run a command whose refusal names the check that failed, and turn that refusal into its error code.
      *
      * @param  array<string, mixed>  $input
+     * @return array<string, mixed>
      */
     private function runRefusable(
         Instance $instance,
-        string $program,
+        string $command,
         array $input,
         string $step,
         bool $force,
-        ?GitReadEnvironment $gitRead = null,
-    ): ProgramResult {
-        $result = $this->runStep($instance->node, $program, $input, $step, $this->failureCode($force), $gitRead);
-        $mismatch = self::ProgramMismatches[$result->outcome] ?? null;
-
-        if ($mismatch instanceof InstanceSourceMismatch) {
-            $this->mismatch($instance, $mismatch, $step, self::output($result));
-        }
-
-        return match ($result->outcome) {
-            'unsafe_content' => $this->unsafeContent($instance, $step, self::output($result)),
-            'source_changed' => throw new RuntimeConvergenceException(
-                step: $step,
-                errorCode: 'instance.removal_conflict',
-                message: "Instance [{$instance->name}] source changed after inspection.",
-                result: self::output($result),
-            ),
-            default => $result,
-        };
-    }
-
-    /**
-     * Run a program on the Node. A run without a result, and the outcomes that refuse, fail the step with its error
-     * code. A timeout or cancellation keeps its own failure.
-     *
-     * @param  array<string, mixed>  $input
-     */
-    private function runStep(
-        Node $node,
-        string $program,
-        array $input,
-        string $step,
-        string $errorCode,
-        ?GitReadEnvironment $gitRead = null,
-    ): ProgramResult {
+    ): array {
         try {
-            $result = $this->programs->run($node, $this->catalog->program($program), $input, $gitRead);
-        } catch (RemoteProgramFailed $exception) {
-            if ($exception->reason === RemoteProgramFailure::Unreachable) {
-                throw new RuntimeConvergenceException(
+            return $this->runStep($instance->node, $command, $input, $step, $this->failureCode($force));
+        } catch (RuntimeConvergenceException $exception) {
+            $refused = AgentStep::refusal($exception);
+            $mismatch = $refused === null ? null : (self::CommandMismatches[$refused->errorCode] ?? null);
+
+            if ($mismatch instanceof InstanceSourceMismatch) {
+                $this->mismatch($instance, $mismatch, $step, $exception->result);
+            }
+
+            match ($refused?->errorCode) {
+                'instances.unsafe_content' => $this->unsafeContent($instance, $step, $exception->result),
+                'instances.source_changed' => throw new RuntimeConvergenceException(
                     step: $step,
-                    errorCode: 'app-dev.wireguard_ip_missing',
-                    message: "Node [{$node->name}] has no WireGuard address.",
-                    previous: $exception,
-                );
-            }
-
-            if (in_array($exception->reason, [RemoteProgramFailure::TimedOut, RemoteProgramFailure::Cancelled], true)) {
-                throw $exception;
-            }
-
-            $this->stepFailed($node, $step, $errorCode, new CommandResult($exception->exitCode ?? 1, '', $exception->log, 0, false), $exception);
+                    errorCode: 'instance.removal_conflict',
+                    message: "Instance [{$instance->name}] source changed after inspection.",
+                    result: $exception->result,
+                ),
+                default => throw $exception,
+            };
         }
-
-        if (in_array($result->outcome, self::FailedOutcomes, true)) {
-            $this->stepFailed($node, $step, $errorCode, self::output($result));
-        }
-
-        return $result;
     }
 
     /**
-     * The step's failure with the program's output, so the Activity of the command keeps it, such as a line that starts
-     * with `cross-device:`.
+     * @param  array<string, mixed>  $input
+     * @return array<string, mixed>
      */
-    private function stepFailed(
-        Node $node,
-        string $step,
-        string $errorCode,
-        CommandResult $output,
-        ?RemoteProgramFailed $previous = null,
-    ): never {
-        throw new RuntimeConvergenceException(
-            step: $step,
-            errorCode: $errorCode,
-            message: "App development step [{$step}] failed on node [{$node->name}].",
-            previous: $previous,
-            result: $output,
-        );
-    }
-
-    /**
-     * A refusing outcome as command output: the result line on standard output and the program's log on standard error.
-     * The exit status is 1, because the step failed although the program ended normally.
-     */
-    private static function output(ProgramResult $result): CommandResult
+    private function runStep(Node $node, string $command, array $input, string $step, string $errorCode): array
     {
-        return new CommandResult(
-            exitCode: 1,
-            stdout: json_encode(['outcome' => $result->outcome, 'data' => $result->data === [] ? new stdClass : $result->data], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n",
-            stderr: $result->log,
-            durationMs: 0,
-            truncated: false,
-        );
+        return AgentStep::run($this->agents, $node, $command, $input, $step, $errorCode, 'App development');
     }
 
     private function mismatch(
@@ -1226,7 +1159,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
     public static function ownUnits(Instance $instance): array
     {
         $systemd = app(SystemdProcessRenderer::class);
-        $schedules = app(ScheduleRenderer::class);
+        $schedules = app(ScheduleSpecification::class);
         $units = [];
         foreach ($instance->processes()->get() as $process) {
             if ($process->runtime === ProcessRuntime::Systemd) {

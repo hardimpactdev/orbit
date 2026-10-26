@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Instances\InstanceState;
@@ -12,100 +13,17 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
-use App\Infrastructure\Caddy\CaddyGlobalOptions;
 use App\Infrastructure\Doctor\NativePublicRouteEdgeInspector;
-use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Routes\NativePublicRouteEdgeProjector;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
-use Illuminate\Support\Facades\File;
-use Tests\Support\LocalRootShellSshExecutor;
-
-const PUBLIC_EDGE_UFW_ACTIVE = <<<'UFW'
-    Status: active
-
-         To                         Action      From
-         --                         ------      ----
-    [ 1] 80/tcp                     ALLOW IN    Anywhere                   # orbit:ingress-http
-    [ 2] 443/tcp                    ALLOW IN    Anywhere                   # orbit:ingress-https
-    [ 3] 80/tcp (v6)                ALLOW IN    Anywhere (v6)              # orbit:ingress-http
-    [ 4] 443/tcp (v6)               ALLOW IN    Anywhere (v6)              # orbit:ingress-https
-
-    UFW;
-
-beforeEach(function (): void {
-    $this->caddy = sys_get_temp_dir().'/orbit-public-edge-'.bin2hex(random_bytes(4));
-    File::ensureDirectoryExists("{$this->caddy}/orbit-versions/v1");
-    symlink("{$this->caddy}/orbit-versions/v1/Caddyfile", "{$this->caddy}/Caddyfile");
-    $this->ssh = new LocalRootShellSshExecutor("{$this->caddy}/orbit-versions", PUBLIC_EDGE_UFW_ACTIVE);
-});
-
-afterEach(function (): void {
-    File::deleteDirectory($this->caddy);
-});
-
-describe('a separate Ingress', function (): void {
-    beforeEach(function (): void {
-        $this->router = public_edge_listener();
-        $this->forwardingPort = (int) substr((string) stream_socket_get_name($this->router, false), strlen('127.0.0.1:'));
-        $cluster = Cluster::query()->create(['name' => 'edge', 'tld' => 'edge.test', 'state' => ClusterState::Active]);
-        public_edge_node('edge-router', '10.44.0.20', '127.0.0.1', $cluster, [RoleName::Router]);
-        $this->ingress = public_edge_node('edge-ingress', '10.44.0.30', '10.10.0.30', $cluster, [RoleName::Ingress]);
-        $workload = public_edge_node('edge-workload', '10.44.0.40', '10.10.0.40', $cluster, [RoleName::AppProd]);
-        $this->route = public_edge_route($cluster, $workload);
-    });
-
-    it('accepts the published reverse proxy to the Router', function (): void {
-        public_edge_publish($this->caddy, $this->ingress);
-
-        expect(public_edge_observe($this))->toBe([true, true, true])
-            ->and(public_edge_forwarding($this))->toBeTrue();
-    });
-
-    it('reports a Router address that the Ingress cannot reach', function (): void {
-        public_edge_publish($this->caddy, $this->ingress);
-        fclose($this->router);
-
-        expect(public_edge_forwarding($this))->toBeFalse()
-            ->and(public_edge_observe($this))->toBe([true, true, true]);
-    });
-
-    it('reports a public site that no longer proxies to the Router', function (): void {
-        public_edge_publish($this->caddy, $this->ingress, static fn (string $site): string => str_replace(
-            'reverse_proxy https://127.0.0.1',
-            'reverse_proxy https://10.10.0.99',
-            $site,
-        ));
-
-        expect(public_edge_observe($this))->toBe([false, true, true]);
-    });
-
-    it('reports a missing public HTTPS firewall rule without touching the site checks', function (): void {
-        public_edge_publish($this->caddy, $this->ingress);
-        $this->ssh->ufwStatus = implode("\n", array_filter(
-            explode("\n", PUBLIC_EDGE_UFW_ACTIVE),
-            static fn (string $line): bool => ! str_contains($line, 'orbit:ingress-https'),
-        ));
-
-        expect(public_edge_observe($this))->toBe([true, true, false]);
-    });
-
-    it('reports an inactive firewall', function (): void {
-        public_edge_publish($this->caddy, $this->ingress);
-        $this->ssh->ufwStatus = "Status: inactive\n";
-
-        expect(public_edge_observe($this))->toBe([true, true, false]);
-    });
-});
+use Tests\Support\FakeAgentCommandRunner;
 
 describe('an Ingress whose role is converging', function (): void {
     beforeEach(function (): void {
@@ -196,6 +114,26 @@ describe('an Ingress that runs the workload while the Router is on another Node'
             ->not->toContain('tls force_automate');
     });
 
+    it('verifies both selected hops through the agent and maps a refused hop', function (): void {
+        $agents = new FakeAgentCommandRunner()->answer('routes.verify-certificate', []);
+        app()->instance(AgentCommandRunner::class, $agents);
+        $projector = app(NativePublicRouteEdgeProjector::class);
+
+        $projector->verifyPublicEdge($this->route);
+
+        expect($agents->calls)->toBe([
+            ['node' => $this->ingress->name, 'command' => 'routes.verify-certificate', 'input' => ['address' => '10.44.0.1', 'port' => 443, 'domain' => $this->route->domain]],
+            ['node' => $this->router->name, 'command' => 'routes.verify-certificate', 'input' => ['address' => '10.44.0.3', 'port' => 443, 'domain' => $this->route->domain]],
+        ])->and($agents->deadlines)->toBe([15.0, 15.0]);
+        $agents->refuse('routes.verify-certificate', 'routes.certificate_invalid', ['stderr' => 'untrusted']);
+
+        expect(fn () => $projector->verifyPublicEdge($this->route))
+            ->toThrow(function (RuntimeConvergenceException $exception): void {
+                expect([$exception->step, $exception->errorCode])->toBe(['ingress-forwarding', 'route.public_edge_unverified']);
+            });
+        expect($agents->calls)->toHaveCount(3);
+    });
+
     it('builds the Router with the Ingress when the public edge activates', function (): void {
         $builds = app(NodeCaddyBuilds::class);
 
@@ -204,11 +142,6 @@ describe('an Ingress that runs the workload while the Router is on another Node'
         expect($builds->built)->toBe(['app-prod', 'gateway']);
     });
 
-    it('accepts the published site', function (): void {
-        public_edge_publish_build($this->caddy, $this->ingress);
-
-        expect(public_edge_observe($this))->toBe([true, true, true]);
-    });
 });
 
 describe('an Ingress that is also the Router, with the workload on another Node', function (): void {
@@ -227,276 +160,7 @@ describe('an Ingress that is also the Router, with the workload on another Node'
             ->toContain("# orbit: ingress route-{$this->route->id}-ingress\n{$this->route->domain} {\n    bind 0.0.0.0 10.44.0.1\n    tls force_automate");
     });
 
-    it('accepts the public site in the one Caddyfile a Node Caddy build writes', function (): void {
-        public_edge_publish_build($this->caddy, $this->ingress);
-
-        expect(public_edge_observe($this))->toBe([true, true, true]);
-    });
-
-    it('reports a public site that left the WireGuard address', function (): void {
-        public_edge_publish_build($this->caddy, $this->ingress, fn (string $file): string => str_replace(
-            "{$this->route->domain} {\n    bind 0.0.0.0 10.44.0.1\n",
-            "{$this->route->domain} {\n    bind 0.0.0.0\n",
-            $file,
-        ));
-
-        expect(public_edge_observe($this)[0])->toBeFalse();
-    });
 });
-
-describe('an Ingress that shares the Router and the workload', function (): void {
-    beforeEach(function (): void {
-        $cluster = Cluster::query()->create(['name' => 'prod', 'tld' => 'prod.test', 'state' => ClusterState::Active]);
-        $this->ingress = public_edge_node(
-            'app-prod',
-            '10.44.0.4',
-            null,
-            $cluster,
-            [RoleName::Router, RoleName::Ingress, RoleName::AppProd],
-        );
-        $this->route = public_edge_route($cluster, $this->ingress);
-    });
-
-    it('accepts the composed site that serves the Instance directly', function (): void {
-        public_edge_publish($this->caddy, $this->ingress);
-
-        expect(public_edge_observe($this))->toBe([true, true, true])
-            ->and(public_edge_forwarding($this))->toBeTrue()
-            ->and(file_get_contents("{$this->caddy}/orbit-versions/v1/Caddyfile"))
-            ->toContain('php_fastcgi unix//run/php/orbit-app-')
-            ->not->toContain('reverse_proxy');
-    });
-
-    it('reports a composed site that no longer serves the Instance', function (): void {
-        public_edge_publish($this->caddy, $this->ingress, static fn (string $site): string => preg_replace(
-            '/^php_fastcgi .*$/m',
-            'php_fastcgi unix//run/php/other.sock {',
-            $site,
-        ) ?? $site);
-
-        expect(public_edge_observe($this))->toBe([false, true, true]);
-    });
-
-    it('reports only TLS when the composed site loses certificate automation', function (): void {
-        public_edge_publish($this->caddy, $this->ingress, static fn (string $site): string => str_replace(
-            "    tls force_automate\n",
-            '',
-            $site,
-        ));
-
-        expect(public_edge_observe($this))->toBe([true, false, true]);
-    });
-
-    it('reports an untrusted, wrong-domain, missing, or expiring served certificate as a TLS mismatch', function (string $certificate): void {
-        public_edge_publish($this->caddy, $this->ingress);
-        $this->ssh->certificateStatus = $certificate;
-
-        expect(public_edge_observe($this))->toBe([true, false, true]);
-    })->with([
-        'missing certificate' => 'missing',
-        'expiring certificate' => 'expiring',
-        'locally trusted Orbit CA certificate' => 'missing',
-        'public certificate for another hostname' => 'missing',
-    ]);
-
-    it('validates the public certificate hostname against public-only trust anchors', function (): void {
-        public_edge_publish($this->caddy, $this->ingress);
-
-        public_edge_observe($this);
-        $script = $this->ssh->commands[0]->input;
-
-        expect($script)
-            ->toContain('-verify_hostname "$domain"')
-            ->toContain('-CAfile "$public_roots"')
-            ->toContain('-no-CApath -no-CAstore')
-            ->toContain('/usr/share/ca-certificates/mozilla')
-            ->not->toContain('/etc/ssl/certs/ca-certificates.crt');
-    });
-
-    it('reports a public site that pins an Orbit CA leaf', function (): void {
-        $scope = "route-{$this->route->id}-ingress";
-        public_edge_publish($this->caddy, $this->ingress, static fn (string $site): string => str_replace(
-            "    tls force_automate\n",
-            "    tls /etc/caddy/orbit-certificates/{$scope}/current/cert.pem /etc/caddy/orbit-certificates/{$scope}/current/key.pem\n",
-            $site,
-        ));
-
-        expect(public_edge_observe($this))->toBe([true, false, true]);
-    });
-
-    it('accepts a site without certificate automation on a Node that leaves certificate management on', function (): void {
-        public_edge_publish(
-            $this->caddy,
-            $this->ingress,
-            static fn (string $site): string => str_replace("    tls force_automate\n", '', $site),
-            globalOptions: '',
-        );
-
-        expect(public_edge_observe($this))->toBe([true, true, true]);
-    });
-
-    it('fails closed when the firewall status cannot be read', function (int $exitCode, string $status): void {
-        public_edge_publish($this->caddy, $this->ingress);
-        $this->ssh->ufwExitCode = $exitCode;
-        $this->ssh->ufwStatus = $status;
-
-        expect(fn () => public_edge_observe($this))->toThrow(DoctorInspectionException::class);
-    })->with([
-        'failed command' => [1, ''],
-        'unrecognised status' => [0, "ERROR: problem running iptables\n"],
-    ]);
-
-    it('reports a Node that does not serve the public site at all', function (): void {
-        public_edge_publish($this->caddy, $this->ingress, static fn (string $site): string => "# no sites\n");
-
-        expect(public_edge_observe($this))->toBe([false, false, true]);
-    });
-
-    it('reads the root-only published Caddy version through sudo', function (): void {
-        public_edge_publish($this->caddy, $this->ingress);
-
-        public_edge_observe($this);
-
-        expect(array_slice($this->ssh->commands[0]->arguments, 0, 3))->toBe(['sudo', 'bash', '-seu']);
-    });
-    it('accepts the composed site in the one Caddyfile a Node Caddy build writes', function (): void {
-        public_edge_publish_build($this->caddy, $this->ingress);
-
-        expect(public_edge_observe($this))->toBe([true, true, true])
-            ->and(is_dir("{$this->caddy}/orbit-versions/v2/fragments"))->toBeFalse();
-    });
-
-    it('reports a composed site that no longer serves the Instance in a build', function (): void {
-        public_edge_publish_build($this->caddy, $this->ingress, static fn (string $file): string => preg_replace(
-            '/^(\s*)php_fastcgi .*$/m',
-            '$1php_fastcgi unix//run/php/other.sock {',
-            $file,
-        ) ?? $file);
-
-        expect(public_edge_observe($this)[0])->toBeFalse();
-    });
-
-    it('reports a build whose public site lost certificate automation', function (): void {
-        public_edge_publish_build($this->caddy, $this->ingress, static fn (string $file): string => str_replace(
-            "    tls force_automate\n",
-            '',
-            $file,
-        ));
-
-        expect(public_edge_observe($this))->toBe([true, false, true]);
-    });
-});
-
-it('fails closed when the Node publishes no public site for the Route', function (): void {
-    $cluster = Cluster::query()->create(['name' => 'edge', 'tld' => 'edge.test', 'state' => ClusterState::Active]);
-    $ingress = public_edge_node('edge-ingress', '10.44.0.30', null, $cluster, [RoleName::Ingress]);
-    $route = public_edge_route($cluster, public_edge_node('edge-workload', '10.44.0.40', null, $cluster, [RoleName::AppProd]));
-
-    expect(fn () => public_edge_inspector($this->ssh, $this->caddy)->inspect($ingress, $route))
-        ->toThrow(DoctorInspectionException::class);
-});
-
-/** @return array{?bool, ?bool, ?bool} */
-function public_edge_observe(object $test): array
-{
-    $observation = public_edge_inspector($test->ssh, $test->caddy, $test->forwardingPort ?? 443)
-        ->inspect($test->ingress, $test->route);
-
-    return [
-        $observation->ingressProjectionMatches,
-        $observation->publicTlsMatches,
-        $observation->firewallMatches,
-    ];
-}
-
-function public_edge_forwarding(object $test): ?bool
-{
-    return public_edge_inspector($test->ssh, $test->caddy, $test->forwardingPort ?? 443)
-        ->inspect($test->ingress, $test->route)
-        ->privateForwardingMatches;
-}
-
-/** Listens on a free loopback port that stands in for the Router's HTTPS listener. */
-function public_edge_listener(): mixed
-{
-    $server = stream_socket_server('tcp://127.0.0.1:0');
-
-    if ($server === false) {
-        throw new RuntimeException('The test Router listener could not start.');
-    }
-
-    return $server;
-}
-
-function public_edge_inspector(
-    LocalRootShellSshExecutor $ssh,
-    string $caddy,
-    int $forwardingPort = 443,
-): NativePublicRouteEdgeInspector {
-    return new NativePublicRouteEdgeInspector(
-        new DevelopmentSshExecutor(
-            $ssh,
-            new class implements SshKeyProvider
-            {
-                public function privateKeyPath(): string
-                {
-                    return '/tmp/public-edge-test-key';
-                }
-
-                public function publicKey(): string
-                {
-                    return 'ssh-ed25519 test';
-                }
-            },
-            new class implements KnownHostsStore
-            {
-                public function path(): string
-                {
-                    return '/tmp/public-edge-known-hosts';
-                }
-
-                public function put(string $host, int $port, HostKey $key): void {}
-            },
-        ),
-        new CommandDeadline,
-        liveCaddyfilePath: "{$caddy}/Caddyfile",
-        defaultForwardingPort: $forwardingPort,
-    );
-}
-
-/**
- * Publishes the Ingress Node's Route sites after the global options block in the one live Caddyfile.
- *
- * @param  (Closure(string): string)|null  $edit
- */
-function public_edge_publish(string $caddy, Node $ingress, ?Closure $edit = null, ?string $globalOptions = null): void
-{
-    $sites = implode(PHP_EOL, array_map(
-        static fn (array $block): string => $block['block'],
-        array_values(array_filter(
-            app(NodeCaddyfileRenderer::class)->render($ingress)->blocks,
-            static fn (array $block): bool => $block['source'] !== 'gateway',
-        )),
-    ));
-    file_put_contents(
-        "{$caddy}/orbit-versions/v1/Caddyfile",
-        ($globalOptions ?? CaddyGlobalOptions::render()).($edit instanceof Closure ? $edit($sites) : $sites),
-    );
-}
-
-/**
- * Publishes the Ingress Node's whole render as the one versioned Caddyfile a Node Caddy build writes.
- *
- * @param  (Closure(string): string)|null  $edit
- */
-function public_edge_publish_build(string $caddy, Node $ingress, ?Closure $edit = null): void
-{
-    $file = app(NodeCaddyfileRenderer::class)->render($ingress)->content;
-    File::ensureDirectoryExists("{$caddy}/orbit-versions/v2");
-    file_put_contents("{$caddy}/orbit-versions/v2/Caddyfile", $edit instanceof Closure ? $edit($file) : $file);
-    unlink("{$caddy}/Caddyfile");
-    symlink("{$caddy}/orbit-versions/v2/Caddyfile", "{$caddy}/Caddyfile");
-}
 
 function public_edge_route(Cluster $cluster, Node $workload): Route
 {
@@ -572,8 +236,7 @@ function public_edge_node(string $name, string $wireguardIp, ?string $lanIp, Clu
 }
 
 it('checks the public Process listener directly from the Ingress without a Router hop', function (): void {
-    $listener = public_edge_listener();
-    $port = (int) substr((string) stream_socket_get_name($listener, false), strlen('127.0.0.1:'));
+    $port = 8081;
     $cluster = Cluster::query()->create(['name' => 'process-edge', 'state' => ClusterState::Active]);
     public_edge_node('process-router', '10.44.0.20', '10.10.0.20', $cluster, [RoleName::Router]);
     $ingress = public_edge_node('process-ingress', '10.44.0.30', '10.10.0.30', $cluster, [RoleName::Ingress]);
@@ -582,16 +245,99 @@ it('checks the public Process listener directly from the Ingress without a Route
     $route = Route::query()->create(['kind' => 'custom_proxy', 'cluster_id' => $cluster->id, 'domain' => 'sync.example.com', 'provenance' => 'explicit', 'publication' => 'public', 'status' => 'pending']);
     $route->customProxy()->create(['node_id' => $services->id, 'process_id' => $process->id, 'upstream' => 'http://127.0.0.1:'.$port]);
     $route->update(['status' => 'active', 'sites_published' => true, 'replacement_step' => 'ingress-firewall']);
-    try {
-        public_edge_publish($this->caddy, $ingress);
-        $inspector = public_edge_inspector($this->ssh, $this->caddy);
-        expect($inspector->inspect($ingress, $route)->privateForwardingMatches)->toBeTrue();
-        fclose($listener);
-        $listener = null;
-        expect($inspector->inspect($ingress, $route)->privateForwardingMatches)->toBeFalse();
-    } finally {
-        if (is_resource($listener)) {
-            fclose($listener);
-        }
+    $agents = public_edge_agents();
+    $inspector = new NativePublicRouteEdgeInspector($agents);
+
+    expect($inspector->inspect($ingress, $route)->privateForwardingMatches)->toBeTrue()
+        ->and($agents->calls[0]['input']['forwarding'])->toBe(['127.0.0.1:8081']);
+});
+
+function public_edge_agents(): FakeAgentCommandRunner
+{
+    return new FakeAgentCommandRunner()
+        ->answer('doctor.inspect-public-route', ['ingress' => true, 'forwarding' => true, 'tls' => true])
+        ->answer('firewall.inspect', ['backend' => 'active', 'ownerships' => [], 'matches' => true, 'live' => []]);
+}
+
+/** @return array{Node, Route} */
+function public_edge_fixture(bool $routerHere = false, bool $workloadHere = false): array
+{
+    $cluster = Cluster::query()->create(['name' => 'edge', 'tld' => 'edge.test', 'state' => ClusterState::Active]);
+    $roles = [RoleName::Ingress];
+    if ($routerHere) {
+        $roles[] = RoleName::Router;
+    } else {
+        public_edge_node('router', '10.44.0.20', null, $cluster, [RoleName::Router]);
+    }
+    if ($workloadHere) {
+        $roles[] = RoleName::AppProd;
+    }
+    $ingress = public_edge_node('ingress', '10.44.0.30', null, $cluster, $roles);
+    $workload = $workloadHere ? $ingress : public_edge_node('workload', '10.44.0.40', null, $cluster, [RoleName::AppProd]);
+
+    return [$ingress, public_edge_route($cluster, $workload)];
+}
+
+it('sends the composed site and forwarding intent for the selected Ingress placement', function (bool $routerHere, bool $workloadHere, array $forwarding): void {
+    [$ingress, $route] = public_edge_fixture($routerHere, $workloadHere);
+    $agents = public_edge_agents();
+
+    $result = new NativePublicRouteEdgeInspector($agents)->inspect($ingress, $route);
+
+    expect((array) $result)->toBe(['ingressProjectionMatches' => true, 'privateForwardingMatches' => true, 'publicTlsMatches' => true, 'firewallMatches' => true]);
+    expect($agents->commands())->toBe(['doctor.inspect-public-route', 'firewall.inspect'])
+        ->and($agents->calls[0]['node'])->toBe($ingress->name)
+        ->and($agents->calls[0]['input'])->toMatchArray([
+            'domain' => $route->domain,
+            'certificates' => '/etc/caddy/orbit-certificates/route-'.$route->id.'-ingress/current',
+            'forwarding' => $forwarding,
+        ])
+        ->and($agents->calls[0]['input']['expected_site'])->toContain("{$route->domain} {", 'tls force_automate');
+})->with([
+    'separate' => [false, false, ['10.44.0.20:443']],
+    'Router on Ingress' => [true, false, ['10.44.0.40:443']],
+    'workload on Ingress' => [false, true, []],
+    'all on Ingress' => [true, true, []],
+]);
+
+it('maps native drift without changing other observations', function (): void {
+    [$node, $route] = public_edge_fixture();
+    $agents = public_edge_agents()->answer('doctor.inspect-public-route', ['ingress' => false, 'forwarding' => true, 'tls' => false]);
+
+    expect((array) new NativePublicRouteEdgeInspector($agents)->inspect($node, $route))
+        ->toBe(['ingressProjectionMatches' => false, 'privateForwardingMatches' => true, 'publicTlsMatches' => false, 'firewallMatches' => true]);
+});
+
+it('reports native firewall drift', function (): void {
+    [$node, $route] = public_edge_fixture();
+    $agents = public_edge_agents()->answer('firewall.inspect', ['backend' => 'active', 'ownerships' => [], 'matches' => false, 'live' => []]);
+
+    expect(new NativePublicRouteEdgeInspector($agents)->inspect($node, $route)->firewallMatches)->toBeFalse();
+});
+
+it('reports failed and malformed observations as unavailable', function (string $failure): void {
+    [$node, $route] = public_edge_fixture();
+    $agents = public_edge_agents();
+    match ($failure) {
+        'refused' => $agents->refuse('doctor.inspect-public-route', 'doctor.public_route_unavailable'),
+        'incomplete' => $agents->answerMalformed('doctor.inspect-public-route', ['ingress' => true]),
+        'firewall' => $agents->answerMalformed('firewall.inspect', ['matches' => 'private']),
+    };
+
+    expect(fn () => new NativePublicRouteEdgeInspector($agents)->inspect($node, $route))->toThrow(DoctorInspectionException::class);
+})->with(['refused', 'incomplete', 'firewall']);
+
+it('refuses an Ingress with no intended public site before any agent call', function (): void {
+    [$node, $route] = public_edge_fixture();
+    $route->update(['publication' => RoutePublication::Private]);
+    $agents = public_edge_agents();
+
+    expect(fn () => new NativePublicRouteEdgeInspector($agents)->inspect($node, $route))->toThrow(DoctorInspectionException::class)
+        ->and($agents->calls)->toBe([]);
+});
+
+it('keeps public Route observation behind the agent boundary', function (): void {
+    foreach (['DevelopmentSshExecutor', 'RemoteCommand', '<<<', 'openssl', 'bash'] as $forbidden) {
+        expect(file_get_contents(app_path('Infrastructure/Doctor/NativePublicRouteEdgeInspector.php')))->not->toContain($forbidden);
     }
 });

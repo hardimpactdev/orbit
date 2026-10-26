@@ -26,7 +26,7 @@ A Node Process serves the Node itself, for example a shared Docker database. A s
 
 A Node systemd Process accepts `user`. The CLI flag is `--user`, and the API field is `user`. The name is one letter or underscore, then at most 31 letters, digits, underscores, or hyphens. The unit's `User=` is that name. When `user` is omitted, `User=` stays the derived account. `user` is part of the specification: a second create with the same name and a different account returns `process.name_taken`.
 
-The Gateway checks the named account over SSH with `getent passwd` and defaults the working directory to that account's home. An explicit working directory overrides this default. JSON includes `user`, and it is null when the Process uses the derived account. The Gateway does not create the account. It refuses `root` and accounts with UID zero. An absent account or an invalid account home fails create with `process.user_unavailable` (HTTP 422).
+The Gateway reads the named account through the agent's `accounts.lookup` and defaults the working directory to that account's home. An explicit working directory overrides this default. JSON includes `user`, and it is null when the Process uses the derived account. The Gateway does not create the account. It refuses `root` and accounts with UID zero. An absent account or an invalid account home fails create with `process.user_unavailable` (HTTP 422).
 
 Instance Processes, Docker Processes, presets, and Project definitions reject `user`. The API returns HTTP 422 and names the field `user`. [`process:create`](/cli/process#orbit-processcreate) returns `process.option_invalid` for a rejected combination and `process.user_invalid` for a name that fails the pattern, and it sends no request. For example, `--user=deploy` runs the unit as the existing account `deploy`. The Node must be an active Linux Node with a WireGuard address. macOS returns `process.platform_unsupported` (HTTP 422) before SSH. A Node Process stays when an Instance is removed. The Gateway refuses to remove a Node that still owns a Process with `node.has_processes`. [Offline removal](/reference/node-provisioning#remove-a-node) of an unreachable Node deletes its Process records without remote cleanup.
 
@@ -123,7 +123,7 @@ The Gateway exposes these Process endpoints.
 | `POST /api/v1/processes` | Creates one Process. |
 | `PATCH /api/v1/processes/{process}` | Replaces the specification and reconverges the runtime of the same Process. The Process of a Valkey [Database server](/reference/database-servers#retry-and-response) is refused with `process.required_by_database_server` (409), so its command always keeps the server's ACL file. |
 | `POST /api/v1/processes/{process}/start`, `/stop`, `/restart` | Changes the runtime and stores the desired state: `running` after start and restart, `stopped` after stop. |
-| `GET /api/v1/processes/{process}/logs?lines=N` | A tail of 1 through 1,000 lines over SSH. See [Live logs](/reference/live-logs) to follow new lines. |
+| `GET /api/v1/processes/{process}/logs?lines=N` | A tail of 1 through 1,000 lines, read by the agent's `processes.logs`. See [Live logs](/reference/live-logs) to follow new lines. |
 | `DELETE /api/v1/processes/{process}` | Stops the Process, removes its unit or container, and deletes the record. The Process of a [Database server](/reference/database-servers) is refused with `process.required_by_database_server` (409); remove the server instead. |
 
 Creating or starting an Instance Process needs an active Instance on an active Node. Creating or starting a Node Process needs an active managed Node. Otherwise the Gateway refuses with `process.target_inactive` before it changes anything. Removal can use the recorded placement of a failed or removing Instance while its Node is active.
@@ -207,6 +207,23 @@ Create, update, start, and restart of an Instance Process first take the Instanc
 
 Systemd replacement installs a checked candidate unit and restores the earlier unit when activation fails. Docker replacement keeps or restores the earlier container.
 
+## On the Node
+
+The Gateway changes a Process's unit or container only through the [Node agent's](/reference/node-agent#commands) `processes.*` commands. Each runs as root and acts only on an artifact with the Process's own marker. The Gateway keeps the locks, the activation record, and the error codes; the agent makes the change and its rollback in one call.
+
+| Command | What it does |
+| --- | --- |
+| `processes.check-release` | Tells whether the `current` release of a production Instance exists. |
+| `processes.status` | Reads `systemctl is-active` or the container state; `absent` without an owned artifact. |
+| `processes.control` | Starts, stops, or restarts the owned unit or container. An on-demand `app-dev` host starts a unit without enabling it. |
+| `processes.stage-unit` | Reports an unchanged unit with its state, or writes a candidate to `/etc/orbit/systemd-candidates` that `systemd-analyze verify` accepts. |
+| `processes.activate-unit` | Publishes the candidate, keeps a backup of the unit it replaces, reloads systemd, and sets the desired state. A failure puts the previous unit and state back. |
+| `processes.converge-container` | Creates a candidate container, renames the current one to `-rollback-running` or `-rollback-stopped`, renames the candidate in, and removes the rollback. A failure restores the previous container. |
+| `processes.remove` | Removes the owned unit, or the owned container with its candidate and rollback containers. It also removes a Vite+ dev Process's Vite environment file. |
+| `processes.logs` | Reads the newest journal entries or container lines, as [Live logs](/reference/live-logs#sources) describes. |
+
+The Gateway records a pending systemd activation between `processes.stage-unit` and `processes.activate-unit`, so a lost response leaves the activation for the next converge. A later `processes.converge-container` finishes or undoes a container change that a lost response interrupted. The Vite environment file goes only when it carries the Instance marker. A container's environment goes to Docker through a root-only file that the agent deletes after `docker container create`; no argument carries a value.
+
 ## Project definitions
 
 A Project holds Process definitions and Schedule definitions. A definition has a UUID, a name that is unique within the Project and kind, an `environments` list, and a `spec`.
@@ -240,7 +257,7 @@ A copy is independent. Changing or removing a copy does not change the definitio
 
 ## Inspect with Doctor
 
-[Doctor](/cli/doctor) compares the desired state of each Instance and Node Process with the systemd or Docker status on the Node. It reports a missing runtime, a state mismatch, a [systemd crash loop](#process-runtime-state), a failed inspection, or an unreachable Node, and changes nothing. A sleeping development Process is not a mismatch; see [hibernation](/reference/app-dev-runtime-hibernation).
+[Doctor](/cli/doctor) compares the desired state of each Instance and Node Process with the systemd or Docker status on the Node. `doctor.inspect-process` verifies the owned runtime and gathers bounded observations in one agent call. For a running systemd Process, Rust takes two samples two seconds apart unless the first already shows an automatic restart; the command’s ten-second bound includes both samples. It reports a missing runtime, a state mismatch, a [systemd crash loop](#process-runtime-state), a failed inspection, or an unreachable Node, and changes nothing. A sleeping development Process is not a mismatch; see [hibernation](/reference/app-dev-runtime-hibernation).
 
 ## Why it works this way
 

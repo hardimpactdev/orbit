@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\TaskVms;
 
 /**
- * Every stable `task_vm.*` error code, in one place. Rows, `tasks:status`, logs, and the API carry the value.
- * {@see TaskVmException} takes a case; a test checks that every `task_vm.*` code in the Gateway is a case here.
+ * Stable Gateway `task_vm.*` error codes. Rows, `tasks:status`, logs, and the API carry the value.
+ * {@see TaskVmException} takes a case. Native command refusals belong to the exported agent contract.
  */
 enum TaskVmError: string
 {
@@ -54,11 +54,15 @@ enum TaskVmError: string
 
     // Base images.
     case ImageMismatch = 'task_vm.image_mismatch';
+    case ImageCheckFailed = 'task_vm.image_check_failed';
+    case ImageCleanFailed = 'task_vm.image_clean_failed';
+    case ImageIdentityPresent = 'task_vm.image_identity_present';
     case TopologySeedMissing = 'task_vm.topology_seed_missing';
     case TopologySeedFailed = 'task_vm.topology_seed_failed';
     case BaseImageMissing = 'task_vm.base_image_missing';
     case ImageBuildFailed = 'task_vm.image_build_failed';
     case ImageChannelLost = 'task_vm.image_channel_lost';
+    case ImageBuilderRebooted = 'task_vm.image_builder_rebooted';
     case ImageBuildRunning = 'task_vm.image_build_running';
     case ImageBuildSuperseded = 'task_vm.image_build_superseded';
     case ImageSyncFailed = 'task_vm.image_sync_failed';

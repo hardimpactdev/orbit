@@ -8,11 +8,11 @@ use App\Domain\AppDev\AppDevCaddyManager;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\RoleName;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentStep;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Nodes\Roles\CaddyRoleFailure;
-use App\Infrastructure\Processes\SystemdVpnOrderingDropIn;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 
 /**
@@ -23,21 +23,22 @@ final readonly class RemoteAppDevCaddyManager implements AppDevCaddyManager
 {
     public function __construct(
         private NodeCaddyBuilds $builds,
-        private DevelopmentSshExecutor $ssh,
+        private AgentCommandRunner $agents,
         private ?DevelopmentProjectionOperationLock $projection = null,
-        private SystemdVpnOrderingDropIn $vpnOrdering = new SystemdVpnOrderingDropIn,
     ) {}
 
     /** Role convergence: orders Caddy after the WireGuard interface, then builds the Node. */
     public function converge(Node $node, RoleName $role = RoleName::AppDev): void
     {
         $this->owner()->run(function () use ($node, $role): void {
-            $this->ssh->execute(
+            AgentStep::run(
+                $this->agents,
                 $node,
-                new RemoteCommand($this->vpnOrdering->arguments('caddy'), $this->vpnOrdering->script()),
+                'caddy.order-after-vpn',
+                [],
                 step: 'caddy-service-ordering',
                 errorCode: CaddyRoleFailure::code($role),
-                failureLabel: CaddyRoleFailure::sshLabel($role),
+                label: CaddyRoleFailure::sshLabel($role),
             );
             $this->buildOwned($node, $role);
         });

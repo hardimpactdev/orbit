@@ -19,6 +19,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * @property string $name
  * @property LifecycleStatus $status
  * @property string $platform
+ * @property string|null $agent_failed_pin
  * @property string|null $architecture
  * @property string $public_ssh_host
  * @property int $public_ssh_port

@@ -133,7 +133,7 @@ The publish step then fails with the error `Release refused for a non-tip commit
 
 ## Pull-request builds
 
-The `Orbit CLI Binary` workflow, `.github/workflows/orbit-cli-binary.yml`, builds the three targets on pull requests to `main` that change the CLI, PHP SDK, PHP recipe or its build scripts, binary build or version scripts, or the binary workflow itself. Unrelated pull requests skip it. Each PR has one concurrency group, and a newer run cancels its superseded run. The workflow also runs on `workflow_dispatch`. The release workflow calls the same `workflow_call` entry for the commit it publishes, without sharing a PR concurrency group. Pull-request builds are packaging checks, not part of `Required checks`. PR binary artifacts stay for 7 days; release-transfer and manual-build artifacts stay for 30 days.
+The `Orbit CLI Binary` workflow, `.github/workflows/orbit-cli-binary.yml`, builds the three targets on pull requests to `main` that change the CLI, PHP SDK, PHP recipe or its build scripts, Rust agent, agent build adapter, binary build or version scripts, or the binary workflow itself. Unrelated pull requests skip it. Each PR has one concurrency group, and a newer run cancels its superseded run. The workflow also runs on `workflow_dispatch`. The release workflow calls the same `workflow_call` entry for the commit it publishes, without sharing a PR concurrency group. Pull-request builds are packaging checks, not part of `Required checks`. PR binary artifacts stay for 7 days; release-transfer and manual-build artifacts stay for 30 days.
 
 | Target | Build runner | Run runner | Builder | Artifact | File |
 | --- | --- | --- | --- | --- | --- |

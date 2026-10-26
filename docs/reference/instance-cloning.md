@@ -52,7 +52,9 @@ The result names the new Instance, its branch, its preview domain, and its selec
 
 The candidate is an active development Instance with its checkout, or an active production Instance with a selected release. A development candidate must have its recorded branch checked out, not another branch or a detached `HEAD`. Its source must have no staged, unstaged, untracked, or submodule change. Its current commit must be in the Project repository. The Gateway checks this on the candidate's Node using its recorded source identity.
 
-Every Git invocation in the candidate inspection, including calls through `sudo` and checks inside submodules, passes `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false`. Development candidate checks that inspect file contents run as the Node's managed user without a credential environment. `instance.clone_candidate_unavailable` carries the inspection's stderr in `details.stderr`, at most 1,000 characters, with URL credentials and token-shaped words replaced by `[REDACTED]`.
+The [Node agent](/reference/node-agent#commands)'s `instances.inspect-clone-candidate` runs the inspection. Its Git runs as the Instance user: the managed user for a development candidate, and the production user for a production one. Rust walks the indexed submodules at every depth and checks that each is initialized, at its recorded commit, and clean, including untracked files. Submodule paths are read as NUL-delimited data, never shell source. 
+
+Every Git invocation passes `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false`. Only the repository fetch gets the credential environment. It fetches into a private scratch directory that the agent removes. `instance.clone_candidate_repository_unavailable` carries the fetch's stderr in `details.stderr`, at most 1,000 characters, with URL credentials and token-shaped words replaced by `[REDACTED]`.
 
 A checkout's hooks and custom filesystem monitor do not run during that check. These overrides leave the candidate's stored Git configuration unchanged; they do not relax the clean-source rules.
 
@@ -60,7 +62,9 @@ A checkout's hooks and custom filesystem monitor do not run during that check. T
 
 The destination must be an active Linux Node with an active `app-prod` role. The Project can have one production Instance per Node. In an active Cluster, the Cluster needs an active Router.
 
-Orbit inspects the destination checkout as its production user from a directory that user can access. A private SSH account home does not prevent source classification. For a nested Laravel app, classification uses `composer.json` and `artisan` in the [application directory](/reference/projects#application-directory) derived from the effective web root; Git identity checks still use the complete repository. Foreign file ownership, unsafe source metadata, and failed directory scans still stop the clone.
+The [Node agent](/reference/node-agent#commands) prepares the destination: `instances.prepare-production-user` creates the system account `orbit-app-<project>` and its private home, `instances.prepare-production-source` clones the repository into `releases/initial` and records the root-owned source markers, `instances.resolve-production-source` checks out the branch and links `.env`, and `instances.grant-production-caddy-access` lets Caddy reach only the web root.
+
+Source preparation creates `/var/lib/orbit/app-instance-sources` and its missing parents on a fresh Node; each Instance's marker directory is private to root. `instances.inspect-production-profile` reads the Composer metadata, and refuses any file in the checkout that the production user does not own. For a nested Laravel app, classification uses `composer.json` and `artisan` in the [application directory](/reference/projects#application-directory) derived from the effective web root; Git identity checks still use the complete repository. Foreign file ownership, unsafe source metadata, and failed directory scans still stop the clone.
 
 ## What the clone gets
 
@@ -92,7 +96,16 @@ A missing Node TLD returns `route.tld_required`. A domain that another Route own
 
 ## SQLite seed
 
-`sqlite_source_path` must be inside the candidate's checkout or selected release, and it must be a readable SQLite database. Orbit takes a consistent snapshot while the candidate keeps writing, checks its integrity, and installs it as `<home>/database.sqlite`, owned by the new Instance's user. The Gateway checks the path and disk space on both Nodes before it replaces anything.
+`sqlite_source_path` must be inside the candidate's checkout or selected release, and it must be a readable SQLite database. Orbit takes a consistent snapshot while the candidate keeps writing, checks its integrity, and installs it as `<home>/database.sqlite`, owned by the new Instance's user. The agent creates the snapshot as a private `0600` file before SQLite opens it, without changing umask, which controls permissions for every thread in the process. The Gateway checks the path and disk space on both Nodes before it replaces anything.
+
+The [Node agent](/reference/node-agent#commands) does the work on each Node as root:
+
+- `instances.prepare-sqlite-seed` takes the snapshot as the candidate's user.
+- `instances.install-sqlite-seed` installs it as a new file, never over an existing database.
+
+The Gateway transfers the snapshot with `instances.read-sqlite-snapshot` and `instances.receive-sqlite-snapshot` through the agent runner. These account commands accept only managed snapshot paths and verify the SQLite header, exact size, and SHA-256. Binary framing bounds each snapshot to 1 TiB. Upload preserves the prepared file's inode, so the target's ownership receipt remains valid. No general file upload or `scp` path handles database contents.
+
+Each records its progress under `/var/lib/orbit/app-instance-sqlite-seeds`, so a retry resumes or cleans up what an earlier run left.
 
 Orbit registers a SQLite connection named `<project>-<instance>` (shortened with a stable hash when it exceeds 63 characters), owned by the new Instance on the destination Node, attaches it under prefix `DB`, and syncs the production `.env` with `DB_CONNECTION=sqlite` and `DB_DATABASE=<home>/database.sqlite`. Retrying an interrupted clone reuses that connection and attachment. Without the option, the clone gets no database and no candidate `DB_*` values.
 

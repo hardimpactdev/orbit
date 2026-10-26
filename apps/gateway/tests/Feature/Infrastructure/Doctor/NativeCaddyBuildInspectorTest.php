@@ -3,29 +3,22 @@
 declare(strict_types=1);
 
 use App\Domain\Doctor\DoctorInspectionException;
-use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildLock;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Caddy\Build\NodeCaddyLiveReader;
 use App\Infrastructure\Caddy\Build\NodeCaddyTransport;
 use App\Infrastructure\Doctor\NativeCaddyBuildInspector;
 use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessRunner;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Tests\Support\CaddySiteCertificateFixtures;
+use Tests\Support\FakeAgentCommandRunner;
 
 beforeEach(function (): void {
-    $this->ssh = new CaddyBuildInspectorSsh;
+    $this->agents = new FakeAgentCommandRunner()->answer('caddy.read-live', ['content' => '']);
     $this->lockDirectory = sys_get_temp_dir().'/orbit-caddy-build-inspector-'.bin2hex(random_bytes(6));
 });
 
@@ -36,7 +29,8 @@ afterEach(function (): void {
 it('matches a live Caddyfile that is byte for byte the fresh build', function (): void {
     $node = caddy_build_inspector_websocket_node();
     $render = app(NodeCaddyfileRenderer::class)->render($node);
-    $this->ssh->live = $render->content;
+    $this->live = $render->content;
+    $this->agents->answer('caddy.read-live', ['content' => $this->live]);
 
     $observation = caddy_build_inspector($this)->inspect($node);
 
@@ -44,24 +38,26 @@ it('matches a live Caddyfile that is byte for byte the fresh build', function ()
         ->and($observation?->expectedVersion)->toBe($render->version)
         ->and($observation?->liveVersion)->toBe($render->version)
         ->and($observation?->sources)->toBe(['websocket'])
-        ->and($this->ssh->commands[0]->arguments)->toBe(['sudo', 'bash', '-seu', '--', '/etc/caddy/Caddyfile']);
+        ->and($this->agents->commands())->toBe(['caddy.read-live']);
 });
 
 it('reports a hand edit of a built Caddyfile with the digest of the live file', function (): void {
     $node = caddy_build_inspector_websocket_node();
     $render = app(NodeCaddyfileRenderer::class)->render($node);
-    $this->ssh->live = $render->content."\nhand.example.test {\n    respond hi\n}\n";
+    $this->live = $render->content."\nhand.example.test {\n    respond hi\n}\n";
+    $this->agents->answer('caddy.read-live', ['content' => $this->live]);
 
     $observation = caddy_build_inspector($this)->inspect($node);
 
     expect($observation?->matches)->toBeFalse()
         ->and($observation?->expectedVersion)->toBe($render->version)
-        ->and($observation?->liveVersion)->toBe(NodeCaddyfileRenderer::version($this->ssh->live));
+        ->and($observation?->liveVersion)->toBe(NodeCaddyfileRenderer::version($this->live));
 });
 
 it('reports a live Caddyfile that no build wrote as not built', function (string $live): void {
     $node = caddy_build_inspector_websocket_node();
-    $this->ssh->live = $live;
+    $this->live = $live;
+    $this->agents->answer('caddy.read-live', ['content' => $this->live]);
 
     $observation = caddy_build_inspector($this)->inspect($node);
 
@@ -76,7 +72,8 @@ it('compares a Node whose Caddy role renders no site yet', function (): void {
     $node = caddy_build_inspector_node('app-dev');
     $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $render = app(NodeCaddyfileRenderer::class)->render($node);
-    $this->ssh->live = $render->content;
+    $this->live = $render->content;
+    $this->agents->answer('caddy.read-live', ['content' => $this->live]);
 
     $observation = caddy_build_inspector($this)->inspect($node);
 
@@ -88,7 +85,7 @@ it('skips a Node that serves no Caddy site and holds no Caddy role, without cont
     $node = $prepare(caddy_build_inspector_node('vpn'));
 
     expect(caddy_build_inspector($this)->inspect($node))->toBeNull()
-        ->and($this->ssh->commands)->toBe([]);
+        ->and($this->agents->calls)->toBe([]);
 })->with([
     'a Node without Caddy roles' => [static function (Node $node): Node {
         $node->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
@@ -110,7 +107,7 @@ it('skips a Node that serves no Caddy site and holds no Caddy role, without cont
 
 it('fails closed when the live Caddyfile cannot be read', function (CommandResult $result): void {
     $node = caddy_build_inspector_websocket_node();
-    $this->ssh->result = $result;
+    $this->agents->answer('caddy.read-live', static fn (): array => throw new AgentRunnerFailure('caddy.read-live', 'transport', $result->stderr));
 
     expect(fn () => caddy_build_inspector($this)->inspect($node))->toThrow(DoctorInspectionException::class);
 })->with([
@@ -120,7 +117,8 @@ it('fails closed when the live Caddyfile cannot be read', function (CommandResul
 
 it('reports a Node as not compared when a build keeps its lock past the short wait, and reads with a short timeout', function (): void {
     $node = caddy_build_inspector_websocket_node();
-    $this->ssh->live = app(NodeCaddyfileRenderer::class)->render($node)->content."# hand edit\n";
+    $this->live = app(NodeCaddyfileRenderer::class)->render($node)->content."# hand edit\n";
+    $this->agents->answer('caddy.read-live', ['content' => $this->live]);
     mkdir($this->lockDirectory, 0o700, true);
     $held = fopen("{$this->lockDirectory}/node-{$node->id}.lock", 'c+');
     flock($held, LOCK_EX);
@@ -139,7 +137,7 @@ it('reports a Node as not compared when a build keeps its lock past the short wa
         expect($observation?->building)->toBeTrue()
             ->and($observation?->matches)->toBeFalse()
             ->and($waited)->toBeGreaterThanOrEqual((int) (NativeCaddyBuildInspector::LockWaitSeconds * 1_000_000))->toBeLessThan((int) (NativeCaddyBuildInspector::LockWaitSeconds * 1_000_000) + 100_000)
-            ->and($this->ssh->commands)->toBe([]);
+            ->and($this->agents->calls)->toBe([]);
     } finally {
         flock($held, LOCK_UN);
         fclose($held);
@@ -149,20 +147,14 @@ it('reports a Node as not compared when a build keeps its lock past the short wa
 
     expect($observation?->building)->toBeFalse()
         ->and($observation?->matches)->toBeFalse()
-        ->and($this->ssh->commands[0]->timeout)->toBe(NativeCaddyBuildInspector::ReadTimeoutSeconds);
+        ->and($this->agents->commands())->toBe(['caddy.read-live']);
 });
 
 function caddy_build_inspector(object $test, ?NodeCaddyBuildLock $lock = null): NativeCaddyBuildInspector
 {
     return new NativeCaddyBuildInspector(
         app(NodeCaddyfileRenderer::class),
-        new NodeCaddyLiveReader(new NodeCaddyTransport(
-            new CaddyBuildInspectorProcesses,
-            $test->ssh,
-            new CaddyBuildInspectorKeys,
-            new CaddyBuildInspectorKnownHosts,
-            app(GatewayServingHost::class),
-        )),
+        new NodeCaddyLiveReader(new NodeCaddyTransport($test->agents)),
         $lock ?? new NodeCaddyBuildLock($test->lockDirectory),
     );
 }
@@ -186,52 +178,4 @@ function caddy_build_inspector_websocket_node(): Node
     CaddySiteCertificateFixtures::recordAll($node);
 
     return $node;
-}
-
-final class CaddyBuildInspectorSsh implements SshExecutor
-{
-    public string $live = '';
-
-    public ?CommandResult $result = null;
-
-    /** @var list<RemoteCommand> */
-    public array $commands = [];
-
-    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-    {
-        $this->commands[] = $command;
-
-        return $this->result ?? new CommandResult(0, $this->live, '', 1, false);
-    }
-}
-
-final class CaddyBuildInspectorProcesses implements ProcessRunner
-{
-    public function run(ProcessInvocation $invocation): CommandResult
-    {
-        throw new RuntimeException('The inspected Node does not run the Gateway.');
-    }
-}
-
-final readonly class CaddyBuildInspectorKeys implements SshKeyProvider
-{
-    public function privateKeyPath(): string
-    {
-        return '/tmp/key';
-    }
-
-    public function publicKey(): string
-    {
-        return 'ssh-ed25519 key';
-    }
-}
-
-final readonly class CaddyBuildInspectorKnownHosts implements KnownHostsStore
-{
-    public function path(): string
-    {
-        return '/tmp/known-hosts';
-    }
-
-    public function put(string $host, int $port, HostKey $key): void {}
 }

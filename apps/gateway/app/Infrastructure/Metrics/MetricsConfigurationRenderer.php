@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Infrastructure\Metrics;
 
 use InvalidArgumentException;
-use JsonException;
 use SensitiveParameter;
 
 final readonly class MetricsConfigurationRenderer
@@ -28,13 +27,6 @@ final readonly class MetricsConfigurationRenderer
         $prometheusFiles = [
             '/etc/orbit/metrics/prometheus.yml' => $this->prometheus->render($targets, $services),
         ];
-        // Grafana reads grafana.ini and its provisioning directory once, at
-        // start, so only these files justify replacing the container. The
-        // provisioned dashboard is deliberately absent: it carries the scraped
-        // node names, so hashing it would replace Grafana on every fleet
-        // change and drop every live session. It does not need to be hashed,
-        // because the provider polls the bind mount and reloads the dashboard
-        // while Grafana runs. See GrafanaConfigRenderer::dashboardProvider().
         $grafanaFiles = [
             '/etc/orbit/metrics/grafana/grafana.ini' => $this->grafana->rootUrl(),
             '/etc/orbit/metrics/grafana/provisioning/datasources/prometheus.yml' => $this->grafana->datasource(),
@@ -53,33 +45,14 @@ final readonly class MetricsConfigurationRenderer
         $files = [];
 
         foreach ($publicFiles as $path => $contents) {
-            // Prometheus (nobody) and Grafana (472) read these bind mounts inside
-            // their containers, so the public files stay world-readable.
-            $files[] = new MetricsGeneratedFile($path, new ProtectedMetricsSecret($contents), mode: 0o644);
+            $files[] = new MetricsGeneratedFile($path, new ProtectedMetricsSecret($contents));
         }
 
         $files[] = new MetricsGeneratedFile(
             path: '/etc/orbit/metrics/grafana/admin-password',
             contents: new ProtectedMetricsSecret($password),
-            mode: 0o400,
-            owner: '472',
-            group: '472',
         );
 
-        return new MetricsConfigurationBundle(
-            files: $files,
-            prometheusHash: hash('sha256', $this->encode($prometheusFiles)),
-            grafanaHash: hash('sha256', $this->encode($grafanaFiles)),
-        );
-    }
-
-    /** @param array<string, string> $files */
-    private function encode(array $files): string
-    {
-        try {
-            return json_encode($files, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
-        } catch (JsonException $exception) {
-            throw new InvalidArgumentException('The generated Metrics configuration is invalid.', previous: $exception);
-        }
+        return new MetricsConfigurationBundle($files);
     }
 }

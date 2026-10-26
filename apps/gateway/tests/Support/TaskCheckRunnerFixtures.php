@@ -3,29 +3,24 @@
 declare(strict_types=1);
 
 use App\Domain\GitHub\RepositoryPullRequestAccess;
-use App\Domain\Projects\GatewaySetupSteps;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
-use App\Domain\Tools\SemverVersionNormalizer;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
-use App\Infrastructure\Tools\RemoteToolCommandRunner;
-use App\Infrastructure\Tools\VpToolManager;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\ResolvedVp;
 use Tests\Support\StandardLibraryPython;
 
 function check_runner_directory(): string
@@ -39,9 +34,10 @@ function check_runner_directory(): string
 }
 
 /** Use only when command evidence, not Composer itself, is the proof. */
-function check_runner_scripted_checks(): void
+function check_runner_scripted_checks(?string $directory = null): void
 {
-    $bin = test()->directory.'/scripted-check-bin';
+    $directory ??= test()->directory;
+    $bin = $directory.'/scripted-check-bin';
     File::ensureDirectoryExists($bin);
     file_put_contents($bin.'/composer', <<<'PHP'
         #!/usr/bin/env php
@@ -56,15 +52,16 @@ function check_runner_scripted_checks(): void
         PHP
         ."\n");
     chmod($bin.'/composer', 0700);
-    file_put_contents(test()->directory.'/home/.profile', 'export PATH='.escapeshellarg($bin).':"$PATH"'."\n", FILE_APPEND);
+    file_put_contents($directory.'/home/.profile', 'export PATH='.escapeshellarg($bin).':"$PATH"'."\n", FILE_APPEND);
 }
 
-function check_runner_checkout(string $check, bool $realComposer = false): string
+function check_runner_checkout(string $check, bool $realComposer = false, ?string $directory = null): string
 {
+    $directory ??= test()->directory;
     if (! $realComposer) {
-        check_runner_scripted_checks();
+        check_runner_scripted_checks($directory);
     }
-    $checkout = test()->directory.'/'.bin2hex(random_bytes(6));
+    $checkout = $directory.'/'.bin2hex(random_bytes(6));
     new Process(['git', 'init', '--quiet', $checkout])->mustRun();
     file_put_contents($checkout.'/composer.json', json_encode(['scripts' => ['check' => $check]], JSON_THROW_ON_ERROR));
     file_put_contents($checkout.'/.gitignore', "ignored/\n");
@@ -83,35 +80,20 @@ function check_runner_instance(string $checkout, array $group = []): Instance
     return test_ready_task_workspace($project, $node, ['name' => 'task-8', 'checkout_path' => $checkout, 'branch' => 'task-8'], $group);
 }
 
-function check_runner_shell(LocalShellSshExecutor $transport): LocalShellSshExecutor
+function check_runner_shell(LocalShellSshExecutor $transport, ?string $directory = null): LocalShellSshExecutor
 {
-    $transport->environment['HOME'] = test()->directory.'/home';
+    $transport->environment['HOME'] = ($directory ?? test()->directory).'/home';
     $transport->environment['PATH'] = StandardLibraryPython::path((string) getenv('PATH'));
 
     return $transport;
 }
 
-function check_runner(SshExecutor $transport, string $vpHome = '/opt/orbit/vite-plus', ?SshExecutor $probe = null): RemoteTaskCheckRunner
+function check_runner(SshExecutor $transport, string $vpHome = '/opt/orbit/vite-plus', ?AgentCommandRunner $probe = null, ?string $directory = null): RemoteTaskCheckRunner
 {
     if ($transport instanceof LocalShellSshExecutor) {
-        check_runner_shell($transport);
+        check_runner_shell($transport, $directory);
     }
-    $vp = new VpToolManager(
-        new RemoteToolCommandRunner(
-            $probe ?? new readonly class($vpHome) implements SshExecutor
-            {
-                public function __construct(private string $home) {}
-
-                public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-                {
-                    return new CommandResult(0, $this->home."/bin/vp\n", '', 1, false);
-                }
-            },
-            app(SshKeyProvider::class),
-            app(KnownHostsStore::class),
-        ),
-        new SemverVersionNormalizer,
-    );
+    $vp = ResolvedVp::manager($vpHome, $probe);
 
     return new RemoteTaskCheckRunner(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(
         $transport,
@@ -136,7 +118,7 @@ function check_runner(SshExecutor $transport, string $vpHome = '/opt/orbit/vite-
 
             public function put(string $host, int $port, HostKey $key): void {}
         },
-    )), $vp, app(GatewaySetupSteps::class), app(RepositoryPullRequestAccess::class));
+    )), $vp, app(RepositoryPullRequestAccess::class));
 }
 
 function check_runner_wait(RemoteTaskCheckRunner $runner, Instance $instance, TaskCheckProcess $process): TaskCheckReading

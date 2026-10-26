@@ -14,6 +14,7 @@ use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\TaskVms\TaskVmPublishState;
 use App\Domain\TaskVms\TaskVmState;
+use App\Infrastructure\AgentCommands\WorkspaceAgentCommandRunner;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -40,6 +41,7 @@ use Symfony\Component\Process\Process;
 use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\GitRemoteRedirect;
+use Tests\Support\ProcessInput;
 use Tests\Support\StreamingLocalShellSshExecutor;
 use Tests\Support\TestOrbitHome;
 
@@ -218,8 +220,12 @@ describe('publish and fetch', function (): void {
             Queue::assertPushed(PublishTaskVmCommit::class, 1);
             $job = Queue::pushed(PublishTaskVmCommit::class)->sole();
             expect([$job->connection, $job->commit, $job->branch])->toBe(['gateway', $commit, $branch])
-                // Required source objects arrive first; the optional cache/baseline transfer follows.
-                ->and($transport->sent)->toHaveCount(4);
+                // Each transfer reads refs and imports a pack through the workspace agent runner.
+                ->and(array_column(app(WorkspaceAgentCommandRunner::class)->calls, 'command'))->toBe([
+                    'task-vms.read-git-refs', 'task-vms.import-git-pack',
+                    'task-vms.read-git-refs', 'task-vms.import-git-pack',
+                ])
+                ->and($transport->sent)->toHaveCount(2);
 
             $job->handle($publisher);
             expect(TaskVm::query()->where('group_id', $group->id)->sole()->publish_started_at)->not->toBeNull();
@@ -233,9 +239,8 @@ describe('publish and fetch', function (): void {
                 ->and(TaskVm::query()->where('group_id', $group->id)->sole()->publish_state)->toBe(TaskVmPublishState::Pushed)
                 ->and($transport->sent)->not->toBeEmpty();
             foreach ($transport->sent as [$connection, $command]) {
-                $input = $command->protectedInput?->stream();
                 expect($connection->host)->toBe('10.44.0.130')
-                    ->and(implode("\n", $command->arguments).($command->input ?? '').(is_resource($input) ? stream_get_contents($input) : ''))
+                    ->and(implode("\n", $command->arguments).($command->input ?? '').ProcessInput::contents($command->protectedInput))
                     ->not->toContain('ghs_push')->not->toContain(base64_encode('x-access-token:ghs_push'));
             }
         } finally {

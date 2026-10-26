@@ -17,13 +17,15 @@ covers:
 
 ## Desired fleet state
 
+Fleet rollout calls the root `cli.self-update` agent command. It supplies the managed account and, only after an authorized Gateway rollback, an exact CLI version to permit. Rust checks the installed CLI, runs the fixed executable with root's profile, and returns its parsed report and bounded diagnostics. The Gateway decides whether that result converged, needs catch-up, or permits a retry. The command holds its own target lock; each binary installer retains the shared update lock, so a child installer never waits on its parent. An unrecognized or malformed CLI report never counts as a successful update.
+
 The desired fleet state names what every machine should run for the Gateway's commit. The Gateway separately converges the [Orbit footprint](/reference/node-provisioning#converge-the-orbit-footprint); `self-update` does not apply those artifacts or remove files left by deleted artifacts.
 
 | Field | Contents |
 | --- | --- |
 | `commit` | The full SHA of the Gateway's commit, or null when the Gateway version is not a commit |
 | `cli` | The [CLI release](/reference/cli-binaries#release-contract-for-clients) of that commit: `status`, `reason`, `version`, `tag`, the `commit` CI built it from, `checksums_url`, and one asset per platform |
-| `agent` | The pinned [`orbit-agent`](/reference/node-agent#install-and-upgrade) `version` and one asset per Linux architecture |
+| `agent` | The pinned [`orbit-agent`](/reference/node-agent#install-and-upgrade) `version`, the delivery `commit` its release is tagged with, and one asset per Linux architecture |
 
 Each asset has `platform` (`linux-x86_64`, `linux-aarch64`, or `macos-arm64`), the release asset `name`, the HTTPS download `url`, and its lowercase hex `sha256`.
 
@@ -47,12 +49,13 @@ Each asset has `platform` (`linux-x86_64`, `linux-aarch64`, or `macos-arm64`), t
     ]
   },
   "agent": {
-    "version": "0.3.0",
+    "version": "0.5.0",
+    "commit": "1f0e4c5d6b7a8c9d0e1f2a3b4c5d6e7f8a9b0c1d",
     "assets": [
       {
         "platform": "linux-x86_64",
-        "name": "orbit-agent-0.3.0-linux-x86_64",
-        "url": "https://github.com/hardimpactdev/orbit/releases/download/agent-v0.3.0/orbit-agent-0.3.0-linux-x86_64",
+        "name": "orbit-agent-linux-x86_64",
+        "url": "https://github.com/hardimpactdev/orbit/releases/download/agent-v1f0e4c5d6b7a8c9d0e1f2a3b4c5d6e7f8a9b0c1d/orbit-agent-linux-x86_64",
         "sha256": "f5125b2ab36abd79882b3b11eb5d40f5e457fbf23cc8bf3ff4c096e2cab4618a"
       }
     ]
@@ -134,8 +137,8 @@ The Gateway names which release to install. It never names where to download it.
 | --- | --- |
 | CLI binary | `<location>/cli-v<version>/orbit-<version>-<platform>` |
 | CLI checksums | `<location>/cli-v<version>/SHA256SUMS` |
-| Agent binary | `<location>/agent-v<version>/orbit-agent-<version>-<platform>` |
-| Agent checksums | `<location>/agent-v<version>/SHA256SUMS` |
+| Agent binary | `<location>/agent-v<commit>/orbit-agent-<platform>` |
+| Agent checksums | `<location>/agent-v<commit>/SHA256SUMS` |
 
 The Gateway's asset `name` and `url` must equal what the CLI builds, or the step fails with `self_update.release_mismatch` or `agent.release_mismatch` before any download. The CLI downloads `SHA256SUMS` itself and reads the binary's line. That digest must equal the Gateway's `sha256`, and the download must match both. A compromised Gateway can therefore only ask for a published Orbit release. `ORBIT_SELF_UPDATE_RELEASES` on the machine itself changes the location, for a mirror you trust.
 
@@ -143,10 +146,10 @@ Every download runs `curl --disable` with HTTPS only, at most 5 redirects, and a
 
 ### One update at a time
 
-The command holds a lock while it runs: `/run/lock/orbit-self-update.lock` as root on Linux, `/var/run/orbit-self-update.lock` as root on macOS, and `$ORBIT_HOME/self-update.lock` for any other user. A second run waits up to 120 seconds and then fails with `self_update.busy`. Gateway steps hold the same lock:
+Each binary changes under one lock: `/run/lock/orbit-self-update.lock` as root on Linux, `/var/run/orbit-self-update.lock` as root on macOS, and `$ORBIT_HOME/self-update.lock` for any other user. The agent's own `agent.install` takes it for the agent, and the command takes it for the CLI. A held lock would make the installer wait for the command that started it. A second run waits up to 120 seconds for the CLI step and then fails with `self_update.busy`. Gateway steps hold the same lock:
 
-- the [agent converge](/reference/node-agent#install-and-upgrade), from its secret check through the agent restart;
-- the [fleet rollout](/reference/gateway-recovery#one-node), for its CLI install and footprint steps;
+- the [agent converge](/reference/node-agent#install-and-upgrade), whose `agent.configure` holds it from the secret check through the agent restart;
+- the [fleet rollout](/reference/gateway-recovery#one-node), whose `cli.install` holds it while it installs the CLI;
 - a release's [runtime handoff](/reference/gateway-recovery#gateway-node-agent), while it updates the Gateway Node's agent.
 
 So a Gateway step never swaps or restarts the agent while a self-update replaces it or watches its health. The converge and the rollout wait up to 300 seconds for the lock, and the handoff waits up to 120 seconds.
@@ -204,9 +207,9 @@ The agent step runs only on a **managed Node**: a Linux host whose `/etc/systemd
 | It differs or is missing, and the command does not run as root | `skipped`, reason `root_required` |
 | It differs or is missing, and the command runs as root | Replaced and restarted: `updated` |
 
-The replacement confirms the pin against the agent release's `SHA256SUMS`, as for the CLI. It keeps the current binary as `orbit-agent.orbit-previous`. It then downloads a candidate, checks its SHA-256, sets owner `root:root` and mode `0755`, and renames it over the binary. A mismatch fails with `agent.checksum_mismatch` and changes nothing.
+The agent release is tagged `agent-v<commit>`, with the delivery commit that the desired fleet state names. The replacement confirms the pin against that release's `SHA256SUMS`, as for the CLI. It downloads the asset, such as `orbit-agent-linux-x86_64`, to a private candidate beside the binary and checks its SHA-256. A mismatch fails with `agent.checksum_mismatch` and changes nothing.
 
-After `systemctl restart orbit-agent.service`, the agent must stay `active` for 5 seconds without systemd restarting it: `NRestarts` must not change. When the restart fails or the agent does not stay up, the command moves the kept binary back, restarts the agent, and fails with `agent.restart_failed` or `agent.unhealthy`. The message says whether the previous agent runs again. The agent's configuration, certificate, secret, and unit stay with the Gateway's agent converge.
+Then the candidate's own [`agent.install`](/reference/node-agent#install-on-mismatch) replaces the binary under the update lock and restarts the observer. The observer must stay active for 5 seconds; otherwise the installer restores the kept binary and the step fails with `agent.health_check_failed`. An installer refusal fails the step with its own code and message, and an installer that prints no result fails with `agent.install_failed`. The agent's configuration, certificate, secret, and unit stay with the Gateway's agent converge.
 
 When the agent step fails, the CLI step does not run. It reports `skipped` with reason `previous_step_failed`.
 
@@ -267,7 +270,7 @@ The CLI prints it at most once every 24 hours, and only when standard error is a
 
 A Node with an active `ci-runner` role participates in [fleet rollout group 2](/reference/gateway-recovery#rollout-set-and-order). A recorded recipe profile does not add a roleless Node to the rollout.
 
-[Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) pins the Ubuntu snapshot and role tools separately. It holds the same Node update lock as `self-update`, so the two operations cannot replace software at the same time. Recipe convergence verifies the Node with the fleet verifier before recording its recipe identity.
+[Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) pins the Ubuntu snapshot and role tools separately. Each binary replacement holds the same Node update lock as `self-update`. Recipe convergence releases that lock during package work and Doctor. Its final `recipe.verify-delivery` command takes the lock again, checks the installed agent digest and requested CLI version, and returns the identity the Gateway may record. Earlier observations cannot mark the Node current.
 
 [Update and recover a Gateway: Limits](/reference/gateway-recovery#limits) lists what is not built yet.
 

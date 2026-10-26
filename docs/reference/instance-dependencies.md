@@ -108,7 +108,7 @@ For non-monorepo types, the Gateway runs these steps as the Node's user in the s
 
 The inspection refuses a Yarn project, an unsupported layout, two package managers, and an unverified Vite+.
 
-Each package step has a 600-second deadline and owns its process group. A failed step stops the steps after it. Orbit claims no rollback. The update succeeds only when every package step and the final scan succeed.
+The Gateway selects the ecosystem and enforces development-only updates. Typed [Node agent commands](/reference/node-agent#commands) inspect the source, run the constrained package update as its owner, and return the result. Each package step has a 600-second deadline and owns its process group. A failed step stops the steps after it. Orbit claims no rollback. The update succeeds only when every package step and the final scan succeed.
 
 Orbit uses the first Vite+ it finds at `/opt/orbit/vite-plus/bin/vp`, `~/.vite-plus/bin/vp`, `~/.vite-plus/current/bin/vp`, `~/.local/share/vite-plus/bin/vp`, or `~/.local/share/vite-plus/current/bin/vp`. It also accepts the launcher `/usr/local/bin/vp`. Only Vite+ 0.3.0 is verified. Another version fails with `dependencies.unsupported_delegation`.
 

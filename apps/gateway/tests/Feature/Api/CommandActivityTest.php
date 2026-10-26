@@ -53,6 +53,7 @@ use Tests\Support\FakeGatewayPrivateDnsRoute;
 use Tests\Support\FakeNodeConverger;
 use Tests\Support\FakeNodeRoleFirewallManager;
 use Tests\Support\FakeRouteRemovalProjector;
+use Tests\Support\FakesEnvironmentSyncInspection;
 use Tests\Support\FakeToolManager;
 use Tests\Support\FakeToolManagerMaterializer;
 
@@ -1848,6 +1849,8 @@ final class CommandActivityFirewallFakeManager implements FirewallManager
 
 final readonly class CommandActivityEnvironmentAccess implements InstanceEnvironmentReader, InstanceEnvironmentWriter, InstanceOperationPreflight
 {
+    use FakesEnvironmentSyncInspection;
+
     public function __construct(
         private string $contents,
     ) {}

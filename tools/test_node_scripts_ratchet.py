@@ -54,6 +54,16 @@ class ScriptRatchetTest(unittest.TestCase):
         self.assertEqual(sum(counts['files'].values()), 8)
         self.assertEqual(counts['inline'], {})
 
+    def test_compiled_extension_sources_are_not_delivered_scripts(self):
+        counts = self.scan({
+            'apps/gateway/extensions/documents/agent/Cargo.toml': '[package]',
+            'apps/gateway/extensions/documents/agent/src/lib.rs': 'pub fn register() {}',
+            'apps/gateway/extensions/documents/agent/src/hidden.rs': '#!/bin/sh\ntrue',
+            'apps/gateway/extensions/documents/agent/src/worker.py': 'pass',
+            'apps/gateway/extensions/documents/resources/worker.rs': 'program',
+        })
+        self.assertEqual(sum(counts['files'].values()), 3)
+
     def test_moves_between_files_and_into_extensions_are_neutral(self):
         before = self.scan({
             'apps/gateway/app/One.php': "<<<'SCRIPT'\ntrue\nSCRIPT;\n",
@@ -160,18 +170,6 @@ class ScriptRatchetTest(unittest.TestCase):
                 path = 'apps/gateway/resources/probe.' + suffix
                 self.assertEqual(self.scan({path: valid})['files'], {})
                 self.assertEqual(sum(self.scan({path: 'echo true'})['files'].values()), 1)
-
-    def test_ci_host_authorization_is_limited_to_its_first_addition(self):
-        empty = self.scan({})
-        host = self.scan({RATCHET.CI_HOST: 'pass'})
-        self.assertEqual(RATCHET.growth(empty, host), [])
-        extra = self.scan({RATCHET.CI_HOST: 'pass', 'apps/gateway/resources/other.py': 'pass'})
-        self.assertEqual(RATCHET.growth(empty, extra), ['files: 0 -> 2'])
-        self.assertEqual(RATCHET.growth(host, extra), ['files: 1 -> 2'])
-        inline = self.scan({RATCHET.CI_HOST: 'pass', 'apps/gateway/app/Other.php': "['sh', '-c', 'true'];"})
-        self.assertEqual(RATCHET.growth(empty, inline), ['inline: 0 -> 1'])
-        unrelated = self.scan({'apps/gateway/resources/other.py': 'pass'})
-        self.assertEqual(RATCHET.growth(empty, unrelated), ['files: 0 -> 1'])
 
     def test_only_total_growth_fails_and_categories_cannot_offset_each_other(self):
         before = self.scan({'apps/gateway/app/A.php': "['sh', '-c', 'true'];"})

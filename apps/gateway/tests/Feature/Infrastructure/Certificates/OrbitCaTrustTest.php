@@ -6,13 +6,9 @@ use App\Domain\Broadcasting\RealtimeConnection;
 use App\Domain\Broadcasting\RealtimeConnectionData;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\GatewayReleases\GatewayReleaseException;
-use App\Domain\Schedules\ScheduleRenderer;
-use App\Domain\Schedules\ScheduleTarget;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Infrastructure\Certificates\OrbitCaCurlFactory;
 use App\Infrastructure\GatewayReleases\HttpGatewayReleaseVerifier;
-use App\Models\Node;
-use App\Models\Schedule;
 use GuzzleHttp\Handler\CurlHandler;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\File;
@@ -203,31 +199,6 @@ it('accepts Orbit certificates and rejects a different CA for internal HTTPS', f
     $send($trusted);
     expect(fn () => $send($untrusted))->toThrow(Exception::class);
 })->with(['ai-router', 'reverb', 'release']);
-
-it('sends Schedule callbacks only to an Orbit certificate and cleans up the private CA directory', function (): void {
-    $trusted = orbit_https_server($this->servers, $this->directory, 'orbit', 'ok');
-    $untrusted = orbit_https_server($this->servers, $this->directory, 'system', 'ok');
-    $systemStore = $this->directory.'/system-store';
-    $temporary = $this->directory.'/callback-tmp';
-    mkdir($systemStore);
-    mkdir($temporary);
-    $hash = openssl_x509_parse((string) file_get_contents($this->systemRoot))['hash'];
-    symlink($this->systemRoot, $systemStore.'/'.$hash.'.0');
-    $schedule = new Schedule(['id' => '123e4567-e89b-42d3-a456-426614174000', 'command' => 'true']);
-    $target = new ScheduleTarget(new Node, 'orbit', 'orbit', '/home/orbit', '/home/orbit', '/bin/bash', false, null);
-
-    foreach ([$trusted, $untrusted] as $port) {
-        $renderer = new ScheduleRenderer($this->signer, "https://127.0.0.1:{$port}");
-        // Supply the ambient CA directory explicitly, as libcurl's compiled-in directory would.
-        // The rendered callback must override it with an empty private directory.
-        $script = str_replace('/usr/bin/curl ', '/usr/bin/curl --capath '.escapeshellarg($systemStore).' ', $renderer->renderScript($schedule, $target));
-        (new Process(['/bin/bash', '-c', $script, 'callback', 'complete'], env: ['TMPDIR' => $temporary, 'SERVICE_RESULT' => 'success']))->mustRun();
-    }
-
-    expect(is_file($this->directory.'/received-orbit.pem'))->toBeTrue();
-    expect(is_file($this->directory.'/received-system.pem'))->toBeFalse();
-    expect(glob($temporary.'/*'))->toBe([]);
-});
 
 it('fails release verification when the Orbit CA file is missing', function (): void {
     $port = orbit_https_server($this->servers, $this->directory, 'orbit', 'ok');

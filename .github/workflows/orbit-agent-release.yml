@@ -1,104 +1,113 @@
 name: Orbit Agent Release
 
+# Publishes the agent delivery that main's CI built and tested (ADR 0225). It never rebuilds: it downloads the
+# `agent-delivery` artifact of the CI run, tags the delivery's commit `agent-v<commit>`, and attaches the same
+# binaries, SHA256SUMS, and a manifest with release URLs. The delivery commit is the last commit that changed
+# apps/agent, so a Gateway release whose agent sources did not change keeps the existing delivery.
 on:
-  push:
-    tags:
-      - 'agent-v*'
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: The CI run on main whose agent-delivery artifact to publish again
+        required: true
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
-  group: orbit-agent-release-${{ github.ref }}
+  group: orbit-agent-release
   cancel-in-progress: false
 
 jobs:
-  build:
-    name: Build agent release
+  publish:
+    name: Publish agent delivery
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-26.04
-    outputs:
-      version: ${{ steps.version.outputs.value }}
-    defaults:
-      run:
-        working-directory: apps/agent
+    # Only this environment holds the release App, the one identity the agent-v* tag ruleset lets create a tag.
+    environment: agent-release
     steps:
-      - name: Check out repository
+      - name: Find the CI run
+        id: run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          run=$(gh api "repos/$REPOSITORY/actions/runs/$RUN_ID")
+          [ "$(jq -r .head_branch <<<"$run")" = main ] && [ "$(jq -r .conclusion <<<"$run")" = success ] || { echo "Run $RUN_ID is not a passing run on main" >&2; exit 1; }
+          echo "id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "head=$(jq -r .head_sha <<<"$run")" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the tested commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ steps.run.outputs.head }}
+          fetch-depth: 0
 
-      - name: Validate tag version and release immutability
-        id: version
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.ref_name }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          scripts/check-release-tag.sh "$RELEASE_TAG" "$REPOSITORY"
-          echo "value=${RELEASE_TAG#agent-v}" >> "$GITHUB_OUTPUT"
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-        with:
-          targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
-
-      - name: Install cross compiler
-        run: cargo install cross --locked
-
-      - name: Build static x86_64 binary
-        run: cross build --locked --release --target x86_64-unknown-linux-musl
-
-      - name: Build static aarch64 binary
-        run: cross build --locked --release --target aarch64-unknown-linux-musl
-
-      - name: Prepare release assets
-        env:
-          VERSION: ${{ steps.version.outputs.value }}
-        run: |
-          set -euo pipefail
-          cp target/x86_64-unknown-linux-musl/release/orbit-agent "orbit-agent-${VERSION}-linux-x86_64"
-          cp target/aarch64-unknown-linux-musl/release/orbit-agent "orbit-agent-${VERSION}-linux-aarch64"
-          sha256sum "orbit-agent-${VERSION}-linux-x86_64" "orbit-agent-${VERSION}-linux-aarch64" > SHA256SUMS
-
-      - name: Upload release assets
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: agent-release
-          path: |
-            apps/agent/orbit-agent-${{ steps.version.outputs.value }}-linux-x86_64
-            apps/agent/orbit-agent-${{ steps.version.outputs.value }}-linux-aarch64
-            apps/agent/SHA256SUMS
-          if-no-files-found: error
-          retention-days: 1
-
-  publish:
-    name: Publish agent release
-    needs: build
-    runs-on: ubuntu-26.04
-    permissions:
-      contents: write
-    steps:
-      - name: Download release assets
+      - name: Download the tested delivery
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: agent-release
-          path: ${{ runner.temp }}/agent-release
+          name: agent-delivery
+          path: ${{ runner.temp }}/agent-delivery
+          run-id: ${{ steps.run.outputs.id }}
+          github-token: ${{ github.token }}
 
-      - name: Publish GitHub release
-        working-directory: ${{ runner.temp }}/agent-release
+      - name: Validate the delivery and its tag
+        id: tag
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.ref_name }}
-          VERSION: ${{ needs.build.outputs.version }}
           REPOSITORY: ${{ github.repository }}
+          HEAD_SHA: ${{ steps.run.outputs.head }}
+          DELIVERY: ${{ runner.temp }}/agent-delivery
         run: |
           set -euo pipefail
-          gh release create "$RELEASE_TAG" \
-            "orbit-agent-${VERSION}-linux-x86_64" \
-            "orbit-agent-${VERSION}-linux-aarch64" \
-            SHA256SUMS \
+          commit=$(jq -r .commit "$DELIVERY/manifest.json")
+          if gh release view "agent-v$commit" --repo "$REPOSITORY" >/dev/null 2>&1; then
+            echo "agent-v$commit is already published"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          apps/agent/scripts/check-release-tag.sh "agent-v$commit" "$REPOSITORY" "$DELIVERY/manifest.json" "$HEAD_SHA"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Add release URLs to the manifest
+        if: steps.tag.outputs.skip == 'false'
+        env:
+          DELIVERY: ${{ runner.temp }}/agent-delivery
+          BASE: https://github.com/${{ github.repository }}/releases/download/agent-v${{ steps.tag.outputs.commit }}
+        run: |
+          set -euo pipefail
+          jq --arg base "$BASE" '.artifacts |= with_entries(.value.url = ($base + "/" + .value.path))' "$DELIVERY/manifest.json" > "$DELIVERY/manifest.json.new"
+          mv "$DELIVERY/manifest.json.new" "$DELIVERY/manifest.json"
+
+      - name: Mint the release App token
+        if: steps.tag.outputs.skip == 'false'
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.ORBIT_RELEASE_APP_ID }}
+          private-key: ${{ secrets.ORBIT_RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Tag the commit and publish the delivery
+        if: steps.tag.outputs.skip == 'false'
+        working-directory: ${{ runner.temp }}/agent-delivery
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          REPOSITORY: ${{ github.repository }}
+          COMMIT: ${{ steps.tag.outputs.commit }}
+        run: |
+          set -euo pipefail
+          version=$(jq -r .version manifest.json)
+          gh release create "agent-v$COMMIT" orbit-agent-linux-* orbit-agent-macos-* SHA256SUMS manifest.json \
             --repo "$REPOSITORY" \
-            --verify-tag \
-            --title "orbit-agent ${VERSION}" \
-            --notes "Static Linux binaries for orbit-agent ${VERSION}."
+            --target "$COMMIT" \
+            --title "orbit-agent $version ($COMMIT)" \
+            --notes "Linux and macOS binaries for orbit-agent $version, built and tested by CI at $COMMIT."

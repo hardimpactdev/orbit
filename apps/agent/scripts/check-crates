@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Include the runner and its directly composed local contract/extension crates in Cargo checks.
+set -euo pipefail
+case ${1:-} in test|clippy) action=$1; shift ;; *) echo 'Usage: scripts/check-crates test|clippy [cargo arguments]' >&2; exit 2 ;; esac
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+packages=()
+while IFS= read -r name; do packages+=(-p "$name"); done < <(
+    cargo metadata --locked --no-deps --format-version=1 | jq -r '.packages[] | .name, (.dependencies[] | select(.path != null) | .name)' | sort -u
+)
+[[ ${#packages[@]} -gt 0 ]] || { echo 'No agent crates found' >&2; exit 1; }
+exec cargo "$action" "${packages[@]}" "$@"

@@ -13,16 +13,10 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StorageRootResolver;
-use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\Tasks\TaskWorkspaceLifecycle;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Processes\CommandDeadline;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
@@ -30,9 +24,7 @@ use App\Models\Project;
 final readonly class NativeProjectStateInspector implements ProjectStateInspector
 {
     public function __construct(
-        private SshExecutor $ssh,
-        private SshKeyProvider $keys,
-        private KnownHostsStore $knownHosts,
+        private AgentCommandRunner $agents,
         private CommandDeadline $deadline,
         private ManagedUserAccountResolver $accounts,
         private StorageRootResolver $storageRoots,
@@ -49,7 +41,6 @@ final readonly class NativeProjectStateInspector implements ProjectStateInspecto
         try {
             $account = null;
             $repository = GitRepositoryOrigin::validate($project->repository_url);
-            $identity = GitRepositoryIdentity::derive($repository);
         } catch (\Throwable) {
             throw new DoctorInspectionException;
         }
@@ -79,10 +70,7 @@ final readonly class NativeProjectStateInspector implements ProjectStateInspecto
                     'path' => $instance->checkout_path,
                     'root' => $home,
                     'user' => $user,
-                    'slug' => $project->slug,
-                    'instance' => $instance->name,
-                    'mode' => 'app-prod',
-                    'expected_root' => '',
+                    'production' => true,
                 ];
 
                 continue;
@@ -95,133 +83,43 @@ final readonly class NativeProjectStateInspector implements ProjectStateInspecto
                 'path' => $instance->checkout_path,
                 'root' => $root,
                 'user' => $account->user,
-                'slug' => '',
-                'instance' => '',
-                'mode' => 'app-dev',
-                'expected_root' => $root,
+                'production' => false,
             ];
         }
-        $match = true;
-        $mismatchingInstanceIds = [];
-        $failedInstanceIds = [];
-        foreach ($checkouts as $checkout) {
-            try {
-                $result = $this->ssh->execute(
-                    new SshConnection(
-                        $host,
-                        $node->user,
-                        22,
-                        $this->keys->privateKeyPath(),
-                        $this->knownHosts->path(),
-                        commandTimeout: $this->deadline->cap(30.0),
-                    ),
-                    new RemoteCommand(
-                        [
-                            'bash',
-                            '-seu',
-                            '--',
-                            $repository,
-                            $checkout['path'],
-                            $checkout['root'],
-                            $checkout['user'],
-                            $checkout['slug'],
-                            $checkout['instance'],
-                            $checkout['mode'],
-                            $checkout['expected_root'],
-                        ],
-                        input: 'repository=$1'
-                        ."\n"
-                        .'checkout=$2'
-                        ."\n"
-                        .'root=$3'
-                        ."\n"
-                        .'user=$4'
-                        ."\n"
-                        .'slug=$5'
-                        ."\n"
-                        .'instance=$6'
-                        ."\n"
-                        .'mode=$7'
-                        ."\n"
-                        .'expected_root=$8'
-                        ."\n"
-                        .'if [ "$mode" = app-dev ]; then'
-                        ."\n"
-                        .'  test -z "$slug" && test -z "$instance"'
-                        ."\n"
-                        .'  test "$root" = "$expected_root"'
-                        ."\n"
-                        .'  case "$checkout" in "$expected_root"|"$expected_root"/*) ;; *) exit 1 ;; esac'
-                        ."\n"
-                        .'  if test -d "$checkout" && test ! -L "$checkout"; then'
-                        .' origin=$(git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" config --get remote.origin.url 2>/dev/null) || origin=;'
-                        .' printf "1 %s\\n" "$(printf %s "$origin" | base64 --wrap=0)"; else printf "0\\n"; fi'
-                        ."\n"
-                        .'  exit 0'
-                        ."\n"
-                        .'fi'
-                        ."\n"
-                        .'test -n "$user" && test -n "$root" && test -n "$checkout"'
-                        ."\n"
-                        .'test ! -L "$root"'
-                        ."\n"
-                        .'if sudo -u "$user" -H -- test -d "$checkout"'
-                        .' && sudo -u "$user" -H -- test ! -L "$checkout"'
-                        .' && test "$(sudo -u "$user" -H -- realpath -e "$checkout")" = "$checkout"'
-                        .' && test "$(sudo -u "$user" -H -- stat -c %U "$checkout")" = "$user"'
-                        .' && test "$(sudo -u "$user" -H -- git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" rev-parse --show-toplevel 2>/dev/null)" = "$checkout"; then'
-                        .' origin=$(sudo -u "$user" -H -- git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" config --get remote.origin.url 2>/dev/null) || origin=;'
-                        .' printf "1 %s\\n" "$(printf %s "$origin" | base64 --wrap=0)"; else printf "0\\n"; fi'
-                        ."\n",
-                    ),
-                );
-            } catch (\Throwable) {
-                $failedInstanceIds[] = (int) $checkout['instance_id'];
+        if ($checkouts === []) {
+            return new ProjectInspectionData(0, true);
+        }
 
-                continue;
+        $ids = array_column($checkouts, 'instance_id');
+        try {
+            $result = $this->agents->run($node, 'doctor.inspect-project', [
+                'repository' => $repository,
+                'checkouts' => $checkouts,
+            ], $this->deadline->cap(30.0));
+            $observations = $result['checkouts'] ?? null;
+            if (! is_array($observations) || ! array_is_list($observations) || count($observations) !== count($checkouts)) {
+                throw new DoctorInspectionException;
             }
-
-            $originMatches = $this->originMatches($result, $identity);
-            if ($originMatches === null) {
-                $failedInstanceIds[] = (int) $checkout['instance_id'];
-
-                continue;
+            $mismatchingInstanceIds = [];
+            $failedInstanceIds = [];
+            foreach ($observations as $index => $observation) {
+                if (! is_array($observation)
+                    || ($observation['instance_id'] ?? null) !== $ids[$index]
+                    || ! array_key_exists('matches', $observation)
+                    || ($observation['matches'] !== null && ! is_bool($observation['matches']))) {
+                    throw new DoctorInspectionException;
+                }
+                if ($observation['matches'] === null) {
+                    $failedInstanceIds[] = $ids[$index];
+                } elseif (! $observation['matches']) {
+                    $mismatchingInstanceIds[] = $ids[$index];
+                }
             }
-
-            if (! $originMatches) {
-                $mismatchingInstanceIds[] = (int) $checkout['instance_id'];
-                $match = false;
-            }
+        } catch (\Throwable) {
+            return new ProjectInspectionData(count($checkouts), true, [], $ids);
         }
 
-        return new ProjectInspectionData(count($checkouts), $match, $mismatchingInstanceIds, $failedInstanceIds);
-    }
-
-    /**
-     * Compares the observed checkout origin by repository identity, so equivalent
-     * SSH and HTTPS URLs match. Returns null when the observation is unusable.
-     */
-    private function originMatches(CommandResult $result, string $identity): ?bool
-    {
-        if (! $result->succeeded() || $result->truncated) {
-            return null;
-        }
-
-        if ($result->stdout === "0\n") {
-            return false;
-        }
-
-        $matches = [];
-        if (preg_match('/\A1 ([A-Za-z0-9+\/]*={0,2})\n\z/', $result->stdout, $matches) !== 1) {
-            return null;
-        }
-
-        $origin = base64_decode($matches[1], true);
-        if (! is_string($origin) || ! GitRepositoryOrigin::isValid($origin)) {
-            return false;
-        }
-
-        return GitRepositoryIdentity::derive($origin) === $identity;
+        return new ProjectInspectionData(count($checkouts), $mismatchingInstanceIds === [], $mismatchingInstanceIds, $failedInstanceIds);
     }
 
     /** Resolves the single managed apps root for development checkouts. */

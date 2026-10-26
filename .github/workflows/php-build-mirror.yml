@@ -10,7 +10,7 @@ on:
     paths:
       - apps/gateway/resources/machine-software/recipe.json
       - bin/php-build
-      - apps/gateway/resources/remote/lib/artifacts.py
+      - tools/agent_command.py
       - .github/workflows/php-build-mirror.yml
   workflow_dispatch:
 

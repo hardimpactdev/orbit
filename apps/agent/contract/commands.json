@@ -1,0 +1,5825 @@
+{
+  "common_errors": [
+    "agent.version_mismatch",
+    "agent.envelope_invalid",
+    "agent.binary_input_invalid",
+    "agent.unknown_command",
+    "agent.invalid_input",
+    "agent.identity_mismatch",
+    "agent.platform_unsupported",
+    "agent.deadline_exceeded",
+    "agent.supervisor_failed",
+    "agent.supervisor_not_ready",
+    "agent.target_busy",
+    "agent.lock_unavailable"
+  ],
+  "commands": [
+    {
+      "name": "analytics.configure-clickhouse",
+      "summary": "Publish Plausible's four fixed ClickHouse configuration files.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "analytics.clickhouse_config_unsafe",
+        "analytics.clickhouse_config_failed",
+        "analytics.clickhouse_recovery_failed"
+      ]
+    },
+    {
+      "name": "task-vms.start-topology",
+      "summary": "Start one bounded topology preparation as the managed account.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.topology_input_invalid",
+        "task_vm.topology_failed"
+      ]
+    },
+    {
+      "name": "task-vms.topology-status",
+      "summary": "Read a topology result, boot identity, or conservative systemd state.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.topology_input_invalid",
+        "task_vm.topology_failed"
+      ]
+    },
+    {
+      "name": "agent.status",
+      "summary": "Report the running agent binary and its observer.",
+      "mutates": false,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "agent.digest_unreadable"
+      ]
+    },
+    {
+      "name": "gateway.check-release-adoption",
+      "summary": "Prepare or inspect a Gateway release adoption repository and private environment.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_adopt_conflict",
+        "gateway.release_adopt_unsupported",
+        "gateway.release_adopt_not_checkout",
+        "gateway.release_adopt_local_changes",
+        "gateway.release_adopt_repository_conflict",
+        "gateway.release_adopt_repository_failed",
+        "gateway.release_adopt_env_missing",
+        "gateway.release_adopt_env_conflict",
+        "gateway.release_adopt_env_failed"
+      ]
+    },
+    {
+      "name": "gateway.adopt-release-repository",
+      "summary": "Prepare or inspect a Gateway release adoption repository and private environment.",
+      "mutates": true,
+      "timeout_seconds": 600,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_adopt_conflict",
+        "gateway.release_adopt_unsupported",
+        "gateway.release_adopt_not_checkout",
+        "gateway.release_adopt_local_changes",
+        "gateway.release_adopt_repository_conflict",
+        "gateway.release_adopt_repository_failed",
+        "gateway.release_adopt_env_missing",
+        "gateway.release_adopt_env_conflict",
+        "gateway.release_adopt_env_failed"
+      ]
+    },
+    {
+      "name": "gateway.inspect-adoption-origin",
+      "summary": "Prepare or inspect a Gateway release adoption repository and private environment.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_adopt_conflict",
+        "gateway.release_adopt_unsupported",
+        "gateway.release_adopt_not_checkout",
+        "gateway.release_adopt_local_changes",
+        "gateway.release_adopt_repository_conflict",
+        "gateway.release_adopt_repository_failed",
+        "gateway.release_adopt_env_missing",
+        "gateway.release_adopt_env_conflict",
+        "gateway.release_adopt_env_failed"
+      ]
+    },
+    {
+      "name": "gateway.resolve-adoption-target",
+      "summary": "Prepare or inspect a Gateway release adoption repository and private environment.",
+      "mutates": true,
+      "timeout_seconds": 600,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_adopt_conflict",
+        "gateway.release_adopt_unsupported",
+        "gateway.release_adopt_not_checkout",
+        "gateway.release_adopt_local_changes",
+        "gateway.release_adopt_repository_conflict",
+        "gateway.release_adopt_repository_failed",
+        "gateway.release_adopt_env_missing",
+        "gateway.release_adopt_env_conflict",
+        "gateway.release_adopt_env_failed"
+      ]
+    },
+    {
+      "name": "gateway.adopt-release-environment",
+      "summary": "Prepare or inspect a Gateway release adoption repository and private environment.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_adopt_conflict",
+        "gateway.release_adopt_unsupported",
+        "gateway.release_adopt_not_checkout",
+        "gateway.release_adopt_local_changes",
+        "gateway.release_adopt_repository_conflict",
+        "gateway.release_adopt_repository_failed",
+        "gateway.release_adopt_env_missing",
+        "gateway.release_adopt_env_conflict",
+        "gateway.release_adopt_env_failed"
+      ]
+    },
+    {
+      "name": "gateway.restore-adoption-environment",
+      "summary": "Prepare or inspect a Gateway release adoption repository and private environment.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_adopt_conflict",
+        "gateway.release_adopt_unsupported",
+        "gateway.release_adopt_not_checkout",
+        "gateway.release_adopt_local_changes",
+        "gateway.release_adopt_repository_conflict",
+        "gateway.release_adopt_repository_failed",
+        "gateway.release_adopt_env_missing",
+        "gateway.release_adopt_env_conflict",
+        "gateway.release_adopt_env_failed"
+      ]
+    },
+    {
+      "name": "gateway.switch-release",
+      "summary": "Select a prepared Gateway release or inspect its Git identity.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_path_conflict",
+        "gateway.release_not_prepared",
+        "gateway.release_not_adopted",
+        "gateway.release_switch_failed",
+        "gateway.release_downgrade",
+        "gateway.release_source_unknown"
+      ]
+    },
+    {
+      "name": "gateway.check-release-forward",
+      "summary": "Select a prepared Gateway release or inspect its Git identity.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_path_conflict",
+        "gateway.release_not_prepared",
+        "gateway.release_not_adopted",
+        "gateway.release_switch_failed",
+        "gateway.release_downgrade",
+        "gateway.release_source_unknown"
+      ]
+    },
+    {
+      "name": "gateway.inspect-release-source",
+      "summary": "Select a prepared Gateway release or inspect its Git identity.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_path_conflict",
+        "gateway.release_not_prepared",
+        "gateway.release_not_adopted",
+        "gateway.release_switch_failed",
+        "gateway.release_downgrade",
+        "gateway.release_source_unknown"
+      ]
+    },
+    {
+      "name": "gateway.inspect-releases",
+      "summary": "Select a prepared Gateway release or inspect its Git identity.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_path_conflict",
+        "gateway.release_not_prepared",
+        "gateway.release_not_adopted",
+        "gateway.release_switch_failed",
+        "gateway.release_downgrade",
+        "gateway.release_source_unknown"
+      ]
+    },
+    {
+      "name": "gateway.inspect-release-preparation",
+      "summary": "Prepare, complete, or remove an account-owned Gateway release.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_commit_invalid",
+        "gateway.release_layout_missing",
+        "gateway.release_path_conflict",
+        "gateway.release_disk_low",
+        "gateway.release_fetch_failed",
+        "gateway.release_commit_unknown",
+        "gateway.release_conflict",
+        "gateway.release_current_incomplete",
+        "gateway.release_worktree_failed",
+        "gateway.release_link_failed",
+        "gateway.release_dependencies_failed",
+        "gateway.release_access_failed",
+        "gateway.release_agent_delivery_invalid",
+        "gateway.release_revision_failed",
+        "gateway.release_configuration_failed",
+        "gateway.release_migrate_failed",
+        "gateway.release_schema_pending",
+        "gateway.release_handoff_failed",
+        "gateway.release_current",
+        "gateway.release_not_prepared",
+        "gateway.release_lock_unavailable",
+        "gateway.release_in_progress"
+      ]
+    },
+    {
+      "name": "gateway.prepare-release",
+      "summary": "Prepare, complete, or remove an account-owned Gateway release.",
+      "mutates": true,
+      "timeout_seconds": 2400,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_commit_invalid",
+        "gateway.release_layout_missing",
+        "gateway.release_path_conflict",
+        "gateway.release_disk_low",
+        "gateway.release_fetch_failed",
+        "gateway.release_commit_unknown",
+        "gateway.release_conflict",
+        "gateway.release_current_incomplete",
+        "gateway.release_worktree_failed",
+        "gateway.release_link_failed",
+        "gateway.release_dependencies_failed",
+        "gateway.release_access_failed",
+        "gateway.release_agent_delivery_invalid",
+        "gateway.release_revision_failed",
+        "gateway.release_configuration_failed",
+        "gateway.release_migrate_failed",
+        "gateway.release_schema_pending",
+        "gateway.release_handoff_failed",
+        "gateway.release_current",
+        "gateway.release_not_prepared",
+        "gateway.release_lock_unavailable",
+        "gateway.release_in_progress"
+      ]
+    },
+    {
+      "name": "gateway.inspect-release-agent-delivery",
+      "summary": "Resolve the prepared checkout's agent source identity and verify its delivery.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_commit_invalid",
+        "gateway.release_layout_missing",
+        "gateway.release_path_conflict",
+        "gateway.release_disk_low",
+        "gateway.release_fetch_failed",
+        "gateway.release_commit_unknown",
+        "gateway.release_conflict",
+        "gateway.release_current_incomplete",
+        "gateway.release_worktree_failed",
+        "gateway.release_link_failed",
+        "gateway.release_dependencies_failed",
+        "gateway.release_access_failed",
+        "gateway.release_agent_delivery_invalid",
+        "gateway.release_revision_failed",
+        "gateway.release_configuration_failed",
+        "gateway.release_migrate_failed",
+        "gateway.release_schema_pending",
+        "gateway.release_handoff_failed",
+        "gateway.release_current",
+        "gateway.release_not_prepared",
+        "gateway.release_lock_unavailable",
+        "gateway.release_in_progress"
+      ]
+    },
+    {
+      "name": "gateway.install-release-agent-delivery",
+      "summary": "Validate and atomically install the immutable agent manifest in a release checkout.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_commit_invalid",
+        "gateway.release_layout_missing",
+        "gateway.release_path_conflict",
+        "gateway.release_disk_low",
+        "gateway.release_fetch_failed",
+        "gateway.release_commit_unknown",
+        "gateway.release_conflict",
+        "gateway.release_current_incomplete",
+        "gateway.release_worktree_failed",
+        "gateway.release_link_failed",
+        "gateway.release_dependencies_failed",
+        "gateway.release_access_failed",
+        "gateway.release_agent_delivery_invalid",
+        "gateway.release_revision_failed",
+        "gateway.release_configuration_failed",
+        "gateway.release_migrate_failed",
+        "gateway.release_schema_pending",
+        "gateway.release_handoff_failed",
+        "gateway.release_current",
+        "gateway.release_not_prepared",
+        "gateway.release_lock_unavailable",
+        "gateway.release_in_progress"
+      ]
+    },
+    {
+      "name": "gateway.finish-release",
+      "summary": "Prepare, complete, or remove an account-owned Gateway release.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_commit_invalid",
+        "gateway.release_layout_missing",
+        "gateway.release_path_conflict",
+        "gateway.release_disk_low",
+        "gateway.release_fetch_failed",
+        "gateway.release_commit_unknown",
+        "gateway.release_conflict",
+        "gateway.release_current_incomplete",
+        "gateway.release_worktree_failed",
+        "gateway.release_link_failed",
+        "gateway.release_dependencies_failed",
+        "gateway.release_access_failed",
+        "gateway.release_agent_delivery_invalid",
+        "gateway.release_revision_failed",
+        "gateway.release_configuration_failed",
+        "gateway.release_migrate_failed",
+        "gateway.release_schema_pending",
+        "gateway.release_handoff_failed",
+        "gateway.release_current",
+        "gateway.release_not_prepared",
+        "gateway.release_lock_unavailable",
+        "gateway.release_in_progress"
+      ]
+    },
+    {
+      "name": "gateway.refresh-release-configuration",
+      "summary": "Prepare, complete, or remove an account-owned Gateway release.",
+      "mutates": true,
+      "timeout_seconds": 180,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_commit_invalid",
+        "gateway.release_layout_missing",
+        "gateway.release_path_conflict",
+        "gateway.release_disk_low",
+        "gateway.release_fetch_failed",
+        "gateway.release_commit_unknown",
+        "gateway.release_conflict",
+        "gateway.release_current_incomplete",
+        "gateway.release_worktree_failed",
+        "gateway.release_link_failed",
+        "gateway.release_dependencies_failed",
+        "gateway.release_access_failed",
+        "gateway.release_agent_delivery_invalid",
+        "gateway.release_revision_failed",
+        "gateway.release_configuration_failed",
+        "gateway.release_migrate_failed",
+        "gateway.release_schema_pending",
+        "gateway.release_handoff_failed",
+        "gateway.release_current",
+        "gateway.release_not_prepared",
+        "gateway.release_lock_unavailable",
+        "gateway.release_in_progress"
+      ]
+    },
+    {
+      "name": "gateway.remove-release",
+      "summary": "Prepare, complete, or remove an account-owned Gateway release.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_commit_invalid",
+        "gateway.release_layout_missing",
+        "gateway.release_path_conflict",
+        "gateway.release_disk_low",
+        "gateway.release_fetch_failed",
+        "gateway.release_commit_unknown",
+        "gateway.release_conflict",
+        "gateway.release_current_incomplete",
+        "gateway.release_worktree_failed",
+        "gateway.release_link_failed",
+        "gateway.release_dependencies_failed",
+        "gateway.release_access_failed",
+        "gateway.release_agent_delivery_invalid",
+        "gateway.release_revision_failed",
+        "gateway.release_configuration_failed",
+        "gateway.release_migrate_failed",
+        "gateway.release_schema_pending",
+        "gateway.release_handoff_failed",
+        "gateway.release_current",
+        "gateway.release_not_prepared",
+        "gateway.release_lock_unavailable",
+        "gateway.release_in_progress"
+      ]
+    },
+    {
+      "name": "gateway.inspect-release-step",
+      "summary": "Prepare, complete, or remove an account-owned Gateway release.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_commit_invalid",
+        "gateway.release_layout_missing",
+        "gateway.release_path_conflict",
+        "gateway.release_disk_low",
+        "gateway.release_fetch_failed",
+        "gateway.release_commit_unknown",
+        "gateway.release_conflict",
+        "gateway.release_current_incomplete",
+        "gateway.release_worktree_failed",
+        "gateway.release_link_failed",
+        "gateway.release_dependencies_failed",
+        "gateway.release_access_failed",
+        "gateway.release_agent_delivery_invalid",
+        "gateway.release_revision_failed",
+        "gateway.release_configuration_failed",
+        "gateway.release_migrate_failed",
+        "gateway.release_schema_pending",
+        "gateway.release_handoff_failed",
+        "gateway.release_current",
+        "gateway.release_not_prepared",
+        "gateway.release_lock_unavailable",
+        "gateway.release_in_progress"
+      ]
+    },
+    {
+      "name": "gateway.migrate-release",
+      "summary": "Prepare, complete, or remove an account-owned Gateway release.",
+      "mutates": true,
+      "timeout_seconds": 960,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_commit_invalid",
+        "gateway.release_layout_missing",
+        "gateway.release_path_conflict",
+        "gateway.release_disk_low",
+        "gateway.release_fetch_failed",
+        "gateway.release_commit_unknown",
+        "gateway.release_conflict",
+        "gateway.release_current_incomplete",
+        "gateway.release_worktree_failed",
+        "gateway.release_link_failed",
+        "gateway.release_dependencies_failed",
+        "gateway.release_access_failed",
+        "gateway.release_agent_delivery_invalid",
+        "gateway.release_revision_failed",
+        "gateway.release_configuration_failed",
+        "gateway.release_migrate_failed",
+        "gateway.release_schema_pending",
+        "gateway.release_handoff_failed",
+        "gateway.release_current",
+        "gateway.release_not_prepared",
+        "gateway.release_lock_unavailable",
+        "gateway.release_in_progress"
+      ]
+    },
+    {
+      "name": "gateway.check-release-migrations",
+      "summary": "Prepare, complete, or remove an account-owned Gateway release.",
+      "mutates": true,
+      "timeout_seconds": 180,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_commit_invalid",
+        "gateway.release_layout_missing",
+        "gateway.release_path_conflict",
+        "gateway.release_disk_low",
+        "gateway.release_fetch_failed",
+        "gateway.release_commit_unknown",
+        "gateway.release_conflict",
+        "gateway.release_current_incomplete",
+        "gateway.release_worktree_failed",
+        "gateway.release_link_failed",
+        "gateway.release_dependencies_failed",
+        "gateway.release_access_failed",
+        "gateway.release_agent_delivery_invalid",
+        "gateway.release_revision_failed",
+        "gateway.release_configuration_failed",
+        "gateway.release_migrate_failed",
+        "gateway.release_schema_pending",
+        "gateway.release_handoff_failed",
+        "gateway.release_current",
+        "gateway.release_not_prepared",
+        "gateway.release_lock_unavailable",
+        "gateway.release_in_progress"
+      ]
+    },
+    {
+      "name": "gateway.handoff-release",
+      "summary": "Prepare, complete, or remove an account-owned Gateway release.",
+      "mutates": true,
+      "timeout_seconds": 4860,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_commit_invalid",
+        "gateway.release_layout_missing",
+        "gateway.release_path_conflict",
+        "gateway.release_disk_low",
+        "gateway.release_fetch_failed",
+        "gateway.release_commit_unknown",
+        "gateway.release_conflict",
+        "gateway.release_current_incomplete",
+        "gateway.release_worktree_failed",
+        "gateway.release_link_failed",
+        "gateway.release_dependencies_failed",
+        "gateway.release_access_failed",
+        "gateway.release_agent_delivery_invalid",
+        "gateway.release_revision_failed",
+        "gateway.release_configuration_failed",
+        "gateway.release_migrate_failed",
+        "gateway.release_schema_pending",
+        "gateway.release_handoff_failed",
+        "gateway.release_current",
+        "gateway.release_not_prepared",
+        "gateway.release_lock_unavailable",
+        "gateway.release_in_progress"
+      ]
+    },
+    {
+      "name": "gateway.inspect-release-hold",
+      "summary": "Verify the operator's release hold against Node writer and process observations.",
+      "mutates": false,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_not_drained"
+      ]
+    },
+    {
+      "name": "gateway.inspect-release-process",
+      "summary": "Observe the exact native identity of a declared unrelated Gateway Node Process.",
+      "mutates": false,
+      "timeout_seconds": 90,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_not_drained"
+      ]
+    },
+    {
+      "name": "gateway.protect-release-recovery",
+      "summary": "Preserve and verify a private standalone staged SQLite recovery copy.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_recovery_invalid",
+        "gateway.release_recovery_foreign_keys",
+        "gateway.release_restore_required"
+      ]
+    },
+    {
+      "name": "gateway.verify-release-recovery",
+      "summary": "Verify the recorded private staged recovery copy without changing it.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_recovery_invalid",
+        "gateway.release_recovery_foreign_keys",
+        "gateway.release_restore_required"
+      ]
+    },
+    {
+      "name": "gateway.write-release-receipt",
+      "summary": "Publish one private staged record receipt without overwriting another identity.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_recovery_invalid",
+        "gateway.release_recovery_foreign_keys",
+        "gateway.release_restore_required"
+      ]
+    },
+    {
+      "name": "gateway.read-release-receipt",
+      "summary": "Read the private receipt for one staged record and exact target SHA.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_recovery_invalid",
+        "gateway.release_recovery_foreign_keys",
+        "gateway.release_restore_required"
+      ]
+    },
+    {
+      "name": "gateway.inspect-release-owner",
+      "summary": "Verify the Gateway execution account and private release state without changing it.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_owner_invalid"
+      ]
+    },
+    {
+      "name": "gateway.inspect-web-build",
+      "summary": "Inspect one web build and the artifact download limit.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_web_directory_missing",
+        "gateway.release_web_build_invalid",
+        "gateway.release_web_install_failed",
+        "gateway.release_web_build_missing",
+        "gateway.release_web_publish_failed"
+      ]
+    },
+    {
+      "name": "gateway.install-web-build",
+      "summary": "Validate and install a downloaded web artifact with Caddy access.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_web_directory_missing",
+        "gateway.release_web_build_invalid",
+        "gateway.release_web_install_failed",
+        "gateway.release_web_build_missing",
+        "gateway.release_web_publish_failed"
+      ]
+    },
+    {
+      "name": "gateway.publish-web-build",
+      "summary": "Publish one installed web build and retain the exact previous target.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_web_directory_missing",
+        "gateway.release_web_build_invalid",
+        "gateway.release_web_install_failed",
+        "gateway.release_web_build_missing",
+        "gateway.release_web_publish_failed"
+      ]
+    },
+    {
+      "name": "gateway.restore-web-build",
+      "summary": "Restore the exact web target preceding a failed activation.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_web_directory_missing",
+        "gateway.release_web_build_invalid",
+        "gateway.release_web_install_failed",
+        "gateway.release_web_build_missing",
+        "gateway.release_web_publish_failed"
+      ]
+    },
+    {
+      "name": "gateway.remove-web-build",
+      "summary": "Remove one retired web build while preserving the current build.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_web_directory_missing",
+        "gateway.release_web_build_invalid",
+        "gateway.release_web_install_failed",
+        "gateway.release_web_build_missing",
+        "gateway.release_web_publish_failed"
+      ]
+    },
+    {
+      "name": "gateway.prune-web-builds",
+      "summary": "Remove unretained web builds while preserving the current build.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_web_directory_missing",
+        "gateway.release_web_build_invalid",
+        "gateway.release_web_install_failed",
+        "gateway.release_web_build_missing",
+        "gateway.release_web_publish_failed"
+      ]
+    },
+    {
+      "name": "gateway.converge-release-units",
+      "summary": "Converge fixed release units and host retention without restarting release services.",
+      "mutates": true,
+      "timeout_seconds": 1500,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_units_invalid",
+        "gateway.release_units_install_failed",
+        "gateway.release_unit_failed"
+      ]
+    },
+    {
+      "name": "gateway.converge-fleet-units",
+      "summary": "Manage one fixed Gateway control-plane service.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.service_units_invalid",
+        "gateway.fleet_units_install_failed",
+        "gateway.agent_view_install_failed",
+        "gateway.hibernator_install_failed",
+        "gateway.fleet_start_failed"
+      ]
+    },
+    {
+      "name": "gateway.converge-agent-view",
+      "summary": "Manage one fixed Gateway control-plane service.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.service_units_invalid",
+        "gateway.fleet_units_install_failed",
+        "gateway.agent_view_install_failed",
+        "gateway.hibernator_install_failed",
+        "gateway.fleet_start_failed"
+      ]
+    },
+    {
+      "name": "gateway.converge-hibernator",
+      "summary": "Manage one fixed Gateway control-plane service.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.service_units_invalid",
+        "gateway.fleet_units_install_failed",
+        "gateway.agent_view_install_failed",
+        "gateway.hibernator_install_failed",
+        "gateway.fleet_start_failed"
+      ]
+    },
+    {
+      "name": "gateway.start-fleet-run",
+      "summary": "Manage one fixed Gateway control-plane service.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.service_units_invalid",
+        "gateway.fleet_units_install_failed",
+        "gateway.agent_view_install_failed",
+        "gateway.hibernator_install_failed",
+        "gateway.fleet_start_failed"
+      ]
+    },
+    {
+      "name": "gateway.drain-scheduler",
+      "summary": "Apply one fixed Gateway scheduler handoff step to an owned Process unit.",
+      "mutates": true,
+      "timeout_seconds": 3660,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_scheduler_invalid",
+        "gateway.release_scheduler_failed"
+      ]
+    },
+    {
+      "name": "gateway.start-scheduler",
+      "summary": "Apply one fixed Gateway scheduler handoff step to an owned Process unit.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_scheduler_invalid",
+        "gateway.release_scheduler_failed"
+      ]
+    },
+    {
+      "name": "gateway.stop-scheduler",
+      "summary": "Apply one fixed Gateway scheduler handoff step to an owned Process unit.",
+      "mutates": true,
+      "timeout_seconds": 150,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_scheduler_invalid",
+        "gateway.release_scheduler_failed"
+      ]
+    },
+    {
+      "name": "gateway.restart-release-process",
+      "summary": "Apply one fixed Gateway scheduler handoff step to an owned Process unit.",
+      "mutates": true,
+      "timeout_seconds": 90,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_scheduler_invalid",
+        "gateway.release_scheduler_failed"
+      ]
+    },
+    {
+      "name": "gateway.start-release-run",
+      "summary": "Request the fixed release unit for one queued record.",
+      "mutates": true,
+      "timeout_seconds": 45,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_units_invalid",
+        "gateway.release_units_install_failed",
+        "gateway.release_unit_failed"
+      ]
+    },
+    {
+      "name": "gateway.inspect-release-run",
+      "summary": "Read the systemd state of one release record without taking a lock.",
+      "mutates": false,
+      "timeout_seconds": 15,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_units_invalid",
+        "gateway.release_units_install_failed",
+        "gateway.release_unit_failed"
+      ]
+    },
+    {
+      "name": "gateway.inspect-release-database",
+      "summary": "Inspect the configured release database and WAL size.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_snapshot_unavailable",
+        "gateway.release_snapshot_failed",
+        "gateway.release_disk_low",
+        "gateway.release_layout_invalid",
+        "gateway.release_lock_unavailable",
+        "gateway.release_in_progress"
+      ]
+    },
+    {
+      "name": "gateway.snapshot-release-database",
+      "summary": "Create a private consistent release database snapshot and retain recovery copies.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_snapshot_unavailable",
+        "gateway.release_snapshot_failed",
+        "gateway.release_disk_low",
+        "gateway.release_layout_invalid",
+        "gateway.release_lock_unavailable",
+        "gateway.release_in_progress"
+      ]
+    },
+    {
+      "name": "gateway.prepare-identity",
+      "summary": "Prepare the Gateway account's SSH and WireGuard identity without replacing existing keys.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.identity_invalid",
+        "gateway.directory_failed",
+        "gateway.ssh_key_failed",
+        "vpn.key_generation_failed",
+        "gateway.self_access_failed"
+      ]
+    },
+    {
+      "name": "gateway.converge-self-access",
+      "summary": "Authorize the Gateway account's managed key and read its SSH host identity.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.identity_invalid",
+        "gateway.directory_failed",
+        "gateway.ssh_key_failed",
+        "vpn.key_generation_failed",
+        "gateway.self_access_failed"
+      ]
+    },
+    {
+      "name": "gateway.adopt-release-storage",
+      "summary": "Converge a Gateway release adoption transition without a missing serving path.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_adopt_conflict",
+        "gateway.release_adopt_storage_missing",
+        "gateway.release_adopt_storage_conflict",
+        "gateway.release_not_prepared",
+        "gateway.release_adoption_failed"
+      ]
+    },
+    {
+      "name": "gateway.switch-release-adoption",
+      "summary": "Converge a Gateway release adoption transition without a missing serving path.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_adopt_conflict",
+        "gateway.release_adopt_storage_missing",
+        "gateway.release_adopt_storage_conflict",
+        "gateway.release_not_prepared",
+        "gateway.release_adoption_failed"
+      ]
+    },
+    {
+      "name": "gateway.restore-release-adoption",
+      "summary": "Converge a Gateway release adoption transition without a missing serving path.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_adopt_conflict",
+        "gateway.release_adopt_storage_missing",
+        "gateway.release_adopt_storage_conflict",
+        "gateway.release_not_prepared",
+        "gateway.release_adoption_failed"
+      ]
+    },
+    {
+      "name": "gateway.finish-release-adoption",
+      "summary": "Converge a Gateway release adoption transition without a missing serving path.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_adopt_conflict",
+        "gateway.release_adopt_storage_missing",
+        "gateway.release_adopt_storage_conflict",
+        "gateway.release_not_prepared",
+        "gateway.release_adoption_failed"
+      ]
+    },
+    {
+      "name": "gateway.converge-fpm",
+      "summary": "Validate and activate the Gateway pool and startup hooks, preserving unchanged requests.",
+      "mutates": true,
+      "timeout_seconds": 180,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.fpm_invalid",
+        "gateway.fpm_unsafe",
+        "gateway.fpm_failed",
+        "gateway.fpm_hook_failed",
+        "gateway.fpm_recovery_failed",
+        "gateway.fpm_observation_failed"
+      ]
+    },
+    {
+      "name": "gateway.inspect-fpm-connections",
+      "summary": "Count accepted connections on every enabled Gateway PHP-FPM pool socket.",
+      "mutates": false,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.fpm_invalid",
+        "gateway.fpm_unsafe",
+        "gateway.fpm_failed",
+        "gateway.fpm_hook_failed",
+        "gateway.fpm_recovery_failed",
+        "gateway.fpm_observation_failed"
+      ]
+    },
+    {
+      "name": "tools.inspect-vp-store",
+      "summary": "Inspect exact immutable deployment runtimes without locks or network access.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.store_invalid",
+        "tools.store_failed",
+        "tools.store_lock_timeout"
+      ]
+    },
+    {
+      "name": "tools.install-vp-environment",
+      "summary": "Verify and publish missing Node and package-manager runtimes as the store owner.",
+      "mutates": true,
+      "timeout_seconds": 600,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.store_invalid",
+        "tools.store_failed",
+        "tools.store_lock_timeout"
+      ]
+    },
+    {
+      "name": "tools.prune-vp-store",
+      "summary": "Collect only unreferenced runtimes with an Orbit deployment receipt.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.store_invalid",
+        "tools.store_failed",
+        "tools.store_lock_timeout"
+      ]
+    },
+    {
+      "name": "tools.read-vp-project",
+      "summary": "Read Project runtime requirements as its account without executing hooks.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "owner",
+        "macos": "owner"
+      },
+      "errors": [
+        "tools.project_invalid"
+      ]
+    },
+    {
+      "name": "tools.inspect-vp-scope",
+      "summary": "Find the enrolled account's existing Vite+ scope without changing it.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.vp_scope_absent",
+        "tools.vp_scope_conflict",
+        "tools.vp_scope_unreadable"
+      ]
+    },
+    {
+      "name": "tools.materialize-vp",
+      "summary": "Prepare the Linux Vite+ scope and verify its managed launchers.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "tools.vp_materialize_invalid",
+        "tools.vp_materialize_conflict",
+        "tools.vp_materialize_failed",
+        "tools.vp_materialize_restore_failed"
+      ]
+    },
+    {
+      "name": "tools.composer-version",
+      "summary": "Read the Composer manager version.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "tools.composer_input_invalid",
+        "tools.composer_operation_failed",
+        "tools.composer_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.composer-candidate",
+      "summary": "Read one package's Composer dry-run candidate.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "tools.composer_input_invalid",
+        "tools.composer_operation_failed",
+        "tools.composer_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.composer-inventory",
+      "summary": "Read installed Composer global package observations.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "tools.composer_input_invalid",
+        "tools.composer_operation_failed",
+        "tools.composer_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.composer-removal-plan",
+      "summary": "Check removal of one Composer root requirement.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "tools.composer_input_invalid",
+        "tools.composer_operation_failed",
+        "tools.composer_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.composer-install",
+      "summary": "Add one Composer global root requirement.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "tools.composer_input_invalid",
+        "tools.composer_operation_failed",
+        "tools.composer_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.composer-update",
+      "summary": "Update one Composer global root and its dependencies.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "tools.composer_input_invalid",
+        "tools.composer_operation_failed",
+        "tools.composer_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.composer-remove",
+      "summary": "Remove one Composer global root requirement.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "tools.composer_input_invalid",
+        "tools.composer_operation_failed",
+        "tools.composer_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.inspect-homebrew-scope",
+      "summary": "Inspect the enrolled account's Homebrew prefix without changing it.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.homebrew_account_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_materialize_failed"
+      ]
+    },
+    {
+      "name": "tools.materialize-homebrew",
+      "summary": "Prepare the owned Linux Homebrew prefix and verify its pinned release.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "tools.homebrew_account_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_materialize_failed"
+      ]
+    },
+    {
+      "name": "tools.homebrew-version",
+      "summary": "Read the verified Homebrew manager version.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.homebrew_input_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_operation_failed",
+        "tools.homebrew_output_invalid",
+        "tools.homebrew_version_unsupported",
+        "tools.homebrew_bottle_unavailable",
+        "tools.homebrew_package_protected",
+        "tools.homebrew_candidate_invalid",
+        "tools.homebrew_cask_source",
+        "tools.homebrew_cask_artifact",
+        "tools.homebrew_cask_authorization",
+        "tools.homebrew_cask_checksum",
+        "tools.homebrew_cask_version"
+      ]
+    },
+    {
+      "name": "tools.homebrew-formula-inventory",
+      "summary": "Read installed formula versions without loading formula definitions.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.homebrew_input_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_operation_failed",
+        "tools.homebrew_output_invalid",
+        "tools.homebrew_version_unsupported",
+        "tools.homebrew_bottle_unavailable",
+        "tools.homebrew_package_protected",
+        "tools.homebrew_candidate_invalid",
+        "tools.homebrew_cask_source",
+        "tools.homebrew_cask_artifact",
+        "tools.homebrew_cask_authorization",
+        "tools.homebrew_cask_checksum",
+        "tools.homebrew_cask_version"
+      ]
+    },
+    {
+      "name": "tools.homebrew-formula-candidate",
+      "summary": "Read one official Core formula's verified bottle candidate.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.homebrew_input_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_operation_failed",
+        "tools.homebrew_output_invalid",
+        "tools.homebrew_version_unsupported",
+        "tools.homebrew_bottle_unavailable",
+        "tools.homebrew_package_protected",
+        "tools.homebrew_candidate_invalid",
+        "tools.homebrew_cask_source",
+        "tools.homebrew_cask_artifact",
+        "tools.homebrew_cask_authorization",
+        "tools.homebrew_cask_checksum",
+        "tools.homebrew_cask_version"
+      ]
+    },
+    {
+      "name": "tools.homebrew-formula-adoption",
+      "summary": "Inspect one installed formula for explicit adoption without changing packages.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.homebrew_input_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_operation_failed",
+        "tools.homebrew_output_invalid",
+        "tools.homebrew_version_unsupported",
+        "tools.homebrew_bottle_unavailable",
+        "tools.homebrew_package_protected",
+        "tools.homebrew_candidate_invalid",
+        "tools.homebrew_cask_source",
+        "tools.homebrew_cask_artifact",
+        "tools.homebrew_cask_authorization",
+        "tools.homebrew_cask_checksum",
+        "tools.homebrew_cask_version"
+      ]
+    },
+    {
+      "name": "tools.homebrew-formula-install",
+      "summary": "Install one verified Core bottle.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.homebrew_input_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_operation_failed",
+        "tools.homebrew_output_invalid",
+        "tools.homebrew_version_unsupported",
+        "tools.homebrew_bottle_unavailable",
+        "tools.homebrew_package_protected",
+        "tools.homebrew_candidate_invalid",
+        "tools.homebrew_cask_source",
+        "tools.homebrew_cask_artifact",
+        "tools.homebrew_cask_authorization",
+        "tools.homebrew_cask_checksum",
+        "tools.homebrew_cask_version"
+      ]
+    },
+    {
+      "name": "tools.homebrew-formula-update",
+      "summary": "Upgrade one verified Core bottle without unpinning it.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.homebrew_input_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_operation_failed",
+        "tools.homebrew_output_invalid",
+        "tools.homebrew_version_unsupported",
+        "tools.homebrew_bottle_unavailable",
+        "tools.homebrew_package_protected",
+        "tools.homebrew_candidate_invalid",
+        "tools.homebrew_cask_source",
+        "tools.homebrew_cask_artifact",
+        "tools.homebrew_cask_authorization",
+        "tools.homebrew_cask_checksum",
+        "tools.homebrew_cask_version"
+      ]
+    },
+    {
+      "name": "tools.homebrew-formula-remove",
+      "summary": "Remove exactly one unprotected Core formula.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.homebrew_input_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_operation_failed",
+        "tools.homebrew_output_invalid",
+        "tools.homebrew_version_unsupported",
+        "tools.homebrew_bottle_unavailable",
+        "tools.homebrew_package_protected",
+        "tools.homebrew_candidate_invalid",
+        "tools.homebrew_cask_source",
+        "tools.homebrew_cask_artifact",
+        "tools.homebrew_cask_authorization",
+        "tools.homebrew_cask_checksum",
+        "tools.homebrew_cask_version"
+      ]
+    },
+    {
+      "name": "tools.homebrew-cask-inventory",
+      "summary": "Read installed official cask versions.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": null,
+        "macos": "account"
+      },
+      "errors": [
+        "tools.homebrew_input_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_operation_failed",
+        "tools.homebrew_output_invalid",
+        "tools.homebrew_version_unsupported",
+        "tools.homebrew_bottle_unavailable",
+        "tools.homebrew_package_protected",
+        "tools.homebrew_candidate_invalid",
+        "tools.homebrew_cask_source",
+        "tools.homebrew_cask_artifact",
+        "tools.homebrew_cask_authorization",
+        "tools.homebrew_cask_checksum",
+        "tools.homebrew_cask_version"
+      ]
+    },
+    {
+      "name": "tools.homebrew-cask-candidate",
+      "summary": "Read the safe official cask candidate.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": null,
+        "macos": "account"
+      },
+      "errors": [
+        "tools.homebrew_input_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_operation_failed",
+        "tools.homebrew_output_invalid",
+        "tools.homebrew_version_unsupported",
+        "tools.homebrew_bottle_unavailable",
+        "tools.homebrew_package_protected",
+        "tools.homebrew_candidate_invalid",
+        "tools.homebrew_cask_source",
+        "tools.homebrew_cask_artifact",
+        "tools.homebrew_cask_authorization",
+        "tools.homebrew_cask_checksum",
+        "tools.homebrew_cask_version"
+      ]
+    },
+    {
+      "name": "tools.homebrew-cask-adoption",
+      "summary": "Inspect an installed cask for explicit adoption.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": null,
+        "macos": "account"
+      },
+      "errors": [
+        "tools.homebrew_input_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_operation_failed",
+        "tools.homebrew_output_invalid",
+        "tools.homebrew_version_unsupported",
+        "tools.homebrew_bottle_unavailable",
+        "tools.homebrew_package_protected",
+        "tools.homebrew_candidate_invalid",
+        "tools.homebrew_cask_source",
+        "tools.homebrew_cask_artifact",
+        "tools.homebrew_cask_authorization",
+        "tools.homebrew_cask_checksum",
+        "tools.homebrew_cask_version"
+      ]
+    },
+    {
+      "name": "tools.homebrew-cask-install",
+      "summary": "Install one safe official cask.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": null,
+        "macos": "account"
+      },
+      "errors": [
+        "tools.homebrew_input_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_operation_failed",
+        "tools.homebrew_output_invalid",
+        "tools.homebrew_version_unsupported",
+        "tools.homebrew_bottle_unavailable",
+        "tools.homebrew_package_protected",
+        "tools.homebrew_candidate_invalid",
+        "tools.homebrew_cask_source",
+        "tools.homebrew_cask_artifact",
+        "tools.homebrew_cask_authorization",
+        "tools.homebrew_cask_checksum",
+        "tools.homebrew_cask_version"
+      ]
+    },
+    {
+      "name": "tools.homebrew-cask-update",
+      "summary": "Upgrade one safe official cask.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": null,
+        "macos": "account"
+      },
+      "errors": [
+        "tools.homebrew_input_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_operation_failed",
+        "tools.homebrew_output_invalid",
+        "tools.homebrew_version_unsupported",
+        "tools.homebrew_bottle_unavailable",
+        "tools.homebrew_package_protected",
+        "tools.homebrew_candidate_invalid",
+        "tools.homebrew_cask_source",
+        "tools.homebrew_cask_artifact",
+        "tools.homebrew_cask_authorization",
+        "tools.homebrew_cask_checksum",
+        "tools.homebrew_cask_version"
+      ]
+    },
+    {
+      "name": "tools.homebrew-cask-remove",
+      "summary": "Remove one cask after checking uninstall safety.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": null,
+        "macos": "account"
+      },
+      "errors": [
+        "tools.homebrew_input_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_operation_failed",
+        "tools.homebrew_output_invalid",
+        "tools.homebrew_version_unsupported",
+        "tools.homebrew_bottle_unavailable",
+        "tools.homebrew_package_protected",
+        "tools.homebrew_candidate_invalid",
+        "tools.homebrew_cask_source",
+        "tools.homebrew_cask_artifact",
+        "tools.homebrew_cask_authorization",
+        "tools.homebrew_cask_checksum",
+        "tools.homebrew_cask_version"
+      ]
+    },
+    {
+      "name": "tools.homebrew-scan",
+      "summary": "Read formula and cask inventories independently without changing Tool intent.",
+      "mutates": false,
+      "timeout_seconds": 180,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.homebrew_input_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_operation_failed",
+        "tools.homebrew_output_invalid",
+        "tools.homebrew_version_unsupported",
+        "tools.homebrew_bottle_unavailable",
+        "tools.homebrew_package_protected",
+        "tools.homebrew_candidate_invalid",
+        "tools.homebrew_cask_source",
+        "tools.homebrew_cask_artifact",
+        "tools.homebrew_cask_authorization",
+        "tools.homebrew_cask_checksum",
+        "tools.homebrew_cask_version"
+      ]
+    },
+    {
+      "name": "tools.inspect-composer-scope",
+      "summary": "Read Composer root requirements from the owned shared scope.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "tools.composer_account_invalid",
+        "tools.composer_scope_absent",
+        "tools.composer_scope_conflict",
+        "tools.composer_scope_unreadable",
+        "tools.composer_materialize_failed"
+      ]
+    },
+    {
+      "name": "tools.materialize-composer",
+      "summary": "Install Composer prerequisites and prepare the account-owned shared scope.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "tools.composer_account_invalid",
+        "tools.composer_scope_absent",
+        "tools.composer_scope_conflict",
+        "tools.composer_scope_unreadable",
+        "tools.composer_materialize_failed"
+      ]
+    },
+    {
+      "name": "tools.apt-version",
+      "summary": "Read the APT manager version.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "tools.apt_input_invalid",
+        "tools.apt_operation_failed",
+        "tools.apt_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.apt-candidate",
+      "summary": "Read APT's normal candidate for one package.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "tools.apt_input_invalid",
+        "tools.apt_operation_failed",
+        "tools.apt_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.apt-inventory",
+      "summary": "Read installed APT package versions and unverifiable states.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "tools.apt_input_invalid",
+        "tools.apt_operation_failed",
+        "tools.apt_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.apt-removal-plan",
+      "summary": "Read every package APT would remove.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "tools.apt_input_invalid",
+        "tools.apt_operation_failed",
+        "tools.apt_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.apt-install",
+      "summary": "Install exactly the requested APT package with no recommendations.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "tools.apt_input_invalid",
+        "tools.apt_operation_failed",
+        "tools.apt_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.apt-update",
+      "summary": "Update exactly the requested APT package to its normal candidate.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "tools.apt_input_invalid",
+        "tools.apt_operation_failed",
+        "tools.apt_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.apt-remove",
+      "summary": "Remove the requested APT package without purging or autoremoving.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "tools.apt_input_invalid",
+        "tools.apt_operation_failed",
+        "tools.apt_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.vp-version",
+      "summary": "Read the account's Vite+ manager version.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.vp_input_invalid",
+        "tools.vp_package_protected",
+        "tools.vp_scope_absent",
+        "tools.vp_scope_conflict",
+        "tools.vp_scope_unreadable",
+        "tools.vp_operation_failed",
+        "tools.vp_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.vp-candidate",
+      "summary": "Read Vite+'s normal registry candidate for one package.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.vp_input_invalid",
+        "tools.vp_package_protected",
+        "tools.vp_scope_absent",
+        "tools.vp_scope_conflict",
+        "tools.vp_scope_unreadable",
+        "tools.vp_operation_failed",
+        "tools.vp_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.vp-inventory",
+      "summary": "Read Vite+ global package observations without changing Tool intent.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.vp_input_invalid",
+        "tools.vp_package_protected",
+        "tools.vp_scope_absent",
+        "tools.vp_scope_conflict",
+        "tools.vp_scope_unreadable",
+        "tools.vp_operation_failed",
+        "tools.vp_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.vp-removal-plan",
+      "summary": "Check removal of exactly one Vite+ global package.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.vp_input_invalid",
+        "tools.vp_package_protected",
+        "tools.vp_scope_absent",
+        "tools.vp_scope_conflict",
+        "tools.vp_scope_unreadable",
+        "tools.vp_operation_failed",
+        "tools.vp_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.vp-install",
+      "summary": "Install one Vite+ global package with its normal Node selection.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.vp_input_invalid",
+        "tools.vp_package_protected",
+        "tools.vp_scope_absent",
+        "tools.vp_scope_conflict",
+        "tools.vp_scope_unreadable",
+        "tools.vp_operation_failed",
+        "tools.vp_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.vp-update",
+      "summary": "Update one Vite+ global package and reconcile its Node runtime.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.vp_input_invalid",
+        "tools.vp_package_protected",
+        "tools.vp_scope_absent",
+        "tools.vp_scope_conflict",
+        "tools.vp_scope_unreadable",
+        "tools.vp_operation_failed",
+        "tools.vp_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.vp-remove",
+      "summary": "Remove exactly one Vite+ global package.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.vp_input_invalid",
+        "tools.vp_package_protected",
+        "tools.vp_scope_absent",
+        "tools.vp_scope_conflict",
+        "tools.vp_scope_unreadable",
+        "tools.vp_operation_failed",
+        "tools.vp_output_invalid"
+      ]
+    },
+    {
+      "name": "image.inspect-phase",
+      "summary": "Observe an image phase's retained service and builder boot.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.image_build_failed",
+        "task_vm.image_channel_lost",
+        "task_vm.image_builder_rebooted"
+      ]
+    },
+    {
+      "name": "image.start-phase",
+      "summary": "Start an immutable recipe phase under its bounded, retained systemd unit.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.image_build_failed",
+        "task_vm.image_channel_lost",
+        "task_vm.image_builder_rebooted"
+      ]
+    },
+    {
+      "name": "image.restart-phase",
+      "summary": "Restart only the failed invocation recorded by the image build attempt.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.image_build_failed",
+        "task_vm.image_channel_lost",
+        "task_vm.image_builder_rebooted"
+      ]
+    },
+    {
+      "name": "image.verify",
+      "summary": "Verify image pins and guest tool access without refreshing indexes or installing packages.",
+      "mutates": false,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.image_build_failed"
+      ]
+    },
+    {
+      "name": "pi.receive-artifact",
+      "summary": "Receive a bounded Pi binary chunk into its fixed verified artifact cache.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "pi.artifact_invalid",
+        "pi.artifact_failed"
+      ]
+    },
+    {
+      "name": "pi.install-artifact",
+      "summary": "Publish the verified Pi binary at the managed account's fixed runtime path.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "pi.artifact_invalid",
+        "pi.artifact_failed"
+      ]
+    },
+    {
+      "name": "pi.inspect-artifact",
+      "summary": "Check the managed account's installed Pi digest and executable mode.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "pi.artifact_invalid",
+        "pi.artifact_failed"
+      ]
+    },
+    {
+      "name": "pi.configure-runtime",
+      "summary": "Publish the managed account's private Pi provider settings and token.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "pi.runtime_invalid",
+        "pi.runtime_failed"
+      ]
+    },
+    {
+      "name": "gateway.prepare-web-directory",
+      "summary": "Prepare the Gateway web release directories for Caddy.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.web_directory_invalid",
+        "gateway.web_directory_failed"
+      ]
+    },
+    {
+      "name": "gateway.publish-certificate",
+      "summary": "Validate and publish the Gateway certificate with Caddy activation recovery.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.certificate_invalid",
+        "gateway.certificate_unsafe",
+        "gateway.certificate_failed",
+        "gateway.certificate_recovery_failed"
+      ]
+    },
+    {
+      "name": "gateway.check-checkout",
+      "summary": "Check the Gateway checkout and managed release link before convergence.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.checkout_invalid",
+        "gateway.checkout_failed",
+        "gateway.checkout_recovery_failed"
+      ]
+    },
+    {
+      "name": "gateway.prepare-checkout",
+      "summary": "Grant Caddy checkout access while keeping private files and immutable releases protected.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.checkout_invalid",
+        "gateway.checkout_failed",
+        "gateway.checkout_recovery_failed"
+      ]
+    },
+    {
+      "name": "caddy.order-after-vpn",
+      "summary": "Order Caddy after the managed WireGuard interface.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "services.ordering_unsafe",
+        "services.ordering_failed",
+        "services.ordering_recovery_failed"
+      ]
+    },
+    {
+      "name": "wireguard.remove-dns-ordering",
+      "summary": "Remove the dnsmasq dependency that creates a WireGuard boot cycle.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "services.ordering_unsafe",
+        "services.ordering_failed",
+        "services.ordering_recovery_failed"
+      ]
+    },
+    {
+      "name": "php.inspect-build",
+      "summary": "Inspect the pinned PHP build, extra packages, and extension ownership.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "php.build_input_invalid",
+        "php.build_platform_unsupported",
+        "php.build_conflicting_source",
+        "php.build_extra_packages",
+        "php.build_unowned_extensions",
+        "php.build_download_failed",
+        "php.build_rollback_unavailable",
+        "php.build_install_failed",
+        "php.build_modules_mismatch",
+        "php.build_fpm_invalid",
+        "php.build_rolled_back",
+        "php.build_rollback_failed",
+        "php.build_execution_failed"
+      ]
+    },
+    {
+      "name": "php.install-build",
+      "summary": "Install and verify the exact PHP recipe build with rollback on failed activation.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "php.build_input_invalid",
+        "php.build_platform_unsupported",
+        "php.build_conflicting_source",
+        "php.build_extra_packages",
+        "php.build_unowned_extensions",
+        "php.build_download_failed",
+        "php.build_rollback_unavailable",
+        "php.build_install_failed",
+        "php.build_modules_mismatch",
+        "php.build_fpm_invalid",
+        "php.build_rolled_back",
+        "php.build_rollback_failed",
+        "php.build_execution_failed"
+      ]
+    },
+    {
+      "name": "php.configure-runtime",
+      "summary": "Publish and verify the shared PHP-FPM runtime module.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "php.runtime_input_invalid",
+        "php.runtime_platform_unsupported",
+        "php.runtime_configuration_failed"
+      ]
+    },
+    {
+      "name": "docker.plan-migration",
+      "summary": "Inspect Docker CE and plan a provider migration without changing the Node.",
+      "mutates": false,
+      "timeout_seconds": 3600,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "docker.migration_failed"
+      ]
+    },
+    {
+      "name": "docker.prepare-migration",
+      "summary": "Preserve Docker state and migrate CE to the recipe's Ubuntu provider.",
+      "mutates": true,
+      "timeout_seconds": 3600,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "docker.migration_failed"
+      ]
+    },
+    {
+      "name": "docker.restore-migration-policies",
+      "summary": "Restore original container policies after an operator restores Docker CE.",
+      "mutates": true,
+      "timeout_seconds": 3600,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "docker.migration_failed"
+      ]
+    },
+    {
+      "name": "docker.report-migration",
+      "summary": "Report final container states without exposing private Docker inventory.",
+      "mutates": false,
+      "timeout_seconds": 3600,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "docker.migration_failed"
+      ]
+    },
+    {
+      "name": "recipe.verify-delivery",
+      "summary": "Verify the installed agent and CLI under the update lock before recording a recipe.",
+      "mutates": false,
+      "timeout_seconds": 365,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "recipe.delivery_invalid",
+        "recipe.update_busy",
+        "recipe.update_lock_failed",
+        "recipe.delivery_mismatch"
+      ]
+    },
+    {
+      "name": "recipe.inspect",
+      "summary": "Inspect recipe versions, package origins, and planned ownership changes.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "recipe.failed"
+      ]
+    },
+    {
+      "name": "recipe.incus-preflight",
+      "summary": "Refuse an Incus recipe change unless every host instance is stopped.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "recipe.failed"
+      ]
+    },
+    {
+      "name": "recipe.apply",
+      "summary": "Converge pinned recipe packages and runtimes, then verify their services.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "recipe.failed"
+      ]
+    },
+    {
+      "name": "recipe.install-javascript",
+      "summary": "Install and verify recipe JavaScript runtimes before retiring duplicate Node packages.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "recipe.failed"
+      ]
+    },
+    {
+      "name": "image.recipe-marker",
+      "summary": "Record the recipe identity of the base image builder.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.image_build_failed"
+      ]
+    },
+    {
+      "name": "image.recipe-log",
+      "summary": "Append a sanitized observation to a fixed private image phase log.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.image_build_failed"
+      ]
+    },
+    {
+      "name": "incus.images",
+      "summary": "Read the fingerprints and aliases of a project's Incus images.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "incus.input_invalid",
+        "task_vm.invalid_host_output",
+        "task_vm.host_command_failed",
+        "task_vm.vm_missing",
+        "task_vm.image_mismatch",
+        "task_vm.base_image_missing",
+        "task_vm.topology_seed_missing"
+      ]
+    },
+    {
+      "name": "incus.instances",
+      "summary": "Read instance names only after proving the Incus project exists.",
+      "mutates": false,
+      "timeout_seconds": 240,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "incus.input_invalid",
+        "task_vm.invalid_host_output",
+        "task_vm.host_command_failed",
+        "task_vm.vm_missing",
+        "task_vm.image_mismatch",
+        "task_vm.base_image_missing",
+        "task_vm.topology_seed_missing"
+      ]
+    },
+    {
+      "name": "incus.inventory",
+      "summary": "Read instances and custom volumes across all Incus projects and pools.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "incus.input_invalid",
+        "task_vm.invalid_host_output",
+        "task_vm.host_command_failed",
+        "task_vm.vm_missing",
+        "task_vm.image_mismatch",
+        "task_vm.base_image_missing",
+        "task_vm.topology_seed_missing"
+      ]
+    },
+    {
+      "name": "incus.prepare-host",
+      "summary": "Converge a task VM host's ZFS pool, isolated bridge, project, profile, and stock image.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.setup_failed"
+      ]
+    },
+    {
+      "name": "incus.volumes",
+      "summary": "Read custom volume names in one Incus project and pool.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "incus.input_invalid",
+        "task_vm.invalid_host_output",
+        "task_vm.host_command_failed",
+        "task_vm.vm_missing",
+        "task_vm.image_mismatch",
+        "task_vm.base_image_missing",
+        "task_vm.topology_seed_missing"
+      ]
+    },
+    {
+      "name": "incus.volume",
+      "summary": "Clone, finish, or remove an explicitly selected task VM topology volume.",
+      "mutates": true,
+      "timeout_seconds": 180,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "incus.input_invalid",
+        "task_vm.invalid_host_output",
+        "task_vm.host_command_failed",
+        "task_vm.vm_missing",
+        "task_vm.image_mismatch",
+        "task_vm.base_image_missing",
+        "task_vm.topology_seed_missing"
+      ]
+    },
+    {
+      "name": "incus.vm-state",
+      "summary": "Read the exact VM state, guest bridge address, and original image.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "incus.input_invalid",
+        "task_vm.invalid_host_output",
+        "task_vm.host_command_failed",
+        "task_vm.vm_missing",
+        "task_vm.image_mismatch",
+        "task_vm.base_image_missing",
+        "task_vm.topology_seed_missing"
+      ]
+    },
+    {
+      "name": "incus.vm",
+      "summary": "Create, start, stop, or remove a task or image VM and its selected seed clone.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "incus.input_invalid",
+        "task_vm.invalid_host_output",
+        "task_vm.host_command_failed",
+        "task_vm.vm_missing",
+        "task_vm.image_mismatch",
+        "task_vm.base_image_missing",
+        "task_vm.topology_seed_missing"
+      ]
+    },
+    {
+      "name": "image.clean",
+      "summary": "Remove a never-enrolled image builder's identities before publication.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.image_identity_present",
+        "task_vm.image_clean_failed"
+      ]
+    },
+    {
+      "name": "image.boot",
+      "summary": "Prepare fixed service masks and optional Incus DHCPv4 boot settings.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.image_check_failed"
+      ]
+    },
+    {
+      "name": "image.firewall",
+      "summary": "Enable the image firewall with only public SSH allowed by default.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.image_check_failed"
+      ]
+    },
+    {
+      "name": "image.check",
+      "summary": "Check image account, authorized key, and provider boot requirements.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.image_check_failed"
+      ]
+    },
+    {
+      "name": "image.owner",
+      "summary": "Check the image builder's pinned orbit UID and GID.",
+      "mutates": false,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.image_check_failed"
+      ]
+    },
+    {
+      "name": "guest.cloud-init",
+      "summary": "Wait briefly for cloud-init and return typed bootstrap readiness.",
+      "mutates": false,
+      "timeout_seconds": 45,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.invalid_host_output",
+        "task_vm.host_command_failed",
+        "task_vm.bootstrap_failed"
+      ]
+    },
+    {
+      "name": "guest.fingerprint",
+      "summary": "Read the guest's ed25519 SSH host fingerprint through its trusted transport.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.invalid_host_output",
+        "task_vm.host_command_failed",
+        "task_vm.bootstrap_failed"
+      ]
+    },
+    {
+      "name": "image.prepare-incus",
+      "summary": "Order the image's cloud-init after the Incus agent before publication.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.image_identity_present",
+        "task_vm.image_clean_failed"
+      ]
+    },
+    {
+      "name": "incus.instance-images",
+      "summary": "Read the original image fingerprint of every instance in a project.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "incus.input_invalid",
+        "task_vm.invalid_host_output",
+        "task_vm.host_command_failed",
+        "task_vm.vm_missing",
+        "task_vm.image_mismatch",
+        "task_vm.base_image_missing",
+        "task_vm.topology_seed_missing"
+      ]
+    },
+    {
+      "name": "incus.image",
+      "summary": "Prepare builder metadata, publish, promote, or prune selected images.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "incus.input_invalid",
+        "task_vm.invalid_host_output",
+        "task_vm.host_command_failed",
+        "task_vm.vm_missing",
+        "task_vm.image_mismatch",
+        "task_vm.base_image_missing",
+        "task_vm.topology_seed_missing"
+      ]
+    },
+    {
+      "name": "incus.build-topology-seed",
+      "summary": "Build a topology seed from a published image in a disposable smoke VM.",
+      "mutates": true,
+      "timeout_seconds": 600,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "incus.input_invalid",
+        "task_vm.topology_seed_failed"
+      ]
+    },
+    {
+      "name": "incus.package-cache",
+      "summary": "Attach the fixed read-only host package cache to one task VM.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "incus.input_invalid",
+        "task_vm.package_cache_mount_invalid",
+        "task_vm.package_cache_failed"
+      ]
+    },
+    {
+      "name": "package-cache.host",
+      "summary": "Initialize or fill the owned host cache with verified public archives.",
+      "mutates": true,
+      "timeout_seconds": 1600,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.package_cache_invalid_limit",
+        "task_vm.package_cache_failed"
+      ]
+    },
+    {
+      "name": "package-cache.seed",
+      "summary": "Seed private Composer, npm and Bun caches from the read-only host mount.",
+      "mutates": true,
+      "timeout_seconds": 600,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.package_cache_invalid_limit",
+        "task_vm.package_cache_failed"
+      ]
+    },
+    {
+      "name": "firewall.task-vm-hub",
+      "summary": "Converge the reserved task VM range filter on the WireGuard hub.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.setup_failed"
+      ]
+    },
+    {
+      "name": "agent.install",
+      "summary": "Install a staged, pinned agent binary and restart its running services.",
+      "mutates": true,
+      "timeout_seconds": 180,
+      "privilege": {
+        "linux": "root",
+        "macos": "account"
+      },
+      "errors": [
+        "agent.candidate_invalid",
+        "agent.candidate_missing",
+        "agent.candidate_digest_mismatch",
+        "agent.update_busy",
+        "agent.replace_failed",
+        "agent.health_check_failed",
+        "agent.install_time_short"
+      ]
+    },
+    {
+      "name": "agent.configure",
+      "summary": "Write the agent's secret, configuration, CA, and unit, and restart it when they change.",
+      "mutates": true,
+      "timeout_seconds": 420,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "agent.update_busy",
+        "agent.configure_failed"
+      ]
+    },
+    {
+      "name": "agent.remove",
+      "summary": "Stop the observer and remove the agent's binary, unit, and files.",
+      "mutates": true,
+      "timeout_seconds": 420,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "agent.update_busy",
+        "agent.configure_failed"
+      ]
+    },
+    {
+      "name": "nodes.prepare-storage-root",
+      "summary": "Check a storage root the managed user owns, and create its missing directories.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "nodes.storage_root_unusable"
+      ]
+    },
+    {
+      "name": "nodes.publish-tmpfiles",
+      "summary": "Publish Orbit's tmpfiles rule for its scratch directories.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "nodes.tmpfiles_invalid",
+        "nodes.tmpfiles_failed"
+      ]
+    },
+    {
+      "name": "websocket.converge-runtime",
+      "summary": "Install the pinned Reverb release, switch to it, and restart the websocket service.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "websocket.runtime_invalid",
+        "websocket.runtime_failed",
+        "websocket.runtime_not_listening"
+      ]
+    },
+    {
+      "name": "websocket.remove-runtime",
+      "summary": "Stop and remove the websocket service, and its releases when asked.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "websocket.runtime_invalid",
+        "websocket.runtime_failed",
+        "websocket.runtime_not_listening"
+      ]
+    },
+    {
+      "name": "websocket.runtime-active",
+      "summary": "Say whether the websocket service is active.",
+      "mutates": false,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "websocket.runtime_invalid",
+        "websocket.runtime_failed",
+        "websocket.runtime_not_listening"
+      ]
+    },
+    {
+      "name": "ci-runners.host",
+      "summary": "Converge, inspect, or remove the CI role's reserved Incus host resources.",
+      "mutates": true,
+      "timeout_seconds": 180,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "ci_runners.host_failed"
+      ]
+    },
+    {
+      "name": "instances.read-queue",
+      "summary": "Report an Instance's Horizon queue, without job payloads.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "instances.queue_invalid",
+        "instances.queue_failed"
+      ]
+    },
+    {
+      "name": "databases.write-valkey-acl",
+      "summary": "Write the ACL file into a Valkey Database server's volume.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "databases.valkey_acl_invalid",
+        "databases.valkey_acl_failed"
+      ]
+    },
+    {
+      "name": "cli.inspect",
+      "summary": "Say whether the Orbit CLI on the Node is missing, current, older, or foreign.",
+      "mutates": false,
+      "timeout_seconds": 150,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "cli.foreign_binary",
+        "cli.release_needed",
+        "cli.update_busy",
+        "cli.download_failed",
+        "cli.checksum_mismatch",
+        "cli.candidate_invalid",
+        "cli.install_failed"
+      ]
+    },
+    {
+      "name": "cli.install",
+      "summary": "Install the Orbit CLI release when the Node needs it, and write root's CLI profile.",
+      "mutates": true,
+      "timeout_seconds": 720,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "cli.foreign_binary",
+        "cli.release_needed",
+        "cli.update_busy",
+        "cli.download_failed",
+        "cli.checksum_mismatch",
+        "cli.candidate_invalid",
+        "cli.install_failed"
+      ]
+    },
+    {
+      "name": "cli.self-update",
+      "summary": "Run the trusted CLI self-update with root's managed Node profile.",
+      "mutates": true,
+      "timeout_seconds": 600,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "cli.self_update_invalid",
+        "cli.self_update_unavailable",
+        "cli.self_update_failed"
+      ]
+    },
+    {
+      "name": "nodes.os-release",
+      "summary": "Read the operating system ID and codename of the Node.",
+      "mutates": false,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "nodes.os_release_unreadable"
+      ]
+    },
+    {
+      "name": "nodes.bootstrap",
+      "summary": "Install base packages and prepare managed SSH access, restoring retained Orbit DNS.",
+      "mutates": true,
+      "timeout_seconds": 660,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "nodes.bootstrap_invalid",
+        "nodes.bootstrap_os_unsupported",
+        "nodes.bootstrap_unsafe",
+        "nodes.bootstrap_dns_refused",
+        "nodes.bootstrap_failed",
+        "nodes.bootstrap_dns_recovery_failed"
+      ]
+    },
+    {
+      "name": "nodes.inspect-macos-enrollment",
+      "summary": "Verify the existing Mac architecture and enrolled WireGuard address.",
+      "mutates": false,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": null,
+        "macos": "account"
+      },
+      "errors": [
+        "nodes.macos_platform_mismatch",
+        "nodes.macos_architecture_unavailable",
+        "nodes.macos_wireguard_required"
+      ]
+    },
+    {
+      "name": "nodes.scan-host-key",
+      "summary": "Scan and fingerprint a target before trusting its SSH identity.",
+      "mutates": false,
+      "timeout_seconds": 25,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "nodes.host_key_input_invalid",
+        "nodes.host_key_scan_failed",
+        "nodes.host_key_invalid"
+      ]
+    },
+    {
+      "name": "roles.install-prerequisites",
+      "summary": "Install a role's packages, and the Composer home and JavaScript runtime of an application role.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "roles.os_unsupported",
+        "roles.prerequisite_conflict",
+        "roles.prerequisite_failed"
+      ]
+    },
+    {
+      "name": "instances.inspect-source",
+      "summary": "Read the evidence of a development source before its removal.",
+      "mutates": false,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.path_mismatch",
+        "instances.ownership_mismatch",
+        "instances.layout_mismatch",
+        "instances.origin_mismatch",
+        "instances.branch_mismatch",
+        "instances.worktrees_mismatch",
+        "instances.unsafe_content",
+        "instances.source_changed",
+        "instances.removal_refused",
+        "instances.source_step_failed"
+      ]
+    },
+    {
+      "name": "instances.remove-source",
+      "summary": "Check an active development checkout again and delete it.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.path_mismatch",
+        "instances.ownership_mismatch",
+        "instances.layout_mismatch",
+        "instances.origin_mismatch",
+        "instances.branch_mismatch",
+        "instances.worktrees_mismatch",
+        "instances.unsafe_content",
+        "instances.source_changed",
+        "instances.removal_refused",
+        "instances.source_step_failed"
+      ]
+    },
+    {
+      "name": "instances.prepare-source-removal",
+      "summary": "Record the removal journal of a development source.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.path_mismatch",
+        "instances.ownership_mismatch",
+        "instances.layout_mismatch",
+        "instances.origin_mismatch",
+        "instances.branch_mismatch",
+        "instances.worktrees_mismatch",
+        "instances.unsafe_content",
+        "instances.source_changed",
+        "instances.removal_refused",
+        "instances.source_step_failed"
+      ]
+    },
+    {
+      "name": "instances.finalize-source-removal",
+      "summary": "Quarantine a recorded development source, write its receipt, and delete it.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.path_mismatch",
+        "instances.ownership_mismatch",
+        "instances.layout_mismatch",
+        "instances.origin_mismatch",
+        "instances.branch_mismatch",
+        "instances.worktrees_mismatch",
+        "instances.unsafe_content",
+        "instances.source_changed",
+        "instances.removal_refused",
+        "instances.source_step_failed"
+      ]
+    },
+    {
+      "name": "instances.read-removal-receipt",
+      "summary": "Report how much of a receipt-backed source removal is left.",
+      "mutates": false,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.path_mismatch",
+        "instances.ownership_mismatch",
+        "instances.layout_mismatch",
+        "instances.origin_mismatch",
+        "instances.branch_mismatch",
+        "instances.worktrees_mismatch",
+        "instances.unsafe_content",
+        "instances.source_changed",
+        "instances.removal_refused",
+        "instances.source_step_failed"
+      ]
+    },
+    {
+      "name": "instances.clean-removal-receipt",
+      "summary": "Delete what is left of a receipt-backed source removal.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.path_mismatch",
+        "instances.ownership_mismatch",
+        "instances.layout_mismatch",
+        "instances.origin_mismatch",
+        "instances.branch_mismatch",
+        "instances.worktrees_mismatch",
+        "instances.unsafe_content",
+        "instances.source_changed",
+        "instances.removal_refused",
+        "instances.source_step_failed"
+      ]
+    },
+    {
+      "name": "instances.read-source-removal-state",
+      "summary": "Report the state of a recorded source removal and release its empty parent.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.path_mismatch",
+        "instances.ownership_mismatch",
+        "instances.layout_mismatch",
+        "instances.origin_mismatch",
+        "instances.branch_mismatch",
+        "instances.worktrees_mismatch",
+        "instances.unsafe_content",
+        "instances.source_changed",
+        "instances.removal_refused",
+        "instances.source_step_failed"
+      ]
+    },
+    {
+      "name": "instances.check-publication",
+      "summary": "Check whether the origin publishes a commit.",
+      "mutates": false,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.path_mismatch",
+        "instances.ownership_mismatch",
+        "instances.layout_mismatch",
+        "instances.origin_mismatch",
+        "instances.branch_mismatch",
+        "instances.worktrees_mismatch",
+        "instances.unsafe_content",
+        "instances.source_changed",
+        "instances.removal_refused",
+        "instances.source_step_failed"
+      ]
+    },
+    {
+      "name": "instances.inspect-laravel-routes",
+      "summary": "Read whether a production release's Laravel routes claim the Reverb paths.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.path_mismatch",
+        "instances.laravel_routes_unreadable"
+      ]
+    },
+    {
+      "name": "instances.prepare-development-source",
+      "summary": "Create a development Instance's checkout, or check the one an earlier attempt made.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.source_invalid",
+        "instances.source_busy",
+        "instances.git_failed"
+      ]
+    },
+    {
+      "name": "instances.inspect-development-source",
+      "summary": "Check a development Instance's prepared checkout and read its origin, branch, and commit.",
+      "mutates": false,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.source_invalid",
+        "instances.source_busy",
+        "instances.git_failed"
+      ]
+    },
+    {
+      "name": "instances.resolve-development-source",
+      "summary": "Fetch a development Instance's origin and check out its branch.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.source_invalid",
+        "instances.source_busy",
+        "instances.git_failed"
+      ]
+    },
+    {
+      "name": "instances.inspect-registration-source",
+      "summary": "Read a checkout, or its worktree set, with the identity and digest that registration keeps.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.registration_invalid",
+        "instances.git_failed"
+      ]
+    },
+    {
+      "name": "instances.relocate-registration-source",
+      "summary": "Adopt a registered source set in place, or move it into the apps directory and resume an interrupted move.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.registration_invalid",
+        "instances.git_failed"
+      ]
+    },
+    {
+      "name": "instances.laravel-registration-receipt",
+      "summary": "Keep, restore, or drop the Laravel URL files that registration rewrites.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.registration_invalid",
+        "instances.git_failed"
+      ]
+    },
+    {
+      "name": "instances.prepare-release",
+      "summary": "Clone a new production release of a branch and link its environment and shared paths.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.activate-release",
+      "summary": "Check a production release, grant Caddy its web roots, and select it as current.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.inspect-release",
+      "summary": "Check and read the selected production release, or a named retained one.",
+      "mutates": false,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.list-releases",
+      "summary": "List the production releases that pass their checks, and the selected one.",
+      "mutates": false,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.prune-releases",
+      "summary": "Remove production releases beyond the retained count that no process uses.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.inspect-repository-binding",
+      "summary": "Read the repository URL that each production marker and release records.",
+      "mutates": false,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.rebind-repository",
+      "summary": "Move the repository URL that production markers and releases record to the Project's new URL.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.prepare-served-web-roots",
+      "summary": "Link the environment and grant Caddy each Route web root in a production Instance's selected release.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.check-served-web-roots",
+      "summary": "Check that a production Instance's selected release can serve each Route web root.",
+      "mutates": false,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.run-deploy-step",
+      "summary": "Run a production deploy step as the Instance user and publish its output live.",
+      "mutates": true,
+      "timeout_seconds": 3600,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.deploy_step_invalid",
+        "instances.deploy_step_start_failed"
+      ]
+    },
+    {
+      "name": "instances.read-application-log",
+      "summary": "Read the newest lines of an Instance's Laravel log.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.log_unreadable"
+      ]
+    },
+    {
+      "name": "instances.check-path-free",
+      "summary": "Check that nothing occupies the path of a new Instance source.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.path_mismatch",
+        "instances.ownership_mismatch",
+        "instances.layout_mismatch",
+        "instances.origin_mismatch",
+        "instances.branch_mismatch",
+        "instances.worktrees_mismatch",
+        "instances.unsafe_content",
+        "instances.source_changed",
+        "instances.removal_refused",
+        "instances.source_step_failed"
+      ]
+    },
+    {
+      "name": "instances.read-environment",
+      "summary": "Read an Instance's .env, or check that it can be read or replaced.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.environment_input_invalid"
+      ]
+    },
+    {
+      "name": "instances.inspect-environment-sync",
+      "summary": "Check that an Instance's .env can be replaced, then read its existing workload keys.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.environment_input_invalid"
+      ]
+    },
+    {
+      "name": "instances.write-environment",
+      "summary": "Replace an Instance's .env, or merge Orbit's keys into .env.testing.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.environment_input_invalid"
+      ]
+    },
+    {
+      "name": "instances.inspect-development-profile",
+      "summary": "Read a development checkout's Composer metadata, refusing a link or another owner.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.write-development-url",
+      "summary": "Write APP_URL into a development application's .env and cached configuration.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.grant-development-caddy-access",
+      "summary": "Deny Caddy development checkouts and grant it each Web root and the passage to it.",
+      "mutates": true,
+      "timeout_seconds": 600,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.caddy_access_invalid",
+        "instances.caddy_access_failed",
+        "instances.caddy_access_recovery_failed"
+      ]
+    },
+    {
+      "name": "instances.inspect-clone-candidate",
+      "summary": "Check that a clone candidate's source is clean and its repository holds its commit.",
+      "mutates": false,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.clone_candidate_release_missing",
+        "instances.clone_candidate_source_invalid",
+        "instances.clone_candidate_release_changed",
+        "instances.clone_candidate_branch_invalid",
+        "instances.clone_candidate_dirty",
+        "instances.clone_candidate_repository_unavailable",
+        "instances.clone_candidate_commit_unavailable",
+        "instances.clone_target_branch_missing"
+      ]
+    },
+    {
+      "name": "instances.copy-sqlite",
+      "summary": "Copy, export, install, or remove a development SQLite database.",
+      "mutates": true,
+      "timeout_seconds": 600,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.sqlite_copy_refused",
+        "instances.sqlite_copy_failed"
+      ]
+    },
+    {
+      "name": "instances.read-sqlite-snapshot",
+      "summary": "Stream a verified private SQLite snapshot to the Gateway.",
+      "mutates": false,
+      "timeout_seconds": 1800,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.sqlite_transfer_invalid",
+        "instances.sqlite_transfer_refused",
+        "instances.sqlite_transfer_failed"
+      ],
+      "output_max_bytes": 1099511627776
+    },
+    {
+      "name": "instances.receive-sqlite-snapshot",
+      "summary": "Receive a verified SQLite snapshot into its prepared account-owned file.",
+      "mutates": true,
+      "timeout_seconds": 1800,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.sqlite_transfer_invalid",
+        "instances.sqlite_transfer_refused",
+        "instances.sqlite_transfer_failed"
+      ],
+      "input_max_bytes": 1099511627776
+    },
+    {
+      "name": "database.query-sqlite",
+      "summary": "Query an existing SQLite database read-only as its selected owner.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "owner",
+        "macos": "owner"
+      },
+      "errors": [
+        "database.sqlite_unreadable",
+        "database.query_failed"
+      ]
+    },
+    {
+      "name": "database.write-sqlite",
+      "summary": "Run an authorized write against an existing SQLite database as its selected owner.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "owner",
+        "macos": "owner"
+      },
+      "errors": [
+        "database.sqlite_unreadable",
+        "database.query_failed"
+      ]
+    },
+    {
+      "name": "instances.prepare-sqlite-seed",
+      "summary": "Take or clean up the source snapshot of a SQLite seed.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "instances.sqlite_seed_refused",
+        "instances.sqlite_seed_failed",
+        "instances.sqlite_seed_unconfirmed"
+      ]
+    },
+    {
+      "name": "instances.install-sqlite-seed",
+      "summary": "Prepare, install, or clean up the target of a SQLite seed.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "instances.sqlite_seed_refused",
+        "instances.sqlite_seed_failed",
+        "instances.sqlite_seed_unconfirmed"
+      ]
+    },
+    {
+      "name": "instances.transfer-source",
+      "summary": "Capture, discard, or clean up a development Instance transfer.",
+      "mutates": true,
+      "timeout_seconds": 600,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.transfer_archive_invalid",
+        "instances.transfer_source_failed"
+      ]
+    },
+    {
+      "name": "instances.read-transfer-archive",
+      "summary": "Stream a private captured checkout archive to the Gateway.",
+      "mutates": false,
+      "timeout_seconds": 1800,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.transfer_archive_invalid",
+        "instances.transfer_source_failed"
+      ],
+      "output_max_bytes": 1099511627776
+    },
+    {
+      "name": "instances.materialize-transfer",
+      "summary": "Materialize a received checkout archive as the managed account.",
+      "mutates": true,
+      "timeout_seconds": 1800,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.transfer_archive_invalid",
+        "instances.transfer_source_failed"
+      ],
+      "input_max_bytes": 1099511627776
+    },
+    {
+      "name": "vite.select-port",
+      "summary": "Choose the first free TCP port from a preferred one, skipping excluded ports.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "vite.ports_exhausted",
+        "vite.node_failed"
+      ]
+    },
+    {
+      "name": "vite.check-listener",
+      "summary": "Check that a Process's unit owns its Vite listener, and that it serves the Vite client.",
+      "mutates": false,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "vite.ports_exhausted",
+        "vite.node_failed"
+      ]
+    },
+    {
+      "name": "vite.set-traffic",
+      "summary": "Suspend or allow a Vite Instance's traffic, or write its port environment.",
+      "mutates": true,
+      "timeout_seconds": 15,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "vite.ports_exhausted",
+        "vite.node_failed"
+      ]
+    },
+    {
+      "name": "firewall.inspect",
+      "summary": "Inspect typed firewall shapes and exact managed ownership.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "firewall.input_invalid",
+        "firewall.status_failed",
+        "firewall.status_unrecognized",
+        "firewall.rule_collision",
+        "firewall.apply_failed",
+        "firewall.reconcile_failed",
+        "firewall.verify_failed",
+        "firewall.remove_failed",
+        "firewall.remove_verify_failed",
+        "node.firewall_convergence_failed",
+        "router.lan_ingress_recovery_failed"
+      ]
+    },
+    {
+      "name": "firewall.rule",
+      "summary": "Converge or remove one owned named firewall rule.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "firewall.input_invalid",
+        "firewall.status_failed",
+        "firewall.status_unrecognized",
+        "firewall.rule_collision",
+        "firewall.apply_failed",
+        "firewall.reconcile_failed",
+        "firewall.verify_failed",
+        "firewall.remove_failed",
+        "firewall.remove_verify_failed",
+        "node.firewall_convergence_failed",
+        "router.lan_ingress_recovery_failed"
+      ]
+    },
+    {
+      "name": "firewall.rules",
+      "summary": "Converge exact managed role rules and retire owned rules under one lock.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "firewall.input_invalid",
+        "firewall.status_failed",
+        "firewall.status_unrecognized",
+        "firewall.rule_collision",
+        "firewall.apply_failed",
+        "firewall.reconcile_failed",
+        "firewall.verify_failed",
+        "firewall.remove_failed",
+        "firewall.remove_verify_failed",
+        "node.firewall_convergence_failed",
+        "router.lan_ingress_recovery_failed"
+      ]
+    },
+    {
+      "name": "firewall.router-lan",
+      "summary": "Expand or prune owned Router LAN rules and restore the preceding inventory on failure.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "firewall.input_invalid",
+        "firewall.status_failed",
+        "firewall.status_unrecognized",
+        "firewall.rule_collision",
+        "firewall.apply_failed",
+        "firewall.reconcile_failed",
+        "firewall.verify_failed",
+        "firewall.remove_failed",
+        "firewall.remove_verify_failed",
+        "node.firewall_convergence_failed",
+        "router.lan_ingress_recovery_failed"
+      ]
+    },
+    {
+      "name": "firewall.route-lan",
+      "summary": "Converge a Route LAN allowance or remove all rules owned by its exact comment.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "firewall.input_invalid",
+        "firewall.status_failed",
+        "firewall.status_unrecognized",
+        "firewall.rule_collision",
+        "firewall.apply_failed",
+        "firewall.reconcile_failed",
+        "firewall.verify_failed",
+        "firewall.remove_failed",
+        "firewall.remove_verify_failed",
+        "node.firewall_convergence_failed",
+        "router.lan_ingress_recovery_failed"
+      ]
+    },
+    {
+      "name": "firewall.gateway-vpn",
+      "summary": "Converge Gateway VPN rules and retire public SSH only after verified private access.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "firewall.input_invalid",
+        "vpn.firewall_status_failed",
+        "vpn.firewall_status_invalid",
+        "vpn.firewall_recovery_probe_failed",
+        "vpn.firewall_enable_failed",
+        "vpn.firewall_rule_failed",
+        "vpn.firewall_probe_failed",
+        "vpn.firewall_recovery_remove_failed"
+      ]
+    },
+    {
+      "name": "routes.verify-certificate",
+      "summary": "Check that a workload serves a trusted certificate for a Route's domain.",
+      "mutates": false,
+      "timeout_seconds": 15,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "routes.certificate_input_invalid",
+        "routes.certificate_invalid"
+      ]
+    },
+    {
+      "name": "routes.verify-http",
+      "summary": "Check HTTP reachability of a public Process Route from its Ingress.",
+      "mutates": false,
+      "timeout_seconds": 15,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "routes.http_input_invalid",
+        "routes.http_unreachable"
+      ]
+    },
+    {
+      "name": "task-vms.read-topology-evidence",
+      "summary": "Read the newest MiB of a task VM checkout's topology evidence.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.evidence_input_invalid",
+        "task_vm.evidence_unreadable"
+      ]
+    },
+    {
+      "name": "task-vms.read-git-refs",
+      "summary": "Read checkout refs and its worktree-private CI baseline for pack transfer.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.git_input_invalid",
+        "task_vm.git_unreadable"
+      ]
+    },
+    {
+      "name": "task-vms.export-git-pack",
+      "summary": "Stream a thin pack of the approved checkout commit to the Gateway.",
+      "mutates": false,
+      "timeout_seconds": 1800,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.git_export_invalid",
+        "task_vm.git_commit_missing",
+        "task_vm.git_export_failed",
+        "task_vm.git_pack_too_large"
+      ],
+      "output_max_bytes": 2147483648
+    },
+    {
+      "name": "task-vms.import-git-pack",
+      "summary": "Import a mirror pack and set approved checkout refs without network access.",
+      "mutates": true,
+      "timeout_seconds": 1800,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.git_import_invalid",
+        "task_vm.git_pack_invalid",
+        "task_vm.git_import_failed"
+      ],
+      "input_max_bytes": 2147483648
+    },
+    {
+      "name": "caddy.install-certificate",
+      "summary": "Atomically publish an owned Caddy certificate pair, restoring it if reload fails.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "caddy.certificate_input_invalid",
+        "caddy.certificate_invalid",
+        "caddy.certificate_unsafe",
+        "caddy.publication_lock_failed",
+        "caddy.certificate_failed",
+        "caddy.certificate_recovery_failed"
+      ]
+    },
+    {
+      "name": "caddy.reload",
+      "summary": "Reload Caddy under its publication lock to close revoked Metrics streams.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "caddy.publication_lock_failed",
+        "caddy.reload_failed"
+      ]
+    },
+    {
+      "name": "caddy.publish",
+      "summary": "Validate and publish a rendered Node Caddyfile, restoring the previous configuration on reload failure.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "caddy.publication_invalid",
+        "caddy.publication_failed"
+      ]
+    },
+    {
+      "name": "caddy.check-addresses",
+      "summary": "Check that every Caddy listen address exists on the Node.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "caddy.publication_invalid",
+        "caddy.publication_failed"
+      ]
+    },
+    {
+      "name": "caddy.read-live",
+      "summary": "Read the live Caddyfile without expanding imports.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "caddy.publication_invalid",
+        "caddy.publication_failed"
+      ]
+    },
+    {
+      "name": "doctor.inspect-node",
+      "summary": "Observe Node identity, addresses, observer state, and filesystem capacity.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": "account"
+      },
+      "errors": [
+        "doctor.node_input_invalid",
+        "doctor.node_inspection_failed"
+      ]
+    },
+    {
+      "name": "doctor.inspect-project",
+      "summary": "Observe the repository identity of settled Project checkouts in one call.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "doctor.project_input_invalid"
+      ]
+    },
+    {
+      "name": "doctor.inspect-development-source",
+      "summary": "Observe development checkout ownership, Git layout, origin, and recorded history.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "doctor.source_input_invalid",
+        "doctor.source_inspection_failed"
+      ]
+    },
+    {
+      "name": "doctor.inspect-production-instance",
+      "summary": "Observe production release, environment, Caddy, and dedicated PHP-FPM projections.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "doctor.production_input_invalid",
+        "doctor.production_inspection_failed"
+      ]
+    },
+    {
+      "name": "doctor.inspect-role-runtime",
+      "summary": "Inspect role packages, services, and the installed Caddy version without repairs.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "doctor.role_input_invalid",
+        "doctor.role_inspection_failed"
+      ]
+    },
+    {
+      "name": "doctor.inspect-private-route",
+      "summary": "Compare private Route projections without running application code or repairing state.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "doctor.projection_invalid"
+      ]
+    },
+    {
+      "name": "doctor.inspect-application-urls",
+      "summary": "Check Laravel URLs in the application directories served by an Instance's Routes.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "doctor.projection_invalid"
+      ]
+    },
+    {
+      "name": "doctor.inspect-public-route",
+      "summary": "Inspect a public Route's live site, forwarding and public certificate.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "doctor.public_route_invalid",
+        "doctor.public_route_unavailable"
+      ]
+    },
+    {
+      "name": "doctor.inspect-custom-proxy",
+      "summary": "Inspect a custom proxy's live site, certificate files, DNS and loopback reachability.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "doctor.projection_invalid"
+      ]
+    },
+    {
+      "name": "caddy.remove-certificate",
+      "summary": "Remove only an owned role or extension Caddy certificate pair under its publication lock.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "caddy.certificate_input_invalid",
+        "caddy.certificate_invalid",
+        "caddy.certificate_unsafe",
+        "caddy.publication_lock_failed",
+        "caddy.certificate_failed",
+        "caddy.certificate_recovery_failed"
+      ]
+    },
+    {
+      "name": "caddy.install-package",
+      "summary": "Install the pinned Caddy package when the Node is below the version floor.",
+      "mutates": true,
+      "timeout_seconds": 600,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "caddy.package_invalid",
+        "caddy.package_unsafe",
+        "caddy.package_failed"
+      ]
+    },
+    {
+      "name": "http.await-healthy",
+      "summary": "Wait until a service answers its health URL.",
+      "mutates": false,
+      "timeout_seconds": 600,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "http.url_invalid",
+        "http.unhealthy"
+      ]
+    },
+    {
+      "name": "metrics.certificate",
+      "summary": "Publish, restore, or remove the Metrics site's certificate for Caddy.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "metrics.certificate_failed"
+      ]
+    },
+    {
+      "name": "metrics.node-exporter",
+      "summary": "Snapshot, converge, remove, or restore one Metrics exporter.",
+      "mutates": true,
+      "timeout_seconds": 420,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "metrics.exporter_input_invalid",
+        "metrics.cadvisor_input_invalid",
+        "metrics.exporter_address_invalid",
+        "metrics.cadvisor_address_invalid",
+        "metrics.exporter_platform_unsupported",
+        "metrics.cadvisor_platform_unsupported",
+        "metrics.exporter_configuration_inspection_failed",
+        "metrics.cadvisor_configuration_inspection_failed",
+        "metrics.exporter_configuration_ownership_drift",
+        "metrics.cadvisor_configuration_ownership_drift",
+        "metrics.exporter_configuration_failed",
+        "metrics.cadvisor_configuration_failed",
+        "metrics.exporter_configuration_verify_failed",
+        "metrics.cadvisor_configuration_verify_failed",
+        "metrics.exporter_configuration_remove_failed",
+        "metrics.cadvisor_configuration_remove_failed",
+        "metrics.exporter_configuration_remove_verify_failed",
+        "metrics.cadvisor_configuration_remove_verify_failed",
+        "metrics.exporter_service_inspection_failed",
+        "metrics.cadvisor_service_inspection_failed",
+        "metrics.exporter_service_failed",
+        "metrics.cadvisor_service_failed",
+        "metrics.exporter_service_verify_failed",
+        "metrics.cadvisor_service_verify_failed",
+        "metrics.exporter_service_remove_failed",
+        "metrics.cadvisor_service_remove_failed",
+        "metrics.exporter_service_remove_verify_failed",
+        "metrics.cadvisor_service_remove_verify_failed",
+        "metrics.exporter_firewall_inspection_failed",
+        "metrics.cadvisor_firewall_inspection_failed",
+        "metrics.exporter_firewall_inactive",
+        "metrics.cadvisor_firewall_inactive",
+        "metrics.exporter_firewall_ownership_drift",
+        "metrics.cadvisor_firewall_ownership_drift",
+        "metrics.exporter_firewall_failed",
+        "metrics.cadvisor_firewall_failed",
+        "metrics.exporter_firewall_remove_failed",
+        "metrics.cadvisor_firewall_remove_failed",
+        "metrics.exporter_firewall_verify_failed",
+        "metrics.cadvisor_firewall_verify_failed",
+        "metrics.exporter_firewall_remove_verify_failed",
+        "metrics.cadvisor_firewall_remove_verify_failed",
+        "metrics.exporter_install_failed",
+        "metrics.cadvisor_install_failed",
+        "metrics.exporter_binary_download_failed",
+        "metrics.cadvisor_binary_download_failed",
+        "metrics.exporter_binary_inspection_failed",
+        "metrics.cadvisor_binary_inspection_failed",
+        "metrics.exporter_checksum_mismatch",
+        "metrics.cadvisor_checksum_mismatch",
+        "metrics.exporter_binary_install_failed",
+        "metrics.cadvisor_binary_install_failed",
+        "metrics.exporter_binary_remove_failed",
+        "metrics.cadvisor_binary_remove_failed",
+        "metrics.exporter_rollback_failed",
+        "metrics.cadvisor_rollback_failed",
+        "metrics.exporter_configuration_rollback_verify_failed",
+        "metrics.cadvisor_configuration_rollback_verify_failed",
+        "metrics.exporter_service_rollback_verify_failed",
+        "metrics.cadvisor_service_rollback_verify_failed",
+        "metrics.exporter_firewall_rollback_verify_failed",
+        "metrics.cadvisor_firewall_rollback_verify_failed"
+      ]
+    },
+    {
+      "name": "metrics.cadvisor",
+      "summary": "Snapshot, converge, remove, or restore one Metrics exporter.",
+      "mutates": true,
+      "timeout_seconds": 420,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "metrics.exporter_input_invalid",
+        "metrics.cadvisor_input_invalid",
+        "metrics.exporter_address_invalid",
+        "metrics.cadvisor_address_invalid",
+        "metrics.exporter_platform_unsupported",
+        "metrics.cadvisor_platform_unsupported",
+        "metrics.exporter_configuration_inspection_failed",
+        "metrics.cadvisor_configuration_inspection_failed",
+        "metrics.exporter_configuration_ownership_drift",
+        "metrics.cadvisor_configuration_ownership_drift",
+        "metrics.exporter_configuration_failed",
+        "metrics.cadvisor_configuration_failed",
+        "metrics.exporter_configuration_verify_failed",
+        "metrics.cadvisor_configuration_verify_failed",
+        "metrics.exporter_configuration_remove_failed",
+        "metrics.cadvisor_configuration_remove_failed",
+        "metrics.exporter_configuration_remove_verify_failed",
+        "metrics.cadvisor_configuration_remove_verify_failed",
+        "metrics.exporter_service_inspection_failed",
+        "metrics.cadvisor_service_inspection_failed",
+        "metrics.exporter_service_failed",
+        "metrics.cadvisor_service_failed",
+        "metrics.exporter_service_verify_failed",
+        "metrics.cadvisor_service_verify_failed",
+        "metrics.exporter_service_remove_failed",
+        "metrics.cadvisor_service_remove_failed",
+        "metrics.exporter_service_remove_verify_failed",
+        "metrics.cadvisor_service_remove_verify_failed",
+        "metrics.exporter_firewall_inspection_failed",
+        "metrics.cadvisor_firewall_inspection_failed",
+        "metrics.exporter_firewall_inactive",
+        "metrics.cadvisor_firewall_inactive",
+        "metrics.exporter_firewall_ownership_drift",
+        "metrics.cadvisor_firewall_ownership_drift",
+        "metrics.exporter_firewall_failed",
+        "metrics.cadvisor_firewall_failed",
+        "metrics.exporter_firewall_remove_failed",
+        "metrics.cadvisor_firewall_remove_failed",
+        "metrics.exporter_firewall_verify_failed",
+        "metrics.cadvisor_firewall_verify_failed",
+        "metrics.exporter_firewall_remove_verify_failed",
+        "metrics.cadvisor_firewall_remove_verify_failed",
+        "metrics.exporter_install_failed",
+        "metrics.cadvisor_install_failed",
+        "metrics.exporter_binary_download_failed",
+        "metrics.cadvisor_binary_download_failed",
+        "metrics.exporter_binary_inspection_failed",
+        "metrics.cadvisor_binary_inspection_failed",
+        "metrics.exporter_checksum_mismatch",
+        "metrics.cadvisor_checksum_mismatch",
+        "metrics.exporter_binary_install_failed",
+        "metrics.cadvisor_binary_install_failed",
+        "metrics.exporter_binary_remove_failed",
+        "metrics.cadvisor_binary_remove_failed",
+        "metrics.exporter_rollback_failed",
+        "metrics.cadvisor_rollback_failed",
+        "metrics.exporter_configuration_rollback_verify_failed",
+        "metrics.cadvisor_configuration_rollback_verify_failed",
+        "metrics.exporter_service_rollback_verify_failed",
+        "metrics.cadvisor_service_rollback_verify_failed",
+        "metrics.exporter_firewall_rollback_verify_failed",
+        "metrics.cadvisor_firewall_rollback_verify_failed"
+      ]
+    },
+    {
+      "name": "metrics.runtime",
+      "summary": "Converge or remove the owned Metrics configuration and containers.",
+      "mutates": true,
+      "timeout_seconds": 1200,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "metrics.runtime_input_invalid",
+        "metrics.wireguard_ip_missing",
+        "metrics.configuration_ownership_drift",
+        "metrics.configuration_snapshot_failed",
+        "metrics.configuration_publish_failed",
+        "metrics.configuration_remove_failed",
+        "metrics.runtime_rollback_failed",
+        "metrics.prometheus_configuration_invalid",
+        "metrics.prometheus_configuration_check_timed_out",
+        "metrics.image_pull_failed",
+        "metrics.image_pull_timed_out",
+        "metrics.docker_unavailable",
+        "metrics.container_inspection_failed",
+        "metrics.volume_inspection_failed",
+        "metrics.container_inspection_invalid",
+        "metrics.volume_inspection_invalid",
+        "metrics.container_ownership_drift",
+        "metrics.volume_ownership_drift",
+        "metrics.container_convergence_failed",
+        "metrics.container_rollback_failed",
+        "metrics.container_cleanup_failed",
+        "metrics.container_remove_failed",
+        "metrics.volume_purge_failed",
+        "metrics.remote_command_timed_out",
+        "metrics.credentials_reset_failed"
+      ]
+    },
+    {
+      "name": "metrics.publication-firewall",
+      "summary": "Converge or remove Grafana's ordered Gateway-only firewall boundary.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "metrics.publication_firewall_inspection_failed",
+        "metrics.publication_firewall_inactive",
+        "metrics.publication_firewall_ownership_drift",
+        "metrics.publication_firewall_apply_failed",
+        "metrics.publication_firewall_verify_failed",
+        "metrics.publication_firewall_remove_failed",
+        "metrics.publication_firewall_remove_verify_failed",
+        "metrics.remote_command_timed_out"
+      ]
+    },
+    {
+      "name": "metrics.runtime-health",
+      "summary": "Observe the health of an owned Metrics container.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "metrics.runtime_input_invalid",
+        "metrics.wireguard_ip_missing",
+        "metrics.configuration_ownership_drift",
+        "metrics.configuration_snapshot_failed",
+        "metrics.configuration_publish_failed",
+        "metrics.configuration_remove_failed",
+        "metrics.runtime_rollback_failed",
+        "metrics.prometheus_configuration_invalid",
+        "metrics.prometheus_configuration_check_timed_out",
+        "metrics.image_pull_failed",
+        "metrics.image_pull_timed_out",
+        "metrics.docker_unavailable",
+        "metrics.container_inspection_failed",
+        "metrics.volume_inspection_failed",
+        "metrics.container_inspection_invalid",
+        "metrics.volume_inspection_invalid",
+        "metrics.container_ownership_drift",
+        "metrics.volume_ownership_drift",
+        "metrics.container_convergence_failed",
+        "metrics.container_rollback_failed",
+        "metrics.container_cleanup_failed",
+        "metrics.container_remove_failed",
+        "metrics.volume_purge_failed",
+        "metrics.remote_command_timed_out",
+        "metrics.credentials_reset_failed"
+      ]
+    },
+    {
+      "name": "metrics.credentials",
+      "summary": "Verify or reset Grafana's administrator credential.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "metrics.runtime_input_invalid",
+        "metrics.wireguard_ip_missing",
+        "metrics.configuration_ownership_drift",
+        "metrics.configuration_snapshot_failed",
+        "metrics.configuration_publish_failed",
+        "metrics.configuration_remove_failed",
+        "metrics.runtime_rollback_failed",
+        "metrics.prometheus_configuration_invalid",
+        "metrics.prometheus_configuration_check_timed_out",
+        "metrics.image_pull_failed",
+        "metrics.image_pull_timed_out",
+        "metrics.docker_unavailable",
+        "metrics.container_inspection_failed",
+        "metrics.volume_inspection_failed",
+        "metrics.container_inspection_invalid",
+        "metrics.volume_inspection_invalid",
+        "metrics.container_ownership_drift",
+        "metrics.volume_ownership_drift",
+        "metrics.container_convergence_failed",
+        "metrics.container_rollback_failed",
+        "metrics.container_cleanup_failed",
+        "metrics.container_remove_failed",
+        "metrics.volume_purge_failed",
+        "metrics.remote_command_timed_out",
+        "metrics.credentials_reset_failed"
+      ]
+    },
+    {
+      "name": "metrics.service-runtime",
+      "summary": "Recover, snapshot, or apply the FPM exporter and service scrape firewall rules.",
+      "mutates": true,
+      "timeout_seconds": 180,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "metrics.service_invalid",
+        "metrics.service_ownership",
+        "metrics.service_failed",
+        "metrics.service_recovery_failed"
+      ]
+    },
+    {
+      "name": "projects.update-source",
+      "summary": "Check, change, or restore a development checkout's origin or default branch.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "projects.source_failed"
+      ]
+    },
+    {
+      "name": "databases.server-admin",
+      "summary": "Run the admin client of a Database server's container, or copy a database inside it.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "databases.server_admin_invalid",
+        "databases.server_admin_failed",
+        "databases.server_not_ready"
+      ]
+    },
+    {
+      "name": "hibernation.prepare-directories",
+      "summary": "Prepare Caddy's hibernation marker and access-log directories.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "hibernation.node_failed"
+      ]
+    },
+    {
+      "name": "hibernation.marker",
+      "summary": "Create or remove a hibernation marker that Caddy reads.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "hibernation.node_failed"
+      ]
+    },
+    {
+      "name": "hibernation.times",
+      "summary": "Read the modification times of hibernation markers and access logs.",
+      "mutates": false,
+      "timeout_seconds": 15,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "hibernation.node_failed"
+      ]
+    },
+    {
+      "name": "hibernation.inspect-checkout",
+      "summary": "Report an Instance checkout's dependency files and its last source change.",
+      "mutates": false,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "hibernation.node_failed"
+      ]
+    },
+    {
+      "name": "hibernation.prune-checkout",
+      "summary": "Remove an Instance checkout's vendor or node_modules directory.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "hibernation.node_failed"
+      ]
+    },
+    {
+      "name": "hibernation.restore-dependencies",
+      "summary": "Install an Instance checkout's Composer or JavaScript dependencies again.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "hibernation.node_failed"
+      ]
+    },
+    {
+      "name": "doctor.inspect-process",
+      "summary": "Inspect an owned Process and gather bounded restart evidence.",
+      "mutates": false,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "doctor.process_invalid",
+        "doctor.process_unavailable"
+      ]
+    },
+    {
+      "name": "doctor.inspect-schedule",
+      "summary": "Inspect a Schedule's artifacts and timer.",
+      "mutates": false,
+      "timeout_seconds": 15,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "schedules.target_unavailable",
+        "schedules.artifact_conflict",
+        "schedules.calendar_invalid",
+        "schedules.rollback_failed",
+        "schedules.failed",
+        "schedules.run_active"
+      ]
+    },
+    {
+      "name": "doctor.schedule-orphans",
+      "summary": "Find Schedule artifacts without recorded intent.",
+      "mutates": false,
+      "timeout_seconds": 15,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "schedules.target_unavailable",
+        "schedules.artifact_conflict",
+        "schedules.calendar_invalid",
+        "schedules.rollback_failed",
+        "schedules.failed",
+        "schedules.run_active"
+      ]
+    },
+    {
+      "name": "schedules.install",
+      "summary": "Write a Schedule's units and set its timer.",
+      "mutates": true,
+      "timeout_seconds": 90,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "schedules.target_unavailable",
+        "schedules.artifact_conflict",
+        "schedules.calendar_invalid",
+        "schedules.rollback_failed",
+        "schedules.failed",
+        "schedules.run_active"
+      ]
+    },
+    {
+      "name": "schedules.activate",
+      "summary": "Enable and start a Schedule's timer.",
+      "mutates": true,
+      "timeout_seconds": 45,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "schedules.target_unavailable",
+        "schedules.artifact_conflict",
+        "schedules.calendar_invalid",
+        "schedules.rollback_failed",
+        "schedules.failed",
+        "schedules.run_active"
+      ]
+    },
+    {
+      "name": "schedules.run",
+      "summary": "Start one run of a Schedule.",
+      "mutates": true,
+      "timeout_seconds": 15,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "schedules.target_unavailable",
+        "schedules.artifact_conflict",
+        "schedules.calendar_invalid",
+        "schedules.rollback_failed",
+        "schedules.failed",
+        "schedules.run_active"
+      ]
+    },
+    {
+      "name": "schedules.logs",
+      "summary": "Read a Schedule's newest journal entries.",
+      "mutates": false,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "schedules.target_unavailable",
+        "schedules.artifact_conflict",
+        "schedules.calendar_invalid",
+        "schedules.rollback_failed",
+        "schedules.failed",
+        "schedules.run_active"
+      ]
+    },
+    {
+      "name": "schedules.remove",
+      "summary": "Delete a Schedule's units.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "schedules.target_unavailable",
+        "schedules.artifact_conflict",
+        "schedules.calendar_invalid",
+        "schedules.rollback_failed",
+        "schedules.failed",
+        "schedules.run_active"
+      ]
+    },
+    {
+      "name": "accounts.lookup",
+      "summary": "Read a local account's primary group, home, and shell.",
+      "mutates": false,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "accounts.missing"
+      ]
+    },
+    {
+      "name": "processes.check-release",
+      "summary": "Tell whether a production Process has a selected release.",
+      "mutates": false,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "processes.invalid",
+        "processes.name_collision",
+        "processes.not_found",
+        "processes.start_failed",
+        "processes.stop_failed",
+        "processes.restart_failed",
+        "processes.remove_failed",
+        "processes.status_failed",
+        "processes.logs_failed",
+        "processes.converge_failed",
+        "processes.candidate_invalid",
+        "processes.activation_failed",
+        "processes.rollback_failed",
+        "processes.recovery_required",
+        "processes.vite_cleanup_failed"
+      ]
+    },
+    {
+      "name": "processes.status",
+      "summary": "Read the state of a Process's unit or container.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "processes.invalid",
+        "processes.name_collision",
+        "processes.not_found",
+        "processes.start_failed",
+        "processes.stop_failed",
+        "processes.restart_failed",
+        "processes.remove_failed",
+        "processes.status_failed",
+        "processes.logs_failed",
+        "processes.converge_failed",
+        "processes.candidate_invalid",
+        "processes.activation_failed",
+        "processes.rollback_failed",
+        "processes.recovery_required",
+        "processes.vite_cleanup_failed"
+      ]
+    },
+    {
+      "name": "processes.control",
+      "summary": "Start, stop, or restart a Process's unit or container.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "processes.invalid",
+        "processes.name_collision",
+        "processes.not_found",
+        "processes.start_failed",
+        "processes.stop_failed",
+        "processes.restart_failed",
+        "processes.remove_failed",
+        "processes.status_failed",
+        "processes.logs_failed",
+        "processes.converge_failed",
+        "processes.candidate_invalid",
+        "processes.activation_failed",
+        "processes.rollback_failed",
+        "processes.recovery_required",
+        "processes.vite_cleanup_failed"
+      ]
+    },
+    {
+      "name": "processes.remove",
+      "summary": "Delete a Process's unit or containers.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "processes.invalid",
+        "processes.name_collision",
+        "processes.not_found",
+        "processes.start_failed",
+        "processes.stop_failed",
+        "processes.restart_failed",
+        "processes.remove_failed",
+        "processes.status_failed",
+        "processes.logs_failed",
+        "processes.converge_failed",
+        "processes.candidate_invalid",
+        "processes.activation_failed",
+        "processes.rollback_failed",
+        "processes.recovery_required",
+        "processes.vite_cleanup_failed"
+      ]
+    },
+    {
+      "name": "processes.stage-unit",
+      "summary": "Write a Process unit candidate that systemd accepts.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "processes.invalid",
+        "processes.name_collision",
+        "processes.not_found",
+        "processes.start_failed",
+        "processes.stop_failed",
+        "processes.restart_failed",
+        "processes.remove_failed",
+        "processes.status_failed",
+        "processes.logs_failed",
+        "processes.converge_failed",
+        "processes.candidate_invalid",
+        "processes.activation_failed",
+        "processes.rollback_failed",
+        "processes.recovery_required",
+        "processes.vite_cleanup_failed"
+      ]
+    },
+    {
+      "name": "processes.activate-unit",
+      "summary": "Publish a Process unit candidate and set its desired state.",
+      "mutates": true,
+      "timeout_seconds": 600,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "processes.invalid",
+        "processes.name_collision",
+        "processes.not_found",
+        "processes.start_failed",
+        "processes.stop_failed",
+        "processes.restart_failed",
+        "processes.remove_failed",
+        "processes.status_failed",
+        "processes.logs_failed",
+        "processes.converge_failed",
+        "processes.candidate_invalid",
+        "processes.activation_failed",
+        "processes.rollback_failed",
+        "processes.recovery_required",
+        "processes.vite_cleanup_failed"
+      ]
+    },
+    {
+      "name": "processes.converge-container",
+      "summary": "Create or replace a Process's container and set its desired state.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "processes.invalid",
+        "processes.name_collision",
+        "processes.not_found",
+        "processes.start_failed",
+        "processes.stop_failed",
+        "processes.restart_failed",
+        "processes.remove_failed",
+        "processes.status_failed",
+        "processes.logs_failed",
+        "processes.converge_failed",
+        "processes.candidate_invalid",
+        "processes.activation_failed",
+        "processes.rollback_failed",
+        "processes.recovery_required",
+        "processes.vite_cleanup_failed"
+      ]
+    },
+    {
+      "name": "processes.logs",
+      "summary": "Read the newest lines of a Process's unit or container.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "processes.invalid",
+        "processes.name_collision",
+        "processes.not_found",
+        "processes.start_failed",
+        "processes.stop_failed",
+        "processes.restart_failed",
+        "processes.remove_failed",
+        "processes.status_failed",
+        "processes.logs_failed",
+        "processes.converge_failed",
+        "processes.candidate_invalid",
+        "processes.activation_failed",
+        "processes.rollback_failed",
+        "processes.recovery_required",
+        "processes.vite_cleanup_failed"
+      ]
+    },
+    {
+      "name": "certificates.request-leaf",
+      "summary": "Reuse a valid development leaf certificate, or make a new key and its signing request.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "certificates.leaf_failed"
+      ]
+    },
+    {
+      "name": "certificates.publish-leaf",
+      "summary": "Install a signed development leaf for the managed account and Caddy, and reload Caddy.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "certificates.leaf_failed"
+      ]
+    },
+    {
+      "name": "certificates.inspect-leaf",
+      "summary": "Report whether a development leaf exists for the managed account and for Caddy.",
+      "mutates": false,
+      "timeout_seconds": 15,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "certificates.leaf_failed"
+      ]
+    },
+    {
+      "name": "certificates.remove-leaf",
+      "summary": "Remove a development leaf for the managed account and for Caddy.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "certificates.leaf_failed"
+      ]
+    },
+    {
+      "name": "instances.read-dependency-files",
+      "summary": "Read the dependency manifests and lockfiles of a development checkout.",
+      "mutates": false,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.dependency_input_invalid"
+      ]
+    },
+    {
+      "name": "instances.read-release-dependency-files",
+      "summary": "Read the dependency manifests and lockfiles of a production home's current release.",
+      "mutates": false,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.dependency_input_invalid"
+      ]
+    },
+    {
+      "name": "instances.probe-dependency-update",
+      "summary": "Check whether one package ecosystem of a directory is ready for an update.",
+      "mutates": false,
+      "timeout_seconds": 45,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.dependency_input_invalid"
+      ]
+    },
+    {
+      "name": "instances.update-dependencies",
+      "summary": "Update one package ecosystem of a development checkout within its constraints.",
+      "mutates": true,
+      "timeout_seconds": 630,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.dependency_input_invalid"
+      ]
+    },
+    {
+      "name": "instances.resolve-development-target",
+      "summary": "Fetch a development default's branch and name the commit a deploy checks out.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.development_checkout_invalid",
+        "instances.checkout_dirty",
+        "instances.branch_diverged",
+        "instances.commit_not_on_branch",
+        "instances.lifecycle_busy",
+        "instances.development_step_failed"
+      ]
+    },
+    {
+      "name": "instances.checkout-development-default",
+      "summary": "Check out a commit on a development default's branch in place.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.development_checkout_invalid",
+        "instances.checkout_dirty",
+        "instances.branch_diverged",
+        "instances.commit_not_on_branch",
+        "instances.lifecycle_busy",
+        "instances.development_step_failed"
+      ]
+    },
+    {
+      "name": "instances.run-development-step",
+      "summary": "Run a development deploy step in a development default's checkout, live.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.development_checkout_invalid",
+        "instances.checkout_dirty",
+        "instances.branch_diverged",
+        "instances.commit_not_on_branch",
+        "instances.lifecycle_busy",
+        "instances.development_step_failed"
+      ]
+    },
+    {
+      "name": "instances.run-lifecycle-step",
+      "summary": "Run a Project setup or teardown step in an Instance checkout.",
+      "mutates": true,
+      "timeout_seconds": 3600,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.development_checkout_invalid",
+        "instances.checkout_dirty",
+        "instances.branch_diverged",
+        "instances.commit_not_on_branch",
+        "instances.lifecycle_busy",
+        "instances.development_step_failed"
+      ]
+    },
+    {
+      "name": "instances.prepare-production-user",
+      "summary": "Create a production Instance's system account and private home, or check them.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.prepare-production-source",
+      "summary": "Clone a production Instance's repository into its initial release and record the source markers.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.resolve-production-source",
+      "summary": "Check out a branch in a production Instance's initial release and link its environment.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.inspect-production-profile",
+      "summary": "Read a production checkout's Composer metadata, refusing files the user does not own.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.grant-production-caddy-access",
+      "summary": "Deny Caddy a production home except a path to the selected web root.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.validate-release-layout",
+      "summary": "Check a production home, its releases, and the release that current selects.",
+      "mutates": false,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.clear-current-release",
+      "summary": "Check a production home and remove its current link.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.remove-production-home",
+      "summary": "Remove a production Instance's home, system account, and source state.",
+      "mutates": true,
+      "timeout_seconds": 600,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.write-directory-url",
+      "summary": "Write APP_URL into the stable .env of a production Instance's served application directory.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.refresh-config-cache",
+      "summary": "Rebuild the Laravel configuration cache of a production Instance's current release, if it has one.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "php.inspect-shared-pools",
+      "summary": "Inspect shared PHP pool working directories and required versions.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "php.shared_pool_invalid",
+        "php.shared_pool_unsafe",
+        "php.shared_pool_failed",
+        "php.shared_pool_recovery_failed"
+      ]
+    },
+    {
+      "name": "php.converge-shared-pools",
+      "summary": "Publish shared PHP pools with ordered version changes and recovery.",
+      "mutates": true,
+      "timeout_seconds": 180,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "php.shared_pool_invalid",
+        "php.shared_pool_unsafe",
+        "php.shared_pool_failed",
+        "php.shared_pool_recovery_failed"
+      ]
+    },
+    {
+      "name": "php.converge-production-runtime",
+      "summary": "Publish a production Instance's dedicated PHP-FPM service, or only a monitoring change of its pool.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "php.runtime_invalid",
+        "php.cache_socket_unavailable",
+        "php.cache_association_invalid",
+        "php.cache_reset_rejected",
+        "php.cache_reset_pending",
+        "php.cache_protocol_failed"
+      ]
+    },
+    {
+      "name": "php.remove-production-runtime",
+      "summary": "Stop and remove a production Instance's dedicated PHP-FPM service, keeping its local tuning.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "php.runtime_invalid",
+        "php.cache_socket_unavailable",
+        "php.cache_association_invalid",
+        "php.cache_reset_rejected",
+        "php.cache_reset_pending",
+        "php.cache_protocol_failed"
+      ]
+    },
+    {
+      "name": "php.inspect-production-pool",
+      "summary": "Read a production Instance's generated PHP-FPM pool and its fingerprint.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "php.runtime_invalid",
+        "php.cache_socket_unavailable",
+        "php.cache_association_invalid",
+        "php.cache_reset_rejected",
+        "php.cache_reset_pending",
+        "php.cache_protocol_failed"
+      ]
+    },
+    {
+      "name": "php.refresh-production-cache",
+      "summary": "Reset OPcache in a production Instance's own PHP-FPM workers and confirm it.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "php.runtime_invalid",
+        "php.cache_socket_unavailable",
+        "php.cache_association_invalid",
+        "php.cache_reset_rejected",
+        "php.cache_reset_pending",
+        "php.cache_protocol_failed"
+      ]
+    },
+    {
+      "name": "wireguard.project-hub",
+      "summary": "Install the WireGuard hub configuration and run it, restoring the previous one on failure.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "wireguard.hub_install_failed",
+        "wireguard.forwarding_install_failed",
+        "wireguard.forwarding_config_invalid",
+        "wireguard.hub_config_invalid",
+        "wireguard.hub_start_failed"
+      ]
+    },
+    {
+      "name": "wireguard.prepare-peer-key",
+      "summary": "Manage the native WireGuard peer transaction: wireguard.prepare-peer-key.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "wireguard.peer_busy",
+        "wireguard.peer_key_missing",
+        "wireguard.peer_key_failed",
+        "wireguard.peer_state_unsupported",
+        "wireguard.peer_recovery_pending",
+        "wireguard.peer_dns_uplink_missing",
+        "wireguard.peer_config_failed",
+        "wireguard.peer_commit_failed",
+        "wireguard.peer_rollback_failed"
+      ]
+    },
+    {
+      "name": "wireguard.publish-peer",
+      "summary": "Manage the native WireGuard peer transaction: wireguard.publish-peer.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "wireguard.peer_busy",
+        "wireguard.peer_key_missing",
+        "wireguard.peer_key_failed",
+        "wireguard.peer_state_unsupported",
+        "wireguard.peer_recovery_pending",
+        "wireguard.peer_dns_uplink_missing",
+        "wireguard.peer_config_failed",
+        "wireguard.peer_commit_failed",
+        "wireguard.peer_rollback_failed"
+      ]
+    },
+    {
+      "name": "wireguard.commit-peer",
+      "summary": "Manage the native WireGuard peer transaction: wireguard.commit-peer.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "wireguard.peer_busy",
+        "wireguard.peer_key_missing",
+        "wireguard.peer_key_failed",
+        "wireguard.peer_state_unsupported",
+        "wireguard.peer_recovery_pending",
+        "wireguard.peer_dns_uplink_missing",
+        "wireguard.peer_config_failed",
+        "wireguard.peer_commit_failed",
+        "wireguard.peer_rollback_failed"
+      ]
+    },
+    {
+      "name": "wireguard.rollback-peer",
+      "summary": "Manage the native WireGuard peer transaction: wireguard.rollback-peer.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "wireguard.peer_busy",
+        "wireguard.peer_key_missing",
+        "wireguard.peer_key_failed",
+        "wireguard.peer_state_unsupported",
+        "wireguard.peer_recovery_pending",
+        "wireguard.peer_dns_uplink_missing",
+        "wireguard.peer_config_failed",
+        "wireguard.peer_commit_failed",
+        "wireguard.peer_rollback_failed"
+      ]
+    },
+    {
+      "name": "wireguard.bootstrap-hub",
+      "summary": "Validate the Gateway hub, enable forwarding and restart WireGuard with configuration recovery.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "wireguard.hub_install_failed",
+        "wireguard.forwarding_install_failed",
+        "wireguard.forwarding_config_invalid",
+        "wireguard.hub_config_invalid",
+        "wireguard.hub_start_failed"
+      ]
+    },
+    {
+      "name": "wireguard.inspect-hub",
+      "summary": "Read whether the hub interface runs and the digests of its configuration and VPN DNS records.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "wireguard.hub_unreadable"
+      ]
+    },
+    {
+      "name": "wireguard.inspect-peer-dns",
+      "summary": "Read a peer's saved DNS state, its PostUp hooks, and its live orbit resolver settings.",
+      "mutates": false,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "wireguard.peer_dns_busy",
+        "wireguard.peer_dns_unreadable"
+      ]
+    },
+    {
+      "name": "wireguard.query-dns",
+      "summary": "Look names up through systemd-resolved without its cache.",
+      "mutates": false,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "wireguard.dns_name_invalid"
+      ]
+    },
+    {
+      "name": "wireguard.repair-peer-dns",
+      "summary": "Move a peer's DNS selection to the orbit link with the given routing domains, restoring it on failure.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "wireguard.peer_dns_busy",
+        "wireguard.peer_recovery_pending",
+        "wireguard.peer_dns_state_unsupported",
+        "wireguard.peer_dns_candidate_invalid",
+        "wireguard.peer_dns_apply_failed",
+        "wireguard.peer_dns_recovery_failed",
+        "wireguard.peer_dns_uplink_missing",
+        "wireguard.peer_dns_repair_failed"
+      ]
+    },
+    {
+      "name": "documents.prepare-cleanup",
+      "summary": "Prepare and invalidate the local document cleanup gate before Gateway startup.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "documents.cleanup_input_invalid",
+        "documents.cleanup_state_unsafe",
+        "documents.cleanup_start_failed"
+      ]
+    },
+    {
+      "name": "ai-router.remove-source",
+      "summary": "Remove the code-owned retired collector source directory.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "ai-router.source_unsafe",
+        "ai-router.source_remove_failed"
+      ]
+    }
+  ],
+  "output_chunk_bytes": 65536
+}

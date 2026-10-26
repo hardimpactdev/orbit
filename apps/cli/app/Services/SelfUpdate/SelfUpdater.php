@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Services\SelfUpdate;
 
 use Illuminate\Support\Facades\Process;
-use Illuminate\Support\Sleep;
 use Orbit\Sdk\Responses\Gateway\DesiredFleetStateResponse;
 use Orbit\Sdk\Responses\Gateway\FleetReleaseAssetResponse;
 
@@ -20,12 +19,8 @@ use Orbit\Sdk\Responses\Gateway\FleetReleaseAssetResponse;
  */
 final readonly class SelfUpdater
 {
-    public const string AgentService = 'orbit-agent.service';
-
-    /** How long the restarted agent must stay active without a restart. */
-    public const int AgentHealthSeconds = 5;
-
-    public const string PreviousAgentSuffix = '.orbit-previous';
+    /** The installer's bound: the update lock wait, the copy, and the observer's health window. */
+    public const int AgentInstallSeconds = 180;
 
     private const string ReleaseVersion = '/\A0\.([1-9][0-9]{0,9})\.0\z/D';
 
@@ -39,8 +34,6 @@ final readonly class SelfUpdater
     private const string LegacyVersion = '/\A[0-9a-f]{40}\z/D';
 
     public const string LegacyBackup = 'orbit.orbit-previous';
-
-    private const string AgentVersion = '/\A[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}\z/D';
 
     public function __construct(
         private SelfUpdateHost $host,
@@ -157,44 +150,58 @@ final readonly class SelfUpdater
         $before = new InstalledVersion($installed === $asset->sha256 ? $version : null, $installed);
         $after = new InstalledVersion($version, $asset->sha256);
 
+        if ($installed === $asset->sha256) {
+            return new SelfUpdateStep('agent', SelfUpdateOutcome::Unchanged, $path, $before, $after);
+        }
+
+        if (! $this->host->isRoot()) {
+            return new SelfUpdateStep('agent', SelfUpdateOutcome::Skipped, $path, $before, $before, reason: 'root_required');
+        }
+
+        $commit = $state->agent->commit;
+        // The verified candidate waits beside the installed binary, in a directory only root can write.
+        $candidate = dirname($path).'/orbit-agent-candidate-'.bin2hex(random_bytes(8));
+
         try {
-            if (preg_match(self::AgentVersion, $version) !== 1) {
-                throw new SelfUpdateFailure('agent.release_mismatch', "The Gateway pins agent version {$version}, which is not an orbit-agent release.");
-            }
-
-            $url = $this->expectedAsset($asset, $version, $this->location->agentAssetName($version, $platform), $this->location->agentAssetUrl($version, $platform), 'agent');
-
-            if ($installed === $asset->sha256) {
-                return new SelfUpdateStep('agent', SelfUpdateOutcome::Unchanged, $path, $before, $after);
-            }
-
-            if (! $this->host->isRoot()) {
-                return new SelfUpdateStep('agent', SelfUpdateOutcome::Skipped, $path, $before, $before, reason: 'root_required');
-            }
-
-            $this->confirmChecksum($this->location->agentChecksumsUrl($version), $asset, 'agent');
-            $previous = $path.self::PreviousAgentSuffix;
-            $kept = $installed !== null && $this->installer->keep($path, $previous);
-            $this->installer->install(target: $path, url: $url, sha256: $asset->sha256, errorPrefix: 'agent', mode: 0755, owner: $this->host->agentOwner());
+            $url = $this->expectedAsset($asset, $commit, $this->location->agentAssetName($platform), $this->location->agentAssetUrl($commit, $platform), 'agent');
+            $this->confirmChecksum($this->location->agentChecksumsUrl($commit), $asset, 'agent');
+            $this->installer->install(target: $candidate, url: $url, sha256: $asset->sha256, errorPrefix: 'agent', mode: 0700, owner: $this->host->agentOwner());
+            $replaced = $this->installAgent($candidate, $asset->sha256);
         } catch (SelfUpdateFailure $failure) {
+            @unlink($candidate);
+
             return new SelfUpdateStep('agent', SelfUpdateOutcome::Failed, $path, $before, $before, failure: $failure);
         }
 
-        $restart = Process::timeout(60)->run(['systemctl', 'restart', self::AgentService]);
-        $problem = match (true) {
-            ! $restart->successful() => ['agent.restart_failed', 'systemctl could not restart '.self::AgentService],
-            ! $this->agentStaysUp() => ['agent.unhealthy', 'The new orbit-agent did not stay running'],
-            default => null,
-        };
+        return new SelfUpdateStep('agent', $replaced ? SelfUpdateOutcome::Updated : SelfUpdateOutcome::Unchanged, $path, $before, $after);
+    }
 
-        if ($problem === null) {
-            return new SelfUpdateStep('agent', SelfUpdateOutcome::Updated, $path, $before, $after);
+    /**
+     * Runs the agent's own installer from the verified candidate (ADR 0225): it replaces the binary under the
+     * update lock, restarts the observer, and restores the kept binary when the observer does not stay up.
+     *
+     * @throws SelfUpdateFailure
+     */
+    private function installAgent(string $candidate, string $sha256): bool
+    {
+        $envelope = json_encode([
+            'agent_sha256' => $sha256,
+            'deadline_ms' => self::AgentInstallSeconds * 1000,
+            'input' => ['candidate' => $candidate, 'sha256' => $sha256],
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        $result = Process::timeout(self::AgentInstallSeconds + 30)->input($envelope)->run([$candidate, 'command', 'agent.install']);
+        $lines = array_values(array_filter(explode("\n", $result->output()), static fn (string $line): bool => trim($line) !== ''));
+        $answer = json_decode((string) end($lines), true);
+
+        if (is_array($answer) && ($answer['ok'] ?? null) === true && is_array($answer['data'] ?? null)) {
+            return ($answer['data']['replaced'] ?? null) === true;
         }
 
-        return new SelfUpdateStep('agent', SelfUpdateOutcome::Failed, $path, $before, $kept ? $before : $after, failure: new SelfUpdateFailure(
-            $problem[0],
-            $problem[1].'. '.($kept ? $this->rollBackAgent($previous, $path) : 'No previous orbit-agent was installed to restore.'),
-        ));
+        $error = is_array($answer) && is_array($answer['error'] ?? null) ? $answer['error'] : null;
+        $code = is_string($error['code'] ?? null) ? $error['code'] : 'agent.install_failed';
+        $message = is_string($error['message'] ?? null) ? $error['message'] : 'The orbit-agent installer returned no result.';
+
+        throw new SelfUpdateFailure($code, $message);
     }
 
     /**
@@ -288,62 +295,6 @@ final readonly class SelfUpdater
         if (! $result->successful() || trim($result->output()) !== 'Orbit '.$version) {
             throw new SelfUpdateFailure('self_update.candidate_invalid', "The downloaded orbit does not run here or does not report version {$version}.");
         }
-    }
-
-    /**
-     * Whether the restarted agent stays active without systemd restarting it for a few seconds.
-     */
-    private function agentStaysUp(): bool
-    {
-        $baseline = $this->agentState();
-
-        if ($baseline === null) {
-            return false;
-        }
-
-        for ($second = 0; $second < self::AgentHealthSeconds; $second++) {
-            Sleep::for(1)->second();
-            $state = $this->agentState();
-
-            if ($state === null || $state['restarts'] !== $baseline['restarts']) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /** @return array{restarts: string}|null The state while the unit is active, or null. */
-    private function agentState(): ?array
-    {
-        $result = Process::timeout(30)->run(['systemctl', 'show', self::AgentService, '--property=ActiveState', '--property=NRestarts']);
-        $properties = [];
-
-        foreach (explode("\n", $result->output()) as $line) {
-            [$key, $value] = array_pad(explode('=', trim($line), 2), 2, '');
-            $properties[$key] = $value;
-        }
-
-        if (! $result->successful() || ($properties['ActiveState'] ?? null) !== 'active' || ! isset($properties['NRestarts'])) {
-            return null;
-        }
-
-        return ['restarts' => $properties['NRestarts']];
-    }
-
-    private function rollBackAgent(string $previous, string $path): string
-    {
-        try {
-            $this->installer->restore($previous, $path, 'agent');
-        } catch (SelfUpdateFailure) {
-            return 'The previous orbit-agent could not be restored.';
-        }
-
-        $restart = Process::timeout(60)->run(['systemctl', 'restart', self::AgentService]);
-
-        return $restart->successful()
-            ? 'The previous orbit-agent is restored and running.'
-            : 'The previous orbit-agent is restored, but systemctl could not restart it.';
     }
 
     /**

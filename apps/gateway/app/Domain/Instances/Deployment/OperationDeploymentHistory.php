@@ -74,6 +74,7 @@ final readonly class OperationDeploymentHistory
             phase: static function (DeploymentProgressPhase $phase, ?string $stepName) use ($collector): void {
                 $collector->phase($phase, $stepName);
             },
+            operation: $run->operation()->id,
         );
         $steps = new OperationDeploymentSteps($run, static function () use ($deployment, $collector): void {
             $deployment->update(['events' => $collector->events()]);

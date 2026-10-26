@@ -90,15 +90,15 @@ Every topology Node is a copy of the stopped VM `node-template` in the Incus poo
 
 The base already provides pinned software, `orbit` with uid/gid 1000 and passwordless sudo, masked apt timers, and identity cleanup before publication. The template never booted, so it holds no machine identity, and each copy gets its own. The shared base preserves DNS configuration for normal task VMs. Only nested topology guests receive persistent public DNS upstreams: as soon as their guest agents respond, the harness sets them before waiting for cloud-init. This avoids the two-minute network-online timeout on topology bridges without usable DNS, while normal task VMs keep their link DNS for internal names.
 
-Convergence clears known hosts, verifies the account, and keeps apt timers masked. It converts the exact root-owned Bun launcher from the recipe into the symlink required by app-role enrollment. Other executables remain subject to the normal conflict checks.
+Convergence clears known hosts, verifies the account, and keeps apt timers masked.
 
-Before enrollment, the harness checks pnpm as `orbit` and repairs a broken launcher from the recipe's integrity-pinned native archive, at the same version. This supports existing bases whose wrapper still names `pnpm.cjs`. The preparation program combines the shared artifact and recipe libraries under `apps/gateway/resources/remote/lib` with the harness's pnpm entry point; it uses the recipe installer without running Node convergence or building an image.
+Before enrollment, the harness prepares pnpm through `recipe.install-javascript`. Build the agent from the checkout with `cargo build --release --locked` in `apps/agent` before acquiring a topology. The harness stages that binary in a private directory on every guest and sends its exact digest and recipe pin. The native command checks the launcher as `orbit`, repairs a broken launcher from the pinned archive, and verifies it again. Staging is removed after the command. This works before enrollment and does not require a source mount on production guests.
 
 Cloud-init creates fresh SSH keys; the harness waits through its seed reboot before configuration. The shared base stays usable as a task VM image, so convergence does not disable cloud-init in the published image.
 
 Before the first migration, `converge-gateway.sh prerequisites` ensures that Caddy and dnsmasq are installed, installing only missing packages.
 
-The Gateway runs its rendered `gateway vpn` enrollment programs except bootstrap during composition. This supplies VPN prerequisites and the Gateway's Caddy program, which a software-only recipe role does not replace. Composition installs no PHP: every Node, the Gateway included, runs the recipe's [PHP build](/reference/compute-drivers#php-build) from the base image. Workload and operator enrollment still use the normal product paths.
+The Gateway runs its rendered `gateway vpn` enrollment programs except bootstrap during composition. It first installs the pinned agent from the mounted worktree, because the programs call it. This supplies VPN prerequisites and the Gateway's Caddy program, which a software-only recipe role does not replace. Composition installs no PHP: every Node, the Gateway included, runs the recipe's [PHP build](/reference/compute-drivers#php-build) from the base image. Workload and operator enrollment still use the normal product paths.
 
 Every Node keeps the template's root disk, which has the size of the base image's disk. Guest ownership repair stays on the guest filesystem and does not scan the mounted checkout. The operator needs 1 GiB of memory for the shared base; 512 MiB can kill cloud-init during boot.
 
@@ -126,7 +126,7 @@ Every Node keeps the template's root disk, which has the size of the base image'
 
 A copy can override only the devices of the template, which has its root disk and nothing else, so the NIC and the mount are added after the copy.
 
-`bootstrap.gateway` writes the Gateway checkout path into the worktree's Gateway `.env` and applies the migrations. `orbit:bootstrap` then creates the Orbit CA, the Gateway SSH key, and the VPN at `10.44.0.1`.
+`bootstrap.gateway` writes the Gateway checkout path into the worktree's Gateway `.env`, writes the Gateway encryption key to the guest's `/home/orbit/.orbit/gateway.app-key` with `bin/gateway-app-key` when it is absent, and applies the migrations. `orbit:bootstrap` then creates the Orbit CA, the Gateway SSH key, and the VPN at `10.44.0.1`.
 
 For each workload Node, `enroll.<node>` authorizes the Gateway SSH key and reads the Node's host key. It passes the Node's roles, WireGuard address, and host key fingerprint to `orbit:node-provision`. Enrollment is serial, because it writes the Gateway's SQLite store.
 

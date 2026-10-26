@@ -4525,6 +4525,7 @@ export interface components {
         };
         DesiredAgent: {
             version?: string;
+            commit?: string;
             assets?: components["schemas"]["FleetReleaseAsset"][];
         };
         GatewayReleaseAutomation: {

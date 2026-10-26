@@ -22,6 +22,7 @@ use App\Infrastructure\Doctor\NativeCaddyBuildInspector;
 use App\Infrastructure\Doctor\NativeCustomProxyRouteInspector;
 use App\Infrastructure\Doctor\NativeGatewayVpnStateInspector;
 use App\Infrastructure\Doctor\NativeInstanceStateInspector;
+use App\Infrastructure\Doctor\NativeNodeStateInspector;
 use App\Infrastructure\Doctor\NativePhpPoolDirectoryInspector;
 use App\Infrastructure\Doctor\NativePrivateRouteProjectionInspector;
 use App\Infrastructure\Doctor\NativeProcessStateInspector;
@@ -30,14 +31,13 @@ use App\Infrastructure\Doctor\NativePublicRouteEdgeInspector;
 use App\Infrastructure\Doctor\NativeRoleStateInspector;
 use App\Infrastructure\Doctor\NativeRouteApplicationUrlInspector;
 use App\Infrastructure\Doctor\SharedInstalledPackageInventory;
-use App\Infrastructure\Doctor\SshNodeStateInspector;
 use App\Infrastructure\Firewall\NativeUfwFirewallInspector;
 use App\Infrastructure\Metrics\NativeMetricsFirewallExpectationProvider;
 use App\Infrastructure\Tools\NativeToolInspector;
 
 it('resolves every read-only inspector through its domain contract', function (): void {
     expect(app(NodeStateInspector::class))
-        ->toBeInstanceOf(SshNodeStateInspector::class)
+        ->toBeInstanceOf(NativeNodeStateInspector::class)
         ->and(app(RoleStateInspector::class))
         ->toBeInstanceOf(NativeRoleStateInspector::class)
         ->and(app(GatewayVpnStateInspector::class))

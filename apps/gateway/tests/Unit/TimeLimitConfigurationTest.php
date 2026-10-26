@@ -5,6 +5,7 @@ declare(strict_types=1);
 use PHPUnit\Framework\Attributes\Large;
 use Symfony\Component\Yaml\Yaml;
 use Tests\Feature\Extensions\Documents\Infrastructure\DocumentTransportDeadlineTest;
+use Tests\Feature\Infrastructure\Tasks\TaskCheckDeadlineTest;
 use Tests\Feature\Support\LinuxHostCtimeTest;
 
 it('enforces the two-second default and keeps stock large-test budgets for reviewed real deadlines', function (): void {
@@ -37,11 +38,18 @@ it('passes the five-second default through Pest in Gateway CI test jobs', functi
         )))->toBe(['--default-time-limit=5']);
 })->with(['Gateway shards' => 'gateway-shards', 'Gateway privileged' => 'privileged']);
 
-it('restricts the native large classes to the three reviewed real-deadline cases', function (): void {
+it('restricts the native large classes to the reviewed real-deadline cases', function (): void {
     foreach ([
         DocumentTransportDeadlineTest::class => [
             'test_enforces_the_connection_bound_during_a_stalled_tls_handshake',
             'test_enforces_the_total_request_deadline_when_a_response_body_stalls',
+        ],
+        TaskCheckDeadlineTest::class => [
+            'test_redacts_split_credentials_on_timeout',
+            'test_removes_setup_scripts',
+            'test_kills_a_timed_out_base_process_group',
+            'test_streams_setup_and_stops_descendants',
+            'test_bounds_output_draining',
         ],
         LinuxHostCtimeTest::class => ['test_removes_legacy_copies_whose_change_time_is_stale'],
     ] as $class => $expectedMethods) {

@@ -18,6 +18,7 @@ use App\Domain\Fleet\NodeCliState;
 use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Releases\ReleaseAlertKind;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\FleetRollout;
 use App\Models\FleetRolloutNode;
 use App\Models\GatewayRelease;
@@ -84,7 +85,7 @@ describe('fleet rollout gate', function (): void {
 
     it('fails closed when the release layout cannot be read', function (): void {
         ['visitor' => $visitor] = FleetFixtures::bind();
-        Config::set('orbit.gateway_checkout', '/nonexistent/orbit/apps/gateway');
+        FleetFixtures::unreadable();
         FleetFixtures::node('dev', [RoleName::AppDev]);
 
         expect(safetyRun()['status'])->toBe('release_layout_unreadable')
@@ -302,7 +303,7 @@ describe('fleet rollout CLI fallback alert', function (): void {
         app(FleetRolloutAlerts::class)->cliFallback($rollout, new DesiredFleetStateData(
             FleetFixtures::Commit,
             $reason instanceof CliReleaseUnavailableReason ? $cli->fallbackFor($reason) : $cli,
-            DesiredAgentData::fromFootprint(),
+            DesiredAgentData::fromDelivery(app(AgentDelivery::class)),
         ));
 
         expect($alerts->alerts[0]->summary)->toBe(sprintf(

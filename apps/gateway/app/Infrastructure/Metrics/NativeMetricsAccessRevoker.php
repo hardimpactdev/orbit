@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace App\Infrastructure\Metrics;
 
 use App\Domain\Metrics\MetricsAccessRevoker;
+use App\Domain\Metrics\MetricsGatewayResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Caddy\CaddyPublicationLock;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Models\NodeRole;
 
 /**
@@ -19,7 +20,8 @@ use App\Models\NodeRole;
 final readonly class NativeMetricsAccessRevoker implements MetricsAccessRevoker
 {
     public function __construct(
-        private ProcessRunner $processes,
+        private AgentCommandRunner $agents,
+        private MetricsGatewayResolver $gateways = new MetricsGatewayResolver,
     ) {}
 
     public function revoke(): void
@@ -32,17 +34,14 @@ final readonly class NativeMetricsAccessRevoker implements MetricsAccessRevoker
             return;
         }
 
-        $result = $this->processes->run(new ProcessInvocation(
-            arguments: ['sudo', 'bash', '-seu'],
-            timeout: 60.0,
-            input: CaddyPublicationLock::script(CaddyPublicationLock::Path).PHP_EOL.'systemctl reload caddy'.PHP_EOL,
-        ));
-
-        if (! $result->succeeded()) {
+        try {
+            $this->agents->run($this->gateways->resolve(), 'caddy.reload');
+        } catch (AgentCommandRefused|AgentRunnerFailure $exception) {
             throw new ResourceOperationException(
                 'metrics.caddy_publication_failed',
                 'Metrics Caddy publication did not complete.',
                 502,
+                previous: $exception,
             );
         }
     }

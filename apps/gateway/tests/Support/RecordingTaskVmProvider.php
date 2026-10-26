@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
-use App\Domain\TaskVms\TaskVmGuestCommand;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\VmObservation;
-use App\Infrastructure\Processes\CommandResult;
 use App\Models\TaskVm;
 use Closure;
 use Throwable;
@@ -35,10 +33,7 @@ final class RecordingTaskVmProvider implements TaskVmProvider
     /** Whether cloud-init is done, or the failure its guest command throws. */
     public bool|Throwable $ready = true;
 
-    /** What `cloud-init status` prints, in place of the answer of `$ready`. */
-    public ?string $cloudInitOutput = null;
-
-    public ?string $userData = null;
+    public ?string $gatewayPublicKey = null;
 
     public ?Throwable $startError = null;
 
@@ -53,10 +48,10 @@ final class RecordingTaskVmProvider implements TaskVmProvider
         $this->observation = new VmObservation(true, '10.251.77.20');
     }
 
-    public function create(TaskVm $vm, string $userData): void
+    public function create(TaskVm $vm, string $gatewayPublicKey): void
     {
         $this->record('create', $vm);
-        $this->userData = $userData;
+        $this->gatewayPublicKey = $gatewayPublicKey;
         if ($this->onCreate instanceof Closure) {
             ($this->onCreate)($vm);
         }
@@ -76,19 +71,14 @@ final class RecordingTaskVmProvider implements TaskVmProvider
         return self::Fingerprint;
     }
 
-    /** Answers `cloud-init status` from `$cloudInitOutput` or `$ready`, recorded as `cloud-init`. */
-    public function exec(TaskVm $vm, TaskVmGuestCommand $command): CommandResult
+    public function bootstrapReady(TaskVm $vm): bool
     {
         $this->record('cloud-init', $vm);
-        if ($this->cloudInitOutput !== null) {
-            return new CommandResult(1, $this->cloudInitOutput, '', 1, false);
-        }
         if ($this->ready instanceof Throwable) {
             throw $this->ready;
         }
 
-        // A guest that cannot run commands yet fails with nothing on stdout.
-        return $this->ready ? new CommandResult(0, '{"status":"done","errors":[]}', '', 1, false) : new CommandResult(255, '', 'not reachable', 1, false);
+        return $this->ready;
     }
 
     public function start(TaskVm $vm): void

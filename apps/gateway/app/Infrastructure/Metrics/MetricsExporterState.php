@@ -4,29 +4,22 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Metrics;
 
-use App\Infrastructure\Firewall\UfwRuleOwnership;
-
+/** A Node snapshot retained only for fleet rollback. Rust owns its interpretation. */
 final readonly class MetricsExporterState
 {
-    /**
-     * @param  ?string  $staleFirewallSource  The source address of an Orbit rule that admits a former Metrics
-     *                                        Node, with `firewallOwnership` Drift. Convergence re-points it.
-     */
     public function __construct(
         public ?string $configuration,
         public bool $serviceActive,
-        public UfwRuleOwnership $firewallOwnership,
-        public string $firewallStatus = '',
-        public ?string $staleFirewallSource = null,
+        public ?string $firewallSource,
     ) {}
 
-    /** The source the Orbit rule admits, or null when there is none. */
-    public function firewallSource(string $expectedSource): ?string
+    /** @return array{configuration: ?string, service_active: bool, firewall_source: ?string} */
+    public function toAgent(): array
     {
-        return match ($this->firewallOwnership) {
-            UfwRuleOwnership::Exact => $expectedSource,
-            UfwRuleOwnership::Missing => null,
-            UfwRuleOwnership::Drift => $this->staleFirewallSource,
-        };
+        return [
+            'configuration' => $this->configuration,
+            'service_active' => $this->serviceActive,
+            'firewall_source' => $this->firewallSource,
+        ];
     }
 }

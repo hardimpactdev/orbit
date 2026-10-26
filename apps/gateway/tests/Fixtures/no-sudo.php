@@ -5,22 +5,18 @@ declare(strict_types=1);
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
 use Symfony\Component\Process\Process;
-use Tests\Support\ForkedPythonPrograms;
+use Tests\Support\PythonPrograms;
 use Tests\Support\TestToolchain;
 
 beforeAll(function (): void {
     no_sudo_programs();
 });
 
-afterAll(function (): void {
-    no_sudo_programs()->close();
-});
-
-function no_sudo_programs(): ForkedPythonPrograms
+function no_sudo_programs(): PythonPrograms
 {
     static $programs = null;
 
-    return $programs ??= new ForkedPythonPrograms;
+    return $programs ??= new PythonPrograms;
 }
 
 it('keeps the current guard in a Python worker started before the test', function (bool $pinnedPath): void {

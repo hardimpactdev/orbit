@@ -39,6 +39,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 use Tests\Support\EnvironmentConcurrencySchemaFixture;
+use Tests\Support\FakesEnvironmentSyncInspection;
 use Tests\Support\ForkedGatewayProcess;
 
 beforeAll(fn () => EnvironmentConcurrencySchemaFixture::prepare(orb207_concurrency_worker_script()));
@@ -298,6 +299,8 @@ it('renders stored production values for candidate and previous Route domains wi
     $route->update(['replaced_by_route_id' => $replacement->id]);
     $preflight = new class implements InstanceOperationPreflight
     {
+        use FakesEnvironmentSyncInspection;
+
         /** @var list<string> */
         public array $domains = [];
 
@@ -576,6 +579,8 @@ function orb212_sync_concurrency_worker(mixed $socket, string $directory, string
     if ($mode === 'sync') {
         app()->instance(InstanceOperationPreflight::class, new class implements InstanceOperationPreflight
         {
+            use FakesEnvironmentSyncInspection;
+
             public function assertEnvironmentReadable(InstanceEnvironmentContext $context): void {}
 
             public function assertEnvironmentWritable(InstanceEnvironmentContext $context, int $requiredCapacityBytes): void {}

@@ -2,34 +2,29 @@
 
 declare(strict_types=1);
 
+use App\Actions\Instances\Dependencies\CollectInstanceDependencyFilesAction;
 use App\Actions\Instances\Dependencies\ReadInstanceDependencyScanAction;
 use App\Actions\Instances\Dependencies\ScanInstanceDependenciesAction;
 use App\Data\Instances\Dependencies\DependencyInventoryData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\Instances\Dependencies\DependencyInventoryState;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
-use App\Infrastructure\Instances\DependencyFilesProgram;
 use App\Infrastructure\Instances\NativeInstanceEnvironmentOperationLock;
 use App\Infrastructure\Processes\CommandDeadline;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\InstanceDependencyScanAttempt;
 use App\Models\Node;
 use App\Models\Project;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
-use Symfony\Component\Process\Process;
-
-use function Pest\Laravel\mock;
+use Tests\Support\FakeAgentCommandRunner;
 
 function dependency_scan_instance(): Instance
 {
     $project = Project::query()->create(['slug' => 'dependency-scan', 'name' => 'Dependency scan', 'repository_url' => 'https://example.test/scan.git']);
-    $node = Node::query()->create(['name' => 'dependency-scan', 'public_ssh_host' => '192.0.2.180', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit', 'status' => 'active']);
+    $node = Node::query()->create(['name' => 'dependency-scan', 'platform' => 'linux', 'architecture' => 'x86_64', 'public_ssh_host' => '192.0.2.180', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit', 'status' => 'active']);
     orbit_test_set_app_placement_role($node, false);
 
     return $project->instances()->create([
@@ -41,7 +36,7 @@ function dependency_scan_instance(): Instance
 /** @return array<string, mixed> */
 function dependency_scan_receipt(string $manager = 'npm'): array
 {
-    $files = array_fill_keys(DependencyFilesProgram::FILES, ['content' => null, 'hash' => null, 'error' => null]);
+    $files = array_fill_keys(CollectInstanceDependencyFilesAction::FILES, ['content' => null, 'hash' => null, 'error' => null]);
     $inputs = [
         'composer.json' => 'Composer/composer2-manifest.json', 'composer.lock' => 'Composer/composer2-lock.json',
         ...match ($manager) {
@@ -60,41 +55,38 @@ function dependency_scan_receipt(string $manager = 'npm'): array
 
 function dependency_scan_remote(Closure $response): void
 {
-    mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/keys/private');
-    mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/keys/known_hosts');
-    mock(SshExecutor::class)->shouldReceive('execute')->andReturnUsing(function () use ($response): CommandResult {
-        return new CommandResult(0, json_encode($response(), JSON_THROW_ON_ERROR), '', 1, false);
-    });
+    app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner()
+        ->answer('instances.read-dependency-files', fn (): array => $response())
+        ->answer('instances.read-release-dependency-files', fn (): array => $response()));
 }
 
-/** Run the pinned collector locally instead of opening an SSH connection. */
-function dependency_scan_local_source(Instance $instance): string
+/** @return array<string, mixed> */
+function dependency_scan_source_receipt(string $relative, string $ecosystem): array
 {
-    $path = sys_get_temp_dir().'/orbit-monorepo-scan-'.Str::uuid();
-    mkdir($path, 0700);
-    $instance->update(['checkout_path' => $path]);
-    mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/keys/private');
-    mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/keys/known_hosts');
-    mock(SshExecutor::class)->shouldReceive('execute')->andReturnUsing(function ($connection, $command): CommandResult {
-        $process = new Process($command->arguments);
-        $process->setInput($command->input);
-        $process->mustRun();
-
-        return new CommandResult(0, $process->getOutput(), $process->getErrorOutput(), 1, false);
-    });
-
-    return $path;
-}
-
-function dependency_scan_write_fixture(string $path, string $ecosystem): void
-{
-    new Filesystem()->ensureDirectoryExists($path);
-    $inputs = $ecosystem === 'composer'
-        ? ['composer.json' => 'Composer/composer2-manifest.json', 'composer.lock' => 'Composer/composer2-lock.json']
-        : ['package.json' => 'Npm/manifest.json', 'package-lock.json' => 'Npm/package-lock-v3.json'];
-    foreach ($inputs as $name => $fixture) {
-        copy(base_path('tests/Fixtures/Dependencies/'.$fixture), $path.'/'.$name);
+    $receipt = dependency_scan_receipt();
+    $receipt['root'] .= $relative;
+    foreach ($receipt['files'] as $name => &$file) {
+        if (str_starts_with($name, 'composer') !== ($ecosystem === 'composer')) {
+            $file = ['content' => null, 'hash' => null, 'error' => null];
+        }
     }
+
+    return $receipt;
+}
+
+/** @param array<string, string> $projects
+ * @return array<string, mixed>
+ */
+function dependency_scan_project_receipt(array $projects): array
+{
+    $receipt = dependency_scan_receipt();
+    $receipt['files'] = array_fill_keys(CollectInstanceDependencyFilesAction::FILES, ['content' => null, 'hash' => null, 'error' => null]);
+    $receipt['sub_projects'] = [];
+    foreach ($projects as $relative => $ecosystem) {
+        $receipt['sub_projects'][$relative] = dependency_scan_source_receipt('/'.$relative, $ecosystem);
+    }
+
+    return $receipt;
 }
 
 describe('coordinated instance dependency scans', function (): void {
@@ -287,7 +279,7 @@ describe('coordinated instance dependency scans', function (): void {
         dependency_scan_remote(function () use (&$calls, $receipt): array {
             $calls++;
             if ($calls === 3) {
-                $receipt['files'] = array_fill_keys(DependencyFilesProgram::FILES, ['content' => null, 'hash' => null, 'error' => null]);
+                $receipt['files'] = array_fill_keys(CollectInstanceDependencyFilesAction::FILES, ['content' => null, 'hash' => null, 'error' => null]);
             }
 
             return $receipt;
@@ -306,7 +298,7 @@ describe('coordinated instance dependency scans', function (): void {
     it('replaces a changed lock version without retaining old usage', function (): void {
         $instance = dependency_scan_instance();
         $receipt = dependency_scan_receipt();
-        $receipt['files'] = array_fill_keys(DependencyFilesProgram::FILES, ['content' => null, 'hash' => null, 'error' => null]);
+        $receipt['files'] = array_fill_keys(CollectInstanceDependencyFilesAction::FILES, ['content' => null, 'hash' => null, 'error' => null]);
         $manifest = '{"dependencies":{"widget":"*"}}';
         $receipt['files']['package.json'] = ['content' => base64_encode($manifest), 'hash' => hash('sha256', $manifest), 'error' => null];
         $version = '1.0.0';
@@ -418,7 +410,7 @@ describe('coordinated instance dependency scans', function (): void {
         } else {
             $instance->update(['status' => 'reserved']);
         }
-        mock(SshExecutor::class)->shouldNotReceive('execute');
+        app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner);
 
         $result = app(ScanInstanceDependenciesAction::class)->execute($instance);
 
@@ -460,149 +452,122 @@ describe('coordinated instance dependency scans', function (): void {
         }
     });
 
-    it('discovers only direct web apps and packages and preserves separate inventories', function (): void {
+    it('preserves separate sub-project inventories and the last valid snapshot after a partial failure', function (): void {
         $instance = dependency_scan_instance();
         $instance->project->update(['type' => 'monorepo']);
-        $path = dependency_scan_local_source($instance);
-        dependency_scan_write_fixture($path.'/apps/api', 'composer');
-        dependency_scan_write_fixture($path.'/packages/widget', 'npm');
-        dependency_scan_write_fixture($path.'/packages/other', 'npm');
-        $otherLock = $path.'/packages/other/package-lock.json';
-        file_put_contents($otherLock, str_replace('"version": "1.1.0"', '"version": "1.2.0"', file_get_contents($otherLock)));
-        new Filesystem()->ensureDirectoryExists($path.'/apps/native');
-        file_put_contents($path.'/apps/native/Cargo.toml', '[package]');
-        dependency_scan_write_fixture($path.'/apps/native/nested', 'composer');
-        dependency_scan_write_fixture($path.'/elsewhere/api', 'composer');
-        file_put_contents($path.'/package.json', '{"workspaces":["apps/*"]}');
-        try {
-            $scan = app(ScanInstanceDependenciesAction::class);
-            $first = $scan->execute($instance);
-            $lock = $path.'/packages/other/package-lock.json';
-            file_put_contents($lock, '{}');
+        $receipt = dependency_scan_project_receipt(['apps/api' => 'composer', 'packages/other' => 'npm', 'packages/widget' => 'npm']);
+        $lock = &$receipt['sub_projects']['packages/other']['files']['package-lock.json'];
+        $content = str_replace('"version": "1.1.0"', '"version": "1.2.0"', base64_decode($lock['content']));
+        $lock = ['content' => base64_encode($content), 'hash' => hash('sha256', $content), 'error' => null];
+        dependency_scan_remote(function () use (&$receipt): array {
+            return $receipt;
+        });
+        $scan = app(ScanInstanceDependenciesAction::class);
+        $first = $scan->execute($instance);
+        $lock = ['content' => base64_encode('{}'), 'hash' => hash('sha256', '{}'), 'error' => null];
 
-            $second = $scan->execute($instance);
+        $second = $scan->execute($instance);
 
-            expect(array_keys($first->subProjects))->toBe(['apps/api', 'packages/other', 'packages/widget']);
-            expect($first->succeeded())->toBeTrue();
-            expect($first->composer)->toBeNull();
-            expect(collect($first->subProjects['packages/widget']->javascript->snapshot->graph->resolutions)->firstWhere('id', 'node_modules/app-one')->version)->toBe('1.1.0');
-            expect(collect($first->subProjects['packages/other']->javascript->snapshot->graph->resolutions)->firstWhere('id', 'node_modules/app-one')->version)->toBe('1.2.0');
-            expect($second->succeeded())->toBeFalse();
-            expect($second->subProjects['apps/api']->composer->succeeded())->toBeTrue();
-            expect($second->subProjects['packages/widget']->javascript->succeeded())->toBeTrue();
-            expect($second->subProjects['packages/other']->javascript->errorCode)->toBe('dependencies.unsupported_format');
-            expect($second->subProjects['packages/other']->javascript->snapshot)->toEqual($first->subProjects['packages/other']->javascript->snapshot);
-            expect(app(ReadInstanceDependencyScanAction::class)->subProjects($instance->id))->toEqual($second->subProjects);
-            $this->assertDatabaseCount('instance_dependency_observations', 6);
-            $this->assertDatabaseCount('instance_dependency_scan_attempts', 12);
-            expect(file_get_contents($path.'/package.json'))->toBe('{"workspaces":["apps/*"]}');
-        } finally {
-            new Filesystem()->deleteDirectory($path);
-        }
+        expect(array_keys($first->subProjects))->toBe(['apps/api', 'packages/other', 'packages/widget']);
+        expect($first->succeeded())->toBeTrue();
+        expect($first->composer)->toBeNull();
+        expect(collect($first->subProjects['packages/widget']->javascript->snapshot->graph->resolutions)->firstWhere('id', 'node_modules/app-one')->version)->toBe('1.1.0');
+        expect(collect($first->subProjects['packages/other']->javascript->snapshot->graph->resolutions)->firstWhere('id', 'node_modules/app-one')->version)->toBe('1.2.0');
+        expect($second->succeeded())->toBeFalse();
+        expect($second->subProjects['apps/api']->composer->succeeded())->toBeTrue();
+        expect($second->subProjects['packages/widget']->javascript->succeeded())->toBeTrue();
+        expect($second->subProjects['packages/other']->javascript->errorCode)->toBe('dependencies.unsupported_format');
+        expect($second->subProjects['packages/other']->javascript->snapshot)->toEqual($first->subProjects['packages/other']->javascript->snapshot);
+        expect(app(ReadInstanceDependencyScanAction::class)->subProjects($instance->id))->toEqual($second->subProjects);
+        $this->assertDatabaseCount('instance_dependency_observations', 6);
+        $this->assertDatabaseCount('instance_dependency_scan_attempts', 12);
     });
 
-    it('discovers repository siblings when a monorepo has a nested Laravel application root', function (): void {
+    it('requests repository discovery with the nested application as fallback and records siblings', function (): void {
         $instance = dependency_scan_instance();
         $instance->project->update(['type' => 'monorepo', 'root' => 'apps/gateway/public']);
         $instance->update(['source_is_laravel' => true]);
-        $path = dependency_scan_local_source($instance);
-        dependency_scan_write_fixture($path.'/apps/gateway', 'composer');
-        dependency_scan_write_fixture($path.'/apps/sibling', 'composer');
-        dependency_scan_write_fixture($path.'/packages/widget', 'npm');
-        try {
-            $result = app(ScanInstanceDependenciesAction::class)->execute($instance);
+        $receipt = dependency_scan_project_receipt(['apps/gateway' => 'composer', 'apps/sibling' => 'composer', 'packages/widget' => 'npm']);
+        $agents = new FakeAgentCommandRunner()->answer('instances.read-dependency-files', $receipt);
+        app()->instance(AgentCommandRunner::class, $agents);
 
-            expect($result->succeeded())->toBeTrue();
-            expect(array_keys($result->subProjects))->toBe(['apps/gateway', 'apps/sibling', 'packages/widget']);
-            expect($result->subProjects['apps/gateway']->composer->snapshot->source->projectRoot)->toBe($path.'/apps/gateway');
-            expect($result->subProjects['apps/sibling']->composer->snapshot->source->projectRoot)->toBe($path.'/apps/sibling');
-            expect($result->subProjects['packages/widget']->javascript->snapshot->source->projectRoot)->toBe($path.'/packages/widget');
-            expect(array_keys(app(ReadInstanceDependencyScanAction::class)->subProjects($instance->id)))->toBe(['apps/gateway', 'apps/sibling', 'packages/widget']);
-            $this->assertDatabaseCount('instance_dependency_observations', 6);
-            $this->assertDatabaseMissing('instance_dependency_scan_attempts', ['instance_id' => $instance->id, 'sub_project' => '']);
-        } finally {
-            new Filesystem()->deleteDirectory($path);
+        $result = app(ScanInstanceDependenciesAction::class)->execute($instance);
+
+        expect($result->succeeded())->toBeTrue();
+        expect(array_keys($result->subProjects))->toBe(['apps/gateway', 'apps/sibling', 'packages/widget']);
+        expect($result->subProjects['apps/gateway']->composer->snapshot->source->projectRoot)->toBe('/home/orbit/project/apps/gateway');
+        expect($result->subProjects['apps/sibling']->composer->snapshot->source->projectRoot)->toBe('/home/orbit/project/apps/sibling');
+        expect($result->subProjects['packages/widget']->javascript->snapshot->source->projectRoot)->toBe('/home/orbit/project/packages/widget');
+        expect(array_keys(app(ReadInstanceDependencyScanAction::class)->subProjects($instance->id)))->toBe(['apps/gateway', 'apps/sibling', 'packages/widget']);
+        expect($agents->calls)->toHaveCount(2);
+        foreach ($agents->calls as $call) {
+            expect($call['input'])->toBe(['path' => '/home/orbit/project', 'application' => '/apps/gateway', 'monorepo' => true]);
         }
+        $this->assertDatabaseCount('instance_dependency_observations', 6);
+        $this->assertDatabaseMissing('instance_dependency_scan_attempts', ['instance_id' => $instance->id, 'sub_project' => '']);
     });
 
-    it('falls back to the nested Laravel application when both top-level discovery directories are missing', function (): void {
+    it('records the nested fallback returned when monorepo discovery is unavailable', function (): void {
         $instance = dependency_scan_instance();
         $instance->project->update(['type' => 'monorepo', 'root' => 'server/web/public']);
         $instance->update(['source_is_laravel' => true]);
-        $path = dependency_scan_local_source($instance);
-        dependency_scan_write_fixture($path, 'npm');
-        dependency_scan_write_fixture($path.'/server/web', 'composer');
-        dependency_scan_write_fixture($path.'/server/web/apps/ignored', 'npm');
-        try {
-            $result = app(ScanInstanceDependenciesAction::class)->execute($instance);
+        $receipt = dependency_scan_source_receipt('/server/web', 'composer');
+        $receipt['sub_projects'] = null;
+        dependency_scan_remote(fn (): array => $receipt);
 
-            expect($result->succeeded())->toBeTrue();
-            expect($result->subProjects)->toBeNull();
-            expect($result->composer->snapshot->source->projectRoot)->toBe($path.'/server/web');
-            expect($result->javascript->state())->toBe(DependencyInventoryState::Absent);
-            $this->assertDatabaseCount('instance_dependency_observations', 2);
-            $this->assertDatabaseMissing('instance_dependency_scan_attempts', ['instance_id' => $instance->id, 'sub_project' => 'apps/ignored']);
-        } finally {
-            new Filesystem()->deleteDirectory($path);
-        }
+        $result = app(ScanInstanceDependenciesAction::class)->execute($instance);
+
+        expect($result->succeeded())->toBeTrue();
+        expect($result->subProjects)->toBeNull();
+        expect($result->composer->snapshot->source->projectRoot)->toBe('/home/orbit/project/server/web');
+        expect($result->javascript->state())->toBe(DependencyInventoryState::Absent);
+        $this->assertDatabaseCount('instance_dependency_observations', 2);
+        $this->assertDatabaseMissing('instance_dependency_scan_attempts', ['instance_id' => $instance->id, 'sub_project' => 'apps/ignored']);
     });
 
-    it('keeps single-directory scanning without discovery for other types or missing monorepo directories', function (string $type): void {
+    it('selects discovery only for monorepos and accepts a single source result', function (string $type): void {
         $instance = dependency_scan_instance();
         $instance->project->update(['type' => $type]);
-        $path = dependency_scan_local_source($instance);
-        dependency_scan_write_fixture($path, 'composer');
-        if ($type !== 'monorepo') {
-            dependency_scan_write_fixture($path.'/apps/ignored', 'npm');
-        }
-        try {
-            $result = app(ScanInstanceDependenciesAction::class)->execute($instance);
+        $agents = new FakeAgentCommandRunner()->answer('instances.read-dependency-files', dependency_scan_source_receipt('', 'composer'));
+        app()->instance(AgentCommandRunner::class, $agents);
 
-            expect($result->succeeded())->toBeTrue();
-            expect($result->subProjects)->toBeNull();
-            expect($result->composer->snapshot->source->projectRoot)->toBe($path);
-            $this->assertDatabaseCount('instance_dependency_observations', 2);
-        } finally {
-            new Filesystem()->deleteDirectory($path);
+        $result = app(ScanInstanceDependenciesAction::class)->execute($instance);
+
+        expect($result->succeeded())->toBeTrue();
+        expect($result->subProjects)->toBeNull();
+        expect($result->composer->snapshot->source->projectRoot)->toBe('/home/orbit/project');
+        expect($agents->calls)->toHaveCount(2);
+        foreach ($agents->calls as $call) {
+            expect($call['input'])->toBe(['path' => '/home/orbit/project', 'application' => '', 'monorepo' => $type === 'monorepo']);
         }
+        $this->assertDatabaseCount('instance_dependency_observations', 2);
     })->with(['monorepo', 'node-package']);
 
-    it('isolates unsafe files to their sub-project and leaves valid siblings readable', function (): void {
+    it('records unsafe sub-project files without discarding valid sibling inventories', function (): void {
         $instance = dependency_scan_instance();
         $instance->project->update(['type' => 'monorepo']);
-        $path = dependency_scan_local_source($instance);
-        dependency_scan_write_fixture($path.'/apps/bad', 'composer');
-        dependency_scan_write_fixture($path.'/packages/good', 'npm');
-        unlink($path.'/apps/bad/composer.lock');
-        symlink($path.'/packages/good/package-lock.json', $path.'/apps/bad/composer.lock');
-        try {
-            $result = app(ScanInstanceDependenciesAction::class)->execute($instance);
+        $receipt = dependency_scan_project_receipt(['apps/bad' => 'composer', 'packages/good' => 'npm']);
+        $receipt['sub_projects']['apps/bad']['files']['composer.lock'] = ['content' => null, 'hash' => null, 'error' => 'dependencies.unsafe_source'];
+        dependency_scan_remote(fn (): array => $receipt);
 
-            expect($result->subProjects['apps/bad']->composer->errorCode)->toBe('dependencies.unsafe_source');
-            expect($result->subProjects['packages/good']->javascript->succeeded())->toBeTrue();
-            expect(is_link($path.'/apps/bad/composer.lock'))->toBeTrue();
-        } finally {
-            new Filesystem()->deleteDirectory($path);
-        }
+        $result = app(ScanInstanceDependenciesAction::class)->execute($instance);
+
+        expect($result->subProjects['apps/bad']->composer->errorCode)->toBe('dependencies.unsafe_source');
+        expect($result->subProjects['packages/good']->javascript->succeeded())->toBeTrue();
+        expect(app(ReadInstanceDependencyScanAction::class)->subProjects($instance->id))->toEqual($result->subProjects);
     });
 
     it('records no skipped projects when discovery finds no qualifying sources', function (): void {
         $instance = dependency_scan_instance();
         $instance->project->update(['type' => 'monorepo']);
-        $path = dependency_scan_local_source($instance);
-        new Filesystem()->ensureDirectoryExists($path.'/apps/native');
-        file_put_contents($path.'/apps/native/package.json', '{}');
-        file_put_contents($path.'/apps/native/yarn.lock', 'unsupported');
-        try {
-            $result = app(ScanInstanceDependenciesAction::class)->execute($instance);
+        dependency_scan_remote(fn (): array => dependency_scan_project_receipt([]));
 
-            expect($result->succeeded())->toBeTrue();
-            expect($result->subProjects)->toBe([]);
-            expect(app(ReadInstanceDependencyScanAction::class)->subProjects($instance->id))->toBe([]);
-            $this->assertDatabaseCount('instance_dependency_scan_attempts', 0);
-        } finally {
-            new Filesystem()->deleteDirectory($path);
-        }
+        $result = app(ScanInstanceDependenciesAction::class)->execute($instance);
+
+        expect($result->succeeded())->toBeTrue();
+        expect($result->subProjects)->toBe([]);
+        expect(app(ReadInstanceDependencyScanAction::class)->subProjects($instance->id))->toBe([]);
+        $this->assertDatabaseCount('instance_dependency_scan_attempts', 0);
     });
 
     it('returns busy without recording an attempt when another lifecycle owner holds the instance', function (): void {
@@ -617,7 +582,7 @@ describe('coordinated instance dependency scans', function (): void {
             $time += $wait / 1_000_000;
         });
         app()->instance(InstanceEnvironmentOperationLock::class, $contender);
-        mock(SshExecutor::class)->shouldNotReceive('execute');
+        app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner);
         try {
             $result = $owner->run([$instance->id], fn () => app(ScanInstanceDependenciesAction::class)->execute($instance));
             expect($result->composer->errorCode)->toBe('dependencies.operation_busy');

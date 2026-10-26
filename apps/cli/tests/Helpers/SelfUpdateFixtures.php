@@ -14,7 +14,10 @@ use Saloon\Http\Faking\MockResponse;
 
 const SELF_UPDATE_OLD_BINARY = "#!/bin/sh\necho 'Orbit 0.4600.0'\n";
 
-const SELF_UPDATE_AGENT_BYTES = "orbit-agent 0.4.4 fixture binary\n";
+const SELF_UPDATE_AGENT_BYTES = "orbit-agent 0.5.0 fixture binary\n";
+
+/** The delivery commit of the recorded Gateway fixtures; agent releases are tagged `agent-v<commit>`. */
+const SELF_UPDATE_AGENT_COMMIT = '0123456789abcdef0123456789abcdef01234567';
 
 function self_update_release_bytes(string $name): string
 {
@@ -41,23 +44,26 @@ function self_update_agent_sums(): string
 {
     $digest = hash('sha256', SELF_UPDATE_AGENT_BYTES);
 
-    return "{$digest}  orbit-agent-0.4.4-linux-aarch64\n{$digest}  orbit-agent-0.4.4-linux-x86_64\n";
+    return "{$digest}  orbit-agent-linux-aarch64\n{$digest}  orbit-agent-linux-x86_64\n";
 }
 
 /**
- * Fakes the processes self-update starts: `curl` writes the release asset its URL names, the candidate reports
- * its version, `systemctl restart` succeeds unless told otherwise, and `systemctl show` reports the agent
- * active with the restart counts in `$restarts`, one per call. Every command is recorded in `$this->processes`.
+ * Fakes the processes self-update starts: `curl` writes the release asset its URL names, the CLI candidate reports
+ * its version, and the agent candidate's `command agent.install` acts as the agent's installer: it copies the
+ * candidate over the agent binary and answers with `$agentInstall`, or answers that line without a change when it
+ * is a refusal. Every command is recorded in `$this->processes`, and each installer envelope in `$this->envelopes`.
  *
  * @param  array<string, string>  $downloads  Bytes to serve by `<tag>/<asset>` instead of the stand-ins.
- * @param  list<string>  $restarts  The NRestarts values `systemctl show` reports, the last one repeating.
+ * @param  array<string, mixed>|string|null  $agentInstall  The installer's result line; a string is printed as is.
  */
-function fake_self_update_processes(object $test, array $downloads = [], string $reported = 'Orbit 0.4681.0', int $restartExit = 0, ?Closure $onDownload = null, array $restarts = ['0']): void
+function fake_self_update_processes(object $test, array $downloads = [], string $reported = 'Orbit 0.4681.0', ?Closure $onDownload = null, array|string|null $agentInstall = null): void
 {
     $test->processes = [];
-    $shows = 0;
+    $test->envelopes = [];
+    $test->lockFreeDuringAgentInstall = [];
+    $agentInstall ??= ['ok' => true, 'data' => ['replaced' => true, 'observer' => 'restarted']];
 
-    Process::fake(static function (PendingProcess $process) use ($test, $downloads, $reported, $restartExit, $onDownload, $restarts, &$shows) {
+    Process::fake(static function (PendingProcess $process) use ($test, $downloads, $reported, $onDownload, $agentInstall) {
         $command = (array) $process->command;
         $test->processes[] = $command;
 
@@ -71,8 +77,8 @@ function fake_self_update_processes(object $test, array $downloads = [], string 
             }
 
             $bytes = $downloads[$key] ?? match ($key) {
-                'agent-v0.4.4/SHA256SUMS' => self_update_agent_sums(),
-                'agent-v0.4.4/orbit-agent-0.4.4-linux-x86_64' => SELF_UPDATE_AGENT_BYTES,
+                'agent-v'.SELF_UPDATE_AGENT_COMMIT.'/SHA256SUMS' => self_update_agent_sums(),
+                'agent-v'.SELF_UPDATE_AGENT_COMMIT.'/orbit-agent-linux-x86_64' => SELF_UPDATE_AGENT_BYTES,
                 default => str_starts_with($url, ReleaseLocation::Default.'/cli-v0.4681.0/') ? self_update_release_bytes(basename($url)) : null,
             };
 
@@ -89,14 +95,20 @@ function fake_self_update_processes(object $test, array $downloads = [], string 
             return Process::result(output: $reported."\n");
         }
 
-        if ($command[0] === 'systemctl' && $command[1] === 'show') {
-            $value = $restarts[min($shows++, count($restarts) - 1)];
+        if (($command[1] ?? null) === 'command' && ($command[2] ?? null) === 'agent.install') {
+            $envelope = json_decode((string) $process->input, true, flags: JSON_THROW_ON_ERROR);
+            $test->envelopes[] = $envelope;
+            // agent.install takes the self-update lock itself, so the command must not hold it here.
+            $lock = fopen($test->machine.'/self-update.lock', 'c');
+            $test->lockFreeDuringAgentInstall[] = flock($lock, LOCK_EX | LOCK_NB);
+            flock($lock, LOCK_UN);
+            fclose($lock);
+            if (is_array($agentInstall) && ($agentInstall['ok'] ?? false) === true) {
+                copy($envelope['input']['candidate'], $test->machine.'/bin/orbit-agent');
+                unlink($envelope['input']['candidate']);
+            }
 
-            return Process::result(output: "NRestarts={$value}\nActiveState=active\n");
-        }
-
-        if ($command[0] === 'systemctl') {
-            return Process::result(exitCode: $restartExit, errorOutput: $restartExit === 0 ? '' : 'Failed to restart orbit-agent.service.');
+            return Process::result(output: is_string($agentInstall) ? $agentInstall : json_encode($agentInstall, JSON_THROW_ON_ERROR)."\n");
         }
 
         return Process::result(exitCode: 127);
@@ -109,7 +121,7 @@ function self_update_commands(object $test): array
     return array_map(static fn (array $command): string => match (true) {
         $command[0] === 'curl' => 'curl '.basename(dirname((string) end($command))).'/'.basename((string) end($command)),
         ($command[1] ?? null) === '--version' => 'version',
-        $command[0] === 'systemctl' && $command[1] === 'show' => 'systemctl show',
+        ($command[1] ?? null) === 'command' => 'candidate command '.$command[2],
         default => implode(' ', $command),
     }, $test->processes);
 }

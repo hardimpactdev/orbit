@@ -59,14 +59,17 @@ final class SelfUpdateCommand extends GatewayCommand
         }
 
         try {
-            return $lock->hold($host->lockPath(), fn (): int => $this->update($profile, $connectors, $updater, $host));
+            return $this->update($profile, $connectors, $updater, $host, $lock);
         } catch (SelfUpdateFailure $failure) {
             return $this->renderGatewayFailure($failure->errorCode, $failure->getMessage());
         }
     }
 
-    /** Runs under the self-update lock, so no other self-update or agent converge swaps a binary meanwhile. */
-    private function update(GatewayProfile $profile, GatewayConnectorFactory $connectors, SelfUpdater $updater, SelfUpdateHost $host): int
+    /**
+     * Each binary changes under the self-update lock, so no other self-update or agent converge swaps it meanwhile.
+     * `agent.install` takes the lock for the agent itself; this command takes it only for the CLI.
+     */
+    private function update(GatewayProfile $profile, GatewayConnectorFactory $connectors, SelfUpdater $updater, SelfUpdateHost $host, SelfUpdateLock $lock): int
     {
         $progress = $this->progressDisplay('Update Orbit');
         $progress->admit('state', 'Read desired state', 'Reading desired state', 'Read desired state');
@@ -106,7 +109,10 @@ final class SelfUpdateCommand extends GatewayCommand
             $progress->complete('cli', ProgressState::Skipped, $this->skipReason($cli->reason));
         } else {
             self::loadClassesUsedAfterReplacement();
-            $cli = $progress->during('cli', static fn (): SelfUpdateStep => $updater->updateCli($state, $currentVersion, $allowDowngrade));
+            $cli = $progress->during('cli', static fn (): SelfUpdateStep => $lock->hold(
+                $host->lockPath(),
+                static fn (): SelfUpdateStep => $updater->updateCli($state, $currentVersion, $allowDowngrade),
+            ));
             $this->settle($progress, 'cli', $cli);
         }
 

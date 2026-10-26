@@ -7,7 +7,7 @@ use App\Domain\Processes\ProcessTargetType;
 use App\Models\Node;
 use Orbit\Extensions\AiRouter\Domain\AiRouterProcess;
 
-it('uses the absolute python interpreter and fixes the collector listener and mapping to one port', function (): void {
+it('uses the compiled agent service and fixes the collector listener and mapping to one port', function (): void {
     $node = new Node(['name' => 'beast']);
     $node->id = 8;
     $environment = [
@@ -27,9 +27,9 @@ it('uses the absolute python interpreter and fixes the collector listener and ma
         ->and($data->targetId)->toBe(8)
         ->and($data->name)->toBe('ai-router-collector')
         ->and($data->runtime)->toBe(ProcessRuntime::Systemd)
-        ->and($data->command)->toBe([AiRouterProcess::EXECUTABLE, '/var/lib/orbit/ai-router/collector.py'])
+        ->and($data->command)->toBe([AiRouterProcess::EXECUTABLE, 'service', 'ai-router-collector'])
         ->and($data->command[0])->toStartWith('/')
-        ->and($data->workingDirectory)->toBe('/var/lib/orbit/ai-router')
+        ->and($data->workingDirectory)->toBe('/')
         ->and($data->environment)->toBe([...$environment, 'AI_ROUTER_PORT' => '8787'])
         ->and($data->ports)->toBe(['127.0.0.1:8787:8787/tcp']);
 });

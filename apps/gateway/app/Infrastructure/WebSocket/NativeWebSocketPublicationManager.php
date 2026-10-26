@@ -13,10 +13,6 @@ use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Caddy\Build\Sources\WebSocketCaddySiteSource;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use Closure;
 
@@ -27,9 +23,6 @@ final readonly class NativeWebSocketPublicationManager implements WebSocketPubli
         private WebSocketCertificatePublisher $certificatePublisher,
         private NodeCaddyBuilds $builds,
         private PrivateDnsManager $dns,
-        private SshExecutor $ssh,
-        private SshKeyProvider $keys,
-        private KnownHostsStore $knownHosts,
         private ?CaddySiteCertificates $siteCertificates = null,
         private WebSocketDnsTarget $dnsTarget = new WebSocketDnsTarget,
     ) {}
@@ -42,10 +35,7 @@ final readonly class NativeWebSocketPublicationManager implements WebSocketPubli
         $certificatePem = $this->read($certificate->certificatePath);
         $privateKeyPem = $this->read($certificate->privateKeyPath);
 
-        $certificateResult = $this->ssh->execute(
-            $this->connection($node, $address),
-            $this->certificatePublisher->command($certificatePem, $privateKeyPem),
-        );
+        $certificateResult = $this->certificatePublisher->publish($node, $certificatePem, $privateKeyPem);
 
         if (! $certificateResult->succeeded()) {
             throw new NodeRoleOperationException(
@@ -78,7 +68,7 @@ final readonly class NativeWebSocketPublicationManager implements WebSocketPubli
     /** The role is already `removing` or has moved, so the build withdraws the site before the certificate goes. */
     public function remove(Node $node): void
     {
-        $address = $this->address($node);
+        $this->address($node);
 
         // Forgetting the certificate record withdraws the site in the build, also on the source of a move,
         // where the role row already names another Node. The build's Caddy reload closes the Node's Reverb
@@ -87,7 +77,7 @@ final readonly class NativeWebSocketPublicationManager implements WebSocketPubli
         $this->certificateRecords()->forget($node->id, WebSocketCaddySiteSource::CertificateSlug);
         $this->build($node, fn () => $this->builds->build($node));
 
-        $this->ssh->execute($this->connection($node, $address), $this->certificatePublisher->removeCommand());
+        $this->certificatePublisher->remove($node);
         $this->dns->converge();
     }
 
@@ -124,17 +114,6 @@ final readonly class NativeWebSocketPublicationManager implements WebSocketPubli
                 $exception,
             );
         }
-    }
-
-    private function connection(Node $node, string $address): SshConnection
-    {
-        return new SshConnection(
-            $address,
-            $node->user,
-            22,
-            $this->keys->privateKeyPath(),
-            $this->knownHosts->path(),
-        );
     }
 
     private function address(Node $node): string

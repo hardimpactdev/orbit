@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\E2E;
 
+use App\E2E\Value\MountPath;
 use App\E2E\Value\TopologyNode;
 use App\E2E\Value\TopologyNodePurpose;
 use Illuminate\Support\Facades\Process;
@@ -25,21 +26,23 @@ final readonly class TopologyNodePrograms
 
     /**
      * The programs of the Node's roles. The test Gateway is never enrolled over SSH: `orbit:bootstrap` registers it
-     * locally, so it skips the program that prepares a Node for the Gateway's SSH access.
+     * locally, so it skips the program that prepares a Node for the Gateway's SSH access. The programs call the
+     * pinned agent, so the guest installs `agent` first: its path in the mounted worktree and its SHA-256.
      *
-     * @return list<Program>
+     * @return array{agent: array{path: string, sha256: string}, programs: list<Program>}
      */
-    public function for(TopologyNode $node): array
+    public function for(TopologyNode $node, string $architecture = 'x86_64'): array
     {
+        $rendered = $this->render($node->roles, $architecture);
         $programs = [];
-        foreach ($this->render($node->roles) as $program) {
+        foreach ($rendered['programs'] as $program) {
             if ($program['name'] === 'bootstrap' && $node->purpose === TopologyNodePurpose::Gateway) {
                 continue;
             }
             $programs[] = $program;
         }
 
-        return $programs;
+        return ['agent' => $rendered['agent'], 'programs' => $programs];
     }
 
     /**
@@ -63,9 +66,9 @@ final readonly class TopologyNodePrograms
      * fingerprint stable. Its private half was discarded. Gateway convergence skips the SSH bootstrap program.
      *
      * @param  list<string>  $roles
-     * @return list<Program>
+     * @return array{agent: array{path: string, sha256: string}, programs: list<Program>}
      */
-    private function render(array $roles): array
+    private function render(array $roles, string $architecture): array
     {
         GatewayEnvironment::ensure($this->repositoryRoot);
         $home = sys_get_temp_dir().'/orbit-e2e-programs-'.bin2hex(random_bytes(8));
@@ -75,7 +78,7 @@ final readonly class TopologyNodePrograms
             }
             $result = Process::timeout(120)->run([
                 'env', '-i', 'PATH=/usr/local/bin:/usr/bin:/bin', "HOME={$home}", "ORBIT_HOME={$home}",
-                PHP_BINARY, $this->repositoryRoot.'/apps/gateway/artisan', 'orbit:node-programs', ...$roles, '--json', '--no-interaction',
+                PHP_BINARY, $this->repositoryRoot.'/apps/gateway/artisan', 'orbit:node-programs', ...$roles, '--architecture='.$architecture, '--json', '--no-interaction',
             ]);
         } finally {
             Process::run(['rm', '-rf', '--', $home]);
@@ -91,7 +94,19 @@ final readonly class TopologyNodePrograms
         } catch (JsonException $exception) {
             throw new RuntimeException('orbit:node-programs returned invalid JSON.', previous: $exception);
         }
-        $programs = is_array($decoded) ? ($decoded['programs'] ?? null) : null;
+        $agent = is_array($decoded) ? ($decoded['agent'] ?? null) : null;
+        $prefix = $this->repositoryRoot.'/';
+        if (
+            ! is_array($agent)
+            || array_keys($agent) !== ['path', 'sha256']
+            || ! is_string($agent['path'])
+            || ! str_starts_with($agent['path'], $prefix)
+            || ! is_string($agent['sha256'])
+            || preg_match('/\A[0-9a-f]{64}\z/D', $agent['sha256']) !== 1
+        ) {
+            throw new RuntimeException('orbit:node-programs returned no agent inside the worktree.');
+        }
+        $programs = $decoded['programs'] ?? null;
         if (! is_array($programs) || ! array_is_list($programs) || $programs === []) {
             throw new RuntimeException('orbit:node-programs returned no programs.');
         }
@@ -120,6 +135,9 @@ final readonly class TopologyNodePrograms
             $rendered[] = $entry;
         }
 
-        return $rendered;
+        return [
+            'agent' => ['path' => MountPath::GUEST_SOURCE.'/'.substr($agent['path'], strlen($prefix)), 'sha256' => $agent['sha256']],
+            'programs' => $rendered,
+        ];
     }
 }

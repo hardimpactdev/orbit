@@ -40,7 +40,7 @@ final readonly class EnrollMacOsNodeAction
 
         try {
             $observation = $this->converger->enroll(
-                name: $node->name,
+                node: $node,
                 host: $host,
                 port: $port,
                 account: $account,

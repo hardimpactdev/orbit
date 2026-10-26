@@ -21,6 +21,8 @@ The extension has one switch and one fleet setup. They are separate.
 - `orbit ai-router:teardown` stops the collector and withdraws the hostname.
 - `orbit extension:disable ai-router` hides and refuses the extension. It does not tear down the collector.
 
+Certificate publication uses the shared [Node agent](/reference/node-agent#commands) Caddy commands. The extension keeps ownership of the collector hostname, publication intent, and error mapping.
+
 ## Valkey placement
 
 No Node role holds a cache. Shared Valkey runs as a [Valkey Database server](/reference/database-servers#a-valkey-server) on a Node with the [`database` role](/reference/database-role). The collector and the Gateway log in through a [Redis Database connection](/reference/database-connections) with its own ACL user.
@@ -57,9 +59,9 @@ When task VMs are enabled (`ORBIT_TASK_VMS_ENABLED`), the URL must equal `ORBIT_
 
 The Gateway stores the management key as a secret setting and passes it to the collector Process. No API response contains it.
 
-Setup can run again. It keeps the read and control tokens, writes the collector script, updates the collector Process in place, and publishes the hostname again. On the same Node, the collector keeps its Process ID rather than being destroyed and created again. The [fleet rollout](/reference/node-provisioning#converge-the-orbit-footprint) and `orbit node:converge` also write a changed script after a Gateway release and restart the collector Process.
+Setup can run again. It keeps the read and control tokens, installs the delivered agent pin through the command runner, updates the collector Process in place, and publishes the hostname again. On the same Node, the collector keeps its Process ID rather than being destroyed and created again. The collector runs as `/usr/local/bin/orbit-agent service ai-router-collector`. Its implementation lives in the AI router extension's Rust crate and is compiled into the agent. The [fleet rollout](/reference/node-provisioning#converge-the-orbit-footprint) and `orbit node:converge` deliver changed collector code with that binary.
 
-A script that already matches stays, and a completed collector keeps running. A legacy collector without a source revision first compares the remote source without changing it; matching source does not require restart. Before publishing changed source, the Gateway records pending source activation on the Process; it clears that intent and records the revision only after activation succeeds. An interruption after publication leaves activation pending, so retry restarts an existing running collector even when the source file is already current. A completed unchanged retry does not restart the collector.
+The Gateway records the delivered agent digest as the collector revision. Before changing that revision, it records pending activation on the Process. It clears that intent only after activation succeeds. An interrupted activation therefore retries even when the binary is already current. A completed unchanged retry does not restart the collector. Agent installation restarts running services that use the agent binary; a stopped collector stays stopped. Collector setup and teardown use fixed extension commands to remove the previous Python source files. The Gateway sends no program source or file paths.
 
 Setup with another `--node` sets up only the new Node and leaves the old Node's collector in place. To move the collector, run `ai-router:teardown` first.
 
@@ -88,12 +90,12 @@ Setup places these pieces on the collector Node and in Gateway settings.
 | Piece | Where | Detail |
 | --- | --- | --- |
 | Process `ai-router-collector` | The collector Node | systemd, listens on `127.0.0.1:8787` |
-| Collector script | The collector Node | `/var/lib/orbit/ai-router/collector.py` |
+| Compiled collector | The collector Node | The delivered `/usr/local/bin/orbit-agent` binary |
 | Orbit CA leaf and Caddy site | The collector Node | HTTPS on the Node's WireGuard address |
 | Private DNS `host-record` | VPN DNS | `collector.ai-router.orbit` to the Node's WireGuard address |
 | Management key, read token, and control token | Gateway settings | Stored as secrets |
 
-The Process runs `/usr/bin/python3 /var/lib/orbit/ai-router/collector.py`. systemd does not search `PATH`, so the command names the absolute path. The unit receives the `AI_ROUTER_*` values as `Environment=` directives: the CLIProxyAPI URL and management key (`AI_ROUTER_MANAGEMENT_KEY`), the read and control tokens, the port, and the Valkey host, port, username, and password. The script uses that management key to read auth-file models. It receives no client API key. [Processes and schedules](/reference/processes-and-schedules#environment-of-a-systemd-process) describes that environment.
+The Process runs `/usr/local/bin/orbit-agent service ai-router-collector`. systemd does not search `PATH`, so the command names the absolute path. The unit receives the `AI_ROUTER_*` values as `Environment=` directives: the CLIProxyAPI URL and management key (`AI_ROUTER_MANAGEMENT_KEY`), the read and control tokens, the port, and the Valkey host, port, username, and password. The service uses that management key to read auth-file models. It receives no client API key. [Processes and schedules](/reference/processes-and-schedules#environment-of-a-systemd-process) describes that environment.
 
 While setup holds the collector, `process:destroy` refuses to remove the Process with `process.required_by_ai_router`.
 
@@ -101,7 +103,7 @@ While setup uses a Database connection, `database:destroy` refuses to remove it 
 
 `AiRouterProcess::data()` sets both the required `AI_ROUTER_PORT` environment value and the Process port mapping from `AiRouterProcess::PORT` (8787). Caddy upstream and Route takeover checks use that constant too. The collector refuses to start without `AI_ROUTER_PORT`. It has no port setting.
 
-The extension stores the collector Process’s source revision and pending activation in `ai_router_process_sources`, keyed by Process ID. The core Process record has no collector source fields. A Process without a source row has a null revision and no pending activation.
+The extension stores the collector Process’s agent digest and pending activation in `ai_router_process_sources`, keyed by Process ID. The core Process record has no collector source fields. A Process without a source row has a null revision; convergence records pending activation before delivering its first compiled collector.
 
 An unchanged collector with no pending activation stays untouched on its next convergence. Deleting a Process also deletes its source record.
 
@@ -113,7 +115,7 @@ Setup runs the shared [Caddy package step](/reference/node-provisioning#package-
 
 The `ai-router` provider contributes the collector site to the [Node Caddy build](/reference/caddy-configuration#node-caddy-build) through a [plug-in point](/reference/extensions#plug-in-points). The site renders on the collector Node while setup holds the collector and the Node has the collector certificate.
 
-The provider contributes three more pieces through [plug-in points](/reference/extensions#plug-in-points): the `ai-router` artifact of the [Node footprint](/reference/node-provisioning#converge-the-orbit-footprint), the private DNS record `collector.ai-router.orbit`, and the reservation of that name. The footprint artifact writes a changed collector script on the collector Node. VPN DNS publishes the record while setup holds the collector. The name stays reserved while the extension is off.
+The provider contributes three more pieces through [plug-in points](/reference/extensions#plug-in-points): the `ai-router` artifact of the [Node footprint](/reference/node-provisioning#converge-the-orbit-footprint), the private DNS record `collector.ai-router.orbit`, and the reservation of that name. The footprint artifact converges the collector on the delivered agent pin. VPN DNS publishes the record while setup holds the collector. The name stays reserved while the extension is off.
 
 ## Collection
 
@@ -203,7 +205,7 @@ Tear down the collector when collection should stop for the whole fleet.
 orbit ai-router:teardown
 ```
 
-Teardown removes the collector Process and script, withdraws the Caddy site and its certificate, and publishes private DNS without the collector name. It deletes the stored management key and the read and control tokens. A later setup needs the key file again and gives CodexBar a new read token. Valkey data and the Redis connection stay. Teardown does not change the extension switch.
+Teardown removes the collector Process and the previous Python source files, withdraws the Caddy site and its certificate, and publishes private DNS without the collector name. It deletes the stored management key and the read and control tokens. A later setup needs the key file again and gives CodexBar a new read token. Valkey data and the Redis connection stay. Teardown does not change the extension switch.
 
 Teardown refuses with HTTP 409 and changes nothing while it would strand Tasks:
 
@@ -229,7 +231,7 @@ These codes come from the Gateway on setup, teardown, reads, and toggles.
 | `ai_router.cache_invalid` | 422 | The cache connection is not Redis. |
 | `ai_router.cache_unplaced` | 422 | The cache connection's Node is not in the fleet or has no active `database` role. |
 | `ai_router.node_invalid` | 422 | The collector Node is missing, inactive, not Linux, or has no WireGuard address. |
-| `ai_router.source_publication_failed` | 422 | Setup could not write the collector script on the Node. |
+| `ai_router.source_removal_failed` | 422 | The Node could not remove the previous Python collector source. |
 | `ai_router.certificate_publication_failed` | 422 | Setup could not place the Orbit CA leaf on the Node. |
 | `ai_router.certificate_read_failed` | 422 | The Gateway could not read the certificate it issued. |
 | `ai_router.hostname_taken` | 409 | A Route that setup cannot take over holds `collector.ai-router.orbit`. Setup changes nothing. |

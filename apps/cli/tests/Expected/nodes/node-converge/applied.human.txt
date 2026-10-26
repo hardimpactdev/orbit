@@ -13,5 +13,5 @@ Node #2 [app-dev] footprint re-applied.
  │ agent    │ applied │
  │ caddy    │ applied │
  └──────────┴─────────┘
-Digest: 4a2ad6359d29c8298dccb7ab6acc61ca0f71edac499dcd3d0ef64ae7134e332f
+Digest: b4d67d4c4b77008d74c0454cf6828ec2a1751b706430b7202eaf5c62d85f241c
 Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

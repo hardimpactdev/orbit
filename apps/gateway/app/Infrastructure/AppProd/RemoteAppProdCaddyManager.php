@@ -6,10 +6,10 @@ namespace App\Infrastructure\AppProd;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppProd\AppProdCaddyManager;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentStep;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
-use App\Infrastructure\Processes\SystemdVpnOrderingDropIn;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 
 /**
@@ -20,17 +20,19 @@ final readonly class RemoteAppProdCaddyManager implements AppProdCaddyManager
 {
     public function __construct(
         private NodeCaddyBuilds $builds,
-        private ProductionSshExecutor $ssh,
-        private SystemdVpnOrderingDropIn $vpnOrdering = new SystemdVpnOrderingDropIn,
+        private AgentCommandRunner $agents,
     ) {}
 
     public function converge(Node $node): void
     {
-        $this->ssh->execute(
+        AgentStep::run(
+            $this->agents,
             $node,
-            new RemoteCommand($this->vpnOrdering->arguments('caddy'), $this->vpnOrdering->script()),
+            'caddy.order-after-vpn',
+            [],
             step: 'app-prod-caddy-service-ordering',
             errorCode: 'app-prod.caddy_config_failed',
+            label: 'App production',
         );
         $this->build($node);
     }

@@ -8,6 +8,7 @@ use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Processes\ProcessSpecification;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Node;
 use App\Models\Process;
 use Orbit\Extensions\AiRouter\Domain\AiRouterCollectorEnvironment;
@@ -26,6 +27,7 @@ final readonly class ConvergeAiRouterAction
 {
     public function __construct(
         private ExtensionStore $extensions,
+        private AgentDelivery $delivery,
         private AiRouterLifecycleLock $lifecycle,
         private AiRouterState $state,
         private AiRouterPlacement $placement,
@@ -66,7 +68,7 @@ final readonly class ConvergeAiRouterAction
                 && ! $process->systemd_activation_pending
                 && $process->status !== LifecycleStatus::Failed
                 && $source?->activation_pending === false
-                && $source->source_revision === hash_file('sha256', base_path('extensions/ai-router/resources/collector.py'))) {
+                && $source->source_revision === $this->delivery->pin($node)) {
                 return false;
             }
             $takeover = $this->routes->takeoverCandidate($node);

@@ -3,6 +3,8 @@ title: "Caddy configuration"
 description: "How the Gateway builds each Node's whole Caddyfile from its database and pushes it in one step, and what happens when a build fails."
 covers:
   - apps/gateway/app/Infrastructure/Caddy/**
+  - apps/gateway/app/Infrastructure/Gateway/NativeGatewayCertificatePublisher.php
+  - apps/agent/src/commands/gateway_certificate.rs
   - apps/gateway/app/Console/Commands/CaddyBuildCommand.php
   - apps/gateway/app/Infrastructure/Doctor/NativeCaddyBuildInspector.php
   - apps/gateway/app/Infrastructure/Nodes/Roles/CaddyRoleFailure.php
@@ -137,7 +139,7 @@ Caddy cannot start with a missing listen address. So every build first checks th
 The build binds 192.168.6.30, which is not an address on this Node. Correct the stored WireGuard or LAN address of the Node, then build again.
 ```
 
-The `websocket` role runs this check before it changes anything on the Node. Give a Node with a stored LAN address a fixed address or a DHCP reservation.
+The `websocket` role runs the read-only `caddy.check-addresses` command before it changes anything on the Node. Doctor and `caddy:build --dry-run --diff` read only the live file through `caddy.read-live`; they do not expand imports. Give a Node with a stored LAN address a fixed address or a DHCP reservation.
 
 ### When a build runs
 
@@ -145,15 +147,27 @@ A command that changes Caddy sites commits its change first. Then it requests a 
 
 A command that adds a site publishes the site's certificate before the build, because `caddy validate` loads every certificate file the Caddyfile names. A command that removes a site builds first and removes the certificate afterwards. A certificate step that replaces a certificate that a live site uses reloads Caddy itself under the [Node lock](#how-a-build-is-pushed), because a build with an unchanged render does not reload.
 
+The shared `caddy.install-certificate` and `caddy.remove-certificate` commands own role and extension certificate directories named `/etc/caddy/orbit-<scope>-cert-current`. They refuse other paths, symlinks, unexpected files, and incorrect ownership or permissions. Each directory contains one matching PEM certificate and private key pair, owned by `root:caddy`, with directory mode `0750` and file mode `0640`.
+
+Publication validates the key match before it changes the live pair, then swaps the complete directory atomically under the Caddy publication lock. The same lock covers reload and rollback. Matching bytes cause no reload, and an inactive Caddy service stays inactive. A failed reload restores the previous directory and reloads the prior certificate; failed recovery has its own refusal and retains the prior pair. Removal accepts only an owned pair or an absent directory, and runs after the Gateway withdraws its site.
+
+Gateway web convergence publishes its certificate through `gateway.publish-certificate`. The Gateway sends the leaf, private key, and public CA through the agent's protected input. The agent verifies the CA chain and key match before changing the live certificate. It owns the fixed version directories and current link under `/etc/caddy`, and holds the Caddy publication lock through the switch and reload. Matching bytes leave the current version unchanged. Failed activation restores the prior link and active service; failed recovery is reported explicitly. Previous certificate versions remain available.
+
+Metrics convergence publishes the `metrics.orbit` certificate through `metrics.certificate`. The agent keeps each publication in its own version directory under `/etc/caddy/orbit-metrics-cert-versions`, and the `orbit-metrics-cert-current` link selects one. It holds the Caddy publication lock through the switch, the reload, and any rollback. It reads the Caddy service state as the shared certificate commands do, and refuses before a change when it cannot read that state.
+
+Matching bytes leave the current version unchanged. A failed reload selects the previous version again and removes the new one. A publish replaces a directory of its version that an interrupted publish left behind, but refuses to overwrite the current version. A restore selects only a directory inside the versions directory.
+
+Certificate input or staging failures report `gateway.certificate_install_failed`. An invalid certificate, key, or CA reports `gateway.certificate_invalid`. Publication failures report `gateway.certificate_publish_failed`; activation or recovery failures report `gateway.caddy_start_failed`, with the native refusal retained in the operation output.
+
 The Gateway refuses to remove a certificate that a site in its stored state still renders on the Node. A Route certificate removal then fails with `app-dev.certificate_in_use`, names the blocking site's domain, and keeps the certificate, so the command can be retried.
 
-The `app-dev` role creates the hibernation marker and log directories before it requests a build, because `caddy validate` opens those logs as the `caddy` user. The convergence of `app-dev`, `app-prod`, `router`, and `ingress` first runs the step `caddy-service-ordering`, which orders the Caddy service after `wg-quick@orbit`, and then builds the Node.
+The `app-dev` role creates the hibernation marker and log directories before it requests a build, because `caddy validate` opens those logs as the `caddy` user. The convergence of `app-dev`, `app-prod`, `router`, and `ingress` first runs the step `caddy-service-ordering`, which calls `caddy.order-after-vpn` through `AgentCommandRunner`, and then builds the Node. The agent publishes the fixed systemd drop-in as root. An unchanged drop-in with an active Caddy service needs no reload or restart; an inactive service is restarted. Unsafe paths fail before mutation. A failed activation restores the prior drop-in and service state, and reports a failed recovery explicitly.
 
 The Gateway runs one build at a time for each Node. A second build waits up to 30 seconds and then reads the latest committed state, so the last build always renders every committed change. A build that renders the file that is already live changes nothing and does not reload Caddy, so open WebSocket streams stay connected.
 
 ### How a build is pushed
 
-The Gateway sends one script to the Node over SSH. On the Node that runs the Gateway process, it runs the same script through local `sudo`. The script runs these stages:
+The Gateway sends the rendered configuration, its digest, and its listen addresses to `caddy.publish` through `AgentCommandRunner`. The Rust agent owns validation, backups, publication, reload, and pruning. The runner selects local execution on the Gateway and pinned SSH on other Nodes. The mutation runs in its own systemd service, outside the Gateway service's filesystem sandbox. The agent runs these stages:
 
 | Stage | Work |
 | --- | --- |
@@ -168,7 +182,7 @@ The Gateway sends one script to the Node over SSH. On the Node that runs the Gat
 | `reload` | Enables and reloads the `caddy` service. |
 | — | Keeps the live version and the nine newest others, and removes older versions. |
 
-Every build and every certificate step that reloads Caddy holds `/run/lock/orbit/caddy.lock`. A second holder waits up to 30 seconds and then fails without a change. Before the script takes the lock, it checks the lock path:
+Every build and every certificate step that reloads Caddy holds `/run/lock/orbit/caddy.lock`. A second holder waits up to 30 seconds and then fails without a change. Before the agent takes the lock, it checks the lock path:
 
 | Path | Requirement |
 | --- | --- |
@@ -191,7 +205,7 @@ A failed build does not publish a new file. A build fails when a site cannot ren
 
 While [task VMs](/reference/compute-drivers#refuse-task-vms-in-caddy) are configured and `task_vms.wireguard_range` is invalid, every build on every Node fails at stage `render`, because Orbit cannot render the task VM guard. That includes the Gateway release handoff, which then fails with `gateway.release_caddy_failed`. Correct the range in the Gateway's environment and run `gateway:release:configure`. No other task VM value affects a build.
 
-A failed reload leaves Caddy on the configuration it already runs. The script points `/etc/caddy/Caddyfile` back at the previous version and asks Caddy to load it again. It never restarts a running Caddy. It starts Caddy only when Caddy is not running.
+A failed reload leaves Caddy on the configuration it already runs. The agent points `/etc/caddy/Caddyfile` back at the previous version and asks Caddy to load it again. It never restarts a running Caddy. It starts Caddy only when Caddy is not running.
 
 One broken site blocks every Caddy change on its Node until it is fixed, because each build renders every site. A certificate file that someone removed by hand fails validation, for example. Converge the role or Route that owns the site again to publish the certificate.
 

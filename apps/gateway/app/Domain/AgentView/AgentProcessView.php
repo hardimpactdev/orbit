@@ -37,17 +37,6 @@ final readonly class AgentProcessView
             : $this->view->node($nodeId)->status($process->runtime, $name);
     }
 
-    /** Whether the agent lists the Process's exact unit or container. */
-    public function lists(Process $process): ?bool
-    {
-        $name = self::unitName($process);
-        $nodeId = $this->nodeId($process);
-
-        return $name === null || $nodeId === null
-            ? null
-            : $this->view->node($nodeId)->lists($process->runtime, $name);
-    }
-
     /** Whether the Process runs no program, or null when the view cannot say. */
     public function isStopped(Process $process): ?bool
     {

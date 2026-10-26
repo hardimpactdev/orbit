@@ -569,20 +569,3 @@ it('preserves literal command arguments through native workspace supervision', f
         (new Process(['sudo', '-n', 'systemctl', 'stop', 'orbit-workspace-operation-'.$operation.'.service']))->run();
     }
 })->group('privileged');
-
-it('reads topology status through native workspace supervision without expanding the shell program', function (): void {
-    $operation = bin2hex(random_bytes(16));
-    $binding = bin2hex(random_bytes(32));
-    $process = new Process(['python3', '-c', TaskUnitProgram::read('tasks/workspace-operation.py'),
-        'run', $operation, $binding, '0', 'bash', '-c', TaskUnitProgram::read('task-vms/topology.sh'),
-        'topology', 'status', 'abcdef0123456789'], cwd: $this->receiptHome, env: ['HOME' => $this->receiptHome]);
-
-    try {
-        $process->run();
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
-        expect(json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR))->toBe(['state' => 'lost']);
-    } finally {
-        $process->stop(0);
-        (new Process(['sudo', '-n', 'systemctl', 'stop', 'orbit-workspace-operation-'.$operation.'.service']))->run();
-    }
-})->group('privileged');

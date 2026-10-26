@@ -5,24 +5,19 @@ declare(strict_types=1);
 namespace Tests\Support;
 
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\GatewayReleases\GatewayReleaseCommands;
 use App\Infrastructure\GatewayReleases\GitHubArtifactWebBuild;
 use App\Infrastructure\GitHub\GitHubActionsReader;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\NativeProcessRunner;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessRunner;
+use App\Models\Node;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use RuntimeException;
 use Tests\Feature\GitHub\GitHubTestSupport;
-use ZipArchive;
 
-/**
- * GitHub Actions answers for one `web-dist-<sha>` artifact, built from the recorded shapes in
- * `tests/Fixtures/GitHub/WebBuild`, plus a web directory in a temporary directory. The shared
- * release repository's origin is `https://github.com/hardimpactdev/orbit.git`; every other command runs.
- */
-final class WebArtifactFixture implements ProcessRunner
+/** GitHub provider responses and explicit native command answers. */
+final class WebArtifactFixture
 {
     public const string Sha = '3c83e74ce6f241197b06b7b8e506e9496455b277';
 
@@ -32,37 +27,33 @@ final class WebArtifactFixture implements ProcessRunner
 
     public readonly string $web;
 
-    /** @var list<list<string>> */
-    public array $commands = [];
-
-    private readonly NativeProcessRunner $native;
+    public readonly FakeAgentCommandRunner $agents;
 
     public function __construct(public readonly GatewayReleaseLayout $layout, ?string $web = null)
     {
-        $this->web = $web ?? sys_get_temp_dir().'/orbit-web-'.Str::lower(Str::random(10));
-        $this->native = new NativeProcessRunner(maxOutputBytes: 1_048_576);
-        @mkdir($this->web.'/releases', 0750, true);
-    }
-
-    public static function group(): string
-    {
-        $group = posix_getgrgid(posix_getegid());
-
-        if (! is_array($group)) {
-            throw new RuntimeException('The test process has no group name.');
+        $this->web = $web ?? '/srv/orbit/web-'.Str::lower(Str::random(10));
+        $node = Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->first();
+        if (! $node instanceof Node) {
+            $node = Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.2', 'user' => 'orbit', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64']);
+            $node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
         }
-
-        return $group['name'];
+        $this->agents = (new FakeAgentCommandRunner)
+            ->answer('gateway.inspect-release-source', ['origin' => 'https://github.com/hardimpactdev/orbit.git'])
+            ->answer('gateway.inspect-web-build', ['installed' => false, 'archive_limit' => 4096])
+            ->answer('gateway.install-web-build', ['reused' => false])
+            ->answer('gateway.publish-web-build', ['previous' => null])
+            ->answer('gateway.restore-web-build', ['changed' => true])
+            ->answer('gateway.remove-web-build', ['changed' => true])
+            ->answer('gateway.prune-web-builds', ['changed' => true]);
     }
 
     public function build(): GitHubArtifactWebBuild
     {
         return new GitHubArtifactWebBuild(
             layout: $this->layout,
-            processes: $this,
+            commands: new GatewayReleaseCommands($this->agents),
             actions: app(GitHubActionsReader::class),
             webRoot: $this->web,
-            group: self::group(),
         );
     }
 
@@ -75,7 +66,7 @@ final class WebArtifactFixture implements ProcessRunner
      */
     public function github(string $sha = self::Sha, ?string $archive = null, array $artifact = [], array $run = [], bool $missing = false, bool $denied = false): string
     {
-        $archive ??= self::archive(['index.html' => '<!doctype html><script src="/assets/app-abc123.js"></script>', 'assets/app-abc123.js' => 'console.log(1)']);
+        $archive ??= 'downloaded artifact bytes; native tests own ZIP validation';
         $listing = self::recorded($missing ? 'artifacts-none.json' : 'artifacts.json');
 
         if (! $missing) {
@@ -111,35 +102,6 @@ final class WebArtifactFixture implements ProcessRunner
         return $archive;
     }
 
-    /**
-     * @param  array<string, string>  $files
-     * @param  array<string, int>  $modes  Unix file modes by entry name.
-     */
-    public static function archive(array $files, array $modes = []): string
-    {
-        $path = tempnam(sys_get_temp_dir(), 'web-artifact-');
-        $zip = new ZipArchive;
-        $zip->open((string) $path, ZipArchive::OVERWRITE);
-
-        foreach ($files as $name => $contents) {
-            if (str_ends_with($name, '/')) {
-                $zip->addEmptyDir(rtrim($name, '/'));
-            } else {
-                $zip->addFromString($name, $contents);
-            }
-
-            // Like the real web-dist archive: regular files with Unix mode 0100644 and no directory entries.
-            $mode = $modes[$name] ?? (str_ends_with($name, '/') ? 0040755 : 0100644);
-            $zip->setExternalAttributesName($name, ZipArchive::OPSYS_UNIX, $mode << 16);
-        }
-
-        $zip->close();
-        $bytes = (string) file_get_contents((string) $path);
-        unlink((string) $path);
-
-        return $bytes;
-    }
-
     /** @return array<string, mixed> */
     public static function recorded(string $file): array
     {
@@ -150,29 +112,5 @@ final class WebArtifactFixture implements ProcessRunner
         }
 
         return $decoded;
-    }
-
-    /** @return list<string> the entries of the web releases directory, hidden ones included */
-    public function releases(): array
-    {
-        return array_values(array_diff((array) scandir($this->web.'/releases'), ['.', '..']));
-    }
-
-    public function run(ProcessInvocation $invocation): CommandResult
-    {
-        $this->commands[] = $invocation->arguments;
-
-        if (array_slice($invocation->arguments, -3) === ['remote', 'get-url', 'origin']) {
-            return new CommandResult(0, "https://github.com/hardimpactdev/orbit.git\n", '', 1, false);
-        }
-
-        return $this->native->run($invocation);
-    }
-
-    public function cleanup(): void
-    {
-        if (is_dir($this->web)) {
-            exec('chmod -R u+w '.escapeshellarg($this->web).' && rm -rf '.escapeshellarg($this->web));
-        }
     }
 }

@@ -6,7 +6,6 @@ namespace Orbit\Extensions\AiRouter\Infrastructure;
 
 use App\Actions\Processes\DestroyProcessAction;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Fleet\NodeShell;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Support\Facades\DB;
@@ -19,8 +18,7 @@ final readonly class AiRouterRenameCutover
     public function __construct(
         private DestroyProcessAction $processes,
         private AiRouterCache $cache,
-        private NodeShell $shell,
-        private AiRouterSourcePublisher $source,
+        private AiRouterSourceRemoval $source,
         private AiRouterCertificatePublisher $certificates,
     ) {}
 
@@ -54,10 +52,9 @@ final readonly class AiRouterRenameCutover
 
     public function complete(Node $node): void
     {
-        foreach ([$this->source->removeCommand('/var/lib/orbit/proxycli'), $this->certificates->removeCommand('/etc/caddy/orbit-proxycli-cert-current')] as $command) {
-            if (! $this->shell->run($node, $command)->succeeded()) {
-                throw new RuntimeException('Could not remove the retired collector files.');
-            }
+        $this->source->remove($node, retired: true);
+        if (! $this->certificates->remove($node, '/etc/caddy/orbit-proxycli-cert-current')->succeeded()) {
+            throw new RuntimeException('Could not remove the retired collector files.');
         }
         DB::table('ai_router_cutovers')->where('node_id', $node->id)->delete();
     }

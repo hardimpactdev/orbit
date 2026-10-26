@@ -5,21 +5,16 @@ declare(strict_types=1);
 use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
-use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\ProtectedInput;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\NativeSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\TaskVms\IncusHost;
 use App\Infrastructure\TaskVms\TaskVmCredentialGuard;
 use App\Models\Node;
 use App\Models\TaskVm;
@@ -95,36 +90,6 @@ it('marks only token-bearing reads as a GitHub credential', function (): void {
         ->and(ProtectedInput::fromString('x')->carriesGitCredential())->toBeFalse();
 });
 
-it('refuses a GitHub credential on a task VM host, where incus exec would hand it to a VM', function (): void {
-    $transport = new TaskVmGuardRunner;
-    $incus = new IncusHost(new TaskVmCredentialGuard(new NativeSshExecutor($transport)), new class implements SshKeyProvider
-    {
-        public function privateKeyPath(): string
-        {
-            return '/keys/id';
-        }
-
-        public function publicKey(): string
-        {
-            return 'ssh-ed25519 AAAA';
-        }
-    }, new class implements KnownHostsStore
-    {
-        public function path(): string
-        {
-            return '/keys/known_hosts';
-        }
-
-        public function put(string $host, int $port, HostKey $key): void {}
-    });
-    $host = Node::query()->create(['name' => 'shark', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.8', 'wireguard_ip' => '10.44.0.8', 'user' => 'nckrtl']);
-    $taskHost = new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 4, 2, '4GiB', '40GiB');
-
-    expect(fn () => $incus->run($taskHost, $host, ['exec', '--', 'tvm-image-1', 'bash', '-se'], tvm_guard_credential()))
-        ->toThrow(TaskVmException::class, 'A command that carries a GitHub credential cannot run on a task VM.');
-    expect($transport->runs)->toBe([]);
-});
-
 /** @return array<string, string> every PHP file under app/, by its path relative to the Gateway */
 function tvm_guard_sources(): array
 {
@@ -152,16 +117,16 @@ it('keeps source Git credentials and Composer setup on reviewed remote paths', f
     };
 
     expect($only('/->bashPreamble\(/'))->toBe(['app/Infrastructure/GitHub/GitReadScript.php'])
-        // A remote program receives the Git read environment in its JSON input, on protected input.
-        ->and($only('/ProtectedInput::gitCredential\(/'))->toBe(['app/Infrastructure/GitHub/GitReadScript.php', 'app/Infrastructure/RemotePrograms/SshProgramRunner.php'])
+        // Remote programs carry their existing configuration; native commands carry only the token, on protected input.
+        ->and($only('/ProtectedInput::gitCredential\(/'))->toBe(['app/Infrastructure/AgentCommands/NativeAgentCommandRunner.php', 'app/Infrastructure/GitHub/GitReadScript.php', 'app/Infrastructure/RemotePrograms/SshProgramRunner.php'])
         ->and($only('/extraheader/i'))->toBe(['app/Domain/GitHub/GitReadEnvironment.php'])
         // The publisher removes the token from Git's error output; the others only unset or filter the variables.
         ->and($only('/x-access-token/'))->toBe(['app/Domain/GitHub/GitReadEnvironment.php', 'app/Infrastructure/Tasks/GitHubTaskPullRequestPublisher.php'])
         ->and($only('/GIT_CONFIG_VALUE_/'))->toBe(['app/Domain/GitHub/GitReadEnvironment.php'])
+        ->and($only('/->githubToken\(/'))->toBe(['app/Infrastructure/AgentCommands/AgentInvocation.php'])
         // GitHub access in the environment of a process on the Gateway, never in a remote command.
         ->and($only('/->variables\b/'))->toBe([
             'app/Domain/GitHub/GitReadEnvironment.php',
-            'app/Infrastructure/GatewayReleases/GatewayReleaseBuilder.php',
             'app/Infrastructure/RemotePrograms/SshProgramRunner.php',
             'app/Infrastructure/SourceControl/GitRemoteBranchHeads.php',
             'app/Infrastructure/SourceControl/NativeRepositoryDefaultBranchResolver.php',
@@ -172,12 +137,9 @@ it('keeps source Git credentials and Composer setup on reviewed remote paths', f
     $remote = $only('/\b(?:RemoteCommand|SshExecutor)\b/');
     $access = $only('/\b(?:RepositoryPullRequestAccess|RepositoryReadAccess|GitReadEnvironment)\b/');
     expect(array_values(array_intersect($remote, $access)))->toBe([
-        'app/Infrastructure/Instances/RemoteDevelopmentDeployment.php',
+        // The agent envelope carries the token only on the runner's protected input.
+        'app/Infrastructure/AgentCommands/AgentInvocation.php',
         'app/Infrastructure/Instances/RemoteDevelopmentInstanceSourceLifecycle.php',
-        'app/Infrastructure/Instances/RemoteInstanceCloneCandidateInspector.php',
-        'app/Infrastructure/Instances/RemoteProductionDeployment.php',
-        'app/Infrastructure/Instances/RemoteProductionInstanceSourceLifecycle.php',
-        'app/Infrastructure/Projects/RemoteProjectUpdateSourceMutator.php',
         'app/Infrastructure/RemotePrograms/SshProgramRunner.php',
         'app/Infrastructure/TaskVms/TaskVmGit.php',
         'app/Infrastructure/Tasks/GitHubTaskBaseBranchFetcher.php',

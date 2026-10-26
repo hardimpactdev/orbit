@@ -12,7 +12,7 @@ final readonly class NodeCaddyfile
     /**
      * @param  list<CaddySite>  $sites
      * @param  list<string>  $problems
-     * @param  list<string>  $listenAddresses  Every specific IP address a site binds; the push script checks each exists.
+     * @param  list<string>  $listenAddresses  Every specific IP address a site binds; the agent checks each exists.
      * @param  list<array{source: string, name: string, block: string}>  $blocks  Each rendered site block exactly as the file holds it.
      */
     public function __construct(

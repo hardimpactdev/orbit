@@ -169,7 +169,8 @@ it('preserves isolation, arguments, current binary environment and deadlines wit
                 'arguments' => ['-c', $root.'/checkout', 'legacy'], 'cwd' => getcwd(),
             ]);
         $transport->environment['ORBIT_METADATA_BLOCK'] = '1';
-        $timedOut = $transport->execute(turn_metadata_fixture_connection(), new RemoteCommand(arguments: $command->arguments, input: $command->input, timeout: 0.05));
+        // Each call starts a fresh Python, so the deadline leaves room to print before the child blocks for good.
+        $timedOut = $transport->execute(turn_metadata_fixture_connection(), new RemoteCommand(arguments: $command->arguments, input: $command->input, timeout: 0.5));
         expect($timedOut->exitCode)->toBe(124)->and($timedOut->stdout)->toBe("missing\nstarted\n")
             ->and($timedOut->stderr)->toContain('Python test program timed out.')
             ->and($timedOut->stderr)->not->toContain('must not reach the child');

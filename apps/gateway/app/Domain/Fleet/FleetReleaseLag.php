@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Fleet;
 
 use App\Data\Fleet\DesiredFleetStateData;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Models\FleetRollout;
 use App\Models\FleetRolloutNode;
@@ -22,6 +23,7 @@ final readonly class FleetReleaseLag
         private FleetRolloutMembership $membership,
         private NodeFootprint $footprint,
         private AgentReportedVersions $versions,
+        private AgentDelivery $delivery,
         private bool $enabled,
     ) {}
 
@@ -33,7 +35,7 @@ final readonly class FleetReleaseLag
     {
         $reported = $this->versions->get($node->id)['version'] ?? null;
 
-        return ($reported !== null && $reported !== $state->agent->version)
+        return ($reported !== null && $reported !== $this->delivery->reportedVersion($node))
             || ($row->cli_version !== null && $state->cli->isAvailable() && $row->cli_version !== $state->cli->version)
             || $this->footprint->drifted($node);
     }

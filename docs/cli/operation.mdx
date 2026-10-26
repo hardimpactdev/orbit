@@ -8,6 +8,8 @@ covers:
 
 An [operation](/reference/operations) is a long piece of work, such as an Instance deploy or rollback, that the Gateway runs on its queue. The command that starts it, such as [`instance:deploy`](/cli/instance#orbit-instancedeploy) or [`instance:rollback`](/cli/instance#orbit-instancerollback), returns or stops following without stopping the operation. These commands find it again.
 
+When a deploy command follows an operation, it shows live output from the Node agent on the operation’s Reverb channel. A step that printed live does not print its stored output tail again. `operation:show` reads the retained tails; it does not subscribe to live output. See [following operations](/reference/operations#follow-an-operation-over-reverb).
+
 ## Commands
 
 | Command | Result |

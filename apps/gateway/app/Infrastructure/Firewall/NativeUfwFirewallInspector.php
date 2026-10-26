@@ -10,21 +10,16 @@ use App\Domain\Firewall\FirewallInspectionBatchData;
 use App\Domain\Firewall\FirewallInspectionTarget;
 use App\Domain\Firewall\FirewallInspector;
 use App\Domain\Firewall\FirewallRuleInspectionStatus;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentContract;
 use App\Infrastructure\Processes\CommandDeadline;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 
 final readonly class NativeUfwFirewallInspector implements FirewallInspector
 {
     public function __construct(
-        private SshExecutor $ssh,
-        private SshKeyProvider $keys,
-        private KnownHostsStore $knownHosts,
+        private AgentCommandRunner $agents,
+        private AgentContract $contract,
         private CommandDeadline $deadline = new CommandDeadline,
-        private UfwStatusParser $parser = new UfwStatusParser,
     ) {}
 
     public function inspect(array $targets): FirewallInspectionBatchData
@@ -42,63 +37,33 @@ final readonly class NativeUfwFirewallInspector implements FirewallInspector
             throw new DoctorInspectionException;
         }
         try {
-            $r = $this->ssh->execute(
-                new SshConnection(
-                    $host,
-                    $node->user,
-                    22,
-                    $this->keys->privateKeyPath(),
-                    $this->knownHosts->path(),
-                    commandTimeout: $this->deadline->cap(30.0),
-                ),
-                new RemoteCommand(['sudo', 'ufw', 'status', 'numbered']),
-            );
-        } catch (\Throwable) {
-            throw new DoctorInspectionException;
-        }
-        if (! $r->succeeded() || $r->truncated) {
-            throw new DoctorInspectionException;
-        }
-        if (preg_match('/\AStatus:\s+inactive\s*$/mi', $r->stdout) === 1) {
-            return $this->uniformResult(FirewallBackendStatus::Inactive, $targets);
-        }
-        if (preg_match('/\AStatus:\s+absent\s*$/mi', $r->stdout) === 1) {
-            return $this->uniformResult(FirewallBackendStatus::Absent, $targets);
-        }
-        if (preg_match('/\AStatus:\s+active\s*$/mi', $r->stdout) !== 1) {
-            throw new DoctorInspectionException;
-        }
-        try {
-            $ownerships = $this->parser->ownerships(
-                $r->stdout,
-                array_map(
-                    static fn (FirewallInspectionTarget $target): UfwRuleShape => new UfwRuleShape(
-                        $target->shape->comment,
-                        $target->shape->action,
-                        $target->shape->direction,
-                        $target->shape->source,
-                        $target->shape->destination,
-                        $target->shape->port,
-                        $target->shape->protocol,
-                        $target->shape->inInterface,
-                        $target->shape->outInterface,
-                        $target->shape->family,
-                    ),
-                    $targets,
-                ),
-            );
-        } catch (\Throwable) {
-            throw new DoctorInspectionException;
-        }
+            $shapes = array_map(static fn (FirewallInspectionTarget $target): array => new UfwRuleShape(
+                $target->shape->comment, $target->shape->action, $target->shape->direction,
+                $target->shape->source, $target->shape->destination, $target->shape->port,
+                $target->shape->protocol, $target->shape->inInterface, $target->shape->outInterface,
+                $target->shape->family,
+            )->toAgentInput(), $targets);
+            $result = $this->agents->run($node, 'firewall.inspect', [
+                'expected' => $shapes, 'exclusive_families' => [], 'stored' => false,
+            ], $this->deadline->cap($this->contract->command('firewall.inspect')->timeoutSeconds));
+            if (! is_string($result['backend'] ?? null)) {
+                throw new DoctorInspectionException;
+            }
+            $backend = FirewallBackendStatus::from($result['backend']);
+            if ($backend !== FirewallBackendStatus::Active) {
+                return $this->uniformResult($backend, $targets);
+            }
+            if (! is_array($result['ownerships'] ?? null) || ! array_is_list($result['ownerships']) || count($result['ownerships']) !== count($targets)) {
+                throw new DoctorInspectionException;
+            }
 
-        return new FirewallInspectionBatchData(
-            FirewallBackendStatus::Active,
-            array_map(static fn (UfwRuleOwnership $ownership): FirewallRuleInspectionStatus => match ($ownership) {
-                UfwRuleOwnership::Exact => FirewallRuleInspectionStatus::Exact,
-                UfwRuleOwnership::Missing => FirewallRuleInspectionStatus::Missing,
-                UfwRuleOwnership::Drift => FirewallRuleInspectionStatus::Drift,
-            }, $ownerships),
-        );
+            return new FirewallInspectionBatchData($backend, array_map(
+                FirewallRuleInspectionStatus::from(...),
+                $result['ownerships'],
+            ));
+        } catch (\Throwable) {
+            throw new DoctorInspectionException;
+        }
     }
 
     /** @param non-empty-list<FirewallInspectionTarget> $targets */

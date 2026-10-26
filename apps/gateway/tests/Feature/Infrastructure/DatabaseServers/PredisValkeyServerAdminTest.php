@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Actions\DatabaseConnections\CreateServerDatabaseAction;
 use App\Actions\DatabaseServers\ConvergeValkeyServerAction;
-use App\Actions\DatabaseServers\WriteValkeyAclFileAction;
 use App\Actions\Doctor\DatabaseServerDoctorProbe;
 use App\Data\DatabaseConnections\CreateServerDatabaseData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
@@ -14,18 +13,12 @@ use App\Domain\DatabaseServers\ValkeyAclUser;
 use App\Domain\DatabaseServers\ValkeyServerAdmin;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
-use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
-use App\Domain\RemotePrograms\ProgramResult;
-use App\Domain\RemotePrograms\RemoteProgram;
-use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
-use App\Infrastructure\RemotePrograms\SshProgramRunner;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\Node;
@@ -34,31 +27,17 @@ use Illuminate\Support\Sleep;
 use Predis\Client;
 use Predis\Connection\ConnectionException;
 use Symfony\Component\Process\Process as LocalProcess;
+use Tests\Support\FakeAgentCommandRunner;
 
 /**
  * Runs the Valkey Database server code against a real Valkey in Docker. Each test starts a disposable server as Orbit
- * does: its initial ACL is a private copy of an immutable seed made through the real remote writer and checked
- * against its records. Repairs use the real writer. The container runs the production image, entrypoint and command.
+ * does: its initial ACL is a private copy of an immutable seed checked against its records.
+ * Agent writes are faked by copying the requested ACL into the private container; native Rust tests prove publication. The container runs the production image, entrypoint and command.
  * The server listens on a random loopback port. The tests run when ORBIT_TEST_DOCKER=1, as in CI's Gateway privileged job, and need Docker and
  * passwordless sudo. Startup and repair restarts read TCP readiness directly from the attached start process,
  * so no extra inspect/log-follow clients or retry sleep are needed. Containers and volumes are private to each case.
  */
 pest()->group('privileged');
-
-/** Runs remote programs on this host, as SshProgramRunner runs them on a Node. */
-final readonly class ValkeyDockerTestProgramRunner implements RemoteProgramRunner
-{
-    public function run(
-        Node $node,
-        RemoteProgram $program,
-        array $input = [],
-        #[SensitiveParameter] ?GitReadEnvironment $gitRead = null,
-        ?float $timeoutSeconds = null,
-        ?Closure $cancelled = null,
-    ): ProgramResult {
-        return valkey_docker_program($program, app(RemoteProgramCatalog::class)->bootstrap(), $input);
-    }
-}
 
 /** Only immutable ACL bytes and image metadata are shared; no live server or mutable volume survives preparation. */
 final class ValkeyDockerTestSeed
@@ -75,39 +54,38 @@ final class ValkeyDockerTestSeed
         $fixture = json_decode(file_get_contents(__DIR__.'/../../../Fixtures/valkey/acl-list.json'), true, flags: JSON_THROW_ON_ERROR);
         $acl = array_find($fixture['closed'], static fn (string $line): bool => str_starts_with($line, 'user default '))."\n";
         $image = DatabaseServerProcess::valkeyImage(self::TAG);
-        $volume = 'orbit-test-valkey-seed-'.bin2hex(random_bytes(6));
-        $catalog = new RemoteProgramCatalog(__DIR__.'/../../../../resources/remote');
-        try {
-            $result = valkey_docker_program($catalog->program(WriteValkeyAclFileAction::PROGRAM), $catalog->bootstrap(), [
-                'volume' => $volume, 'image' => $image, 'acl' => $acl,
-            ]);
-            if ($result->outcome !== 'written') {
-                throw new RuntimeException('Could not prepare the immutable Valkey ACL seed.');
-            }
-            $written = valkey_docker([
-                'run', '--rm', '--network', 'none', '--mount', "type=volume,source=$volume,target=/data,readonly",
-                '--entrypoint', 'cat', $image, DatabaseServerProcess::VALKEY_ACL_FILE,
-            ])."\n";
-            $entrypoint = json_decode(valkey_docker(['image', 'inspect', '--format', '{{json .Config.Entrypoint}}', $image]), true, flags: JSON_THROW_ON_ERROR);
+        valkey_docker(['pull', $image]);
+        $entrypoint = json_decode(valkey_docker(['image', 'inspect', '--format', '{{json .Config.Entrypoint}}', $image]), true, flags: JSON_THROW_ON_ERROR);
+        // Start the image once here, so Docker's first container start on a fresh host is not timed in the first test.
+        valkey_docker(['run', '--rm', '--network', 'none', '--entrypoint', 'valkey-server', $image, '--version']);
 
-            return new self($written, $entrypoint);
-        } finally {
-            valkey_docker(['volume', 'rm', '--force', $volume]);
-        }
+        return new self($acl, $entrypoint);
     }
 }
 
-/** @param array<string, mixed> $input */
-function valkey_docker_program(RemoteProgram $program, string $bootstrap, array $input): ProgramResult
+/** The Node writer is tested in Rust. This fake supplies its result to the private Predis fixture. */
+function valkey_agent(string $container, string $volume): FakeAgentCommandRunner
 {
-    $command = SshProgramRunner::pythonCommand($program, $bootstrap, $input);
-    $process = new LocalProcess($command->arguments);
-    $process->setInput($command->input)->setTimeout($command->timeout)->run();
+    return new FakeAgentCommandRunner()->answer('databases.write-valkey-acl', static function (array $input) use ($container, $volume): array {
+        expect($input)->toHaveKeys(['volume', 'image', 'acl'])
+            ->and($input['volume'])->toBe($volume)
+            ->and($input['image'])->toBe(DatabaseServerProcess::valkeyImage(ValkeyDockerTestSeed::TAG));
+        // docker cp can seed a stopped container too. No publication or validation implementation lives here.
+        $path = sys_get_temp_dir().'/orbit-valkey-fixture-'.bin2hex(random_bytes(6)).'.tar';
+        try {
+            $archive = new PharData($path);
+            $archive['users.acl'] = $input['acl'];
+            $archive['users.acl']->chmod(0600);
+            unset($archive);
+            new LocalProcess(['docker', 'cp', '-', $container.':/data/'])->setInput(file_get_contents($path))->mustRun();
+        } finally {
+            if (is_file($path)) {
+                unlink($path);
+            }
+        }
 
-    return SshProgramRunner::pythonResult(
-        $program,
-        new CommandResult((int) $process->getExitCode(), $process->getOutput(), $process->getErrorOutput(), 0, false),
-    );
+        return [];
+    });
 }
 
 /** Restarts the server's container and reads its state; a repair needs nothing else from the Process runtime. */
@@ -224,12 +202,12 @@ beforeEach(function (): void {
     $name = 'orbit-test-valkey-'.bin2hex(random_bytes(6));
     $this->container = $name;
     $this->volume = DatabaseServerProcess::volume($name);
-    app()->instance(RemoteProgramRunner::class, new ValkeyDockerTestProgramRunner);
+    app()->instance(AgentCommandRunner::class, valkey_agent($name, $this->volume));
     app()->instance(ProcessRuntimeManager::class, new ValkeyDockerTestRuntime($name));
 
     $this->node = Node::query()->create([
         'name' => 'valkey-docker', 'status' => 'active', 'platform' => 'linux',
-        'public_ssh_host' => '192.0.2.80', 'user' => 'orbit', 'wireguard_ip' => '127.0.0.1',
+        'public_ssh_host' => '192.0.2.80', 'user' => 'orbit', 'wireguard_ip' => '127.0.0.1', 'architecture' => 'x86_64',
     ]);
     $this->fixture = json_decode(file_get_contents(base_path('tests/Fixtures/valkey/acl-list.json')), true, flags: JSON_THROW_ON_ERROR);
     $this->server = DatabaseServer::query()->create([

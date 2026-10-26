@@ -4,55 +4,49 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessRuntimeManager;
-use App\Domain\RemotePrograms\ProgramResult;
-use App\Domain\RemotePrograms\RemoteProgram;
-use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Fleet\NodeShell;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\MachineSoftware\NodeRecipeProgram;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
-use App\Infrastructure\Nodes\NodeUpdateLock;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
 use Illuminate\Support\Facades\Artisan;
-use Symfony\Component\Process\Process;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\Fleet\FleetFixtures;
-use Tests\Support\Fleet\FleetTestSsh;
-use Tests\Support\Fleet\ScriptedSshExecutor;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
-it('requires explicit Docker maintenance consent before any SSH', function (bool $restorePolicies): void {
-    $ssh = new ScriptedSshExecutor;
-    app()->instance(NodeShell::class, FleetTestSsh::shell($ssh));
+it('requires explicit Docker maintenance consent before any agent command', function (bool $restorePolicies): void {
+    $agents = new FakeAgentCommandRunner;
+    app()->instance(AgentCommandRunner::class, $agents);
 
     expect(Artisan::call('node:migrate-docker', ['node' => 'Beast', '--restore-policies' => $restorePolicies]))->toBe(1)
         ->and(Artisan::output())->toContain('--yes is required')
-        ->and($ssh->commands)->toBe([]);
+        ->and($agents->calls)->toBe([]);
 })->with([false, true]);
 
-it('refuses policy recovery combined with migration options before any SSH', function (string $option): void {
-    $ssh = new ScriptedSshExecutor;
-    app()->instance(NodeShell::class, FleetTestSsh::shell($ssh));
+it('refuses policy recovery combined with migration options before any agent command', function (string $option): void {
+    $agents = new FakeAgentCommandRunner;
+    app()->instance(AgentCommandRunner::class, $agents);
 
     expect(Artisan::call('node:migrate-docker', ['node' => 'Beast', '--yes' => true, '--restore-policies' => true, $option => true]))->toBe(1)
         ->and(Artisan::output())->toContain('--restore-policies cannot be combined')
-        ->and($ssh->commands)->toBe([]);
+        ->and($agents->calls)->toBe([]);
 })->with(['--dry-run', '--fallback']);
 
-it('refuses a Docker migration recipe mismatch before any SSH', function (): void {
-    $ssh = new ScriptedSshExecutor;
-    app()->instance(NodeShell::class, FleetTestSsh::shell($ssh));
+it('refuses a Docker migration recipe mismatch before any agent command', function (): void {
+    $agents = new FakeAgentCommandRunner;
+    app()->instance(AgentCommandRunner::class, $agents);
 
     expect(Artisan::call('node:migrate-docker', ['node' => 'Beast', '--yes' => true, '--recipe' => 'sha256:other']))->toBe(1)
         ->and(Artisan::output())->toContain('differs from this checkout')
-        ->and($ssh->commands)->toBe([]);
+        ->and($agents->calls)->toBe([]);
 });
 
 it('translates the Docker CE recipe refusal to a typed reason with the explicit migration command', function (): void {
     $node = FleetFixtures::node('ce-provider', [RoleName::AppProd]);
-    $ssh = new ScriptedSshExecutor;
-    $ssh->on('/^python3 - inspect$/', ScriptedSshExecutor::fail(stdout: 'recipe-stage:docker-provider:docker-ce'));
-    app()->instance(NodeShell::class, FleetTestSsh::shell($ssh));
+    $agents = new FakeAgentCommandRunner;
+    $agents->refuse('recipe.inspect', 'recipe.failed', ['stage' => 'recipe-stage:docker-provider:docker-ce']);
+    app()->instance(AgentCommandRunner::class, $agents);
     $recipe = new RecipeLoader()->load();
     $program = app(NodeRecipeProgram::class);
 
@@ -63,33 +57,29 @@ it('translates the Docker CE recipe refusal to a typed reason with the explicit 
         expect($exception->errorCode)->toBe('node.recipe_docker_provider')
             ->and($exception->getMessage())->toContain('docker-provider:docker-ce', 'node:migrate-docker '.$node->id.' --dry-run');
     }
-    expect($ssh->commands)->toHaveCount(1)
+    expect($agents->calls)->toHaveCount(1)
         ->and($node->refresh()->settings['machine_recipe'] ?? null)->toBeNull();
 });
 
-it('runs the Docker plan as an ADR 0211 program with stdin input and recipe containerd', function (): void {
+it('sends the native Docker plan its recipe pins and stored intent', function (): void {
     $node = FleetFixtures::node('docker-plan', [RoleName::AppProd]);
-    $runner = Mockery::mock(RemoteProgramRunner::class);
-    $runner->shouldReceive('run')->once()->withArgs(function (Node $target, RemoteProgram $program, array $input) use ($node): bool {
+    $agents = new FakeAgentCommandRunner;
+    $agents->answer('docker.plan-migration', function (array $input, Node $target) use ($node): array {
         $recipe = new RecipeLoader()->load();
         expect($target->id)->toBe($node->id)
-            ->and($program->name)->toBe('docker.migrate')
-            ->and($program->user)->toBe('root')
-            ->and($program->timeoutSeconds)->toBe(3600)
-            ->and($program->outcomes)->toBe(['planned', 'prepared', 'restored', 'reported', 'failed'])
-            ->and($program->source)->toContain('def snapshot_options(', 'def retire_sources(', 'def transient_prepare(')
             ->and($input['docker_version'])->toBe($recipe->tools['docker.io']->version)
             ->and($input['containerd_version'])->toBe($recipe->tools['containerd']->version)
-            ->and($input['mode'])->toBe('plan')
+            ->and($input)->not->toHaveKey('mode')
             ->and($input['fallback'])->toBeTrue()
             ->and($input['process_ids'])->toBe([]);
 
-        return true;
-    })->andReturn(new ProgramResult('planned', ['containers' => ['mailpit']], ''));
-    app()->instance(RemoteProgramRunner::class, $runner);
+        return ['containers' => ['mailpit']];
+    });
+    app()->instance(AgentCommandRunner::class, $agents);
 
     expect(Artisan::call('node:migrate-docker', ['node' => $node->name, '--dry-run' => true, '--fallback' => true]))->toBe(0)
-        ->and(Artisan::output())->toContain('mailpit');
+        ->and(Artisan::output())->toContain('mailpit')
+        ->and($agents->calls)->toHaveCount(1);
 });
 
 it('reports final states after reconciling stored specs for migration and policy recovery', function (bool $failConverge, bool $restorePolicies): void {
@@ -103,22 +93,20 @@ it('reports final states after reconciling stored specs for migration and policy
     $runtime = new ProcessesApiFakeRuntimeManager;
     $runtime->failConverge = $failConverge;
     app()->instance(ProcessRuntimeManager::class, $runtime);
-    $runner = Mockery::mock(RemoteProgramRunner::class);
-    $runner->shouldReceive('run')->once()->withArgs(function (Node $node, RemoteProgram $program, array $input) use ($process, $restorePolicies): bool {
-        expect($input['mode'])->toBe($restorePolicies ? 'restore-policies' : 'prepare')
-            ->and($input['process_ids'])->toBe([(string) $process->id])
+    $agents = new FakeAgentCommandRunner;
+    $agents->answer($restorePolicies ? 'docker.restore-migration-policies' : 'docker.prepare-migration', function (array $input) use ($process): array {
+        expect($input['process_ids'])->toBe([(string) $process->id])
             ->and($input['process_states']->{(string) $process->id})->toBe('running')
             ->and(json_encode($input))->not->toContain('private');
 
-        return true;
-    })->andReturn(new ProgramResult($restorePolicies ? 'restored' : 'prepared', ['fallback' => true, 'process_ids' => [(string) $process->id]], ''));
-    $runner->shouldReceive('run')->once()->withArgs(function (Node $node, RemoteProgram $program, array $input) use ($runtime, $process): bool {
-        expect($input['mode'])->toBe('report')->and($runtime->convergedProcessIds)->toBe([$process->id]);
+        return ['fallback' => true, 'process_ids' => [(string) $process->id]];
+    });
+    $agents->answer('docker.report-migration', function () use ($runtime, $process): array {
+        expect($runtime->convergedProcessIds)->toBe([$process->id]);
 
-        return true;
-    })->andReturn(new ProgramResult('reported', ['healthy' => true, 'containers' => [['name' => 'mysql', 'state' => 'running']]], ''));
-    app()->instance(RemoteProgramRunner::class, $runner);
-    app()->instance(NodeUpdateLock::class, new NodeUpdateLock(FleetTestSsh::shell(new ScriptedSshExecutor)));
+        return ['healthy' => true, 'containers' => [['name' => 'mysql', 'state' => 'running']]];
+    });
+    app()->instance(AgentCommandRunner::class, $agents);
 
     expect(Artisan::call('node:migrate-docker', ['node' => $node->name, '--yes' => true, '--restore-policies' => $restorePolicies]))->toBe($failConverge ? 1 : 0);
     $report = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
@@ -131,12 +119,11 @@ it('reports final states after reconciling stored specs for migration and policy
 
 it('reports remote failures with recovery advice for the failed action', function (bool $restorePolicies, string $failure, bool $offerFallback): void {
     $node = FleetFixtures::node('docker-failure', [RoleName::AppProd]);
-    $runner = Mockery::mock(RemoteProgramRunner::class);
-    $runner->shouldReceive('run')->once()->withArgs(fn (Node $node, RemoteProgram $program, array $input): bool => $input['mode'] === ($restorePolicies ? 'restore-policies' : 'prepare'))->andReturn(new ProgramResult('failed', [
+    $agents = new FakeAgentCommandRunner;
+    $agents->refuse($restorePolicies ? 'docker.restore-migration-policies' : 'docker.prepare-migration', 'docker.migration_failed', [
         'failure' => $failure, 'containers' => [['name' => 'mailpit', 'state' => 'unreadable']],
-    ], 'PASSWORD=private'));
-    app()->instance(RemoteProgramRunner::class, $runner);
-    app()->instance(NodeUpdateLock::class, new NodeUpdateLock(FleetTestSsh::shell(new ScriptedSshExecutor)));
+    ]);
+    app()->instance(AgentCommandRunner::class, $agents);
     $runtime = new ProcessesApiFakeRuntimeManager;
     app()->instance(ProcessRuntimeManager::class, $runtime);
 
@@ -157,9 +144,22 @@ it('reports remote failures with recovery advice for the failed action', functio
     'policy recovery failure' => [true, 'docker-migration:restore-engine', false],
 ]);
 
-it('executes the Docker inventory swap fallback preservation and resume regression programs', function (): void {
-    $process = new Process(['python3', base_path('tests/Programs/test_docker_migration.py'), '-v']);
-    $process->mustRun();
+it('does not reconcile Processes after a native migration refusal', function (): void {
+    $node = FleetFixtures::node('docker-refusal', [RoleName::AppProd]);
+    $runtime = new ProcessesApiFakeRuntimeManager;
+    app()->instance(ProcessRuntimeManager::class, $runtime);
+    $agents = new FakeAgentCommandRunner;
+    $agents->refuse('docker.prepare-migration', 'docker.migration_failed', ['failure' => 'docker-migration:insufficient-space']);
+    app()->instance(AgentCommandRunner::class, $agents);
 
-    expect($process->getErrorOutput())->toMatch('/Ran [1-9][0-9]* tests/')->toContain('OK');
+    expect(Artisan::call('node:migrate-docker', ['node' => $node->name, '--yes' => true]))->toBe(1)
+        ->and($runtime->convergedProcessIds)->toBe([])
+        ->and($agents->calls)->toHaveCount(1);
+});
+
+it('keeps Docker migration execution behind the native command runner', function (): void {
+    $source = file_get_contents(app_path('Actions/Fleet/MigrateDockerAction.php'));
+
+    expect($source)->toBeString()->not->toContain('RemoteProgram', 'SshExecutor', 'NodeShell', 'Process::run', 'shell_exec', 'Symfony\\Component\\Process')
+        ->and(file_exists(resource_path('remote/docker/migrate.py')))->toBeFalse();
 });

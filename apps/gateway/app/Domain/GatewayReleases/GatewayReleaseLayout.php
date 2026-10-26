@@ -19,7 +19,7 @@ final readonly class GatewayReleaseLayout
 {
     private const string ApplicationSuffix = '/apps/gateway';
 
-    public function __construct(public string $applicationPath)
+    public function __construct(public string $applicationPath, private ?GatewayReleaseObserver $observer = null)
     {
         if (
             ! str_ends_with($applicationPath, self::ApplicationSuffix)
@@ -97,33 +97,15 @@ final readonly class GatewayReleaseLayout
         return 'releases/'.GatewayReleaseCommit::assertId($id);
     }
 
-    /**
-     * The id of the release the current path links to, or null when the current path is not a
-     * release link (an in-place checkout, or nothing).
-     */
+    /** Read live state through the command boundary; path construction needs no observer. */
+    public function observe(?string $runningApplication = null): GatewayReleaseInventory
+    {
+        return ($this->observer ?? app(GatewayReleaseObserver::class))->inspect($this, $runningApplication);
+    }
+
     public function currentReleaseId(): ?string
     {
-        $current = $this->currentPath();
-
-        if (! is_link($current)) {
-            return null;
-        }
-
-        $target = readlink($current);
-
-        if (! is_string($target)) {
-            return null;
-        }
-
-        foreach ([$this->releasesPath().'/', 'releases/'] as $prefix) {
-            if (str_starts_with($target, $prefix)) {
-                $id = substr($target, strlen($prefix));
-
-                return GatewayReleaseCommit::isId($id) ? $id : null;
-            }
-        }
-
-        return null;
+        return $this->observe()->current;
     }
 
     public function isAdopted(): bool
@@ -131,75 +113,22 @@ final readonly class GatewayReleaseLayout
         return $this->currentReleaseId() !== null;
     }
 
-    /**
-     * The full commit a prepared release was built from, or null when the release is missing or its
-     * preparation never finished. `REVISION` is written last, so it marks a complete release.
-     */
     public function preparedCommit(string $id): ?string
     {
-        $revision = $this->releasePath($id).'/REVISION';
+        $id = GatewayReleaseCommit::assertId($id);
 
-        if (! is_file($revision) || is_link($revision)) {
-            return null;
-        }
-
-        $sha = trim((string) file_get_contents($revision));
-
-        return GatewayReleaseCommit::isSha($sha) && str_starts_with($sha, $id) ? $sha : null;
+        return $this->observe()->commits[$id] ?? null;
     }
 
-    /**
-     * The ids of release directories without `REVISION`: prepares that stopped or are still running. A directory
-     * whose `REVISION` names another commit is not listed, because prepare refuses to replace it.
-     *
-     * @return list<string>
-     */
+    /** @return list<string> */
     public function incompleteReleaseIds(): array
     {
-        $entries = @scandir($this->releasesPath());
-
-        if ($entries === false) {
-            return [];
-        }
-
-        $releases = [];
-
-        foreach ($entries as $entry) {
-            $path = $this->releasesPath().'/'.$entry;
-
-            if (GatewayReleaseCommit::isId($entry) && is_dir($path) && ! is_link($path) && ! file_exists($path.'/REVISION') && ! is_link($path.'/REVISION')) {
-                $releases[] = $entry;
-            }
-        }
-
-        return $releases;
+        return array_map(strval(...), array_keys($this->observe()->incomplete));
     }
 
-    /**
-     * Retained release ids, newest first by preparation time. Partial releases are excluded.
-     *
-     * @return list<string>
-     */
+    /** @return list<string> */
     public function retainedReleaseIds(): array
     {
-        $entries = @scandir($this->releasesPath());
-
-        if ($entries === false) {
-            return [];
-        }
-
-        $releases = [];
-
-        foreach ($entries as $entry) {
-            if (! GatewayReleaseCommit::isId($entry) || $this->preparedCommit($entry) === null) {
-                continue;
-            }
-
-            $releases[$entry] = (int) filemtime($this->releasePath($entry).'/REVISION');
-        }
-
-        uksort($releases, static fn (string $left, string $right): int => [$releases[$right], $right] <=> [$releases[$left], $left]);
-
-        return array_map(strval(...), array_keys($releases));
+        return $this->observe()->retained;
     }
 }

@@ -20,8 +20,4 @@ final readonly class AiRouterFootprint
     public const string CertificateCurrentDirectory = '/etc/caddy/orbit-ai-router-cert-current';
 
     public const string CaddyServiceName = 'caddy';
-
-    public const string SourceDirectory = '/var/lib/orbit/ai-router';
-
-    public const string SourcePath = '/var/lib/orbit/ai-router/collector.py';
 }

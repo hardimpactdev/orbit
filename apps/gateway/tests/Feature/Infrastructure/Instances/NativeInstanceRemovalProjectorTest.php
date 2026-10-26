@@ -22,10 +22,10 @@ use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentPhpFpmConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
@@ -36,12 +36,6 @@ use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
@@ -51,9 +45,11 @@ use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
-use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakePublicRouteEdgeProjector;
-use Tests\Support\SshNodeCaddyBuilds;
+use Tests\Support\PhpBuildAnswers;
+use Tests\Support\RouteProjectionAgentAnswers;
+use Tests\Support\SharedPhpPoolAnswers;
 
 afterEach(function (): void {
     if (is_string($this->orb181ProjectorHome ?? null)) {
@@ -61,14 +57,20 @@ afterEach(function (): void {
     }
 });
 
+beforeEach(function (): void {
+    $this->phpAgents = new FakeAgentCommandRunner;
+    (new PhpBuildAnswers)->register($this->phpAgents);
+    $this->phpAgents->answer('php.configure-runtime', ['changed' => false, 'reloaded' => false]);
+    app()->instance(AgentCommandRunner::class, $this->phpAgents);
+});
+
 it('serves the exact transient development 503 without an upstream then deletes the final Route', function (): void {
     [$member, $route] = orb181_projector_development_member();
-    [$projector, $ssh, $processes] = orb181_removal_projector($this);
-    $ssh->failCall = 1;
+    [$projector, $agents, $processes] = orb181_removal_projector($this, refuse: orb181_first_caddy_publication());
 
     expect(fn () => $projector->clearRouteTarget($member))->toThrow(RuntimeConvergenceException::class);
 
-    $configurations = orb181_caddy_configurations($ssh->commands);
+    $configurations = orb181_caddy_configurations($agents->calls);
     $unavailable = collect($configurations)->first(
         static fn (string $configuration): bool => str_contains($configuration, 'Orbit Route unavailable'),
     );
@@ -84,17 +86,12 @@ it('serves the exact transient development 503 without an upstream then deletes 
         ->toBe('deleted')
         ->and(Route::query()->find($route->id))
         ->toBeNull()
-        ->and(collect($ssh->commands)
-            ->contains(
-                static fn (RemoteCommand $command): bool => in_array(
-                    "orbit:route-{$route->id}-lan",
-                    $command->arguments,
-                    true,
-                ),
-            ))
-        ->toBeTrue()
+        ->and($agents->calls)->toContain([
+            'node' => Node::query()->findOrFail($member->node_id)->name, 'command' => 'firewall.route-lan',
+            'input' => ['operation' => 'remove', 'route_id' => $route->id],
+        ])
         ->and(
-            collect(orb181_caddy_configurations($ssh->commands))
+            collect(orb181_caddy_configurations($agents->calls))
                 ->filter(
                     static fn (string $configuration): bool => str_contains(
                         $configuration,
@@ -120,17 +117,15 @@ it('serves the exact transient development 503 without an upstream then deletes 
 
 it('withdraws the final Route in a build before it removes the Instance certificate', function (): void {
     [$member, $route] = orb181_projector_development_member();
-    [$projector, $ssh] = orb181_removal_projector($this);
+    [$projector, $agents] = orb181_removal_projector($this);
 
     expect($projector->clearRouteTarget($member))->toBe('deleted');
 
     $scope = "app-instance-{$member->instance_id}";
-    $removal = collect($ssh->commands)->search(
-        static fn (RemoteCommand $command): bool => is_string($command->input)
-            && str_contains($command->input, 'rm -rf -- "$managed_home/.orbit/certificates/$scope"')
-            && in_array($scope, $command->arguments, true),
+    $removal = collect($agents->calls)->search(
+        static fn (array $call): bool => $call['command'] === 'certificates.remove-leaf' && $call['input']['scope'] === $scope,
     );
-    $published = orb181_caddy_configurations(array_slice($ssh->commands, 0, is_int($removal) ? $removal : 0));
+    $published = orb181_caddy_configurations(array_slice($agents->calls, 0, is_int($removal) ? $removal : 0));
 
     // The unavailable answer renders from the stored Route, its record, and the open member; clearing
     // the record withdraws it in the build that runs before the certificate is removed.
@@ -157,33 +152,28 @@ it('withdraws the second placement of a Route that waits for its placement withd
         'replacement_step' => RouteReplacementStep::DatabaseCutover->value,
         'transition_dns_moved_at' => now(),
     ]);
-    [$projector, $ssh] = orb181_removal_projector($this);
+    [$projector, $agents] = orb181_removal_projector($this);
 
     expect($projector->clearRouteTarget($member))->toBe('deleted');
 
-    $on = static fn (string $host): array => collect($ssh->commands)
-        ->keys()
-        ->filter(static fn (int $index): bool => $ssh->connections[$index]->host === $host)
-        ->map(static fn (int $index): RemoteCommand => $ssh->commands[$index])
-        ->values()
-        ->all();
-    $removed = static fn (array $commands): array => collect($commands)
-        ->filter(static fn (RemoteCommand $command): bool => is_string($command->input)
-            && str_contains($command->input, 'rm -rf -- "$managed_home/.orbit/certificates/$scope"'))
-        ->map(static fn (RemoteCommand $command): ?string => collect($command->arguments)
-            ->first(static fn (string $argument): bool => str_starts_with($argument, 'route-') || str_starts_with($argument, 'app-instance-')))
-        ->values()
-        ->all();
-    $routerConfigurations = orb181_caddy_configurations($on((string) $router->wireguard_ip));
+    $on = static fn (string $node): array => array_values(array_filter(
+        $agents->calls,
+        static fn (array $call): bool => $call['node'] === $node,
+    ));
+    $removed = static fn (array $calls): array => array_values(array_map(
+        static fn (array $call): string => $call['input']['scope'],
+        array_filter($calls, static fn (array $call): bool => $call['command'] === 'certificates.remove-leaf'),
+    ));
+    $routerConfigurations = orb181_caddy_configurations($on($router->name));
 
     // The old Router is built without the Route before its certificates are removed.
     expect($routerConfigurations)->not->toBeEmpty()
         ->and(end($routerConfigurations))->not->toContain('dev.acme.test')
-        ->and($removed($on((string) $router->wireguard_ip)))->toBe([
+        ->and($removed($on($router->name)))->toBe([
             "route-{$route->id}-router",
             "route-{$route->id}-router-hostname-change",
         ])
-        ->and($removed($on('10.44.0.31')))->toContain(
+        ->and($removed($on(Node::query()->findOrFail($member->node_id)->name)))->toContain(
             "app-instance-{$member->instance_id}",
             "app-instance-{$member->instance_id}-hostname-change",
         );
@@ -191,8 +181,8 @@ it('withdraws the second placement of a Route that waits for its placement withd
 
 it('keeps the final Route row until every projection cleanup succeeds', function (): void {
     [$member, $route] = orb181_projector_development_member();
-    [$projector, $ssh] = orb181_removal_projector($this);
-    $ssh->failCall = 4;
+    [$projector, $agents] = orb181_removal_projector($this);
+    $agents->refuse('firewall.route-lan', 'firewall.remove_failed');
 
     expect(fn () => $projector->clearRouteTarget($member))
         ->toThrow(RuntimeConvergenceException::class);
@@ -202,6 +192,8 @@ it('keeps the final Route row until every projection cleanup succeeds', function
         ->and($route->refresh()->targets()->count())
         ->toBe(0);
 
+    $agents->answer('firewall.route-lan', ['matches' => true]);
+
     expect($projector->clearRouteTarget($member))
         ->toBe('deleted')
         ->and(Route::query()->find($route->id))
@@ -210,7 +202,7 @@ it('keeps the final Route row until every projection cleanup succeeds', function
 
 it('resumes final Route cleanup after certificate deletion and a late DNS failure', function (): void {
     [$member, $route] = orb181_projector_development_member();
-    [$projector, $ssh, $processes] = orb181_removal_projector($this);
+    [$projector, $agents, $processes] = orb181_removal_projector($this);
     $processes->failCall = 2;
 
     expect(fn () => $projector->clearRouteTarget($member))
@@ -220,15 +212,8 @@ it('resumes final Route cleanup after certificate deletion and a late DNS failur
         ->toBeNull()
         ->and($route->refresh()->targets()->count())
         ->toBe(0)
-        ->and(collect($ssh->commands)
-            ->contains(
-                static fn (RemoteCommand $command): bool => in_array(
-                    "app-instance-{$member->instance_id}",
-                    $command->arguments,
-                    true,
-                ),
-            ))
-        ->toBeTrue()
+        ->and(array_column(RouteProjectionAgentAnswers::scopes($agents, 'certificates.remove-leaf'), 'scope'))
+        ->toContain("app-instance-{$member->instance_id}")
         ->and(count($processes->invocations))
         ->toBe(2);
 
@@ -239,7 +224,7 @@ it('resumes final Route cleanup after certificate deletion and a late DNS failur
         ->and(count($processes->invocations))
         ->toBe(3)
         ->and(
-            collect(orb181_caddy_configurations($ssh->commands))
+            collect(orb181_caddy_configurations($agents->calls))
                 ->filter(
                     static fn (string $configuration): bool => str_contains($configuration, 'Orbit Route unavailable'),
                 )
@@ -250,13 +235,13 @@ it('resumes final Route cleanup after certificate deletion and a late DNS failur
 
 it('deletes a final production Route after cleanup without publishing development unavailability', function (): void {
     [$member, $route] = orb183_projector_production_member(shared: false);
-    [$projector, $ssh] = orb181_removal_projector($this);
+    [$projector, $agents] = orb181_removal_projector($this);
 
     expect($projector->clearRouteTarget($member))
         ->toBe('deleted')
         ->and(Route::query()->find($route->id))
         ->toBeNull()
-        ->and(collect(orb181_caddy_configurations($ssh->commands))
+        ->and(collect(orb181_caddy_configurations($agents->calls))
             ->contains(
                 static fn (string $configuration): bool => orb181_unavailable_site($configuration),
             ))
@@ -273,18 +258,16 @@ it('finishes development runtime cleanup when PHP-FPM skips another site whose d
     $brokenRoute->targets()->create(['instance_id' => $broken->id, 'position' => 0]);
     $brokenRoute->update(['status' => RouteStatus::Active, 'sites_published' => true]);
     $broken->update(['status' => InstanceState::Active]);
-    [$projector, $ssh] = orb181_removal_projector($this);
-    $ssh->phpDiscovery = "missing-directory\t{$broken->checkout_path}\n";
+    [$projector, $agents] = orb181_removal_projector($this);
+    $agents->answer('php.converge-shared-pools', ['changed' => true, 'missing_pools' => [
+        ['pool' => 'orbit-app-instance-'.$broken->id, 'version' => '8.5', 'directory' => $broken->checkout_path, 'installed' => false],
+    ]]);
 
     $projector->cleanupRuntime($member);
 
-    expect(orb181_caddy_configurations($ssh->commands))->not->toBeEmpty()
-        ->and(collect($ssh->commands)->contains(
-            static fn (RemoteCommand $command): bool => str_contains(
-                $command->input ?? '',
-                'rm -rf -- "$managed_home/.orbit/certificates/$scope"',
-            ),
-        ))->toBeTrue();
+    expect(orb181_caddy_configurations($agents->calls))->not->toBeEmpty()
+        ->and(array_column(RouteProjectionAgentAnswers::scopes($agents, 'certificates.remove-leaf'), 'scope'))
+        ->toContain("app-instance-{$member->instance_id}");
 });
 
 it('withdraws the pool of a member whose Route is cleared and keeps the other pools', function (): void {
@@ -299,18 +282,11 @@ it('withdraws the pool of a member whose Route is cleared and keeps the other po
     $neighbourRoute->update(['status' => RouteStatus::Active, 'sites_published' => true]);
     $neighbour->update(['status' => InstanceState::Active]);
     $member->update(['route_cleared_at' => now(), 'route_outcome' => 'deleted']);
-    [$projector, $ssh] = orb181_removal_projector($this);
-    $ssh->phpDiscovery = "8.5\t".base64_encode(implode("\n", [
-        "[orbit-app-instance-{$instance->id}]",
-        "chdir = {$instance->checkout_path}",
-        "[orbit-app-instance-{$neighbour->id}]",
-        "chdir = {$neighbour->checkout_path}",
-        '',
-    ]))."\n";
+    [$projector, $agents] = orb181_removal_projector($this);
 
     $projector->withdrawPhpPool($member);
 
-    $published = orb181_published_php_pools($ssh->commands);
+    $published = array_values((array) collect($agents->calls)->firstWhere('command', 'php.converge-shared-pools')['input']['configurations']);
     expect($published)->toHaveCount(1)
         ->and($published[0])
         ->toContain("[orbit-app-instance-{$neighbour->id}]")
@@ -329,28 +305,26 @@ it('withdraws the pool even when PHP-FPM skips another site whose directory is m
     $brokenRoute->update(['status' => RouteStatus::Active, 'sites_published' => true]);
     $broken->update(['status' => InstanceState::Active]);
     $instance = Instance::query()->findOrFail($member->instance_id);
-    [$projector, $ssh] = orb181_removal_projector($this);
-    $ssh->phpDiscovery = "8.5\t".base64_encode(implode("\n", [
-        "[orbit-app-instance-{$instance->id}]",
-        "chdir = {$instance->checkout_path}",
-        "[orbit-app-instance-{$broken->id}]",
-        "chdir = {$broken->checkout_path}",
-        '',
-    ]))."\nmissing-directory\t{$broken->checkout_path}\n";
+    [$projector, $agents] = orb181_removal_projector($this);
+    $agents->answer('php.converge-shared-pools', ['changed' => true, 'missing_pools' => [
+        ['pool' => 'orbit-app-instance-'.$broken->id, 'version' => '8.5', 'directory' => $broken->checkout_path, 'installed' => false],
+    ]]);
 
     $projector->withdrawPhpPool($member);
 
-    expect(orb181_published_php_pools($ssh->commands))->toBe(['']);
+    expect($agents->commands())->toContain('php.converge-shared-pools');
+    $desired = (array) collect($agents->calls)->firstWhere('command', 'php.converge-shared-pools')['input']['configurations'];
+    expect(implode('', $desired))->not->toContain('[orbit-app-instance-'.$instance->id.']');
 });
 
 it('leaves the dedicated runtime of a production member to runtime cleanup', function (): void {
     [$member] = orb183_projector_production_member(shared: false);
     $phpRuntime = new Orb214RemovalPhpRuntimeManager;
-    [$projector, $ssh] = orb181_removal_projector($this, $phpRuntime);
+    [$projector, $agents] = orb181_removal_projector($this, $phpRuntime);
 
     $projector->withdrawPhpPool($member);
 
-    expect($ssh->commands)->toBeEmpty()
+    expect($agents->calls)->toBeEmpty()
         ->and($phpRuntime->removed)->toBeEmpty();
 });
 
@@ -364,18 +338,14 @@ it('skips PHP cleanup but removes Caddy and certificate state for non-PHP produc
         'production_php_socket' => null,
     ]);
     $phpRuntime = new Orb214RemovalPhpRuntimeManager;
-    [$projector, $ssh] = orb181_removal_projector($this, $phpRuntime);
+    [$projector, $agents] = orb181_removal_projector($this, $phpRuntime);
 
     $projector->cleanupRuntime($member);
 
     expect($phpRuntime->removed)->toBeEmpty()
-        ->and(orb181_caddy_configurations($ssh->commands))->not->toBeEmpty()
-        ->and(collect($ssh->commands)->contains(
-            static fn (RemoteCommand $command): bool => str_contains(
-                $command->input ?? '',
-                'rm -rf -- "$managed_home/.orbit/certificates/$scope"',
-            ) && in_array("app-instance-{$instance->id}", $command->arguments, strict: true),
-        ))->toBeTrue();
+        ->and(orb181_caddy_configurations($agents->calls))->not->toBeEmpty()
+        ->and(array_column(RouteProjectionAgentAnswers::scopes($agents, 'certificates.remove-leaf'), 'scope'))
+        ->toContain("app-instance-{$instance->id}");
 });
 
 it('skips PHP-FPM cleanup for a Laravel package with a selected PHP version but no runtime identity', function (): void {
@@ -455,25 +425,18 @@ it('removes only the dedicated runtime for an associated production Instance', f
     $identity = ProductionPhpRuntimeIdentity::forProvisioning($departing->refresh(), '8.5');
     $departing->update($identity->attributes());
     $dedicated = new Orb214RemovalPhpRuntimeManager;
-    [$projector, $ssh] = orb181_removal_projector($this, $dedicated);
+    [$projector, $agents] = orb181_removal_projector($this, $dedicated);
 
     $projector->cleanupRuntime($member);
 
     expect($dedicated->removed)
         ->toBe([$departing->id])
-        ->and(collect($ssh->commands)
-            ->contains(
-                static fn (RemoteCommand $command): bool => str_contains(
-                    $command->input ?? '',
-                    'orbit-scopes.conf',
-                ),
-            ))
-        ->toBeFalse();
+        ->and($agents->commands())->not->toContain('php.converge-shared-pools');
 });
 
 it('retries shared and final production cleanup without restoring targets or Routes', function (bool $shared): void {
     [$member, $route, , $survivor] = orb183_projector_production_member($shared);
-    [$projector, $ssh, $processes] = orb181_removal_projector($this);
+    [$projector, $agents, $processes] = orb181_removal_projector($this);
     $processes->failCall = 1;
 
     expect(fn () => $projector->clearRouteTarget($member))
@@ -489,7 +452,7 @@ it('retries shared and final production cleanup without restoring targets or Rou
         ->toBe($shared ? [$survivor->id] : [])
         ->and(Route::query()->find($route->id) instanceof Route)
         ->toBe($shared)
-        ->and(collect(orb181_caddy_configurations($ssh->commands))
+        ->and(collect(orb181_caddy_configurations($agents->calls))
             ->contains(
                 static fn (string $configuration): bool => orb181_unavailable_site($configuration),
             ))
@@ -500,18 +463,6 @@ function orb181_unavailable_site(string $configuration): bool
 {
     return str_contains($configuration, 'Orbit Route unavailable')
         && ! str_contains($configuration, 'handle_errors');
-}
-
-function expectConnectionHost(?string $host): SshConnection
-{
-    return new SshConnection(
-        host: (string) $host,
-        user: 'orbit',
-        port: 22,
-        identityFile: '/tmp/orbit-test-key',
-        knownHostsFile: '/tmp/orbit-test-known-hosts',
-        commandTimeout: 900.0,
-    );
 }
 
 /** @return array{InstanceRemovalMember, Route, Instance, Instance, Node} */
@@ -564,35 +515,19 @@ function orb183_projector_production_member(bool $shared): array
     return [orb181_projector_member($departing, $route), $route, $departing, $survivor->load('node'), $router];
 }
 
-/** @return array{NativeInstanceRemovalProjector, Orb181RemovalSshExecutor, Orb181RemovalProcessRunner} */
+/**
+ * One agent runner answers every Node command of the removal, in call order. A leaf stays present
+ * until the agent removes it.
+ *
+ * @param  (Closure(string, array<string, mixed>, Node): bool)|null  $refuse
+ * @return array{NativeInstanceRemovalProjector, FakeAgentCommandRunner, Orb181RemovalProcessRunner}
+ */
 function orb181_removal_projector(
     object $test,
     ?ProductionPhpRuntimeManager $productionPhp = null,
     ?PublicRouteEdgeProjector $publicEdge = null,
+    ?Closure $refuse = null,
 ): array {
-    $ssh = new Orb181RemovalSshExecutor;
-    $keys = new class implements SshKeyProvider
-    {
-        public function privateKeyPath(): string
-        {
-            return '/tmp/orbit-test-key';
-        }
-
-        public function publicKey(): string
-        {
-            return 'ssh-ed25519 AAAA';
-        }
-    };
-    $knownHosts = new class implements KnownHostsStore
-    {
-        public function path(): string
-        {
-            return '/tmp/orbit-test-known-hosts';
-        }
-
-        public function put(string $host, int $port, HostKey $key): void {}
-    };
-    $executor = new DevelopmentSshExecutor($ssh, $keys, $knownHosts);
     $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
     $accounts = new class($account) implements ManagedUserAccountResolver
     {
@@ -623,25 +558,44 @@ function orb181_removal_projector(
     $test->orb181ProjectorHome = $home;
     config()->set('orbit.home', $home);
 
+    $agents = RouteProjectionAgentAnswers::register(new FakeAgentCommandRunner()->answer('firewall.route-lan', ['matches' => true]), $refuse);
+    $agents->answer('certificates.inspect-leaf', static fn (array $input, Node $node): array => [
+        'present' => ! in_array(['node' => $node->name, 'scope' => $input['scope']], RouteProjectionAgentAnswers::scopes($agents, 'certificates.remove-leaf'), true),
+    ]);
+
     return [
         new NativeInstanceRemovalProjector(
-            new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($ssh), $executor),
-            new RemoteAppDevCertificateManager($executor, $signer, $accounts),
+            new RemoteAppDevCaddyManager(RouteProjectionAgentAnswers::builds($agents), new FakeAgentCommandRunner),
+            new RemoteAppDevCertificateManager($agents, $signer, $accounts),
             new RemoteAppDevPhpFpmManager(
                 $sites,
                 new DevelopmentPhpFpmConfigRenderer,
-                $executor,
+                SharedPhpPoolAnswers::register($agents),
                 $accounts,
                 new RemotePhpPackageManager,
             ),
             new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class))),
-            new RemoteAppDevRouteFirewallManager($executor),
+            new RemoteAppDevRouteFirewallManager($agents),
             $productionPhp,
             $publicEdge,
         ),
-        $ssh,
+        $agents,
         $processes,
     ];
+}
+
+/** @return Closure(string): bool Refuses the first Caddy publication only. */
+function orb181_first_caddy_publication(): Closure
+{
+    $refused = false;
+
+    return static function (string $command) use (&$refused): bool {
+        if ($command !== 'caddy.publish' || $refused) {
+            return false;
+        }
+
+        return $refused = true;
+    };
 }
 
 final class Orb214RemovalPhpRuntimeManager implements ProductionPhpRuntimeManager
@@ -790,48 +744,15 @@ function orb181_projector_member(Instance $instance, Route $route): InstanceRemo
 }
 
 /**
- * The shared PHP-FPM pool files that each publication installs.
- *
- * @param  list<RemoteCommand>  $commands
+ * @param  list<array{node: string, command: string, input: array<string, mixed>}>  $calls
  * @return list<string>
  */
-function orb181_published_php_pools(array $commands): array
+function orb181_caddy_configurations(array $calls): array
 {
-    $pools = [];
-
-    foreach ($commands as $command) {
-        $input = $command->input ?? '';
-
-        if (str_contains($input, 'orbit-scopes.conf') && preg_match("/printf '%s' '([A-Za-z0-9+\\/=]*)' \\| base64 --decode/", $input, $match) === 1) {
-            $pools[] = (string) base64_decode($match[1], true);
-        }
-    }
-
-    return $pools;
-}
-
-/** @param list<RemoteCommand> $commands @return list<string> */
-function orb181_caddy_configurations(array $commands): array
-{
-    $configurations = [];
-
-    foreach ($commands as $command) {
-        if (! is_string($command->input)) {
-            continue;
-        }
-
-        if (preg_match("/printf '%s' '([^']+)' \\| base64 --decode/", $command->input, $matches) !== 1) {
-            continue;
-        }
-
-        $decoded = base64_decode($matches[1], true);
-
-        if (is_string($decoded)) {
-            $configurations[] = $decoded;
-        }
-    }
-
-    return $configurations;
+    return array_values(array_map(
+        static fn (array $call): string => $call['input']['content'],
+        array_filter($calls, static fn (array $call): bool => $call['command'] === 'caddy.publish'),
+    ));
 }
 
 /** @param list<ProcessInvocation> $invocations @return list<string> */
@@ -856,59 +777,6 @@ function orb181_dns_configurations(array $invocations): array
     }
 
     return $configurations;
-}
-
-final class Orb181RemovalSshExecutor implements SshExecutor
-{
-    /** @var list<RemoteCommand> */
-    public array $commands = [];
-
-    /** @var list<SshConnection> */
-    public array $connections = [];
-
-    public ?int $failCall = null;
-
-    public bool $certificatePresent = true;
-
-    public ?string $phpDiscovery = null;
-
-    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-    {
-        $this->connections[] = $connection;
-        $this->commands[] = $command;
-
-        if ($this->failCall === count($this->commands)) {
-            return new CommandResult(1, '', 'injected failure', 1, false);
-        }
-
-        if (($command->arguments[4] ?? null) === 'php.install-build') {
-            return new CommandResult(0, AppDevFakeSshExecutor::InstallerApplied, '', 1, false);
-        }
-
-        if (
-            is_string($this->phpDiscovery)
-            && is_string($command->input)
-            && str_contains($command->input, 'base64 --wrap=0 -- "$path"')
-        ) {
-            return new CommandResult(0, $this->phpDiscovery, '', 1, false);
-        }
-
-        if (is_string($command->input) && str_contains($command->input, "printf 'PRESENT\\n'")) {
-            return new CommandResult(0, $this->certificatePresent ? "PRESENT\n" : "ABSENT\n", '', 1, false);
-        }
-
-        if (
-            is_string($command->input)
-            && str_contains(
-                $command->input,
-                'rm -rf -- "$managed_home/.orbit/certificates/$scope"',
-            )
-        ) {
-            $this->certificatePresent = false;
-        }
-
-        return new CommandResult(0, '', '', 1, false);
-    }
 }
 
 final class Orb181RemovalProcessRunner implements ProcessRunner

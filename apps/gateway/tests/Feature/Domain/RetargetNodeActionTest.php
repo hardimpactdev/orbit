@@ -10,17 +10,16 @@ use App\Domain\Nodes\NodeProvisioningLockException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
 use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
-use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\HostKeyScanner;
 use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\WireGuard\WireGuardPeerConverger;
 use App\Models\Node;
+use Tests\Support\FakeRetargetAgentRunner;
 
 describe(RetargetNodeAction::class, function (): void {
     beforeEach(function (): void {
@@ -31,7 +30,7 @@ describe(RetargetNodeAction::class, function (): void {
             /** @var list<array{host:string,port:int}> */
             public array $scans = [];
 
-            public function scan(string $host, int $port, ?SshConnection $via = null): HostKey
+            public function scan(string $host, int $port, ?Node $via = null): HostKey
             {
                 $this->scans[] = ['host' => $host, 'port' => $port];
 
@@ -69,25 +68,7 @@ describe(RetargetNodeAction::class, function (): void {
                 return 'ssh-ed25519 AAAAC3Nza';
             }
         });
-        app()->instance(SshExecutor::class, new class implements SshExecutor
-        {
-            /** @var list<array{connection:SshConnection,command:RemoteCommand}> */
-            public array $calls = [];
-
-            public CommandResult $result;
-
-            public function __construct()
-            {
-                $this->result = new CommandResult(0, '', '', 1, false);
-            }
-
-            public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-            {
-                $this->calls[] = compact('connection', 'command');
-
-                return $this->result;
-            }
-        });
+        app()->instance(AdmissionAgentRunner::class, new FakeRetargetAgentRunner);
         app()->instance(WireGuardPeerConverger::class, new class implements WireGuardPeerConverger
         {
             public ?Node $node = null;
@@ -137,8 +118,8 @@ describe(RetargetNodeAction::class, function (): void {
         $knownHosts = app(KnownHostsStore::class);
         /** @var WireGuardPeerConverger&object{connection:?SshConnection,rolelessOperator:?bool} $wireGuard */
         $wireGuard = app(WireGuardPeerConverger::class);
-        /** @var SshExecutor&object{calls:list<array{connection:SshConnection,command:RemoteCommand}>} $ssh */
-        $ssh = app(SshExecutor::class);
+        /** @var FakeRetargetAgentRunner $ssh */
+        $ssh = app(AdmissionAgentRunner::class);
 
         expect($retargeted->only([
             'status',
@@ -490,9 +471,9 @@ describe(RetargetNodeAction::class, function (): void {
     });
 
     it('fails when the private wireguard ssh probe fails', function (): void {
-        /** @var SshExecutor&object{result:CommandResult,calls:list<array{connection:SshConnection,command:RemoteCommand}>} $ssh */
-        $ssh = app(SshExecutor::class);
-        $ssh->result = new CommandResult(1, '', 'wireguard ssh failed', 2, false);
+        /** @var FakeRetargetAgentRunner $ssh */
+        $ssh = app(AdmissionAgentRunner::class);
+        $ssh->failure = new RuntimeException('wireguard ssh failed');
         $node = Node::query()->create([
             'name' => 'app-dev',
             'status' => LifecycleStatus::Active,
@@ -510,8 +491,8 @@ describe(RetargetNodeAction::class, function (): void {
                     ->toBe('wireguard-ssh')
                     ->and($exception->errorCode)
                     ->toBe('vpn.peer_ssh_failed')
-                    ->and($exception->result)
-                    ->toBe($ssh->result)
+                    ->and($exception->getPrevious())
+                    ->toBe($ssh->failure)
                     ->and($node->refresh()->status)
                     ->toBe(LifecycleStatus::Failed)
                     ->and($node->public_ssh_host)
@@ -578,8 +559,8 @@ describe(RetargetNodeAction::class, function (): void {
             $knownHosts = app(KnownHostsStore::class);
             /** @var WireGuardPeerConverger&object{node:?Node} $wireGuard */
             $wireGuard = app(WireGuardPeerConverger::class);
-            /** @var SshExecutor&object{calls:list<array{connection:SshConnection,command:RemoteCommand}>} $ssh */
-            $ssh = app(SshExecutor::class);
+            /** @var FakeRetargetAgentRunner $ssh */
+            $ssh = app(AdmissionAgentRunner::class);
 
             expect($retargeted->only(['status', 'public_ssh_host', 'public_ssh_port', 'wireguard_ip']))
                 ->toBe([
@@ -600,8 +581,9 @@ describe(RetargetNodeAction::class, function (): void {
                 ->toBe(22)
                 ->and($ssh->calls[0]['connection']->user)
                 ->toBe('nckrtl')
-                ->and($ssh->calls[0]['command']->arguments)
-                ->toBe(['true'])
+                ->and($ssh->calls[0]['command'])
+                ->toBe('agent.status')
+                ->and($ssh->calls[0]['input'])->toBe([])
                 ->and($knownHosts->writes)
                 ->toBe([
                     ['host' => '10.44.0.3', 'port' => 22, 'fingerprint' => 'SHA256:pinned'],
@@ -670,9 +652,9 @@ describe(RetargetNodeAction::class, function (): void {
         });
 
         it('restores the public ssh target when the wireguard probe fails', function (): void {
-            /** @var SshExecutor&object{result:CommandResult} $ssh */
-            $ssh = app(SshExecutor::class);
-            $ssh->result = new CommandResult(1, '', 'wireguard ssh failed', 2, false);
+            /** @var FakeRetargetAgentRunner $ssh */
+            $ssh = app(AdmissionAgentRunner::class);
+            $ssh->failure = new RuntimeException('wireguard ssh failed');
 
             expect(fn () => app(RetargetNodeAction::class)->execute(new RetargetNodeData(
                 name: 'app-dev',

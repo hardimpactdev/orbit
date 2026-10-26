@@ -29,6 +29,8 @@ The role runs two containers on the Metrics Node and two units on each selected 
 
 Both containers use pinned official images and host networking. Their logs use `json-file`, with three files of 10 MB each. Prometheus scrapes every target every 10 seconds and keeps samples for 7 days. It labels each target with the Orbit Node name in `node`, and the dashboards filter on that label. Grafana gets one Prometheus datasource and three dashboards: `Orbit Node Resources`, `Orbit Caddy Traffic`, and `Orbit PHP Capacity`. The last two stay empty until [service metrics](/reference/service-metrics) select a Node.
 
+The Gateway sends the rendered configuration and role assignment to `metrics.runtime`. Under one Node-local lock, Rust verifies ownership of the configuration, both containers, recovery containers, and volumes before it changes them. Rust owns image pins, container arguments, separate service hashes, publication, health checks, and rollback. A failed replacement restores the prior containers and configuration. Once both replacements are healthy, a recovery-container cleanup failure keeps the new configuration and reports `metrics.container_cleanup_failed`. Dashboard changes do not replace Grafana; its file provider reloads them. `metrics.runtime-health` observes container health, and `metrics.credentials` verifies or changes the Grafana password through its authenticated API. Passwords travel only in protected command input.
+
 The role runs its containers and units itself. They create no `Process` records, and their packages create no `Tool` records.
 
 ## Enable and recover
@@ -89,6 +91,8 @@ A selected Node runs the packaged `prometheus-node-exporter` unit with the Orbit
 
 The first convergence of a Node installs the exporter package and cAdvisor. This normally happens during `node:add`. Later reconciles only verify them. These requests reconcile Metrics before they finish: `node:add` except the enrollment of a task VM, `node:remove`, role changes, exporter preference changes, and the Instance and Route events that [service metrics](/reference/service-metrics#lifecycle) lists.
 
+The Gateway selects the fleet and sends the Node and Metrics IPv4 addresses to `metrics.node-exporter` and `metrics.cadvisor`. Each agent command snapshots, converges, removes, or restores one exporter under Node-local exporter and firewall locks. Rust owns configuration, package or binary installation, service control, firewall ownership checks, and verification. A failed change restores the prior configuration, service state, and firewall source before returning its error. Fleet rollback passes the snapshots back to the commands; cAdvisor restoration reinstalls its pinned binary when removal deleted it. The Gateway sends no configuration source or executable arguments.
+
 The node exporter and cAdvisor ports are open to every WireGuard peer, not only to the Metrics Node. Each Node keeps the rule `orbit:wireguard-members`, which admits every member on its WireGuard address, and no deny rule guards ports 9100 and 9102. WireGuard membership is the security boundary, so this is intended.
 
 ### Exporter degradation
@@ -129,9 +133,9 @@ Open Grafana at `https://metrics.orbit` from the active Gateway Node, or from an
 
 Private DNS answers `metrics.orbit` with the Gateway's WireGuard address. The Gateway's Caddy presents an Orbit CA certificate. Before each request, Caddy calls `GET /api/v1/metrics/grafana/authorize` with the connection address. It ignores forwarding and identity headers from the caller. Caddy runs that check in the current Gateway release: it resolves the stable Gateway application path for each request, as the Gateway site does ([Runtime handoff](/reference/gateway-recovery#runtime-handoff)). It proxies admitted traffic over WireGuard to Grafana on the Metrics Node.
 
-The Gateway refuses an unknown, inactive, ungranted, or public caller. It also refuses when it cannot establish the caller's identity or authority. The Gateway reloads its Caddy when a Node is removed, or when an access grant to the Gateway Node is removed, while a Metrics role exists. Later requests fail, and open streaming connections close.
+The Gateway refuses an unknown, inactive, ungranted, or public caller. It also refuses when it cannot establish the caller's identity or authority. When a Node or an access grant to the Gateway Node is removed while a Metrics role exists, the Gateway calls `caddy.reload` through the local agent adapter. The agent holds the shared Caddy publication lock during the reload. Later requests fail, and open streaming connections close. A failed reload reports `metrics.caddy_publication_failed`.
 
-The Gateway's own origin also serves Grafana under `/grafana/`, behind the same check. The web app reads Node metrics there. On the Metrics Node, the rules `orbit:metrics-grafana-upstream` and `orbit:metrics-grafana-isolation` admit only the Gateway to port 3000. This applies also when the Gateway and Metrics roles share a Node.
+The Gateway's own origin also serves Grafana under `/grafana/`, behind the same check. The web app reads Node metrics there. On the Metrics Node, the rules `orbit:metrics-grafana-upstream` and `orbit:metrics-grafana-isolation` admit only the Gateway to port 3000. This applies also when the Gateway and Metrics roles share a Node. The `metrics.publication-firewall` command owns this boundary under the Node firewall lock. It checks both rules before mutation and places the allow before the deny, with both before broad WireGuard trust. If the allow fails, the deny stays in place. Removal verifies absence; abandonment without a Gateway matches only the exact Orbit comments.
 
 ## Authorization
 

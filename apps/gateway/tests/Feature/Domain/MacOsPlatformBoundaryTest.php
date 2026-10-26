@@ -161,7 +161,7 @@ final class MacOsBoundaryConverger implements NodeConverger, RecoverableNodeConv
         Node $node,
         NodeProvisioningIdentity $identity,
         ?string $expectedSshHostFingerprint = null,
-        bool $rolelessOperator = false,
+        bool $rolelessOperator = false, ?Closure $recordObservation = null,
     ): NodeObservation {
         throw new RuntimeException('Linux convergence must not start.');
     }
@@ -171,7 +171,7 @@ final class MacOsBoundaryConverger implements NodeConverger, RecoverableNodeConv
         NodeProvisioningIdentity $identity,
         ?string $expectedSshHostFingerprint,
         Closure $completion,
-        bool $rolelessOperator = false,
+        bool $rolelessOperator = false, ?Closure $recordObservation = null,
     ): void {
         throw new RuntimeException('Linux convergence must not start.');
     }

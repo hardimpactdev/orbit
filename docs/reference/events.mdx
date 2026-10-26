@@ -191,6 +191,16 @@ A Route that Orbit creates or replaces as part of another action sends no `route
 
 `id` is the operation ID. These events are notices: they never carry input, steps, output, or the result. On its own channel, an operation sends at most one output change per second, and every status and step change at once. A client drops an event whose `sequence` is not greater than the one it has read, and reads the operation with `after_sequence` for the rest. [Follow an operation over Reverb](/reference/operations#follow-an-operation-over-reverb) describes the order.
 
+### Deploy step output
+
+While a production deploy step runs, the [Node agent](/reference/node-agent#live-output) that runs it publishes its output on `private-operation.{id}` as Pusher client events. These events carry no `{type, id, at, data}` envelope.
+
+| Event | When | Data |
+| --- | --- | --- |
+| `client-output` | The step writes one line. | `{ step, stream, sequence, line }` |
+
+`step` is the deploy step's name. `stream` is `stdout` or `stderr`. `sequence` counts the step's lines from 1. `line` is redacted, without its newline. The events are live only: a client that missed one reads the step's output tail from the operation once the step ends.
+
 
 ### Tasks
 

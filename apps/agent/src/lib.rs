@@ -1,3 +1,4 @@
+pub use orbit_agent_contract::command_errors;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -7,9 +8,31 @@ use std::{
     io::BufReader,
     net::{IpAddr, SocketAddr},
 };
+pub mod command;
+pub mod commands;
 pub mod logs;
+pub mod realtime;
 pub mod workspace;
 use workspace::WorkspaceState;
+
+/// The version the observer reports in presence: the Cargo version plus the first 16 hexadecimal digits of the
+/// running binary's SHA-256, as semver build metadata. The Gateway derives the same string from its delivery
+/// manifest, so presence proves the exact pinned binary, not only its release number (ADR 0225).
+pub fn reported_version() -> &'static str {
+    static REPORTED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    REPORTED.get_or_init(|| {
+        let digest =
+            command::run::file_sha256(std::path::Path::new("/proc/self/exe")).unwrap_or_default();
+        version_with_digest(env!("CARGO_PKG_VERSION"), &digest)
+    })
+}
+
+pub fn version_with_digest(version: &str, sha256: &str) -> String {
+    match sha256.get(..16) {
+        Some(prefix) => format!("{version}+{prefix}"),
+        None => version.to_string(),
+    }
+}
 
 pub const CONFIG_PATH: &str = "/etc/orbit/agent/config.toml";
 pub const CA_PATH: &str = "/etc/orbit/agent/ca.pem";
@@ -506,6 +529,14 @@ impl Liveness {
 mod tests {
     use super::*;
     #[test]
+    fn reports_the_version_with_the_binary_digest_as_build_metadata() {
+        assert_eq!(
+            version_with_digest("0.4.4", &"ab".repeat(32)),
+            "0.4.4+abababababababab"
+        );
+        assert_eq!(version_with_digest("0.4.4", ""), "0.4.4");
+    }
+    #[test]
     fn loads_a_hexadecimal_secret_and_never_prints_it() {
         let secret = "0123456789abcdef".repeat(4);
         let parsed = AgentSecret::parse(&format!("{secret}\n")).unwrap();
@@ -794,7 +825,7 @@ gateway_address = "10.44.0.1""#,
         assert_eq!(event.data["workspace"]["instance_id"], 7);
         assert_eq!(
             event.data.as_object().unwrap().keys().collect::<Vec<_>>(),
-            ["at", "sequence", "workspace"]
+            ["sequence", "at", "workspace"]
         );
         assert!(serde_json::to_vec(&event).unwrap().len() <= PUSHER_FRAME_LIMIT);
     }

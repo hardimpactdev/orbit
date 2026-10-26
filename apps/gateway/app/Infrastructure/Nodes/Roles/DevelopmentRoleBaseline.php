@@ -14,18 +14,17 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ConfiguredStoragePathValidator;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\Hibernation\HibernationDirectoryEnsure;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentStep;
 use App\Infrastructure\Nodes\EnrollmentProgram;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 use App\Models\NodeRole;
 
 final readonly class DevelopmentRoleBaseline implements RoleBaseline
 {
     public function __construct(
-        private NodeRolePrerequisiteCommandFactory $commands,
-        private DevelopmentSshExecutor $ssh,
+        private RolePrerequisites $prerequisites,
+        private AgentCommandRunner $agents,
         private AppDevCaddyManager $caddy,
         private NodeRoleFirewallManager $firewall,
         private PrivateDnsManager $dns,
@@ -46,30 +45,27 @@ final readonly class DevelopmentRoleBaseline implements RoleBaseline
         );
         $this->dns->converge($node);
         // Task VM enrollment trusts the software in its image.
-        $caddyPackage = $this->commands->caddyPackage($node, RoleName::AppDev);
-        if ($caddyPackage instanceof RemoteCommand && ! EnrollmentProgram::skipForTaskVm($node, EnrollmentProgram::CaddyPackage)) {
-            $this->ssh->execute($node, $caddyPackage, 'caddy-package-source', 'app-dev.prerequisite_failed', failureLabel: CaddyRoleFailure::sshLabel(RoleName::AppDev));
-        }
-        $prerequisites = $this->commands->make($node, RoleName::AppDev, $account);
-        if (! EnrollmentProgram::skipForTaskVm($node, EnrollmentProgram::prerequisites(RoleName::AppDev))) {
-            $this->ssh->execute(
-                $node,
-                $prerequisites,
-                'role-prerequisites',
-                'app-dev.prerequisite_failed',
-                failureLabel: CaddyRoleFailure::sshLabel(RoleName::AppDev),
-            );
-        }
-        // Hibernation wake sites log to these directories, and validation opens those logs as `caddy`.
-        $this->ssh->execute(
+        $this->prerequisites->converge(
             $node,
-            new RemoteCommand(
-                ['sudo', 'bash', '-seu', '--', RuntimeHibernation::MarkerDirectory, RuntimeHibernation::AccessLogDirectory],
-                HibernationDirectoryEnsure::script(),
-            ),
+            RoleName::AppDev,
+            $account,
+            'app-dev.prerequisite_failed',
+            CaddyRoleFailure::sshLabel(RoleName::AppDev),
+            caddy: ! EnrollmentProgram::skipForTaskVm($node, EnrollmentProgram::CaddyPackage),
+            packages: ! EnrollmentProgram::skipForTaskVm($node, EnrollmentProgram::prerequisites(RoleName::AppDev)),
+        );
+        // Hibernation wake sites log to these directories, and validation opens those logs as `caddy`.
+        AgentStep::run(
+            $this->agents,
+            $node,
+            'hibernation.prepare-directories',
+            [
+                'marker_directory' => RuntimeHibernation::MarkerDirectory,
+                'log_directory' => RuntimeHibernation::AccessLogDirectory,
+            ],
             'hibernation-directories',
             'app-dev.prerequisite_failed',
-            failureLabel: CaddyRoleFailure::sshLabel(RoleName::AppDev),
+            CaddyRoleFailure::sshLabel(RoleName::AppDev),
         );
         $this->caddy->converge($node, RoleName::AppDev);
         $this->firewall->converge($node, RoleName::AppDev, $node->user);

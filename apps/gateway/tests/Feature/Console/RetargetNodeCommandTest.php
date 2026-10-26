@@ -6,21 +6,20 @@ use App\Domain\Nodes\NodeProvisioningLock;
 use App\Domain\Nodes\NodeProvisioningLockException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\HostKeyScanner;
 use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\WireGuard\WireGuardPeerConverger;
 use App\Models\Node;
+use Tests\Support\FakeRetargetAgentRunner;
 
 beforeEach(function (): void {
     app()->instance(HostKeyScanner::class, new class implements HostKeyScanner
     {
-        public function scan(string $host, int $port, ?SshConnection $via = null): HostKey
+        public function scan(string $host, int $port, ?Node $via = null): HostKey
         {
             return new HostKey('ssh-ed25519', 'host-key', 'SHA256:pinned');
         }
@@ -46,18 +45,7 @@ beforeEach(function (): void {
             return 'ssh-ed25519 AAAAC3Nza';
         }
     });
-    app()->instance(SshExecutor::class, new class implements SshExecutor
-    {
-        /** @var list<SshConnection> */
-        public array $connections = [];
-
-        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-        {
-            $this->connections[] = $connection;
-
-            return new CommandResult(0, '', '', 1, false);
-        }
-    });
+    app()->instance(AdmissionAgentRunner::class, new FakeRetargetAgentRunner);
     app()->instance(WireGuardPeerConverger::class, new class implements WireGuardPeerConverger
     {
         public ?SshConnection $connection = null;
@@ -92,8 +80,8 @@ it('retargets a node from the gateway console', function (): void {
     $node = Node::query()->where('name', 'app-dev')->sole();
     /** @var WireGuardPeerConverger&object{connection:?SshConnection} $wireGuard */
     $wireGuard = app(WireGuardPeerConverger::class);
-    /** @var SshExecutor&object{connections:list<SshConnection>} $ssh */
-    $ssh = app(SshExecutor::class);
+    /** @var FakeRetargetAgentRunner $ssh */
+    $ssh = app(AdmissionAgentRunner::class);
 
     expect($node->public_ssh_host)
         ->toBe('198.51.100.25')
@@ -105,16 +93,16 @@ it('retargets a node from the gateway console', function (): void {
         ->toBe(2202)
         ->and($wireGuard->connection?->user)
         ->toBe('nckrtl')
-        ->and($ssh->connections)
+        ->and($ssh->calls)
         ->toHaveCount(1)
-        ->and($ssh->connections[0]->user)
+        ->and($ssh->calls[0]['connection']->user)
         ->toBe('nckrtl');
 });
 
 it('reports typed retarget failures without leaking command output', function (): void {
     app()->instance(HostKeyScanner::class, new class implements HostKeyScanner
     {
-        public function scan(string $host, int $port, ?SshConnection $via = null): HostKey
+        public function scan(string $host, int $port, ?Node $via = null): HostKey
         {
             throw new RuntimeException('sensitive command output');
         }
@@ -139,7 +127,7 @@ it('reports typed retarget failures without leaking command output', function ()
 it('explains the node-side recovery when a converged node is unreachable over wireguard', function (): void {
     app()->instance(HostKeyScanner::class, new class implements HostKeyScanner
     {
-        public function scan(string $host, int $port, ?SshConnection $via = null): HostKey
+        public function scan(string $host, int $port, ?Node $via = null): HostKey
         {
             throw new RuntimeException('sensitive command output');
         }

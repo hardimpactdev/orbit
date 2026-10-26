@@ -7,6 +7,7 @@ namespace App\Infrastructure\Fleet\Footprint;
 use App\Domain\Fleet\FleetNodeConverger;
 use App\Domain\Fleet\FootprintArtifactSkipped;
 use App\Domain\Fleet\NodeFootprintArtifact;
+use App\Domain\Nodes\CaddyRelease;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Caddy\Build\CaddySiteRoles;
 use App\Infrastructure\Caddy\Build\ContributedCaddySiteSource;
@@ -59,10 +60,10 @@ final readonly class CaddyFootprintArtifact implements NodeFootprintArtifact
      */
     public function inputs(): array
     {
-        return SourceClosure::of(['app/Infrastructure/Caddy'], array_map(
+        return SourceClosure::of(['app/Infrastructure/Caddy'], [CaddyRelease::class, ...array_map(
             static fn (ContributedCaddySiteSource $source): string => $source::class,
             array_values([...$this->contributions]),
-        ));
+        )]);
     }
 
     public function apply(Node $node): bool

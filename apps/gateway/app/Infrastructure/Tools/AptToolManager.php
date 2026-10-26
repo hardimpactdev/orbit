@@ -16,11 +16,13 @@ use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolRemovalPlan;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\MachineSoftware\PhpBuild;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
-use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
 
 final readonly class AptToolManager implements ReservesRolePackages, SupportsToolAdoption, ToolManager
@@ -30,30 +32,14 @@ final readonly class AptToolManager implements ReservesRolePackages, SupportsToo
 
     private const int MAX_PACKAGE_LENGTH = 128;
 
-    private const int MAX_VERSION_LENGTH = 255;
-
     private const string PACKAGE_PATTERN = '/\A[a-z0-9][a-z0-9+.-]*\z/D';
 
-    private const string PLANNED_PACKAGE_PATTERN = '/\ARemv\s+([a-z0-9][a-z0-9+.-]*(?::[a-z0-9][a-z0-9-]*)?)(?:\s|$)/D';
-
-    /**
-     * Wait for another apt process to release the dpkg locks. Apt applies this
-     * only to those locks, and 300 seconds stays inside the 900 second tool command budget.
-     */
-    private const string DPKG_LOCK_TIMEOUT = 'DPkg::Lock::Timeout=300';
-
-    private const array REMOVED_STATUSES = [
-        'deinstall ok config-files',
-        'deinstall ok not-installed',
-        'purge ok config-files',
-        'purge ok not-installed',
-    ];
-
     public function __construct(
-        private RemoteToolCommandRunner $commands,
+        private AgentCommandRunner $agents,
         private DebianVersionNormalizer $versions,
         private ?NodeBootstrapPackageCatalog $packages = null,
         private ?MachineRecipe $recipe = null,
+        private ?ToolCommandBudget $budget = null,
     ) {}
 
     /** The PHP role owns the recipe's PHP build, ADR 0216: every `php<version>-*` package and the shared PHP pins. */
@@ -97,23 +83,9 @@ final readonly class AptToolManager implements ReservesRolePackages, SupportsToo
 
     public function managerVersion(Node $node): string
     {
-        $result = $this->commands->execute($node, ['apt-get', '--version']);
-
-        $this->guardSuccessfulResult(
-            result: $result,
-            step: 'manager-version',
-            message: 'The APT manager version probe failed.',
-        );
-
-        $lines = preg_split('/\R/', $result->stdout, limit: 2);
-        $version = is_array($lines) ? $lines[0] ?? '' : '';
-
-        if (! $this->isSafeVersion($version)) {
-            throw new ToolManagerException(
-                step: 'manager-version',
-                message: 'The APT manager version probe returned malformed output.',
-                result: $result,
-            );
+        $version = $this->version($node, 'tools.apt-version', [], 'manager-version');
+        if ($version === null) {
+            throw new ToolManagerException('manager-version', 'The agent returned an invalid APT manager version.');
         }
 
         return $version;
@@ -123,85 +95,29 @@ final readonly class AptToolManager implements ReservesRolePackages, SupportsToo
     {
         $this->guardPackage($package);
 
-        $result = $this->commands->execute($node, ['apt-cache', 'policy', '--', $package]);
-
-        $this->guardSuccessfulResult(
-            result: $result,
-            step: 'candidate-version',
-            message: 'The APT candidate version probe failed.',
-        );
-
-        $lines = preg_split('/\R/', $result->stdout);
-        $candidateLines = array_values(array_filter(
-            is_array($lines) ? $lines : [],
-            static fn (string $line): bool => preg_match('/\A\s*Candidate:/', $line) === 1,
-        ));
-
-        if (count($candidateLines) !== 1) {
-            throw new ToolManagerException(
-                step: 'candidate-version',
-                message: 'The APT candidate version probe returned ambiguous output.',
-                result: $result,
-            );
-        }
-
-        $matches = [];
-
-        if (preg_match('/\A\s*Candidate:\s+(\S+)\s*\z/D', $candidateLines[0], $matches) !== 1) {
-            throw new ToolManagerException(
-                step: 'candidate-version',
-                message: 'The APT candidate version probe returned malformed output.',
-                result: $result,
-            );
-        }
-
-        $version = $matches[1];
-
-        if ($version === '(none)') {
-            return null;
-        }
-
-        if (! $this->isSafeVersion($version)) {
-            throw new ToolManagerException(
-                step: 'candidate-version',
-                message: 'The APT candidate version probe returned malformed output.',
-                result: $result,
-            );
-        }
-
-        return $version;
+        return $this->version($node, 'tools.apt-candidate', ['package' => $package], 'candidate-version');
     }
 
     public function installedInventory(Node $node): InstalledToolInventory
     {
-        $result = $this->commands->execute($node, ['dpkg-query', '--show', '--showformat=${Package}\\t${Status}\\t${Version}\\n'], maxOutputBytes: 1_048_576);
-        $this->guardSuccessfulResult($result, 'installed-version', 'The APT installed inventory probe failed.');
+        $data = $this->command($node, 'tools.apt-inventory', [], 'installed-version');
+        if (! is_array($data['packages'] ?? null) || ! array_is_list($data['packages'])) {
+            throw new ToolManagerException('installed-version', 'The agent returned an invalid APT inventory.');
+        }
         $versions = [];
         $unverifiable = [];
-        foreach (explode("\n", rtrim($result->stdout, "\n")) as $line) {
-            if ($line === '') {
-                continue;
+        foreach ($data['packages'] as $entry) {
+            if (! is_array($entry) || ! is_string($entry['name'] ?? null) || ! array_key_exists('version', $entry) || ($entry['version'] !== null && ! is_string($entry['version']))) {
+                throw new ToolManagerException('installed-version', 'The agent returned an invalid APT package observation.');
             }
-            $fields = explode("\t", $line);
-            if (count($fields) !== 3) {
-                throw new ToolManagerException('installed-version', 'The APT installed inventory was malformed.', $result);
+            if ($entry['version'] === null) {
+                $unverifiable[] = $entry['name'];
+            } else {
+                $versions[$entry['name']][] = $entry['version'];
             }
-            [$package, $status, $version] = $fields;
-            if (! $this->validatePackage($package)) {
-                continue;
-            }
-            if (in_array($status, [...self::REMOVED_STATUSES, 'unknown ok not-installed'], true)) {
-                continue;
-            }
-            if ($status !== 'install ok installed' || ! $this->isSafeVersion($version)) {
-                $unverifiable[] = $package;
-
-                continue;
-            }
-            $versions[$package][] = $version;
         }
 
-        return new InstalledToolInventory($versions, $result, $unverifiable);
+        return new InstalledToolInventory($versions, unverifiablePackages: $unverifiable);
     }
 
     public function installedVersion(Node $node, string $package): ?string
@@ -270,69 +186,28 @@ final readonly class AptToolManager implements ReservesRolePackages, SupportsToo
 
     public function install(Node $node, string $package): void
     {
-        $this->mutate(
-            node: $node,
-            package: $package,
-            step: 'install',
-            arguments: ['sudo', 'apt-get', '-o', self::DPKG_LOCK_TIMEOUT, 'install', '--yes', '--no-install-recommends', '--', $package],
-        );
+        $this->mutate($node, $package, 'install');
     }
 
     public function update(Node $node, string $package): void
     {
-        $this->mutate(
-            node: $node,
-            package: $package,
-            step: 'update',
-            arguments: ['sudo', 'apt-get', '-o', self::DPKG_LOCK_TIMEOUT, 'install', '--yes', '--no-install-recommends', '--', $package],
-        );
+        $this->mutate($node, $package, 'update');
     }
 
     public function planRemoval(Node $node, string $package): ToolRemovalPlan
     {
         $this->guardPackage($package);
-
-        $result = $this->commands->execute($node, ['apt-get', '--simulate', 'remove', '--', $package]);
-
-        $this->guardSuccessfulResult(
-            result: $result,
-            step: 'removal-plan',
-            message: 'The APT removal plan failed.',
-        );
-
-        $packages = [];
-        $lines = preg_split('/\R/', $result->stdout);
-
-        foreach (is_array($lines) ? $lines : [] as $line) {
-            if (preg_match('/\A\s*Remv(?:\s|\z)/', $line) !== 1) {
-                continue;
-            }
-
-            $matches = [];
-
-            if (preg_match(self::PLANNED_PACKAGE_PATTERN, $line, $matches) !== 1) {
-                throw new ToolManagerException(
-                    step: 'removal-plan',
-                    message: 'The APT removal plan returned a malformed package record.',
-                    result: $result,
-                );
-            }
-
-            $plannedPackage = $this->normalizeRequestedArchitecture($matches[1], $package);
-            $packages[$plannedPackage] = true;
+        $data = $this->command($node, 'tools.apt-removal-plan', ['package' => $package], 'removal-plan');
+        if (! is_array($data['packages'] ?? null) || ! array_is_list($data['packages']) || array_filter($data['packages'], is_string(...)) !== $data['packages']) {
+            throw new ToolManagerException('removal-plan', 'The agent returned an invalid APT removal plan.');
         }
 
-        return new ToolRemovalPlan(array_keys($packages));
+        return new ToolRemovalPlan($data['packages']);
     }
 
     public function remove(Node $node, string $package): void
     {
-        $this->mutate(
-            node: $node,
-            package: $package,
-            step: 'remove',
-            arguments: ['sudo', 'apt-get', '-o', self::DPKG_LOCK_TIMEOUT, 'remove', '--yes', '--', $package],
-        );
+        $this->mutate($node, $package, 'remove');
     }
 
     private function guardPackage(string $package): void
@@ -347,49 +222,35 @@ final readonly class AptToolManager implements ReservesRolePackages, SupportsToo
         );
     }
 
-    private function guardSuccessfulResult(CommandResult $result, string $step, string $message): void
-    {
-        if ($result->succeeded()) {
-            return;
-        }
-
-        throw new ToolManagerException(
-            step: $step,
-            message: $message,
-            result: $result,
-        );
-    }
-
-    private function isSafeVersion(string $version): bool
-    {
-        return
-            $version !== ''
-            && strlen($version) <= self::MAX_VERSION_LENGTH
-            && preg_match('/[\x00-\x1F\x7F]/', $version) !== 1;
-    }
-
-    /** @param non-empty-list<string> $arguments */
-    private function mutate(Node $node, string $package, string $step, array $arguments): void
+    private function mutate(Node $node, string $package, string $step): void
     {
         $this->guardPackage($package);
-
-        $result = $this->commands->execute($node, $arguments);
-
-        $this->guardSuccessfulResult(
-            result: $result,
-            step: $step,
-            message: "The APT {$step} operation failed.",
-        );
+        $this->command($node, 'tools.apt-'.$step, ['package' => $package], $step);
     }
 
-    private function normalizeRequestedArchitecture(string $plannedPackage, string $requestedPackage): string
+    /** @param array<string, mixed> $input */
+    private function version(Node $node, string $command, array $input, string $step): ?string
     {
-        $prefix = "{$requestedPackage}:";
-
-        if (! str_starts_with($plannedPackage, $prefix)) {
-            return $plannedPackage;
+        $data = $this->command($node, $command, $input, $step);
+        if (! array_key_exists('version', $data) || ($data['version'] !== null && ! is_string($data['version']))) {
+            throw new ToolManagerException($step, 'The agent returned an invalid APT version.');
         }
 
-        return $requestedPackage;
+        return $data['version'];
+    }
+
+    /** @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    private function command(Node $node, string $command, array $input, string $step): array
+    {
+        if (! $this->supportsNode($node)) {
+            throw new ToolManagerException('node', 'APT tools require a Linux node.');
+        }
+        try {
+            return $this->agents->run($node, $command, $input, $this->budget?->seconds());
+        } catch (AgentCommandRefused|AgentRunnerFailure $exception) {
+            throw new ToolManagerException($step, 'The APT operation failed.', previous: $exception);
+        }
     }
 }

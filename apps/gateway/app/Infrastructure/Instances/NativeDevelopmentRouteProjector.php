@@ -12,15 +12,15 @@ use App\Domain\Instances\Transfer\InstanceTransferRouteProjector;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RoutePublication;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentStep;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
 use App\Models\Node;
@@ -34,7 +34,7 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
         private RemoteAppDevCertificateManager $certificates,
         private RemoteAppDevCaddyManager $caddy,
         private DnsmasqPrivateDnsManager $dns,
-        private DevelopmentSshExecutor $ssh,
+        private AgentCommandRunner $agents,
         private DevelopmentSourceAccess $sourceAccess,
         private ?PublicRouteEdgeProjector $publicEdge = null,
     ) {}
@@ -131,7 +131,7 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
         if (! $this->usesCertificate($source, "app-instance-{$sourceInstance->id}")) {
             $this->certificates->removeInstance($sourceInstance);
         }
-        new RemoteAppDevRouteFirewallManager($this->ssh)->remove($source, $transfer->source_route_id);
+        new RemoteAppDevRouteFirewallManager($this->agents)->remove($source, $transfer->source_route_id);
         if (! $this->usesCertificate($sourceRouter, "route-{$transfer->source_route_id}-router")) {
             $oldRoute = new Route;
             $oldRoute->id = $transfer->source_route_id;
@@ -157,7 +157,7 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
             $this->certificates->removeRouteLeaf($route, $source);
         }
 
-        new RemoteAppDevRouteFirewallManager($this->ssh)->remove($source, $routeId);
+        new RemoteAppDevRouteFirewallManager($this->agents)->remove($source, $routeId);
 
         if (! $this->usesCertificate($sourceRouter, "route-{$routeId}-router")) {
             $this->certificates->removeRouteRouter($route, $sourceRouter);
@@ -424,27 +424,12 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
             );
         }
 
-        $this->ssh->execute(
-            $instance->node,
-            new RemoteCommand([
-                'sudo',
-                'ufw',
-                'allow',
-                'in',
-                'proto',
-                'tcp',
-                'from',
-                $routerAddress,
-                'to',
-                $workloadAddress,
-                'port',
-                '443',
-                'comment',
-                "orbit:route-{$route->id}-lan",
-            ]),
-            step: 'route-firewall',
-            errorCode: 'app-dev.route_firewall_failed',
-        );
+        AgentStep::run($this->agents, $instance->node, 'firewall.route-lan', [
+            'operation' => 'converge',
+            'route_id' => $route->id,
+            'router' => $routerAddress,
+            'workload' => $workloadAddress,
+        ], 'route-firewall', 'app-dev.route_firewall_failed', 'App development');
     }
 
     private function verifyWorkloadLeaf(Instance $instance, Route $route, Node $router): void
@@ -461,25 +446,10 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
             );
         }
 
-        $this->ssh->execute(
-            $router,
-            new RemoteCommand(
-                [
-                    'timeout',
-                    '10',
-                    'openssl',
-                    's_client',
-                    '-connect',
-                    "{$address}:443",
-                    '-servername',
-                    $route->domain,
-                    '-verify_return_error',
-                ],
-                input: '',
-            ),
-            step: 'workload-certificate',
-            errorCode: 'app-dev.workload_certificate_invalid',
-            commandTimeout: 15,
-        );
+        AgentStep::run($this->agents, $router, 'routes.verify-certificate', [
+            'address' => $address,
+            'port' => 443,
+            'domain' => $route->domain,
+        ], 'workload-certificate', 'app-dev.workload_certificate_invalid', 'App development');
     }
 }

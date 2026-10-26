@@ -35,13 +35,13 @@ Provisioning, `node:converge`, and [repair](#repair-one-peer) apply the render. 
 
 Private Route, Cluster TLD, and Node TLD writes validate names in a serialized database transaction. A change is refused only if the rendered count increases beyond 512 domains. Deletion or rollback that keeps or reduces an already oversized count is allowed. The renderer also refuses invalid stored names or more than 512 domains before peer mutation, never truncating or using `~.`. systemd 259 allows 1,024 domains per link. Orbit reserves half that capacity so a complete replacement can allocate new domains before resolved removes old ones.
 
-Doctor reports `node.private_dns_uplink_missing` when no usable non-Orbit DNS server is configured. Reconcile reports `vpn.peer_dns_uplink_missing` by Node name. Doctor reports `node.private_dns_policy_mismatch` for drift and `node.private_dns_unreachable` when a private DNS query fails or returns the wrong Gateway address. `node.public_dns_unreachable` reports a failed uncached public lookup or one sent over `orbit`. Global `resolved.conf` DNS servers are valid public resolvers. SSH inspection failures are unverifiable (`node.inspection_failed`), not policy drift. Namespace changes can report temporary mismatch until the next successful scheduled pass.
+Doctor reports `node.private_dns_uplink_missing` when no usable non-Orbit DNS server is configured. Reconcile reports `vpn.peer_dns_uplink_missing` by Node name. Doctor reports `node.private_dns_policy_mismatch` for drift and `node.private_dns_unreachable` when a private DNS query fails or returns the wrong Gateway address. `node.public_dns_unreachable` reports a failed uncached public lookup or one sent over `orbit`. Global `resolved.conf` DNS servers are valid public resolvers. Doctor and reconcile read the peer through the [Node agent](/reference/node-agent#commands): `wireguard.inspect-peer-dns` takes one snapshot of the saved and live state under a shared peer lock, and `wireguard.query-dns` sends the uncached lookups. A failed read is unverifiable (`node.inspection_failed`), not policy drift. Namespace changes can report temporary mismatch until the next successful scheduled pass.
 
 The policy leaves `/etc/resolv.conf` and uplink DNS in place. Route-only suffixes make the private link ineligible as a default DNS route. Apply sets the private link's live default-route flag to false. PostUp sets its DNS server and route-only domains; after tunnel restart, resolved infers `no` from those domains. WireGuard endpoint overrides stay separate. The global VPN DNS server must also be a usable WireGuard-subnet address for managed peers.
 
 When repair moves an old underlay selection to `orbit`, it first requires a networkd-managed uplink. It removes the old transient DNS selection with `resolvectl revert` and preserves the uplink’s LLMNR, mDNS, DNSSEC, DNS over TLS, and negative trust anchors. It reconfigures the uplink through networkd to restore provider or DHCP DNS. It waits up to 15 seconds for networkd and resolved to expose a usable non-Orbit server.
 
-Every managed split apply requires a usable non-`orbit` per-link or global resolver before switching. If none exists, it refuses with exit 47 (`vpn.peer_dns_uplink_missing`) and retains or restores the previous DNS state. A durable transaction snapshot restores all preceding uplink resolver settings, including its default-route flag, if migration fails. Successful migration leaves the uplink default-route decision with networkd.
+Every managed split apply requires a usable non-`orbit` per-link or global resolver before switching. If none exists, it refuses with `vpn.peer_dns_uplink_missing` and retains or restores the previous DNS state. A durable transaction snapshot restores all preceding uplink resolver settings, including its default-route flag, if migration fails. Successful migration leaves the uplink default-route decision with networkd.
 
 A [Node without roles](/reference/node-provisioning#nodes-without-roles) keeps its client-owned `DNS =` line. macOS, the VPN holder, and the Gateway's separate bootstrap resolver are outside this managed peer policy. On a Mac outside the fleet, use [`dns:resolve`](/cli/dns) for a local override.
 
@@ -59,7 +59,7 @@ Read the saved state first to find the resolver link, server, and routing domain
 | `getent ahostsv4 example.com` | An ordinary name resolves through the provider or DHCP resolver. |
 | `ip route` | Application routes do not depend on the DNS selection. |
 
-Peer DNS programs use Bash and the base system tools, including awk; they do not require PHP on the peer. Routing domains travel in the script input, keeping the serialized SSH command small at the 512-domain cap.
+Peer convergence uses the agent's `wireguard.prepare-peer-key`, `wireguard.publish-peer`, `wireguard.commit-peer`, and `wireguard.rollback-peer` commands. Admission carries them over the pinned bootstrap SSH connection until the tunnel is verified, then uses the verified connection to finish the transaction. Repair and inspection use the same agent. Routing domains travel in the standard-input envelope, so the SSH command line stays small at the 512-domain cap.
 
 The `PostUp` hook restores the selection whenever the `orbit` interface starts. There is no `PreDown` hook, because systemd-resolved drops the link settings when WireGuard deletes the interface. The policy uses the `orbit` link, including with an explicit server override. Repair reads old underlay state only to migrate it. Native peer DNS repair refuses unmanaged targets with `vpn.peer_dns_unmanaged`. Explicit repair also refuses the Gateway. AppDev TLD convergence reports the refusal and leaves its bootstrap resolver unchanged.
 
@@ -202,7 +202,7 @@ An unreachable LAN address stays selected. Orbit does not fall back to WireGuard
 
 ## Repair one peer
 
-Run this command on the Gateway to update the resolver settings of one active managed Linux peer. It uses the saved WireGuard address and pinned SSH identity. Roles and the running tunnel stay the same.
+Run this command on the Gateway to update the resolver settings of one active managed Linux peer. It runs the [Node agent](/reference/node-agent#commands)'s `wireguard.repair-peer-dns` over SSH to the saved WireGuard address with the pinned identity. Roles and the running tunnel stay the same.
 
 ```bash
 php artisan orbit:node-dns-repair <node-name>
@@ -224,11 +224,11 @@ The command refuses a missing or inactive Node, a [Node without roles](/referenc
 
 Record the [inspect](#inspect-a-peer) commands, `systemctl is-active wg-quick@orbit`, each role's service state, and a fingerprint of `wg show orbit public-key` before and after the repair. The DNS server, routing domains, hooks, and saved DNS state can change. The key fingerprint, role services, tunnel state, application placement, and `ip route` stay the same.
 
-The repair takes `/run/lock/orbit-wireguard-peer.lock` and validates the proposed configuration. It backs up managed files, writes the hooks and DNS state, and then applies the resolver settings. Repeating the command gives the same result.
+The repair takes `/run/lock/orbit-wireguard-peer.lock`, the lock that peer convergence also takes, and validates the proposed configuration. It backs up managed files and records a `dns-repair-v2` transaction in `/etc/wireguard/.orbit.peer-transaction`. Then it writes the hooks and DNS state and applies the resolver settings. A refusal before publication leaves no candidate file. Repeating the command gives the same result.
 
 On the `orbit` link, it changes DNS servers and routing domains and sets `DefaultRoute=no`. It preserves LLMNR, mDNS, DNSSEC, DNS over TLS, and negative trust anchors. When it migrates an old underlay selection, networkd restores the uplink configuration.
 
-Each failure reports one code without remote command output.
+Each failure reports one code without remote command output. The agent refuses with a `wireguard.*` code, and the Gateway reports the `vpn.*` code of the same name.
 
 | Failure code | Result and recovery |
 | --- | --- |
@@ -239,9 +239,14 @@ Each failure reports one code without remote command output.
 | `vpn.peer_dns_state_unsupported`, `vpn.peer_dns_candidate_invalid` | Nothing is published. Inspect `orbit.conf` and `orbit.dns-link`, then fix the peer through normal provisioning. |
 | `vpn.peer_dns_apply_failed` | The command restored the previous files and resolver selection. Fix the DNS or systemd-resolved fault, then retry. |
 | `vpn.peer_dns_recovery_failed` | Recovery files stay under `/etc/wireguard`. Keep them, fix the fault, and retry the same repair. The retry restores the previous state first. |
-| `vpn.peer_dns_repair_failed`, `vpn.configuration_invalid` | The command reports no success. Fix SSH reachability or the Gateway VPN configuration, then retry. |
+| `vpn.peer_dns_uplink_missing` | The previous DNS state stays or is restored. Configure a non-Orbit per-link or global DNS server, then retry. |
+| `vpn.peer_dns_repair_failed`, `vpn.configuration_invalid` | The command reports no success. Fix SSH reachability, the agent, or the Gateway VPN configuration, then retry. |
 
-Peer convergence and repair save the live WireGuard configuration, DNS state, and service state before they publish. A failed change restores that state without resetting unrelated link settings. Recovery files under `/etc/wireguard` mean the last operation did not finish. Keep them for diagnosis. Do not edit `/etc/wireguard/orbit.key`, replace a private key, or restart the tunnel to repair DNS.
+Peer convergence and repair save the live WireGuard configuration, DNS state, and service state before they publish. The native publication command restores that state when it fails, without resetting unrelated link settings. Recoverable admission retains a successful publication until its continuation commits; a failed continuation requests rollback over its last verified connection. A lost publication result fails for inspection and is not retried. Recovery files under `/etc/wireguard` mean the last operation did not finish. Keep them for diagnosis. Do not edit `/etc/wireguard/orbit.key`, replace a private key, or restart the tunnel to repair DNS.
+
+Peer publication keeps its complete snapshot in the root-owned, mode-0600 `/etc/wireguard/.orbit.peer-transaction` JSON record. Commit removes that single record after verifying the live public key. Rollback stops the current tunnel before restoring the saved files, then restores its active and enabled state, live DNS servers, routing domains, resolver flags, and DNS symlink if present. This also restores an operator's DNS selection when no saved DNS-link file exists.
+
+The record must fit the same 2 MiB limit used to read it; an oversized snapshot refuses before publication. DNS repair refuses a peer publication record. Peer publication and rollback leave older or unrecognized recovery artifacts in place for inspection.
 
 ## Why it works this way
 

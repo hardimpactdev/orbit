@@ -13,25 +13,17 @@ use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\Sources\MetricsCaddySiteSource;
 use App\Infrastructure\Metrics\MetricsCertificatePublisher;
+use App\Infrastructure\Metrics\MetricsPublicationFirewall;
 use App\Infrastructure\Metrics\MetricsPublicationManager;
-use App\Infrastructure\Metrics\MetricsPublicationSshExecutor;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessRunner;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\Node;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\RecordingNodeCaddyBuilds;
 
 it('publishes the certificate and firewall, requests a Gateway build, and publishes DNS last', function (): void {
     $events = [];
     $manager = metrics_publication_manager(
         $events,
-        [metrics_publication_manager_result(stdout: metrics_publication_manager_firewall())],
         projection: new MetricsPublicationManagerProjectionOwner($events),
     );
 
@@ -44,7 +36,7 @@ it('publishes the certificate and firewall, requests a Gateway build, and publis
         'projection:enter',
         'certificate:issue',
         'process:certificate',
-        'ssh:status',
+        'firewall:converge',
         'build:gateway',
         'dns:metrics',
         'projection:leave',
@@ -57,7 +49,6 @@ it('writes no Caddy file on the Gateway itself', function (): void {
     $invocations = [];
     $manager = metrics_publication_manager(
         $events,
-        [metrics_publication_manager_result(stdout: metrics_publication_manager_firewall())],
         invocations: $invocations,
     );
 
@@ -69,7 +60,7 @@ it('writes no Caddy file on the Gateway itself', function (): void {
     expect($invocations)->not->toBeEmpty();
 
     foreach ($invocations as $invocation) {
-        expect(implode(' ', $invocation->arguments)."\n".($invocation->input ?? ''))
+        expect(json_encode($invocation, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
             ->not->toContain('orbit-versions')
             ->not->toContain('metrics.caddy');
     }
@@ -79,7 +70,6 @@ it('keeps its error code, names the build failure, and keeps the certificate a f
     $events = [];
     $manager = metrics_publication_manager(
         $events,
-        [metrics_publication_manager_result(stdout: metrics_publication_manager_firewall())],
         buildFailure: new NodeCaddyBuildException('gateway', 'reload', 'Error: loading new config'),
     );
 
@@ -91,19 +81,13 @@ it('keeps its error code, names the build failure, and keeps the certificate a f
             ->and($exception->details)->toBe(['node' => 'gateway', 'stage' => 'reload', 'message' => 'Error: loading new config']);
     });
 
-    expect($events)->toBe(['certificate:issue', 'process:certificate', 'ssh:status', 'build:gateway']);
+    expect($events)->toBe(['certificate:issue', 'process:certificate', 'firewall:converge', 'build:gateway']);
 });
 
 it('removes publication in DNS, build, firewall, certificate order', function (): void {
     $events = [];
     $manager = metrics_publication_manager(
         $events,
-        [
-            metrics_publication_manager_result(stdout: metrics_publication_manager_firewall()),
-            metrics_publication_manager_result(),
-            metrics_publication_manager_result(),
-            metrics_publication_manager_result(stdout: metrics_publication_manager_wireguard_firewall()),
-        ],
         projection: new MetricsPublicationManagerProjectionOwner($events),
     );
 
@@ -116,10 +100,7 @@ it('removes publication in DNS, build, firewall, certificate order', function ()
         'projection:enter',
         'dns:none',
         'build:gateway',
-        'ssh:status',
-        'ssh:delete',
-        'ssh:delete',
-        'ssh:status',
+        'firewall:remove',
         'process:certificate',
         'projection:leave',
     ]);
@@ -132,12 +113,6 @@ it('keeps the certificate when the Metrics role moved and its site still renders
     $events = [];
     $manager = metrics_publication_manager(
         $events,
-        [
-            metrics_publication_manager_result(stdout: metrics_publication_manager_firewall()),
-            metrics_publication_manager_result(),
-            metrics_publication_manager_result(),
-            metrics_publication_manager_result(stdout: metrics_publication_manager_wireguard_firewall()),
-        ],
     );
 
     $manager->remove(
@@ -145,7 +120,7 @@ it('keeps the certificate when the Metrics role moved and its site still renders
         metrics_publication_manager_node('metrics', '10.44.0.3'),
     );
 
-    expect($events)->toBe(['dns:none', 'build:gateway', 'ssh:status', 'ssh:delete', 'ssh:delete', 'ssh:status'])
+    expect($events)->toBe(['dns:none', 'build:gateway', 'firewall:remove'])
         ->and(new CaddySiteCertificates()->published(metrics_publication_manager_node('gateway', '10.44.0.1')->id, MetricsCaddySiteSource::CertificateSlug))->toBeTrue();
 });
 
@@ -155,7 +130,7 @@ it('retracts the Gateway side by building the Gateway before it removes the cert
     new CaddySiteCertificates()->record($gateway->id, MetricsCaddySiteSource::CertificateSlug);
     $events = [];
 
-    metrics_publication_manager($events, [])->retract(metrics_publication_manager_node('metrics', '10.44.0.3'));
+    metrics_publication_manager($events)->retract(metrics_publication_manager_node('metrics', '10.44.0.3'));
 
     expect($events)->toBe(['dns:none', 'build:gateway', 'process:certificate'])
         ->and(new CaddySiteCertificates()->published($gateway->id, MetricsCaddySiteSource::CertificateSlug))->toBeFalse();
@@ -165,7 +140,6 @@ it('retains projection ownership when DNS publication fails', function (): void 
     $events = [];
     $manager = metrics_publication_manager(
         $events,
-        [metrics_publication_manager_result(stdout: metrics_publication_manager_firewall())],
         failDns: true,
         projection: new MetricsPublicationManagerProjectionOwner($events),
     );
@@ -179,33 +153,38 @@ it('retains projection ownership when DNS publication fails', function (): void 
         ->toBe('projection:enter')
         ->and($events[array_key_last($events)])
         ->toBe('projection:leave')
-        ->and($events)->not->toContain('ssh:delete');
+        ->and($events)->not->toContain('firewall:remove');
 });
 
 /**
  * @param  list<string>  $events
- * @param  list<CommandResult>  $sshResults
- * @param  list<ProcessInvocation>  $invocations
+ * @param  list<array<string, mixed>>  $invocations  The input of each Metrics certificate agent call.
  */
 function metrics_publication_manager(
     array &$events,
-    array $sshResults,
     ?NodeCaddyBuildException $buildFailure = null,
     bool $failDns = false,
     ?DevelopmentProjectionOperationLock $projection = null,
     array &$invocations = [],
 ): MetricsPublicationManager {
-    $processes = new MetricsPublicationManagerProcessRunner($events, $invocations);
+    $agents = new FakeAgentCommandRunner()->answer('metrics.certificate', static function (array $input) use (&$events, &$invocations): array {
+        $invocations[] = $input;
+        $events[] = 'process:certificate';
+
+        return $input['operation'] === 'publish' ? ['change' => 'created', 'previous' => null] : [];
+    });
+
+    $agents->answer('metrics.publication-firewall', static function (array $input) use (&$events): array {
+        $events[] = 'firewall:'.$input['action']['operation'];
+
+        return ['changed' => true];
+    });
 
     return new MetricsPublicationManager(
         certificates: new MetricsPublicationManagerCertificateIssuer($events),
-        certificatePublisher: new MetricsCertificatePublisher($processes),
+        certificatePublisher: new MetricsCertificatePublisher($agents),
         builds: new RecordingNodeCaddyBuilds($events, $buildFailure),
-        firewall: new MetricsPublicationSshExecutor(
-            new MetricsPublicationManagerSshExecutor($events, $sshResults),
-            new MetricsPublicationManagerSshKeyProvider,
-            new MetricsPublicationManagerKnownHostsStore,
-        ),
+        firewall: new MetricsPublicationFirewall($agents, new CommandDeadline),
         dns: new MetricsPublicationManagerDns($events, $failDns),
         projection: $projection ?? new MetricsPublicationManagerProjectionOwner,
     );
@@ -222,51 +201,6 @@ function metrics_publication_manager_node(string $name, string $address): Node
     ]);
 }
 
-function metrics_publication_manager_result(string $stdout = "orbit-metrics-publication:created\n"): CommandResult
-{
-    return new CommandResult(0, $stdout, '', 1, false);
-}
-
-function metrics_publication_manager_firewall(): string
-{
-    return <<<'STATUS'
-        Status: active
-
-        [ 1] 10.44.0.3 3000/tcp on orbit ALLOW IN 10.44.0.1 # orbit:metrics-grafana-upstream
-        [ 2] 10.44.0.3 3000/tcp on orbit DENY IN Anywhere # orbit:metrics-grafana-isolation
-        [ 3] 10.44.0.3 on orbit ALLOW IN Anywhere on orbit # orbit:wireguard-members
-        STATUS;
-}
-
-function metrics_publication_manager_wireguard_firewall(): string
-{
-    return <<<'STATUS'
-        Status: active
-
-        [ 1] 10.44.0.3 on orbit ALLOW IN Anywhere on orbit # orbit:wireguard-members
-        STATUS;
-}
-
-final class MetricsPublicationManagerProcessRunner implements ProcessRunner
-{
-    /**
-     * @param  list<string>  $events
-     * @param  list<ProcessInvocation>  $invocations
-     */
-    public function __construct(
-        private array &$events,
-        private array &$invocations,
-    ) {}
-
-    public function run(ProcessInvocation $invocation): CommandResult
-    {
-        $this->invocations[] = $invocation;
-        $this->events[] = str_contains((string) $invocation->input, 'orbit-metrics-cert') ? 'process:certificate' : 'process:other';
-
-        return metrics_publication_manager_result();
-    }
-}
-
 final class MetricsPublicationManagerCertificateIssuer implements GatewayCertificateIssuer
 {
     /** @param list<string> $events */
@@ -277,54 +211,13 @@ final class MetricsPublicationManagerCertificateIssuer implements GatewayCertifi
     public function issue(string $domain, string $wireguardIp): GatewayCertificatePaths
     {
         $this->events[] = 'certificate:issue';
+        $directory = sys_get_temp_dir().'/orbit-metrics-manager-'.bin2hex(random_bytes(4));
+        mkdir($directory);
+        file_put_contents("{$directory}/metrics.key", "KEY\n");
+        file_put_contents("{$directory}/metrics.pem", "CERTIFICATE\n");
 
-        return new GatewayCertificatePaths('/ca/metrics.key', '/ca/metrics.pem');
+        return new GatewayCertificatePaths("{$directory}/metrics.key", "{$directory}/metrics.pem");
     }
-}
-
-final class MetricsPublicationManagerSshExecutor implements SshExecutor
-{
-    /** @param list<string> $events @param list<CommandResult> $results */
-    public function __construct(
-        private array &$events,
-        private array $results,
-    ) {}
-
-    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-    {
-        $arguments = $command->arguments;
-        $this->events[] = match (true) {
-            in_array('status', $arguments, true) => 'ssh:status',
-            in_array('insert', $arguments, true) => 'ssh:insert',
-            in_array('delete', $arguments, true) => 'ssh:delete',
-            default => 'ssh:unknown',
-        };
-
-        return array_shift($this->results) ?? metrics_publication_manager_result(stdout: '');
-    }
-}
-
-final readonly class MetricsPublicationManagerSshKeyProvider implements SshKeyProvider
-{
-    public function privateKeyPath(): string
-    {
-        return '/tmp/key';
-    }
-
-    public function publicKey(): string
-    {
-        return 'ssh-ed25519 key';
-    }
-}
-
-final readonly class MetricsPublicationManagerKnownHostsStore implements KnownHostsStore
-{
-    public function path(): string
-    {
-        return '/tmp/known-hosts';
-    }
-
-    public function put(string $host, int $port, HostKey $key): void {}
 }
 
 final class MetricsPublicationManagerDns implements PrivateDnsManager

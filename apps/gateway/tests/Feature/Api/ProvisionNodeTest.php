@@ -56,13 +56,16 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 if ($expectedSshHostFingerprint !== null) {
                     $node->update(['ssh_host_fingerprint' => $expectedSshHostFingerprint]);
                 }
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         });
 
@@ -102,9 +105,12 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         });
         $requestId = (string) Str::uuid();
@@ -170,9 +176,12 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         });
         app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
@@ -230,12 +239,15 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $this->calls++;
                 $this->publicSshHost = $node->public_ssh_host;
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         };
         app()->instance(NodeConverger::class, $converger);
@@ -281,11 +293,14 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $this->calls++;
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         };
         app()->instance(NodeConverger::class, $converger);
@@ -325,12 +340,15 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $this->expectedFingerprint = $expectedSshHostFingerprint;
                 $node->update(['ssh_host_fingerprint' => $this->observedFingerprint]);
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         };
         app()->instance(NodeConverger::class, $converger);
@@ -363,9 +381,12 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         });
         Node::query()->create([
@@ -451,11 +472,14 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $this->calls++;
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         };
         app()->instance(NodeConverger::class, $converger);
@@ -491,9 +515,12 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         });
         $cluster = Cluster::query()->create([
@@ -532,11 +559,14 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $this->calls++;
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         };
         app()->instance(NodeConverger::class, $converger);
@@ -623,9 +653,12 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
-                return new NodeObservation('aarch64');
+                $observation = new NodeObservation('aarch64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         });
 
@@ -649,9 +682,12 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
-                return new NodeObservation('aarch64');
+                $observation = new NodeObservation('aarch64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         });
 
@@ -741,7 +777,7 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $this->expectedFingerprint = $expectedSshHostFingerprint;
 
@@ -797,9 +833,12 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         });
         app()->instance(MetricsFleetReconciler::class, new class implements MetricsFleetReconciler
@@ -845,7 +884,7 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $node->update(['wireguard_public_key' => 'replacement-key']);
 
@@ -884,7 +923,7 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 throw new SshHostKeyScanException(
                     message: 'ssh-keyscan could not connect to the target',
@@ -952,9 +991,12 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         });
 
@@ -987,11 +1029,14 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $this->calls++;
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         };
         app()->instance(NodeConverger::class, $converger);
@@ -1083,7 +1128,7 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 throw new NodeProvisioningException(
                     step: 'base-host',
@@ -1137,11 +1182,14 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $this->identities[] = [$identity->bootstrapUser, $identity->managedUser];
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         });
         $common = ['architecture' => 'x86_64', 'host_key_fingerprint' => 'SHA256:'.str_repeat('A', 43)];
@@ -1185,11 +1233,14 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $this->calls++;
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         });
         foreach (['', ' ', 'bad/name', "bad\nname", '1name', str_repeat('a', 33)] as $invalid) {

@@ -3,11 +3,11 @@ title: "PHP runtimes"
 description: "How Orbit selects a PHP version for an Instance, runs shared development and dedicated production PHP-FPM services, and refreshes production OPcache."
 covers:
   - apps/gateway/app/Domain/Instances/{InstancePhpVersionCatalog,ComposerSourceClassifier,ProductionPhpRuntimeIdentity,ProductionPhpRuntimeManager}.php
-  - apps/gateway/app/Infrastructure/Instances/{RemoteProductionPhpRuntimeManager,RemoteProductionInstanceSourceLifecycle,ProductionPhpRuntimeConfigRenderer,ProductionPhpRuntimeConfiguration,ProductionRuntimeGenerationProgram}.php
+  - apps/gateway/app/Infrastructure/Instances/{RemoteProductionPhpRuntimeManager,RemoteProductionInstanceSourceLifecycle,ProductionPhpRuntimeConfigRenderer,ProductionPhpRuntimeConfiguration}.php
   - apps/gateway/app/Infrastructure/AppProd/{RemoteAppProdPhpFpmManager,RemoteAppProdSourceManager}.php
   - apps/gateway/app/Infrastructure/Nodes/{PhpFpmRuntimeIniRenderer,RemotePhpPackageManager}.php
   - apps/gateway/app/Infrastructure/AppDev/{DevelopmentPhpFpmConfigRenderer,RemoteAppDevPhpFpmManager}.php
-  - apps/gateway/app/Infrastructure/SharedOrbitDirectory.php
+  - apps/agent/src/commands/{php_runtime,php_doctor,php_profile,php_shared}.rs
 ---
 
 # PHP runtimes
@@ -23,6 +23,8 @@ The Gateway reads the source's `composer.json` once, before it publishes the run
 With root `apps/site/public`, the working directory for PHP-FPM is `<checkout>/apps/site` in development or `<production-home>/current/apps/site` in production; Caddy's document root remains the corresponding `apps/site/public`. Root `public` keeps the checkout or release root as the application working directory.
 
 Before the first production deployment, `current` is absent, so the dedicated pool starts in the application's directory under `releases/initial`. Once a deployment or rollback selects a release, Orbit reconciles the pool to the application's directory under `current` before refreshing its PHP cache. It validates the selected directory before starting or restarting FPM.
+
+The Gateway renders each production runtime's files. The [Node agent](/reference/node-agent#commands) checks and publishes them, as root, with `php.converge-production-runtime`; `php.remove-production-runtime` removes them, and `php.refresh-production-cache` refreshes the cache. Each command first checks the root-owned marker `/etc/orbit/php-fpm/<user>/orbit.identity`, and each takes the agent's lock `production-php:<user>`, so two changes to one runtime never overlap. Service metrics read the generated pool with `php.inspect-production-pool`, which takes no lock.
 
 The generated pool records the resolved release as a comment. A release switch changes those bytes and restarts that Instance's dedicated service, so existing workers cannot keep the previous release as their working directory. A confirmed no-op reconciliation does not restart the service.
 
@@ -71,20 +73,22 @@ Orbit does not recover missing source profiles on older Instances. [Projects: On
 
 ## Development runtime
 
-Development sites share the distribution service `php<version>-fpm`. Each application directory of an Instance has its own pool and socket: `orbit-app-instance-<id>` for the default directory, and a suffixed name for a directory that a [Route with a web root](/reference/routes#serve-several-web-roots) serves. The Gateway writes every Orbit pool for a version into one file, `/etc/php/<version>/fpm/pool.d/orbit-scopes.conf`, and rewrites it from stored state at each PHP-FPM convergence on the Node. Instance creation, transfer, and removal run that convergence.
+Development sites share the distribution service `php<version>-fpm`. Each application directory of an Instance has its own pool and socket: `orbit-app-instance-<id>` for the default directory, and a suffixed name for a directory that a [Route with a web root](/reference/routes#serve-several-web-roots) serves. The Gateway renders desired pools from stored state. The native `php.converge-shared-pools` command publishes each version into `/etc/php/<version>/fpm/pool.d/orbit-scopes.conf`. Instance creation, transfer, and removal run that convergence.
+
+The read-only `php.inspect-shared-pools` command reports missing working directories and the versions whose desired pools can run. Doctor uses the same read. The Gateway installs those versions, then calls `php.converge-shared-pools` once with all desired configurations. When no shared pools remain desired, the Gateway sends an empty configuration directly, without account, inspection, or package preflights. The mutation holds one Node-wide shared-pool lock while it discovers installed state, retires pools that move between versions, activates their replacements, and recovers failures. It never sends installed configuration back to PHP for parsing.
 
 One PHP-FPM convergence runs these steps:
 
 1. It reads each `orbit-scopes.conf`. As root, it checks the working directory (`chdir`) of every installed pool and of every pool that stored state renders.
 2. It skips a pool whose working directory is missing. [Doctor](#doctor) reports that pool.
-3. It installs the [PHP build](#php-build) and enables `php<version>-fpm`. It does not start the service. A stale pool can keep PHP-FPM from starting, but it cannot block the step that removes it.
-4. For each version, it renders the candidate file, copies the other pool files beside it, and validates the whole set with `php-fpm<version> -t`.
-5. It moves a changed candidate into place and reloads the service. The reload also starts a stopped or failed service.
+3. It installs the [PHP build](#php-build) without starting the service. A stale pool can keep PHP-FPM from starting, but it cannot block the step that removes it.
+4. It stages each version's desired pools with the other pool files and validates every set with `php-fpm<version> -t` before publication.
+5. It moves changed candidates into place, enables the services, and reloads them. The reload also starts a stopped or failed service.
 6. It starts a stopped or failed service whose file is already current.
-7. If the service fails with the new file, it restores the previous file and reloads again. A version that changed earlier in the same convergence also gets its previous file back.
+7. If publication or activation fails, it restores touched versions in reverse order with their prior file modes and service state.
 8. A convergence that skipped a pool fails with `app-dev.php_pool_directory_missing` after it publishes every version. The error names the pool.
 
-Step 3 downloads nothing when every package is already at its recipe version.
+Step 3 downloads nothing when every package is already at its recipe version. A failed restoration reports `php.shared_pool_recovery_failed`; the Gateway maps it to the existing runtime failure.
 
 A restored file leaves out a pool whose working directory is gone, because that file could never pass `php-fpm -t` again. The final error makes Instance creation, deployment, transfer, and a Project root change report the missing directory. Without it, they would succeed and leave a site that answers `502`.
 
@@ -92,7 +96,7 @@ PHP-FPM refuses to start while any pool names a missing `chdir`, so one such poo
 
 Instance removal runs this convergence for every development Instance, also when the Instance never became active or its Route was destroyed first. It runs after the Route target is cleared and before the checkout is deleted. At that point stored state renders no pool for the Instance, so the convergence removes the pool and reloads PHP-FPM while its directory still exists. See [Instance removal](/reference/instance-removal#runtime-cleanup).
 
-Orbit publishes one module per version at `/etc/php/<version>/mods-available/orbit-runtime.ini` and enables it for FPM only, as `/etc/php/<version>/fpm/conf.d/99-orbit-runtime.ini`. The CLI keeps stock settings. At each convergence, the Gateway compares the module with the installed file, repairs the link, and reloads a running service only when the module or its enablement changed and the installed pools pass `php-fpm<version> -t`. Otherwise the pool publication reloads it.
+Orbit publishes one module per version at `/etc/php/<version>/mods-available/orbit-runtime.ini` and enables it for FPM only, as `/etc/php/<version>/fpm/conf.d/99-orbit-runtime.ini`. The CLI keeps stock settings. At each convergence, the native `php.configure-runtime` command compares the module with the installed file, repairs the link, and reloads a running service only when the module or its enablement changed and the installed pools pass `php-fpm<version> -t`. Otherwise the pool publication reloads it.
 
 A development pool checks every file on every request, so a saved file is served at once:
 
@@ -117,7 +121,9 @@ Each production Instance that serves PHP has a dedicated service for its Unix us
 
 A [Route with a web root](/reference/routes#web-roots-on-production) adds a pool for its application directory to the same master: `orbit-<production-user>-<suffix>`, with socket `/run/php/<production-user>.<suffix>.sock` and its working directory under `current`. The suffix is the same hash of the relative directory as in development. The generated pool file holds that pool's process settings, because `local.conf` tunes only the default pool. Convergence refuses a pool whose directory is not inside a release, and checks each socket after a start. Without such a Route, the generated files are unchanged. All pools share the master's OPcache, so one cache refresh covers them.
 
-Orbit seeds `local.conf` with its defaults for a new service. After that, provisioning, retries, updates, and removal never change it. The generated files set the identity: the user, pool, socket, PHP version, home, and application path. Before it starts or reloads the service, the Gateway validates the effective configuration. It refuses a `local.conf` that changes the identity. It never adopts an existing user, service, socket, or file that belongs to something else.
+Orbit seeds `local.conf` with its defaults for a new service. After that, provisioning, retries, updates, and removal never change it. Removal keeps the ownership marker beside the tuning, so the same runtime can be created again without adopting an unowned file. A different identity still refuses.
+
+The generated files set the identity: the user, pool, socket, PHP version, home, and application path. Before it starts or reloads the service, the Rust agent validates the effective configuration. It refuses a `local.conf` that changes the identity, including a `chroot` directive. Doctor uses the same tuning rule. It never adopts an existing user, service, socket, or file that belongs to something else.
 
 A failed start restores the generated files and service state from before the change. An interrupted change resumes from the recorded identity.
 
@@ -150,7 +156,7 @@ The Gateway's own `orbit-gateway` pool uses 8 children and a 600-second request 
 
 A production master keeps compiled code until a cache refresh. Each [deployment](/reference/deployments) and rollback refreshes the cache of its own service:
 
-1. The Gateway checks that the service is active and owns the expected socket.
+1. The Node agent checks that the service is active and owns the expected socket.
 2. It asks for `opcache_reset()` through that socket, inside the service. The FastCGI request sets the parameter `ORBIT_OPCACHE_ACTION=reset`. A request without it only reads the cache status.
 3. It reports success only after a later request shows the reset finished.
 
@@ -167,7 +173,7 @@ The refresh never touches another Instance's socket and never reloads a service.
 
 On every Node with an active `app-dev` or `app-prod` role, [Doctor](/cli/doctor) reports `role.php_pool_directory_missing` for each Orbit pool whose working directory is missing. It reports the issue on the `app-dev` role, or else on `app-prod`. A pool in a live `orbit-scopes.conf` with a missing directory stops that PHP version from starting at its next restart; the next PHP-FPM convergence on the Node removes it. A pool that only stored state renders is skipped by convergence until its directory exists.
 
-Doctor also checks that each production PHP Instance has one service, pool, and socket, and shares none of them. It compares the generated files and rejects a `local.conf` that changes the identity. It also checks the service's `ExecStart` and `PHP_INI_SCAN_DIR`, the master process, its socket, and the user and parent of each worker. An idle pool with no workers is valid.
+The read-only `doctor.inspect-production-instance` agent command compares the Node state. It shares pool selection and generation receipt checks with PHP runtime convergence. Doctor also checks that each production PHP Instance has one service, pool, and socket, and shares none of them. It compares the generated files and rejects a `local.conf` that changes the identity. It also checks the service's `ExecStart` and `PHP_INI_SCAN_DIR`, the master process, its socket, and the user and parent of each worker. An idle pool with no workers is valid.
 
 Doctor reads only. It never starts PHP-FPM, sends a request, reloads a service, or resets a cache. It does not compare allowed tuning with Orbit's defaults. A process that exits while Doctor reads it is not drift. When Doctor cannot read a required fact, it reports `instance.inspection_failed`.
 

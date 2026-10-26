@@ -2,14 +2,14 @@
 title: "Node provisioning"
 description: "How node:add bootstraps or converges a Node, how roles share and lock a Node, how the Orbit CLI and footprint reach it, and how node:remove hands it back."
 covers:
-  - apps/gateway/app/Actions/Nodes/{ProvisionNodeAction,EnrollMacOsNodeAction,RemoveNodeAction,AddNodeRoleAction,RemoveNodeRoleAction,AssignRoleAction}.php
-  - apps/gateway/app/Infrastructure/{WireGuard/NativeGatewayPeerProjectionManager.php,Gateway/NativeGatewayCaddyInstaller.php,Nodes/{Roles/CiRunnerRoleBaseline,CiRunnerHostProgram,NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackage*,RemotePhpPackageManager,NodeLocks,NodeLock}.php}
+  - apps/gateway/app/Actions/{Gateway/BootstrapGatewayAction.php,Nodes/{ProvisionNodeAction,EnrollMacOsNodeAction,RemoveNodeAction,AddNodeRoleAction,RemoveNodeRoleAction,AssignRoleAction}.php}
+  - apps/gateway/app/Infrastructure/{WireGuard/{NativeGatewayPeerProjectionManager,NativeGatewayVpnConverger}.php,Gateway/{NativeGatewayCaddyInstaller,NativeGatewaySelfAccessConverger}.php,Nodes/{Roles/{CiRunnerRoleBaseline,NativeNodeRoleFirewallManager},CiRunnerHostProgram,NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackage*,RemotePhpPackageManager,NodeLocks,NodeLock}.php}
   - apps/gateway/app/Console/Commands/{ProvisionNodeCommand,ConvergeNodeRecipeCommand}.php
-  - apps/gateway/{app/{Actions/Fleet/ConvergeNodeRecipeAction.php,Data/Fleet/NodeRecipePlan.php,Infrastructure/MachineSoftware/NodeRecipe*.php,Domain/Nodes/RoleRegistry.php},resources/remote/lib/recipe.py}
+  - apps/gateway/{app/{Actions/Fleet/ConvergeNodeRecipeAction.php,Data/Fleet/NodeRecipePlan.php,Infrastructure/MachineSoftware/NodeRecipe*.php,Domain/Nodes/RoleRegistry.php}}
   - apps/gateway/app/Infrastructure/{Firewall/NodeFirewallRuleCatalog,Ssh/NativeSshExecutor,Ssh/SshConnection,Ssh/SshHostKeyScanner,Ssh/HostKeyScanner}.php
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/gateway/app/{Infrastructure/Nodes/*Cli*.php,Domain/Nodes/NodeCli*.php,Domain/Fleet/NodeFootprint*.php,Domain/Fleet/NodeCliConvergence.php,Infrastructure/Fleet/Footprint/**,Actions/Fleet/ConvergeNodeFootprintAction.php,Http/Controllers/Api/NodeFootprintsController.php}
-  - apps/gateway/resources/remote/ci-runners/**
+  - apps/agent/src/commands/{ci_runner.rs,recipe.rs,recipe/**,php_build.rs,php_build/**,gateway_identity.rs,gateway_identity/**}
 ---
 
 # Node provisioning
@@ -25,15 +25,17 @@ For Ubuntu, the Gateway records the Node as `provisioning` and runs these steps 
 | Step | Work |
 | --- | --- |
 | 1 | Check the host key against the fingerprint. |
-| 2 | Connect as the bootstrap user, install the base packages, create the managed user, add its SSH key, and grant passwordless sudo. |
-| 3 | Connect as the managed user and read the machine architecture. |
+| 2 | Validate and record the candidate architecture. Install the pinned agent through the bootstrap login, then run `nodes.bootstrap` for base packages and managed SSH access. |
+| 3 | Connect as the managed user and verify the architecture with `agent.status`. |
 | 4 | Publish the Node's WireGuard peer and pin SSH over the tunnel. |
-| 5 | Record the architecture, install the `apt` [Tool Manager](/reference/tools#tool-managers), and converge each requested role. |
+| 5 | Install the `apt` [Tool Manager](/reference/tools#tool-managers) and converge each requested role. |
 | 6 | Update Router LAN access and private DNS for the Node's Cluster. |
 | 7 | Mark the Node `active`. |
 | 8 | Store and prepare the [storage settings](/reference/node-settings). |
 | 9 | Reconcile the [Metrics exporters](/reference/metrics#exporter-selection). A [task VM](/reference/compute-drivers#task-vms) skips this step. |
-| 10 | Install or upgrade the [Node agent](/reference/node-agent), at step `agent`. |
+| 10 | Configure the [Node agent observer](/reference/node-agent) with its Node identity and secret, at step `agent`. |
+
+`nodes.bootstrap` creates a missing managed account, adds its SSH key, and validates passwordless sudo before publishing the rule. It preserves existing home and directory modes and refuses linked access paths.
 
 A [task VM's enrollment trusts its base image](/reference/compute-drivers#skip-what-the-image-holds) for the `app-dev` software. It keeps the VM-specific host key, WireGuard, firewall, Caddy, DNS, agent and secret, and Pi steps. Every other Node runs every program at enrollment.
 
@@ -46,7 +48,13 @@ Task checkout operations require systemd 250 or newer, cgroup v2, and the manage
 
 After the agent, the Gateway installs the [Orbit CLI](#orbit-cli) on a Node of the [fleet rollout set](/reference/gateway-recovery#rollout-set-and-order). A role converge does the same after its agent converge. Both are best effort: an unpublished CLI release or a failed install only logs a warning, and the fleet catch-up installs the CLI later.
 
-The Gateway console command `orbit:node-provision` runs the same steps for the first Node. On failure, `--diagnostics` includes a redacted command-output tail: at most 40 lines and 4,000 characters. The topology harness uses it to report the prerequisite error. Role firewall state comes from the shared Node firewall rule catalog, keeping initial provisioning and later role reconciliation consistent.
+The Gateway console command `orbit:node-provision` runs the same steps for the first Node. On failure, `--diagnostics` includes a redacted command-output tail, or the underlying exception messages when no command output exists: at most 40 lines and 4,000 characters. The topology harness uses it to report the prerequisite error. Role firewall intent comes from the shared Node firewall rule catalog. The agent's `firewall.rules` command checks ownership, preserves recovery SSH before enabling UFW, applies desired rules, and removes exact old rules under one firewall lock. Admission calls it over the pinned bootstrap connection; later role work uses the WireGuard connection.
+
+Gateway bootstrap installs the pinned agent before preparing its host identity. `gateway.prepare-identity` creates the managed SSH and WireGuard keys under the Gateway's Orbit home, preserving existing private keys on repeat. `gateway.converge-self-access` authorizes the managed public key for the executing account and returns the host public key and fingerprint. Both commands run as the Gateway account. Invalid paths, foreign ownership, and inconsistent existing keys refuse before publication. The Gateway retains its CA authority and known-host records as control-plane data.
+
+Observer configuration follows once the Gateway is active. `firewall.gateway-vpn` checks all desired and recovery rule ownership before mutation. On an inactive firewall, it proves the stored public SSH recovery rule in both address families before enabling UFW. It applies and verifies the VPN rules before removing recovery SSH. The command holds the firewall lock across these steps. Private DNS publication keeps its separate convergence step.
+
+`wireguard.bootstrap-hub` validates the rendered hub configuration, installs IPv4 forwarding, and restarts `wg-quick@orbit`. It shares configuration publication and recovery with `wireguard.project-hub`, which applies peer changes without restarting an active interface. Both commands hold the same hub target lock. The agent rejects WireGuard shell hooks before writing files. The Gateway retains peer selection, configuration rendering, and the projection lock that protects that selection.
 
 Router LAN reconciliation expands and prunes HTTPS and both DNS transport families together, using the same proposed member eligibility. A failure before membership or Cluster state commits leaves the previous state authoritative. If pruning fails after the commit, the committed state remains authoritative and the command reports cleanup failure; stale rules may remain. Restoring a preceding firewall snapshot does not roll back database state.
 
@@ -67,7 +75,7 @@ Name a bootstrap user with `--user` when root cannot log in, or when the managed
 
 ### Machine architecture
 
-After it connects as the managed user, the Gateway reads the architecture with `uname -m`, such as `x86_64` or `aarch64`. A Node without a recorded architecture stores it. The value stays even when a later step fails. An existing Node keeps its recorded value. An explicit `--architecture` for a new Node must equal the observed value. A mismatch fails with `node.architecture_mismatch` (HTTP 409) at step `machine-architecture`, before any role converges.
+Before staging the first agent binary, the runner selects its platform and architecture with a fixed `uname -sm` probe over the pinned bootstrap connection. After bootstrap, `agent.status` verifies the same architecture as the managed user. A Node without a recorded architecture stores it. The value stays even when a later step fails. An existing Node keeps its recorded value. An explicit `--architecture` for a new Node must equal the observed value. A mismatch fails with `node.architecture_mismatch` (HTTP 409) at step `machine-architecture`, before agent installation or any role convergence.
 
 ### Failure codes
 
@@ -99,7 +107,7 @@ Each failure names the check or step that stopped the request.
 
 `orbit node:role:add <node> ci-runner` prepares a Linux Node to host GitHub Actions runners in unprivileged Incus containers. The role is not a singleton or relocatable. Add it to an enrolled Node through the normal role-add path; `node:add --role` does not accept it. It can share every role except `gateway` and `vpn`, which hold fleet trust anchors. A Node that serves CI alone needs no app role, TLD, or Cluster. Beast can keep its app and database roles. Shark needs only `ci-runner` for CI; removing its existing roles is a separate operator decision.
 
-The role installs Incus and prepares the restricted `orbit-ci` project, the `orbitci0` bridge, the `orbit-ci-egress` ACL, and the default runner profile. The profile sets 6 CPUs, 12 GiB of memory, 8192 processes, and autostart, with privilege and nesting disabled. The project permits only that bridge and forbids VMs and host disk devices. The role uses the existing `default` storage pool, or creates a directory pool when it is absent. It never changes an existing pool or bridge IPv4 subnet. Incus chooses a subnet for a new bridge.
+The role installs Incus, and the agent's `ci-runners.host` prepares the restricted `orbit-ci` project, the `orbitci0` bridge, the `orbit-ci-egress` ACL, and the default runner profile. The profile sets 6 CPUs, 12 GiB of memory, 8192 processes, and autostart, with privilege and nesting disabled. The project permits only that bridge and forbids VMs and host disk devices. The role uses the existing `default` storage pool, or creates a directory pool when it is absent. It never changes an existing pool or bridge IPv4 subnet. Incus chooses a subnet for a new bridge.
 
 The ACL permits public IPv4 egress and rejects private, CGNAT, loopback, link-local, multicast, reserved IPv4, and all IPv6. Incus permits bridge DNS and DHCP before the ACL; this boundary does not claim to block those services. The normal managed firewall catalog owns the routed allowance on `orbitci0`, including adoption of the existing `orbit-ci-runners` comment. Role convergence repairs the project, profile, ACL, bridge settings, and managed firewall rule. Doctor checks their projection, packages, service, and firewall. Task VM stray checks recognize the role's project without an `operator_owned` entry.
 
@@ -127,7 +135,7 @@ Convergence also backs up and removes the NodeSource `nodejs` and `nsolid` prefe
 
 Vite+ caches and running processes are separate: update project pins, deploy retained releases, and restart affected services before retiring old cached runtimes.
 
-Recipe Node uses the same [immutable store layout](/reference/tools#project-environments-in-the-vite-store) as deploy prerequisites. A matching real runtime stays in place on convergence. A link into the former recipe directory or a runtime without the recipe reference is reported as needing verified installation even when its Node version is current. Convergence calls the store publisher as the enrolled account. It migrates all former recipe links to real directories with normalized modes, keeps their old targets for running processes, and records a reference that protects only the current runtime from deployment cleanup.
+Recipe Node uses the same [immutable store layout](/reference/tools#project-environments-in-the-vite-store) as deploy prerequisites. A matching real runtime stays in place on convergence. A link into the former recipe directory or a runtime without the recipe reference is reported as needing verified installation even when its Node version is current. Convergence publishes the store with the enrolled account as its owner. It migrates all former recipe links to real directories with normalized modes, keeps their old targets for running processes, and records a reference that protects only the current runtime from deployment cleanup.
 
 Older migrated versions remain adopted content. A link is briefly absent between unlink and directory rename; avoid process restarts during migration. Recipe installation refuses unrelated links or differing real content without deleting them.
 
@@ -135,15 +143,17 @@ On the Gateway, run `php artisan node:converge-recipe <node> [--recipe=sha256:<d
 
 The command requires an active managed Ubuntu Node and a supported architecture. It unions the Node's active role profiles, including common tools once. A Node without roles uses `operator`. The service-role profiles match the existing role prerequisite catalog. A prerequisite absent from the recipe, an unsupported artifact, or an incompatible managed Tool constraint stops the operation before package changes. It never installs the base image's development-only tool set on a production Node.
 
+The Gateway sends those pins and the enrolled account to `recipe.inspect`, `recipe.incus-preflight`, and `recipe.apply` through the agent runner. Rust owns package inventory, origin proof, source retirement, verified downloads, runtime installation, and service checks. The applying command holds the package resource lock. It removes its temporary package restart policy on failure or graceful interruption and reserves cleanup time before its command deadline.
+
 Docker CE refuses both a dry run and application with `node.recipe_docker_provider` and reason `docker-provider:docker-ce`. Convergence does not stop containers or replace that provider. Follow the [Docker migration runbook](/reference/docker-provider-migration) during a planned window.
 
 The `ci-runner` role selects its recipe tool set through the same role union as other roles. Roleless Nodes use `operator`. Recorded profiles have no effect.
 
 `--dry-run` reads installed versions and managed Tool intent, then prints JSON with the snapshot, recipe identity, selected tools, recipe versions, observed versions, satisfaction status, and planned changes. An `unsupported_newer` tool includes `refusal: origin:<tool>` and plans no downgrade. Ubuntu packages use the [version floor and origin checks](/reference/compute-drivers#recipe-schema); Sury PHP builds stay exact.
 
-A dry run writes no files, refreshes no apt indexes, takes no remote lock, and restarts nothing. Dependencies are resolved from the snapshot during application; the dry-run lists explicit package and tool changes, not an apt dependency simulation. It reads Vite+ metadata and exact cached runtimes directly. An unknown version is `null` and plans an installation; it never invokes a moving runtime shim or an uninitialized Vite+ binary.
+A dry run changes no host configuration, installed packages, or system APT indexes. Origin verification can fetch authenticated indexes into a temporary directory, which it removes afterward. It takes no remote lock and restarts nothing. Dependencies are resolved from the snapshot during application; the dry-run lists explicit package and tool changes, not an apt dependency simulation. It reads Vite+ metadata and exact cached runtimes directly. An unknown version is `null` and plans an installation; it never invokes a moving runtime shim or an uninitialized Vite+ binary.
 
-Application shares the role-converge and self-update locks with Node convergence and fleet rollout. It holds the existing Tool Manager scope locks while applying and checking the recipe. At preflight it repairs only the exact snapshot source file written by earlier Orbit convergence, restoring stock Ubuntu archive, updates, backports, and security sources, or ports on arm64. It preserves other source content.
+Application shares the role-converge lock with Node convergence and fleet rollout. It holds the existing Tool Manager scope locks while applying and checking the recipe. Each binary installer takes the self-update lock for its own replacement; package work and Doctor do not hold that lock. At preflight it repairs only the exact snapshot source file written by earlier Orbit convergence, restoring stock Ubuntu archive, updates, backports, and security sources, or ports on arm64. It preserves other source content.
 
 Every applying run refreshes these Ubuntu pockets through a temporary Ubuntu-only source file, whether or not preflight repaired `ubuntu.sources`. An unrelated third-party source cannot block convergence. A failed Ubuntu refresh still stops convergence. Even a Node configured with a regional mirror must reach `archive.ubuntu.com` and `security.ubuntu.com` on amd64, or `ports.ubuntu.com` on arm64.
 
@@ -171,7 +181,7 @@ Services from unpinned dependency packages, such as `incus.service` or `wg-quick
 
 If a unit fails the active check, convergence accepts a loaded unit that completed successfully (`ActiveState=inactive`, `Result=success`). It also accepts a unit when the shared task-unit proof shows it is not loaded, is inactive, has no cgroup, and has no pending job. A failed state read, any other non-loaded state, or an unsuccessful completion stops convergence.
 
-The fleet verifier checks Node and role requirements with no tolerated preexisting issues. The command stops at the first failure and reports the failed stage with a nonzero exit code. It makes no automatic rollback. Package application is not retried; Doctor uses the fleet verifier’s settling checks.
+The fleet verifier checks Node and role requirements with no tolerated preexisting issues. Then `recipe.verify-delivery` takes the self-update lock and checks the installed agent digest and CLI version against the delivery selected before application. Only its passing result supplies the recipe identity to record. An unavailable CLI release refuses before application; a mismatch or busy update lock leaves no success marker. The command stops at the first failure and reports the failed stage with a nonzero exit code. It makes no automatic rollback. Package application is not retried; Doctor uses the fleet verifier’s settling checks.
 
 A failed command reports its recipe stage, exit code, and bounded, redacted output in the convergence error. A failure during package installation also reports the attempted packages. APT source validation reports the source or backup path and the reason, including malformed fields, mixed provider entries, and symlinks. These reasons use the same bounded, redacted diagnostic envelope. No automatic retry or rollback runs.
 
@@ -203,16 +213,17 @@ The Gateway does not record a new Node until enrollment succeeds or a remote che
 | --- | --- | --- |
 | 1 | `ssh-host-key` | Resolve the host and compare its key with the approved fingerprint. Do not pin the key yet. |
 | 2 | `account` | SSH as the existing account. Create no user and change no sudoers file. |
-| 3 | `machine-architecture` | Read `uname -s` and `uname -m`. Refuse a platform or architecture disagreement. |
-| 4 | `identity` | Verify the WireGuard address on the machine. Do not write the registry yet. |
-| 5 | `ssh-pin` | Write the approved host key to the Gateway known_hosts file for the public host and the WireGuard address. |
-| 6 | `active` | Store the host key, fingerprint, observed identity, and `active` status. Skip apt, roles, firewall, DNS, exporters, and the Node agent. |
+| 3 | `machine-architecture` | Use the fixed staging probe to select the macOS agent artifact. Refuse a different platform before staging. |
+| 4 | `agent` | Stage the pinned binary in a unique absolute temporary path and run `agent.install` as the enrolled account. |
+| 5 | `identity` | Call `nodes.inspect-macos-enrollment` to verify the native platform, architecture, and WireGuard address. Do not write the registry yet. |
+| 6 | `ssh-pin` | Write the approved host key to the Gateway known_hosts file for the public host and the WireGuard address. |
+| 7 | `active` | Store the host key, fingerprint, observed identity, and `active` status. Skip apt, roles, firewall, DNS, exporters, and the observer service. |
 
 `uname -s` must be Darwin. A Linux host requested as macOS fails with `node.platform_mismatch` before any account, package, DNS, or firewall change.
 
 ### Enrollment recovery
 
-A failed check changes nothing on the Mac. Retry with the same `node:add`. The retry does not run the Ubuntu bootstrap. The Gateway writes known_hosts before the registry pin. A known_hosts entry with no registry pin is harmless, and the retry completes it. The registry never stores an active pin without those entries.
+A failed native check can leave the pinned command binary installed on the Mac. It changes no account, package manager, tunnel, DNS, or firewall state. Retry with the same `node:add`. The retry does not run the Ubuntu bootstrap. The Gateway writes known_hosts before the registry pin. A known_hosts entry with no registry pin is harmless, and the retry completes it. The registry never stores an active pin without those entries.
 
 | Failure | New Node | Existing peer |
 | --- | --- | --- |
@@ -277,9 +288,11 @@ Doctor checks a Node without roles like any other Node when the Gateway has a pi
 
 The Gateway can enroll a Node that it reaches only through another Node. [Task VMs](/reference/compute-drivers#task-vms) use this: a task VM has only a private address on its Incus host's bridge. The jump is internal. `node:add` and the API have no field for it.
 
-The Node records the jump Node in `ssh_jump_node_id`. While the Node has no active role, SSH to its public address goes through an `ssh` hop to the jump Node, as `<managed user>@<WireGuard address>:22` of the jump Node. The hop uses the same key, pinned host keys, and strict options as the command. See [An explicit hop, not ProxyJump](#an-explicit-hop-not-proxyjump). The host key scan runs `ssh-keyscan` on the jump Node, and the scanned key must match the expected fingerprint. A task VM's fingerprint comes from its host, before any code in the VM runs.
+The Node records the jump Node in `ssh_jump_node_id`. While the Node has no active role, SSH to its public address goes through an `ssh` hop to the jump Node, as `<managed user>@<WireGuard address>:22` of the jump Node. The hop uses the same key, pinned host keys, and strict options as the command. See [An explicit hop, not ProxyJump](#an-explicit-hop-not-proxyjump).
 
-Commands through a jump Node share one connection too, once the Node's host key is pinned. Nodes behind different jump Nodes can have the same private address, and a new Node can reuse an address. So that connection is named after the jump Node, the target, and the target's pinned host key fingerprint. Before the key is pinned, each command opens its own connection. A jump Node without a WireGuard address fails with `vpn.peer_address_missing` before SSH.
+The read-only `nodes.scan-host-key` agent command scans and fingerprints the target on the jump Node, or on the serving Gateway when no jump is needed. It prefers Ed25519, then ECDSA P-256, then RSA. The target needs no installed agent. The Gateway compares the result with the expected fingerprint before pinning it or installing anything on the target. A task VM's expected fingerprint comes from its host, before any code in the VM runs.
+
+When the Node's host key is pinned, commands through its jump Node share one connection. Nodes behind different jump Nodes can have the same private address, and a new Node can reuse an address. So that connection is named after the jump Node, the target, and the target's pinned host key fingerprint. Before the key is pinned, each command opens its own connection. A jump Node without a WireGuard address fails with `vpn.peer_address_missing` before SSH.
 
 The enrollment steps are the same as for any Node. When the first active role closes public SSH, the Gateway reaches the Node over WireGuard and ignores the jump. A Node without a jump Node connects directly, as [SSH connections](#ssh-connections) describes.
 
@@ -314,7 +327,7 @@ Every Node of the [fleet rollout set](/reference/gateway-recovery#rollout-set-an
 
 This is the layout `orbit self-update` keeps, so either one can update what the other installed. The profile holds no secret. The Gateway identifies the Node by its WireGuard address, as for every CLI call, and its certificate covers that address. `sudo orbit self-update` reads root's profile.
 
-The step reads the link path first, as the managed user, never as root. A link may name only an `orbit-0.N.0` file beside it, without `/` or `..`. The file must be a `root`-owned ELF executable. Only then does the step run it with `--version`, which must print `Orbit 0.N.0` or, for a pre-release build, `Orbit <40-character commit>`.
+The agent's `cli.install` runs the step, and `cli.inspect` reads the link alone. Both read the link path first and run a found binary as the managed user, never as root. A link may name only an `orbit-0.N.0` file beside it, without `/` or `..`. The file must be a `root`-owned ELF executable. Only then does the step run it with `--version`, which must print `Orbit 0.N.0` or, for a pre-release build, `Orbit <40-character commit>`.
 
 | Found | Result |
 | --- | --- |
@@ -323,7 +336,7 @@ The step reads the link path first, as the managed user, never as root. A link m
 | An Orbit CLI without `self-update`, such as a pre-release build | An older CLI. Install the release as for a missing one, and keep the old file as `orbit.orbit-previous` |
 | Another link, a script, another program, or a file another user owns | Refuse with `cli.foreign_binary` without running a script. The fleet rollout leaves the Node out as `foreign_cli` until an operator moves the file aside |
 
-The step reads the path again under the Node's update lock before it installs, because a self-update may have changed it meanwhile. The download, the move, and the link switch run under that lock, `/run/lock/orbit-self-update.lock`, which `orbit self-update` holds too ([Node agent](/reference/node-agent#install-and-upgrade)). A checksum mismatch deletes the candidate and fails with `cli.checksum_mismatch`; the link stays as it was. Then the step writes root's profile when it differs.
+The agent takes the Node's update lock, `/run/lock/orbit-self-update.lock`, before it installs, and reads the path again under it, because a self-update may have changed it meanwhile. The download, the move, and the link switch run under that lock, which `orbit self-update` holds too ([Node agent](/reference/node-agent#install-and-upgrade)). A self-update that keeps it longer than 300 seconds fails the step with `node.update_busy`. A checksum mismatch deletes the candidate and fails with `cli.checksum_mismatch`; the link stays as it was. Then the step writes root's profile when it differs.
 
 | Code | Meaning |
 | --- | --- |
@@ -347,18 +360,20 @@ The step reads the path again under the Node's update lock before it installs, b
 | `peer-dns` | Active managed Linux peers with roles, excluding the VPN holder and the Gateway | The [split private DNS policy](/reference/private-dns#resolver-selection), without a tunnel restart. Its digest includes the routing domains and selected DNS server |
 | `private-dns` | The `vpn` Node, when it is not the Gateway's | The [private-DNS](/reference/private-dns) listener release, units, records, and catalog. It restarts the listener or dnsmasq only for a change |
 | `route-residue` | A Node that an [offline Route removal](/reference/routes#remove-a-route-from-an-unreachable-node) skipped | Caddy and PHP-FPM without the removed Route, then its certificates and firewall rules. A failure is `skipped` and retried later |
-| `tmpfiles` | Every Linux Node with an active `app-dev` role | `/etc/tmpfiles.d/orbit.conf`. The daily `systemd-tmpfiles-clean` run empties each `/tmp/orbit-*` and `/dev/shm/orbit-*` directory a day after its contents last changed. It removes no other path and restarts nothing |
+| `tmpfiles` | Every Linux Node with an active `app-dev` role | `/etc/tmpfiles.d/orbit.conf`, through the agent's `nodes.publish-tmpfiles`. The daily `systemd-tmpfiles-clean` run empties each `/tmp/orbit-*` and `/dev/shm/orbit-*` directory a day after its contents last changed. It removes no other path and restarts nothing |
 | `ai-router` | The [AI router](/reference/ai-router) collector's Node | The collector script. A changed script restarts the collector, a Node-owned Process |
 
 Converge applies the artifacts in this order. The artifacts that [extensions contribute](/reference/extensions#plug-in-points), such as `ai-router`, come after core's. Each artifact has its own name.
 
-Each artifact has a digest that the Gateway computes from its own code and pins, without SSH. The Caddy package digest covers the package program and the `CaddyRelease` floor. The Caddy digest covers every Gateway source file the Caddy build renders from: the build, its site sources, the site sources that [extensions contribute](/reference/extensions#plug-in-points), and the classes they use, such as `DevelopmentSite` and the `CaddyRelease` pin.
+Each artifact has a digest that the Gateway computes from its own code and pins, without SSH. The footprint combines every artifact digest with the agent pin for that Node. A change to native code therefore re-applies the artifacts even when their PHP sources have not changed; an unchanged pin and artifact digest skip Node work. Manifest locations and other platforms do not change this identity.
 
-The private-DNS digest covers the listener release, the publication code, and each private DNS record source that an extension contributes, with the classes it uses, such as the AI router state that decides the collector record. The other digests cover the agent pin and the inputs its unit renders from, the collector script, and the tmpfiles rule.
+The Caddy package digest covers the package program and the `CaddyRelease` floor. The Caddy digest covers every Gateway source file the Caddy build renders from: the build, its site sources, the site sources that [extensions contribute](/reference/extensions#plug-in-points), and the classes they use, such as `DevelopmentSite` and the `CaddyRelease` pin.
+
+The private-DNS digest covers the listener release, the publication code, and each private DNS record source that an extension contributes, with the classes it uses, such as the AI router state that decides the collector record. The other digests cover the inputs the agent unit renders from, the collector script, and the tmpfiles rule. The shared footprint boundary adds the agent pin to all of them.
 
 A user's sites and Routes do not change the code digests. The `peer-dns` digest includes the rendered private domains and server, so namespace changes also reach peers through convergence. Their own operations publish them, and Doctor reports their drift.
 
-The `route-residue` digest also covers state: it covers the residues of offline Route removals, which are Orbit's own unfinished work, so the Node drifts until a converge removes them. The Gateway keeps the digests each Node last received, and a converge re-applies only the artifacts whose digest changed. It takes the Node's update lock over SSH first. So even a converge that changes nothing runs a few lock commands on the Node.
+The `route-residue` digest also covers state: it covers the residues of offline Route removals, which are Orbit's own unfinished work, so the Node drifts until a converge removes them. The Gateway keeps the digests each Node last received, and a converge re-applies only the artifacts whose digest changed. Its native binary installers own their update locks; it starts no separate SSH lock holder.
 
 Removing a registered artifact changes the aggregate footprint digest. Converge invokes only artifacts that are still registered and apply to the Node. Unless forced, it skips each remaining artifact whose own digest is unchanged. After a successful converge, the Gateway drops the removed name from the stored artifact metadata. Removal itself does not delete or rewrite any Node files; files left by the removed artifact stay untouched.
 
@@ -418,11 +433,21 @@ The installer also repairs the [managed PHP settings](/reference/compute-drivers
 
 For Caddy, the Gateway pins a release and the SHA-512 digest of its `.deb` for `amd64` and `arm64`. It downloads the package only when Caddy is missing or below the floor, refuses a download whose digest does not match, and installs it with apt. A Node on another architecture fails the step. The step adds no apt source. It deletes `/etc/apt/sources.list.d/orbit-caddy.sources` and `/usr/share/keyrings/orbit-caddy.gpg`, which earlier Orbit releases wrote for the Caddy apt source on Cloudsmith.
 
+### Role prerequisites
+
+Each role installs its prerequisites through the agent's `roles.install-prerequisites`. The role guard first reads `ID` and `VERSION_CODENAME` with `nodes.os-release` and refuses a release the role does not support. The command checks the release again and installs the role's packages with `apt-get`, which waits up to 300 seconds for the dpkg locks. A healthy Docker CE installation replaces `docker.io`.
+
+For `app-dev`, it also creates `<home>/apps` for the managed user. For `app-dev` and `app-prod`, it prepares the shared Composer home, `/opt/orbit/composer`. A path that Orbit did not make fails the step with `roles.prerequisite_conflict` before any change.
+
+An application role then installs the JavaScript runtimes its [recipe profile](/reference/compute-drivers#role-and-base-tool-sets) pins: Node, Vite+, pnpm, and Bun. It sends `recipe.install-javascript`, the same command and verified archives as [recipe convergence](#converge-a-node-to-a-recipe), and it runs no downloaded installer. Image programs render the same call as `javascript-runtime`. Like recipe convergence, it replaces any root-owned launcher in `/usr/local/bin`. After it verifies the recipe Node, it removes the apt `nodejs` package, retires the NodeSource apt source, and removes Corepack links.
+
 Caddy must be at least 2.9.0. A lower release fails the `caddy-package-source` step and names both releases. Doctor reports it as `role.caddy_version_unsupported`. Converging a role upgrades an archive Caddy in place. A Caddy at or above the floor stays as it is, so a newer pin does not restart it. `/etc/caddy/Caddyfile` is a symlink into Orbit's own versions directory, so the upgrade keeps the live configuration.
 
-The roles `gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, and `analytics` install Caddy when they converge. AI router publication does the same on its Node. On the Gateway machine, the bootstrap and `php artisan orbit:gateway-web` install Caddy through local `sudo`. A failure there stops at step `gateway-caddy-install` with `gateway.caddy_install_failed`, and the live Caddy configuration stays unchanged. [Caddy configuration](/reference/caddy-configuration) describes how the Gateway builds each Node's Caddyfile.
+The roles `gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, and `analytics` install Caddy when they converge. AI router publication does the same on its Node. On the Gateway machine, the bootstrap and `php artisan orbit:gateway-web` install Caddy through the agent command `caddy.install-package`. A failure there stops at step `gateway-caddy-install` with `gateway.caddy_install_failed`, and the live Caddy configuration stays unchanged. [Caddy configuration](/reference/caddy-configuration) describes how the Gateway builds each Node's Caddyfile.
 
-`CaddyPackageProgram::command()` supplies the same fixed arguments and shell program to role convergence, the fleet footprint, Gateway installation, and Analytics and AI router publication. The rename from `CaddyPackageSourceProgram` changes the digest of the `caddy-package` footprint once, so the next footprint converge repeats this idempotent step. Its host command stays byte-for-byte the same. A Caddy at or above the floor is not reinstalled or restarted. The Gateway ordering step can fail with `gateway.caddy_start_failed` if its WireGuard ordering drop-in cannot be installed.
+`caddy.install-package` owns package installation for every caller. The Gateway sends the release pins and keeps the operation error mapping. The agent owns the download URL, kernel setting, and obsolete source paths. It checks the pins and host paths before mutation, verifies the downloaded package before apt sees it, and publishes the kernel setting atomically. Package and system commands share the command deadline. Rust tests cover installation, repetition, drift, and refusal; Gateway tests cover intent. `caddy.order-after-vpn` then orders Caddy after WireGuard. Its failure maps to `gateway.caddy_start_failed`.
+
+Gateway VPN convergence calls `wireguard.remove-dns-ordering` to remove the managed dnsmasq ordering drop-in. dnsmasq provides `nss-lookup.target`, which WireGuard starts after; ordering dnsmasq after WireGuard creates a boot cycle. An absent drop-in needs no service call. Removal preserves other drop-ins, reloads systemd, and restarts dnsmasq. Failed activation restores the prior file and service state.
 
 ### Caddy reloads
 
@@ -510,7 +535,17 @@ The Node with the `vpn` role holds the WireGuard hub: its private key, address, 
 
 Repeating the same key still projects the hub when it has no collision; after a projection failure, the stored key remains and the operator retries after repairing the hub. A crash can leave either the old or new hub configuration, without guaranteed rollback or automatic reconciliation. [WireGuard key recovery](/cli/node#orbit-nodewireguard-key) explains how to restore an authorized management path and replay the desired key.
 
-When the `vpn` and `gateway` roles share a machine, or no `gateway` role is active, the Gateway installs the configuration locally with `sudo`. When they are on different Nodes, the Gateway sends the configuration over SSH to the `vpn` Node, with the private key on standard input, and activates `wg-quick@orbit` there. Without SSH, the projection fails with `vpn.server_config_install_failed` and never installs the configuration in `/etc/wireguard` on the Gateway machine. The Gateway always keeps the rendered hub configuration, private key included, at `ORBIT_HOME/generated/wireguard/orbit.conf`.
+The Gateway runs the [Node agent](/reference/node-agent#commands)'s `wireguard.project-hub` on the `vpn` Node, with the configuration and its private key in the protected input. When the `vpn` and `gateway` roles share a machine, the runner starts it as a local process; otherwise it reaches the `vpn` Node over SSH to its WireGuard address. The command writes a root-only candidate, validates it with `wg-quick strip`, keeps the live file as a backup, and swaps the candidate in. Then it live-syncs a running `wg-quick@orbit` with `wg syncconf`, or enables and starts a stopped one. When activation fails, it puts the backup and the previous enabled and active state back.
+
+| Agent refusal | Step | Error code |
+| --- | --- | --- |
+| `wireguard.hub_install_failed` | `wireguard-server-install` | `vpn.server_config_install_failed` |
+| `wireguard.hub_config_invalid` | `wireguard-server-validate` | `vpn.server_config_invalid` |
+| `wireguard.hub_start_failed`, or no result | `wireguard-server-restart` | `vpn.server_start_failed` |
+
+The Gateway always keeps the rendered hub configuration, private key included, at `ORBIT_HOME/generated/wireguard/orbit.conf`. Doctor compares it, and the VPN DNS records, with the digests that `wireguard.inspect-hub` reads on the `vpn` Node.
+
+Peer convergence still runs over SSH. It generates or reads the peer key and installs the peer configuration during admission, over the public bootstrap address, before the tunnel that the agent's transport uses exists.
 
 ## Remove a Node
 
@@ -558,7 +593,9 @@ For a Node that does not answer, the API needs `force`, or the Gateway refuses w
 
 After an online removal, the machine keeps its WireGuard tunnel, which can still point DNS at Orbit. When a new bootstrap cannot resolve the package sources for that reason, and the request names at least one role and no `--dns-server` override, it clears only the DNS server and route-all domain that match Orbit's ownership record on the `orbit` link.
 
-The bootstrap then uses the machine's own DNS for the base packages and restores the earlier link values. It keeps operator overrides, refuses missing or changed ownership state, and changes no global resolver file or IP route. When the machine's own DNS cannot resolve the sources either, the bootstrap fails before it sets up the managed user. A Node added again without a role, or with a DNS server override, keeps its DNS as it is, and the bootstrap fails when the sources do not resolve.
+The native `nodes.bootstrap` command holds the peer lock while it uses the machine's own DNS for the base packages and restores the earlier link values. It tries APT first, so working proxies and custom transports need no local DNS probe. After a failed update, it inspects source hosts without executing source text. It keeps operator overrides, refuses missing or changed ownership state, and changes no global resolver file or IP route. It attempts to restore both resolver properties on failure or interruption.
+
+Account setup starts only after packages and DNS restoration succeed. A Node added again without a role, or with a DNS server override, keeps its DNS as it is, and the bootstrap fails when the sources do not resolve.
 
 Provisioning then writes a new tunnel configuration and restarts `wg-quick@orbit`. When the Node sends private DNS through WireGuard, the configuration has a `PostUp` hook that sends only the [rendered Orbit private domains](/reference/private-dns#resolver-selection) to Orbit DNS. Public names keep the provider or DHCP resolver. Every split-DNS apply first requires a non-`orbit` per-link or global DNS server; absent one, it refuses with exit 47 (`vpn.peer_dns_uplink_missing`). Existing per-Node DNS overrides and global DNS overrides outside the usable WireGuard subnet are cleared by migrations; endpoint overrides stay unchanged. It never has a `PreDown` hook, because the AppArmor profile that Ubuntu 26.04 ships for wg-quick denies the resolver revert call.
 
@@ -608,9 +645,9 @@ After a Gateway release, a Node needs only what the Gateway renders from its own
 
 A Mac is a managed Node for tools, not a service host. It uses the account, WireGuard identity, and SSH access that already exist. Enrollment pins the approved host key and checks the platform, architecture, account, and tunnel before it succeeds. It creates no account, installs no Ubuntu packages, and does not change host DNS or the firewall.
 
-An application role was rejected because tools do not need application services and the role list stays empty. Package operations through the Node agent were rejected because SSH already makes the changes and the agent stays observation-only. The Ubuntu bootstrap was rejected because its packages, users, resolver, firewall, and systemd units do not apply to macOS. A second Homebrew or Vite+ install was rejected because the packages already on the machine would stay outside the scope Orbit manages.
+An application role was rejected because tools do not need application services and the role list stays empty. SSH carries named agent commands for enrollment, package operations, and Doctor. The command binary does not run an observer or login-session service on macOS. The Ubuntu bootstrap was rejected because its packages, users, resolver, firewall, and systemd units do not apply to macOS. A second Homebrew or Vite+ install was rejected because the packages already on the machine would stay outside the scope Orbit manages.
 
-Platform support is checked per operation. Tool management and Doctor run on the enrolled Mac. Linux roles, exporters, Processes, Schedules, and the Node agent do not. A role assignment fails before any remote change. macOS OS updates, firewall management, application hosting, and a macOS Node agent are separate features. A roleless Ubuntu Node proves the same empty-role boundary on Linux, including apt adoption without a reinstall. A real Mac proves enrollment and the Homebrew and Vite+ lifecycle. Low free space on that Mac makes the Node drift with `node.disk_low` while informational package findings stay informational.
+Platform support is checked per operation. Tool management and Doctor run on the enrolled Mac. Linux roles, exporters, Processes, Schedules, and the observer service do not. A role assignment fails before any remote change. macOS OS updates, firewall management, application hosting, and a macOS login-session agent are separate features. A roleless Ubuntu Node proves the same empty-role boundary on Linux, including apt adoption without a reinstall. A real Mac proves enrollment and the Homebrew and Vite+ lifecycle. Low free space on that Mac makes the Node drift with `node.disk_low` while informational package findings stay informational.
 
 ### CI roles own hosts; operators own runner registration
 

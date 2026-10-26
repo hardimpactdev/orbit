@@ -5,7 +5,7 @@ covers:
   - apps/gateway/app/{Domain,Actions,Infrastructure,Data}/Routes/**
   - apps/gateway/app/Http/{Controllers/Api/RoutesController.php,Requests/Routes/**}
   - apps/gateway/{app/Models/{Route,RouteTarget,RouteCustomProxy}.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - apps/gateway/app/Infrastructure/AppDev/{DevelopmentCaddyConfigRenderer,DevelopmentSiteRepository,NativeDevelopmentProjectionOperationLock}.php
+  - apps/gateway/app/Infrastructure/AppDev/{DevelopmentCaddyConfigRenderer,DevelopmentSiteRepository,NativeDevelopmentProjectionOperationLock,RemoteAppDevCertificateManager,RemoteAppDevRouteFirewallManager}.php
   - apps/gateway/app/{Domain/AppDev/{DevelopmentServerEndpoint,PrivateDnsAnswerExpiry}.php,Infrastructure/Clusters/NativeClusterRouterOperationLock.php}
   - apps/gateway/app/Infrastructure/Instances/{NativeProductionRouteProjector,NativeDevelopmentRouteProjector,NativeDevelopmentSourceAccess}.php
   - apps/gateway/app/Domain/Instances/DevelopmentSourceAccess.php
@@ -266,6 +266,8 @@ The selected Ingress terminates public TLS with the same ACME policy and `ingres
 
 Activation verifies the Process Node's firewall and sends an HTTP HEAD request from the Ingress to the selected listener before publishing. WireGuard uses the existing `orbit:wireguard-members` trust rule. LAN needs an active managed `orbit:` TCP allow rule for the Ingress LAN source and selected port; a rule for another port, source, or network does not qualify. Orbit refuses activation with `route.upstream_firewall_mismatch` when this rule is missing, and `route.upstream_unreachable` when the listener cannot be reached.
 
+The Gateway sends the selected address, port, and Route domain to `routes.verify-http`. The agent sends HEAD with the Route's Host header, bypasses HTTP proxies, and waits at most ten seconds. Any HTTP status proves reachability; it does not follow redirects or require application success.
+
 It keeps the activation for retry and Doctor reports the blocked path. Orbit adds no hidden firewall opening or Process port rewrite. Use the managed [firewall commands](/cli/firewall) to allow the selected LAN source before retrying. Docker publications bypass UFW, as that page explains; this check requires recorded firewall intent and does not make UFW an isolation boundary for Docker.
 
 Node convergence restores the WireGuard member rule; Ingress convergence rebuilds the public site and HTTP rules. Removing the last public Route closes the public Ingress rules, including after offline residue cleanup. Process removal stays refused with `process.has_routes`.
@@ -306,27 +308,33 @@ This preparation walks only the Instance's checkout and served checkouts nested 
 
 #### Caddy access
 
-Caddy runs as its own user and must reach each development site's web root, also when the [apps root](/reference/node-settings#derive-the-effective-root) lies outside the managed user's home. The same preparation runs for a [task VM](/reference/compute-drivers#task-vms) workspace that has a Route. The managed user runs it with plain ACL tools, in this order:
+The agent publishes development TLS leaves under `/etc/caddy/orbit-certificates/<scope>`. It creates the shared `orbit-certificates` directory on first publication. That directory, the scope directory, its `versions` directory, and each certificate version belong to `root:caddy` with mode `0750`. Caddy can traverse the complete path to the certificate and its group-readable private key.
+
+Caddy runs as its own user and must reach each development site's web root, also when the [apps root](/reference/node-settings#derive-the-effective-root) lies outside the managed user's home. The same preparation runs for a [task VM](/reference/compute-drivers#task-vms) workspace that has a Route. The Node agent's `instances.grant-development-caddy-access` runs it. Its ACL tools run as the managed user, in this order:
 
 1. Deny Caddy the whole checkout and its Git directory, including the default ACL of every directory, so new files stay closed too.
 2. Grant Caddy read access to the web root and to the Laravel public storage target.
 3. Grant Caddy execute access on each directory above the web root that it cannot enter yet. Caddy can pass through those directories but cannot list them.
 
-Every deny comes before any grant, so a served checkout nested in another keeps its own web root. No change follows a symlink. The managed user changes its own entries. An entry that the managed user does not own fails the preparation with "Operation not permitted"; the walk never skips it. Root acts only through `sudo -n` on a directory above every checkout that root owns, on a path that root owns from `/` down, such as an apps root's parent. Root never changes anything at or below a checkout.
+Every deny comes before any grant, so a served checkout nested in another keeps its own web root. No change follows a symlink. The managed user changes its own entries. An entry that the managed user does not own fails the preparation with "Operation not permitted"; the walk never skips it. The agent acts as root only on a directory above every checkout that root owns, on a path that root owns from `/` down, such as an apps root's parent. Root never changes anything at or below a checkout.
 
-The grants keep each entry's mask. A file or directory whose mode hides it from the group class, such as a mode 0600 environment file, stays hidden from Caddy even when it lies in the web root. Only the passage grant on a directory adds execute to its mask. When Caddy still cannot read the web root or the public storage target, the preparation fails and names it. When Caddy cannot read some entries in them, the preparation succeeds and warns, naming up to five of those entries.
+The grants keep each entry's mask. A file or directory whose mode hides it from the group class, such as a mode 0600 environment file, stays hidden from Caddy even when it lies in the web root. Only the passage grant on a directory adds execute to its mask. When Caddy still cannot read the web root or the public storage target, the preparation fails with `instances.caddy_access_failed` and names it. When Caddy cannot read some entries in them, the preparation succeeds, and the agent's result lists up to 100 of those entries.
 
 Setup can run while the walk runs, for a task VM workspace whose Route follows its baseline start. An entry that vanishes during the walk needs no change, and the walk does not fail for it. A new entry inherits the default ACL of its directory.
 
 Before it changes access, the walk saves the ACLs of what it grants: the web root, the public storage target, the directories above them, and the Git directory. The saved ACLs live in a private directory under `/var/tmp`, which is on disk, not in a `/tmp` that can be a memory-backed tmpfs. Only the managed user can enter that directory. Root-owned directories go in a separate file that only root restores.
 
-When the preparation fails, the walk restores the saved ACLs, and the deny on the rest of the checkout stays. So a failure never widens access. When the restore fails, the saved directory stays and the error names it. The next walk removes the managed user's saved directories that are older than three days.
+When the preparation fails, the walk restores the saved ACLs, and the deny on the rest of the checkout stays. So a failure never widens access. When the restore fails, the saved directory stays, and the error `instances.caddy_access_recovery_failed` names it in `snapshots`. The next walk removes the managed user's saved directories that are older than three days.
 
 ### Cluster scope
 
 Private DNS points the Route domain and the Cluster TLD at the Router. [Private DNS](/reference/private-dns#cluster-router-addresses) describes which Router address each requester gets.
 
 Router Caddy forwards Orbit CA HTTPS to the workload Node and keeps the domain as the HTTP `Host` value and the TLS server name. The Router and the workload Node get separate private keys. The Router uses the workload Node's LAN address when the Node has one, and its WireGuard address otherwise. A configured LAN address that does not answer fails publication. Orbit never falls back to WireGuard, also not per target in a pool.
+
+The Gateway sends the Route ID and the two LAN addresses to `firewall.route-lan`. The agent owns the TCP 443 allowance and its `orbit:route-<id>-lan` comment. Repeated convergence keeps an existing matching rule. Removal deletes every numbered rule with that exact comment, highest number first, and verifies absence under the same firewall lock. An inactive firewall stays inactive; convergence checks its stored rule, and removal leaves its stored rules unchanged.
+
+Before publication, `routes.verify-certificate` checks each remote workload from its Router and each public app Route hop from its forwarding Node. It connects to the selected address on port 443, sends the Route domain as TLS SNI, and requires a chain trusted by that Node. This preserves the existing OpenSSL chain check; it does not add a separate hostname check. The Gateway keeps placement, activation order, and public error mapping. Router replacement uses the same commands.
 
 When the Router and the workload share one Node, one Caddy service serves the Route and sends the request to the local runtime. It never proxies to its own HTTPS listener. A pool that mixes a local and a remote target serves the local target through an internal Unix listener.
 
@@ -622,7 +630,9 @@ Doctor skips an Instance in `removing`. A removal that lasts 10 minutes or more 
 | `instance.related_node_unverifiable` | A required related Node is outside the selected set. |
 | `instance.inspection_failed` | A required observation is missing, malformed, or unreachable. |
 
-Doctor builds the expected public site the same way the build does. It also checks that a public Route's Let's Encrypt certificate exists and does not expire within the renewal margin, defined as one sixth of that certificate's lifetime from `notBefore` to `notAfter`. This relative margin avoids raising an alarm at Caddy's own renewal point and scales to shorter certificate lifetimes. While a public Route is mid-issuance and the Ingress serves no valid public certificate yet, Doctor can report a transient TLS issue; it clears once issuance completes.
+Doctor builds the expected public site the same way the build does. The Gateway sends that site and the intended forwarding addresses to `doctor.inspect-public-route`; Rust reads the live Caddyfile, probes those addresses, and checks the certificate on the public listener. The certificate check trusts only Ubuntu’s packaged Mozilla roots, verifies the domain, and applies no local Orbit CA trust.
+
+It also checks that a public Route's Let's Encrypt certificate exists and does not expire within the renewal margin, defined as one sixth of that certificate's lifetime from `notBefore` to `notAfter`. This relative margin avoids raising an alarm at Caddy's own renewal point and scales to shorter certificate lifetimes. While a public Route is mid-issuance and the Ingress serves no valid public certificate yet, Doctor can report a transient TLS issue; it clears once issuance completes.
 
 The forwarding check dials the Router, or the workload Nodes when the Ingress is also the Router. A site that serves the target directly forwards nowhere, so it always passes.
 

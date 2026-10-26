@@ -17,6 +17,7 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Models\Project;
 use Tests\Support\FakeDatabaseServerAdmin;
+use Tests\Support\FakesEnvironmentSyncInspection;
 
 const SERVER_DATABASE_ROOT_SECRET = 'server-root-secret-5d1e';
 
@@ -101,6 +102,8 @@ trait ServerDatabaseFixtures
 
 final class ServerDatabaseEnvironmentAccess implements InstanceEnvironmentReader, InstanceEnvironmentWriter, InstanceOperationPreflight
 {
+    use FakesEnvironmentSyncInspection;
+
     public function assertEnvironmentReadable(InstanceEnvironmentContext $context): void
     {
         throw new RuntimeException('Attachment contacted the workload Node.');

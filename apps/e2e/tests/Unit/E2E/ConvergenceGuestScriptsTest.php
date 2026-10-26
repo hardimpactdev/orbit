@@ -177,8 +177,13 @@ describe('Gateway convergence', function () {
             'php' => "printf '%s %s\\n' \"\$PWD\" \"\$*\" >> '__ROOT__/commands'",
         ]);
 
+        mkdir("{$fixture['home']}/orbit/bin");
+        file_put_contents("{$fixture['home']}/orbit/bin/gateway-app-key", "#!/usr/bin/env bash\nprintf 'gateway-app-key %s\\n' \"\$ORBIT_HOME\" >> '{$fixture['root']}/commands'\n");
+        chmod("{$fixture['home']}/orbit/bin/gateway-app-key", 0o700);
+
         expect(runGuestScript($fixture, ['bootstrap', 'gateway'])->getExitCode())->toBe(0)
             ->and(commandLog($fixture))->toBe([
+                "gateway-app-key {$fixture['home']}/.orbit",
                 "{$fixture['home']}/orbit/apps/gateway artisan migrate --force",
                 "{$fixture['home']}/orbit/apps/gateway artisan orbit:bootstrap gateway --no-interaction",
             ]);

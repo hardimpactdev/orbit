@@ -8,66 +8,40 @@ use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Metrics\NativeServiceMetricsRuntime;
 use App\Infrastructure\Metrics\ServiceMetricsNode;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
+use Symfony\Component\Process\Process;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeNodeCaddyBuilds;
 
+/**
+ * The full exporter state that `metrics.service-runtime` returns and accepts.
+ *
+ * @param  array<string, mixed>  $overrides
+ * @return array<string, mixed>
+ */
+function service_metrics_state(array $overrides = []): array
+{
+    return [...['config' => null, 'unit' => null, 'rules' => [], 'active' => false, 'enabled' => false, 'binary' => false], ...$overrides];
+}
+
 beforeEach(function (): void {
-    $this->ssh = new class implements SshExecutor
-    {
-        /** @var list<RemoteCommand> */
-        public array $commands = [];
-
-        /** @var list<string> */
-        public array $outputs = [];
-
-        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-        {
-            $this->commands[] = $command;
-
-            return new CommandResult(0, array_shift($this->outputs) ?? '{}', '', 1, false);
-        }
-    };
     $this->builds = new FakeNodeCaddyBuilds;
+    $this->pools = [];
+    $this->exporter = service_metrics_state();
+    $this->agents = new FakeAgentCommandRunner()
+        ->answer('php.inspect-production-pool', fn (): array => array_shift($this->pools))
+        ->answer('metrics.service-runtime', fn (array $input): array => $input['operation'] === 'snapshot' ? $this->exporter : []);
     $this->productionPhp = Mockery::mock(ProductionPhpRuntimeManager::class)->shouldIgnoreMissing();
     $this->runtime = new NativeServiceMetricsRuntime(
-        new ProductionSshExecutor(
-            $this->ssh,
-            new class implements SshKeyProvider
-            {
-                public function privateKeyPath(): string
-                {
-                    return '/tmp/orbit-test-key';
-                }
-
-                public function publicKey(): string
-                {
-                    return 'ssh-ed25519 AAAA test';
-                }
-            },
-            new class implements KnownHostsStore
-            {
-                public function path(): string
-                {
-                    return '/tmp/orbit-test-known-hosts';
-                }
-
-                public function put(string $host, int $port, HostKey $key): void {}
-            },
-        ),
         $this->builds,
+        $this->agents,
         productionPhp: $this->productionPhp,
     );
     $this->metrics = service_metrics_runtime_node('metrics', '10.44.0.7', []);
@@ -79,7 +53,18 @@ it('requests a Node Caddy build of an Ingress Node and writes no Caddy file', fu
     $this->runtime->converge(new ServiceMetricsNode($ingress, true, false), $this->metrics);
 
     expect($this->builds->built)->toBe(['app-prod'])
-        ->and(service_metrics_runtime_text($this->ssh->commands))
+        ->and($this->agents->calls[0])->toMatchArray([
+            'node' => 'app-prod',
+            'command' => 'metrics.service-runtime',
+            'input' => ['operation' => 'apply', 'state' => [
+                'config' => null, 'unit' => null, 'active' => false, 'enabled' => false, 'binary' => false,
+                'rules' => [
+                    ['allow', 'in', 'on', 'orbit', 'proto', 'tcp', 'from', '10.44.0.7', 'to', '10.44.0.4', 'port', '9103', 'comment', 'orbit:metrics-service-caddy-allow'],
+                    ['deny', 'in', 'on', 'orbit', 'proto', 'tcp', 'from', 'any', 'to', '10.44.0.4', 'port', '9103', 'comment', 'orbit:metrics-service-caddy-deny'],
+                ],
+            ]],
+        ])
+        ->and(json_encode($this->agents->calls, JSON_THROW_ON_ERROR))
         ->not->toContain('orbit-versions', '00-metrics-service.caddy', '/etc/caddy/Caddyfile');
 });
 
@@ -96,12 +81,12 @@ it('snapshots exporter state only and restores by building the Node', function (
     $target = new ServiceMetricsNode($ingress, true, false);
 
     $snapshot = $this->runtime->snapshot($target);
-    $commandsBeforeRestore = count($this->ssh->commands);
+    $commandsBeforeRestore = count($this->agents->calls);
     $this->runtime->restore($target, $snapshot);
 
-    expect(json_decode($snapshot, true, flags: JSON_THROW_ON_ERROR))->toBe(['exporter' => [], 'pools' => []])
-        ->and(service_metrics_runtime_text($this->ssh->commands))->not->toContain('/etc/caddy')
-        ->and(count($this->ssh->commands))->toBe($commandsBeforeRestore + 1)
+    expect(json_decode($snapshot, true, flags: JSON_THROW_ON_ERROR))->toBe(['exporter' => service_metrics_state(), 'pools' => []])
+        ->and(json_encode($this->agents->calls, JSON_THROW_ON_ERROR))->not->toContain('/etc/caddy')
+        ->and(count($this->agents->calls))->toBe($commandsBeforeRestore + 1)
         ->and($this->builds->built)->toBe(['app-prod']);
 });
 
@@ -122,18 +107,11 @@ it('restores the previous pool monitoring state after publication fails', functi
     $target = new ServiceMetricsNode($node, false, false, [$instance]);
     $enabledPool = "[orbit-metricapp]\nuser = metricapp\npm.status_path = /orbit-fpm-status\npm.status_listen = /run/php/metricapp.sock.status\n";
     $disabledPool = "[orbit-metricapp]\nuser = metricapp\n";
-    $this->ssh->outputs = [
-        '{"config":"prior-exporter-config"}',
-        json_encode(['pool' => $enabledPool, 'fingerprint' => 'before'], JSON_THROW_ON_ERROR),
-    ];
+    $this->exporter = service_metrics_state(['config' => 'prior-exporter-config']);
+    $this->pools = [['pool' => $enabledPool, 'fingerprint' => 'before'], ['pool' => $disabledPool, 'fingerprint' => 'after']];
     $snapshot = $this->runtime->snapshot($target);
     $this->productionPhp->shouldReceive('convergeMonitoring')->once()->with($instance, false);
     $this->productionPhp->shouldReceive('convergeMonitoring')->once()->with($instance, true);
-    $this->ssh->outputs = [
-        json_encode(['pool' => $disabledPool, 'fingerprint' => 'after'], JSON_THROW_ON_ERROR),
-        '{}',
-        '{}',
-    ];
 
     try {
         $this->runtime->converge($target, $this->metrics);
@@ -144,39 +122,35 @@ it('restores the previous pool monitoring state after publication fails', functi
     }
 
     expect(json_decode($snapshot, true, flags: JSON_THROW_ON_ERROR)['pools'][(string) $instance->id]['enabled'])->toBeTrue()
-        ->and(service_metrics_runtime_request($this->ssh->commands[array_key_last($this->ssh->commands)]))
-        ->toMatchArray(['operation' => 'apply', 'state' => ['config' => 'prior-exporter-config']]);
+        ->and($this->agents->calls[array_key_last($this->agents->calls)]['input'])
+        ->toMatchArray(['operation' => 'apply', 'state' => service_metrics_state(['config' => 'prior-exporter-config'])]);
 });
 
 it('includes a read-only runtime fingerprint in exporter config after monitoring convergence', function (): void {
     $node = service_metrics_runtime_node('app-prod', '10.44.0.4', [RoleName::AppProd]);
     $instance = service_metrics_runtime_instance($node);
     $this->productionPhp->shouldReceive('convergeMonitoring')->once()->with($instance, true);
-    $this->ssh->outputs = [
-        json_encode(['pool' => "[orbit-metricapp]\nuser = metricapp\npm.status_path = /orbit-fpm-status\npm.status_listen = /run/php/metricapp.sock.status\n", 'fingerprint' => 'local-tuning-hash'], JSON_THROW_ON_ERROR),
-        '{}',
-    ];
+    $this->pools = [['pool' => "[orbit-metricapp]\nuser = metricapp\npm.status_path = /orbit-fpm-status\npm.status_listen = /run/php/metricapp.sock.status\n", 'fingerprint' => 'local-tuning-hash']];
 
     $this->runtime->converge(new ServiceMetricsNode($node, false, true, [$instance]), $this->metrics);
-    $request = service_metrics_runtime_request($this->ssh->commands[array_key_last($this->ssh->commands)]);
+    $request = $this->agents->calls[array_key_last($this->agents->calls)]['input'];
 
     expect($request['state']['config'])->toContain('# runtime '.$instance->id.': local-tuning-hash');
 });
 
-it('restores exporter state without asking the Node script to restore pool state', function (): void {
+it('restores exporter state without asking the exporter command to restore pool state', function (): void {
     $ingress = service_metrics_runtime_node('app-prod', '10.44.0.4', [RoleName::Ingress]);
-    $this->ssh->outputs = ['{"enabled":true}'];
+    $this->exporter = service_metrics_state(['enabled' => true]);
     $snapshot = $this->runtime->snapshot(new ServiceMetricsNode($ingress, true, false));
     $state = json_decode($snapshot, true, flags: JSON_THROW_ON_ERROR);
-    $commandsBeforeRestore = count($this->ssh->commands);
+    $commandsBeforeRestore = count($this->agents->calls);
 
-    $this->ssh->outputs = ['{}'];
     $this->runtime->restore(new ServiceMetricsNode($ingress, true, false), $snapshot);
 
-    expect($state)->toBe(['exporter' => ['enabled' => true], 'pools' => []])
-        ->and(count($this->ssh->commands))->toBe($commandsBeforeRestore + 1)
-        ->and(service_metrics_runtime_request($this->ssh->commands[$commandsBeforeRestore]))
-        ->toMatchArray(['operation' => 'apply', 'state' => ['enabled' => true]])
+    expect($state)->toBe(['exporter' => service_metrics_state(['enabled' => true]), 'pools' => []])
+        ->and(count($this->agents->calls))->toBe($commandsBeforeRestore + 1)
+        ->and($this->agents->calls[$commandsBeforeRestore]['input'])
+        ->toMatchArray(['operation' => 'apply', 'state' => service_metrics_state(['enabled' => true])])
         ->and($this->builds->built)->toBe(['app-prod']);
 });
 
@@ -191,6 +165,26 @@ it('keeps its error code and names the build stage when the build fails', functi
                 ->and($exception->getMessage())->toContain('failed at stage [addresses]');
         });
 });
+
+it('maps an agent refusal to the service metrics step before requesting a Caddy build', function (): void {
+    $ingress = service_metrics_runtime_node('app-prod', '10.44.0.4', [RoleName::Ingress]);
+    $this->agents->refuse('metrics.service-runtime', 'metrics.service_ownership', ['path' => '/etc/orbit/service-metrics']);
+
+    expect(fn () => $this->runtime->converge(new ServiceMetricsNode($ingress, true, false), $this->metrics))
+        ->toThrow(function (RuntimeConvergenceException $exception): void {
+            expect($exception->errorCode)->toBe('metrics.service_convergence_failed')
+                ->and($exception->step)->toBe('service-metrics');
+        });
+    expect($this->builds->built)->toBe([]);
+});
+
+arch('service metrics runs Node code only through the agent command runner')
+    ->expect(NativeServiceMetricsRuntime::class)
+    ->not->toUse([
+        SshExecutor::class,
+        RemoteCommand::class,
+        Process::class,
+    ]);
 
 /** @param list<RoleName> $roles */
 function service_metrics_runtime_node(string $name, string $address, array $roles): Node
@@ -246,26 +240,4 @@ function service_metrics_runtime_instance(Node $node): Instance
         'production_php_socket' => '/run/php/metricapp.sock',
         'status' => 'active',
     ]);
-}
-
-/** @return array<string, mixed> */
-function service_metrics_runtime_request(RemoteCommand $command): array
-{
-    $encoded = $command->arguments[3] ?? null;
-    if (! is_string($encoded)) {
-        return [];
-    }
-
-    $request = json_decode(base64_decode($encoded, true) ?: '', true);
-
-    return is_array($request) ? array_filter($request, is_string(...), ARRAY_FILTER_USE_KEY) : [];
-}
-
-/** @param list<RemoteCommand> $commands */
-function service_metrics_runtime_text(array $commands): string
-{
-    return implode("\n", array_map(
-        static fn (RemoteCommand $command): string => implode(' ', $command->arguments)."\n".($command->input ?? ''),
-        $commands,
-    ));
 }

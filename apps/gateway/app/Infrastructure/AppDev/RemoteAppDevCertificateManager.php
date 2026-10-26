@@ -6,18 +6,22 @@ namespace App\Infrastructure\AppDev;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Certificates\LeafCertificateSigner;
-use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
-use App\Infrastructure\Caddy\CaddyPublicationLock;
-use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentStep;
+use App\Infrastructure\Shared\StoredValue;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
 
+/**
+ * The Orbit CA leaf certificates of development Routes, through the Node agent's `certificates.*-leaf` commands
+ * (docs/reference/routes.md). The Gateway signs each request; the Node keeps the key.
+ */
 final readonly class RemoteAppDevCertificateManager
 {
     public function __construct(
-        private DevelopmentSshExecutor $ssh,
+        private AgentCommandRunner $agents,
         private LeafCertificateSigner $signer,
         private ManagedUserAccountResolver $accounts,
         private DevelopmentSiteRepository $sites = new DevelopmentSiteRepository,
@@ -65,29 +69,14 @@ final readonly class RemoteAppDevCertificateManager
     {
         $instance->loadMissing('node');
         $account = $this->accounts->resolve($instance->node);
-        $scope = "app-instance-{$instance->id}";
-        $result = $this->ssh->execute(
-            $instance->node,
-            new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $scope, $account->home],
-                input: <<<'BASH'
-                    scope=$1
-                    managed_home=$2
-                    if [ -f "$managed_home/.orbit/certificates/$scope/current/cert.pem" ] && \
-                        sudo test -f "/etc/caddy/orbit-certificates/$scope/current/cert.pem"; then
-                        printf 'PRESENT\n'
-                    else
-                        printf 'ABSENT\n'
-                    fi
-                    BASH,
-            ),
-            step: 'certificate-inspect',
-            errorCode: 'app-dev.certificate_inspection_failed',
-        );
+        $result = AgentStep::run($this->agents, $instance->node, 'certificates.inspect-leaf', [
+            'scope' => "app-instance-{$instance->id}",
+            'home' => $account->home,
+        ], 'certificate-inspect', 'app-dev.certificate_inspection_failed', 'App development');
 
-        return match (trim($result->stdout)) {
-            'PRESENT' => true,
-            'ABSENT' => false,
+        return match ($result['present'] ?? null) {
+            true => true,
+            false => false,
             default => throw new RuntimeConvergenceException(
                 step: 'certificate-inspect',
                 errorCode: 'app-dev.certificate_inspection_failed',
@@ -156,214 +145,26 @@ final readonly class RemoteAppDevCertificateManager
     private function converge(Node $node, string $scope, string $domain): void
     {
         $account = $this->accounts->resolve($node);
-        $version = bin2hex(random_bytes(8));
         $rootCertificate = $this->signer->rootCertificate();
-        $rootHash = hash('sha256', $rootCertificate);
-        $request = $this->ssh->execute(
-            $node,
-            new RemoteCommand(
-                arguments: [
-                    'bash',
-                    '-seu',
-                    '--',
-                    $scope,
-                    $domain,
-                    $version,
-                    $rootHash,
-                    $account->user,
-                    $account->group,
-                    $account->home,
-                ],
-                input: <<<'BASH'
-                    scope=$1
-                    domain=$2
-                    version=$3
-                    expected_root_hash=$4
-                    managed_user=$5
-                    managed_group=$6
-                    managed_home=$7
-                    root="$managed_home/.orbit/certificates/$scope"
-                    current="$root/current"
-                    caddy_current="/etc/caddy/orbit-certificates/$scope/current"
-                    trust_anchor=/usr/local/share/ca-certificates/orbit-managed-root-ca.crt
-                    validity_seconds=0
+        $leaf = [
+            'scope' => $scope,
+            'domain' => $domain,
+            'version' => bin2hex(random_bytes(8)),
+            'root_hash' => hash('sha256', $rootCertificate),
+            'user' => $account->user,
+            'home' => $account->home,
+        ];
+        $request = AgentStep::run($this->agents, $node, 'certificates.request-leaf', $leaf, 'certificate-request', 'app-dev.certificate_request_failed', 'App development');
 
-                    certificate_extension() {
-                        openssl x509 -in "$current/cert.pem" -noout -ext "$1" 2>/dev/null \
-                            | tr '\n' ' ' \
-                            | tr -s ' ' \
-                            | sed 's/^ //; s/ $//'
-                    }
-
-                    if [ -f "$current/cert.pem" ]; then
-                        not_before=$(openssl x509 -in "$current/cert.pem" -noout -startdate | cut -d= -f2-)
-                        not_after=$(openssl x509 -in "$current/cert.pem" -noout -enddate | cut -d= -f2-)
-
-                        if not_before_epoch=$(date -d "$not_before" +%s) && \
-                            not_after_epoch=$(date -d "$not_after" +%s); then
-                            validity_seconds=$((not_after_epoch - not_before_epoch))
-                        fi
-                    fi
-
-                    if [ -f "$current/key.pem" ] && [ -f "$current/cert.pem" ] && [ -f "$current/root.pem" ] && \
-                        sudo test -f "$caddy_current/key.pem" && sudo test -f "$caddy_current/cert.pem" && \
-                        [ "$(sha256sum "$current/root.pem" | cut -d ' ' -f 1)" = "$expected_root_hash" ] && \
-                        openssl verify -CAfile "$current/root.pem" "$current/cert.pem" >/dev/null && \
-                        openssl x509 -in "$current/cert.pem" -noout -checkend 2592000 >/dev/null && \
-                        [ "$validity_seconds" -ge 34214400 ] && [ "$validity_seconds" -le 34387200 ] && \
-                        openssl x509 -in "$current/cert.pem" -noout -checkhost "$domain" >/dev/null && \
-                        openssl pkey -in "$current/key.pem" -text_pub -noout 2>/dev/null | \
-                            grep -Eq '^(RSA )?Public-Key: \(2048 bit\)' && \
-                        [ "$(certificate_extension basicConstraints)" = \
-                            'X509v3 Basic Constraints: critical CA:FALSE' ] && \
-                        [ "$(certificate_extension keyUsage)" = \
-                            'X509v3 Key Usage: critical Digital Signature, Key Encipherment' ] && \
-                        [ "$(certificate_extension extendedKeyUsage)" = \
-                            'X509v3 Extended Key Usage: TLS Web Server Authentication' ] && \
-                        [ "$(certificate_extension subjectAltName)" = \
-                            "X509v3 Subject Alternative Name: DNS:$domain" ] && \
-                        [ "$(openssl pkey -in "$current/key.pem" -pubout 2>/dev/null)" = \
-                            "$(openssl x509 -in "$current/cert.pem" -pubkey -noout 2>/dev/null)" ] && \
-                        [ "$(openssl x509 -in "$current/cert.pem" -fingerprint -sha256 -noout)" = \
-                            "$(sudo openssl x509 -in "$caddy_current/cert.pem" -fingerprint -sha256 -noout)" ] && \
-                        [ "$(sudo openssl pkey -in "$caddy_current/key.pem" -pubout 2>/dev/null)" = \
-                            "$(sudo openssl x509 -in "$caddy_current/cert.pem" -pubkey -noout 2>/dev/null)" ]; then
-                        if ! sudo test -f "$trust_anchor" || \
-                            [ "$(sudo sha256sum "$trust_anchor" | cut -d ' ' -f 1)" != "$expected_root_hash" ]; then
-                            trust_staged=$(mktemp)
-                            trap 'rm -f -- "$trust_staged"' EXIT
-                            install -m 0644 -- "$current/root.pem" "$trust_staged"
-                            sudo install -o root -g root -m 0644 -- "$trust_staged" "$trust_anchor"
-                            sudo update-ca-certificates >/dev/null
-                            openssl verify -CAfile /etc/ssl/certs/ca-certificates.crt "$current/cert.pem" >/dev/null
-                        fi
-                        printf 'CURRENT\n'
-                        exit 0
-                    fi
-
-                    install -d -m 0700 -- "$root/versions"
-                    find "$root/versions" -mindepth 1 -maxdepth 1 -type d -name '*.candidate' -exec rm -rf -- {} +
-                    candidate="$root/versions/$version.candidate"
-                    install -d -m 0700 -- "$candidate"
-                    openssl genrsa -out "$candidate/key.pem" 2048
-                    chmod 0600 "$candidate/key.pem"
-                    openssl req -new -key "$candidate/key.pem" -subj "/CN=$domain" -out "$candidate/request.pem"
-                    cat "$candidate/request.pem"
-                    BASH,
-            ),
-            step: 'certificate-request',
-            errorCode: 'app-dev.certificate_request_failed',
-        );
-
-        if (trim($request->stdout) === 'CURRENT') {
+        if (($request['state'] ?? null) === 'current') {
             return;
         }
 
-        $certificate = $this->signer->sign($domain, $request->stdout);
-        $this->publish(
-            node: $node,
-            scope: $scope,
-            domain: $domain,
-            version: $version,
-            certificate: $certificate,
-            rootCertificate: $rootCertificate,
-            rootHash: $rootHash,
-            account: $account,
-        );
-    }
-
-    private function publish(
-        Node $node,
-        string $scope,
-        string $domain,
-        string $version,
-        string $certificate,
-        string $rootCertificate,
-        string $rootHash,
-        ManagedUserAccount $account,
-    ): void {
-        $this->ssh->execute(
-            $node,
-            new RemoteCommand(
-                arguments: [
-                    'bash',
-                    '-ceu',
-                    $this->publishScript(),
-                    '--',
-                    $scope,
-                    $domain,
-                    $version,
-                    $rootHash,
-                    (string) strlen($certificate),
-                    $account->user,
-                    $account->group,
-                    $account->home,
-                    CaddyPublicationLock::script(CaddyPublicationLock::Path).PHP_EOL.'systemctl reload-or-restart caddy'.PHP_EOL,
-                ],
-                input: $certificate.$rootCertificate,
-            ),
-            step: 'certificate-publish',
-            errorCode: 'app-dev.certificate_publish_failed',
-        );
-    }
-
-    private function publishScript(): string
-    {
-        return <<<'BASH'
-            scope=$1
-            domain=$2
-            version=$3
-            expected_root_hash=$4
-            certificate_length=$5
-            managed_user=$6
-            managed_group=$7
-            managed_home=$8
-            locked_reload=$9
-            root="$managed_home/.orbit/certificates/$scope"
-            candidate="$root/versions/$version.candidate"
-            published="$root/versions/$version"
-            test -d "$candidate"
-            head -c "$certificate_length" > "$candidate/cert.pem"
-            cat > "$candidate/root.pem"
-            rm -f -- "$candidate/request.pem"
-            chmod 0600 "$candidate/key.pem"
-            chmod 0644 "$candidate/cert.pem" "$candidate/root.pem"
-            openssl pkey -in "$candidate/key.pem" -text_pub -noout 2>/dev/null | \
-                grep -Eq '^(RSA )?Public-Key: \(2048 bit\)'
-            openssl verify -CAfile "$candidate/root.pem" "$candidate/cert.pem"
-            test "$(sha256sum "$candidate/root.pem" | cut -d ' ' -f 1)" = "$expected_root_hash"
-            openssl x509 -in "$candidate/cert.pem" -noout -checkhost "$domain"
-            test "$(openssl pkey -in "$candidate/key.pem" -pubout 2>/dev/null)" = \
-                "$(openssl x509 -in "$candidate/cert.pem" -pubkey -noout 2>/dev/null)"
-
-            trust_anchor=/usr/local/share/ca-certificates/orbit-managed-root-ca.crt
-            trust_staged=$(mktemp)
-            trap 'rm -f -- "$trust_staged"' EXIT
-            install -m 0644 -- "$candidate/root.pem" "$trust_staged"
-            sudo install -o root -g root -m 0644 -- "$trust_staged" "$trust_anchor"
-            sudo update-ca-certificates
-            openssl verify -CAfile /etc/ssl/certs/ca-certificates.crt "$candidate/cert.pem" >/dev/null
-            mv -fT -- "$candidate" "$published"
-            target_link="$root/.current-$version"
-            ln -s -- "$published" "$target_link"
-            mv -fT -- "$target_link" "$root/current"
-
-            caddy_root="/etc/caddy/orbit-certificates/$scope"
-            caddy_candidate="$caddy_root/versions/$version.candidate"
-            caddy_published="$caddy_root/versions/$version"
-            sudo install -d -o root -g caddy -m 0750 -- "$caddy_root/versions" "$caddy_candidate"
-            sudo install -o root -g caddy -m 0640 -- "$published/key.pem" "$caddy_candidate/key.pem"
-            sudo install -o root -g caddy -m 0644 -- "$published/cert.pem" "$caddy_candidate/cert.pem"
-            sudo mv -fT -- "$caddy_candidate" "$caddy_published"
-            caddy_link="$caddy_root/.current-$version"
-            sudo ln -s -- "$caddy_published" "$caddy_link"
-            sudo mv -fT -- "$caddy_link" "$caddy_root/current"
-            # A live site may already name this certificate, and a build whose render did not change does
-            # not reload, so Caddy reloads here under the Node Caddy lock that builds hold.
-            if sudo systemctl is-active --quiet caddy; then
-                sudo bash -ceu "$locked_reload"
-            fi
-            BASH;
+        AgentStep::run($this->agents, $node, 'certificates.publish-leaf', [
+            ...$leaf,
+            'certificate' => $this->signer->sign($domain, StoredValue::string($request['request'] ?? null)),
+            'root_certificate' => $rootCertificate,
+        ], 'certificate-publish', 'app-dev.certificate_publish_failed', 'App development');
     }
 
     /**
@@ -383,30 +184,9 @@ final readonly class RemoteAppDevCertificateManager
             );
         }
 
-        $account = $this->accounts->resolve($node);
-        $this->ssh->execute(
-            $node,
-            new RemoteCommand(
-                arguments: [
-                    'bash',
-                    '-seu',
-                    '--',
-                    $scope,
-                    $account->user,
-                    $account->group,
-                    $account->home,
-                ],
-                input: <<<'BASH'
-                    scope=$1
-                    managed_user=$2
-                    managed_group=$3
-                    managed_home=$4
-                    rm -rf -- "$managed_home/.orbit/certificates/$scope"
-                    sudo rm -rf -- "/etc/caddy/orbit-certificates/$scope"
-                    BASH,
-            ),
-            step: 'certificate-remove',
-            errorCode: 'app-dev.certificate_remove_failed',
-        );
+        AgentStep::run($this->agents, $node, 'certificates.remove-leaf', [
+            'scope' => $scope,
+            'home' => $this->accounts->resolve($node)->home,
+        ], 'certificate-remove', 'app-dev.certificate_remove_failed', 'App development');
     }
 }

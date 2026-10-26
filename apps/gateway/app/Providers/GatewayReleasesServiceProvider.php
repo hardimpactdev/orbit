@@ -23,11 +23,14 @@ use App\Console\Commands\SmokeGatewayReleaseCommand;
 use App\Console\Commands\StageGatewayReleaseCommand;
 use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\Fleet\FleetConvergeUnits;
+use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseDrain;
+use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseExecutionOwner;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
+use App\Domain\GatewayReleases\GatewayReleaseObserver;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
 use App\Domain\GatewayReleases\GatewayReleaseSmoke;
 use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
@@ -41,9 +44,10 @@ use App\Domain\Nodes\NodeUpdateBroadcaster;
 use App\Domain\Settings\SettingRepository;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskTickClock;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
-use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Gateway\GatewayApplicationPath;
+use App\Infrastructure\Gateway\GatewayCheckoutAccessConverger;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
@@ -52,12 +56,15 @@ use App\Infrastructure\GatewayReleases\ArtisanGatewayReleaseRuntime;
 use App\Infrastructure\GatewayReleases\GatewayCleanupHandoff;
 use App\Infrastructure\GatewayReleases\GatewayNodeAgentUpdate;
 use App\Infrastructure\GatewayReleases\GatewayReleaseAdopter;
+use App\Infrastructure\GatewayReleases\GatewayReleaseAdoptionFiles;
 use App\Infrastructure\GatewayReleases\GatewayReleaseAlerts;
 use App\Infrastructure\GatewayReleases\GatewayReleaseBuilder;
-use App\Infrastructure\GatewayReleases\GatewayReleaseExchange;
+use App\Infrastructure\GatewayReleases\GatewayReleaseCommands;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GatewayReleases\GatewayReleasePromoter;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
+use App\Infrastructure\GatewayReleases\GatewayReleaseRecovery;
+use App\Infrastructure\GatewayReleases\GatewayReleaseRestore;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSource;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSupersession;
@@ -77,6 +84,7 @@ use App\Infrastructure\GatewayReleases\SystemdGatewayReleaseUnitStarter;
 use App\Infrastructure\GitHub\GitHubActionsReader;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
+use App\Models\Node;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
@@ -90,11 +98,12 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
         $this->app->bind(GatewayReleaseExecutionOwner::class, NativeGatewayReleaseExecutionOwner::class);
         $this->app->bind(GatewayReleaseDrain::class, SystemdGatewayReleaseDrain::class);
         $this->app->bind(GatewayReleaseLayout::class, static fn (): GatewayReleaseLayout => GatewayReleaseLayout::fromConfig());
+        $this->app->bind(GatewayReleaseObserver::class, GatewayReleaseCommands::class);
         $this->app->bind(
             GatewayReleaseWebBuild::class,
             static fn (Application $app): GitHubArtifactWebBuild => new GitHubArtifactWebBuild(
                 layout: $app->make(GatewayReleaseLayout::class),
-                processes: $app->make(ProcessRunner::class),
+                commands: $app->make(GatewayReleaseCommands::class),
                 actions: $app->make(GitHubActionsReader::class),
                 webRoot: rtrim(Config::string('orbit.gateway_web'), '/'),
             ),
@@ -114,7 +123,8 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
         $this->app->bind(
             GatewayReleaseDatabase::class,
             static fn (Application $app): SqliteGatewayReleaseDatabase => new SqliteGatewayReleaseDatabase(
-                processes: $app->make(ProcessRunner::class),
+                commands: $app->make(GatewayReleaseCommands::class),
+                layout: $app->make(GatewayReleaseLayout::class),
                 orbitHome: rtrim(Config::string('orbit.home'), '/'),
                 keptSnapshots: max(1, Config::integer('orbit.gateway_releases.snapshots_keep')),
                 minimumFreeBytes: max(0, Config::integer('orbit.gateway_releases.min_free_mb')) * 1_048_576,
@@ -125,12 +135,8 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
             GatewayReleaseRuntime::class,
             static fn (Application $app): ArtisanGatewayReleaseRuntime => new ArtisanGatewayReleaseRuntime(
                 layout: $app->make(GatewayReleaseLayout::class),
-                processes: $app->make(ProcessRunner::class),
-                // The scheduler drain, a forced stop's wait for the tick lock, the rest of the handoff, and the Gateway
-                // Node's agent update.
-                timeout: (float) (self::drainSeconds() + 330 + 600 + GatewayNodeAgentUpdate::TimeoutSeconds),
+                commands: $app->make(GatewayReleaseCommands::class),
                 stepLock: self::stepLock(),
-                fallback: new LocalGatewayReleaseRuntime($app->make(GatewayRuntimeHandoff::class)),
             ),
         );
         $this->app->bind(
@@ -139,12 +145,11 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 builds: $app->make(NodeCaddyBuilds::class),
                 fpmRenderer: $app->make(GatewayFpmConfigRenderer::class),
                 fpm: $app->make(NativeGatewayFpmConverger::class),
-                files: $app->make(ProtectedFileWriter::class),
                 hibernator: $app->make(RuntimeHibernatorConverger::class),
                 agentView: $app->make(AgentViewConverger::class),
                 releaseUnits: $app->make(GatewayReleaseUnitConverger::class),
                 scheduler: new GatewaySchedulerHandoff(
-                    processes: $app->make(ProcessRunner::class),
+                    agents: $app->make(AgentCommandRunner::class),
                     applicationPath: GatewayApplicationPath::resolve(),
                     drainSeconds: self::drainSeconds(),
                 ),
@@ -152,7 +157,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 applicationPath: GatewayApplicationPath::resolve(),
                 orbitHome: rtrim(Config::string('orbit.home'), '/'),
                 fleet: $app->make(FleetConvergeUnits::class),
-                agent: new GatewayNodeAgentUpdate($app->make(ProcessRunner::class)),
+                agent: $app->make(GatewayNodeAgentUpdate::class),
                 horizon: $app->make(GatewayHorizon::class),
                 recipeImages: static function () use ($app): void {
                     $app->make(RecipeImageBuilds::class)->reconcile();
@@ -161,15 +166,22 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
         );
         $this->app->singleton(
             GatewayReleaseLock::class,
-            static fn (): GatewayReleaseLock => new GatewayReleaseLock(rtrim(Config::string('orbit.home'), '/').'/gateway-release.lock'),
+            static fn (Application $app): GatewayReleaseLock => new GatewayReleaseLock(rtrim(Config::string('orbit.home'), '/').'/gateway-release.lock', $app->make(GatewayReleaseCommands::class)),
         );
         $this->app->bind(
             GatewayReleaseBuilder::class,
             static fn (Application $app): GatewayReleaseBuilder => new GatewayReleaseBuilder(
                 layout: $app->make(GatewayReleaseLayout::class),
-                processes: $app->make(ProcessRunner::class),
+                commands: $app->make(GatewayReleaseCommands::class),
                 readAccess: $app->make(RepositoryReadAccess::class),
                 web: $app->make(GatewayReleaseWebBuild::class),
+                checkoutAccess: static function (string $application) use ($app): void {
+                    $node = Node::query()->find($app->make(GatewayServingHost::class)->nodeId());
+                    if (! $node instanceof Node) {
+                        throw new GatewayReleaseException('access', 'gateway.release_gateway_node_missing', 'No serving Gateway Node exists to prepare checkout access.');
+                    }
+                    new GatewayCheckoutAccessConverger($app->make(AgentCommandRunner::class), $application)->converge($node);
+                },
                 minimumFreeBytes: max(0, Config::integer('orbit.gateway_releases.min_free_mb')) * 1_048_576,
                 reservedBytes: static fn (): int => $app->make(GatewayReleaseDatabase::class)->snapshotBytes(),
                 stepLock: self::stepLock(),
@@ -185,13 +197,13 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
             GatewayReleaseSwitcher::class,
             static fn (Application $app): GatewayReleaseSwitcher => new GatewayReleaseSwitcher(
                 $app->make(GatewayReleaseLayout::class),
-                $app->make(ProcessRunner::class),
+                $app->make(GatewayReleaseCommands::class),
             ),
         );
         $this->app->bind(
             GatewayReleaseSource::class,
             static fn (Application $app): GatewayReleaseSource => new GatewayReleaseSource(
-                processes: $app->make(ProcessRunner::class),
+                commands: $app->make(GatewayReleaseCommands::class),
                 branch: Config::string('orbit.gateway_releases.branch'),
                 checkName: Config::string('orbit.gateway_releases.check'),
             ),
@@ -206,6 +218,8 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
         $this->app->bind(
             GatewayReleaseRecorder::class,
             static fn (Application $app): GatewayReleaseRecorder => new GatewayReleaseRecorder(
+                recovery: $app->make(GatewayReleaseRecovery::class),
+                restore: $app->make(GatewayReleaseRestore::class),
                 alerts: $app->make(GatewayReleaseAlerts::class),
                 automation: $app->make(GatewayReleaseAutomation::class),
                 units: $app->make(GatewayReleaseUnitStarter::class),
@@ -222,11 +236,11 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
         );
         $this->app->bind(
             GatewayReleaseUnitConverger::class,
-            static fn (Application $app): NativeGatewayReleaseUnitConverger => new NativeGatewayReleaseUnitConverger($app->make(ProcessRunner::class)),
+            static fn (Application $app): NativeGatewayReleaseUnitConverger => new NativeGatewayReleaseUnitConverger($app->make(GatewayReleaseCommands::class)),
         );
         $this->app->bind(
             GatewayReleaseUnitStarter::class,
-            static fn (Application $app): SystemdGatewayReleaseUnitStarter => new SystemdGatewayReleaseUnitStarter($app->make(ProcessRunner::class)),
+            static fn (Application $app): SystemdGatewayReleaseUnitStarter => new SystemdGatewayReleaseUnitStarter($app->make(GatewayReleaseCommands::class)),
         );
         $this->app->bind(
             GatewayReleasePromoter::class,
@@ -262,9 +276,8 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
             GatewayReleaseAdopter::class,
             static fn (Application $app): GatewayReleaseAdopter => new GatewayReleaseAdopter(
                 layout: $app->make(GatewayReleaseLayout::class),
-                processes: $app->make(ProcessRunner::class),
                 builder: $app->make(GatewayReleaseBuilder::class),
-                exchange: new GatewayReleaseExchange($app->make(ProcessRunner::class)),
+                files: $app->make(GatewayReleaseAdoptionFiles::class),
                 runtime: new LocalGatewayReleaseRuntime($app->make(GatewayRuntimeHandoff::class)),
                 verifier: $app->make(GatewayReleaseVerifier::class),
                 recorder: $app->make(GatewayReleaseRecorder::class),

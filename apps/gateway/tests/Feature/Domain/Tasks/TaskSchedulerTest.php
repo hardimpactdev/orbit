@@ -7,7 +7,6 @@ use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\UpdateTaskGroupAction;
 use App\Data\Tasks\UpdateTaskGroupData;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
-use App\Domain\Projects\GatewaySetupSteps;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentObservation;
@@ -64,6 +63,7 @@ use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -91,7 +91,7 @@ use Illuminate\Support\Facades\Log;
 use Tests\Support\AcceptingTaskWorkspaceMcp;
 use Tests\Support\AgentCommandDispatcher;
 use Tests\Support\AgentSnapshotReader;
-use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskTurnReceipts;
@@ -1908,10 +1908,14 @@ it('releases the baseline claim and retries after a VP_HOME probe failure', func
     $instance = $group->taskable;
     $spawner = scheduler_recording_spawner();
     scheduler_bind_claim($instance, $spawner);
-    $probe = new AppDevFakeSshExecutor([
-        new CommandResult(42, '', '', 1, false),
-        new CommandResult(0, "/opt/orbit/vite-plus/bin/vp\n", '', 1, false),
-    ]);
+    $probeCalls = 0;
+    $probe = new FakeAgentCommandRunner()->answer('tools.inspect-vp-scope', static function () use (&$probeCalls): array {
+        if (++$probeCalls === 1) {
+            throw new AgentCommandRefused('tools.inspect-vp-scope', 'tools.vp_scope_absent', 'Absent');
+        }
+
+        return ['binary' => '/opt/orbit/vite-plus/bin/vp'];
+    });
     $transport = new class implements SshExecutor
     {
         public int $starts = 0;
@@ -1934,7 +1938,6 @@ it('releases the baseline claim and retries after a VP_HOME probe failure', func
             app(KnownHostsStore::class),
         )),
         ResolvedVp::manager(probe: $probe),
-        app(GatewaySetupSteps::class),
         app(RepositoryPullRequestAccess::class),
     ));
 
@@ -1950,7 +1953,7 @@ it('releases the baseline claim and retries after a VP_HOME probe failure', func
 
     expect(TaskCheck::query()->sole()->pid)->toBe(4100);
     expect($transport->starts)->toBe(1);
-    expect($probe->commands)->toHaveCount(2);
+    expect($probe->calls)->toHaveCount(2);
     expect($group->tasks()->firstOrFail()->communication_failures)->toBe(0);
     expect($group->fresh()?->assistance_requested)->toBeFalse();
 });

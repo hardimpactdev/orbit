@@ -8,118 +8,39 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\ProductionWebRootManager;
 use App\Domain\Routes\RouteWebRoot;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AppProd\ProductionSshExecutor;
-use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentStep;
 use App\Models\Instance;
 use App\Models\Route;
 
+/**
+ * The web roots that a production Instance's Routes serve, in its selected release, through the Node agent's
+ * `instances.prepare-served-web-roots` and `instances.check-served-web-roots` (docs/reference/deployments.md).
+ */
 final readonly class RemoteProductionWebRootManager implements ProductionWebRootManager
 {
-    public function __construct(
-        private ProductionSshExecutor $ssh,
-    ) {}
+    public function __construct(private AgentCommandRunner $agents) {}
 
     public function prepare(Instance $instance, ?Route $activating = null): void
     {
         $instance->loadMissing(['project', 'node']);
         $applications = RouteWebRoot::servedApplications($instance, $activating);
-        $user = $instance->production_user;
-        $home = $instance->production_home;
 
         if ($applications === []) {
             return;
         }
 
-        if (! $instance->placedOnAppProd() || ! is_string($user) || ! is_string($home) || $home !== "/home/{$user}") {
-            throw new ResourceOperationException('app-prod.web_root_invalid', 'The production Instance identity is incomplete.', 409);
-        }
-
-        try {
-            $this->ssh->execute(
-                $instance->node,
-                new RemoteCommand(
-                    arguments: ['bash', '-seu', '--', $user, $home, ProductionWebRootProgram::entries($applications)],
-                    input: ProductionWebRootProgram::functions()."\n".<<<'BASH'
-                        user=$1
-                        home=$2
-                        served_web_roots=$3
-                        printf '%s' "$user" | grep -Eq '^[a-z_][a-z0-9_-]{0,31}$'
-                        test "$home" = "/home/$user"
-                        sudo -u "$user" -H test -d "$home"
-                        sudo -u "$user" -H test ! -L "$home"
-                        test "$(sudo -u "$user" -H realpath -e -- "$home")" = "$home"
-                        current="$home/current"
-                        if ! sudo -u "$user" -H test -L "$current"; then exit 3; fi
-                        selected=$(sudo -u "$user" -H realpath -e -- "$current")
-                        case "$selected" in "$home/releases/"*) ;; *) exit 1 ;; esac
-                        printf '%s' "${selected#"$home/releases/"}" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
-                        link_served_environments "$selected"
-                        grant_served_web_roots "$selected"
-                        BASH,
-                    maxOutputBytes: 4096,
-                ),
-                'app-prod-web-roots',
-                'app-prod.web_root_invalid',
-            );
-        } catch (RuntimeConvergenceException $exception) {
-            if ($exception->result?->exitCode === 3) {
-                throw new ResourceOperationException(
-                    errorCode: 'route.web_root_release_missing',
-                    message: 'Deploy the production Instance before a Route with a web root serves it.',
-                    status: 409,
-                    previous: $exception,
-                );
-            }
-
-            throw $exception;
-        }
+        $this->run($instance, 'instances.prepare-served-web-roots', $applications, 'app-prod-web-roots');
     }
 
     public function assertServable(Instance $instance, string $webRoot): void
     {
         $instance->loadMissing(['project', 'node']);
-        $user = $instance->production_user;
-        $home = $instance->production_home;
-
-        if (! $instance->placedOnAppProd() || ! is_string($user) || ! is_string($home) || $home !== "/home/{$user}") {
-            throw new ResourceOperationException('app-prod.web_root_invalid', 'The production Instance identity is incomplete.', 409);
-        }
-
-        $entries = ProductionWebRootProgram::entries([['web_root' => $webRoot, 'directory' => RouteWebRoot::relativeDirectory($webRoot), 'suffix' => '']]);
 
         try {
-            $this->ssh->execute(
-                $instance->node,
-                new RemoteCommand(
-                    arguments: ['bash', '-seu', '--', $user, $home, $entries],
-                    input: ProductionWebRootProgram::functions()."\n".<<<'BASH'
-                        user=$1
-                        home=$2
-                        served_web_roots=$3
-                        printf '%s' "$user" | grep -Eq '^[a-z_][a-z0-9_-]{0,31}$'
-                        test "$home" = "/home/$user"
-                        current="$home/current"
-                        if ! sudo -u "$user" -H test -L "$current"; then exit 3; fi
-                        selected=$(sudo -u "$user" -H realpath -e -- "$current")
-                        case "$selected" in "$home/releases/"*) ;; *) exit 1 ;; esac
-                        check_served_web_roots "$selected"
-                        BASH,
-                    maxOutputBytes: 4096,
-                ),
-                'app-prod-web-root-check',
-                'app-prod.web_root_invalid',
-            );
+            $this->run($instance, 'instances.check-served-web-roots', [['web_root' => $webRoot, 'directory' => RouteWebRoot::relativeDirectory($webRoot)]], 'app-prod-web-root-check');
         } catch (RuntimeConvergenceException $exception) {
-            if ($exception->result?->exitCode === 3) {
-                throw new ResourceOperationException(
-                    errorCode: 'route.web_root_release_missing',
-                    message: 'Deploy the production Instance before a Route with a web root serves it.',
-                    status: 409,
-                    previous: $exception,
-                );
-            }
-
-            if ($exception->result?->exitCode !== 1) {
+            if (AgentStep::refusal($exception)?->errorCode !== 'instances.release_invalid') {
                 throw $exception;
             }
 
@@ -129,6 +50,41 @@ final readonly class RemoteProductionWebRootManager implements ProductionWebRoot
                 status: 409,
                 previous: $exception,
             );
+        }
+    }
+
+    /** @param  list<array{web_root: string, directory: string}>  $served */
+    private function run(Instance $instance, string $command, array $served, string $step): void
+    {
+        $user = $instance->production_user;
+        $home = $instance->production_home;
+        $root = $instance->root ?? $instance->project->root;
+
+        if (! $instance->placedOnAppProd() || ! is_string($user) || ! is_string($home) || $home !== "/home/{$user}" || ! is_string($root)) {
+            throw new ResourceOperationException('app-prod.web_root_invalid', 'The production Instance identity is incomplete.', 409);
+        }
+
+        try {
+            AgentStep::run($this->agents, $instance->node, $command, [
+                'repository' => $instance->project->repository_url,
+                'user' => $user,
+                'home' => $home,
+                'instance' => $instance->id,
+                'relative_root' => $root,
+                'application_suffix' => ProductionApplicationPaths::suffix($root),
+                'served' => array_map(static fn (array $application): array => ['web_root' => $application['web_root'], 'directory' => $application['directory']], $served),
+            ], $step, 'app-prod.web_root_invalid', 'App production');
+        } catch (RuntimeConvergenceException $exception) {
+            if (AgentStep::refusal($exception)?->errorCode === 'instances.release_missing') {
+                throw new ResourceOperationException(
+                    errorCode: 'route.web_root_release_missing',
+                    message: 'Deploy the production Instance before a Route with a web root serves it.',
+                    status: 409,
+                    previous: $exception,
+                );
+            }
+
+            throw $exception;
         }
     }
 }

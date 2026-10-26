@@ -8,15 +8,15 @@ use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
-use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerScopeLock;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
-use App\Infrastructure\Nodes\NodeUpdateLock;
+use App\Infrastructure\MachineSoftware\NodeRecipeProgram;
 use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Infrastructure\Processes\DockerProcessRenderer;
-use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Support\Collection;
@@ -29,10 +29,8 @@ final readonly class MigrateDockerAction
     public function __construct(
         private ManagedNodeEligibility $eligibility,
         private NodeRoleConvergeLock $roles,
-        private NodeUpdateLock $updates,
         private ToolManagerScopeLock $tools,
-        private RemoteProgramRunner $programs,
-        private RemoteProgramCatalog $catalog,
+        private AgentCommandRunner $agents,
         private ProcessTargetResolver $targets,
         private ProcessRuntimeManager $runtime,
     ) {}
@@ -52,7 +50,7 @@ final readonly class MigrateDockerAction
             return $this->remote($node, $recipe, $ids, $states, $processes, 'plan', $fallback);
         }
 
-        return $this->roles->run($node, fn (): array => $this->tools->run($node->id, ToolManagerName::Apt, fn (): array => $this->updates->run($node, function () use ($node, $recipe, $processes, $ids, $states, $fallback, $restorePolicies): array {
+        return $this->roles->run($node, fn (): array => $this->tools->run($node->id, ToolManagerName::Apt, function () use ($node, $recipe, $processes, $ids, $states, $fallback, $restorePolicies): array {
             foreach ($processes as $process) {
                 if ($this->targets->forInstallation($process)->node->id !== $node->id) {
                     throw new RuntimeException('The Docker Process target changed. Nothing was migrated.');
@@ -85,7 +83,7 @@ final readonly class MigrateDockerAction
             }
 
             return $report;
-        })), errorCode: 'node.docker_migration_failed');
+        }), errorCode: 'node.docker_migration_failed');
     }
 
     /**
@@ -106,13 +104,24 @@ final readonly class MigrateDockerAction
             $specs[(string) $process->id] = ['name' => $renderer->containerName($process), 'hash' => $renderer->specHash($process, $target),
                 'volumes' => $process->runtime_config['volumes'] ?? []];
         }
-        $payload = ['mode' => $mode, 'fallback' => $fallback, 'recipe' => $recipe->identity, 'snapshot' => $recipe->snapshot,
+        $payload = ['fallback' => $fallback, 'recipe' => $recipe->identity, 'snapshot' => $recipe->snapshot,
             'docker_version' => $recipe->tools['docker.io']->version, 'containerd_version' => $recipe->tools['containerd']->version,
             'process_ids' => $ids, 'process_states' => (object) $states, 'process_specs' => (object) $specs,
-            'architecture' => in_array($node->architecture, ['x86_64', 'amd64'], true) ? 'amd64' : 'arm64'];
-        $result = $this->programs->run($node, $this->catalog->program('docker.migrate', 'root'), $payload);
-        $report = $result->data;
-        if ($result->outcome === 'failed') {
+            'architecture' => NodeRecipeProgram::architecture($node)];
+        $command = match ($mode) {
+            'plan' => 'docker.plan-migration',
+            'prepare' => 'docker.prepare-migration',
+            'restore-policies' => 'docker.restore-migration-policies',
+            'report' => 'docker.report-migration',
+            default => throw new RuntimeException('Unknown Docker migration action.'),
+        };
+        try {
+            $report = $this->agents->run($node, $command, $payload);
+        } catch (AgentCommandRefused $error) {
+            if ($error->errorCode !== 'docker.migration_failed') {
+                throw $error;
+            }
+            $report = $error->details;
             $report['healthy'] = false;
             $report['message'] = 'Resume the same command with the same recipe after resolving the failure. No volume data was deleted.';
             if ($mode === 'prepare' && ($report['failure'] ?? null) === 'docker-migration:fallback-required') {
@@ -120,14 +129,6 @@ final readonly class MigrateDockerAction
             }
         }
 
-        $fields = [];
-        foreach ($report as $key => $value) {
-            if (! is_string($key)) {
-                throw new RuntimeException('Docker migration returned an invalid report key.');
-            }
-            $fields[$key] = $value;
-        }
-
-        return $fields;
+        return $report;
     }
 }

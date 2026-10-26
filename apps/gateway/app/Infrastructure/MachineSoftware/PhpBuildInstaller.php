@@ -5,38 +5,55 @@ declare(strict_types=1);
 namespace App\Infrastructure\MachineSoftware;
 
 use App\Domain\RemotePrograms\ProgramResult;
-use App\Domain\RemotePrograms\RemoteProgramRunner;
-use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Models\Node;
 use InvalidArgumentException;
 
 /**
  * Runs `php.install-build`, the one installer of the recipe's PHP build (ADR 0216), on a Node. Recipe convergence and
- * the PHP step of an Instance call it; the image build and bin/php-build run the same program with the same input.
+ * the PHP step of an Instance call it; the image build and bin/php-build call the same native installer with the same input.
  */
 final readonly class PhpBuildInstaller
 {
-    public const string Program = 'php.install-build';
-
     /** Outcomes after which the Node runs the recipe build. */
     public const array Succeeded = ['planned', 'current', 'applied'];
 
     public function __construct(
-        private RemoteProgramRunner $runner,
-        private RemoteProgramCatalog $catalog,
+        private AgentCommandRunner $runner,
     ) {}
 
     /**
      * @param  list<string>  $versions
+     * @param  array{id: string, codenames: list<string>}|null  $release
      * @param  'plan'|'apply'  $mode
      * @param  'refuse'|'keep'|'purge'  $extras  `refuse` for recipe convergence, `keep` for an Instance step, which never
      *                                           removes a site's extension, and `purge` only for the ci-runner profile.
      * @param  'none'|'shared'|'all'|'disabled'  $fpm  Which active PHP-FPM masters restart after a change. `shared` defers a
      *                                                 service whose pools fail `php-fpm -t`; `all` rolls back instead. `disabled` keeps the unused shared service off.
      */
-    public function run(Node $node, MachineRecipe $recipe, array $versions, string $mode, bool $pcov, string $extras, string $fpm, bool $opentelemetry): ProgramResult
+    public function run(Node $node, MachineRecipe $recipe, array $versions, string $mode, bool $pcov, string $extras, string $fpm, bool $opentelemetry, ?array $release = null): ProgramResult
     {
-        return $this->runner->run($node, $this->catalog->program(self::Program), self::input($recipe, $versions, $mode, $pcov, $extras, $fpm, opentelemetry: $opentelemetry));
+        $input = self::input($recipe, $versions, $pcov, $extras, $fpm, opentelemetry: $opentelemetry, release: $release);
+        try {
+            $result = $this->runner->run($node, $mode === 'plan' ? 'php.inspect-build' : 'php.install-build', $input);
+        } catch (AgentCommandRefused $error) {
+            if (! str_starts_with($error->errorCode, 'php.build_')) {
+                throw $error;
+            }
+
+            return new ProgramResult(substr($error->errorCode, strlen('php.build_')), $error->details, '');
+        }
+
+        if ($mode === 'plan') {
+            return new ProgramResult('planned', $result, '');
+        }
+        if (! is_string($result['outcome'] ?? null) || ! in_array($result['outcome'], ['current', 'applied'], true) || ! is_array($result['data'] ?? null)) {
+            throw new AgentRunnerFailure('php.install-build', AgentRunnerFailure::MalformedResult, 'The PHP build installer returned an invalid result.');
+        }
+
+        return new ProgramResult($result['outcome'], $result['data'], '');
     }
 
     /**
@@ -44,9 +61,9 @@ final readonly class PhpBuildInstaller
      * @param  array{id: string, codenames: list<string>}|null  $release  The operating systems the caller supports.
      * @return array<string, mixed>
      */
-    public static function input(MachineRecipe $recipe, array $versions, string $mode, bool $pcov, string $extras, string $fpm, bool $opentelemetry, ?array $release = null): array
+    public static function input(MachineRecipe $recipe, array $versions, bool $pcov, string $extras, string $fpm, bool $opentelemetry, ?array $release = null): array
     {
-        if (! in_array($mode, ['plan', 'apply'], true) || ! in_array($extras, ['refuse', 'keep', 'purge'], true) || ! in_array($fpm, ['none', 'shared', 'all', 'disabled'], true)) {
+        if (! in_array($extras, ['refuse', 'keep', 'purge'], true) || ! in_array($fpm, ['none', 'shared', 'all', 'disabled'], true)) {
             throw new InvalidArgumentException('Invalid PHP build installer options.');
         }
         $sets = [];
@@ -64,7 +81,6 @@ final readonly class PhpBuildInstaller
         $rollback = $recipe->tools[$recipe->phpPolicy->rollbackTool] ?? null;
 
         return [
-            'mode' => $mode,
             'versions' => $sets,
             'mirror' => $recipe->artifactMirror,
             'pcov' => $pcov,

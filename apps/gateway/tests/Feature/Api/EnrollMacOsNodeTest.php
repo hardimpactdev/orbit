@@ -10,34 +10,22 @@ use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
-use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\HostKeyScanner;
 use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use Orbit\Sdk\Requests\Nodes\AddNodeRequest;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRequest;
+use Tests\Support\FakeMacAdmissionAgentRunner;
 use Tests\Support\FakeNodeAgentRuntime;
 
 beforeEach(function (): void {
-    app()->instance(SshExecutor::class, new class implements SshExecutor
-    {
-        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-        {
-            if ($command->arguments[0] === 'true') {
-                return new CommandResult(0, '', '', 1, false);
-            }
-
-            return new CommandResult(0, "Darwin\narm64\nok\n1\n", '', 1, false);
-        }
-    });
+    app()->instance(AdmissionAgentRunner::class, new FakeMacAdmissionAgentRunner);
     app()->instance(HostKeyScanner::class, new class implements HostKeyScanner
     {
-        public function scan(string $host, int $port, ?SshConnection $via = null): HostKey
+        public function scan(string $host, int $port, ?Node $via = null): HostKey
         {
             return new HostKey('ssh-ed25519', 'PUBLICKEY', 'SHA256:'.str_repeat('M', 43));
         }

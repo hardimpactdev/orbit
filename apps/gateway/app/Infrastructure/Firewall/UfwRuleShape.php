@@ -19,19 +19,35 @@ final readonly class UfwRuleShape
         public ?string $family,
     ) {}
 
-    public function withSource(string $source): self
+    /** @return array<string, mixed> */
+    public function toAgentInput(): array
     {
+        return [
+            'comment' => $this->comment,
+            'action' => $this->action,
+            'direction' => $this->direction,
+            'source' => $this->source,
+            'destination' => $this->destination,
+            'port' => $this->port,
+            'protocol' => $this->protocol,
+            'in_interface' => $this->inInterface,
+            'out_interface' => $this->outInterface,
+            'family' => $this->family,
+        ];
+    }
+
+    /** @param array<string, mixed> $value */
+    public static function fromAgentOutput(array $value): self
+    {
+        $string = static fn (string $key): string => is_string($value[$key] ?? null)
+            ? $value[$key] : throw new \UnexpectedValueException('Invalid firewall observation.');
+        $nullable = static fn (string $key): ?string => array_key_exists($key, $value) && ($value[$key] === null || is_string($value[$key]))
+            ? $value[$key] : throw new \UnexpectedValueException('Invalid firewall observation.');
+
         return new self(
-            comment: $this->comment,
-            action: $this->action,
-            direction: $this->direction,
-            source: $source,
-            destination: $this->destination,
-            port: $this->port,
-            protocol: $this->protocol,
-            inInterface: $this->inInterface,
-            outInterface: $this->outInterface,
-            family: $this->family,
+            $string('comment'), $string('action'), $string('direction'), $string('source'),
+            $string('destination'), $string('port'), $string('protocol'),
+            $nullable('in_interface'), $nullable('out_interface'), $nullable('family'),
         );
     }
 

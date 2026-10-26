@@ -354,29 +354,30 @@ final readonly class ProvisionNodeAction
         }
 
         $clock = app(TaskVmStepClock::class);
+        $recordObservation = fn (NodeObservation $observation) => $this->recordArchitecture($node, $data, $observation);
         try {
             if ($priorActiveState !== null && $this->converger instanceof RecoverableNodeConverger) {
                 $this->converger->convergeRecoverably(
                     $node,
                     $identity,
                     $data->expectedSshHostFingerprint,
-                    function (NodeObservation $observation) use ($node, $managedUser, $data): void {
-                        $this->recordArchitecture($node, $data, $observation);
+                    function () use ($node, $managedUser, $data): void {
                         $node->user = $managedUser;
                         $this->toolManagers->converge($node, ToolManagerName::Apt);
                         $this->convergeRoles($node, $data);
                     },
                     $rolelessOperator,
+                    $recordObservation,
                 );
             } else {
-                $observation = $this->converger->converge(
+                $this->converger->converge(
                     $node,
                     $identity,
                     $data->expectedSshHostFingerprint,
                     $rolelessOperator,
+                    $recordObservation,
                 );
                 $clock->step('node-converge');
-                $this->recordArchitecture($node, $data, $observation);
                 $node->user = $managedUser;
                 $this->toolManagers->converge($node, ToolManagerName::Apt);
                 $clock->step('apt-tool-manager');

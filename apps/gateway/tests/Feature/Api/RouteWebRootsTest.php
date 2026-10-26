@@ -33,22 +33,18 @@ use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentPhpFpmConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
-use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Doctor\ProductionInstanceInspectionExpectationFactory;
 use App\Infrastructure\Instances\ProductionPhpRuntimeConfigRenderer;
 use App\Infrastructure\Instances\RemoteProductionDeployment;
-use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Projects\NativeProjectUpdateProjectionMutator;
 use App\Infrastructure\Routes\NativeRouteRemovalProjector;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Collection;
-use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeRouteRemovalProjector;
 
 beforeEach(function (): void {
@@ -356,7 +352,7 @@ describe('route web root', function (): void {
         })
             ->and(Route::query()->where('domain', 'docs.example.com')->exists())->toBeFalse()
             ->and(RouteWebRoot::servedApplications($instance))->toBe([])
-            ->and(web_root_production_deploy_arguments($instance))->toHaveCount(10);
+            ->and(web_root_production_deploy_served($instance))->toBe([]);
     })->with(['missing release', 'missing directory', 'web root is its application directory', 'web root inside the Instance root']);
 
     it('refuses a production web root in the default directory other than the Instance root', function (): void {
@@ -387,7 +383,7 @@ describe('route web root', function (): void {
             ->and($docs->error_code)->toBe('app-prod.injected_failure')
             ->and(RouteWebRoot::servedApplications($instance))->toBe([])
             ->and(RouteWebRoot::servedApplications($instance, $docs))->toHaveCount(1)
-            ->and(web_root_production_deploy_arguments($instance))->toHaveCount(10)
+            ->and(web_root_production_deploy_served($instance))->toBe([])
             ->and(app(ProductionInstanceInspectionExpectationFactory::class)->make($instance)->runtimeConfiguration?->pool)->not->toContain('apps/docs');
     });
 
@@ -697,19 +693,14 @@ function web_root_production(Project $project): array
     return [$instance->refresh(), $events];
 }
 
-/** @return list<string> The arguments of a later production release preparation. */
-function web_root_production_deploy_arguments(Instance $instance): array
+/** @return list<array{web_root: string, directory: string}> The served web roots that a later release preparation sends. */
+function web_root_production_deploy_served(Instance $instance): array
 {
-    $ssh = new AppDevFakeSshExecutor([new CommandResult(0, "20261009-a1\t".str_repeat('b', 40)."\n", '', 1, false)]);
-    $executor = new ProductionSshExecutor(
-        $ssh,
-        Mockery::mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/unused')->getMock(),
-        Mockery::mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/unused')->getMock(),
-    );
+    $agents = new FakeAgentCommandRunner()->answer('instances.prepare-release', ['name' => '20261009-a1', 'commit' => str_repeat('b', 40)]);
     $instance->update(['source_layout' => 'checkout']);
-    new RemoteProductionDeployment($executor, app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class), static fn (): string => '20261009-a1')->prepare($instance->refresh(), 'main');
+    new RemoteProductionDeployment($agents, app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class), static fn (): string => '20261009-a1')->prepare($instance->refresh(), 'main');
 
-    return $ssh->commands[0]->arguments;
+    return $agents->calls[0]['input']['served'];
 }
 
 function web_root_route(Instance $instance, string $domain, ?string $webRoot = null): Route

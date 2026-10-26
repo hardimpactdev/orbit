@@ -149,7 +149,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         }
 
         if (ProjectLifecycleStep::query()->where('project_id', $group->project_id)->where('command', LifecycleStep::ImportCiCaches)->exists()) {
-            $this->git->send($group->project, $instance->checkout_path, [$default => $head],
+            $this->git->send($group->project, $instance->node, $instance->checkout_path, [$default => $head],
                 fn (RemoteCommand $command): CommandResult => $this->workspaces->execute($instance, $command, 'task-baseline-caches', 'tasks.baseline_reset_failed', mutates: true),
                 'tasks.baseline_reset_failed', cachesOnly: true, selectBaseline: true);
         }
@@ -320,7 +320,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
                     throw new TaskPullRequestException($failure." The repository has no branch [{$branch}].");
                 }
             }
-            $this->git->send($project, $instance->checkout_path, $tips, fn (RemoteCommand $command): CommandResult => $this->workspaces->execute($instance, $command, $step, 'tasks.fetch_failed', mutates: true), 'tasks.fetch_failed');
+            $this->git->send($project, $instance->node, $instance->checkout_path, $tips, fn (RemoteCommand $command): CommandResult => $this->workspaces->execute($instance, $command, $step, 'tasks.fetch_failed', mutates: true), 'tasks.fetch_failed');
         } catch (RuntimeConvergenceException $exception) {
             throw new TaskPullRequestException($failure, previous: $exception);
         }

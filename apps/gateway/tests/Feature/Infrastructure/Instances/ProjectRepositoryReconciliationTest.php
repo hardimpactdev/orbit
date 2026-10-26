@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Projects\UpdateProjectAction;
 use App\Data\Projects\UpdateProjectData;
+use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionRepositoryRecord;
@@ -14,22 +15,16 @@ use App\Domain\Projects\ProjectUpdateStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
 use App\Domain\TaskVms\TaskVmState;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\NativeProcessRunner;
-use App\Infrastructure\Processes\ProcessInvocation;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Projects\RemoteProjectUpdateSourceMutator;
-use App\Infrastructure\Ssh\SshExecutor;
 use App\Jobs\TaskVms\ResumeTaskVm;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\ProjectUpdate;
 use App\Models\Task;
-use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Bus;
-use Illuminate\Support\Str;
-use Symfony\Component\Process\Process;
-use Tests\Support\AppDevFakeSshExecutor;
-use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\Orb101ProjectUpdateFixture;
 
 beforeEach(function (): void {
@@ -37,50 +32,23 @@ beforeEach(function (): void {
 });
 
 describe('Project branch switch', function (): void {
-    it('switches and restores Project branches as the managed user without hooks or credentials', function (): void {
-        $checkout = sys_get_temp_dir().'/orbit-project-branch-'.bin2hex(random_bytes(6));
-        $git = static fn (array $args): string => (new Process(['git', '-C', $checkout, '-c', 'user.name=t', '-c', 'user.email=t@t', ...$args]))->mustRun()->getOutput();
-        (new Process(['git', 'init', '-q', '-b', 'main', $checkout]))->mustRun();
-        file_put_contents($checkout.'/.gitattributes', "readme filter=uid\n");
-        file_put_contents($checkout.'/readme', 'main');
-        $git(['add', '.']);
-        $git(['commit', '-qm', 'main']);
-        $git(['checkout', '-qb', 'other']);
-        file_put_contents($checkout.'/readme', 'other');
-        $git(['commit', '-qam', 'other']);
-        $git(['remote', 'add', 'origin', $checkout]);
-        $git(['update-ref', 'refs/remotes/origin/other', 'HEAD']);
-        $git(['checkout', '-q', 'main']);
-        foreach (['clean', 'smudge'] as $filter) {
-            $git(['config', 'filter.uid.'.$filter, 'printf "%s:%s\\n" "$(id -u)" "${GIT_CONFIG_VALUE_0-absent}" >> .git/filter-users; cat']);
-        }
-        // A planted hook must never run.
-        $git(['config', 'core.hooksPath', $checkout.'/.git/planted-hooks']);
-        mkdir($checkout.'/.git/planted-hooks');
-        file_put_contents($checkout.'/.git/planted-hooks/post-checkout', "#!/bin/sh\ntouch \"$(git rev-parse --git-dir)/hook-ran\"\n");
-        chmod($checkout.'/.git/planted-hooks/post-checkout', 0755);
-        @unlink($checkout.'/.git/filter-users');
-        $this->fixture->defaultInstance->forceFill(['checkout_path' => $checkout])->save();
-        $this->app->instance(SshExecutor::class, new LocalShellSshExecutor);
+    it('requests the branch switch and restoration for the same managed checkout', function (): void {
+        $agents = new FakeAgentCommandRunner()->answer('projects.update-source', []);
+        $this->app->instance(AgentCommandRunner::class, $agents);
         $mutator = $this->app->make(RemoteProjectUpdateSourceMutator::class);
+        $instance = $this->fixture->defaultInstance;
 
-        try {
-            $mutator->switchDefaultBranch($this->fixture->defaultInstance->refresh(), 'other');
-            expect(file_get_contents($checkout.'/readme'))->toBe('other')
-                ->and(trim($git(['config', '--get', 'branch.other.merge'])))->toBe('refs/heads/other')
-                ->and(trim($git(['config', '--get', 'branch.other.remote'])))->toBe('origin');
-            $mutator->restoreDefaultBranch($this->fixture->defaultInstance, 'main');
-            expect(file_get_contents($checkout.'/readme'))->toBe('main');
-            $users = file($checkout.'/.git/filter-users', FILE_IGNORE_NEW_LINES) ?: [];
-            expect($users)->not->toBeEmpty();
-            foreach ($users as $user) {
-                expect($user)->toBe(posix_geteuid().':absent');
-            }
-            expect(fileowner($checkout.'/readme'))->toBe(posix_geteuid())
-                ->and(file_exists($checkout.'/.git/hook-ran'))->toBeFalse();
-        } finally {
-            new Filesystem()->deleteDirectory($checkout);
-        }
+        $mutator->switchDefaultBranch($instance, 'other');
+        $mutator->restoreDefaultBranch($instance, 'main');
+
+        expect($agents->calls)->toBe([
+            ['node' => $instance->node->name, 'command' => 'projects.update-source', 'input' => [
+                'operation' => 'switch_branch', 'path' => $instance->checkout_path, 'branch' => 'other',
+            ]],
+            ['node' => $instance->node->name, 'command' => 'projects.update-source', 'input' => [
+                'operation' => 'restore_branch', 'path' => $instance->checkout_path, 'branch' => 'main',
+            ]],
+        ]);
     });
 });
 
@@ -209,50 +177,27 @@ describe('App repository reconciliation', function (): void {
             ->toBe([]);
     });
 
-    it('preflights the configured origin despite an insteadOf rule and still refuses a different origin', function (): void {
-        $sandbox = sys_get_temp_dir().'/orbit-app-update-origin-'.Str::uuid();
-        $checkout = "{$sandbox}/checkout";
-        $git = static function (array $arguments): void {
-            $result = new NativeProcessRunner()->run(new ProcessInvocation(['git', ...$arguments]));
-            expect($result->succeeded())->toBeTrue($result->stderr);
-        };
-        $git(['init', '--bare', '--initial-branch=main', "{$sandbox}/current.git"]);
-        $git(['init', '--bare', '--initial-branch=main', "{$sandbox}/proposed.git"]);
-        $git(['init', '--initial-branch=main', $checkout]);
-        $git(['-C', $checkout, '-c', 'user.name=Orbit Test', '-c', 'user.email=orbit@example.test', 'commit', '--allow-empty', '-m', 'Initial']);
-        $git(['-C', $checkout, 'remote', 'add', 'origin', "{$sandbox}/current.git"]);
-        $git(['-C', $checkout, 'config', "url.{$sandbox}/./.insteadOf", "{$sandbox}/"]);
-        $this->fixture->defaultInstance->update(['checkout_path' => $checkout]);
-        $this->app->instance(SshExecutor::class, new LocalShellSshExecutor);
+    it('maps a repository preflight refusal without changing the Project', function (): void {
+        $agents = new FakeAgentCommandRunner()->refuse('projects.update-source', 'projects.source_failed', ['step' => 'app-update-repository-preflight']);
+        $this->app->instance(AgentCommandRunner::class, $agents);
         $mutator = $this->app->make(RemoteProjectUpdateSourceMutator::class);
 
-        try {
-            $mutator->preflightRepository(
-                [$this->fixture->defaultInstance->refresh()],
-                "{$sandbox}/current.git",
-                "{$sandbox}/proposed.git",
-            );
-
-            $git(['-C', $checkout, 'remote', 'set-url', 'origin', "{$sandbox}/other.git"]);
-
-            expect(fn () => $mutator->preflightRepository(
-                [$this->fixture->defaultInstance->refresh()],
-                "{$sandbox}/current.git",
-                "{$sandbox}/proposed.git",
-            ))->toThrow(function (ResourceOperationException $exception): void {
-                expect($exception->errorCode)->toBe('project.repository_preflight_failed');
-            });
-        } finally {
-            new Filesystem()->deleteDirectory($sandbox);
-        }
+        expect(fn () => $mutator->preflightRepository(
+            [$this->fixture->defaultInstance], 'git@github.com:acme/site.git', 'https://github.com/acme/site.git',
+        ))->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('project.repository_preflight_failed');
+        });
+        expect($agents->calls)->toHaveCount(1)
+            ->and($agents->calls[0]['input'])->toMatchArray([
+                'operation' => 'preflight_repository', 'path' => $this->fixture->defaultInstance->checkout_path,
+                'current' => 'git@github.com:acme/site.git', 'proposed' => 'https://github.com/acme/site.git',
+            ])
+            ->and($this->fixture->project->refresh()->repository_url)->toBe('git@github.com:acme/site.git');
     });
 
     it('runs remote origin updates only against checkout paths', function (): void {
-        $ssh = new AppDevFakeSshExecutor([
-            new CommandResult(0, '', '', 1, false),
-            new CommandResult(0, 'https://github.com/acme/site.git', '', 1, false),
-        ]);
-        $this->app->instance(SshExecutor::class, $ssh);
+        $agents = new FakeAgentCommandRunner()->answer('projects.update-source', []);
+        $this->app->instance(AgentCommandRunner::class, $agents);
         $mutator = $this->app->make(RemoteProjectUpdateSourceMutator::class);
         $this->app->instance(ProjectUpdateSourceMutator::class, $mutator);
 
@@ -263,14 +208,9 @@ describe('App repository reconciliation', function (): void {
             [],
         );
 
-        expect($ssh->commands)->toHaveCount(1);
-        expect($ssh->commands[0]->arguments)
-            ->toContain('/srv/orbit/apps/acme/default')
-            ->toContain('https://github.com/acme/site.git')
-            ->and($ssh->commands[0]->input)
-            ->toContain('remote set-url origin')
-            ->and($ssh->commands[0]->input)
-            ->toContain('test ! -f "$path/.git"');
+        expect(array_column($agents->calls, 'input'))->toBe([
+            ['operation' => 'set_origin', 'path' => '/srv/orbit/apps/acme/default', 'url' => 'https://github.com/acme/site.git'],
+        ]);
     });
 
     it('preflights, changes and restores task VM workspaces that share a path without a credential', function (): void {
@@ -286,27 +226,22 @@ describe('App repository reconciliation', function (): void {
                 'status' => InstanceState::Active, 'task_workspace_owner_id' => $group->id,
             ]);
         }
-        $ssh = new AppDevFakeSshExecutor([
-            ...array_fill(0, 2, new CommandResult(0, '', '', 1, false)),
-            ...array_fill(0, 2, new CommandResult(0, 'https://github.com/acme/site.git', '', 1, false)),
-        ]);
-        $this->app->instance(SshExecutor::class, $ssh);
+        $agents = new FakeAgentCommandRunner()->answer('projects.update-source', []);
+        $this->app->instance(AgentCommandRunner::class, $agents);
         $mutator = $this->app->make(RemoteProjectUpdateSourceMutator::class);
 
         $mutator->preflightRepository($workspaces, 'git@github.com:acme/site.git', 'https://github.com/acme/site.git');
         $evidence = $mutator->changeOrigins($workspaces, 'git@github.com:acme/site.git', 'https://github.com/acme/site.git', []);
         $mutator->restoreOrigins($evidence);
 
-        expect($ssh->commands)->toHaveCount(6)
-            ->and(array_map(static fn ($connection): string => $connection->host, $ssh->connections))
-            ->toBe(['10.44.0.131', '10.44.0.132', '10.44.0.131', '10.44.0.132', '10.44.0.131', '10.44.0.132'])
-            ->and(array_map(static fn ($command): ?bool => $command->protectedInput?->carriesGitCredential(), $ssh->commands))
-            ->toBe(array_fill(0, 6, null))
-            ->and($ssh->commands[0]->arguments)->toContain('0')
+        expect(array_column($agents->calls, 'node'))->toBe(['tvm-0', 'tvm-1', 'tvm-0', 'tvm-1', 'tvm-0', 'tvm-1'])
+            ->and(array_map(static fn (array $call): string => $call['input']['operation'], $agents->calls))
+            ->toBe(['preflight_repository', 'preflight_repository', 'set_origin', 'set_origin', 'restore_origin', 'restore_origin'])
+            ->and($agents->calls[0]['input']['git_read'])->toBeNull()
             ->and(array_column($evidence, 'instance_id'))->toBe([$workspaces[0]->id, $workspaces[1]->id]);
         // A retry with that evidence changes nothing again.
         expect($mutator->changeOrigins($workspaces, 'git@github.com:acme/site.git', 'https://github.com/acme/site.git', $evidence))->toBe($evidence)
-            ->and($ssh->commands)->toHaveCount(6);
+            ->and($agents->calls)->toHaveCount(6);
     });
 
     it('reads the proposed repository on the Gateway for a task workspace and refuses a parked task VM', function (TaskVmState $state): void {
@@ -363,16 +298,16 @@ describe('App repository reconciliation', function (): void {
     ]);
 
     it('restores origin evidence written before rows named their Instance by its path', function (): void {
-        $ssh = new AppDevFakeSshExecutor;
-        $this->app->instance(SshExecutor::class, $ssh);
+        $agents = new FakeAgentCommandRunner()->answer('projects.update-source', []);
+        $this->app->instance(AgentCommandRunner::class, $agents);
 
         $this->app->make(RemoteProjectUpdateSourceMutator::class)->restoreOrigins([[
             'path' => '/srv/orbit/apps/acme/default', 'previous_url' => 'git@github.com:acme/site.git',
             'current_url' => 'https://github.com/acme/site.git', 'mutated' => true,
         ]]);
 
-        expect($ssh->commands)->toHaveCount(1)
-            ->and($ssh->connections[0]->host)->toBe($this->fixture->defaultInstance->node->wireguard_ip);
+        expect($agents->calls)->toHaveCount(1)
+            ->and($agents->calls[0]['node'])->toBe($this->fixture->defaultInstance->node->name);
     });
 
     it('restores an earlier origin when a later checkout fails and records why the update rolled back', function (): void {
@@ -479,66 +414,59 @@ describe('App repository reconciliation', function (): void {
             ->and($this->fixture->sources->originRestores)->toContain('/home/orbit/apps/acme/workspace');
     });
 
-    it('keeps the evidence of a real checkout that changed before a later one failed, and restores it', function (): void {
-        $sandbox = sys_get_temp_dir().'/orbit-app-update-partial-'.Str::uuid();
-        $git = static function (array $arguments): void {
-            $result = new NativeProcessRunner()->run(new ProcessInvocation(['git', ...$arguments]));
-            expect($result->succeeded())->toBeTrue($result->stderr);
-        };
+    it('records attempted changes before dispatch and restores them after a later refusal', function (): void {
         $checkouts = [];
         foreach (['first', 'second'] as $name) {
-            $git(['init', '--initial-branch=main', "{$sandbox}/{$name}"]);
-            $git(['-C', "{$sandbox}/{$name}", 'remote', 'add', 'origin', 'git@github.com:acme/site.git']);
             $checkouts[] = Instance::query()->create([
                 'project_id' => $this->fixture->project->id, 'node_id' => $this->fixture->node->id, 'name' => $name,
                 'environment' => 'development', 'source_layout' => InstanceSourceLayout::Checkout->value,
-                'checkout_path' => "{$sandbox}/{$name}", 'branch' => 'main', 'status' => InstanceState::Active,
+                'checkout_path' => '/srv/orbit/apps/acme/'.$name, 'branch' => 'main', 'status' => InstanceState::Active,
             ]);
         }
-        // The second checkout cannot write its config, so its origin change fails after the first one changed.
-        chmod("{$sandbox}/second/.git", 0555);
-        $this->app->instance(SshExecutor::class, new LocalShellSshExecutor);
-        $mutator = $this->app->make(RemoteProjectUpdateSourceMutator::class);
         $recorded = [];
-        $origin = static fn (string $path): string => trim((string) shell_exec('git -C '.escapeshellarg($path).' config --get remote.origin.url'));
-
-        try {
-            $failure = null;
-            try {
-                $mutator->changeOrigins($checkouts, 'git@github.com:acme/site.git', 'https://github.com/acme/site.git', [], function (array $rows) use (&$recorded): void {
-                    $recorded = $rows;
-                });
-            } catch (ResourceOperationException $exception) {
-                $failure = $exception->errorCode;
+        $agents = new FakeAgentCommandRunner()->answer('projects.update-source', function (array $input) use (&$recorded, $checkouts): array {
+            if ($input['operation'] === 'set_origin') {
+                $row = collect($recorded)->firstWhere('path', $input['path']);
+                expect($row['attempted'])->toBeTrue()->and($row['mutated'])->toBeFalse();
+                if ($input['path'] === $checkouts[1]->checkout_path) {
+                    throw new AgentCommandRefused('projects.update-source', 'projects.source_failed', 'Origin refused.', ['step' => 'app-update-repository-origin']);
+                }
             }
 
-            expect($failure)->toBe('project.repository_origin_failed');
+            return [];
+        });
+        $this->app->instance(AgentCommandRunner::class, $agents);
+        $mutator = $this->app->make(RemoteProjectUpdateSourceMutator::class);
 
-            expect($origin("{$sandbox}/first"))->toBe('https://github.com/acme/site.git')
-                ->and(array_column($recorded, 'mutated', 'instance_id'))->toBe([$checkouts[0]->id => true, $checkouts[1]->id => false]);
+        expect(function () use ($mutator, $checkouts, &$recorded): void {
+            $mutator->changeOrigins($checkouts, 'git@github.com:acme/site.git', 'https://github.com/acme/site.git', [], function (array $rows) use (&$recorded): void {
+                $recorded = $rows;
+            });
+        })->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('project.repository_origin_failed');
+        });
+        expect(array_column($recorded, 'mutated', 'instance_id'))->toBe([$checkouts[0]->id => true, $checkouts[1]->id => false]);
 
-            // The second checkout never changed, so its restore writes nothing and passes while it stays read-only.
-            $mutator->restoreOrigins($recorded);
+        $mutator->restoreOrigins($recorded);
 
-            expect($origin("{$sandbox}/first"))->toBe('git@github.com:acme/site.git')
-                ->and($origin("{$sandbox}/second"))->toBe('git@github.com:acme/site.git');
-        } finally {
-            @chmod("{$sandbox}/second/.git", 0755);
-            new Filesystem()->deleteDirectory($sandbox);
+        expect(array_column(array_column($agents->calls, 'input'), 'operation'))->toBe(['set_origin', 'set_origin', 'restore_origin', 'restore_origin']);
+        foreach (array_slice($agents->calls, 2) as $index => $call) {
+            expect($call['input'])->toBe([
+                'operation' => 'restore_origin', 'path' => $checkouts[$index]->checkout_path, 'url' => 'git@github.com:acme/site.git',
+            ]);
         }
     });
 
     it('still reads the proposed repository with a credential from an ordinary checkout', function (): void {
-        $ssh = new AppDevFakeSshExecutor;
-        $this->app->instance(SshExecutor::class, $ssh);
+        $agents = new FakeAgentCommandRunner()->answer('projects.update-source', []);
+        $this->app->instance(AgentCommandRunner::class, $agents);
 
         $this->app->make(RemoteProjectUpdateSourceMutator::class)->preflightRepository(
             [$this->fixture->defaultInstance], 'git@github.com:acme/site.git', 'https://github.com/acme/site.git',
         );
 
-        expect($ssh->commands)->toHaveCount(1)
-            ->and($ssh->commands[0]->arguments)->toContain('1')
-            ->and($ssh->commands[0]->input)->toContain('ls-remote --heads');
+        expect($agents->calls)->toHaveCount(1)
+            ->and($agents->calls[0]['input']['git_read'])->toBeInstanceOf(GitReadEnvironment::class);
     });
 
     it('re-binds every production home when the URL moves from SSH to HTTPS', function (): void {

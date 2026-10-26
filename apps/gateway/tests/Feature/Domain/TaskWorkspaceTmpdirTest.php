@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\GitHub\RepositoryPullRequestAccess;
-use App\Domain\Projects\GatewaySetupSteps;
 use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
@@ -23,9 +22,9 @@ use App\Models\Project;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
-use Tests\Support\ForkedPythonPrograms;
 use Tests\Support\LinuxHost;
 use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\PythonPrograms;
 use Tests\Support\ResolvedVp;
 use Tests\Support\StandardLibraryPython;
 
@@ -37,15 +36,14 @@ beforeAll(function (): void {
 });
 
 afterAll(function (): void {
-    tmpdir_programs()->close();
     new Filesystem()->deleteDirectory(tmpdir_repository_seed());
 });
 
-function tmpdir_programs(): ForkedPythonPrograms
+function tmpdir_programs(): PythonPrograms
 {
     static $programs = null;
 
-    return $programs ??= new ForkedPythonPrograms;
+    return $programs ??= new PythonPrograms;
 }
 
 beforeEach(function (): void {
@@ -83,30 +81,34 @@ function tmpdir_shell(): LocalShellSshExecutor
 
 function tmpdir_runner(?SshExecutor $transport = null): RemoteTaskCheckRunner
 {
-    return new RemoteTaskCheckRunner(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(
-        $transport ?? tmpdir_shell(),
-        new class implements SshKeyProvider
-        {
-            public function privateKeyPath(): string
+    return new RemoteTaskCheckRunner(
+        new TaskWorkspaceExecutor(new DevelopmentSshExecutor(
+            $transport ?? tmpdir_shell(),
+            new class implements SshKeyProvider
             {
-                return '/unused';
-            }
+                public function privateKeyPath(): string
+                {
+                    return '/unused';
+                }
 
-            public function publicKey(): string
+                public function publicKey(): string
+                {
+                    return 'unused';
+                }
+            },
+            new class implements KnownHostsStore
             {
-                return 'unused';
-            }
-        },
-        new class implements KnownHostsStore
-        {
-            public function path(): string
-            {
-                return '/unused';
-            }
+                public function path(): string
+                {
+                    return '/unused';
+                }
 
-            public function put(string $host, int $port, HostKey $key): void {}
-        },
-    )), ResolvedVp::manager(), app(GatewaySetupSteps::class), app(RepositoryPullRequestAccess::class));
+                public function put(string $host, int $port, HostKey $key): void {}
+            },
+        )),
+        ResolvedVp::manager(),
+        app(RepositoryPullRequestAccess::class),
+    );
 }
 
 function tmpdir_records_scripts(array &$scripts): SshExecutor

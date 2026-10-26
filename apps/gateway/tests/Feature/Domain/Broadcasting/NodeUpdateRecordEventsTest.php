@@ -10,6 +10,8 @@ use App\Domain\Nodes\NodeUpdateBroadcaster;
 use App\Domain\Nodes\NodeUpdates;
 use App\Domain\Nodes\RoleName;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
+use App\Infrastructure\GatewayReleases\GatewayReleaseRecovery;
+use App\Infrastructure\GatewayReleases\GatewayReleaseRestore;
 use App\Models\FleetRolloutNode;
 use App\Models\GatewayRelease;
 use App\Models\Node;
@@ -35,7 +37,7 @@ function nodeUpdatingBroadcasts(Node $node): array
 
 function nodeUpdatingRecorder(): GatewayReleaseRecorder
 {
-    return new GatewayReleaseRecorder(
+    return new GatewayReleaseRecorder(app(GatewayReleaseRecovery::class), app(GatewayReleaseRestore::class),
         orbitHome: sys_get_temp_dir().'/orbit-node-updating-'.bin2hex(random_bytes(4)),
         nodes: app(NodeUpdateBroadcaster::class),
     );

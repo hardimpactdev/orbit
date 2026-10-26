@@ -13,12 +13,11 @@ use App\Domain\Doctor\PrivateRouteProjectionObservation;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteStateResolver;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Processes\CommandDeadline;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
@@ -27,7 +26,7 @@ use Throwable;
 final readonly class NativePrivateRouteProjectionInspector implements PrivateRouteProjectionInspector
 {
     public function __construct(
-        private DevelopmentSshExecutor $ssh,
+        private AgentCommandRunner $agents,
         private CommandDeadline $deadline,
         private DevelopmentSiteRepository $sites = new DevelopmentSiteRepository,
         private RouteStateResolver $placements = new RouteStateResolver,
@@ -167,181 +166,68 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
         return $site instanceof DevelopmentSite ? $site : null;
     }
 
-    /** @return array<string, ?bool> */
-    private function observe(Node $node, RemoteCommand $command): array
+    /**
+     * @param  array<string, mixed>  $input
+     * @return array<string, ?bool>
+     */
+    private function observe(Node $node, array $input): array
     {
         try {
-            $result = $this->ssh->execute(
-                $node,
-                $command,
-                step: 'doctor-private-route',
-                errorCode: 'instance.inspection_failed',
-                commandTimeout: $this->deadline->cap(30.0),
-            );
+            $result = $this->agents->run($node, 'doctor.inspect-private-route', $input, $this->deadline->cap(30.0));
         } catch (Throwable) {
             throw new DoctorInspectionException;
         }
 
         $values = [];
-        foreach (explode("\n", trim($result->stdout)) as $line) {
-            [$key, $value] = array_pad(explode('=', $line, 2), 2, null);
-            if (is_string($key) && is_string($value) && in_array($value, ['0', '1', '2'], true)) {
-                $values[$key] = match ($value) {
-                    '0' => false,
-                    '1' => true,
-                    default => null,
-                };
+        foreach (['caddy', 'tls', 'dns', 'firewall', 'laravel', 'pool'] as $key) {
+            if (! array_key_exists($key, $result) || ($result[$key] !== null && ! is_bool($result[$key]))) {
+                throw new DoctorInspectionException;
             }
+            $values[$key] = $result[$key];
         }
 
         return $values;
     }
 
-    private function workloadCommand(Instance $instance, Route $route, DevelopmentSite $site): RemoteCommand
+    /** @return array<string, mixed> */
+    private function workloadCommand(Instance $instance, Route $route, DevelopmentSite $site): array
     {
-        // The Instance's environment belongs to its own Route. The Instance probe checks the directory
-        // that a Route with a web root serves, so this check passes for such a Route.
-        $laravel = $route->hasWebRoot() ? '0' : match ($instance->source_is_laravel) {
-            true => '1',
-            false => '0',
-            default => '2',
-        };
         $environment = $instance->usesProductionReleaseLayout()
             ? (string) $instance->production_home
             : $instance->applicationDirectory();
-        $dnsAddress = $this->expectedDnsAddress($instance, $route) ?? '';
+        $laravel = $route->hasWebRoot() || $instance->source_is_laravel === false
+            ? ['kind' => 'skip']
+            : ($instance->source_is_laravel === true ? [
+                'kind' => 'check',
+                'environment' => $environment.'/.env',
+                'url' => $this->expectedLaravelUrl($instance, $route),
+            ] : null);
 
-        return new RemoteCommand(
-            arguments: [
-                'sudo',
-                'bash',
-                '-seu',
-                '--',
-                $site->domain,
-                $site->certificateDirectory(),
-                $laravel,
-                $laravel === '1' ? $this->expectedLaravelUrl($instance, $route) : '',
-                $laravel === '1' ? $environment.'/.env' : '',
-                $dnsAddress,
+        return [
+            'domain' => $site->domain,
+            'certificates' => $site->certificateDirectory(),
+            'projection' => [
+                'kind' => 'workload',
+                'dns_address' => $this->expectedDnsAddress($instance, $route),
+                'laravel' => $laravel,
             ],
-            input: <<<'BASH'
-                domain=$1
-                certificates=$2
-                laravel=$3
-                expected_url=$4
-                environment=$5
-                expected_dns=$6
-                # A Node Caddy build keeps every site in the one live file.
-                live=$(readlink -f /etc/caddy/Caddyfile)
-                if grep -qs -- "$domain" "$live"; then
-                    printf 'caddy=1\n'
-                else
-                    printf 'caddy=0\n'
-                fi
-                if sudo test -f "$certificates/cert.pem" && sudo test -f "$certificates/key.pem"; then
-                    printf 'tls=1\n'
-                else
-                    printf 'tls=0\n'
-                fi
-                if [ "$expected_dns" = '' ]; then
-                    printf 'dns=2\n'
-                else
-                    observed=$(getent ahostsv4 "$domain" 2>/dev/null | awk 'NR==1 { print $1 }') || observed=
-                    if [ "$observed" = "$expected_dns" ]; then
-                        printf 'dns=1\n'
-                    elif [ "$observed" = '' ]; then
-                        printf 'dns=0\n'
-                    else
-                        printf 'dns=0\n'
-                    fi
-                fi
-                if sudo ufw status 2>/dev/null | grep -q '^Status: active'; then
-                    printf 'firewall=1\n'
-                else
-                    printf 'firewall=0\n'
-                fi
-                if [ "$laravel" = 2 ]; then
-                    printf 'laravel=2\n'
-                elif [ "$laravel" != 1 ]; then
-                    printf 'laravel=1\n'
-                elif [ ! -f "$environment" ] || [ -L "$environment" ]; then
-                    printf 'laravel=0\n'
-                else
-                    if awk -v expected="$expected_url" '
-                        BEGIN { found = 0 }
-                        $0 ~ /^APP_URL=/ {
-                            found += 1
-                            value = substr($0, 9)
-                            if (value ~ /^".*"$/) {
-                                value = substr(value, 2, length(value) - 2)
-                            }
-                            if (value != expected) { exit 1 }
-                        }
-                        END { if (found != 1) exit 1 }
-                    ' "$environment"; then
-                        printf 'laravel=1\n'
-                    else
-                        printf 'laravel=0\n'
-                    fi
-                fi
-                BASH,
-        );
+        ];
     }
 
-    private function routerCommand(Route $route, DevelopmentSite $site): RemoteCommand
+    /** @return array<string, mixed> */
+    private function routerCommand(Route $route, DevelopmentSite $site): array
     {
-        $upstreams = implode("\n", array_values(array_filter(
-            $site->proxyAddresses(),
-            static fn (string $address): bool => ! str_starts_with($address, 'unix/'),
-        )));
-
-        return new RemoteCommand(
-            arguments: [
-                'sudo',
-                'bash',
-                '-seu',
-                '--',
-                $route->domain,
-                $upstreams,
-                $site->certificateDirectory(),
+        return [
+            'domain' => $route->domain,
+            'certificates' => $site->certificateDirectory(),
+            'projection' => [
+                'kind' => 'router',
+                'upstreams' => array_values(array_filter(
+                    $site->proxyAddresses(),
+                    static fn (string $address): bool => ! str_starts_with($address, 'unix/'),
+                )),
             ],
-            input: <<<'BASH'
-                domain=$1
-                upstreams=$2
-                certificates=$3
-                # A Node Caddy build keeps every site in the one live file.
-                live=$(readlink -f /etc/caddy/Caddyfile)
-                pool=1
-                if [ "$upstreams" != '' ]; then
-                    while IFS= read -r upstream; do
-                        [ "$upstream" = '' ] && continue
-                        if ! grep -qs -- "$upstream" "$live"; then
-                            pool=0
-                            break
-                        fi
-                    done <<EOF
-                $upstreams
-                EOF
-                fi
-                if grep -qs -- "$domain" "$live" && [ "$pool" = 1 ]; then
-                    printf 'caddy=1\n'
-                    printf 'pool=1\n'
-                else
-                    printf 'caddy=0\n'
-                    printf 'pool=0\n'
-                fi
-                if sudo test -f "$certificates/cert.pem" && sudo test -f "$certificates/key.pem"; then
-                    printf 'tls=1\n'
-                else
-                    printf 'tls=0\n'
-                fi
-                if sudo ufw status 2>/dev/null | grep -q '^Status: active'; then
-                    printf 'firewall=1\n'
-                else
-                    printf 'firewall=0\n'
-                fi
-                BASH,
-        );
+        ];
     }
 
     private function expectedLaravelUrl(Instance $instance, Route $route): string

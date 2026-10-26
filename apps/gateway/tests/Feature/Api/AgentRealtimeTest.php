@@ -6,6 +6,7 @@ use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Models\Node;
+use App\Models\Operation;
 use Illuminate\Testing\TestResponse;
 
 describe('agent realtime endpoints', function (): void {
@@ -44,6 +45,24 @@ describe('agent realtime endpoints', function (): void {
 
         foreach (['presence-node-logs.999', 'private-log-stream.'.str_repeat('a', 32), "presence-node-logs.{$this->node->id}x"] as $other) {
             $this->postJson('/api/v1/agent/broadcasting/auth', ['socket_id' => '1.2', 'channel_name' => $other])
+                ->assertForbidden()->assertJsonPath('error.code', 'agent.channel_forbidden');
+        }
+    });
+
+    // A command publishes live output on the channel of the operation that runs it, such as a deploy step.
+    it('signs the private channel of an operation that runs on its own Node only', function (): void {
+        [, $credentials] = activate_websocket_role($this->node);
+        $operation = static fn (int $node, string $status): Operation => Operation::query()->create([
+            'kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => 1, 'node_id' => $node, 'status' => $status, 'input' => [], 'sequence' => 1, 'attempts' => 0,
+        ]);
+        $channel = 'private-operation.'.$operation($this->node->id, 'running')->id;
+
+        $this->postJson('/api/v1/agent/broadcasting/auth', ['socket_id' => '123.456', 'channel_name' => $channel])->assertOk()
+            ->assertExactJson(['auth' => $credentials->appKey.':'.hash_hmac('sha256', '123.456:'.$channel, $credentials->appSecret)]);
+
+        $other = Node::query()->create(['name' => 'other', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '192.0.2.99', 'wireguard_ip' => '10.44.0.99', 'user' => 'orbit']);
+        foreach (['private-operation.'.$operation($other->id, 'running')->id, 'private-operation.'.$operation($this->node->id, 'succeeded')->id, 'private-operation.999999'] as $refused) {
+            $this->postJson('/api/v1/agent/broadcasting/auth', ['socket_id' => '1.2', 'channel_name' => $refused])
                 ->assertForbidden()->assertJsonPath('error.code', 'agent.channel_forbidden');
         }
     });

@@ -4,42 +4,24 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Instances;
 
-use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\InstanceDestinationGuard;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Node;
 
+/** Refuses a destination that anything occupies, through the Node agent's `instances.check-path-free`. */
 final readonly class RemoteInstanceDestinationGuard implements InstanceDestinationGuard
 {
-    public function __construct(
-        private DevelopmentSshExecutor $ssh,
-    ) {}
+    public function __construct(private AgentCommandRunner $agents) {}
 
     public function assertUnoccupied(Node $node, StoragePath $destination): void
     {
-        try {
-            $this->ssh->execute(
-                $node,
-                new RemoteCommand(
-                    arguments: ['bash', '-seu', '--', $destination->value],
-                    input: <<<'BASH'
-                        destination=$1
-                        test ! -e "$destination"
-                        test ! -L "$destination"
-                        BASH,
-                ),
-                step: 'app-instance-destination-occupied',
-                errorCode: 'instance.migration_conflict',
-            );
-        } catch (RuntimeConvergenceException $exception) {
+        if (($this->agents->run($node, 'instances.check-path-free', ['path' => $destination->value])['free'] ?? false) !== true) {
             throw new ResourceOperationException(
                 errorCode: 'instance.migration_conflict',
                 message: "Instance destination [{$destination->value}] is occupied by unmanaged data.",
                 status: 409,
-                previous: $exception,
             );
         }
     }

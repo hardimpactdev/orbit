@@ -33,10 +33,14 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteTargetSetStep;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\VpnSettings;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentContract;
+use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\PrivateDnsMessageCodec;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
@@ -52,12 +56,6 @@ use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Routes\NativeCustomProxyRouteProjector;
 use App\Infrastructure\Routes\NativePublicRouteEdgeProjector;
 use App\Infrastructure\Routes\NativeRouteRemovalProjector;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Cluster;
 use App\Models\FirewallRule;
 use App\Models\Instance;
@@ -69,8 +67,9 @@ use App\Models\RouteRemovalResidue;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeNodeRoleFirewallManager;
-use Tests\Support\SshNodeCaddyBuilds;
+use Tests\Support\RouteProjectionAgentAnswers;
 
 /*
  * ADR 0141: removal saves the state change, builds, and only then removes the certificate. Caddy
@@ -290,7 +289,7 @@ describe('Route removal certificate order', function (): void {
         [$route, $instance] = certificate_order_targeted_route($this->nodes, $this->beast, nodeScoped: true);
         $this->nodes->down = ['10.44.0.7'];
         $this->deleteJson("/api/v1/routes/{$route->id}", ['offline' => true])->assertOk();
-        $footprint = new NodeFootprint([app(RouteResidueFootprintArtifact::class)]);
+        $footprint = new NodeFootprint(app(AgentDelivery::class), [app(RouteResidueFootprintArtifact::class)]);
         // The Node answers the probe, but its Caddy publish still fails.
         $this->nodes->down = [];
         $this->nodes->failCaddy = '10.44.0.7';
@@ -414,7 +413,7 @@ function certificate_order_node(string $name, int $octet, RoleName $role, ?Clust
         'cluster_id' => $cluster?->id,
         'name' => $name,
         'status' => LifecycleStatus::Active,
-        'platform' => 'linux',
+        'platform' => 'linux', 'architecture' => 'x86_64',
         'public_ssh_host' => "192.0.2.{$octet}",
         'wireguard_ip' => "10.44.0.{$octet}",
         'user' => 'orbit',
@@ -433,33 +432,35 @@ function certificate_order_bind_projectors(
     CertificateOrderDnsRunner $dnsRuns,
     CertificateOrderPhpFpm $php,
 ): void {
-    $keys = new class implements SshKeyProvider
-    {
-        public function privateKeyPath(): string
-        {
-            return '/tmp/orbit-test-key';
+    app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner()
+        ->answer('routes.verify-certificate', [])
+        ->answer('routes.verify-http', static function (array $input, Node $node) use ($nodes): array {
+            $nodes->forwarding[] = [$node->wireguard_ip, $input['address'], (string) $input['port']];
+            if ($nodes->failHttp) {
+                throw new AgentCommandRefused('routes.verify-http', 'routes.http_unreachable', 'Unreachable.');
+            }
+
+            return [];
+        }));
+    $liveFirewall = new FakeAgentCommandRunner()->answer('firewall.inspect', static function (array $input, Node $node) use ($nodes): array {
+        $host = $node->wireguard_ip;
+        $nodes->firewallReads[] = $host;
+        if (in_array($host, $nodes->down, true)) {
+            throw new RuntimeException('The Node is unavailable.');
+        }
+        $live = [certificate_order_firewall_shape('orbit:wireguard-members', destination: $host, interface: 'orbit')];
+        foreach ($nodes->lanRules[$host] ?? [] as $comment) {
+            $live[] = certificate_order_firewall_shape($comment, '443', '10.0.0.1', $host, protocol: 'tcp');
         }
 
-        public function publicKey(): string
-        {
-            return 'ssh-ed25519 AAAA';
-        }
-    };
-    $knownHosts = new class implements KnownHostsStore
-    {
-        public function path(): string
-        {
-            return '/tmp/orbit-test-known-hosts';
-        }
-
-        public function put(string $host, int $port, HostKey $key): void {}
-    };
-    $executor = new DevelopmentSshExecutor($nodes, $keys, $knownHosts);
-    app()->instance(NativeLiveUfwReader::class, new NativeLiveUfwReader($nodes, $keys, $knownHosts));
+        return ['backend' => 'active', 'ownerships' => [], 'matches' => true, 'live' => $nodes->firewallShapes[$host] ?? $live];
+    });
+    app()->instance(NativeLiveUfwReader::class, new NativeLiveUfwReader($liveFirewall, app(AgentContract::class)));
     $sites = new DevelopmentSiteRepository;
-    $caddy = new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($nodes), $executor);
+    $nodeAgents = $nodes->answer(new FakeAgentCommandRunner()->answer('caddy.order-after-vpn', ['changed' => false]));
+    $caddy = new RemoteAppDevCaddyManager(RouteProjectionAgentAnswers::builds($nodeAgents), $nodeAgents);
     $certificates = new RemoteAppDevCertificateManager(
-        $executor,
+        $nodeAgents,
         new class implements LeafCertificateSigner
         {
             public function sign(string $domain, string $certificateRequest): string
@@ -482,8 +483,20 @@ function certificate_order_bind_projectors(
     );
     $dns = new DnsmasqPrivateDnsManager($dnsRuns, new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class)));
 
-    $firewall = new RemoteAppDevRouteFirewallManager($executor);
-    app()->instance(DevelopmentSshExecutor::class, $executor);
+    $firewall = new RemoteAppDevRouteFirewallManager(new FakeAgentCommandRunner()->answer('firewall.route-lan', static function (array $input, Node $node) use ($nodes): array {
+        $host = $node->wireguard_ip;
+        expect($input['operation'])->toBe('remove');
+        if (in_array($host, $nodes->down, true)) {
+            throw new RuntimeException('The Node is unavailable.');
+        }
+        $comment = "orbit:route-{$input['route_id']}-lan";
+        if (in_array($comment, $nodes->lanRules[$host] ?? [], true)) {
+            $nodes->firewallRemovals[] = "{$host}:{$comment}";
+            $nodes->lanRules[$host] = array_values(array_diff($nodes->lanRules[$host], [$comment]));
+        }
+
+        return ['matches' => true];
+    }));
     app()->instance(DnsmasqPrivateDnsManager::class, $dns);
     app()->instance(RemoteAppDevCaddyManager::class, $caddy);
     app()->instance(RemoteAppDevRouteFirewallManager::class, $firewall);
@@ -536,6 +549,7 @@ function certificate_order_targeted_route(CertificateOrderNodes $nodes, Node $no
     $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->publishSites();
     $nodes->issue((string) $node->wireguard_ip, "app-instance-{$instance->id}");
+    $nodes->lanRules[(string) $node->wireguard_ip] = ["orbit:route-{$route->id}-lan"];
     certificate_order_caddy()->converge($node);
 
     return [$route, $instance];
@@ -567,10 +581,11 @@ function certificate_order_certificates(): RemoteAppDevCertificateManager
 }
 
 /**
- * Nodes keyed by WireGuard address. Each keeps its live `app-dev.caddy` and its certificates, and
- * refuses a Caddy publish that names a missing certificate.
+ * Nodes keyed by WireGuard address behind the agent's leaf certificate and Caddy publication commands.
+ * Each keeps its live Caddyfile and its certificates, and refuses a publication that names a missing
+ * certificate, as `caddy validate` does.
  */
-final class CertificateOrderNodes implements SshExecutor
+final class CertificateOrderNodes
 {
     /** @var list<array{string, string, string}> */
     public array $forwarding = [];
@@ -587,93 +602,60 @@ final class CertificateOrderNodes implements SshExecutor
     /** @var list<string> */
     public array $firewallRemovals = [];
 
+    /** @var array<string, list<string>> The comments of each host's Route LAN rules. */
+    public array $lanRules = [];
+
     /**
-     * Hosts whose SSH does not connect.
+     * Hosts the agent cannot reach.
      *
      * @var list<string>
      */
     public array $down = [];
 
-    /** @var array<string, string> */
-    public array $firewallStatuses = [];
+    /** @var array<string, list<array<string, mixed>>> */
+    public array $firewallShapes = [];
 
     /** @var list<string> */
     public array $firewallReads = [];
-
-    /** @var list<list<string>> */
-    public array $dnsQueries = [];
 
     public ?string $failCaddy = null;
 
     public bool $failHttp = false;
 
-    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+    public function answer(FakeAgentCommandRunner $agents): FakeAgentCommandRunner
     {
-        $host = $connection->host;
-        if ($command->arguments === ['getent', 'ahostsv4', 'sync.example.com']) {
-            $this->dnsQueries[] = $command->arguments;
+        return $agents
+            ->answer('caddy.publish', function (array $input, Node $node): array {
+                $host = $this->reach($node, 'caddy.publish');
+                if ($host === $this->failCaddy || ! $this->allNamedExist($host, $input['content'])) {
+                    throw new AgentCommandRefused('caddy.publish', 'caddy.publication_failed', 'The Caddy publication failed.', ['stage' => 'validate', 'message' => 'caddy validate failed']);
+                }
+                $this->live[$host] = $input['content'];
 
-            return new CommandResult(0, "172.67.204.181 STREAM sync.example.com\n", '', 1, false);
-        }
-        if ($command->arguments === ['resolvectl', 'query', '--interface=orbit', '--protocol=dns', '--cache=no', '--type=A', 'sync.example.com']) {
-            $this->dnsQueries[] = $command->arguments;
+                return ['result' => 'published'];
+            })
+            ->answer('certificates.request-leaf', function (array $input, Node $node): array {
+                return $this->hasCertificate($this->reach($node, 'certificates.request-leaf'), $input['scope'])
+                    ? ['state' => 'current']
+                    : ['state' => 'request', 'request' => RouteProjectionAgentAnswers::CERTIFICATE_REQUEST];
+            })
+            ->answer('certificates.publish-leaf', function (array $input, Node $node): array {
+                $this->issue($this->reach($node, 'certificates.publish-leaf'), $input['scope']);
 
-            // Only ~orbit is routed here, with DefaultRoute=no. Public names are ineligible.
-            return new CommandResult(1, '', 'No appropriate name servers or networks for name found', 1, false);
-        }
-        if (($command->arguments[0] ?? null) === 'curl' && in_array('--noproxy', $command->arguments, true)) {
-            $upstream = parse_url(array_last($command->arguments));
-            expect($command->arguments)->toContain('--head', 'Host: sync.example.com')->not->toContain('--fail', '--location');
-            $this->forwarding[] = [$host, $upstream['host'], (string) $upstream['port']];
-            if ($this->failHttp) {
-                return new CommandResult(7, '', 'curl: Failed to connect', 1, false);
-            }
-        }
-        $input = is_string($command->input) ? $command->input : '';
+                return [];
+            })
+            ->answer('certificates.inspect-leaf', function (array $input, Node $node): array {
+                return ['present' => $this->hasCertificate($this->reach($node, 'certificates.inspect-leaf'), $input['scope'])];
+            })
+            ->answer('certificates.remove-leaf', function (array $input, Node $node): array {
+                $host = $this->reach($node, 'certificates.remove-leaf');
+                if ($this->names($host, $input['scope'])) {
+                    $this->removedWhileNamed[] = "{$host}:{$input['scope']}";
+                }
+                unset($this->certificates[$host][$input['scope']]);
 
-        if (in_array($host, $this->down, true)) {
-            return new CommandResult(255, '', "ssh: connect to host {$host} port 22: Connection timed out", 1, false);
-        }
-
-        if ($command->arguments === ['sudo', 'ufw', 'status', 'numbered']) {
-            $this->firewallReads[] = $host;
-
-            return new CommandResult(0, $this->firewallStatuses[$host] ?? "Status: active\n[ 1] {$host} on orbit ALLOW IN Anywhere on orbit # orbit:wireguard-members\n", '', 1, false);
-        }
-
-        if (preg_match("/printf '%s' '([A-Za-z0-9+\\/=]*)' \\| base64 --decode \\|/", $input, $matches) === 1) {
-            $configuration = (string) base64_decode($matches[1], true);
-
-            if ($host === $this->failCaddy || ! $this->allNamedExist($host, $configuration)) {
-                return new CommandResult(1, '', 'caddy validate failed', 1, false);
-            }
-
-            $this->live[$host] = $configuration;
-
-            return new CommandResult(0, '', '', 1, false);
-        }
-
-        if (str_contains($input, "printf 'CURRENT\\n'")) {
-            $this->issue($host, (string) $command->arguments[3]);
-
-            return new CommandResult(0, "CURRENT\n", '', 1, false);
-        }
-
-        if (str_contains($input, 'sudo rm -rf -- "/etc/caddy/orbit-certificates/$scope"')) {
-            $scope = (string) $command->arguments[3];
-
-            if ($this->names($host, $scope)) {
-                $this->removedWhileNamed[] = "{$host}:{$scope}";
-            }
-
-            unset($this->certificates[$host][$scope]);
-        }
-
-        if (str_contains($input, 'sudo ufw --force delete')) {
-            $this->firewallRemovals[] = "{$host}:{$command->arguments[3]}";
-        }
-
-        return new CommandResult(0, '', '', 1, false);
+                return [];
+            });
     }
 
     public function issue(string $host, string $scope): void
@@ -710,6 +692,16 @@ final class CertificateOrderNodes implements SshExecutor
         }
 
         return true;
+    }
+
+    private function reach(Node $node, string $command): string
+    {
+        $host = (string) $node->wireguard_ip;
+        if (in_array($host, $this->down, true)) {
+            throw new AgentRunnerFailure($command, AgentRunnerFailure::Transport, "ssh: connect to host {$host} port 22: Connection timed out");
+        }
+
+        return $host;
     }
 
     /** @return list<string> */
@@ -749,7 +741,7 @@ final class CertificateOrderPhpFpm implements AppDevPhpFpmManager
     }
 }
 
-/** The probe sees a Node as unreachable exactly when its simulated SSH does not connect. */
+/** The probe sees a Node as unreachable exactly when the simulated agent cannot reach it. */
 final readonly class CertificateOrderReachability implements NodeReachabilityProbe
 {
     public function __construct(private CertificateOrderNodes $nodes) {}
@@ -770,16 +762,16 @@ it('withdraws a public Process site on the Ingress and reconciles its firewall w
         $ingress->update(['lan_ip' => '10.0.0.4']);
         $process->update(['runtime_config' => ['ports' => ['10.44.0.7:8095:8080/tcp', '10.0.0.6:8095:8080/tcp']]]);
         FirewallRule::query()->create(['node_id' => $this->beast->id, 'name' => 'sync-ingress', 'action' => 'allow', 'source' => '10.0.0.4', 'port' => '8095', 'protocol' => 'tcp', 'status' => 'active']);
-        $this->nodes->firewallStatuses['10.44.0.7'] = "Status: active\n[ 1] 8095/tcp ALLOW IN 10.0.0.4 # orbit:node:{$this->beast->id}:firewall:sync-ingress\n";
+        $this->nodes->firewallShapes['10.44.0.7'] = [certificate_order_firewall_shape("orbit:node:{$this->beast->id}:firewall:sync-ingress", '8095', '10.0.0.4', protocol: 'tcp')];
     }
     $creationFirewall = new FakeNodeRoleFirewallManager;
     app()->instance(NodeRoleFirewallManager::class, $creationFirewall);
     app()->instance(PublicRouteEdgeProjector::class, app(NativePublicRouteEdgeProjector::class));
     $body = ['domain' => 'sync.example.com', 'ingress_node_id' => $ingress->id, 'process_id' => $process->id, 'publication' => 'public'];
     if ($blocked) {
-        $allowed = $this->nodes->firewallStatuses['10.44.0.7'];
+        $allowed = $this->nodes->firewallShapes['10.44.0.7'];
         // The Database listener's rule does not permit this Process port.
-        $this->nodes->firewallStatuses['10.44.0.7'] = "Status: active\n[ 1] 5434/tcp ALLOW IN 10.0.0.4 # orbit:rule-123\n";
+        $this->nodes->firewallShapes['10.44.0.7'] = [certificate_order_firewall_shape('orbit:rule-123', '5434', '10.0.0.4', protocol: 'tcp')];
         $this->postJson('/api/v1/routes', $body)->assertServerError()->assertJsonPath('error.code', 'route.upstream_firewall_mismatch');
         $failed = Route::query()->where('domain', 'sync.example.com')->sole();
         expect($failed->failed_step)->toBe('public-edge-verified');
@@ -790,7 +782,7 @@ it('withdraws a public Process site on the Ingress and reconciles its firewall w
         $scope = new DoctorInspectionScope([$ingress->id => $context, $this->beast->id => new DoctorNodeContext($this->beast, $context->inspection)]);
         $issues = app(RouteDoctorProbe::class)->inspect($context->withScope($scope));
         expect(array_map(static fn ($issue) => $issue->code, $issues->issues))->toContain('route.firewall_mismatch');
-        $this->nodes->firewallStatuses['10.44.0.7'] = $allowed;
+        $this->nodes->firewallShapes['10.44.0.7'] = $allowed;
     }
     $response = $this->postJson('/api/v1/routes', $body);
     $blocked ? $response->assertOk() : $response->assertCreated();
@@ -875,6 +867,14 @@ it('limits native public Process Doctor firewall reads to selected authorized No
         ->and($this->nodes->firewallReads)->toContain($this->beast->wireguard_ip);
 });
 
+/** @return array<string, mixed> */
+function certificate_order_firewall_shape(string $comment, string $port = 'any', string $source = 'any', string $destination = 'any', ?string $interface = null, string $protocol = 'any'): array
+{
+    return ['comment' => $comment, 'action' => 'allow', 'direction' => 'in', 'source' => $source,
+        'destination' => $destination, 'port' => $port, 'protocol' => $protocol,
+        'in_interface' => $interface, 'out_interface' => null, 'family' => 'v4'];
+}
+
 it('checks public Process Route DNS through Orbit instead of the Ingress system resolver', function (string $address, int $flags, bool $truncated, array $codes): void {
     $cluster = Cluster::query()->create(['name' => 'process-edge', 'state' => ClusterState::Active]);
     $ingress = certificate_order_node('process-ingress', 4, RoleName::Router, $cluster);
@@ -925,7 +925,7 @@ it('checks public Process Route DNS through Orbit instead of the Ingress system 
         expect($report->checked)->toBe(1)
             ->and(array_map(static fn ($issue) => $issue->code, $report->issues))->toBe($codes)
             ->and($queries)->toBe(['sync.example.com'])
-            ->and($this->nodes->dnsQueries)->toBeEmpty();
+            ->and(app(AgentCommandRunner::class)->commands())->not->toContain('doctor.resolve-route-dns');
     } finally {
         fclose($server);
     }

@@ -1,0 +1,1 @@
+["apps/agent", ":(glob)apps/gateway/extensions/*/agent/**"]

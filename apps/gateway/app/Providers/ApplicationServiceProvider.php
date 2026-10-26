@@ -91,6 +91,7 @@ use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Gateway\GatewayCacheStore;
 use App\Domain\Gateway\GatewaySelfAccessConverger;
+use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
@@ -212,6 +213,14 @@ use App\Domain\WebSocket\WebSocketRuntimeLifecycle;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Domain\WireGuard\VpnSettings;
 use App\Domain\WireGuard\WireGuardPeerDnsRepairer;
+use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentContract;
+use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AgentCommands\AgentTransports;
+use App\Infrastructure\AgentCommands\GuestAgentCommandRunner;
+use App\Infrastructure\AgentCommands\NativeAgentCommandRunner;
+use App\Infrastructure\AgentCommands\WorkspaceAgentCommandRunner;
 use App\Infrastructure\AgentView\AgentViewSubscriber;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\AgentView\NativeAgentViewConverger;
@@ -259,6 +268,7 @@ use App\Infrastructure\Doctor\NativeCaddyBuildInspector;
 use App\Infrastructure\Doctor\NativeCustomProxyRouteInspector;
 use App\Infrastructure\Doctor\NativeGatewayVpnStateInspector;
 use App\Infrastructure\Doctor\NativeInstanceStateInspector;
+use App\Infrastructure\Doctor\NativeNodeStateInspector;
 use App\Infrastructure\Doctor\NativePhpPoolDirectoryInspector;
 use App\Infrastructure\Doctor\NativePrivateRouteProjectionInspector;
 use App\Infrastructure\Doctor\NativeProcessStateInspector;
@@ -268,18 +278,17 @@ use App\Infrastructure\Doctor\NativeRoleStateInspector;
 use App\Infrastructure\Doctor\NativeRouteApplicationUrlInspector;
 use App\Infrastructure\Doctor\NativeScheduleStateInspector;
 use App\Infrastructure\Doctor\SharedInstalledPackageInventory;
-use App\Infrastructure\Doctor\SshNodeStateInspector;
 use App\Infrastructure\Files\NativeAtomicSymlinkPublisher;
 use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Firewall\NativeRouterLanIngressReconciler;
 use App\Infrastructure\Firewall\NativeUfwFirewallInspector;
 use App\Infrastructure\Firewall\NativeUfwFirewallManager;
-use App\Infrastructure\Firewall\UfwStatusParser;
 use App\Infrastructure\Fleet\GitHubCliReleaseCatalog;
 use App\Infrastructure\Fleet\GitReleaseHistory;
 use App\Infrastructure\Gateway\GatewayApplicationPath;
 use App\Infrastructure\Gateway\GatewayCheckoutAccessConverger;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
+use App\Infrastructure\Gateway\GatewayServiceCommands;
 use App\Infrastructure\Gateway\GatewayWebDirectoryConverger;
 use App\Infrastructure\Gateway\NativeGatewayCaddyInstaller;
 use App\Infrastructure\Gateway\NativeGatewayCertificatePublisher;
@@ -328,13 +337,12 @@ use App\Infrastructure\Instances\RemoteProductionRepositoryBinding;
 use App\Infrastructure\Instances\RemoteProductionWebRootManager;
 use App\Infrastructure\Instances\RemoteRegistrationSourceManager;
 use App\Infrastructure\Logs\CacheLogStreamStore;
+use App\Infrastructure\Metrics\AgentMetricsCadvisorRuntime;
+use App\Infrastructure\Metrics\AgentMetricsExporterRuntime;
 use App\Infrastructure\Metrics\MetricsCadvisorRuntime;
-use App\Infrastructure\Metrics\MetricsCadvisorSshExecutor;
 use App\Infrastructure\Metrics\MetricsExporterRuntime;
-use App\Infrastructure\Metrics\MetricsExporterSshExecutor;
 use App\Infrastructure\Metrics\MetricsPublicationManager;
-use App\Infrastructure\Metrics\MetricsRuntimeHost;
-use App\Infrastructure\Metrics\MetricsSshExecutor;
+use App\Infrastructure\Metrics\MetricsRuntimeCommands;
 use App\Infrastructure\Metrics\NativeMetricsAccessRevoker;
 use App\Infrastructure\Metrics\NativeMetricsCadvisorLifecycle;
 use App\Infrastructure\Metrics\NativeMetricsContainerRuntime;
@@ -350,6 +358,8 @@ use App\Infrastructure\Metrics\NativeServiceMetricsLifecycle;
 use App\Infrastructure\Metrics\NativeServiceMetricsRuntime;
 use App\Infrastructure\Metrics\ServiceMetricsProjection;
 use App\Infrastructure\Metrics\ServiceMetricsRuntime;
+use App\Infrastructure\Nodes\AgentManagedUserAccountResolver;
+use App\Infrastructure\Nodes\AgentNodeStorageRootPreparer;
 use App\Infrastructure\Nodes\EloquentNodeRoleDependencyInspector;
 use App\Infrastructure\Nodes\Metrics\GrafanaPrometheusNodeMetricsReader;
 use App\Infrastructure\Nodes\NativeNodeConverger;
@@ -357,12 +367,10 @@ use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
 use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
 use App\Infrastructure\Nodes\NodeLocks;
-use App\Infrastructure\Nodes\RemoteNodeStorageRootPreparer;
 use App\Infrastructure\Nodes\Roles\GatewayRoleBaseline;
 use App\Infrastructure\Nodes\Roles\NativeNodeRoleFirewallManager;
 use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
 use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
-use App\Infrastructure\Nodes\SshManagedUserAccountResolver;
 use App\Infrastructure\Nodes\SshNodeReachabilityProbe;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\LockRenewingProcessRunner;
@@ -495,27 +503,26 @@ final class ApplicationServiceProvider extends ServiceProvider
         CustomProxyRouteInspector::class => NativeCustomProxyRouteInspector::class,
         MetricsCredentialManager::class => NativeMetricsCredentialManager::class,
         MetricsAccessRevoker::class => NativeMetricsAccessRevoker::class,
-        MetricsCredentialRuntime::class => MetricsSshExecutor::class,
+        MetricsCredentialRuntime::class => MetricsRuntimeCommands::class,
         MetricsExporterLifecycle::class => NativeMetricsExporterLifecycle::class,
         MetricsExporterProjection::class => NativeMetricsExporterProjection::class,
         MetricsFirewallExpectationProvider::class => NativeMetricsFirewallExpectationProvider::class,
-        MetricsExporterRuntime::class => MetricsExporterSshExecutor::class,
+        MetricsExporterRuntime::class => AgentMetricsExporterRuntime::class,
         ServiceMetricsLifecycle::class => NativeServiceMetricsLifecycle::class,
         ServiceMetricsRuntime::class => NativeServiceMetricsRuntime::class,
         ServiceMetricsProjection::class => ServiceMetricsProjection::class,
         MetricsCadvisorLifecycle::class => NativeMetricsCadvisorLifecycle::class,
-        MetricsCadvisorRuntime::class => MetricsCadvisorSshExecutor::class,
+        MetricsCadvisorRuntime::class => AgentMetricsCadvisorRuntime::class,
         MetricsFleetReconciler::class => NativeMetricsFleetReconciler::class,
         MetricsPublicationManagerContract::class => MetricsPublicationManager::class,
         MetricsRoleManager::class => NativeMetricsRoleManager::class,
-        MetricsRuntimeHost::class => MetricsSshExecutor::class,
         MetricsRuntimeLifecycle::class => NativeMetricsContainerRuntime::class,
         MetricsStatusReader::class => NativeMetricsStatusReader::class,
         NodeConverger::class => NativeNodeConverger::class,
-        NodeStorageRootPreparer::class => RemoteNodeStorageRootPreparer::class,
+        NodeStorageRootPreparer::class => AgentNodeStorageRootPreparer::class,
         NodeReachabilityProbe::class => SshNodeReachabilityProbe::class,
         InstalledPackageInventory::class => SharedInstalledPackageInventory::class,
-        NodeStateInspector::class => SshNodeStateInspector::class,
+        NodeStateInspector::class => NativeNodeStateInspector::class,
         NodeMetricsReader::class => GrafanaPrometheusNodeMetricsReader::class,
         ProcessStateInspector::class => NativeProcessStateInspector::class,
         SqliteSnapshotTransfer::class => ProtectedSqliteSnapshotTransfer::class,
@@ -576,6 +583,20 @@ final class ApplicationServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->scoped(OperationIdempotency::class);
+        $this->app->singleton(AgentContract::class, static fn (): AgentContract => new AgentContract(Config::string('orbit.agent.contract')));
+        $this->app->singleton(AgentDelivery::class, static fn (): AgentDelivery => new AgentDelivery(Config::string('orbit.agent.delivery'), Config::string('orbit.home').'/agent-artifacts'));
+        $this->app->bind(AgentTransports::class, static fn ($app): AgentTransports => new AgentTransports(
+            $app->make(GatewayServingHost::class),
+            $app->make(ProcessRunner::class),
+            $app->make(SshExecutor::class),
+            $app->make(SshKeyProvider::class),
+            $app->make(KnownHostsStore::class),
+            Config::string('orbit.home'),
+        ));
+        $this->app->bind(AgentCommandRunner::class, NativeAgentCommandRunner::class);
+        $this->app->bind(GuestAgentCommandRunner::class, NativeAgentCommandRunner::class);
+        $this->app->bind(WorkspaceAgentCommandRunner::class, NativeAgentCommandRunner::class);
+        $this->app->bind(AdmissionAgentRunner::class, NativeAgentCommandRunner::class);
         $this->app->tag([AnalyticsDatabaseConnectionGuard::class], DatabaseConnectionRemovalGuard::class);
         $this->app->tag([ValkeyConnectionUpdateHook::class, PostgresConnectionUpdateHook::class], DatabaseConnectionUpdateHook::class);
 
@@ -682,7 +703,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         $this->app->bind(
             RuntimeHibernatorConverger::class,
             static fn ($app): NativeRuntimeHibernatorConverger => new NativeRuntimeHibernatorConverger(
-                processes: $app->make(ProcessRunner::class),
+                commands: $app->make(GatewayServiceCommands::class),
                 sweepSeconds: Config::integer('orbit.hibernation.sweep_seconds'),
             ),
         );
@@ -697,14 +718,12 @@ final class ApplicationServiceProvider extends ServiceProvider
         $this->app->bind(
             RemoteInstanceCheckoutInspector::class,
             static fn ($app): RemoteInstanceCheckoutInspector => new RemoteInstanceCheckoutInspector(
-                ssh: $app->make(SshExecutor::class),
-                keys: $app->make(SshKeyProvider::class),
-                knownHosts: $app->make(KnownHostsStore::class),
+                agents: $app->make(AgentCommandRunner::class),
                 accounts: $app->make(ManagedUserAccountResolver::class),
                 restoreTimeoutSeconds: Config::integer('orbit.hibernation.cold_wake_timeout_seconds'),
             ),
         );
-        $this->app->singleton(ManagedUserAccountResolver::class, SshManagedUserAccountResolver::class);
+        $this->app->singleton(ManagedUserAccountResolver::class, AgentManagedUserAccountResolver::class);
         $this->app->scoped(NodeProvisioningLock::class, NativeNodeProvisioningLock::class);
         $this->app->scoped(
             DatabaseRemovalLock::class,
@@ -843,7 +862,7 @@ final class ApplicationServiceProvider extends ServiceProvider
                 renderer: app(WireGuardServerConfigRenderer::class),
                 files: app(ProtectedFileWriter::class),
                 processes: app(ProcessRunner::class),
-                firewallParser: app(UfwStatusParser::class),
+                agents: app(AgentCommandRunner::class),
                 orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),
             ),
         );
@@ -852,22 +871,21 @@ final class ApplicationServiceProvider extends ServiceProvider
             static fn (): GatewayWebConverger => new NativeGatewayWebConverger(
                 certificates: app(GatewayCertificateIssuer::class),
                 fpmRenderer: app(GatewayFpmConfigRenderer::class),
-                files: app(ProtectedFileWriter::class),
                 checkout: new GatewayCheckoutAccessConverger(
-                    processes: app(ProcessRunner::class),
+                    agents: app(AgentCommandRunner::class),
                     checkoutPath: rtrim(string: Config::string('orbit.gateway_checkout'), characters: '/'),
                 ),
                 webDirectory: new GatewayWebDirectoryConverger(
-                    processes: app(ProcessRunner::class),
+                    agents: app(AgentCommandRunner::class),
                     webRoot: Config::string('orbit.gateway_web'),
                 ),
                 certificatePublisher: new NativeGatewayCertificatePublisher(
-                    processes: app(ProcessRunner::class),
+                    agents: app(AgentCommandRunner::class),
                     orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),
                 ),
                 fpm: app(NativeGatewayFpmConverger::class),
                 builds: app(NodeCaddyBuilds::class),
-                caddyInstaller: new NativeGatewayCaddyInstaller(app(ProcessRunner::class)),
+                caddyInstaller: new NativeGatewayCaddyInstaller(app(AgentCommandRunner::class)),
                 orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),
                 checkoutPath: rtrim(string: Config::string('orbit.gateway_checkout'), characters: '/'),
                 hibernator: app(RuntimeHibernatorConverger::class),
@@ -879,21 +897,21 @@ final class ApplicationServiceProvider extends ServiceProvider
         $this->app->singleton(
             GatewaySelfAccessConverger::class,
             static fn (): GatewaySelfAccessConverger => new NativeGatewaySelfAccessConverger(
-                processes: app(ProcessRunner::class),
+                agents: app(AgentCommandRunner::class),
                 knownHosts: app(KnownHostsStore::class),
                 sshKeys: app(SshKeyProvider::class),
-                homeDirectory: self::resolveManagedUserHomeDirectory(...),
             ),
         );
         $this->app->singleton(
             BootstrapGatewayAction::class,
             static fn (): BootstrapGatewayAction => new BootstrapGatewayAction(
+                agent: app(NodeAgentRuntime::class),
                 assignRole: app(AssignRoleAction::class),
                 identity: app(GatewayBootstrapIdentityValidator::class),
                 operatingSystem: app(GatewayOperatingSystemGuard::class),
                 vpnSettings: app(VpnSettings::class),
                 processes: app(ProcessRunner::class),
-                files: app(ProtectedFileWriter::class),
+                commands: app(AgentCommandRunner::class),
                 vpn: app(GatewayVpnConverger::class),
                 web: app(GatewayWebConverger::class),
                 selfAccess: app(GatewaySelfAccessConverger::class),
@@ -928,11 +946,8 @@ final class ApplicationServiceProvider extends ServiceProvider
                 configuration: app(VpnConfigurationRepository::class),
                 serverRenderer: app(WireGuardServerConfigRenderer::class),
                 files: app(ProtectedFileWriter::class),
-                processes: app(ProcessRunner::class),
+                agents: app(AgentCommandRunner::class),
                 orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),
-                ssh: app(SshExecutor::class),
-                keys: app(SshKeyProvider::class),
-                knownHosts: app(KnownHostsStore::class),
             ),
         );
         $this->app->alias(NativeGatewayPeerProjectionManager::class, GatewayPeerProjectionManager::class);
@@ -941,7 +956,7 @@ final class ApplicationServiceProvider extends ServiceProvider
             static fn (): NativeWireGuardPeerConverger => new NativeWireGuardPeerConverger(
                 configuration: app(VpnConfigurationRepository::class),
                 gatewayPeers: app(GatewayPeerProjectionManager::class),
-                ssh: app(SshExecutor::class),
+                agents: app(AdmissionAgentRunner::class),
             ),
         );
         $this->app->alias(NativeWireGuardPeerConverger::class, WireGuardPeerConverger::class);
@@ -949,9 +964,7 @@ final class ApplicationServiceProvider extends ServiceProvider
             NativeWireGuardPeerDnsRepairer::class,
             static fn (): NativeWireGuardPeerDnsRepairer => new NativeWireGuardPeerDnsRepairer(
                 configuration: app(VpnConfigurationRepository::class),
-                ssh: app(SshExecutor::class),
-                sshKeys: app(SshKeyProvider::class),
-                knownHosts: app(KnownHostsStore::class),
+                agents: app(AgentCommandRunner::class),
             ),
         );
         $this->app->alias(NativeWireGuardPeerDnsRepairer::class, WireGuardPeerDnsRepairer::class);
@@ -995,12 +1008,5 @@ final class ApplicationServiceProvider extends ServiceProvider
         Relation::morphMap([
             'instance' => Instance::class,
         ]);
-    }
-
-    private static function resolveManagedUserHomeDirectory(string $user): string|false
-    {
-        $account = posix_getpwnam($user);
-
-        return is_array($account) ? (string) $account['dir'] : false;
     }
 }

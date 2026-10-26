@@ -10,6 +10,7 @@ it('fails ordinary cases that call sudo even when they ignore the process failur
     $process = new Process($cleanEnvironment
         ? ['bash', '-c', LinuxHost::testCommand($arguments)]
         : [PHP_BINARY, 'vendor/bin/pest', ...$arguments], dirname(__DIR__, 3), timeout: 60);
+    $process->setEnv(['PAO_DISABLE' => '1']);
     $process->run();
 
     expect($process->getExitCode())->toBe(1)
