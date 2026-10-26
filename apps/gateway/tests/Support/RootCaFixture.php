@@ -11,17 +11,24 @@ use Symfony\Component\Process\Process;
 /** Read-only, real RSA-4096 CAs per worker; each test receives independent files. */
 final class RootCaFixture
 {
-    /** @var array<string, array{key: string, certificate: string, configuration: array{subject: string, days: int, extensions: list<string>}}> */
+    /** @var array<string, array{key: string, certificate: string, configuration: array{subject: string, days: int, extensions: list<string>, notBefore: ?string, notAfter: ?string}}> */
     private static array $materials = [];
 
     /**
-     * Call from beforeAll, outside individual certificate issuance proofs.
+     * Call from beforeAll, outside individual certificate issuance proofs. `$notBefore` and `$notAfter`
+     * take OpenSSL's `YYYYMMDDHHMMSSZ` form and set the validity window instead of `$days`.
      *
      * @param  list<string>  $extensions
      */
-    public static function prepare(string $name = 'primary', string $subject = '/CN=Orbit Root CA', int $days = 3650, array $extensions = []): void
-    {
-        $configuration = ['subject' => $subject, 'days' => $days, 'extensions' => $extensions];
+    public static function prepare(
+        string $name = 'primary',
+        string $subject = '/CN=Orbit Root CA',
+        int $days = 3650,
+        array $extensions = [],
+        ?string $notBefore = null,
+        ?string $notAfter = null,
+    ): void {
+        $configuration = ['subject' => $subject, 'days' => $days, 'extensions' => $extensions, 'notBefore' => $notBefore, 'notAfter' => $notAfter];
         if (isset(self::$materials[$name])) {
             if (self::$materials[$name]['configuration'] !== $configuration) {
                 throw new RuntimeException('A named root CA fixture cannot change its configuration.');
@@ -38,6 +45,12 @@ final class RootCaFixture
             foreach ($extensions as $extension) {
                 $arguments[] = '-addext';
                 $arguments[] = $extension;
+            }
+            foreach (['-not_before' => $notBefore, '-not_after' => $notAfter] as $option => $date) {
+                if ($date !== null) {
+                    $arguments[] = $option;
+                    $arguments[] = $date;
+                }
             }
             (new Process($arguments))->mustRun();
             $key = file_get_contents($home.'/root.key');

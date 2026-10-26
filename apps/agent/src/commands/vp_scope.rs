@@ -2,7 +2,7 @@
 use crate::command::{identity, Command, Context, Platform, Privilege};
 use serde::{Deserialize, Serialize};
 use std::{
-    fs, io,
+    fs,
     os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
     time::Duration,
@@ -23,11 +23,7 @@ pub struct Output {
     pub binary: PathBuf,
 }
 fn metadata(path: &Path) -> Result<Option<fs::Metadata>> {
-    match fs::symlink_metadata(path) {
-        Ok(meta) => Ok(Some(meta)),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(_) => Err(Error::Unreadable {}),
-    }
+    super::recipe::metadata(path).map_err(|_| Error::Unreadable {})
 }
 fn owned(meta: &fs::Metadata, uid: u32, gid: u32, platform: Platform) -> bool {
     meta.uid() == uid && (platform == Platform::Macos || meta.gid() == gid)

@@ -13,8 +13,6 @@ use RuntimeException;
 
 final readonly class OpenSslLeafCertificateSigner implements LeafCertificateSigner
 {
-    private const string LEAF_VALIDITY_DAYS = '397';
-
     /** @var Closure(): int */
     private Closure $clock;
 
@@ -73,7 +71,7 @@ final readonly class OpenSslLeafCertificateSigner implements LeafCertificateSign
                     '-set_serial',
                     '0x'.bin2hex(random_bytes(20)),
                     '-days',
-                    self::LEAF_VALIDITY_DAYS,
+                    (string) OrbitLeafCertificate::ValidityDays,
                     '-sha256',
                     '-extfile',
                     $extensions,
@@ -145,33 +143,7 @@ final readonly class OpenSslLeafCertificateSigner implements LeafCertificateSign
             throw new RuntimeException('Orbit root CA material is not readable.');
         }
 
-        $parsedCertificate = openssl_x509_read(certificate: $certificate);
-        $parsedPrivateKey = openssl_pkey_get_private($privateKey);
-        $privateKeyDetails = $parsedPrivateKey !== false
-            ? openssl_pkey_get_details($parsedPrivateKey)
-            : false;
-        $details = $parsedCertificate !== false ? openssl_x509_parse($parsedCertificate) : false;
-        $basicConstraints = is_array($details)
-            ? $details['extensions']['basicConstraints'] ?? null
-            : null;
-        $validFrom = is_array($details) ? $details['validFrom_time_t'] : null;
-        $validTo = is_array($details) ? $details['validTo_time_t'] : null;
-        $now = ($this->clock)();
-
-        if (
-            $parsedCertificate === false
-            || $parsedPrivateKey === false
-            || ! is_array($privateKeyDetails)
-            || ($privateKeyDetails['type'] ?? null) !== OPENSSL_KEYTYPE_RSA
-            || ($privateKeyDetails['bits'] ?? null) !== 4096
-            || ! is_string($basicConstraints)
-            || ! str_contains($basicConstraints, 'CA:TRUE')
-            || ! is_int($validFrom)
-            || $validFrom > $now
-            || ! is_int($validTo)
-            || $validTo < $now
-            || ! openssl_x509_check_private_key($parsedCertificate, $parsedPrivateKey)
-        ) {
+        if (! OrbitRootCa::pairIsValid($certificate, $privateKey, ($this->clock)())) {
             throw new RuntimeException('Orbit root CA material is invalid.');
         }
 
@@ -180,15 +152,7 @@ final readonly class OpenSslLeafCertificateSigner implements LeafCertificateSign
 
     private function writeExtensions(string $path, string $hostname): void
     {
-        $contents = <<<EXTENSIONS
-            [leaf]
-            basicConstraints = critical,CA:FALSE
-            keyUsage = critical,digitalSignature,keyEncipherment
-            extendedKeyUsage = serverAuth
-            subjectAltName = DNS:{$hostname}
-            EXTENSIONS;
-
-        if (file_put_contents($path, $contents) === false) {
+        if (file_put_contents($path, OrbitLeafCertificate::extensions('leaf', "DNS:{$hostname}")) === false) {
             throw new RuntimeException('Could not write leaf certificate extensions.');
         }
 

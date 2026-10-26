@@ -11,7 +11,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
-    fs, io,
+    fs,
     os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt},
     path::{Path, PathBuf},
     time::Duration,
@@ -49,11 +49,7 @@ pub struct HostKey {
 }
 
 fn meta(path: &Path) -> Result<Option<fs::Metadata>, Error> {
-    match fs::symlink_metadata(path) {
-        Ok(m) => Ok(Some(m)),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(_) => Err(Error::Invalid {}),
-    }
+    super::recipe::metadata(path).map_err(|_| Error::Invalid {})
 }
 fn directory(path: &Path, uid: u32, required: bool) -> Result<(), Error> {
     match meta(path)? {

@@ -11,7 +11,7 @@ use Illuminate\Support\Carbon;
 
 final readonly class OpenSslGatewayCertificateValidator
 {
-    private const int MAXIMUM_VALIDITY_SECONDS = 397 * 24 * 60 * 60;
+    private const int MAXIMUM_VALIDITY_SECONDS = OrbitLeafCertificate::ValidityDays * 24 * 60 * 60;
 
     /**
      * Leaves are re-issued once they expire, and once they come within this margin of expiring.
