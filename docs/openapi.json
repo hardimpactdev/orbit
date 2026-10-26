@@ -34325,6 +34325,8 @@
               "release_missing",
               "release_mismatch",
               "release_incomplete",
+              "release_unverified",
+              "provenance_unconfigured",
               "github_unavailable",
               null
             ]

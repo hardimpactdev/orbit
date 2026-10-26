@@ -1,6 +1,6 @@
 ---
 title: "CLI binaries"
-description: "Published Orbit CLI releases for every green main commit: versions, tags, assets, checksums, how to find and install one, the pull-request builds, and how to build locally."
+description: "Published Orbit CLI releases for every green main commit: versions, tags, assets, checksums, provenance, how to find and install one, the pull-request builds, and how to build locally."
 covers:
   - .github/workflows/orbit-cli-binary.yml
   - .github/workflows/orbit-cli-release.yml
@@ -39,7 +39,7 @@ A released binary reports its version: `orbit --version` prints `Orbit 0.4681.0`
 
 ### Assets
 
-Each release has one CLI binary per supported platform, the agent delivery that CI built and tested for the commit, and a checksum file.
+Each release has one CLI binary per supported platform, the agent delivery that CI built and tested for the commit, a checksum file, and a provenance bundle.
 
 | Asset | Platform | Built on | Run on |
 | --- | --- | --- | --- |
@@ -48,8 +48,25 @@ Each release has one CLI binary per supported platform, the agent delivery that 
 | `orbit-0.N.0-macos-arm64` | macOS on Apple silicon | Hosted `ubuntu-26.04` | Hosted `macos-26` |
 | `orbit-agent-<platform>`, `manifest.json` | The four [agent](/reference/node-agent#releases) platforms | The commit's CI run | The commit's CI run |
 | `SHA256SUMS` | Checksums of the seven binaries | | |
+| `provenance.sigstore.json` | The [provenance](#provenance) of the nine files above | | |
 
 Each CLI binary is one executable file with a static PHP 8.5 inside. The Linux names follow `uname -m`, as the agent's do. `SHA256SUMS` has the `sha256sum` format: one line per binary, sorted by name, with the lowercase hex digest, two spaces, and the asset name.
+
+### Provenance
+
+The publish job signs the release with the workflow's own identity. `actions/attest-build-provenance` takes the job's OIDC token, gets a short-lived certificate from Sigstore's public Fulcio CA, and records the signature in Sigstore's public Rekor log. The job needs `id-token: write` and `attestations: write`, and no secret. It signs one in-toto statement with SLSA provenance v1. Its subjects are the nine files above, each with its SHA-256 digest. The job adds the Sigstore bundle as `provenance.sigstore.json` to the same `gh release create` call, so the release appears with it.
+
+The certificate names the workflow file and its ref, `orbit-cli-release.yml@refs/heads/main`. A `workflow_run` after CI and a `workflow_dispatch` backfill both run the workflow on `refs/heads/main`, so both sign with that identity. No other workflow or branch can produce it.
+
+The Gateway verifies the bundle offline before it installs an agent or names a CLI digest ([Release provenance](/reference/gateway-recovery#release-provenance)). To check a download by hand with the GitHub CLI, verify `SHA256SUMS` and then check each binary against it:
+
+```bash
+gh attestation verify SHA256SUMS --bundle provenance.sigstore.json --repo hardimpactdev/orbit \
+  --cert-identity https://github.com/hardimpactdev/orbit/.github/workflows/orbit-cli-release.yml@refs/heads/main \
+  --cert-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+A release published before provenance existed has no bundle.
 
 ### Release contract for clients
 
@@ -62,6 +79,8 @@ The Gateway, a Node installer, and `orbit self-update` rely on these rules. They
 | Asset URL | `https://github.com/hardimpactdev/orbit/releases/download/cli-v<version>/orbit-<version>-<platform>` |
 | Platforms | `linux-x86_64`, `linux-aarch64`, `macos-arm64` |
 | Checksums URL | `https://github.com/hardimpactdev/orbit/releases/download/cli-v<version>/SHA256SUMS` |
+| Provenance URL | `https://github.com/hardimpactdev/orbit/releases/download/cli-v<version>/provenance.sigstore.json` |
+| Signing identity | Certificate SAN `https://github.com/hardimpactdev/orbit/.github/workflows/orbit-cli-release.yml@refs/heads/main`, OIDC issuer `https://token.actions.githubusercontent.com` |
 | Commits with a release | Commits on the first-parent history of `main` with a successful `Required checks` run. A side commit never has one |
 | Immutability | A published asset never changes. The tag points at `C`, and the release appears with all its assets at once |
 
@@ -119,7 +138,7 @@ When the Gateway's fleet runs a newer release, other commands print a notice to 
 
 When a green `main` commit has no release, for example because the workflow failed on a GitHub outage, run `Orbit CLI Release` with `workflow_dispatch` on `main` and pass the full commit SHA. A dispatch from another branch does nothing. The run applies the same checks, including the first-parent history check. It takes the agent from the newest passing CI run on `main` for that commit, so it works only while that run's `agent-delivery` artifact exists, 30 days.
 
-The build uses the commit's own builder, so a commit from before CLI releases existed cannot be published: its builder has no Linux arm64 target. When the release already exists for that commit with every asset, the run changes nothing. When a tag or release for that version points elsewhere or lacks assets, the run fails and replaces nothing. An unfinished draft from an earlier run is deleted and rebuilt.
+The build uses the commit's own builder, so a commit from before CLI releases existed cannot be published: its builder has no Linux arm64 target. When the release already exists for that commit with every asset, the run changes nothing. A release published before provenance existed lacks the bundle, so its run fails and replaces nothing. When a tag or release for that version points elsewhere or lacks assets, the run fails and replaces nothing. An unfinished draft from an earlier run is deleted and rebuilt.
 
 ### Commits without a release
 
@@ -172,7 +191,8 @@ The binary contract has these limits.
 
 - Only Linux x86_64, Linux arm64, and macOS on Apple silicon are built. Windows and Intel Macs are not.
 - The binaries are not notarized. The macOS binary keeps the ad-hoc signature of PHPacker's PHP build. A download with `curl` gets no quarantine flag and runs; a browser download needs `xattr -d com.apple.quarantine`.
-- `SHA256SUMS` comes from the same release, so it detects a damaged download, not a forged release.
+- `SHA256SUMS` comes from the same release, so alone it detects a damaged download, not a forged release.
+- The [provenance](#provenance) bundle proves that this workflow on `main` built the files. A client that does not verify it trusts GitHub for that.
 - A green commit can miss its release ([Commits without a release](#commits-without-a-release)).
 - The Gateway installs the binary only on the Nodes of the [fleet rollout set](/reference/gateway-recovery#rollout-set-and-order), as `/usr/local/bin/orbit-<version>` behind the `/usr/local/bin/orbit` link that `orbit self-update` also switches ([Orbit CLI](/reference/node-provisioning#orbit-cli)). Operator machines update themselves with `orbit self-update`.
 
@@ -184,7 +204,11 @@ These reasons explain the design. Check them before you propose a change.
 
 Packaging time and artifacts stay out of the quality checks in `ci.yml`, so a packaging failure never hides a test failure, and the reverse. The release workflow waits for the `CI` run instead of joining it, so it can publish only what `Required checks` accepted. Both release paths reuse one build workflow, so a pull request tests the same steps that publish a release.
 
-The release workflow runs from `main` with a token that can write releases. Only the publish job holds that token, and it runs only the workflow's own scripts from `main`. The build jobs run the release commit's code with a read-only token. A pull request's code never runs in the release workflow.
+The release workflow runs from `main` with a token that can write releases. Only the publish job holds that token and the OIDC token that signs the release, and it runs only the workflow's own scripts from `main`. The build jobs run the release commit's code with a read-only token. A pull request's code never runs in the release workflow.
+
+### Provenance from the workflow identity
+
+`SHA256SUMS` and the manifest come from the same public download as the binaries, so they cannot prove where the files came from. A signature from this workflow on `main` can. Sigstore signs with the job's own OIDC identity, so the release needs no secret, no signing key to rotate, and no GitHub App. The bundle is a release asset, so the Gateway verifies it from a public download without asking GitHub's attestation API, which needs a login. The attestation binds the file bytes. The version in the asset names and the agent URLs ties them to one release.
 
 ### Releases for green main commits
 

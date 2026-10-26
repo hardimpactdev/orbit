@@ -5,6 +5,8 @@ publishes it: a lightweight tag `cli-v0.N.0` on the commit, a release with one b
 
 - `release.json` is the `GET /repos/hardimpactdev/orbit/releases/tags/agent-v0.3.0` response captured on 7 Oct 2026,
   with the tag, names, IDs, sizes, dates, and URLs rewritten to `cli-v0.4681.0`.
+- The `provenance.sigstore.json` asset row of `release.json` was added in the same shape. The tests serve its bundle
+  from `Tests\Support\SigstoreTestSigner`, signed for the `SHA256SUMS` they serve.
 - `tag-ref.json` is a `GET /repos/{owner}/{repo}/git/ref/tags/{tag}` response for a lightweight tag.
 - `orbit-0.4681.0-*` are stand-in binaries. `SHA256SUMS` was written from them as `bin/orbit-cli-release-assets`
   does: `LC_ALL=C sha256sum -- orbit-0.4681.0-* | LC_ALL=C sort -k 2`.

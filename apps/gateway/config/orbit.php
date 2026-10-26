@@ -64,6 +64,9 @@ return [
     'cli_releases' => [
         'repository' => env(key: 'ORBIT_CLI_RELEASE_REPOSITORY', default: 'https://github.com/hardimpactdev/orbit'),
         'git_directory' => base_path(),
+        // The Sigstore trust root that release provenance is verified against. Override it only to recover from a
+        // key rotation the committed root does not hold yet (docs/reference/gateway-recovery.md#release-provenance).
+        'trusted_root' => trim((string) env('ORBIT_CLI_RELEASE_TRUSTED_ROOT', '')) ?: resource_path('sigstore/trusted_root.json'),
     ],
     // The limit bin/gateway-smoke gets in each release, in seconds (1 to 600).
     'gateway_release_smoke_timeout' => max(1, min(600, (int) env('ORBIT_GATEWAY_RELEASE_SMOKE_TIMEOUT', 90))),

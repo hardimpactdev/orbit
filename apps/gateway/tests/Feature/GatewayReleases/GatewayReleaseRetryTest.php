@@ -55,7 +55,17 @@ describe(GatewayReleaseRetry::class, function (): void {
             ->and($retry->retryable('gateway.release_agent_delivery_unavailable', $sha))->toBeTrue();
     });
 
-    it('makes a failure the commit causes final at once', function (): void {
-        expect(new GatewayReleaseRetry()->retryable('gateway.release_downgrade', str_repeat('c', 40)))->toBeFalse();
+    it('never spends the budget while a Gateway setting keeps provenance from being checked', function (): void {
+        $sha = str_repeat('a', 40);
+        foreach (range(1, 4) as $attempt) {
+            retry_record(['error_code' => 'gateway.release_provenance_unconfigured']);
+        }
+
+        expect(new GatewayReleaseRetry()->retryable('gateway.release_provenance_unconfigured', $sha))->toBeTrue()
+            ->and(new GatewayReleaseRetry()->retryable('gateway.release_verify_failed', $sha))->toBeTrue();
     });
+
+    it('makes a failure the commit causes final at once', function (string $errorCode): void {
+        expect(new GatewayReleaseRetry()->retryable($errorCode, str_repeat('c', 40)))->toBeFalse();
+    })->with(['gateway.release_downgrade', 'a published release without valid provenance' => 'gateway.release_provenance_invalid']);
 });
