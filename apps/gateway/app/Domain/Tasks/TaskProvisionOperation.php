@@ -12,6 +12,7 @@ use App\Domain\Operations\OperationWaitingKind;
 use App\Domain\Operations\OperationWaitingStep;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmFailedException;
+use App\Infrastructure\TaskVms\TaskVmWorker;
 use App\Infrastructure\TaskVms\TaskVmWorkspace;
 use App\Models\Instance;
 use App\Models\Operation;
@@ -31,6 +32,7 @@ final readonly class TaskProvisionOperation implements OperationWaitingKind, Ope
         private TaskWorkspaceLease $leases,
         private TaskVmWorkspace $vms,
         private TaskAnalysisRunner $analysis,
+        private TaskVmWorker $worker,
     ) {}
 
     public static function requireTodo(Task $group): void
@@ -139,7 +141,7 @@ final readonly class TaskProvisionOperation implements OperationWaitingKind, Ope
         return $this->execution->synchronized($operation->target_id, function () use ($operation, $run): array {
             $group = Task::topLevel()->with('taskable')->findOrFail($operation->target_id);
             $this->operations->requireOpenExternal($group);
-            $identity = $this->leases->run($group, 'provision', 'operation:'.$operation->id, function () use ($group, $run): array {
+            $identity = $this->leases->run($group, 'provision', 'operation:'.$operation->id, function () use ($group, $run, $operation): array {
                 $failure = $this->routes->complete($group);
                 if ($failure !== null) {
                     throw new ResourceOperationException($failure->errorCode ?? 'tasks.provision_failed', $failure->cause);
@@ -148,6 +150,7 @@ final readonly class TaskProvisionOperation implements OperationWaitingKind, Ope
                 if (! $instance instanceof Instance) {
                     throw new LogicException('Provision has no workspace.');
                 }
+                $this->worker->start($operation, $instance, required: false);
                 $base = $run->remember('analysis_base', fn (): array => [
                     'base' => $this->analysis->initialAnalysisBase($instance),
                     'instance_id' => $instance->id,
@@ -169,6 +172,7 @@ final readonly class TaskProvisionOperation implements OperationWaitingKind, Ope
 
     public function stop(OperationRun $run): void
     {
+        $this->worker->forget($run->operation());
         $this->releaseReservation($run->operation());
     }
 
@@ -187,8 +191,12 @@ final readonly class TaskProvisionOperation implements OperationWaitingKind, Ope
 
     public function abandon(Operation $operation, OperationOutcome $failure, ?string $failedStep): OperationOutcome
     {
+        $this->worker->forget($operation);
         $this->releaseReservation($operation);
         $group = Task::topLevel()->find($operation->target_id);
+        if ($group instanceof Task) {
+            $this->worker->stopGroup($group);
+        }
         if ($failure->status === OperationStatus::Failed && $group instanceof Task && ! in_array($group->status, TaskGroupStatus::endedStatuses(), true)) {
             $group->update(['status' => TaskGroupStatus::Failed, 'settled_at' => now()]);
         }

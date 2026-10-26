@@ -31,6 +31,7 @@ use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Actions\Tasks\StartTaskPublishAction;
 use App\Actions\Tasks\StartTaskScriptAction;
 use App\Actions\Tasks\StartTaskTurnAction;
+use App\Actions\Tasks\StartTaskWorkerAction;
 use App\Actions\Tasks\StopTaskSubtaskAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\StoreTaskGroupCommentAction;
@@ -144,6 +145,7 @@ use App\Domain\Tasks\TaskTurnMode;
 use App\Domain\Tasks\TaskTurnOperation;
 use App\Domain\Tasks\TaskTurnPullRequest;
 use App\Domain\Tasks\TaskTurnReceipt;
+use App\Domain\Tasks\TaskWorkerOperation;
 use App\Domain\Tasks\TaskWorkspaceCommitReceipt;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceLeaseRecovery;
@@ -254,7 +256,8 @@ final class TaskOrchestrationEntryPoints
             'run' => 'Runs the external turn operation under its group hold.',
         ],
         TaskClaimAdmission::class => ['provisionWorkspace' => 'Shared claim provisioning; tasks.provision admits external groups and never starts a subtask or check.'],
-        StartTaskProvisionAction::class => ['execute' => 'tasks.provision is the explicit external operation; shared admission requires an open external group.'],
+        TaskOperations::class => ['startWithWorker' => 'Stages enrollment for provision or worker startup through shared open-external-group admission; TaskProvisionOperationTest exercises both boundaries.'],
+        TaskWorkerOperation::class => ['read' => 'Starts the worker only under its external group operation hold and workspace lease; TaskProvisionOperationTest covers parked resume and restart.'],
         TaskProvisionOperation::class => [
             'read' => 'tasks.provision validates orchestration and reserves the group while it observes VM readiness.',
             'finishWorkspace' => 'tasks.provision ends its reservation only after the nonresumable workspace and Route effects.',
@@ -367,8 +370,10 @@ final class TaskOrchestrationEntryPoints
 
         TaskClaimAdmission::class => ['provisionWorkspace' => 'Shared provisioning for tick claim and tasks.provision; the operation owns external admission.'],
         StartTaskProvisionAction::class => ['execute' => 'tasks.provision admits only open external todo groups through shared admission.'],
+        StartTaskWorkerAction::class => ['execute' => 'tasks.worker admits only open external groups with an existing VM workspace; TaskProvisionOperationTest exercises the boundary.'],
         TaskOperations::class => [
             'start' => 'Shared admission requires an open external group and one operation hold.',
+            'startWithWorker' => 'Stages enrollment outside operation records before shared external admission.',
             'requireOpenExternal' => 'Shared operation-only external group guard.',
             'requireCurrentSubtask' => 'Shared operation workspace, subtask ownership and order validation.',
             'cancelOpen' => 'Group cancel and complete stop the open operation before cleanup.',
@@ -380,6 +385,14 @@ final class TaskOrchestrationEntryPoints
             'read' => 'tasks.provision capacity/readiness observation and shared claim provisioning.',
             'stop' => 'tasks.provision cancellation clears the reservation for cleanup.',
             'abandon' => 'tasks.provision failure ends the group; cancellation clears the reservation.',
+        ],
+        TaskWorkerOperation::class => [
+            'run' => 'Plans readiness and worker startup without changing group state.',
+            'requireWorkspace' => 'Requires the existing group workspace and matching task VM.',
+            'waitingStep' => 'tasks.worker waiting read and stop hooks.',
+            'read' => 'Resumes the existing VM and starts its worker under the group hold and workspace lease.',
+            'stop' => 'Discards staged enrollment and releases the worker operation lease.',
+            'abandon' => 'Releases startup resources without ending the group.',
         ],
         AllocateTaskVmAction::class => [
             'execute' => 'Reusable VM placement; engine claim admission is guarded; does not change a group claim or send a turn.',

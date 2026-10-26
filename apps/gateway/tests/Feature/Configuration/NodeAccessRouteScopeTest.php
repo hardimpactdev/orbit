@@ -300,6 +300,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'tasks:subtask:update' => ServingNode::TaskGroupOwning,
         'tasks:turn' => ServingNode::Gateway,
         'tasks:update' => ServingNode::TaskGroupOwning,
+        'tasks:worker' => ServingNode::Gateway,
         'tool:adopt' => ServingNode::ToolOwning,
         'tool:install' => ServingNode::ToolOwning,
         'tool:list' => ServingNode::ToolOwning,

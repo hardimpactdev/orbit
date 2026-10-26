@@ -10,5 +10,6 @@ use Attribute;
 #[Attribute(Attribute::TARGET_METHOD)]
 final readonly class StartsOperation
 {
-    public function __construct(public string $kind, public bool $requiresKey = false, public ?int $maxJsonBytes = null) {}
+    /** @param list<string> $secretInputs Dot paths excluded from the idempotency fingerprint. */
+    public function __construct(public string $kind, public bool $requiresKey = false, public ?int $maxJsonBytes = null, public array $secretInputs = []) {}
 }

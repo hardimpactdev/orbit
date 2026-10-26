@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Actions\TaskVms;
 
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\TaskVms\TaskVmRuntime;
+use App\Infrastructure\TaskVms\TaskVmWorker;
 use App\Models\TaskVm;
 use Throwable;
 
@@ -27,10 +29,15 @@ final readonly class DeleteTaskVmAction
     public function execute(TaskVm $vm): void
     {
         try {
+            try {
+                app(TaskVmWorker::class)->stopVm($vm);
+            } catch (ResourceOperationException) {
+                // VM deletion itself stops the worker when neither the guest nor power-off can do so.
+            }
             $vm->update(['state' => TaskVmState::Destroying, 'error_code' => null, 'error_message' => null]);
             $this->runtime->release($vm);
             $this->provider->destroy($vm);
-            $vm->update(['pi_token' => null]);
+            $vm->update(['pi_token' => null, 'worker_stop_required' => false]);
             $this->workspaces->execute($vm);
         } catch (Throwable $exception) {
             $vm->recordError($exception);

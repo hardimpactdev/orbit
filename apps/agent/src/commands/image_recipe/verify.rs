@@ -161,6 +161,10 @@ pub fn verify(
         "/usr/local/bin/orbit-agent",
         &input.agent_sha256,
     )?;
+    if let Some(pin) = input.recipe.tools.get("swamp") {
+        let artifact = &pin.artifacts[input.recipe.architecture.name()];
+        artifacts::verify(&files.path(recipe::swamp::BINARY), artifact)?;
+    }
     if let Some(digest) = &input.pi_sha256 {
         binary(
             &mut host,

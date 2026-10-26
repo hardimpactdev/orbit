@@ -97,6 +97,7 @@ pub mod sqlite_seed;
 pub mod sqlite_transfer;
 mod ssh_host_key;
 pub mod storage_root;
+mod swamp_worker;
 pub mod task_git;
 pub mod task_git_export;
 pub mod task_git_import;
@@ -238,6 +239,9 @@ pub fn all() -> Vec<Entry> {
         entry::<pi_artifact::Install>(),
         entry::<pi_artifact::Inspect>(),
         entry::<pi_runtime::Configure>(),
+        entry::<swamp_worker::Start>(),
+        entry::<swamp_worker::Stop>(),
+        entry::<swamp_worker::Trust>(),
         entry::<gateway_web::PrepareDirectory>(),
         entry::<gateway_certificate::Publish>(),
         entry::<gateway_checkout::Check>(),

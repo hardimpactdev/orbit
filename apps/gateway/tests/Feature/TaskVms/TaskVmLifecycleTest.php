@@ -757,6 +757,30 @@ describe(DestroyTaskVm::class, function (): void {
         }]);
     });
 
+    it('deletes a worker VM past preservation waits when neither guest stop nor power-off succeeds', function (): void {
+        [$vm, $workspace, $route, $group] = tvm_life_stranded_workspace(false, TaskOrchestration::External);
+        $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
+        $commit = TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => str_repeat('c', 40), 'source' => TaskReviewedCommitSource::OrbitPush]);
+        $vm->update(['worker_stop_required' => true]);
+        app()->instance(AgentCommandRunner::class, (new FakeAgentCommandRunner)->answer('swamp.stop-worker', static fn (): array => throw new RuntimeException('unreachable')));
+        $this->provider->stopError = new RuntimeException('Power-off failed.');
+        $this->provider->onDestroy = function (TaskVm $deleting): void {
+            expect($deleting->state)->toBe(TaskVmState::Destroying);
+            expect($deleting->worker_stop_required)->toBeTrue();
+        };
+
+        app()->call([new DestroyTaskVm($vm->id), 'handle']);
+
+        expect($this->provider->calls)->toBe(['observe', 'stop', 'observe', 'stop', 'destroy']);
+        expect($vm->fresh()->worker_stop_required)->toBeFalse();
+        expect($vm->fresh()->state)->toBe(TaskVmState::Destroyed);
+        expect($vm->fresh()->node_id)->toBeNull();
+        expect($group->fresh()->taskable_id)->toBeNull();
+        expect($commit->fresh()->sha)->toBe(str_repeat('c', 40));
+        expect(Instance::query()->find($workspace->id))->toBeNull();
+        expect(Route::query()->find($route->id))->toBeNull();
+    });
+
     it('revokes the key, deletes the VM and removes the Node before the row is destroyed', function (): void {
         $node = tvm_life_node('tvm-node', '10.44.0.129', role: RoleName::AppDev);
         $node->processes()->create([

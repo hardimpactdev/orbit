@@ -6,6 +6,7 @@ pub fn install(
     input: &Input,
     deadline: Instant,
 ) -> Result<(), Failure> {
+    super::recipe::swamp::install(host, files, &input.recipe)?;
     let config = apt_check(input, &files.path(APT))?;
     let mut host = AptHost {
         host,

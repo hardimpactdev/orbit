@@ -9,6 +9,7 @@ pub mod ownership;
 pub mod services;
 pub mod sources;
 pub mod store;
+pub mod swamp;
 pub mod types;
 
 use super::caddy::chown;

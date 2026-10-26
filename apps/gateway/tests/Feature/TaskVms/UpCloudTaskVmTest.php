@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\TaskVms\AllocateTaskVmAction;
+use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCapacityException;
@@ -304,6 +305,9 @@ function tvm_up_vm(TaskVmState $state = TaskVmState::Provisioning, ?string $host
 
 function tvm_up_image_artifact(): void
 {
+    $signer = Mockery::mock(LeafCertificateSigner::class);
+    $signer->shouldReceive('rootCertificate')->andReturn('public Orbit root certificate');
+    app()->instance(LeafCertificateSigner::class, $signer);
     $directory = sys_get_temp_dir().'/upcloud-image-artifact-'.Str::uuid();
     $resources = $directory.'/releases/current/apps/gateway/resources/machine-software';
     mkdir($resources, 0700, true);
@@ -805,7 +809,7 @@ describe('image build', function (): void {
                 'image.inspect-phase', 'image.start-phase', 'image.inspect-phase', 'image.start-phase',
                 'image.inspect-phase', 'image.start-phase', 'image.inspect-phase', 'image.start-phase',
                 'image.inspect-phase', 'image.start-phase', 'image.inspect-phase', 'pi.receive-artifact', 'image.start-phase',
-                'image.recipe-marker', 'image.verify', 'image.boot', 'image.firewall', 'image.clean', 'guest.cloud-init', 'image.verify', 'image.check'])
+                'image.recipe-marker', 'image.verify', 'image.boot', 'image.firewall', 'image.trust-ca', 'image.clean', 'guest.cloud-init', 'image.verify', 'image.check'])
             ->and(array_find($guestAgents->calls, static fn (array $call): bool => $call['command'] === 'image.check')['input'])->toBe(['lean_boot' => false, 'firewall' => true])
             ->and(Cache::get('task-vms:upcloud-image-build:running:'.substr((string) $this->upcloud->storages[$template]['title'], -14)))->toBeNull()
             ->and(array_filter($guestAgents->calls, static fn (array $call): bool => $call['command'] === 'image.start-phase' && $call['input']['key']['phase'] === 'packages'))->toHaveCount(1)

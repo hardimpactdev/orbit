@@ -10,6 +10,7 @@ use App\Actions\TaskVms\DeleteTaskVmAction;
 use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskFinalReview;
@@ -19,6 +20,7 @@ use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\TaskVms\TaskVmGuest;
+use App\Infrastructure\TaskVms\TaskVmWorker;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskVm;
@@ -58,6 +60,12 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
         $vm = TaskVm::query()->find($this->taskVmId);
         if (! $vm instanceof TaskVm || $vm->state === TaskVmState::Destroyed) {
             return;
+        }
+        try {
+            app(TaskVmWorker::class)->stopVm($vm);
+        } catch (ResourceOperationException) {
+            // A worker that cannot be stopped must reach provider deletion, even past preservation waits.
+            $vm->update(['state' => TaskVmState::Destroying]);
         }
         // Only the group's own workspace holds destroy back. Any other Instance on the Node lives in the VM and goes
         // with it.

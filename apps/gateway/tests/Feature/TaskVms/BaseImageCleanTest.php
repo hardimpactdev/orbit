@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\TaskVms\TaskVmException;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentGuest;
@@ -9,6 +10,12 @@ use App\Infrastructure\AgentCommands\GuestAgentCommandRunner;
 use App\Infrastructure\TaskVms\TaskVmImageRecipe;
 use App\Models\Node;
 use Tests\Support\FakeGuestAgentCommandRunner;
+
+beforeEach(function (): void {
+    $signer = Mockery::mock(LeafCertificateSigner::class);
+    $signer->shouldReceive('rootCertificate')->andReturn('public Orbit root certificate');
+    app()->instance(LeafCertificateSigner::class, $signer);
+});
 
 it('installs the pinned agent then requests typed builder cleanup', function (): void {
     $guest = AgentGuest::incus(new Node(['name' => 'host', 'architecture' => 'x86_64']), 'orbit-tasks', 'tvm-image-1');
@@ -18,18 +25,19 @@ it('installs the pinned agent then requests typed builder cleanup', function ():
     app(TaskVmImageRecipe::class)->clean($guest);
 
     expect($agents->installs)->toBe([$guest]);
-    expect($agents->calls)->toBe([['guest' => $guest, 'command' => 'image.clean', 'input' => []]]);
+    expect(array_column($agents->calls, 'command'))->toBe(['image.trust-ca', 'image.clean']);
+    expect($agents->calls[0]['input']['certificate'])->toBe(app(LeafCertificateSigner::class)->rootCertificate());
 });
 
 it('fails the build on cleanup refusal or absent confirmation', function (string $result): void {
     $guest = AgentGuest::incus(new Node(['name' => 'host', 'architecture' => 'x86_64']), 'orbit-tasks', 'tvm-image-1');
     $agents = new FakeGuestAgentCommandRunner;
     $agents->malformed = true;
-    $agents->answer = static fn (): array => $result === 'missing' ? [] : throw new AgentCommandRefused('image.clean', $result, 'Cleanup refused.');
+    $agents->answer = static fn ($guest, string $command): array => $command === 'image.trust-ca' ? ['ready' => true] : ($result === 'missing' ? [] : throw new AgentCommandRefused('image.clean', $result, 'Cleanup refused.'));
     app()->instance(GuestAgentCommandRunner::class, $agents);
 
     expect(fn () => app(TaskVmImageRecipe::class)->clean($guest))->toThrow(TaskVmException::class);
-    expect($agents->calls)->toHaveCount(1);
+    expect($agents->calls)->toHaveCount(2);
 })->with(['task_vm.image_clean_failed', 'task_vm.image_identity_present', 'missing']);
 
 it('keeps image cleanup behind the native command boundary', function (): void {
@@ -73,7 +81,7 @@ it('fails the build on a native smoke refusal', function (): void {
 it('sends recipe identity and bounded observations through fixed guest commands', function (): void {
     $guest = AgentGuest::incus(new Node(['architecture' => 'x86_64']), 'orbit-tasks', 'builder');
     $agents = new FakeGuestAgentCommandRunner;
-    $recipe = new TaskVmImageRecipe($agents);
+    $recipe = new TaskVmImageRecipe($agents, app(LeafCertificateSigner::class));
 
     $recipe->mark($guest, 'sha256:'.str_repeat('a', 64), 'base');
     $recipe->log($guest, 'base', 'packages', str_repeat('x', 70000).'tail');
@@ -92,7 +100,7 @@ it('fails recipe record writes on native refusal or missing confirmation', funct
     $agents->malformed = true;
     $agents->answer = static fn (): array => $refused ? throw new AgentCommandRefused('image.recipe-marker', 'task_vm.image_build_failed', 'Foreign marker.') : [];
 
-    expect(fn () => (new TaskVmImageRecipe($agents))->mark($guest, 'sha256:'.str_repeat('a', 64), 'base'))->toThrow(TaskVmException::class);
+    expect(fn () => (new TaskVmImageRecipe($agents, app(LeafCertificateSigner::class)))->mark($guest, 'sha256:'.str_repeat('a', 64), 'base'))->toThrow(TaskVmException::class);
     expect($agents->calls)->toHaveCount(1);
 })->with([true, false]);
 

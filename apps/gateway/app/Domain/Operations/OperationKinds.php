@@ -12,6 +12,7 @@ use App\Domain\Tasks\TaskProvisionOperation;
 use App\Domain\Tasks\TaskPublishOperation;
 use App\Domain\Tasks\TaskScriptOperation;
 use App\Domain\Tasks\TaskTurnOperation;
+use App\Domain\Tasks\TaskWorkerOperation;
 use Illuminate\Contracts\Container\Container;
 use LogicException;
 
@@ -40,6 +41,8 @@ final readonly class OperationKinds
 
     public const string TasksTurn = 'tasks.turn';
 
+    public const string TasksWorker = 'tasks.worker';
+
     /** The target type of every kind that changes an Instance, so they hold the same target. */
     public const string InstanceTarget = 'instance';
 
@@ -56,6 +59,7 @@ final readonly class OperationKinds
         self::TasksAnalyze => TaskAnalysisOperation::class,
         self::TasksProvision => TaskProvisionOperation::class,
         self::TasksTurn => TaskTurnOperation::class,
+        self::TasksWorker => TaskWorkerOperation::class,
     ];
 
     /** @param array<string, class-string<OperationKind>> $kinds */

@@ -16,6 +16,7 @@ use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\TaskVms\TaskVmState;
+use App\Infrastructure\TaskVms\TaskVmWorker;
 use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskVm;
@@ -51,6 +52,7 @@ final readonly class CancelTaskGroupAction
                 status: 409,
             );
         }
+        $poweredOff = app(TaskVmWorker::class)->stopGroup($group);
 
         // A live claim owns the workspace it is provisioning. It removes that workspace once it finds the group
         // cancelled, so cancel leaves it alone and only removes what the claim attached before the cancel landed.
@@ -58,7 +60,7 @@ final readonly class CancelTaskGroupAction
         $instance = $claimInFlight ? null : $group->workspace()->first();
         // An unreachable Node cannot accept a push or a removal. Cancel still ends the group and keeps the Instance,
         // so the sweep can delete the checkout later. A Node that answers keeps the fail-closed path below.
-        $offlineId = $instance instanceof Instance && $this->nodeUnreachable($instance) ? $instance->id : null;
+        $offlineId = $instance instanceof Instance && ($poweredOff || $this->nodeUnreachable($instance)) ? $instance->id : null;
 
         if ($instance instanceof Instance && $offlineId === null) {
             $this->teardownWorkspace($group, $instance);
