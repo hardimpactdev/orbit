@@ -136,3 +136,54 @@ it('rejects malformed native preparation results', function (string $command, ar
     'wrong prepared commit' => ['gateway.prepare-release', ['sha' => str_repeat('b', 40), 'reused' => false]],
     'invalid completion flag' => ['gateway.finish-release', ['changed' => null]],
 ]);
+
+it('drains source workers before publishing a new serving release', function (): void {
+    config(['horizon.defaults' => ['builds' => ['timeout' => 120], 'task-vms' => ['timeout' => 75]]]);
+    $process = $this->node->processes()->create([
+        'name' => 'horizon', 'runtime' => 'systemd',
+        'runtime_config' => ['command' => ['/usr/bin/php8.5', 'artisan', 'horizon']],
+        'working_directory' => '/home/orbit/orbit/apps/gateway',
+        'restart_policy' => 'always', 'desired_state' => 'running', 'status' => 'active',
+    ]);
+    $drained = false;
+    $this->agents->answer('gateway.drain-horizon', function (array $input) use (&$drained, $process): array {
+        expect($input)->toBe([
+            'process_id' => $process->id,
+            'name' => "orbit-process-{$process->id}-horizon.service",
+            'drain_seconds' => 150,
+        ]);
+        $drained = true;
+
+        return ['drained' => true];
+    })->answer('gateway.switch-release', function () use (&$drained): array {
+        expect($drained)->toBeTrue();
+
+        return ['previous' => 'bbbbbbbbbbbb'];
+    });
+
+    expect($this->commands->switch($this->layout, 'aaaaaaaaaaaa'))->toBe('bbbbbbbbbbbb');
+    // Switch-back uses the same barrier, even when target workers have already started.
+    $drained = false;
+    $this->commands->switch($this->layout, 'bbbbbbbbbbbb');
+    expect($this->agents->commands())->toBe([
+        'gateway.drain-horizon', 'gateway.switch-release', 'gateway.drain-horizon', 'gateway.switch-release',
+    ]);
+});
+
+it('keeps the source release when its workers cannot be proved drained', function (string $failure): void {
+    $this->node->processes()->create([
+        'name' => 'horizon', 'runtime' => 'systemd',
+        'runtime_config' => ['command' => ['/usr/bin/php8.5', 'artisan', 'horizon']],
+        'working_directory' => '/home/orbit/orbit/apps/gateway',
+        'restart_policy' => 'always', 'desired_state' => 'running', 'status' => 'active',
+    ]);
+    $this->agents->answer('gateway.switch-release', ['previous' => 'bbbbbbbbbbbb']);
+    match ($failure) {
+        'timeout' => $this->agents->refuse('gateway.drain-horizon', 'gateway.release_horizon_not_drained'),
+        'lost_result' => $this->agents->answer('gateway.drain-horizon', static fn (): array => throw new AgentRunnerFailure('gateway.drain-horizon', 'missing_result', 'Lost connection')),
+        'malformed' => $this->agents->answerMalformed('gateway.drain-horizon', ['drained' => false]),
+    };
+
+    expect(fn () => $this->commands->switch($this->layout, 'aaaaaaaaaaaa'))->toThrow(GatewayReleaseException::class);
+    expect($this->agents->commands())->toBe(['gateway.drain-horizon']);
+})->with(['timeout', 'lost_result', 'malformed']);

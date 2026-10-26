@@ -19,8 +19,8 @@ use Illuminate\Support\Facades\Artisan;
 
 /**
  * Laravel Horizon runs as a Process of the Gateway Node (docs/reference/gateway-queue.md#horizon). A release creates it
- * once and afterwards runs `horizon:terminate`: the master waits for its running jobs, exits, and the Process's restart
- * policy starts it again on the new release.
+ * once. Release switching drains and stops its complete control group before changing the serving link; this
+ * handoff then starts it on the selected release. A manual handoff of an active Process uses `horizon:terminate`.
  */
 final readonly class GatewayHorizon
 {

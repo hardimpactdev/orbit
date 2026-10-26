@@ -13,6 +13,8 @@ use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\Gateway\GatewayCommandNode;
+use App\Infrastructure\Gateway\GatewayHorizon;
+use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Models\Node;
 
 /** Release intent and error mapping; the agent owns the release mutations on the Gateway Node. */
@@ -22,12 +24,35 @@ final readonly class GatewayReleaseCommands
 
     public function switch(GatewayReleaseLayout $layout, string $id): ?string
     {
-        $result = $this->run($layout, 'gateway.switch-release', ['release' => GatewayReleaseCommit::assertId($id)], 'switch', 'gateway.release_switch_failed');
+        GatewayReleaseCommit::assertId($id);
+        $this->drainHorizon();
+        $result = $this->run($layout, 'gateway.switch-release', ['release' => $id], 'switch', 'gateway.release_switch_failed');
         if (! array_key_exists('previous', $result) || ($result['previous'] !== null && (! is_string($result['previous']) || ! GatewayReleaseCommit::isId($result['previous'])))) {
             throw $this->malformed('switch', 'gateway.release_switch_failed');
         }
 
         return $result['previous'];
+    }
+
+    /** No serving-link change may publish work to a source-generation consumer. */
+    private function drainHorizon(): void
+    {
+        $gateway = GatewayCommandNode::find();
+        if (! $gateway instanceof Node) {
+            throw new GatewayReleaseException('switch', 'gateway.release_gateway_node_missing', 'No active Gateway Node exists for release commands.', 500);
+        }
+        $process = GatewayHorizon::find($gateway);
+        if ($process === null) {
+            return;
+        }
+        $result = $this->run(null, 'gateway.drain-horizon', [
+            'process_id' => $process->id,
+            'name' => new SystemdProcessRenderer()->unitName($process),
+            'drain_seconds' => GatewayHorizon::longestJobSeconds() + 30,
+        ], 'switch', 'gateway.release_horizon_not_drained');
+        if (($result['drained'] ?? null) !== true) {
+            throw $this->malformed('switch', 'gateway.release_horizon_not_drained');
+        }
     }
 
     /** @return array{source: string|null, source_sha: string|null} */

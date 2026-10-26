@@ -32,8 +32,8 @@ use Throwable;
  * 2. PHP-FPM reloads only when the rendered pool differs from the live pool. Requests keep running otherwise.
  * 3. The hibernator, agent-view, and release units are installed again; agent-view restarts on the new code.
  *    The release units are only written and the timer enabled, so the release that runs the handoff keeps running.
- * 4. Laravel Horizon moves to the new release ({@see GatewayHorizon}): `horizon:terminate` lets it finish its running
- *    jobs, and its Process starts it again.
+ * 4. Laravel Horizon starts on the new release ({@see GatewayHorizon}), after the release switch drained its
+ *    source control group. An active Process in a manual handoff is terminated gracefully.
  * 5. The scheduler finishes its running commands and starts on the new release ({@see GatewaySchedulerHandoff}).
  * 6. Each extension's release cleanup is reconciled and resumed ({@see GatewayCleanupHandoff}).
  * 7. The Gateway Node's own `orbit-agent` moves to the release's pin ({@see GatewayNodeAgentUpdate}), which the
@@ -118,7 +118,7 @@ final readonly class GatewayRuntimeHandoff
             $this->releaseUnits->converge();
         });
         $this->fleetUnits();
-        // Right after the switch, so Horizon runs the old code no longer than its running jobs need.
+        // Release switching already stopped the source generation; start consumers on the selected release.
         $horizon = $this->step('horizon', 'gateway.release_units_failed', fn (): string => $this->horizon?->converge($gateway, fn (): Process => $this->scheduler->process($gateway)) ?? 'none');
 
         return [

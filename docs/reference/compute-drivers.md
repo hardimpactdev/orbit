@@ -769,6 +769,8 @@ The task VM jobs run on the [Gateway queue](/reference/gateway-queue), which Lar
 | Base image step jobs | Poll until the step's deadline. Failure stops the chain. Failed builders stay available for resume |
 | `RefreshUpCloudTaskVmBaseImage` | Never. An attempted identity needs an explicit `task-vms:build-recipe --retry`; a new recipe identity can build automatically |
 
+A failed recipe build does not retry merely because the Gateway restarts or releases code. For an unchanged recipe identity, run `task-vms:build-recipe --retry` after fixing its cause. This starts another attempt from reset. A failure before the builder guest exists cannot resume. A new recipe identity queues builds automatically; it does not retry the old failed rows. Waiting groups become eligible once the current recipe images finish.
+
 The jobs log each step with its seconds as `Task VM step done.`. The wait for the worker is a step of its own, apart from the work: `queue` before `create` in `ProvisionTaskVm`, and `enroll-queue` before `boot` in `EnrollTaskVm`. The guest boots during `enroll-queue`. A `boot` after a released try counts from the launch.
 
 When `ProvisionTaskVm`, `EnrollTaskVm`, `PrepareTaskVmRuntime`, or `ResumeTaskVm` has no retries left, or runs past its timeout, the row becomes `failed` with the job's error code, or `task_vm.job_failed` when the error has none. The group asks for assistance, so `tasks:status` lists it. After `ProvisionTaskVm`, `EnrollTaskVm`, or `PrepareTaskVmRuntime` the reason is `Task VM failed: tvm-<id>: <code>: <message> Cancel the group to destroy the VM.`, the same reason that a [claim](#from-claim-to-workspace) sets; after `ResumeTaskVm` it is `Task VM failed: <code>: <message>`. `EnrollTaskVm` never creates the VM again. The jobs run one at a time, so the 10-minute boot limit counts from the moment `ProvisionTaskVm` launched the VM, not from the row.
@@ -1050,8 +1052,6 @@ Release handoff queues builds immediately when the deployed recipe identity chan
 Each host uses [ADR 0206's chain model](/decisions/0206-build-task-vm-images-as-chains-of-small-jobs) with `Bus::chain` on `builds` and one `task_vm_image_builds` row for the base image. The row stores the full recipe document, identity, desired generation, and the base image location. Steps launch and boot a stock base builder, install snapshot packages and pinned artifacts, prepare boot, clean, publish, and smoke it, and then build its topology seed. The shared base preserves the source image’s DNS configuration, including link DNS for internal names. Topology Nodes use that same base fingerprint for every role.
 
 Each phase is a separate queued job. No workspace or Project setup runs and neither package caches nor CI cache refs enter an image.
-
-Image reconciliation reads the recipe bundled with its running Gateway release. A superseded Gateway process skips image reconciliation. A queued Incus image phase picked up by an old worker waits for a worker on the current release, without changing the build record. Before the Incus reset phase, Orbit installs the pinned host agent, so image builds do not depend on the fleet rollout reaching that host first.
 
 The agent implements the image phases in Rust and reuses the Node recipe's package, archive, JavaScript, and PHP installers. Image APT uses only its recorded snapshot configuration. The agent installed before the first phase remains the Gateway delivery pin.
 

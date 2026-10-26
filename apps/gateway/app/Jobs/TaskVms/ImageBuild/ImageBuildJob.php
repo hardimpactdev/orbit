@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Jobs\TaskVms\ImageBuild;
 
-use App\Domain\Fleet\FleetServingRelease;
 use App\Domain\Fleet\RecipeMaintenanceAlerts;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageBuildStep;
@@ -44,11 +43,6 @@ abstract class ImageBuildJob implements ShouldQueue
 
     public function handle(RecipeImageBuildSteps $work): void
     {
-        if (app(FleetServingRelease::class)->supersedes()) {
-            $this->release(5);
-
-            return;
-        }
         // Serialize the submission acknowledgement with recovery's conditional failure write.
         $build = DB::transaction(function (): ?TaskVmImageBuild {
             $claimed = TaskVmImageBuild::query()->whereKey($this->buildId)->where('state', TaskVmImageBuildState::Running)

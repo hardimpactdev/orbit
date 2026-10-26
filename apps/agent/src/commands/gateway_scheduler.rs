@@ -77,7 +77,7 @@ fn read(path: &Path, limit: u64) -> io::Result<String> {
     }
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
-fn checked(files: &Files, input: &Input) -> Result<(), Error> {
+pub(super) fn checked(files: &Files, input: &Input) -> Result<(), Error> {
     if input.process_id == 0 || input.process_id > i64::MAX as u64 {
         return Err(Error::Invalid {});
     }
