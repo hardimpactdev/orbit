@@ -515,14 +515,15 @@ it('routes only the selected Pusher paths before the existing application handle
     unset($json['logging'], $json['apps']['tls'], $json['apps']['http']['servers'][$server]['tls_connection_policies'], $json['apps']['http']['servers'][$server]['logs']);
     $path = tempnam(sys_get_temp_dir(), 'orbit-public-reverb-');
     $log = tempnam(sys_get_temp_dir(), 'orbit-public-reverb-log-');
-    file_put_contents($path, json_encode($json, JSON_THROW_ON_ERROR));
-    $caddy = proc_open(
-        [TestToolchain::require('caddy', 'install caddy'), 'run', '--config', $path],
-        [0 => ['file', '/dev/null', 'r'], 1 => ['file', $log, 'a'], 2 => ['file', $log, 'a'], 3 => $listener],
-        $pipes,
-    );
-    fclose($listener);
+    $caddy = null;
     try {
+        file_put_contents($path, json_encode($json, JSON_THROW_ON_ERROR));
+        $caddy = proc_open(
+            [TestToolchain::require('caddy', 'install caddy'), 'run', '--config', $path],
+            [0 => ['file', '/dev/null', 'r'], 1 => ['file', $log, 'a'], 2 => ['file', $log, 'a'], 3 => $listener],
+            $pipes,
+        );
+        fclose($listener);
         expect($caddy)->toBeResource();
         $signed = '?auth_key=mealou-key&auth_signature=signature&auth_timestamp=123&auth_version=1.0';
         foreach ([
@@ -566,7 +567,7 @@ it('routes only the selected Pusher paths before the existing application handle
             ['POST', '/broadcasting/auth', false, 'application'],
         ] as [$method, $uri, $upgrade, $expected]) {
             $socket = stream_socket_client('tcp://'.$address, $error, $message, 3);
-            expect($socket)->toBeResource((string) file_get_contents($log));
+            expect($socket)->toBeResource();
             stream_set_timeout($socket, 3);
             fwrite($socket, $method.' '.$uri." HTTP/1.1\r\nHost: mealou.app\r\nConnection: ".($upgrade ? 'keep-alive, Upgrade' : 'close')."\r\n".($upgrade ? "Upgrade: websocket\r\n" : '')."Content-Length: 0\r\n\r\n");
             $response = '';
@@ -581,7 +582,8 @@ it('routes only the selected Pusher paths before the existing application handle
                 $response .= fread($socket, (int) $length[1]);
             }
             fclose($socket);
-            expect($response)->toContain($expected);
+            // The kernel accepts connections even when Caddy fails to start, so a failure shows Caddy's log.
+            expect(str_contains($response, $expected))->toBeTrue("{$method} {$uri} expected {$expected}, got:\n{$response}\nCaddy:\n".file_get_contents($log));
         }
     } finally {
         if (is_resource($caddy)) {

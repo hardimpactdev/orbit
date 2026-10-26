@@ -37,7 +37,7 @@ it('proxies public traffic and admits internal callbacks only from the Gateway p
         [0 => ['file', '/dev/null', 'r'], 1 => ['file', $directory.'/caddy.log', 'a'], 2 => ['file', $directory.'/caddy.log', 'a'], 3 => $listener, 4 => $backendListener],
         $pipes,
         null,
-        getenv() + ['XDG_DATA_HOME' => $directory.'/data', 'XDG_CONFIG_HOME' => $directory.'/config'],
+        ['XDG_DATA_HOME' => $directory.'/data', 'XDG_CONFIG_HOME' => $directory.'/config'] + getenv(),
     );
     fclose($listener);
     fclose($backendListener);
@@ -83,7 +83,8 @@ function websocket_caddy_test_request(int $port, string $path, string $source, s
         CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'X-Forwarded-For: 127.0.0.1'],
     ]);
     $body = curl_exec($curl);
-    expect($body)->not->toBeFalse(curl_error($curl));
+    // The kernel accepts connections even when Caddy fails to start, so a failure shows Caddy's log.
+    expect($body)->not->toBeFalse(curl_error($curl)."\nCaddy:\n".file_get_contents($directory.'/caddy.log'));
 
     return [(int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE), $body];
 }
