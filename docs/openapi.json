@@ -8522,7 +8522,7 @@
                                 "string",
                                 "null"
                               ],
-                              "description": "The requested name when a development create used `default` because the name equals the Project default branch. Null otherwise, and always null on an `app-prod` Node."
+                              "description": "The requested name when Orbit used `default` because the name equals the Project default branch. Null otherwise. A create on an `app-prod` Node converts nothing."
                             }
                           },
                           "required": [
@@ -8563,7 +8563,7 @@
                                 "string",
                                 "null"
                               ],
-                              "description": "The requested name when a development create used `default` because the name equals the Project default branch. Null otherwise, and always null on an `app-prod` Node."
+                              "description": "The requested name when Orbit used `default` because the name equals the Project default branch. Null otherwise. A create on an `app-prod` Node converts nothing."
                             }
                           },
                           "required": [
@@ -35331,9 +35331,13 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "The requested name when Orbit used `default` because the name equals the Project default branch. Null otherwise. A create on an `app-prod` Node converts nothing."
           }
-        }
+        },
+        "required": [
+          "name_converted_from"
+        ]
       },
       "Project": {
         "type": "object",

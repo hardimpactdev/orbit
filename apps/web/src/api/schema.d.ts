@@ -4748,7 +4748,8 @@ export interface components {
             status?: string;
             source_count?: number;
             completed_count?: number;
-            name_converted_from?: string | null;
+            /** @description The requested name when Orbit used `default` because the name equals the Project default branch. Null otherwise. A create on an `app-prod` Node converts nothing. */
+            name_converted_from: string | null;
         };
         Project: {
             id?: number;
@@ -9781,7 +9782,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["Instance"] & {
-                            /** @description The requested name when a development create used `default` because the name equals the Project default branch. Null otherwise, and always null on an `app-prod` Node. */
+                            /** @description The requested name when Orbit used `default` because the name equals the Project default branch. Null otherwise. A create on an `app-prod` Node converts nothing. */
                             name_converted_from: string | null;
                         };
                         meta: components["schemas"]["Meta"];
@@ -9796,7 +9797,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["Instance"] & {
-                            /** @description The requested name when a development create used `default` because the name equals the Project default branch. Null otherwise, and always null on an `app-prod` Node. */
+                            /** @description The requested name when Orbit used `default` because the name equals the Project default branch. Null otherwise. A create on an `app-prod` Node converts nothing. */
                             name_converted_from: string | null;
                         };
                         meta: components["schemas"]["Meta"];

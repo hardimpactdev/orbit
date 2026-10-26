@@ -287,6 +287,8 @@ The default development source keeps the name `default`, its path, and its Route
 
 Callers, often agents, pass the default branch as the name, such as `instance:create <project> <node> main`. Their intent is the Project's default development source. Orbit used to accept the name as given, so these Instances got a `/main` path and a `main.<slug>.<tld>` domain beside the real default. Orbit now converts such a name to `default` and says so in `name_converted_from`. Refusing the name was rejected: the caller's intent is clear, and a refusal only adds a round trip. The conversion changes the name and nothing else, so `--branch` and the registration identity rules keep one meaning each.
 
+An Instance that was named after the default branch before this change keeps its name. Create and register now resolve that name to `default`, so reach the old Instance through other commands, such as `instance:show` and `instance:destroy` with its ID.
+
 ### An explicit branch stays explicit
 
 Orbit records `--branch` even when it equals the default branch. Comparing values later cannot tell a deliberate choice from an inherited one. So when the Project default branch changes, Orbit switches only the development Instance named `default`, and only when it has no override. Using the Instance name as the only way to pick a branch was rejected, because a release branch would then need a new identity.

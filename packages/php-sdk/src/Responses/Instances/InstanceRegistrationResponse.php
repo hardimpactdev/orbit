@@ -68,7 +68,7 @@ final readonly class InstanceRegistrationResponse
             'status' => $this->status,
             'source_count' => $this->sourceCount,
             'completed_count' => $this->completedCount,
-            'name_converted_from' => $this->nameConvertedFrom,
+            ...($this->nameConvertedFrom === null ? [] : ['name_converted_from' => $this->nameConvertedFrom]),
             'request_id' => $this->requestId,
         ];
     }

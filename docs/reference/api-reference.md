@@ -21,7 +21,7 @@ Group assistance comments have separate collection and create schemas: `GET /api
 
 The clone response schema extends the Instance schema with required `data.warnings`, an array of key-only review hints. Both a newly created clone (201) and an identical retry (200) include it; an empty array means no hints apply. The generator keeps this operation-specific field out of other Instance responses. See [Instance cloning](/reference/instance-cloning#what-the-clone-gets) for the warning rules.
 
-The create response schema (`POST /api/v1/instances`) extends the Instance schema with required, nullable `data.name_converted_from`. The generator keeps this operation-specific field out of other Instance responses as well. See [Create a development Instance](/domains/applications#create-a-development-instance) for the conversion rule.
+The create response schema (`POST /api/v1/instances`) extends the Instance schema with required, nullable `data.name_converted_from`. The generator keeps this operation-specific field out of other Instance responses as well. The registration schema has the same required, nullable field with the same description. See [Create a development Instance](/domains/applications#create-a-development-instance) for the conversion rule.
 
 The Gateway rollback operation queues a code switch without a request body. Database restore is an explicit operator step; see [Gateway recovery](/reference/gateway-recovery#roll-back).
 

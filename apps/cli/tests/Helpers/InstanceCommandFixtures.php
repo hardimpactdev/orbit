@@ -124,6 +124,7 @@ function registration_json(): string
             'request_id' => instance_request_id(),
         ], $data[$key]);
     }
+    unset($data['name_converted_from']);
     $data['request_id'] = instance_request_id();
 
     return json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);

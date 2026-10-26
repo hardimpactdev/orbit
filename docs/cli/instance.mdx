@@ -245,7 +245,7 @@ orbit instance:register [options]
 | `--path=PATH` | the current directory | Existing Git checkout or worktree. |
 | `--include-worktrees` | off | Adopt the checkout and every linked worktree as one preflighted set. |
 | `--project=ID` | resolved from the origin | Existing numeric Project ID. |
-| `--name=NAME` | inferred | Non-default Instance name. A name that equals the Project `default_branch` means `default`. |
+| `--name=NAME` | inferred | Instance name. `default`, or a name that equals the Project `default_branch`, means the default development source. |
 | `--root=PATH` | the Project root | Relative web-root override for this Instance. |
 | `--domain=HOST` | generated | Explicit Route domain for the primary source. |
 | `--yes` | off | Confirm transfer of the source into Orbit ownership without prompting. |
@@ -253,7 +253,7 @@ orbit instance:register [options]
 
 The CLI refuses a directory outside Git and an origin with credentials before it sends a request. The Gateway finds the Project by repository identity, checks the source on the caller's Node, moves it into its managed path, and provisions it as `instance:create` does. See [Register an existing checkout](/domains/applications#register-an-existing-checkout).
 
-When `--name` equals the Project default branch, Orbit registers the source as `default`, under the usual [identity rules](/domains/applications#register-an-existing-checkout). Human output shows ``Name `main` is the Project default branch; registered the `default` Instance.``, and JSON carries `name_converted_from` with the requested name, or null without a conversion.
+When `--name` equals the Project default branch, Orbit registers the source as `default`, under the usual [identity rules](/domains/applications#register-an-existing-checkout). Human output shows ``Name `main` is the Project default branch; registered the `default` Instance.``, and JSON carries `name_converted_from` with the requested name. Without a conversion, JSON omits the field, as it does for `instance:create`.
 
 Registration never creates a Project. When no Project owns the repository, it fails with `instance.project_missing`. Run [`project:create`](/cli/project#orbit-projectcreate) first.
 

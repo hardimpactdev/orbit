@@ -25,6 +25,7 @@ use App\Domain\Instances\Environment\InstanceOperationPreflight;
 use App\Domain\Instances\InstanceDestinationGuard;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\ProductionInstanceProvisioner;
 use App\Domain\Instances\ProductionInstanceSourceLifecycle;
 use App\Domain\Instances\ProductionReleaseLayout;
 use App\Domain\Instances\ProductionRouteProjector;
@@ -1230,6 +1231,43 @@ it('refuses new production placement with a candidate-required error before muta
         ->toBe([])
         ->and($this->productionProjection->calls)
         ->toBe([]);
+});
+
+it('passes a default-branch name to a production create unchanged', function (): void {
+    $node = create_app_prod_node('app-prod');
+    $provisioner = new class implements ProductionInstanceProvisioner
+    {
+        /** @var list<string> */
+        public array $names = [];
+
+        public function execute(CreateInstanceData $data, Project $project, Node $node, ?string $root): array
+        {
+            $this->names[] = $data->name;
+            $instance = Instance::query()->create([
+                'project_id' => $project->id,
+                'node_id' => $node->id,
+                'name' => $data->name,
+                'checkout_path' => '/srv/orbit/apps/acme/'.$data->name,
+                'status' => InstanceState::Reserved,
+                'environment' => 'production',
+            ]);
+
+            return ['instance' => $instance, 'created' => true];
+        }
+    };
+    app()->instance(ProductionInstanceProvisioner::class, $provisioner);
+
+    $this
+        ->postJson('/api/v1/instances', [
+            'project_id' => $this->orbitApp->id,
+            'node_id' => $node->id,
+            'name' => 'main',
+        ])
+        ->assertCreated()
+        ->assertJsonPath('data.name', 'main')
+        ->assertJsonPath('data.name_converted_from', null);
+
+    expect($provisioner->names)->toBe(['main']);
 });
 
 it('refuses a repeat for an existing production Instance with candidate required', function (): void {
