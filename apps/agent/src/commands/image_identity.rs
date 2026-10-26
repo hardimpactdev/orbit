@@ -286,13 +286,6 @@ impl Command for CleanImage {
 #[cfg(test)]
 mod tests;
 
-const INCUS_DROP_IN: &str = "/etc/systemd/system/cloud-init-main.service.d/orbit-incus-agent.conf";
-const INCUS_ORDER: &[u8] = b"[Unit]\nWants=incus-agent.service\nAfter=incus-agent.service\n";
-fn prepare_incus(root: &Path) -> Result<Cleaned, Error> {
-    write_fixed(&at(root, INCUS_DROP_IN), INCUS_ORDER)
-        .map_err(|e| failed("cloud-init drop-in", e))?;
-    Ok(Cleaned { ready: true })
-}
 pub(super) fn write_fixed(path: &Path, bytes: &[u8]) -> io::Result<()> {
     use std::{
         io::Write,
@@ -316,24 +309,4 @@ pub(super) fn write_fixed(path: &Path, bytes: &[u8]) -> io::Result<()> {
         let _ = fs::remove_file(&candidate);
     }
     result
-}
-pub struct PrepareIncus;
-impl Command for PrepareIncus {
-    const NAME: &'static str = "image.prepare-incus";
-    const SUMMARY: &'static str =
-        "Order the image's cloud-init after the Incus agent before publication.";
-    const MUTATES: bool = true;
-    const TIMEOUT: Duration = Duration::from_secs(30);
-    type Input = Input;
-    type Output = Cleaned;
-    type Error = Error;
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Root)
-    }
-    fn target(_: &Input) -> Option<String> {
-        Some("image-identity".into())
-    }
-    fn run(_: Input, _: &Context) -> Result<Cleaned, Error> {
-        prepare_incus(Path::new("/"))
-    }
 }

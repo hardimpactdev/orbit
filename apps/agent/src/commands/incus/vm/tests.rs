@@ -173,17 +173,17 @@ fn creates_with_code_owned_cloud_init_and_topology_settings_and_repeats() {
                 good(""),
             ]);
         }
-        answers.extend([good(""), listed("Running")]);
+        answers.extend([good(""), metadata(), good(""), good(""), listed("Running")]);
         let mut host = fake(answers);
         change(&mut host, &create(topology)).unwrap();
         change(&mut host, &create(topology)).unwrap();
-        let launch = host.calls.iter().find(|c| c.0[2] == "launch").unwrap();
+        let launch = host.calls.iter().find(|c| c.0[2] == "init").unwrap();
         assert_eq!(
             launch.0,
             [
                 "--project",
                 "orbit-tasks",
-                "launch",
+                "init",
                 "--vm",
                 "--config",
                 "limits.cpu=4",
@@ -216,17 +216,20 @@ fn creates_with_code_owned_cloud_init_and_topology_settings_and_repeats() {
         if topology {
             assert_eq!(
                 settings["devices"],
-                json!({"topology-seed":{"type":"disk","pool":"tank","source":"tvm-1-topology-seed"}})
+                json!({"cloud-init":{"type":"disk","source":"cloud-init:config"},"topology-seed":{"type":"disk","pool":"tank","source":"tvm-1-topology-seed"}})
             );
             assert_eq!(
                 settings["config"]["raw.qemu.conf"],
                 "[device \"qemu_balloon\"]\nfree-page-reporting = \"on\"\n"
             );
         } else {
-            assert!(settings.get("devices").is_none());
+            assert_eq!(
+                settings["devices"],
+                json!({"cloud-init":{"type":"disk","source":"cloud-init:config"}})
+            );
             assert!(settings["config"].get("raw.qemu.conf").is_none());
         }
-        assert_eq!(host.calls.iter().filter(|c| c.0[2] == "launch").count(), 1);
+        assert_eq!(host.calls.iter().filter(|c| c.0[2] == "init").count(), 1);
     }
 }
 #[test]
@@ -251,14 +254,19 @@ fn start_and_create_start_stopped_vms_and_accept_only_observed_running_after_fai
             (1, Some("Running"), true),
             (1, Some("Stopped"), false),
         ] {
-            let mut answers = vec![listed("Stopped"), output(start_result, "")];
+            let mut answers = vec![
+                listed("Stopped"),
+                metadata(),
+                good(""),
+                output(start_result, ""),
+            ];
             if let Some(state) = observed {
                 answers.push(listed(state));
             }
             let mut host = fake(answers);
             assert_eq!(change(&mut host, &operation).is_ok(), passes);
             assert_eq!(
-                host.calls[1].0,
+                host.calls[3].0,
                 ["--project", "orbit-tasks", "start", "--", "tvm-1"]
             );
         }
@@ -279,7 +287,7 @@ fn a_failed_launch_requires_a_running_vm_else_reports_the_base_or_launch_error()
     for state in [good("[]"), listed("Stopped")] {
         let mut host = fake(vec![good("[]"), output(1, ""), state, images()]);
         assert!(
-            matches!(change(&mut host,&create(false)),Err(Error::Failed {operation,..}) if operation=="launch")
+            matches!(change(&mut host,&create(false)),Err(Error::Failed {operation,..}) if operation=="init")
         );
     }
     assert_eq!(
@@ -424,18 +432,24 @@ fn image_request(builder: bool) -> Input {
 #[test]
 fn image_launch_owns_cloud_init_and_isolation_and_repeats_without_replacement() {
     for builder in [false, true] {
-        let mut host = fake(vec![good("[]"), good(""), listed("Running")]);
+        let mut host = fake(vec![
+            good("[]"),
+            good(""),
+            metadata(),
+            good(""),
+            good(""),
+            listed("Running"),
+        ]);
         let input = image_request(builder);
         change(&mut host, &input).unwrap();
-        change(&mut host, &input).unwrap();
-        assert_eq!(host.calls.len(), 3);
+        assert_eq!(host.calls.len(), 5);
         let (args, data) = &host.calls[1];
         assert_eq!(
             args,
             &[
                 "--project",
                 "orbit-tasks",
-                "launch",
+                "init",
                 "--vm",
                 "--config",
                 "limits.cpu=2",
@@ -469,12 +483,18 @@ fn image_launch_owns_cloud_init_and_isolation_and_repeats_without_replacement() 
             cloud["users"][0]["no_user_group"],
             if builder { json!(false) } else { Value::Null }
         );
-        assert!(config.get("devices").is_none());
+        assert_eq!(
+            config["devices"],
+            json!({"cloud-init":{"type":"disk","source":"cloud-init:config"}})
+        );
+        assert_prepared_before_start(&host, 2);
+        change(&mut host, &input).unwrap();
+        assert_eq!(host.calls.len(), 6);
     }
-    let mut host = fake(vec![listed("Stopped"), good("")]);
+    let mut host = fake(vec![listed("Stopped"), metadata(), good(""), good("")]);
     change(&mut host, &image_request(true)).unwrap();
     assert_eq!(
-        host.calls[1].0,
+        host.calls[3].0,
         ["--project", "orbit-tasks", "start", "--", "tvm-1"]
     );
 }
@@ -567,4 +587,67 @@ fn image_alias_repeats_require_the_same_fingerprint_before_starting() {
         assert_eq!(change(&mut host, &input), Err(Error::ImageMismatch {}));
         assert_eq!(host.calls.len(), 2);
     }
+}
+
+fn metadata() -> Output {
+    good(json!({"architecture":"x86_64", "templates":{
+        "/var/lib/cloud/seed/nocloud-net/meta-data":{"when":["create"],"template":"cloud-init-meta.tpl"},
+        "/var/lib/cloud/seed/nocloud-net/user-data":{"when":["create"],"template":"cloud-init-user.tpl"},
+        "/etc/hostname":{"when":["create"],"template":"hostname.tpl"}
+    }}).to_string())
+}
+fn assert_prepared_before_start(host: &Fake, at: usize) {
+    assert_eq!(
+        host.calls[at].0,
+        [
+            "query",
+            "-X",
+            "GET",
+            "--",
+            "/1.0/instances/tvm-1/metadata?project=orbit-tasks"
+        ]
+    );
+    let put = &host.calls[at + 1].0;
+    assert_eq!(&put[..4], ["query", "-X", "PUT", "--data"]);
+    let metadata: Value = serde_json::from_str(&put[4]).unwrap();
+    assert_eq!(metadata["architecture"], "x86_64");
+    assert_eq!(
+        metadata["templates"],
+        json!({"/etc/hostname":{"when":["create"],"template":"hostname.tpl"}})
+    );
+    assert_eq!(
+        host.calls[at + 2].0,
+        ["--project", "orbit-tasks", "start", "--", "tvm-1"]
+    );
+}
+#[test]
+fn seed_preparation_failure_never_starts_the_builder_and_a_repeat_can_finish() {
+    for response in [output(1, ""), good("malformed"), good("{}")] {
+        let mut host = fake(vec![good("[]"), good(""), response]);
+        assert!(change(&mut host, &image_request(true)).is_err());
+        assert!(!host
+            .calls
+            .iter()
+            .any(|c| c.0.get(2).is_some_and(|a| a == "start")));
+    }
+    let mut host = fake(vec![
+        good("[]"),
+        good(""),
+        metadata(),
+        output(1, ""),
+        listed("Stopped"),
+        metadata(),
+        good(""),
+        good(""),
+    ]);
+    assert!(change(&mut host, &image_request(true)).is_err());
+    change(&mut host, &image_request(true)).unwrap();
+    assert_prepared_before_start(&host, 5);
+    assert_eq!(
+        host.calls
+            .iter()
+            .filter(|c| c.0.get(2).is_some_and(|a| a == "init"))
+            .count(),
+        1
+    );
 }

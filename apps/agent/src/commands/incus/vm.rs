@@ -245,7 +245,7 @@ fn cloud_init(key: &str, builder: bool) -> Value {
         user["no_user_group"] = json!(false);
     }
     let cloud = json!({"users":[user]});
-    json!({"config":{"cloud-init.user-data":format!("#cloud-config\n{}\n", serde_json::to_string_pretty(&cloud).unwrap())}})
+    json!({"config":{"cloud-init.user-data":format!("#cloud-config\n{}\n", serde_json::to_string_pretty(&cloud).unwrap())},"devices":{"cloud-init":{"type":"disk","source":"cloud-init:config"}}})
 }
 struct Launch<'a> {
     image: &'a str,
@@ -262,11 +262,11 @@ fn launch(
 ) -> Result<String, Error> {
     read_input(
         host,
-        "launch",
+        "init",
         &[
             "--project",
             &vm.project,
-            "launch",
+            "init",
             "--vm",
             "--config",
             &format!("limits.cpu={}", spec.cpus),
@@ -283,7 +283,8 @@ fn launch(
             &vm.name,
         ],
         Some(&settings.to_string()),
-    )
+    )?;
+    boot(host, vm)
 }
 fn remove(host: &mut impl Host, vm: &Location) -> Result<(), Error> {
     if let Err(error) = read(
@@ -307,13 +308,17 @@ fn remove(host: &mut impl Host, vm: &Location) -> Result<(), Error> {
 fn running(host: &mut impl Host, vm: &Location) -> Result<bool, Error> {
     Ok(observe(host, vm)?.is_some_and(|o| o.running))
 }
+fn boot(host: &mut impl Host, vm: &Location) -> Result<String, Error> {
+    super::image::prepare_metadata(host, &vm.project, &vm.name)?;
+    read(
+        host,
+        "start",
+        &["--project", &vm.project, "start", "--", &vm.name],
+    )
+}
 fn start(host: &mut impl Host, vm: &Location, observation: &Observation) -> Result<(), Error> {
     if !observation.running {
-        if let Err(error) = read(
-            host,
-            "start",
-            &["--project", &vm.project, "start", "--", &vm.name],
-        ) {
+        if let Err(error) = boot(host, vm) {
             if !running(host, vm)? {
                 return Err(error);
             }
@@ -362,8 +367,8 @@ fn change(host: &mut impl Host, input: &Input) -> Result<Changed, Error> {
                         },
                     },
                 )?;
-                settings["devices"] =
-                    json!({"topology-seed":{"type":"disk","pool":pool,"source":seed.name}});
+                settings["devices"]["topology-seed"] =
+                    json!({"type":"disk","pool":pool,"source":seed.name});
                 settings["config"]["raw.qemu.conf"] =
                     json!("[device \"qemu_balloon\"]\nfree-page-reporting = \"on\"\n");
             }

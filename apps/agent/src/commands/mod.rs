@@ -273,7 +273,6 @@ pub fn all() -> Vec<Entry> {
         entry::<image_boot::CheckOwner>(),
         entry::<guest::ReadCloudInit>(),
         entry::<guest::ReadFingerprint>(),
-        entry::<image_identity::PrepareIncus>(),
         entry::<incus::image::ReadInstanceImages>(),
         entry::<incus::image::ChangeImage>(),
         entry::<incus::seed::BuildSeed>(),
