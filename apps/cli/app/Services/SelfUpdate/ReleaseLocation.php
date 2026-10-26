@@ -41,20 +41,4 @@ final readonly class ReleaseLocation
     {
         return $this->downloads.'/cli-v'.$version.'/SHA256SUMS';
     }
-
-    public function agentAssetName(string $platform): string
-    {
-        return 'orbit-agent-'.$platform;
-    }
-
-    /** An agent release is tagged with its full source commit: `agent-v<commit>` (ADR 0225). */
-    public function agentAssetUrl(string $commit, string $platform): string
-    {
-        return $this->downloads.'/agent-v'.$commit.'/'.$this->agentAssetName($platform);
-    }
-
-    public function agentChecksumsUrl(string $commit): string
-    {
-        return $this->downloads.'/agent-v'.$commit.'/SHA256SUMS';
-    }
 }

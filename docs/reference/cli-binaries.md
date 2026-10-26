@@ -18,7 +18,7 @@ The standalone `orbit` binary runs the CLI on a machine without PHP or Composer.
 
 ## Published releases
 
-Every `main` commit whose `Required checks` passed gets a GitHub release on [hardimpactdev/orbit](https://github.com/hardimpactdev/orbit/releases). The `Orbit CLI Release` workflow, `.github/workflows/orbit-cli-release.yml`, starts when a `CI` run on `main` succeeds, from a push or a manual dispatch. A pull-request run never starts it. It confirms that the commit is on the first-parent history of `main` and that its latest `Required checks` run is `success`, then builds and publishes. A commit whose CI fails or is cancelled gets no release. The release appears a few minutes after `Required checks` turns green. In rare cases GitHub refuses the release of a green commit ([Commits without a release](#commits-without-a-release)).
+Every `main` commit whose `Required checks` passed gets a GitHub release on [hardimpactdev/orbit](https://github.com/hardimpactdev/orbit/releases). The release holds the CLI binaries and the commit's [`orbit-agent`](/reference/node-agent#releases). The `Orbit CLI Release` workflow, `.github/workflows/orbit-cli-release.yml`, starts when a `CI` run on `main` succeeds, from a push or a manual dispatch. A pull-request run never starts it. It confirms that the commit is on the first-parent history of `main` and that its latest `Required checks` run is `success`, then builds and publishes. A commit whose CI fails or is cancelled gets no release. The release appears a few minutes after `Required checks` turns green. In rare cases GitHub refuses the release of a green commit ([Commits without a release](#commits-without-a-release)).
 
 Releases are public, need no login, and do not expire. A published release is never replaced.
 
@@ -39,16 +39,17 @@ A released binary reports its version: `orbit --version` prints `Orbit 0.4681.0`
 
 ### Assets
 
-Each release has one binary per supported platform and a checksum file.
+Each release has one CLI binary per supported platform, the agent delivery that CI built and tested for the commit, and a checksum file.
 
 | Asset | Platform | Built on | Run on |
 | --- | --- | --- | --- |
 | `orbit-0.N.0-linux-x86_64` | Linux x86_64 | Hosted `ubuntu-26.04` | The same runner |
 | `orbit-0.N.0-linux-aarch64` | Linux arm64 | Hosted `ubuntu-26.04-arm` | The same runner |
 | `orbit-0.N.0-macos-arm64` | macOS on Apple silicon | Hosted `ubuntu-26.04` | Hosted `macos-26` |
-| `SHA256SUMS` | Checksums of the three binaries | | |
+| `orbit-agent-<platform>`, `manifest.json` | The four [agent](/reference/node-agent#releases) platforms | The commit's CI run | The commit's CI run |
+| `SHA256SUMS` | Checksums of the seven binaries | | |
 
-Each binary is one executable file with a static PHP 8.5 inside. The Linux names follow `uname -m`, as the `orbit-agent` release does. `SHA256SUMS` has the `sha256sum` format: one line per binary, sorted by name, with the lowercase hex digest, two spaces, and the asset name.
+Each CLI binary is one executable file with a static PHP 8.5 inside. The Linux names follow `uname -m`, as the agent's do. `SHA256SUMS` has the `sha256sum` format: one line per binary, sorted by name, with the lowercase hex digest, two spaces, and the asset name.
 
 ### Release contract for clients
 
@@ -62,11 +63,11 @@ The Gateway, a Node installer, and `orbit self-update` rely on these rules. They
 | Platforms | `linux-x86_64`, `linux-aarch64`, `macos-arm64` |
 | Checksums URL | `https://github.com/hardimpactdev/orbit/releases/download/cli-v<version>/SHA256SUMS` |
 | Commits with a release | Commits on the first-parent history of `main` with a successful `Required checks` run. A side commit never has one |
-| Immutability | A published asset never changes. The tag points at `C`, and the release appears with all four assets at once |
+| Immutability | A published asset never changes. The tag points at `C`, and the release appears with all its assets at once |
 
 `bin/orbit-cli-release-version --tag C` prints the tag and refuses a shallow clone.
 
-A release appears after `CI` completes and the release workflow builds and publishes it. That is usually a few minutes after `Required checks` turns green. The Gateway can deploy a commit before its CLI release exists, and until then every URL above returns 404. A client treats a 404 as "not published yet" and checks again later. It does not install a different version instead. Only the Gateway can name another release: when a commit's release stays missing for 30 minutes, its desired fleet state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit.
+A release appears after `CI` completes and the release workflow builds and publishes it. That is usually a few minutes after `Required checks` turns green. Until then every URL above returns 404, and the Gateway [waits for it](/reference/gateway-recovery#prepare-a-release) before it deploys the commit. A client treats a 404 as "not published yet" and checks again later. It does not install a different version instead. Only the Gateway can name another release: when a commit's release stays missing for 30 minutes, its desired fleet state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit.
 
 ### Find the release for a commit
 
@@ -106,7 +107,7 @@ On a Mac, use `orbit-${version}-macos-arm64` and `shasum -a 256 --check` instead
 
 ### Update an installed binary
 
-`orbit self-update` replaces an installed binary with the CLI release of the active Gateway's commit. It checks the SHA-256 against the Gateway and the release `SHA256SUMS`, runs the new binary once, and swaps it in with one rename. It refuses a downgrade unless `--allow-downgrade` is passed, and it leaves a source checkout alone. On a managed Linux Node it also brings `orbit-agent` to the Gateway's pin. Use `sudo` when the binary lives in a directory only root may write. [Orbit self-update](/reference/self-update) describes each step.
+`orbit self-update` replaces an installed binary with the CLI release of the active Gateway's commit. It checks the SHA-256 against the Gateway and the release `SHA256SUMS`, runs the new binary once, and swaps it in with one rename. It refuses a downgrade unless `--allow-downgrade` is passed, and it leaves a source checkout alone. It does not touch `orbit-agent`: a Node gets the agent from the Gateway. Use `sudo` when the binary lives in a directory only root may write. [Orbit self-update](/reference/self-update) describes each step.
 
 ```bash
 sudo orbit self-update
@@ -116,7 +117,7 @@ When the Gateway's fleet runs a newer release, other commands print a notice to 
 
 ### Publish a missed commit
 
-When a green `main` commit has no release, for example because the workflow failed on a GitHub outage, run `Orbit CLI Release` with `workflow_dispatch` on `main` and pass the full commit SHA. A dispatch from another branch does nothing. The run applies the same checks, including the first-parent history check.
+When a green `main` commit has no release, for example because the workflow failed on a GitHub outage, run `Orbit CLI Release` with `workflow_dispatch` on `main` and pass the full commit SHA. A dispatch from another branch does nothing. The run applies the same checks, including the first-parent history check. It takes the agent from the newest passing CI run on `main` for that commit, so it works only while that run's `agent-delivery` artifact exists, 30 days.
 
 The build uses the commit's own builder, so a commit from before CLI releases existed cannot be published: its builder has no Linux arm64 target. When the release already exists for that commit with every asset, the run changes nothing. When a tag or release for that version points elsewhere or lacks assets, the run fails and replaces nothing. An unfinished draft from an earlier run is deleted and rebuilt.
 
@@ -129,7 +130,7 @@ So a green commit gets no release when both of these are true:
 - A newer commit reached `main` before the release workflow published. A rerun of the commit's CI makes that likely.
 - The commits between them changed a file under `.github/workflows`.
 
-The publish step then fails with the error `Release refused for a non-tip commit`. A `workflow_dispatch` run for that commit cannot publish it either. The Gateway does not wait for such a release forever: its desired fleet state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit until the Gateway deploys a newer commit with its own release.
+The publish step then fails with the error `Release refused for a non-tip commit`. A `workflow_dispatch` run for that commit cannot publish it either. The Gateway never deploys such a commit, because prepare needs the release's agent. It deploys the next commit that has a release. A Gateway may already run a commit without a CLI release, from before releases carried the agent. It does not wait for that release forever: its desired fleet state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit until the Gateway deploys a newer commit with its own release.
 
 ## Pull-request builds
 
@@ -201,7 +202,7 @@ The release workflow accepts only that first-parent history. A side commit merge
 
 ### Immutable releases that never take Latest
 
-A client that verified a checksum must get the same file later, so a published release is never re-uploaded. `gh release create` uploads to a draft and publishes it last, so the tag and the release appear only with every asset. The repository's single **Latest** marker would jump between CLI and `orbit-agent` releases, and an older commit can finish its checks after a newer one. Clients find a CLI release by its tag instead.
+A client that verified a checksum must get the same file later, so a published release is never re-uploaded. `gh release create` uploads to a draft and publishes it last, so the tag and the release appear only with every asset. An older commit can finish its checks after a newer one, so the repository's single **Latest** marker would move backwards. Clients find a CLI release by its tag instead.
 
 ### Build on Linux, run on each platform
 
@@ -213,7 +214,7 @@ The repository is public, so hosted macOS and Linux arm64 runners cost nothing. 
 
 ### Linux arm64
 
-Managed Linux Nodes can be arm64; the `orbit-agent` release already ships for both. Every managed Node that runs the CLI needs a binary for its architecture.
+Managed Linux Nodes can be arm64; the agent already ships for both. Every managed Node that runs the CLI needs a binary for its architecture.
 
 ### PHPacker in its own project
 

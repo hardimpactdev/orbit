@@ -1,0 +1,167 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Domain\GatewayReleases\GatewayReleaseException;
+use App\Domain\GatewayReleases\GatewayReleaseLayout;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\GatewayReleases\GatewayReleaseAgentDelivery;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProcessInvocation;
+use App\Infrastructure\Processes\ProcessRunner;
+use App\Models\Node;
+use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Http;
+use Tests\Support\FakeAgentCommandRunner;
+
+beforeEach(function (): void {
+    $this->base = sys_get_temp_dir().'/orbit-release-agent-'.bin2hex(random_bytes(6));
+    $this->layout = new GatewayReleaseLayout($this->base.'/orbit/apps/gateway');
+    $this->sha = str_repeat('a', 40);
+    $this->tag = 'cli-v0.6900.0';
+    $this->download = 'https://github.com/hardimpactdev/orbit/releases/download/'.$this->tag;
+    $this->gateway = new Node()->forceFill(['name' => 'gateway', 'platform' => 'linux', 'architecture' => 'x86_64']);
+    $this->binaries = [];
+    $this->checksums = '';
+    $this->manifest = ['commit' => str_repeat('b', 40), 'version' => '0.5.0', 'artifacts' => []];
+    foreach (GatewayReleaseAgentDelivery::Platforms as $platform) {
+        $name = 'orbit-agent-'.$platform;
+        $this->binaries[$name] = 'binary for '.$platform;
+        $digest = hash('sha256', $this->binaries[$name]);
+        $this->checksums .= $digest.'  '.$name."\n";
+        $this->manifest['artifacts'][$platform] = ['sha256' => $digest, 'path' => $name, 'url' => $this->download.'/'.$name];
+    }
+    $this->tags = "{$this->sha}\trefs/tags/{$this->tag}\n".str_repeat('c', 40)."\trefs/tags/cli-v0.6899.0\n";
+    $this->listings = [];
+    $this->installs = new FakeAgentCommandRunner;
+    $this->installed = [];
+    $this->delivery = fn (): GatewayReleaseAgentDelivery => new GatewayReleaseAgentDelivery(
+        processes: new class($this) implements ProcessRunner
+        {
+            public function __construct(private object $test) {}
+
+            public function run(ProcessInvocation $invocation): CommandResult
+            {
+                $this->test->listings[] = $invocation->arguments;
+
+                return new CommandResult(exitCode: 0, stdout: $this->test->tags, stderr: '', durationMs: 1, truncated: false);
+            }
+        },
+        repository: 'https://github.com/hardimpactdev/orbit',
+        cacheDirectory: $this->base.'/home/agent-artifacts',
+        runner: function (AgentDelivery $delivery): FakeAgentCommandRunner {
+            $this->installed[] = [$delivery->pin($this->gateway), is_file($delivery->localFile($this->gateway))];
+
+            return $this->installs;
+        },
+    );
+    $this->publish = function (?string $manifest = null): void {
+        Http::fake([
+            $this->download.'/manifest.json' => Http::response($manifest ?? json_encode($this->manifest)),
+            $this->download.'/SHA256SUMS' => Http::response($this->checksums),
+            ...array_map(static fn (string $body) => Http::response($body), array_combine(array_map(fn (string $name): string => $this->download.'/'.$name, array_keys($this->binaries)), $this->binaries)),
+        ]);
+    };
+    Http::preventStrayRequests();
+});
+
+afterEach(function (): void {
+    if (is_dir($this->base)) {
+        exec('chmod -R u+w '.escapeshellarg($this->base));
+        new Filesystem()->deleteDirectory($this->base);
+    }
+});
+
+it('finds the commit by its release tag and verifies the Gateway binary without authentication before any change', function (): void {
+    ($this->publish)();
+
+    $fetched = ($this->delivery)()->fetch('aaaaaaa', $this->gateway);
+
+    expect($fetched)->toBe(['sha' => $this->sha, 'manifest' => json_encode($this->manifest)])
+        ->and($this->listings)->toBe([['git', 'ls-remote', '--tags', '--refs', 'https://github.com/hardimpactdev/orbit', 'refs/tags/cli-v*']])
+        ->and(hash_file('sha256', $this->base.'/home/agent-artifacts/'.$this->manifest['artifacts']['linux-x86_64']['sha256']))->toBe($this->manifest['artifacts']['linux-x86_64']['sha256'])
+        ->and(glob($this->base.'/home/agent-artifacts/*'))->toHaveCount(1)
+        ->and(is_dir($this->base.'/releases'))->toBeFalse();
+    Http::assertSent(static fn ($request): bool => ! $request->hasHeader('Authorization'));
+    Http::assertNotSent(static fn ($request): bool => str_ends_with($request->url(), 'linux-aarch64'));
+});
+
+it('refuses while the commit has no published release, so a later attempt can find it', function (): void {
+    $this->tags = str_repeat('c', 40)."\trefs/tags/cli-v0.6899.0\n";
+
+    $error = release_failure(fn () => ($this->delivery)()->fetch($this->sha, $this->gateway));
+
+    expect($error->errorCode)->toBe('gateway.release_agent_delivery_unavailable')->and($error->step)->toBe('agent-delivery')
+        ->and(file_exists($this->base))->toBeFalse();
+    Http::assertNothingSent();
+});
+
+it('refuses a manifest that does not match the release or its SHA256SUMS', function (string $fault): void {
+    $manifest = $this->manifest;
+    match ($fault) {
+        'checksum' => $manifest['artifacts']['linux-x86_64']['sha256'] = str_repeat('d', 64),
+        'other release' => $manifest['artifacts']['linux-x86_64']['url'] = 'https://github.com/hardimpactdev/orbit/releases/download/cli-v0.1.0.0/orbit-agent-linux-x86_64',
+        'missing platform' => $manifest['artifacts'] = array_slice($manifest['artifacts'], 1),
+    };
+    ($this->publish)(json_encode($manifest));
+
+    $error = release_failure(fn () => ($this->delivery)()->fetch($this->sha, $this->gateway));
+
+    expect($error->errorCode)->toBe('gateway.release_agent_delivery_invalid')->and(file_exists($this->base.'/home/agent-artifacts'))->toBeFalse();
+})->with(['checksum', 'other release', 'missing platform']);
+
+it('refuses a Gateway binary whose bytes do not match the pin', function (): void {
+    $this->binaries['orbit-agent-linux-x86_64'] = 'tampered';
+    ($this->publish)();
+
+    expect(release_failure(fn () => ($this->delivery)()->fetch($this->sha, $this->gateway))->errorCode)->toBe('gateway.release_agent_delivery_unavailable')
+        ->and(glob($this->base.'/home/agent-artifacts/*'))->toBe([]);
+});
+
+it('puts the manifest into a sealed release and installs that pin on the Gateway', function (): void {
+    ($this->publish)();
+    $agent = $this->layout->releasePath('aaaaaaaaaaaa').'/apps/agent';
+    mkdir($agent, 0755, true);
+    chmod($agent, 0555);
+    $delivery = ($this->delivery)();
+    $fetched = $delivery->fetch($this->sha, $this->gateway);
+
+    $delivery->install($fetched, $this->layout, $this->gateway);
+    $delivery->install($fetched, $this->layout, $this->gateway);
+
+    $path = $agent.'/delivery/manifest.json';
+    expect(file_get_contents($path))->toBe($fetched['manifest'])
+        ->and(fileperms($path) & 0777)->toBe(0444)
+        ->and(fileperms(dirname($path)) & 0777)->toBe(0555)
+        ->and(fileperms($agent) & 0777)->toBe(0555)
+        ->and(glob(dirname($path).'/.manifest-*'))->toBe([])
+        ->and($this->installed)->toBe(array_fill(0, 2, [$this->manifest['artifacts']['linux-x86_64']['sha256'], true]))
+        ->and($this->installs->installs)->toHaveCount(2);
+});
+
+it('refuses a release that already holds another manifest', function (): void {
+    ($this->publish)();
+    $delivery = ($this->delivery)();
+    $fetched = $delivery->fetch($this->sha, $this->gateway);
+    $path = $this->layout->releasePath('aaaaaaaaaaaa').'/'.GatewayReleaseAgentDelivery::Manifest;
+    mkdir(dirname($path), 0755, true);
+    file_put_contents($path, '{"other":true}');
+
+    expect(release_failure(fn () => $delivery->install($fetched, $this->layout, $this->gateway))->errorCode)->toBe('gateway.release_agent_delivery_invalid')
+        ->and(file_get_contents($path))->toBe('{"other":true}')
+        ->and($this->installed)->toBe([]);
+});
+
+it('reports an installer refusal on the Gateway as a release failure', function (): void {
+    ($this->publish)();
+    mkdir($this->layout->releasePath('aaaaaaaaaaaa').'/apps/agent', 0755, true);
+    $this->installs->failInstall(new AgentCommandRefused('agent.install', 'agent.install_failed', 'The pinned agent failed to install.', ['cause' => 'agent.health_check_failed']));
+    $delivery = ($this->delivery)();
+
+    $error = release_failure(fn () => $delivery->install($delivery->fetch($this->sha, $this->gateway), $this->layout, $this->gateway));
+
+    expect($error)->toBeInstanceOf(GatewayReleaseException::class)
+        ->and($error->errorCode)->toBe('gateway.release_agent_install_failed')
+        ->and($error->getMessage())->toContain('agent.health_check_failed');
+});

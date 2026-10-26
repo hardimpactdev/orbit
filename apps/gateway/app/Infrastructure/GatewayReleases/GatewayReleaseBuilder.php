@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\GatewayReleases;
 
+use App\Domain\GatewayReleases\GatewayReleaseAgent;
 use App\Domain\GatewayReleases\GatewayReleaseCommit;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
@@ -12,9 +13,14 @@ use App\Domain\GatewayReleases\PreparedGatewayRelease;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Projects\ProjectSourceAccess;
+use App\Infrastructure\Gateway\GatewayCommandNode;
+use App\Models\Node;
 use Closure;
 
-/** Orders native release preparation, web installation, Caddy access, and completion. */
+/**
+ * Orders release preparation: the release agent, the native worktree, the web build, Caddy access, and completion.
+ * The agent comes first, before any agent command, so a Gateway whose own agent is older than this code can prepare.
+ */
 final readonly class GatewayReleaseBuilder
 {
     public const int MinimumFreeBytes = 1_073_741_824;
@@ -31,6 +37,7 @@ final readonly class GatewayReleaseBuilder
         private GatewayReleaseCommands $commands,
         private RepositoryReadAccess $readAccess,
         private GatewayReleaseWebBuild $web,
+        private GatewayReleaseAgent $agent,
         private Closure $checkoutAccess,
         private string $stepLock,
         private int $minimumFreeBytes = self::MinimumFreeBytes,
@@ -43,21 +50,28 @@ final readonly class GatewayReleaseBuilder
     public function prepare(string $revision, bool $withWeb = true): PreparedGatewayRelease
     {
         $startedAt = hrtime(true);
-        $revision = GatewayReleaseCommit::parse($revision);
-        $reserved = max(0, ($this->reservedBytes)());
-        $inspection = $this->commands->inspectPreparation($this->layout, $revision, $this->minimumFreeBytes, $reserved);
-        $read = $inspection['origin'] === null ? null : $this->readAccess->for($inspection['origin'], ProjectSourceAccess::GitHubApp);
-        $prepared = $this->commands->prepare($this->layout, $revision, $this->minimumFreeBytes, $reserved, $read, $this->stepLock);
-        $sha = $prepared['sha'];
+        $gateway = GatewayCommandNode::find();
+        if (! $gateway instanceof Node) {
+            throw new GatewayReleaseException('agent-delivery', 'gateway.release_gateway_node_missing', 'No active Gateway Node exists for release commands.', 500);
+        }
+        $delivery = $this->agent->fetch($revision, $gateway);
+        $sha = $delivery['sha'];
         $id = GatewayReleaseCommit::id($sha);
         $path = $this->layout->releasePath($id);
+        $reused = $this->layout->preparedCommit($id) === $sha;
 
         try {
-            new GatewayReleaseAgentDelivery($this->layout, $this->commands)->install($sha, $this->stepLock);
-            if ($withWeb || $prepared['reused']) {
+            if (! $reused) {
+                $reserved = max(0, ($this->reservedBytes)());
+                $inspection = $this->commands->inspectPreparation($this->layout, $sha, $this->minimumFreeBytes, $reserved);
+                $read = $inspection['origin'] === null ? null : $this->readAccess->for($inspection['origin'], ProjectSourceAccess::GitHubApp);
+                $this->commands->prepare($this->layout, $sha, $this->minimumFreeBytes, $reserved, $read, $this->stepLock);
+            }
+            $this->agent->install($delivery, $this->layout, $gateway);
+            if ($withWeb || $reused) {
                 $this->web->install($id, $sha);
             }
-            if (! $prepared['reused']) {
+            if (! $reused) {
                 $this->grantAccess($path);
                 $this->commands->finish($this->layout, $sha, $this->stepLock);
             }
@@ -65,7 +79,7 @@ final readonly class GatewayReleaseBuilder
             throw $exception->sha === null ? $exception->withSha($sha) : $exception;
         }
 
-        return new PreparedGatewayRelease($id, $sha, $path, $prepared['reused'], intdiv(hrtime(true) - $startedAt, 1_000_000));
+        return new PreparedGatewayRelease($id, $sha, $path, $reused, intdiv(hrtime(true) - $startedAt, 1_000_000));
     }
 
     public function refreshConfiguration(string $id): void

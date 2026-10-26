@@ -10,12 +10,7 @@ use Phar;
 
 final readonly class NativeSelfUpdateHost implements SelfUpdateHost
 {
-    /** The first line the Gateway's agent converge writes into the unit it owns. */
-    public const string AgentUnitMarker = '# Managed by Orbit: agent';
-
     public function __construct(
-        private string $agentUnitPath,
-        private string $agentBinaryPath,
         /** `PHP_BINARY`, which the static PHP inside a standalone binary leaves empty. */
         private string $phpBinary = PHP_BINARY,
     ) {}
@@ -61,34 +56,6 @@ final readonly class NativeSelfUpdateHost implements SelfUpdateHost
     public function isRoot(): bool
     {
         return EffectiveUser::id() === 0;
-    }
-
-    public function isManagedNode(): bool
-    {
-        if (PHP_OS_FAMILY !== 'Linux' || ! is_file($this->agentUnitPath) || ! is_readable($this->agentUnitPath)) {
-            return false;
-        }
-
-        $handle = @fopen($this->agentUnitPath, 'rb');
-
-        if ($handle === false) {
-            return false;
-        }
-
-        $firstLine = fgets($handle, 256);
-        fclose($handle);
-
-        return is_string($firstLine) && rtrim($firstLine, "\r\n") === self::AgentUnitMarker;
-    }
-
-    public function agentBinaryPath(): string
-    {
-        return $this->agentBinaryPath;
-    }
-
-    public function agentOwner(): array
-    {
-        return [0, 0];
     }
 
     public function exitAfterReplacingItself(int $status): never

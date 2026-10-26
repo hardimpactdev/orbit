@@ -16,7 +16,6 @@ final class FakeSelfUpdateHost implements SelfUpdateHost
         public RunningBinaryKind $kind = RunningBinaryKind::Binary,
         public ?string $platform = 'linux-x86_64',
         public bool $root = false,
-        public bool $managedNode = false,
         public ?string $running = null,
     ) {}
 
@@ -39,21 +38,6 @@ final class FakeSelfUpdateHost implements SelfUpdateHost
     public function isRoot(): bool
     {
         return $this->root;
-    }
-
-    public function isManagedNode(): bool
-    {
-        return $this->managedNode;
-    }
-
-    public function agentBinaryPath(): string
-    {
-        return $this->directory.'/bin/orbit-agent';
-    }
-
-    public function agentOwner(): array
-    {
-        return [(int) getmyuid(), (int) getmygid()];
     }
 
     public ?int $exitedWith = null;

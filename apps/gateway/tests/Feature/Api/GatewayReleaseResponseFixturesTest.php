@@ -6,7 +6,6 @@ use App\Actions\GatewayReleases\DeployGatewayReleaseAction;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
-use App\Domain\GatewayReleases\GatewayReleaseObserver;
 use App\Domain\GatewayReleases\GatewayReleaseUnitStarter;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\GatewayReleases\GatewayReleaseCommands;
@@ -125,9 +124,9 @@ function gateway_smoke_api(GatewayReleaseLayout $layout, RecordedSmokeProcesses 
 }
 
 /** A release layout with a current release and a retained target, without Git. */
-function gateway_release_api_layout(string $base, FakeAgentCommandRunner $agents): GatewayReleaseLayout
+function gateway_release_api_layout(string $base): GatewayReleaseLayout
 {
-    $layout = new GatewayReleaseLayout($base.'/orbit/apps/gateway', new GatewayReleaseCommands($agents));
+    $layout = new GatewayReleaseLayout($base.'/orbit/apps/gateway');
 
     foreach ([RELEASE_CURRENT, RELEASE_TARGET] as $sha) {
         mkdir($layout->releasePath(substr($sha, 0, 12)), 0755, true);
@@ -262,17 +261,10 @@ beforeEach(function (): void {
     $this->base = sys_get_temp_dir().'/orbit-release-api-'.bin2hex(random_bytes(4));
     mkdir($this->base.'/home', 0700, true);
     config(['orbit.home' => $this->base.'/home', 'orbit.gateway_checkout' => $this->base.'/orbit/apps/gateway']);
-    $this->inventory = [
-        'current' => substr(RELEASE_CURRENT, 0, 12), 'state' => 'adopted', 'superseded' => false,
-        'commits' => [substr(RELEASE_CURRENT, 0, 12) => RELEASE_CURRENT, substr(RELEASE_TARGET, 0, 12) => RELEASE_TARGET],
-        'incomplete' => [], 'retained' => [substr(RELEASE_CURRENT, 0, 12), substr(RELEASE_TARGET, 0, 12)],
-    ];
-    $this->inventoryAgents = new FakeAgentCommandRunner()->answer('gateway.inspect-releases', $this->inventory);
-    $this->layout = gateway_release_api_layout($this->base, $this->inventoryAgents);
-    app()->instance(GatewayReleaseObserver::class, new GatewayReleaseCommands($this->inventoryAgents));
+    $this->layout = gateway_release_api_layout($this->base);
     $this->unitAgents = new FakeAgentCommandRunner()->answer('gateway.start-release-run', ['changed' => true])->answer('gateway.inspect-release-run', ['state' => 'active']);
     $this->database = new FakeGatewayReleaseDatabase;
-    $this->lock = new GatewayReleaseLock($this->base.'/home/gateway-release.lock', new GatewayReleaseCommands(new FakeAgentCommandRunner()->answer('gateway.inspect-release-step', ['busy' => false])));
+    $this->lock = new GatewayReleaseLock($this->base.'/home/gateway-release.lock');
     app()->instance(GatewayReleaseLayout::class, $this->layout);
     app()->instance(GatewayReleaseLock::class, $this->lock);
     app()->instance(GatewayReleaseDatabase::class, $this->database);
@@ -343,7 +335,7 @@ describe('gateway release API', function (): void {
     });
 
     it('refuses a deploy before the Gateway runs from a release', function (): void {
-        $this->inventoryAgents->answer('gateway.inspect-releases', [...$this->inventory, 'current' => null, 'state' => 'unreadable']);
+        unlink($this->layout->currentPath());
 
         $this->postJson('/api/v1/gateway/releases', ['commit' => RELEASE_TARGET])
             ->assertStatus(409)

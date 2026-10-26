@@ -16,7 +16,7 @@ beforeEach(function (): void {
     $node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
     $this->agents = new FakeAgentCommandRunner;
     $this->commands = new GatewayReleaseCommands($this->agents);
-    $this->layout = new GatewayReleaseLayout('/home/orbit/orbit/apps/gateway', $this->commands);
+    $this->layout = new GatewayReleaseLayout('/home/orbit/orbit/apps/gateway');
     $this->runtime = new ArtisanGatewayReleaseRuntime($this->layout, $this->commands, '/home/orbit/.orbit/gateway-release-step.lock');
 });
 

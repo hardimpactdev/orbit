@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Gateway;
 
 use App\Actions\GatewayReleases\ShowGatewayReleaseAutomationAction;
+use App\Data\Fleet\DesiredFleetStateData;
 use App\Data\Gateway\GatewayAutoReleaseStatusData;
 use App\Data\Gateway\GatewayStatusData;
 use App\Domain\Fleet\DesiredFleetState;
@@ -40,11 +41,23 @@ final readonly class ShowGatewayStatusAction
             version: GatewayVersion::current(),
             phpVersion: PHP_VERSION,
             laravelVersion: Application::VERSION,
-            desiredFleetState: $authenticated ? $this->fleet->cached() : null,
+            desiredFleetState: $authenticated ? $this->desiredFleetState() : null,
             release: $release,
             releaseSha: $sha,
             autoRelease: $authenticated ? $this->autoRelease() : null,
         );
+    }
+
+    /** A release that has no agent manifest has no desired fleet state; status still answers. */
+    private function desiredFleetState(): ?DesiredFleetStateData
+    {
+        try {
+            return $this->fleet->cached();
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return null;
+        }
     }
 
     private function autoRelease(): ?GatewayAutoReleaseStatusData

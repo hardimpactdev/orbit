@@ -1,6 +1,6 @@
 ---
 title: "Orbit self-update"
-description: "The desired fleet state the Gateway serves for its commit, how orbit self-update replaces the CLI and the Node agent from it, and how the CLI learns that a newer release exists."
+description: "The desired fleet state the Gateway serves for its commit, how orbit self-update replaces the CLI from it, and how the CLI learns that a newer release exists."
 covers:
   - apps/gateway/app/{Domain,Data,Infrastructure}/Fleet/**
   - apps/gateway/app/Actions/Gateway/ShowDesiredFleetStateAction.php
@@ -13,11 +13,11 @@ covers:
 
 # Orbit self-update
 
-`orbit self-update` updates one machine to the Gateway's release. It replaces the `orbit` binary with the CLI release that CI published for the Gateway's commit. On a managed Linux Node it also replaces `orbit-agent` when the binary differs from the Gateway's pin. The Gateway serves what to install as the **desired fleet state**. The [fleet rollout](/reference/gateway-recovery#fleet-rollout) runs this command on each managed Node, and an operator runs it on a Mac.
+`orbit self-update` updates one machine to the Gateway's release. It replaces the `orbit` binary with the CLI release that CI published for the Gateway's commit. It never touches `orbit-agent`. A Node gets the Gateway's pinned agent through [install on mismatch](/reference/node-agent#install-on-mismatch) with every agent command, so the agent is current before the fleet rollout runs `cli.self-update`. The Gateway serves what to install as the **desired fleet state**. The [fleet rollout](/reference/gateway-recovery#fleet-rollout) runs this command on each managed Node, and an operator runs it on a Mac.
 
 ## Desired fleet state
 
-Fleet rollout calls the root `cli.self-update` agent command. It supplies the managed account and, only after an authorized Gateway rollback, an exact CLI version to permit. Rust checks the installed CLI, runs the fixed executable with root's profile, and returns its parsed report and bounded diagnostics. The Gateway decides whether that result converged, needs catch-up, or permits a retry. The command holds its own target lock; each binary installer retains the shared update lock, so a child installer never waits on its parent. An unrecognized or malformed CLI report never counts as a successful update.
+Fleet rollout calls the root `cli.self-update` agent command. It supplies the managed account and, only after an authorized Gateway rollback, an exact CLI version to permit. Rust checks the installed CLI, runs the fixed executable with root's profile, and returns its parsed report and bounded diagnostics. The Gateway decides whether that result converged, needs catch-up, or permits a retry. The command holds its own target lock; the CLI installer retains the shared update lock, so a child installer never waits on its parent. An unrecognized or malformed CLI report never counts as a successful update.
 
 The desired fleet state names what every machine should run for the Gateway's commit. The Gateway separately converges the [Orbit footprint](/reference/node-provisioning#converge-the-orbit-footprint); `self-update` does not apply those artifacts or remove files left by deleted artifacts.
 
@@ -25,7 +25,7 @@ The desired fleet state names what every machine should run for the Gateway's co
 | --- | --- |
 | `commit` | The full SHA of the Gateway's commit, or null when the Gateway version is not a commit |
 | `cli` | The [CLI release](/reference/cli-binaries#release-contract-for-clients) of that commit: `status`, `reason`, `version`, `tag`, the `commit` CI built it from, `checksums_url`, and one asset per platform |
-| `agent` | The pinned [`orbit-agent`](/reference/node-agent#install-and-upgrade) `version`, the delivery `commit` its release is tagged with, and one asset per Linux architecture |
+| `agent` | The pinned [`orbit-agent`](/reference/node-agent#install-and-upgrade) `version`, the delivery `commit`, and one asset per Linux architecture. `self-update` does not read it. |
 
 Each asset has `platform` (`linux-x86_64`, `linux-aarch64`, or `macos-arm64`), the release asset `name`, the HTTPS download `url`, and its lowercase hex `sha256`.
 
@@ -55,7 +55,7 @@ Each asset has `platform` (`linux-x86_64`, `linux-aarch64`, or `macos-arm64`), t
       {
         "platform": "linux-x86_64",
         "name": "orbit-agent-linux-x86_64",
-        "url": "https://github.com/hardimpactdev/orbit/releases/download/agent-v1f0e4c5d6b7a8c9d0e1f2a3b4c5d6e7f8a9b0c1d/orbit-agent-linux-x86_64",
+        "url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.4681.0/orbit-agent-linux-x86_64",
         "sha256": "f5125b2ab36abd79882b3b11eb5d40f5e457fbf23cc8bf3ff4c096e2cab4618a"
       }
     ]
@@ -127,7 +127,7 @@ The expected footprint digest per Node joins this state when the footprint re-ap
 
 ## What the command does
 
-[`orbit self-update`](/cli/self-update) reads the desired fleet state with the machine's normal Gateway profile and runs two steps under a lock. It updates the agent first and the CLI last, for the reason in [Replace the CLI last](#replace-the-cli-last).
+[`orbit self-update`](/cli/self-update) reads the desired fleet state with the machine's normal Gateway profile and runs one step under a lock: it updates the CLI.
 
 ### Where it downloads from
 
@@ -137,22 +137,20 @@ The Gateway names which release to install. It never names where to download it.
 | --- | --- |
 | CLI binary | `<location>/cli-v<version>/orbit-<version>-<platform>` |
 | CLI checksums | `<location>/cli-v<version>/SHA256SUMS` |
-| Agent binary | `<location>/agent-v<commit>/orbit-agent-<platform>` |
-| Agent checksums | `<location>/agent-v<commit>/SHA256SUMS` |
 
-The Gateway's asset `name` and `url` must equal what the CLI builds, or the step fails with `self_update.release_mismatch` or `agent.release_mismatch` before any download. The CLI downloads `SHA256SUMS` itself and reads the binary's line. That digest must equal the Gateway's `sha256`, and the download must match both. A compromised Gateway can therefore only ask for a published Orbit release. `ORBIT_SELF_UPDATE_RELEASES` on the machine itself changes the location, for a mirror you trust.
+The Gateway's asset `name` and `url` must equal what the CLI builds, or the step fails with `self_update.release_mismatch` before any download. The CLI downloads `SHA256SUMS` itself and reads the binary's line. That digest must equal the Gateway's `sha256`, and the download must match both. A compromised Gateway can therefore only ask for a published Orbit release. `ORBIT_SELF_UPDATE_RELEASES` on the machine itself changes the location, for a mirror you trust.
 
 Every download runs `curl --disable` with HTTPS only, at most 5 redirects, and a size limit: 256 MiB for a binary and 64 KiB for `SHA256SUMS`. `SHA256SUMS` lands in a private temporary directory and is deleted after it is read.
 
 ### One update at a time
 
-Each binary changes under one lock: `/run/lock/orbit-self-update.lock` as root on Linux, `/var/run/orbit-self-update.lock` as root on macOS, and `$ORBIT_HOME/self-update.lock` for any other user. The agent's own `agent.install` takes it for the agent, and the command takes it for the CLI. A held lock would make the installer wait for the command that started it. A second run waits up to 120 seconds for the CLI step and then fails with `self_update.busy`. Gateway steps hold the same lock:
+The CLI changes under one lock: `/run/lock/orbit-self-update.lock` as root on Linux, `/var/run/orbit-self-update.lock` as root on macOS, and `$ORBIT_HOME/self-update.lock` for any other user. A second run waits up to 120 seconds for the CLI step and then fails with `self_update.busy`. Gateway steps hold the same lock:
 
 - the [agent converge](/reference/node-agent#install-and-upgrade), whose `agent.configure` holds it from the secret check through the agent restart;
 - the [fleet rollout](/reference/gateway-recovery#one-node), whose `cli.install` holds it while it installs the CLI;
 - a release's [runtime handoff](/reference/gateway-recovery#gateway-node-agent), while it updates the Gateway Node's agent.
 
-So a Gateway step never swaps or restarts the agent while a self-update replaces it or watches its health. The converge and the rollout wait up to 300 seconds for the lock, and the handoff waits up to 120 seconds.
+So a Gateway step never replaces a binary while a self-update replaces the CLI. The converge and the rollout wait up to 300 seconds for the lock, and the handoff waits up to 120 seconds.
 
 Each candidate gets its own name, `.<file>.orbit-candidate-<random>`, created exclusively next to its target. A candidate with that pattern can only be left by an interrupted run, so the command deletes them before it downloads.
 
@@ -197,22 +195,6 @@ A failure or an interruption before step 7 leaves `orbit` on the old release. A 
 
 The first update of a plain `orbit` file turns it into the link and keeps the old file as `orbit-<old version>`. That one swap replaces the file that running processes read. The command itself prints its result and exits at once. Another `orbit` command that runs during that swap can fail; run it again. Later updates only switch the link. A process still running from a release older than the one kept loses its file when that release is deleted.
 
-### Update the agent
-
-The agent step runs only on a **managed Node**: a Linux host whose `/etc/systemd/system/orbit-agent.service` starts with `# Managed by Orbit: agent`. The Gateway's agent converge writes that line, and nothing else does. On any other machine the step is `skipped` with reason `not_managed_node`.
-
-| Situation | Outcome |
-| --- | --- |
-| `/usr/local/bin/orbit-agent` has the pinned SHA-256 | `unchanged`. The agent is not restarted. |
-| It differs or is missing, and the command does not run as root | `skipped`, reason `root_required` |
-| It differs or is missing, and the command runs as root | Replaced and restarted: `updated` |
-
-The agent release is tagged `agent-v<commit>`, with the delivery commit that the desired fleet state names. The replacement confirms the pin against that release's `SHA256SUMS`, as for the CLI. It downloads the asset, such as `orbit-agent-linux-x86_64`, to a private candidate beside the binary and checks its SHA-256. A mismatch fails with `agent.checksum_mismatch` and changes nothing.
-
-Then the candidate's own [`agent.install`](/reference/node-agent#install-on-mismatch) replaces the binary under the update lock and restarts the observer. The observer must stay active for 5 seconds; otherwise the installer restores the kept binary and the step fails with `agent.health_check_failed`. An installer refusal fails the step with its own code and message, and an installer that prints no result fails with `agent.install_failed`. The agent's configuration, certificate, secret, and unit stay with the Gateway's agent converge.
-
-When the agent step fails, the CLI step does not run. It reports `skipped` with reason `previous_step_failed`.
-
 ### Result
 
 The command prints one result. Its top-level `outcome` is the first that applies:
@@ -220,10 +202,10 @@ The command prints one result. Its top-level `outcome` is the first that applies
 | `outcome` | When | Exit |
 | --- | --- | --- |
 | `failed` | A step failed. | 1 |
-| `incomplete` | A step that applies here could not run: the CLI release is `unavailable`, or the agent needs root. Nothing failed, but the machine is not up to date. | 0 |
+| `incomplete` | A step that applies here could not run: the CLI release is `unavailable`. Nothing failed, but the machine is not up to date. | 0 |
 | `pending` | The CLI release is not published yet. Run the command again in a few minutes. | 0 |
 | `updated` | A step changed something. | 0 |
-| `unchanged` | Everything is already current, or a step does not apply here: a source checkout, a PHAR, an unsupported platform, or a machine that is not a managed Node. | 0 |
+| `unchanged` | Everything is already current, or a step does not apply here: a source checkout, a PHAR, or an unsupported platform. | 0 |
 
 Human output ends with `Update failed.`, `Update incomplete.`, `Waiting for the CLI release.`, `Orbit updated.`, or `Orbit is up to date.` in the same order. A failure before the first step, such as `gateway.unreachable`, `gateway.profile_missing`, or `self_update.busy`, prints the usual error envelope instead.
 
@@ -232,10 +214,10 @@ Human output ends with `Update failed.`, `Update incomplete.`, `Waiting for the 
 | `gateway` | The profile name |
 | `commit` | The Gateway's commit |
 | `outcome` | `updated`, `unchanged`, `pending`, `incomplete`, or `failed` |
-| `steps` | `agent`, then `cli`, in the order they ran, each with `outcome` (`updated`, `unchanged`, `pending`, `skipped`, or `failed`), `reason`, `path`, `before`, `after`, and `error` |
+| `steps` | One `cli` step, with `outcome` (`updated`, `unchanged`, `pending`, `skipped`, or `failed`), `reason`, `path`, `before`, `after`, and `error` |
 | `request_id` | The Gateway request ID |
 
-`before` and `after` each hold `version` and `sha256`. An agent `before.version` is null unless the binary matches the pin, because a binary does not report its own version. The CLI `path` is the `orbit` link. `error` holds `code` and `message`, or null.
+`before` and `after` each hold `version` and `sha256`. The `path` is the `orbit` link. `error` holds `code` and `message`, or null.
 
 ## Running it on a Node
 
@@ -263,7 +245,7 @@ The CLI prints it at most once every 24 hours, and only when standard error is a
 
 `orbit self-update` has these limits.
 
-- It replaces only the CLI and, on a managed Linux Node, the agent.
+- It replaces only the CLI. A Node gets `orbit-agent` from the Gateway through [install on mismatch](/reference/node-agent#install-on-mismatch).
 - The fleet rollout re-applies the Gateway-rendered footprint, such as the Caddyfile or the `tmpfiles` rule, over SSH.
 - Nothing runs it on an operator machine automatically. The operator runs it after the notice.
 - No agent signal triggers it.
@@ -302,15 +284,11 @@ The Gateway decides which release the fleet runs, but a compromised Gateway must
 
 A checksum proves the download matches the release. It does not prove the binary starts on this machine. Running `--version` before the swap keeps a binary that cannot start from replacing one that can.
 
-### Replace the CLI last
+### Keep releases side by side
 
 A standalone binary is a static PHP with the CLI appended as a PHAR, and it reads its own code from its path as it runs. A process whose file is replaced by a rename fails with exit 255 at its next class load. That is why releases live side by side behind a link: a running process keeps its versioned file, which the update does not touch. A test with real binaries confirmed it: an `orbit` command running across a link switch finished normally three times out of three, and across a rename it failed every time.
 
-The first update of a plain file still replaces the running file. So the command updates the agent first, loads what it still needs before the swap, and exits right after it prints the result. The same path rule explains why the CLI hashes its own binary through `<directory>/./orbit`: the binary reads its exact path as the appended PHAR, not as the whole file.
-
-### Keep the previous agent
-
-A new agent that does not start would leave the Node without presence or log streams until someone acts. Keeping the previous binary lets the command put the working agent back at once, and `NRestarts` shows a crash loop that a single `is-active` check can miss.
+The first update of a plain file still replaces the running file. So the command loads what it still needs before the swap and exits right after it prints the result. The same path rule explains why the CLI hashes its own binary through `<directory>/./orbit`: the binary reads its exact path as the appended PHAR, not as the whole file.
 
 ### Download with curl
 

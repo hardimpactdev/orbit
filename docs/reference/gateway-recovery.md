@@ -90,7 +90,7 @@ The archive contains secrets. Do not attach it to a bug report or commit it to G
 
 A Gateway in the release layout runs from immutable releases instead of an in-place checkout. Each release is one exact commit, built beside the live one, so preparing a release never changes what the Gateway serves.
 
-The account command `gateway.inspect-releases` reads the current link and release inventory. It validates each prepared release's `REVISION`, reports incomplete directories with their modification times, and orders retained releases by preparation time with the release ID as the tie-breaker. It also reports whether the serving application supersedes the caller's running application. It writes nothing. PHP derives paths without a Node connection and requests these observations through `AgentCommandRunner` when it needs live release state.
+The Gateway reads the current link and the release inventory itself, as the Gateway account, without the agent. So status, deploy, and rollback answer also when the Gateway's own agent is older than its code, or the release has no agent manifest. The read validates each prepared release's `REVISION`, reports incomplete directories with their modification times, and orders retained releases by preparation time with the release ID as the tie-breaker. It also reports whether the serving application supersedes the caller's running application. It writes nothing, and a layout entry that another account owns refuses the read.
 
 | Path | Content |
 | --- | --- |
@@ -113,14 +113,26 @@ As `orbit`, build a release for one commit:
 php /home/orbit/orbit/apps/gateway/artisan gateway:release:prepare <SHA>
 ```
 
-Name the commit by its hex SHA, 7 to 40 characters. Branch names, tags, and other revision syntax are refused. Prepare fetches the repository's branches through the [GitHub App](/reference/github-app) when the commit is not present yet, and fetches a full SHA directly when no branch holds it any more. Then it:
+Name the commit by its hex SHA, 7 to 40 characters. Branch names, tags, and other revision syntax are refused.
+
+Prepare first takes the commit's agent, in PHP and before any agent command, so a Gateway whose own agent predates its code can still prepare:
+
+1. It finds the commit's [published release](/reference/cli-binaries#published-releases). `git ls-remote` lists the `cli-v*` tags of `ORBIT_CLI_RELEASE_REPOSITORY`. The tag that points at the commit names the release, which also resolves a short SHA.
+2. It downloads `manifest.json`, `SHA256SUMS`, and the agent binary for the Gateway's platform, without authentication. It checks every digest, and the binary waits in `ORBIT_HOME/agent-artifacts`.
+
+A commit without a release yet refuses here with `gateway.release_agent_delivery_unavailable`, before anything changes. An automatic release tries it again 10 minutes later, as for any [retryable failure](#what-a-tick-does).
+
+Prepare then fetches the repository's branches through the [GitHub App](/reference/github-app) when the commit is not present yet, and fetches a full SHA directly when no branch holds it any more. Then it:
 
 1. creates the worktree `releases/<id>` for the exact commit and makes its Gateway cache directory private before Composer or Artisan runs; linked cache directories are refused;
 2. links the shared env file and the shared storage directory into it;
 3. runs `composer install --no-dev` and `composer check-platform-reqs --no-dev` for `apps/cli` and `apps/gateway`, with the committed locks. A release holds only the packages it runs, not Pest, PHPStan, Pint, Rector, or Boost;
-4. installs the commit's [web build](#web-build) from CI into the web directory, without serving it yet;
-5. gives Caddy the same access to the release's `public` directory that [Gateway web setup](#gateway-request-logs) gives a checkout, and makes the source directories and files read-only;
-6. writes `REVISION`, which the release reads for its [version](#release-layout), then runs `php artisan config:cache` in the release. The cache holds `APP_KEY`, so it is mode `0600`.
+4. writes the agent's `manifest.json` into `apps/agent/delivery/` and installs that pin on the Gateway's own Node, through the new binary's own [`agent.install`](/reference/node-agent#install-on-mismatch);
+5. installs the commit's [web build](#web-build) from CI into the web directory, without serving it yet;
+6. gives Caddy the same access to the release's `public` directory that [Gateway web setup](#gateway-request-logs) gives a checkout, and makes the source directories and files read-only;
+7. writes `REVISION`, which the release reads for its [version](#release-layout), then runs `php artisan config:cache` in the release. The cache holds `APP_KEY`, so it is mode `0600`.
+
+A release that already exists skips steps 1 to 3, and gets the manifest too when an older Gateway prepared it without one. A release that holds another manifest is refused.
 
 Every artisan command of a release runs with a clean environment that has only `HOME`, `PATH`, and `LANG`, so the release reads its configuration from the shared env file alone. These commands, and `composer install`, hold `ORBIT_HOME/gateway-release-step.lock` while they run. When the process that started one dies, for example with its SSH session, the command still finishes. Until it has, the next release step is refused with `gateway.release_in_progress`.
 
@@ -132,7 +144,7 @@ The account command `gateway.inspect-release-preparation` checks the shared layo
 
 Only a release with a `REVISION` file is prepared. When the configuration cannot be cached, prepare removes `REVISION` again. The Gateway runs with a cached configuration, so a change to the shared env file takes effect only after [`gateway:release:configure`](#apply-an-env-change). A release that already has it is reused without another build step. Only its web build is installed again when it is missing. A partial release from a failed or interrupted prepare is removed and built again on the next run of the same commit, or [pruned](#deploy-a-release) by a later verified release once it is 1 hour old.
 
-Prepare never touches the current release link, the database, or a running service.
+Prepare never touches the current release link, the database, or a running service other than the Gateway Node's agent.
 
 Prepare refuses before it fetches or writes when the releases directory has less free space than `ORBIT_GATEWAY_RELEASE_MIN_FREE_MB`, 1024 MiB by default. Each release has its own `vendor/` directories. Releases share the Git objects in `shared/orbit.git`, so a release costs about the size of its source and its two `vendor/` directories, about 115 MB without development packages.
 
@@ -154,6 +166,9 @@ The command prints one JSON object. Success exits 0 with `release`, `sha`, `path
 | `gateway.release_web_build_invalid` | The artifact is larger than the limits, has no digest or does not match it, has an unsafe entry, or has no `index.html`. The commit is marked failed. |
 | `gateway.release_web_build_unavailable` | GitHub Actions cannot be read: no GitHub App, no `Actions: read` permission, or no answer. The commit is tried again later. |
 | `gateway.release_web_directory_missing`, `gateway.release_web_install_failed` | The web directory is missing, or the build cannot be written or given to the `caddy` group. The commit is tried again later. |
+| `gateway.release_agent_delivery_unavailable` | No published release holds the commit yet, or its agent cannot be downloaded or does not match its digest. Nothing changed. The commit is tried again later. |
+| `gateway.release_agent_delivery_invalid` | The release's manifest does not match its files or `SHA256SUMS`, or the release directory already holds another manifest. |
+| `gateway.release_agent_install_failed` | The release's agent could not be installed on the Gateway's own Node. The message names the installer's error code. |
 
 #### Web build
 
@@ -285,11 +300,11 @@ Run `sudo -u orbit php <prepared-release>/apps/gateway/artisan gateway:release:s
 
 Release stage, deploy, finalize and abandon require one canonical, owned SQLite database file. Database URLs (`DB_URL`), read/write connection splits and PDO options are unsupported for these operations and refuse before release work. Admission compares the running Laravel connection and its open SQLite file with each cached configuration. Stage rechecks the newly regenerated target cache before snapshot or migration. Finalize rechecks under the release lock before its migration-status subprocess. Matching raw `DB_DATABASE` values alone do not establish identity.
 
-`gateway.inspect-release-owner` checks the execution account, canonical database path, shared state, existing lock modes and private configuration-cache files without changing them. It includes the prepared target's cache when that release exists. Before the runner reads Node intent, the Gateway requires an existing canonical SQLite file and checks the live connection, so a wrong configured path cannot create a new database. The Gateway supplies its process identity and configured paths, then compares the verified caches with that connection. Loading and comparing Laravel configuration stays in the control plane; filesystem ownership and permission checks live in the agent.
+The Gateway checks the execution account, canonical database path, shared state, existing lock modes and private configuration-cache files itself, without the agent, and changes none of them. It includes the prepared target's cache when that release exists. It requires an existing canonical SQLite file and checks the live connection, so a wrong configured path cannot create a new database, then compares the verified caches with that connection.
 
 Release admission creates absent release and step lock files exclusively with mode `0600`, independent of the caller’s umask. Existing locks must be regular, owned by the executing account and mode `0600`; symlinks, foreign ownership and permissive modes refuse without changing the file or its inode. The command does not repair existing locks.
 
-The Gateway holds the operation lock and asks `gateway.inspect-release-step` whether the preceding native step has finished. This read-only command checks both the file lock and the recorded command service's control group. Releasing the file lock does not admit another release while that service still has live children. An invalid or unreadable record refuses admission.
+The Gateway holds the operation lock and checks itself, without the agent, whether the preceding native step has finished. It checks both the step lock and the control group of the command service that the lock records. Releasing the file lock does not admit another release while that service still has live children. An invalid or unreadable record refuses admission.
 
 ### Finalization
 
@@ -432,7 +447,9 @@ When any step fails, the handoff still starts the scheduler unit, so the schedul
 
 ##### Gateway Node agent
 
-The [fleet rollout](#rollout-set-and-order) never visits the Gateway's own machine, so the scheduler phase updates that Node's `orbit-agent` itself. It runs with the release's own code, so it uses that release's [agent pin](/reference/node-agent#install-and-upgrade). It runs after verify, so an agent restart never delays verify. When smoke later fails and the release switches back, the scheduler phase runs again with the previous release's code, which moves the agent to that release's pin. It leaves the Gateway's CLI alone: the Gateway runs the release's own `apps/cli`.
+The [fleet rollout](#rollout-set-and-order) never visits the Gateway's own machine. [Prepare](#prepare-a-release) installs the release's pin there before any agent command, so an agent that predates the release's code never blocks it. Every agent command then keeps that Node at the pin of the code that sends it, through [install on mismatch](/reference/node-agent#install-on-mismatch). So the deployer's own later commands move it back to the deployer's pin until the switch.
+
+The scheduler phase updates that Node's `orbit-agent` to the release's pin once more. It runs with the release's own code, so it uses that release's [agent pin](/reference/node-agent#install-and-upgrade). It runs after verify, so an agent restart never delays verify. When smoke later fails and the release switches back, the scheduler phase runs again with the previous release's code, which moves the agent to that release's pin. It leaves the Gateway's CLI alone: the Gateway runs the release's own `apps/cli`.
 
 The update installs the release's pin through the agent's own installer, as a local process, never over SSH to itself. It stages the pinned binary under `ORBIT_HOME/agent-candidates` and runs that candidate's [`agent.install`](/reference/node-agent#install-on-mismatch). The installer holds `/run/lock/orbit-self-update.lock` and waits up to 120 seconds for it. It does nothing when the binary already matches the pin.
 

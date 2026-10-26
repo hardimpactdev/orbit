@@ -38,7 +38,6 @@ mod gateway_database;
 mod gateway_drain;
 mod gateway_fpm;
 mod gateway_identity;
-mod gateway_owner;
 mod gateway_recovery;
 mod gateway_releases;
 mod gateway_scheduler;
@@ -143,15 +142,11 @@ pub fn all() -> Vec<Entry> {
         entry::<gateway_releases::Switch>(),
         entry::<gateway_releases::Forward>(),
         entry::<gateway_releases::Source>(),
-        entry::<gateway_releases::Inventory>(),
         entry::<gateway_build::Inspect>(),
         entry::<gateway_build::Prepare>(),
-        entry::<gateway_build::delivery::Inspect>(),
-        entry::<gateway_build::delivery::Install>(),
         entry::<gateway_build::Finish>(),
         entry::<gateway_build::Refresh>(),
         entry::<gateway_build::Remove>(),
-        entry::<gateway_build::InspectStep>(),
         entry::<gateway_build::Migrate>(),
         entry::<gateway_build::CheckMigrations>(),
         entry::<gateway_build::Handoff>(),
@@ -161,7 +156,6 @@ pub fn all() -> Vec<Entry> {
         entry::<gateway_recovery::Verify>(),
         entry::<gateway_recovery::WriteReceipt>(),
         entry::<gateway_recovery::ReadReceipt>(),
-        entry::<gateway_owner::Inspect>(),
         entry::<gateway_web_build::Inspect>(),
         entry::<gateway_web_build::Install>(),
         entry::<gateway_web_build::Publish>(),

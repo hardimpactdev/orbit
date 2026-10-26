@@ -22,7 +22,7 @@ final readonly class BinaryInstaller
     public function __construct(private ReleaseDownloader $downloader) {}
 
     /**
-     * @param  string  $errorPrefix  The error code family: `self_update` for the CLI, `agent` for the agent.
+     * @param  string  $errorPrefix  The error code family, such as `self_update`.
      * @param  array{int, int}|null  $owner  The user and group IDs to give the candidate, or null to keep the caller's.
      * @param  (Closure(string): void)|null  $verify  Checks the verified candidate before the rename; throwing keeps the target.
      *
@@ -99,25 +99,6 @@ final readonly class BinaryInstaller
             @unlink($temporary);
 
             throw new SelfUpdateFailure($errorPrefix.'.install_failed', 'Could not point '.basename($link).' at '.$targetName.'.');
-        }
-
-        $this->sync($directory);
-    }
-
-    /**
-     * Moves a copy of `$source` over `$target` in one rename, such as the kept previous agent back into place.
-     *
-     * @throws SelfUpdateFailure
-     */
-    public function restore(string $source, string $target, string $errorPrefix): void
-    {
-        $directory = $this->writableDirectory($target, $errorPrefix);
-        $candidate = $this->candidate($directory, basename($target), $errorPrefix);
-
-        if (! @copy($source, $candidate) || ! @chmod($candidate, (int) (@fileperms($source) & 0777)) || ! @rename($candidate, $target)) {
-            @unlink($candidate);
-
-            throw new SelfUpdateFailure($errorPrefix.'.install_failed', 'Could not restore the previous '.basename($target).'.');
         }
 
         $this->sync($directory);

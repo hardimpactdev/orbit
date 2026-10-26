@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Domain\Fleet\FleetServingRelease;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
-use App\Domain\GatewayReleases\GatewayReleaseObserver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
@@ -24,7 +23,7 @@ beforeEach(function (): void {
     $this->node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
     $this->agents = new FakeAgentCommandRunner;
     $this->commands = new GatewayReleaseCommands($this->agents);
-    $this->layout = new GatewayReleaseLayout('/home/orbit/orbit/apps/gateway', $this->commands);
+    $this->layout = new GatewayReleaseLayout('/home/orbit/orbit/apps/gateway');
 });
 
 it('sends release identity and force intent and records the native source', function (): void {
@@ -98,63 +97,12 @@ arch('release selection uses the command boundary')->expect([
     GatewayReleasePromoter::class,
 ])->not->toUse([ProcessRunner::class, SshExecutor::class, 'file_get_contents', 'file_exists', 'filemtime', 'is_readable', 'is_link', 'symlink', 'readlink', 'realpath', 'unlink']);
 
-it('reads release observations through the runner and keeps their native ordering', function (): void {
-    $this->agents->answer('gateway.inspect-releases', [
-        'current' => 'aaaaaaaaaaaa', 'state' => 'adopted', 'superseded' => false,
-        'commits' => ['aaaaaaaaaaaa' => str_repeat('a', 40), 'bbbbbbbbbbbb' => str_repeat('b', 40)],
-        'incomplete' => ['cccccccccccc' => 123],
-        'retained' => ['bbbbbbbbbbbb', 'aaaaaaaaaaaa'],
-    ]);
-
-    expect($this->layout->currentReleaseId())->toBe('aaaaaaaaaaaa');
-    expect($this->layout->preparedCommit('aaaaaaaaaaaa'))->toBe(str_repeat('a', 40));
-    expect($this->layout->preparedCommit('cccccccccccc'))->toBeNull();
-    expect($this->layout->retainedReleaseIds())->toBe(['bbbbbbbbbbbb', 'aaaaaaaaaaaa']);
-    expect($this->layout->incompleteReleaseIds())->toBe(['cccccccccccc']);
-    expect($this->agents->calls[0])->toBe(['node' => 'gateway', 'command' => 'gateway.inspect-releases', 'input' => ['checkout' => $this->layout->applicationPath, 'running_application' => null]]);
-
-    $this->agents->answer('gateway.inspect-releases', ['current' => null, 'state' => 'unreadable', 'superseded' => false, 'commits' => [], 'incomplete' => [], 'retained' => []]);
-    expect($this->layout->isAdopted())->toBeFalse();
-});
-
-it('rejects malformed release inventories', function (array $changes): void {
-    $this->agents->answerMalformed('gateway.inspect-releases', array_replace([
-        'current' => null, 'state' => 'unreadable', 'superseded' => false, 'commits' => [], 'incomplete' => [], 'retained' => [],
-    ], $changes));
-
-    expect(fn () => $this->layout->observe())->toThrow(GatewayReleaseException::class, 'invalid release inventory');
-})->with([
-    'bad current' => [['current' => '../other']],
-    'mismatched revision' => [['commits' => ['aaaaaaaaaaaa' => str_repeat('b', 40)], 'retained' => ['aaaaaaaaaaaa']]],
-    'missing retained revision' => [['retained' => ['aaaaaaaaaaaa']]],
-    'bad incomplete time' => [['incomplete' => ['aaaaaaaaaaaa' => '123']]],
-    'prepared marked incomplete' => [['commits' => ['aaaaaaaaaaaa' => str_repeat('a', 40)], 'incomplete' => ['aaaaaaaaaaaa' => 123], 'retained' => ['aaaaaaaaaaaa']]],
-]);
-
 it('constructs paths without resolving an observer or an active Gateway', function (): void {
     $this->node->roles()->delete();
     $layout = new GatewayReleaseLayout('/home/orbit/orbit/apps/gateway');
 
     expect($layout->releaseApplicationPath('aaaaaaaaaaaa'))->toBe('/home/orbit/releases/aaaaaaaaaaaa/apps/gateway');
     expect($this->agents->calls)->toBe([]);
-});
-
-it('uses native serving identity and stops rollout when it cannot be observed', function (): void {
-    config(['orbit.gateway_checkout' => $this->layout->applicationPath]);
-    app()->instance(GatewayReleaseObserver::class, $this->commands);
-    $serving = new FleetServingRelease('/home/orbit/releases/bbbbbbbbbbbb/apps/gateway');
-    $this->agents->answer('gateway.inspect-releases', [
-        'current' => 'aaaaaaaaaaaa', 'state' => 'adopted', 'superseded' => true,
-        'commits' => ['aaaaaaaaaaaa' => str_repeat('a', 40)], 'incomplete' => [], 'retained' => ['aaaaaaaaaaaa'],
-    ]);
-
-    expect($serving->supersedes())->toBeTrue();
-    expect($serving->read())->toBe(['state' => 'adopted', 'commit' => str_repeat('a', 40)]);
-    expect($this->agents->calls[0]['input']['running_application'])->toBe('/home/orbit/releases/bbbbbbbbbbbb/apps/gateway');
-
-    $this->agents->refuse('gateway.inspect-releases', 'gateway.release_path_conflict');
-    expect($serving->read())->toBe(['state' => 'unreadable', 'commit' => null]);
-    expect($serving->supersedes())->toBeFalse();
 });
 
 it('reports a lost switch result as a failure and never resends it', function (): void {

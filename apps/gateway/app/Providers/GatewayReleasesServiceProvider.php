@@ -24,6 +24,7 @@ use App\Console\Commands\StageGatewayReleaseCommand;
 use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\Gateway\GatewayServingHost;
+use App\Domain\GatewayReleases\GatewayReleaseAgent;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseDrain;
@@ -45,6 +46,10 @@ use App\Domain\Settings\SettingRepository;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskTickClock;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentContract;
+use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AgentCommands\AgentTransports;
+use App\Infrastructure\AgentCommands\NativeAgentCommandRunner;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Gateway\GatewayApplicationPath;
 use App\Infrastructure\Gateway\GatewayCheckoutAccessConverger;
@@ -53,10 +58,12 @@ use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Infrastructure\GatewayReleases\ArtisanGatewayReleaseRuntime;
+use App\Infrastructure\GatewayReleases\FilesystemGatewayReleaseObserver;
 use App\Infrastructure\GatewayReleases\GatewayCleanupHandoff;
 use App\Infrastructure\GatewayReleases\GatewayNodeAgentUpdate;
 use App\Infrastructure\GatewayReleases\GatewayReleaseAdopter;
 use App\Infrastructure\GatewayReleases\GatewayReleaseAdoptionFiles;
+use App\Infrastructure\GatewayReleases\GatewayReleaseAgentDelivery;
 use App\Infrastructure\GatewayReleases\GatewayReleaseAlerts;
 use App\Infrastructure\GatewayReleases\GatewayReleaseBuilder;
 use App\Infrastructure\GatewayReleases\GatewayReleaseCommands;
@@ -98,7 +105,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
         $this->app->bind(GatewayReleaseExecutionOwner::class, NativeGatewayReleaseExecutionOwner::class);
         $this->app->bind(GatewayReleaseDrain::class, SystemdGatewayReleaseDrain::class);
         $this->app->bind(GatewayReleaseLayout::class, static fn (): GatewayReleaseLayout => GatewayReleaseLayout::fromConfig());
-        $this->app->bind(GatewayReleaseObserver::class, GatewayReleaseCommands::class);
+        $this->app->bind(GatewayReleaseObserver::class, FilesystemGatewayReleaseObserver::class);
         $this->app->bind(
             GatewayReleaseWebBuild::class,
             static fn (Application $app): GitHubArtifactWebBuild => new GitHubArtifactWebBuild(
@@ -166,7 +173,16 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
         );
         $this->app->singleton(
             GatewayReleaseLock::class,
-            static fn (Application $app): GatewayReleaseLock => new GatewayReleaseLock(rtrim(Config::string('orbit.home'), '/').'/gateway-release.lock', $app->make(GatewayReleaseCommands::class)),
+            static fn (Application $app): GatewayReleaseLock => new GatewayReleaseLock(rtrim(Config::string('orbit.home'), '/').'/gateway-release.lock'),
+        );
+        $this->app->bind(
+            GatewayReleaseAgent::class,
+            static fn (Application $app): GatewayReleaseAgentDelivery => new GatewayReleaseAgentDelivery(
+                processes: $app->make(ProcessRunner::class),
+                repository: Config::string('orbit.cli_releases.repository'),
+                cacheDirectory: rtrim(Config::string('orbit.home'), '/').'/agent-artifacts',
+                runner: static fn (AgentDelivery $delivery): AgentCommandRunner => new NativeAgentCommandRunner($app->make(AgentContract::class), $delivery, $app->make(AgentTransports::class)),
+            ),
         );
         $this->app->bind(
             GatewayReleaseBuilder::class,
@@ -175,6 +191,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 commands: $app->make(GatewayReleaseCommands::class),
                 readAccess: $app->make(RepositoryReadAccess::class),
                 web: $app->make(GatewayReleaseWebBuild::class),
+                agent: $app->make(GatewayReleaseAgent::class),
                 checkoutAccess: static function (string $application) use ($app): void {
                     $node = Node::query()->find($app->make(GatewayServingHost::class)->nodeId());
                     if (! $node instanceof Node) {

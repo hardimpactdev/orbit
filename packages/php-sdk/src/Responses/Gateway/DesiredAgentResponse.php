@@ -12,7 +12,7 @@ final readonly class DesiredAgentResponse
     /** @param  list<FleetReleaseAssetResponse>  $assets */
     public function __construct(
         public string $version,
-        /** The full source commit; the release tag is `agent-v<commit>`. */
+        /** The last commit that changed the agent's sources; the binaries are assets of the Gateway commit's release. */
         public string $commit,
         public array $assets,
     ) {}

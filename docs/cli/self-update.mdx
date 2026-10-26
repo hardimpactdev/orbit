@@ -1,18 +1,18 @@
 ---
 title: "self-update"
-description: "Update this machine to the Gateway's release: the orbit CLI, and orbit-agent on a managed Node."
+description: "Update this machine's orbit CLI to the Gateway's release."
 covers:
   - apps/cli/app/Commands/SelfUpdate/**
   - apps/gateway/app/Http/Controllers/Api/GatewayDesiredFleetStatesController.php
 ---
 
-`self-update` updates this machine to the active Gateway's release. It replaces the `orbit` binary with the CLI release of the Gateway's commit, after a SHA-256 check. On a managed Linux Node it also replaces `orbit-agent` when it differs from the Gateway's pin, and restarts it. [Orbit self-update](/reference/self-update) describes the desired fleet state, each step, and the checks.
+`self-update` updates this machine's `orbit` CLI to the active Gateway's release. It replaces the `orbit` binary with the CLI release of the Gateway's commit, after a SHA-256 check. It never touches `orbit-agent`: a Node gets the agent from the Gateway through [install on mismatch](/reference/node-agent#install-on-mismatch). [Orbit self-update](/reference/self-update) describes the desired fleet state, each step, and the checks.
 
 ## Commands
 
 | Command | Result |
 | --- | --- |
-| [`self-update`](#orbit-self-update) | Update the CLI, and the agent on a managed Node. |
+| [`self-update`](#orbit-self-update) | Update the CLI. |
 
 The command accepts `--json`.
 
@@ -34,7 +34,7 @@ sudo orbit self-update --json
 
 Run it with `sudo` on a Node, and when the binary lives in a directory only root may write, such as `/usr/local/bin`. A source checkout is left alone: update it with `git pull`.
 
-Human output is a progress tree with three steps: read the desired state, update the agent, and update the CLI. Each step shows its result, such as `0.4600.0 → 0.4681.0`, `Already 0.4681.0.`, or why it was skipped.
+Human output is a progress tree with two steps: read the desired state and update the CLI. Each step shows its result, such as `0.4600.0 → 0.4681.0`, `Already 0.4681.0.`, or why it was skipped.
 
 JSON output is one result:
 
@@ -44,15 +44,6 @@ JSON output is one result:
   "commit": "1f0e4c5d6b7a8c9d0e1f2a3b4c5d6e7f8a9b0c1d",
   "outcome": "updated",
   "steps": [
-    {
-      "step": "agent",
-      "outcome": "skipped",
-      "reason": "not_managed_node",
-      "path": null,
-      "before": null,
-      "after": null,
-      "error": null
-    },
     {
       "step": "cli",
       "outcome": "updated",
@@ -72,9 +63,9 @@ JSON output is one result:
 | `updated` | The binary was replaced. | A step changed something. Exit 0. |
 | `unchanged` | The binary already matches. | Nothing changed. Exit 0. |
 | `pending` | The Gateway's CLI release is not published yet. Nothing changed. | Run the command again in a few minutes. Exit 0. |
-| `incomplete` | Not a step outcome. | A step that applies here was skipped: the CLI release is unavailable, or the agent needs root. The machine is not up to date. Exit 0. |
-| `skipped` | The step did not run; `reason` says why. | Not a top-level outcome. A skip because the step does not apply here, such as `not_managed_node`, leaves the command `unchanged`. |
-| `failed` | The step failed; `error` says why. The CLI step does not run after a failed agent step. | Exit 1. |
+| `incomplete` | Not a step outcome. | The CLI step applies here but was skipped, because the CLI release is unavailable. The machine is not up to date. Exit 0. |
+| `skipped` | The step did not run; `reason` says why. | Not a top-level outcome. A skip because the step does not apply here, such as `source_checkout`, leaves the command `unchanged`. |
+| `failed` | The step failed; `error` says why. | Exit 1. |
 
 | Error code | Meaning |
 | --- | --- |
@@ -86,10 +77,6 @@ JSON output is one result:
 | `self_update.not_writable` | The command may not write to the directory of the binary. Run it with `sudo`. |
 | `self_update.install_failed` | The new binary could not be put in place. The old binary is still there. |
 | `self_update.release_mismatch` | The Gateway names a download that is not the Orbit release asset this CLI builds. Nothing was downloaded. |
-| `agent.checksum_mismatch`, `agent.download_failed`, `agent.not_writable`, `agent.release_mismatch` | The same failures for `orbit-agent`. Nothing changed. |
-| `agent.health_check_failed` | The observer did not stay active for 5 seconds on the new agent. The installer restored the kept binary. |
-| `agent.update_busy`, `agent.replace_failed`, `agent.candidate_digest_mismatch` | The agent's installer refused or could not replace the binary. The installed agent is unchanged. |
-| `agent.install_failed` | The agent's installer printed no result. |
 
 A failure before the steps start, such as `gateway.profile_missing`, `gateway.unreachable`, or `self_update.busy` when another self-update holds the lock for 120 seconds, prints the usual JSON error envelope.
 

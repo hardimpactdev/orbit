@@ -9,7 +9,6 @@ covers:
   - apps/gateway/app/{Http/Controllers/Api/AgentRealtimeController,Actions/Gateway/BootstrapGatewayAction}.php
   - apps/gateway/app/Http/Middleware/RequireNodeAgentSecret.php
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
-  - .github/workflows/orbit-agent-release.yml
 ---
 
 # Node agent
@@ -435,14 +434,14 @@ The subscriber accepts `client-log` and `client-log-end` only from `agent.{id}` 
 
 ## Delivery
 
-Each Gateway release pins one agent build: the delivery of the last commit that changed `apps/agent` or a compiled extension. CI builds the Linux and macOS artifacts from that exact source. A delivery job checks that their source commits and versions agree, verifies each binary digest, and combines them into one `manifest.json`:
+Each Gateway release pins one agent build: the delivery in its commit's [release](#releases). CI builds the Linux and macOS artifacts from that exact source. The manifest names the last commit that changed `apps/agent` or a compiled extension. A delivery job checks that their source commits and versions agree, verifies each binary digest, and combines them into one `manifest.json`:
 
 ```json
 {
   "commit": "<full commit SHA>",
   "version": "0.5.0",
   "artifacts": {
-    "linux-x86_64": {"sha256": "<sha256>", "path": "orbit-agent-linux-x86_64", "url": "https://github.com/hardimpactdev/orbit/releases/download/agent-v<commit>/orbit-agent-linux-x86_64"},
+    "linux-x86_64": {"sha256": "<sha256>", "path": "orbit-agent-linux-x86_64", "url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.N.0/orbit-agent-linux-x86_64"},
     "linux-aarch64": {"sha256": "<sha256>", "path": "orbit-agent-linux-aarch64", "url": "..."},
     "macos-aarch64": {"sha256": "<sha256>", "path": "orbit-agent-macos-aarch64", "url": "..."},
     "macos-x86_64": {"sha256": "<sha256>", "path": "orbit-agent-macos-x86_64", "url": "..."}
@@ -452,9 +451,9 @@ Each Gateway release pins one agent build: the delivery of the last commit that 
 
 The Gateway reads it from `apps/agent/delivery/manifest.json` in its checkout, or from the path in `ORBIT_AGENT_DELIVERY`. Git does not track the file. The Gateway picks a Node's artifact by its platform and recorded architecture. It uses the file beside the manifest when it exists, and otherwise downloads the URL once into `ORBIT_HOME/agent-artifacts/<sha256>`. It checks the SHA-256 before every use. An existing local artifact with the wrong digest refuses; only an absent local file uses the published URL. `apps/agent/scripts/build-delivery` writes the same layout for CI and for a topology.
 
-Preparing a managed Gateway release resolves the last commit that changed the agent or a compiled extension, then obtains that commit's published manifest from the release repository. The agent verifies the commit, Cargo version, all platform digests, and immutable artifact URLs before writing the manifest into the new checkout. Preparation, including adoption, refuses to finish without it. The release's private configuration cache selects this checkout's manifest, so a shared environment override cannot keep the previous release's pin. Repeating preparation verifies the existing manifest.
+[Preparing a Gateway release](/reference/gateway-recovery#prepare-a-release) takes the manifest from the commit's published release, in PHP and without the agent. It checks every digest against the release's `SHA256SUMS`, writes the manifest into the release, and installs the pin on the Gateway's own Node before any agent command. Preparation, including adoption, refuses without it. The release's private configuration cache selects this checkout's manifest, so a shared environment override cannot keep the previous release's pin. Repeating preparation verifies the existing manifest.
 
-The manifest also supplies the Linux pins in the [recipe identity](/reference/compute-drivers#recipe-identity). The recipe source carries no separate agent version or hashes. `python3 tools/check_agent_release.py <production-manifest.json>` checks a production delivery against its published commit tag, manifest, and checksums. This production check does not gate local or CI builds that use unpublished artifacts.
+The manifest also supplies the Linux pins in the [recipe identity](/reference/compute-drivers#recipe-identity). The recipe source carries no separate agent version or hashes.
 
 Convergence, Doctor's binary check, the fleet verifier, the release handoff, and the [desired fleet state](/reference/self-update#desired-fleet-state) all read this one pin.
 
@@ -497,15 +496,15 @@ The Gateway converges the agent at these points.
 | `node:add`, after the Metrics exporters | Provisioning fails at step `agent` with `node.agent_install_failed`. A new Node becomes `failed`, and an active Node stays `active`. |
 | A role converge on the Node | The role converge continues. The Gateway logs a warning, and Doctor reports the drift. |
 
-To upgrade the fleet, merge the agent change and release the Gateway. Every Node then gets the new pin on its next command, through [install on mismatch](#install-on-mismatch). The [fleet rollout](/reference/gateway-recovery#fleet-rollout) also runs `sudo orbit self-update` on each Node of the rollout set, one at a time. It downloads the pinned asset, checks it against the release's `SHA256SUMS`, and runs that candidate's own `agent.install`.
+To upgrade the fleet, merge the agent change and release the Gateway. Every Node then gets the new pin from the Gateway on its next command, through [install on mismatch](#install-on-mismatch). The [fleet rollout](/reference/gateway-recovery#fleet-rollout) sends `cli.self-update` to each Node of the rollout set, one at a time, so that command installs the pin first. `orbit self-update` itself replaces only the CLI.
 
-The rollout leaves out the Gateway's own Node. The [runtime handoff](/reference/gateway-recovery#gateway-node-agent) of each release installs that Node's pin through the local transport.
+The rollout leaves out the Gateway's own Node. [Prepare](/reference/gateway-recovery#prepare-a-release) installs the release's pin there before any agent command, and the [runtime handoff](/reference/gateway-recovery#gateway-node-agent) installs it again through the local transport.
 
-`agent.install` holds `/run/lock/orbit-self-update.lock` while it replaces and restarts the agent. `agent.configure` and `agent.remove` hold the same lock, after the installation. So no two of them swap or restart the agent at the same time. A self-update that keeps the lock longer than 5 minutes fails `agent.configure` with `agent.update_busy`.
+`agent.install` holds `/run/lock/orbit-self-update.lock` while it replaces and restarts the agent. `agent.configure` and `agent.remove` hold the same lock, after the installation. So no two of them swap or restart the agent at the same time. A CLI self-update that keeps the lock longer than 5 minutes fails `agent.configure` with `agent.update_busy`.
 
-`self-update` changes no configuration, certificate, secret, or unit; the rollout's footprint step re-applies those when their digest changed. Doctor reports each Node that runs another binary.
+An installation changes no configuration, certificate, secret, or unit; the rollout's footprint step re-applies those when their digest changed. Doctor reports each Node that runs another binary.
 
-The observer sends its version with each channel authorization: the Cargo version with the first 16 hexadecimal digits of its binary's SHA-256 as build metadata, such as `0.5.0+ad999ffe1ab24dca`. The Gateway derives the same string from the delivery for each Node, so presence proves the exact pinned binary. The Gateway keeps the version of `presence-node.{id}` in the agent view's file store without an expiry, because an agent that stays connected never joins again. The fleet rollout waits for the pinned version there after `self-update`, and the catch-up visits a Node whose agent reports another version.
+The observer sends its version with each channel authorization: the Cargo version with the first 16 hexadecimal digits of its binary's SHA-256 as build metadata, such as `0.5.0+ad999ffe1ab24dca`. The Gateway derives the same string from the delivery for each Node, so presence proves the exact pinned binary. The Gateway keeps the version of `presence-node.{id}` in the agent view's file store without an expiry, because an agent that stays connected never joins again. The fleet rollout waits for the pinned version there after `cli.self-update`, and the catch-up visits a Node whose agent reports another version.
 
 ## Failures
 
@@ -562,16 +561,7 @@ Run the [agent checks](/reference/bun-and-rust-projects#node-agent) as a normal 
 
 ## Releases
 
-Agent releases are automatic. A push to `main` builds the [delivery](#delivery) in CI from that exact source and uploads it as the `agent-delivery` artifact. After main's required checks pass, the Orbit Agent Release workflow downloads that artifact. It tags the delivery's commit `agent-v<commit>`, and publishes the same binaries with `SHA256SUMS` and a manifest that names their release URLs. It never rebuilds.
-
-`apps/agent/scripts/check-release-tag.sh` refuses these releases:
-
-- a tag that is not `agent-v<full commit SHA>`
-- a manifest that names another commit
-- a commit that is not the last change to `apps/agent` at the tested head
-- a release that already exists
-
-To publish the artifact of an earlier CI run again, run the workflow with `workflow_dispatch` and that run's `run_id`.
+The agent ships in the one public release that each green `main` commit gets, beside the CLI ([CLI binaries: Published releases](/reference/cli-binaries#published-releases)). A push to `main` builds the [delivery](#delivery) in CI from that exact source and uploads it as the `agent-delivery` artifact. After main's required checks pass, the Orbit CLI Release workflow downloads that artifact from the CI run, checks each binary against its tested digest, and publishes it with the CLI binaries. It never rebuilds the agent. It publishes with the workflow's own token; there is no other credential.
 
 | Asset | Contents |
 | --- | --- |
@@ -579,12 +569,9 @@ To publish the artifact of an earlier CI run again, run the workflow with `workf
 | `orbit-agent-linux-aarch64` | Static binary for `aarch64` Nodes |
 | `orbit-agent-macos-aarch64` | Command binary for Apple silicon Macs |
 | `orbit-agent-macos-x86_64` | Command binary for Intel Macs |
-| `SHA256SUMS` | The checksums of all four binaries |
-| `manifest.json` | The delivery manifest with release URLs |
+| `manifest.json` | The delivery manifest, with each binary's URL in this release |
 
-Only the release App can create an `agent-v*` tag. A tag ruleset restricts creation, update, and deletion, and the App's credentials live only in the protected `agent-release` environment. Task agents and maintainers have no bypass.
-
-A Gateway release that needs new agent code waits for that agent release. A Gateway change that leaves `apps/agent` unchanged keeps the existing delivery.
+The release's `SHA256SUMS` lists the agent binaries with the CLI binaries. A Gateway release of a commit waits for that commit's release, because [prepare](/reference/gateway-recovery#prepare-a-release) takes the agent from it.
 
 ## Limits
 
@@ -621,7 +608,9 @@ The agent runs on every Node, so memory matters. A Rust agent uses about 5 MB. P
 
 ### One pinned delivery
 
-A workflow artifact needs a GitHub login and expires, so the release publishes the tested artifact as release assets with permanent URLs. Building on each Node would put a Rust toolchain on production hosts. Resolving the latest release at install time would let an unreviewed build reach Nodes. So each Gateway release pins the exact digests of one delivery, the build of the last commit that changed the agent, and every reader takes the pin from it.
+A workflow artifact needs a GitHub login and expires, so the commit's release publishes the tested artifact as release assets with permanent URLs, beside the CLI. One release per commit needs no separate tag, token, or App. Building on each Node would put a Rust toolchain on production hosts. Resolving the latest release at install time would let an unreviewed build reach Nodes. So each Gateway release pins the exact digests of its own commit's delivery, and every reader takes the pin from it.
+
+The Gateway fetches and installs that delivery itself in PHP, so installing the agent never needs the agent.
 
 ### The view in a file cache
 

@@ -35,10 +35,12 @@ jobs:
     permissions:
       contents: read
       checks: read
+      actions: read
     outputs:
       commit: ${{ steps.release.outputs.commit }}
       version: ${{ steps.release.outputs.version }}
       tag: ${{ steps.release.outputs.tag }}
+      ci-run: ${{ steps.delivery.outputs.run }}
       publish: ${{ steps.existing.outputs.publish }}
     steps:
       - name: Check out main with full history
@@ -84,6 +86,25 @@ jobs:
           fi
           echo "Required checks passed on ${COMMIT}"
 
+      # The release carries the agent CI built and tested for this commit (ADR 0225); it never rebuilds it.
+      - name: Find the CI run with the tested agent delivery
+        id: delivery
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          COMMIT: ${{ steps.release.outputs.commit }}
+          RUN: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          if [ -z "$RUN" ]; then
+            RUN="$(gh api "repos/${REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${COMMIT}&branch=main&status=success&per_page=100" \
+              --jq '[.workflow_runs[] | select(.event == "push" or .event == "workflow_dispatch")] | first | .id // empty')"
+          fi
+          [ -n "$RUN" ] || { echo "::error::No passing CI run on main exists for ${COMMIT}."; exit 1; }
+          artifact="$(gh api "repos/${REPOSITORY}/actions/runs/${RUN}/artifacts?name=agent-delivery" --jq '[.artifacts[] | select(.expired | not)] | first | .id // empty')"
+          [ -n "$artifact" ] || { echo "::error::CI run ${RUN} has no unexpired agent-delivery artifact."; exit 1; }
+          echo "run=${RUN}" >> "$GITHUB_OUTPUT"
+
       - name: Check for an existing release
         id: existing
         env:
@@ -103,7 +124,8 @@ jobs:
             exit 0
           fi
           tagged="$(gh api "repos/${REPOSITORY}/git/ref/tags/${TAG}" --jq .object.sha)"
-          expected="$(printf '%s\n' SHA256SUMS "orbit-${VERSION}-linux-aarch64" "orbit-${VERSION}-linux-x86_64" "orbit-${VERSION}-macos-arm64")"
+          expected="$(printf '%s\n' SHA256SUMS manifest.json "orbit-${VERSION}-linux-aarch64" "orbit-${VERSION}-linux-x86_64" "orbit-${VERSION}-macos-arm64" \
+            orbit-agent-linux-aarch64 orbit-agent-linux-x86_64 orbit-agent-macos-aarch64 orbit-agent-macos-x86_64 | LC_ALL=C sort)"
           assets="$(jq -r '.assets[].name' <<< "$release" | LC_ALL=C sort)"
           if [ "$tagged" != "$COMMIT" ] || [ "$assets" != "$expected" ]; then
             echo "::error::Release ${TAG} exists but does not match ${COMMIT} and the expected assets. Published releases are never replaced."
@@ -127,6 +149,7 @@ jobs:
     runs-on: ubuntu-26.04
     permissions:
       contents: write
+      actions: read
     env:
       GH_TOKEN: ${{ github.token }}
       REPOSITORY: ${{ github.repository }}
@@ -147,8 +170,16 @@ jobs:
           pattern: orbit-*
           path: artifacts
 
+      - name: Download the tested agent delivery
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: agent-delivery
+          path: agent-delivery
+          run-id: ${{ needs.resolve.outputs.ci-run }}
+          github-token: ${{ github.token }}
+
       - name: Prepare release assets
-        run: bin/orbit-cli-release-assets "$VERSION" artifacts release
+        run: bin/orbit-cli-release-assets "$VERSION" artifacts agent-delivery "https://github.com/${REPOSITORY}/releases/download/${TAG}" release
 
       - name: Remove an unfinished draft
         run: |
@@ -171,7 +202,7 @@ jobs:
             --target "$COMMIT" \
             --title "orbit ${VERSION}" \
             --latest=false \
-            --notes "$(printf 'Orbit CLI %s, built from %s.\n\nCommit: %s\n\nVerify each download against SHA256SUMS. See https://orbit.nckrtl.com/docs/reference/cli-binaries.\n' "$VERSION" "$COMMIT" "$COMMIT")" \
+            --notes "$(printf 'Orbit CLI %s and orbit-agent, built from %s.\n\nCommit: %s\n\nVerify each download against SHA256SUMS. See https://orbit.nckrtl.com/docs/reference/cli-binaries.\n' "$VERSION" "$COMMIT" "$COMMIT")" \
             2> "$errors"; then
             cat "$errors" >&2
             exit 0

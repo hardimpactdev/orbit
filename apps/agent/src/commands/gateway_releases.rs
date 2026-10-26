@@ -6,9 +6,8 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeMap,
     fs, io,
-    os::unix::fs::{symlink, MetadataExt},
+    os::unix::fs::symlink,
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -62,99 +61,6 @@ pub struct ForwardOutput {
 #[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct SourceOutput {
     origin: String,
-}
-
-#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
-pub struct InventoryOutput {
-    current: Option<String>,
-    state: &'static str,
-    superseded: bool,
-    commits: BTreeMap<String, String>,
-    incomplete: BTreeMap<String, i64>,
-    retained: Vec<String>,
-}
-
-#[derive(schemars::JsonSchema, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct InventoryInput {
-    pub checkout: String,
-    pub running_application: Option<PathBuf>,
-}
-
-fn inventory(input: &InventoryInput) -> Result<InventoryOutput, Error> {
-    if input.running_application.as_ref().is_some_and(|path| {
-        !path.is_absolute()
-            || path
-                .components()
-                .any(|p| matches!(p, std::path::Component::ParentDir))
-    }) {
-        return Err(Error::Invalid {});
-    }
-    let layout = Layout::new(&input.checkout)?;
-    let current_meta = owned(&layout.current)?;
-    let superseded = current_meta.as_ref().is_some_and(|m| m.is_symlink())
-        && input.running_application.as_ref().is_some_and(|running| {
-            match (
-                fs::canonicalize(layout.current.join("apps/gateway")),
-                fs::canonicalize(running),
-            ) {
-                (Ok(serving), Ok(running)) => serving != running,
-                _ => false,
-            }
-        });
-    let mut result = InventoryOutput {
-        current: release_id(&layout, &layout.current)?,
-        state: if current_meta.is_some_and(|m| m.is_dir()) {
-            "in_place"
-        } else {
-            "unreadable"
-        },
-        superseded,
-        commits: BTreeMap::new(),
-        incomplete: BTreeMap::new(),
-        retained: Vec::new(),
-    };
-    let releases = layout.base.join("releases");
-    match owned(&releases)? {
-        None => return Ok(result),
-        Some(m) if m.is_dir() => {}
-        _ => return Err(Error::Conflict {}),
-    }
-    let mut retained = Vec::new();
-    for entry in fs::read_dir(&releases).map_err(|_| Error::Conflict {})? {
-        let entry = entry.map_err(|_| Error::Conflict {})?;
-        let Some(id) = entry
-            .file_name()
-            .to_str()
-            .filter(|id| hex(id, 12))
-            .map(str::to_owned)
-        else {
-            continue;
-        };
-        if !owned(&entry.path())?.is_some_and(|m| m.is_dir()) {
-            continue;
-        }
-        let revision = entry.path().join("REVISION");
-        if let Some(sha) = prepared(&layout, &id)? {
-            let modified = owned(&revision)?.ok_or(Error::Conflict {})?.mtime();
-            retained.push((modified, id.clone()));
-            result.commits.insert(id, sha);
-        } else if owned(&revision)?.is_none() {
-            result
-                .incomplete
-                .insert(id, owned(&entry.path())?.ok_or(Error::Conflict {})?.mtime());
-        }
-    }
-    if result
-        .current
-        .as_ref()
-        .is_some_and(|id| result.commits.contains_key(id))
-    {
-        result.state = "adopted";
-    }
-    retained.sort_by(|a, b| b.cmp(a));
-    result.retained = retained.into_iter().map(|(_, id)| id).collect();
-    Ok(result)
 }
 
 pub(super) fn release_id(layout: &Layout, path: &Path) -> Result<Option<String>, Error> {
@@ -329,14 +235,6 @@ command!(
     SourceOutput,
     false,
     source
-);
-command!(
-    Inventory,
-    "gateway.inspect-releases",
-    InventoryInput,
-    InventoryOutput,
-    false,
-    inventory
 );
 
 #[cfg(test)]
