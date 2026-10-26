@@ -71,6 +71,7 @@ Use the kind and target type to start or find the work of a command.
 | `instance:deploy` | `instance.deploy` | `instance` | Instance Node |
 | `instance:rollback` | `instance.rollback` | `instance` | Instance Node |
 | `tasks:provision` | `tasks.provision` | `task_group` | Gateway |
+| `POST /api/v1/task-groups/{group}/worker` | `tasks.worker` | `task_group` | Gateway |
 | `tasks:check` | `tasks.check` | `task_group` | Gateway |
 | `POST task-groups/{group}/script` | `tasks.script` | `task_group` | Gateway |
 | `tasks:analyze` | `tasks.analyze` | `task_group` | Gateway |
@@ -123,7 +124,7 @@ When the Gateway cannot push the job, it ends the record as `failed` with `opera
 
 ### Retry a start with a key
 
-Every route that starts an operation accepts an optional `Idempotency-Key` header. Today these are `POST /api/v1/instances/{instance}/deploy` (`instance.deploy`), `POST /api/v1/instances/{instance}/rollback` (`instance.rollback`), `POST /api/v1/task-groups/{group}/provision` (`tasks.provision`), `POST /api/v1/task-groups/{group}/check` (`tasks.check`), and `POST /api/v1/task-groups/{group}/turn` (`tasks.turn`). A key has 1 to 128 characters from `A-Z a-z 0-9 . _ : -`. Keys are case-sensitive and scoped to the operation kind, across all calling Nodes.
+Every route that starts an operation accepts an optional `Idempotency-Key` header. Today these are `POST /api/v1/instances/{instance}/deploy` (`instance.deploy`), `POST /api/v1/instances/{instance}/rollback` (`instance.rollback`), `POST /api/v1/task-groups/{group}/provision` (`tasks.provision`), `POST /api/v1/task-groups/{group}/check` (`tasks.check`), and `POST /api/v1/task-groups/{group}/turn` (`tasks.turn`). The worker start API requires a key and excludes its enrollment secret from the fingerprint. A key has 1 to 128 characters from `A-Z a-z 0-9 . _ : -`. Keys are case-sensitive and scoped to the operation kind, across all calling Nodes.
 
 After checking the caller's access, the Gateway checks the key before further input or domain validation and before creating a target. The same key, target, and input return `202` with the existing operation, even when it has finished or failed to dispatch. A different target or input returns `409 operation.idempotency_conflict` and starts nothing. JSON object member order and whitespace do not change the input; array order and value types do. A malformed key returns `422 validation.failed` in the normal validation envelope, with `Idempotency-Key` in `error.details`.
 
@@ -215,7 +216,7 @@ Each active run has a deadline of 1,600 seconds; time between waiting reads does
 
 A step can ask the runner to wait with a positive delay in seconds. The operation and its current step become `waiting`. The job ends and releases its attempt lease, while the operation keeps its target. Another start on that target still answers `409 operation.target_busy`.
 
-`tasks.provision` waits for VM capacity and readiness. `tasks.check` waits for VM resume, workspace ownership, and its detached check. Under the [handoff policy](/reference/tasks#check-an-external-group), it also waits for its handoff push and hosted CI. `tasks.turn` waits for a parked VM, a workspace lease, and the Pi turn to end. `tasks.publish` waits for VM resume and its queued push. Deploy and rollback keep their current execution.
+`tasks.provision` waits for VM capacity and readiness. Keyed `tasks.worker` waits for an existing VM to resume, then starts a worker with fresh enrollment under the workspace lease. `tasks.check` waits for VM resume, workspace ownership, and its detached check. Under the [handoff policy](/reference/tasks#check-an-external-group), it also waits for its handoff push and hosted CI. `tasks.turn` waits for a parked VM, a workspace lease, and the Pi turn to end. `tasks.publish` waits for VM resume and its queued push. Deploy and rollback keep their current execution.
 
 A delayed job first claims the operation with one conditional update from `waiting` to `running`, then calls the current step’s read hook. It does not start that work again. The read either finishes the step and continues the operation, or asks to wait again. Duplicate delayed jobs cannot read the step together, and an early job cannot read before the next read is due. A read that finds work still running consumes no recovery attempt. A wait has no time limit of its own. The orchestrator owns time budgets and cancels work that takes too long.
 

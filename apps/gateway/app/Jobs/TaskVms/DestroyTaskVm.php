@@ -19,6 +19,7 @@ use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\TaskVms\TaskVmGuest;
+use App\Infrastructure\TaskVms\TaskVmWorker;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskVm;
@@ -59,6 +60,7 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
         if (! $vm instanceof TaskVm || $vm->state === TaskVmState::Destroyed) {
             return;
         }
+        app(TaskVmWorker::class)->stopVm($vm);
         // Only the group's own workspace holds destroy back. Any other Instance on the Node lives in the VM and goes
         // with it.
         $group = $vm->group;

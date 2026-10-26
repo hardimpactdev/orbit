@@ -7,6 +7,7 @@ namespace App\Actions\TaskVms;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\TaskVms\TaskVmRuntime;
+use App\Infrastructure\TaskVms\TaskVmWorker;
 use App\Models\TaskVm;
 use Throwable;
 
@@ -27,6 +28,7 @@ final readonly class DeleteTaskVmAction
     public function execute(TaskVm $vm): void
     {
         try {
+            app(TaskVmWorker::class)->stopVm($vm);
             $vm->update(['state' => TaskVmState::Destroying, 'error_code' => null, 'error_message' => null]);
             $this->runtime->release($vm);
             $this->provider->destroy($vm);

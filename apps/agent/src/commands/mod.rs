@@ -240,6 +240,7 @@ pub fn all() -> Vec<Entry> {
         entry::<pi_artifact::Inspect>(),
         entry::<pi_runtime::Configure>(),
         entry::<swamp_worker::Start>(),
+        entry::<swamp_worker::Stop>(),
         entry::<swamp_worker::Trust>(),
         entry::<gateway_web::PrepareDirectory>(),
         entry::<gateway_certificate::Publish>(),

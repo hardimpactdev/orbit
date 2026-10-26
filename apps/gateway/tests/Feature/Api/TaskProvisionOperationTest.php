@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\TaskVms\DestroyEndedTaskVmsAction;
+use App\Actions\TaskVms\ParkIdleTaskVmsAction;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
 use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
 use App\Domain\Instances\DevelopmentSourceResolution;
@@ -26,15 +28,22 @@ use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
+use App\Domain\Tasks\TaskPullRequestException;
+use App\Domain\Tasks\TaskPullRequestPublisher;
+use App\Domain\Tasks\TaskReviewedCommitSource;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
+use App\Domain\TaskVms\VmObservation;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Tasks\NativeTaskExecutionLock;
+use App\Infrastructure\TaskVms\TaskVmWorker;
 use App\Infrastructure\TaskVms\TaskWorkerEnrollment;
 use App\Jobs\TaskVms\DestroyTaskVm;
+use App\Jobs\TaskVms\ParkTaskVm;
+use App\Jobs\TaskVms\ResumeTaskVm;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Node;
@@ -43,9 +52,11 @@ use App\Models\Project;
 use App\Models\Route;
 use App\Models\Task;
 use App\Models\TaskCheck;
+use App\Models\TaskReviewedCommit;
 use App\Models\TaskVm;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
@@ -59,6 +70,7 @@ use Tests\Support\RecordingTaskVmProvider;
 use Tests\Support\TaskAnalysisAdapterFixture;
 
 require_once __DIR__.'/../../Support/TaskCheckRunnerFixtures.php';
+use App\Actions\Operations\CancelOperationAction;
 use App\Domain\Tasks\TaskProvisionOperation;
 use App\Models\TaskWorkspaceLeaseRecord;
 use Illuminate\Support\Facades\Cache;
@@ -644,7 +656,7 @@ describe('optional provision worker', function (): void {
         bind_task_node_reachability();
         $provider = new RecordingTaskVmProvider;
         app()->instance(TaskVmProvider::class, $provider);
-        $agents = (new FakeAgentCommandRunner)->answer('swamp.start-worker', ['started' => true]);
+        $agents = (new FakeAgentCommandRunner)->answer('swamp.start-worker', ['started' => true])->answer('swamp.stop-worker', ['stopped' => true]);
         app()->instance(AgentCommandRunner::class, $agents);
         $response = $this->postJson('/api/v1/task-groups/'.$group->id.'/provision', ['worker' => [
             'orchestrator_url' => 'wss://swamp.orbit', 'enrollment_token' => 'group.'.str_repeat('f', 64),
@@ -659,9 +671,14 @@ describe('optional provision worker', function (): void {
         expect($provider->vmCalls)->toBe([]);
         Queue::fake([DestroyTaskVm::class]);
 
-        // The worker is a guest service, so deleting its VM ends it without a second stop path.
+        $provider->onDestroy = function () use ($agents): void {
+            expect($agents->commands())->toBe(['swamp.start-worker', 'swamp.stop-worker']);
+        };
+        // Worker stop precedes deletion, even when a later teardown step must wait.
         $this->postJson('/api/v1/task-groups/'.$group->id.'/cancel')->assertOk()->assertJsonPath('data.status', 'cancelled');
 
+        expect($agents->commands())->toBe(['swamp.start-worker', 'swamp.stop-worker']);
+        expect($vm->fresh()->worker_stop_required)->toBeFalse();
         expect($provider->vmCalls)->toBe(['destroy '.$vm->name]);
         expect($vm->refresh()->state)->toBe(TaskVmState::Destroying);
         expect(Instance::query()->find($workspace->id))->toBeNull();
@@ -682,7 +699,7 @@ describe('optional provision worker', function (): void {
         test_task_vm($group, $this->gatewayNode);
         provision_operation_fakes();
         $token = 'group.'.str_repeat('c', 64);
-        $agents = (new FakeAgentCommandRunner)->answer('swamp.start-worker', static fn (): array => throw new RuntimeException($token));
+        $agents = (new FakeAgentCommandRunner)->answer('swamp.start-worker', static fn (): array => throw new RuntimeException($token))->answer('swamp.stop-worker', ['stopped' => true]);
         app()->instance(AgentCommandRunner::class, $agents);
         Log::spy();
         $response = $this->postJson('/api/v1/task-groups/'.$group->id.'/provision', ['worker' => ['orchestrator_url' => 'wss://swamp.orbit', 'enrollment_token' => $token]])->assertAccepted();
@@ -705,15 +722,9 @@ describe('optional provision worker', function (): void {
     ]);
 });
 
-it('fails provision when the staged enrollment expires without passing a token to the VM', function (): void {
+it('rejects an expired staged enrollment before allocating a VM', function (): void {
     $group = provision_operation_group();
-    test_task_vm($group, $this->gatewayNode);
-    provision_operation_fakes();
-    $agents = (new FakeAgentCommandRunner)->answer('swamp.start-worker', function (array $input): array {
-        expect($input['enrollment_token'])->toBeNull();
-
-        return ['started' => false];
-    });
+    $agents = new FakeAgentCommandRunner;
     app()->instance(AgentCommandRunner::class, $agents);
     $response = $this->postJson('/api/v1/task-groups/'.$group->id.'/provision', ['worker' => [
         'orchestrator_url' => 'wss://swamp.orbit', 'enrollment_token' => 'expired.'.str_repeat('d', 64),
@@ -723,6 +734,8 @@ it('fails provision when the staged enrollment expires without passing a token t
     app(OperationRunner::class)->run($operation->id);
     expect($operation->refresh()->error_code)->toBe('tasks.worker_enrollment_expired');
     expect($group->refresh()->status)->toBe(TaskGroupStatus::Failed);
+    expect($agents->calls)->toBe([]);
+    expect(TaskVm::query()->count())->toBe(0);
 });
 
 it('removes worker startup material when the workspace Route fails before worker startup', function (): void {
@@ -740,4 +753,215 @@ it('removes worker startup material when the workspace Route fails before worker
     expect($operation->refresh()->error_code)->toBe('route.projection_failed');
     expect($agents->calls)->toBe([]);
     expect(app(TaskWorkerEnrollment::class)->read($operation->input['worker']['enrollment_reference']))->toBeNull();
+});
+
+/** @return array{Task, TaskVm} */
+function worker_operation_workspace(): array
+{
+    $group = provision_operation_group(TaskGroupStatus::Running);
+    $node = Node::query()->create([
+        'name' => 'worker-vm', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.129', 'wireguard_ip' => '10.44.0.129', 'user' => 'orbit',
+    ]);
+    $workspace = test_task_workspace($group, ['node_id' => $node->id]);
+    $vm = test_task_vm($group, $node);
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
+    TaskVmSettingsBuilder::bind();
+
+    return [$group->refresh(), $vm];
+}
+
+function worker_operation_start(Task $group, string $key = 'worker.1', string $secret = 'a'): Operation
+{
+    $response = test()->postJson('/api/v1/task-groups/'.$group->id.'/worker', ['worker' => [
+        'orchestrator_url' => 'wss://swamp.orbit', 'enrollment_token' => 'group.'.str_repeat($secret, 64),
+        'labels' => ['group' => (string) $group->id],
+    ]], ['Idempotency-Key' => $key])->assertAccepted()->assertJsonPath('data.kind', 'tasks.worker');
+
+    return Operation::query()->findOrFail($response->json('data.id'));
+}
+
+it('starts a worker again on the same group after parking and resuming its VM', function (): void {
+    [$group, $vm] = worker_operation_workspace();
+    $provider = new RecordingTaskVmProvider;
+    app()->instance(TaskVmProvider::class, $provider);
+    $agents = (new FakeAgentCommandRunner)
+        ->answer('swamp.start-worker', ['started' => true])
+        ->answer('agent.status', ['version' => '0.5.0', 'sha256' => str_repeat('a', 64), 'platform' => 'linux', 'architecture' => 'x86_64', 'observer' => 'active']);
+    app()->instance(AgentCommandRunner::class, $agents);
+    Http::fake(['http://10.44.0.129:3774/capabilities' => Http::response(['models' => []])]);
+    $first = worker_operation_start($group);
+    app(OperationRunner::class)->run($first->id);
+    expect($first->refresh()->status)->toBe(OperationStatus::Succeeded);
+    $group->tasks()->update(['status' => TaskStatus::Completed, 'settled_at' => now()->subHour()]);
+    $group->update(['status' => TaskGroupStatus::WaitingForReview, 'pr_url' => 'https://github.com/acme/provision/pull/1', 'settled_at' => now()->subHour()]);
+    $vm->update(['ready_at' => now()->subHour()]);
+    $workspaceId = $group->taskable_id;
+    Queue::fake([ParkTaskVm::class, ResumeTaskVm::class]);
+
+    expect(app(ParkIdleTaskVmsAction::class)->execute())->toBe(1);
+    app()->call([new ParkTaskVm($vm->id), 'handle']);
+    expect($vm->refresh()->state)->toBe(TaskVmState::Parked);
+    $second = worker_operation_start($group, 'worker.2', 'b');
+    app(OperationRunner::class)->run($second->id);
+    expect($second->refresh()->status)->toBe(OperationStatus::Waiting);
+    expect(array_column($agents->calls, 'command'))->toBe(['swamp.start-worker']);
+    Queue::assertPushed(ResumeTaskVm::class, fn (ResumeTaskVm $job): bool => $job->taskVmId === $vm->id);
+    app()->call([new ResumeTaskVm($vm->id), 'handle']);
+    $this->travel(10)->seconds();
+    app(OperationRunner::class)->read($second->id);
+
+    expect($second->refresh()->status)->toBe(OperationStatus::Succeeded);
+    expect($vm->refresh()->state)->toBe(TaskVmState::Ready);
+    expect($provider->vmCalls)->toBe(['stop '.$vm->name, 'start '.$vm->name]);
+    $starts = array_values(array_filter($agents->calls, fn (array $call): bool => $call['command'] === 'swamp.start-worker'));
+    expect($starts)->toHaveCount(2);
+    expect($starts[1]['input']['enrollment_id'])->not->toBe($starts[0]['input']['enrollment_id']);
+    expect($starts[1]['input']['enrollment_token'])->toBe('group.'.str_repeat('b', 64));
+    expect($group->refresh()->taskable_id)->toBe($workspaceId);
+    expect($group->status)->toBe(TaskGroupStatus::WaitingForReview);
+    expect(TaskVm::query()->count())->toBe(1);
+    expect(app(TaskWorkerEnrollment::class)->read($second->input['worker']['enrollment_reference']))->toBeNull();
+});
+
+it('replays worker and provision keys with a new token without retaining token-derived fingerprints', function (string $route): void {
+    [$group, $vm] = worker_operation_workspace();
+    if ($route === 'provision') {
+        $group->taskable()->dissociate();
+        $group->status = TaskGroupStatus::Todo;
+        $group->save();
+        Instance::query()->where('task_workspace_owner_id', $group->id)->delete();
+    }
+    $payload = ['worker' => ['orchestrator_url' => 'wss://swamp.orbit', 'enrollment_token' => 'old.'.str_repeat('a', 64)]];
+    $url = '/api/v1/task-groups/'.$group->id.'/'.$route;
+    $response = $this->postJson($url, $payload, ['Idempotency-Key' => 'worker.retry'])->assertAccepted();
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+    unset($payload['worker']['enrollment_token']);
+    $expected = hash('sha256', json_encode(['target' => ['group' => $group->id], 'input' => json_encode($payload, JSON_PRESERVE_ZERO_FRACTION)], JSON_PRESERVE_ZERO_FRACTION));
+    expect($operation->idempotency_fingerprint)->toBe($expected);
+    $payload['worker']['enrollment_token'] = 'fresh.'.str_repeat('b', 64);
+    $this->postJson($url, $payload, ['Idempotency-Key' => 'worker.retry'])->assertAccepted()->assertJsonPath('data.id', $operation->id);
+    expect(Operation::query()->count())->toBe(1);
+    expect(app(TaskWorkerEnrollment::class)->read($operation->input['worker']['enrollment_reference']))->toBe('old.'.str_repeat('a', 64));
+    $payload['worker']['orchestrator_url'] = 'wss://other.orbit';
+    $this->postJson($url, $payload, ['Idempotency-Key' => 'worker.retry'])->assertConflict()->assertJsonPath('error.code', 'operation.idempotency_conflict');
+})->with(['worker', 'provision']);
+
+it('fails expired worker enrollment before resuming a parked VM', function (): void {
+    [$group, $vm] = worker_operation_workspace();
+    $vm->update(['state' => TaskVmState::Parked]);
+    Queue::fake([ResumeTaskVm::class]);
+    $operation = worker_operation_start($group);
+    Cache::forget('tasks:worker-enrollment:'.$operation->input['worker']['enrollment_reference']);
+    app(OperationRunner::class)->run($operation->id);
+    expect($operation->refresh()->error_code)->toBe('tasks.worker_enrollment_expired');
+    Queue::assertNotPushed(ResumeTaskVm::class);
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Running);
+});
+
+it('requires worker enrollment, a key, an open external group and an existing VM workspace', function (): void {
+    [$group, $vm] = worker_operation_workspace();
+    $url = '/api/v1/task-groups/'.$group->id.'/worker';
+    $this->postJson($url, [])->assertUnprocessable();
+    $this->postJson($url, [], ['Idempotency-Key' => 'worker.invalid'])->assertUnprocessable();
+    $vm->delete();
+    $payload = ['worker' => ['orchestrator_url' => 'wss://swamp.orbit', 'enrollment_token' => 'group.'.str_repeat('a', 64)]];
+    $this->postJson($url, $payload, ['Idempotency-Key' => 'worker.no-vm'])->assertConflict()->assertJsonPath('error.code', 'tasks.no_workspace');
+    Task::topLevel()->whereKey($group->id)->update(['orchestration' => TaskOrchestration::Tick]);
+    $group->refresh();
+    $this->postJson($url, $payload, ['Idempotency-Key' => 'worker.tick'])->assertConflict()->assertJsonPath('error.code', 'tasks.not_orchestrated');
+    Task::topLevel()->whereKey($group->id)->update(['orchestration' => TaskOrchestration::External, 'status' => TaskGroupStatus::Cancelled]);
+    $group->refresh();
+    $this->postJson($url, $payload, ['Idempotency-Key' => 'worker.closed'])->assertConflict()->assertJsonPath('error.code', 'tasks.group_closed');
+    expect(Operation::query()->count())->toBe(0);
+});
+
+it('stops the worker before preservation can leave the VM alive', function (string $path): void {
+    [$group, $vm] = worker_operation_workspace();
+    bind_task_node_reachability();
+    $vm->update(['worker_stop_required' => true]);
+    $group->update(['status' => TaskGroupStatus::WaitingForReview]);
+    $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
+    TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => str_repeat('c', 40), 'source' => TaskReviewedCommitSource::OrbitPush]);
+    $agents = (new FakeAgentCommandRunner)->answer('swamp.stop-worker', ['stopped' => true]);
+    app()->instance(AgentCommandRunner::class, $agents);
+    mock(TaskPullRequestPublisher::class)->shouldReceive('push')->once()->andReturnUsing(function () use ($vm, $agents): void {
+        expect($agents->commands())->toBe(['swamp.stop-worker']);
+        expect($vm->fresh()->worker_stop_required)->toBeFalse();
+        throw new TaskPullRequestException('Preservation is waiting.');
+    });
+    $provider = new RecordingTaskVmProvider;
+    app()->instance(TaskVmProvider::class, $provider);
+
+    if ($path === 'complete') {
+        $this->postJson('/api/v1/task-groups/'.$group->id.'/complete')->assertOk()->assertJsonPath('data.status', 'completed');
+    } else {
+        expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($group))->toThrow(TaskPullRequestException::class);
+        expect($group->fresh()->status)->toBe(TaskGroupStatus::WaitingForReview);
+    }
+
+    expect($provider->vmCalls)->toBe([]);
+    expect($vm->fresh()->state)->toBe(TaskVmState::Ready);
+    expect($group->fresh()->taskable_id)->not->toBeNull();
+})->with(['complete', 'workspace']);
+
+it('holds group ending when a live VM cannot confirm its worker stop', function (): void {
+    [$group, $vm] = worker_operation_workspace();
+    $vm->update(['worker_stop_required' => true]);
+    $agents = (new FakeAgentCommandRunner)->answer('swamp.stop-worker', static fn (): array => throw new RuntimeException('unsafe diagnostics'));
+    app()->instance(AgentCommandRunner::class, $agents);
+    $provider = new RecordingTaskVmProvider;
+    app()->instance(TaskVmProvider::class, $provider);
+    $this->postJson('/api/v1/task-groups/'.$group->id.'/cancel')->assertStatus(502)->assertJsonPath('error.code', 'tasks.worker_stop_failed')->assertDontSee('unsafe diagnostics');
+    expect($vm->fresh()->worker_stop_required)->toBeTrue();
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Running);
+    expect($provider->calls)->toBe(['observe']);
+});
+
+it('accepts provider proof that an unreachable worker VM is stopped or absent', function (bool $absent): void {
+    [$group, $vm] = worker_operation_workspace();
+    $vm->update(['worker_stop_required' => true, 'state' => TaskVmState::Parked]);
+    $agents = (new FakeAgentCommandRunner)->answer('swamp.stop-worker', static fn (): array => throw new RuntimeException('unreachable'));
+    app()->instance(AgentCommandRunner::class, $agents);
+    $provider = new RecordingTaskVmProvider;
+    $provider->observation = $absent ? null : new VmObservation(false, null);
+    app()->instance(TaskVmProvider::class, $provider);
+    app(TaskVmWorker::class)->stopGroup($group);
+    expect($vm->fresh()->worker_stop_required)->toBeFalse();
+    expect($provider->calls)->toBe(['observe']);
+})->with([false, true]);
+
+it('clears cancelled worker enrollment without starting a worker', function (): void {
+    [$group, $vm] = worker_operation_workspace();
+    $vm->update(['state' => TaskVmState::Parked]);
+    Queue::fake([ResumeTaskVm::class]);
+    $agents = new FakeAgentCommandRunner;
+    app()->instance(AgentCommandRunner::class, $agents);
+    $operation = worker_operation_start($group);
+    app(OperationRunner::class)->run($operation->id);
+    app(CancelOperationAction::class)->execute($operation);
+    expect($operation->refresh()->status)->toBe(OperationStatus::Cancelled);
+    expect(app(TaskWorkerEnrollment::class)->read($operation->input['worker']['enrollment_reference']))->toBeNull();
+    expect($agents->calls)->toBe([]);
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Running);
+});
+
+it('stops the worker before a destroy job waits for unpublished reviewed work', function (): void {
+    [$group, $vm] = worker_operation_workspace();
+    $vm->update(['worker_stop_required' => true]);
+    $group->update(['status' => TaskGroupStatus::Completed]);
+    $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
+    TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => str_repeat('c', 40), 'source' => TaskReviewedCommitSource::OrbitPush]);
+    $agents = (new FakeAgentCommandRunner)->answer('swamp.stop-worker', ['stopped' => true]);
+    app()->instance(AgentCommandRunner::class, $agents);
+    $provider = new RecordingTaskVmProvider;
+    app()->instance(TaskVmProvider::class, $provider);
+
+    app()->call([new DestroyTaskVm($vm->id), 'handle']);
+
+    expect($agents->commands())->toBe(['swamp.stop-worker']);
+    expect($vm->fresh()->worker_stop_required)->toBeFalse();
+    expect($vm->fresh()->state)->toBe(TaskVmState::Ready);
+    expect($group->fresh()->taskable_id)->not->toBeNull();
+    expect($provider->calls)->toBe(['observe']);
 });

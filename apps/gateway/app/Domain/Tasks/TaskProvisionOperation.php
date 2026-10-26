@@ -86,6 +86,7 @@ final readonly class TaskProvisionOperation implements OperationWaitingKind, Ope
 
                     return $this->leases->acquire($group, 'provision', 'operation:'.$run->operation()->id)->id;
                 }
+                $this->worker->requireEnrollment($run->operation());
                 if ($group->status !== TaskGroupStatus::Reserved) {
                     self::requireTodo($group);
                 }
@@ -194,6 +195,9 @@ final readonly class TaskProvisionOperation implements OperationWaitingKind, Ope
         $this->worker->forget($operation);
         $this->releaseReservation($operation);
         $group = Task::topLevel()->find($operation->target_id);
+        if ($group instanceof Task) {
+            $this->worker->stopGroup($group);
+        }
         if ($failure->status === OperationStatus::Failed && $group instanceof Task && ! in_array($group->status, TaskGroupStatus::endedStatuses(), true)) {
             $group->update(['status' => TaskGroupStatus::Failed, 'settled_at' => now()]);
         }

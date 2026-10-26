@@ -10524,6 +10524,81 @@
       }
     },
     {
+      "name": "tasks-worker",
+      "extension": "tasks",
+      "title": "Start a Task group Swamp worker",
+      "description": "Starts keyed tasks.worker on an open external group with an existing task VM workspace. Requires worker enrollment and Idempotency-Key. Resumes a parked VM and starts or replaces the official worker with fresh enrollment, without allocating a VM or changing group status. Replays do not restart the worker; token changes do not conflict. Success confirms process execution, not Swamp enrollment. See /reference/tasks#start-a-group-worker.",
+      "method": "POST",
+      "path": "/api/v1/task-groups/{group}/worker",
+      "path_inputs": [
+        "group"
+      ],
+      "query_inputs": [],
+      "header_inputs": [
+        "Idempotency-Key"
+      ],
+      "starts_operation": true,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          },
+          "Idempotency-Key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "description": "A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409)."
+          },
+          "worker": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "orchestrator_url",
+              "enrollment_token"
+            ],
+            "properties": {
+              "orchestrator_url": {
+                "type": "string",
+                "maxLength": 2048,
+                "pattern": "^wss://[a-zA-Z0-9.-]+(?::[0-9]{1,5})?(?:/[a-zA-Z0-9._~!$&\\x27()*+,;=:@/-]*)?$(?![\\s\\S])",
+                "description": "Orchestrator WebSocket URL without credentials, query, or fragment."
+              },
+              "enrollment_token": {
+                "type": "string",
+                "maxLength": 4096,
+                "writeOnly": true,
+                "format": "password",
+                "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]{16,}$(?![\\s\\S])",
+                "description": "Short-lived single-group enrollment secret; used only for worker startup."
+              },
+              "labels": {
+                "type": "object",
+                "maxProperties": 32,
+                "propertyNames": {
+                  "pattern": "^[A-Za-z0-9_.-]{1,64}$(?![\\s\\S])"
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9_.-]+$(?![\\s\\S])"
+                }
+              }
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group",
+          "Idempotency-Key",
+          "worker"
+        ]
+      }
+    },
+    {
       "name": "tool-adopt",
       "extension": null,
       "title": "Adopt a Tool",

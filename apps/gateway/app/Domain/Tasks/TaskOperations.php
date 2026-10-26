@@ -7,14 +7,18 @@ namespace App\Domain\Tasks;
 use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\StartOperationAction;
 use App\Actions\Tasks\RequireTasksExtensionAction;
+use App\Data\Tasks\TaskWorkerData;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\TaskVms\TaskWorkerEnrollment;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Task;
 use Closure;
+use SensitiveParameter;
+use Throwable;
 
 /** Admission and cancellation shared by every operation whose target is a task group. */
 final readonly class TaskOperations
@@ -25,7 +29,31 @@ final readonly class TaskOperations
         private OperationIdempotency $idempotency,
         private TaskExecutionLock $execution,
         private RequireTasksExtensionAction $extension,
+        private TaskWorkerEnrollment $enrollment,
     ) {}
+
+    /** @param Closure(Task): void $validate */
+    public function startWithWorker(Task $group, string $kind, #[SensitiveParameter] ?TaskWorkerData $worker, Closure $validate, string $triggeredBy, ?string $requestId): Operation
+    {
+        $reference = $worker === null ? null : $this->enrollment->stage($worker->enrollment_token);
+        $input = $worker === null ? [] : ['worker' => [
+            'orchestrator_url' => $worker->orchestrator_url, 'labels' => $worker->labels, 'enrollment_reference' => $reference,
+        ]];
+        try {
+            $operation = $this->start($group, $kind, $input, $validate, $triggeredBy, $requestId);
+        } catch (Throwable $exception) {
+            if ($reference !== null) {
+                $this->enrollment->forget($reference);
+            }
+            throw $exception;
+        }
+        $recorded = $operation->input['worker'] ?? null;
+        if ($reference !== null && (! is_array($recorded) || ($recorded['enrollment_reference'] ?? null) !== $reference)) {
+            $this->enrollment->forget($reference);
+        }
+
+        return $operation;
+    }
 
     /**
      * @param  array<string, mixed>  $input

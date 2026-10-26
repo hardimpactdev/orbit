@@ -13,6 +13,7 @@ use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOperations;
 use App\Domain\Tasks\TaskStatus;
+use App\Infrastructure\TaskVms\TaskVmWorker;
 use App\Models\Instance;
 use App\Models\Task;
 use Illuminate\Support\Facades\DB;
@@ -40,6 +41,12 @@ final readonly class CompleteTaskGroupAction
     {
         $this->requireExtension->execute();
 
+        return $this->execution->synchronized($group->id, fn (): Task => $this->complete($group, $finishWhenRemovalFails), wait: false);
+    }
+
+    /** Keep worker start and group completion exclusive through the remote stop and terminal write. */
+    private function complete(Task $group, bool $finishWhenRemovalFails): Task
+    {
         $group->refresh()->load(['project', 'tasks', 'taskable']);
 
         if (in_array($group->status, [TaskGroupStatus::Running, TaskGroupStatus::Reviewing], true)) {
@@ -48,6 +55,7 @@ final readonly class CompleteTaskGroupAction
             throw $this->notReady();
         }
         app(TaskOperations::class)->cancelOpen($group);
+        app(TaskVmWorker::class)->stopGroup($group);
 
         if ($group->status === TaskGroupStatus::Completed) {
             $this->removeOrFinish($group, $finishWhenRemovalFails);

@@ -104,15 +104,19 @@ The provision API and generated MCP tool accept an optional `worker` object. Omi
 | --- | --- |
 | `worker.orchestrator_url` | Required `wss://` URL without user information, query, or fragment; the VM must reach it for WebSocket control and HTTPS data |
 | `worker.enrollment_token` | Required secret in Swamp's `name.secret` format; the orchestrator mints a short-lived, single-machine token for this group |
-| `worker.labels` | Optional object of scheduling labels, such as `group=2074`; keys and values contain only letters, digits, dots, underscores, and hyphens |
+| `worker.labels` | Optional object of scheduling labels; use `group=<group id>` to restrict placement to this group. Keys and values contain only letters, digits, dots, underscores, and hyphens |
 
 Orbit starts `swamp worker connect` as the VM's `orbit` account only after the workspace and its Route are ready. The worker uses that checkout as its working directory. The [base image](/reference/compute-drivers#swamp-worker) supplies the pinned binary and Orbit CA. The orchestrator owns token minting, expiry, revocation, and step placement. Enrollment alone is supported; an orchestrator that requires a separate server access token must expose a worker entry point that accepts enrollment without that extra credential.
 
-The Gateway stages the token encrypted outside operation records for at most 30 minutes while provisioning. A missing or expired staged token fails provision with `tasks.worker_enrollment_expired`. Operation input keeps only the public worker settings and an opaque startup reference. API output, Activity, logs, queue jobs, operation steps, and results never contain the token. Replays return the same operation and do not replace its enrollment.
+The Gateway stages the token encrypted in its cache outside operation records for at most 30 minutes while startup waits. `cache:clear` drops staged tokens. Provision checks that the staged credential still exists before allocating a VM. A missing or expired staged token fails provision with `tasks.worker_enrollment_expired`. Operation input keeps only the public worker settings and an opaque startup reference.
+
+API output, Activity, logs, queue jobs, operation steps, and results never contain the token. Idempotency fingerprints exclude the enrollment secret. Replays with a newly minted token return the same operation and do not replace its enrollment; use a new key for a new worker start.
 
 Systemd loads the secret from a mode-0600 startup file under `/run` into its runtime credential directory before starting the worker. Orbit then removes the startup file and the Gateway's staged copy. The running Swamp process retains the credential for reconnection; systemd removes its runtime copy when the service stops. No token is written to the image, checkout, unit text, command arguments, or persistent VM disk.
 
-The service reconnects across socket interruptions but does not restart after a process exit or VM reboot: the orchestrator replaces a failed worker through a new group and token. VM destruction stops the service, including its children. Cancelled or failed provision removes its staged credential.
+The service reconnects across socket interruptions but does not restart after a process exit or VM reboot. Parking stays allowed and stops the worker with the VM. Use [start a group worker](#start-a-group-worker) with a fresh token after parking or process failure. Successful startup means systemd executed the process; it does not prove enrollment. The orchestrator confirms enrollment through Swamp before dispatching work.
+
+Orbit stops the worker and its children before ending its group or removing its workspace, ahead of head preservation, Project teardown, or VM deletion. A refused stop returns `tasks.worker_stop_failed` and leaves the group open and the workspace in place. A VM confirmed stopped or absent has no running worker. VM destruction remains the final cleanup boundary. Cancelled or failed startup removes its staged credential.
 
 ##### Public provision identity
 
@@ -142,9 +146,17 @@ For example, this successful result names a starting commit on a divergent works
 
 The CLI follows the operation with the shared operation display. It accepts `--idempotency-key=KEY` and `--json`. The PHP SDK request accepts `idempotencyKey`, and the generated MCP tool `tasks-provision` accepts `Idempotency-Key`. A replay returns the same operation before claim validation and claims no second VM; see [Retry a start with a key](/reference/operations#retry-a-start-with-a-key).
 
-To stop a waiting provision, use `tasks:cancel`. Group cancel and complete first cancel the group's open operation. Cancelling provision clears its claim reservation, so cleanup can remove what it created. Cancelling the operation alone does not end the group. Group cancellation keeps the existing rule for an unreachable Node: end the group, keep the workspace, and request removal assistance.
+To stop a waiting provision, use `tasks:cancel`. Group cancel and complete first cancel the group's open operation. Cancelling provision clears its claim reservation, so cleanup can remove what it created. Cancelling the operation alone does not end the group. Group cancellation keeps the existing rule for an unreachable Node without a possibly running worker: end the group, keep the workspace, and request removal assistance. A worker stop must be confirmed first.
 
 The remaining lifecycle and scheduler descriptions on this page describe `tick` groups unless they state otherwise.
+
+#### Start a group worker
+
+`POST /api/v1/task-groups/{group}/worker` starts keyed operation `tasks.worker`. Send the same `{ worker: { orchestrator_url, enrollment_token, labels } }` object as optional provision enrollment, with a required `Idempotency-Key`. The group must be external and open with a ready workspace and its own task VM.
+
+The operation holds the group target, resumes a parked VM through the normal wake path, then starts or replaces the worker under the workspace lease. It preserves the group, checkout, and task state. A fresh key and token replace the previous worker; replaying a key returns its original operation without restarting anything. An expired staged credential fails before a resume or any new VM allocation. Worker startup never allocates another VM.
+
+Optional provision enrollment remains a shortcut for the initial worker. The driver uses `tasks.worker` whenever it needs a worker again on that same group. Cancelling a waiting worker operation discards its staged enrollment; ending the group also stops any running worker.
 
 #### Check an external group
 

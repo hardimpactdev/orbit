@@ -10,13 +10,18 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\ValidationException;
 use UnexpectedValueException;
 
-final class StartTaskProvisionRequest extends FormRequest
+class StartTaskProvisionRequest extends FormRequest
 {
+    protected function workerPresence(): string
+    {
+        return 'sometimes';
+    }
+
     /** @return array<string, list<string>> */
     public function rules(): array
     {
         return [
-            'worker' => ['sometimes', 'array:orchestrator_url,enrollment_token,labels', 'required_array_keys:orchestrator_url,enrollment_token'],
+            'worker' => [$this->workerPresence(), 'array:orchestrator_url,enrollment_token,labels', 'required_array_keys:orchestrator_url,enrollment_token'],
             'worker.orchestrator_url' => ['required_with:worker', 'string', 'max:2048', 'regex:#\Awss://[a-zA-Z0-9.-]+(?::[0-9]{1,5})?(?:/[a-zA-Z0-9._~!$&\x27()*+,;=:@/-]*)?\z#D'],
             'worker.enrollment_token' => ['required_with:worker', 'string', 'max:4096', 'regex:/\A[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{16,}\z/D'],
             'worker.labels' => ['sometimes', 'array', 'max:32'],

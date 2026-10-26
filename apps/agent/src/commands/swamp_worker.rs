@@ -23,6 +23,7 @@ fn failed() -> Error {
 #[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
+    enrollment_id: String,
     workspace: String,
     orchestrator_url: String,
     labels: BTreeMap<String, String>,
@@ -41,7 +42,8 @@ fn label(s: &str, max: usize) -> bool {
 fn validate(input: &Input) -> Result<(), Error> {
     let invalid = || Error::Invalid {};
     let url = reqwest::Url::parse(&input.orchestrator_url).map_err(|_| invalid())?;
-    if url.scheme() != "wss"
+    if !label(&input.enrollment_id, 128)
+        || url.scheme() != "wss"
         || url.host_str().is_none()
         || !url.username().is_empty()
         || url.password().is_some()
@@ -75,21 +77,59 @@ fn quote(s: &str) -> String {
         s.replace('\\', "\\\\")
             .replace('"', "\\\"")
             .replace('%', "%%")
-            .replace('$', "$$")
     )
 }
-fn unit(input: &Input) -> String {
+fn argument(s: &str) -> String {
+    quote(s).replace('$', "$$")
+}
+fn unit(input: &Input, account: &Account) -> String {
     let labels = input
         .labels
         .iter()
-        .map(|(k, v)| format!(" --label {}", quote(&format!("{k}={v}"))))
+        .map(|(k, v)| format!(" --label {}", argument(&format!("{k}={v}"))))
         .collect::<String>();
-    format!("[Unit]\nDescription=Swamp task worker\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=exec\nUser=orbit\nGroup=orbit\nWorkingDirectory={}\nEnvironment=HOME=/home/orbit\nLoadCredential=enrollment:{TOKEN}\nExecStart=/usr/local/bin/swamp worker connect {} --no-telemetry --token-file=%d/enrollment --cache-dir=/home/orbit/.cache/swamp-worker --ca-cert={CA}{labels}\nRestart=no\nKillMode=control-group\nKillSignal=SIGTERM\nTimeoutStopSec=30\nUMask=0077\n", quote(&input.workspace),quote(&input.orchestrator_url))
+    // WorkingDirectory is a path, not an argv word: systemd keeps quotes literally here.
+    let workspace = input.workspace.replace('%', "%%");
+    let home = account.home.to_string_lossy();
+    let environment = quote(&format!("HOME={home}"));
+    let cache = argument(&format!("--cache-dir={home}/.cache/swamp-worker"));
+    format!("[Unit]\nDescription=Swamp task worker {}\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=exec\nUser=orbit\nGroup=orbit\nWorkingDirectory={workspace}\nEnvironment={environment}\nLoadCredential=enrollment:{TOKEN}\nExecStart=/usr/local/bin/swamp worker connect {} --no-telemetry --token-file=%d/enrollment {cache} --ca-cert={CA}{labels}\nRestart=no\nKillMode=control-group\nKillSignal=SIGTERM\nTimeoutStopSec=30\nUMask=0077\n", input.enrollment_id, argument(&input.orchestrator_url))
 }
 fn call(host: &mut impl Host, args: &[&str]) -> Result<(), Error> {
     // Discard diagnostics: systemd and worker output are not a secret-safe boundary.
     recipe::run(host, &Invocation::new(args), true).map_err(|_| failed())?;
     Ok(())
+}
+fn active(host: &mut impl Host) -> Result<bool, Error> {
+    match recipe::run(
+        host,
+        &Invocation::new(&["systemctl", "is-active", "--quiet", UNIT]),
+        false,
+    )
+    .map_err(|_| failed())?
+    .code
+    {
+        0 => Ok(true),
+        3 | 4 => Ok(false),
+        _ => Err(failed()),
+    }
+}
+fn remove(path: &Path) -> Result<(), Error> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err(failed()),
+    }
+}
+fn stop(files: &Files, host: &mut impl Host) -> Result<(), Error> {
+    let path = files.path(UNIT_PATH);
+    if path.exists() || active(host)? {
+        // Confirm the process and its descendants have stopped before removing the unit.
+        call(host, &["systemctl", "stop", UNIT])?;
+        remove(&path)?;
+        call(host, &["systemctl", "daemon-reload"])?;
+    }
+    remove(&files.path(TOKEN))
 }
 fn start(
     files: &Files,
@@ -105,25 +145,11 @@ fn start(
     {
         return Err(Error::Invalid {});
     }
-    let text = unit(input);
+    let text = unit(input, account);
     let path = files.path(UNIT_PATH);
-    let active = recipe::run(
-        host,
-        &Invocation::new(&["systemctl", "is-active", "--quiet", UNIT]),
-        false,
-    )
-    .map_err(|_| failed())?
-    .code
-        == 0;
-    if active {
-        if fs::read_to_string(&path).ok().as_deref() != Some(&text) {
-            return Err(Error::Invalid {});
-        }
-        match fs::remove_file(files.path(TOKEN)) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(_) => return Err(failed()),
-        }
+    let running = active(host)?;
+    if running && fs::read_to_string(&path).ok().as_deref() == Some(&text) {
+        remove(&files.path(TOKEN))?;
         return Ok(Output { started: true });
     }
     let Some(token) = &input.enrollment_token else {
@@ -131,6 +157,9 @@ fn start(
     };
     if !files.path(CA).is_file() || !files.path("/usr/local/bin/swamp").is_file() {
         return Err(failed());
+    }
+    if running {
+        stop(files, host)?;
     }
     for dir in [
         account.home.join(".cache"),
@@ -162,7 +191,7 @@ fn start(
     })();
     let removed = fs::remove_file(source).map_err(|_| failed());
     if result.is_err() || removed.is_err() {
-        let _ = call(host, &["systemctl", "stop", UNIT]);
+        let _ = stop(files, host);
     }
     removed?;
     result
@@ -189,6 +218,38 @@ impl Command for Start {
             &account,
             &input,
         )
+    }
+}
+
+#[derive(schemars::JsonSchema, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StopInput {}
+#[derive(schemars::JsonSchema, Debug, Serialize)]
+pub struct Stopped {
+    stopped: bool,
+}
+command_errors! {
+    pub enum StopError {
+        Failed {} => "tasks.worker_stop_failed", "The task VM worker could not be stopped.";
+    }
+}
+pub struct Stop;
+impl Command for Stop {
+    const NAME: &'static str = "swamp.stop-worker";
+    const SUMMARY: &'static str =
+        "Stop a task worker and remove its runtime unit and startup credential.";
+    const MUTATES: bool = true;
+    const RESOURCES: &'static [&'static str] = &["swamp-worker"];
+    const TIMEOUT: Duration = Duration::from_secs(60);
+    type Input = StopInput;
+    type Output = Stopped;
+    type Error = StopError;
+    fn privilege(p: Platform) -> Option<Privilege> {
+        super::linux_only(p, Privilege::Root)
+    }
+    fn run(_: StopInput, context: &Context) -> Result<Stopped, StopError> {
+        stop(&Files::system(), &mut recipe::Native(context)).map_err(|_| StopError::Failed {})?;
+        Ok(Stopped { stopped: true })
     }
 }
 

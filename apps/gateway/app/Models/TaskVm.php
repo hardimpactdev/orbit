@@ -50,6 +50,7 @@ use Throwable;
  * @property string $wireguard_ip
  * @property string|null $pi_token
  * @property string|null $model_key
+ * @property bool $worker_stop_required
  * @property string|null $ai_router_origin
  * @property Carbon|null $claimed_at
  * @property Carbon|null $warmed_at
@@ -78,7 +79,7 @@ final class TaskVm extends Model
     protected $fillable = [
         'group_id', 'host_node_id', 'node_id', 'provider', 'size', 'topology', 'topology_state', 'topology_run', 'topology_started_at', 'topology_error',
         'publish_commit', 'publish_branch', 'publish_state', 'publish_error', 'publish_error_code', 'publish_queued_at', 'publish_started_at', 'provider_id', 'ssh_host_key', 'name', 'state', 'address', 'wireguard_ip',
-        'pi_token', 'model_key', 'ai_router_origin', 'claimed_at', 'warmed_at', 'image_fingerprint', 'recipe_identity',
+        'pi_token', 'model_key', 'worker_stop_required', 'ai_router_origin', 'claimed_at', 'warmed_at', 'image_fingerprint', 'recipe_identity',
         'error_code', 'error_message', 'ready_at', 'destroyed_at',
     ];
 
@@ -106,6 +107,7 @@ final class TaskVm extends Model
             'publish_started_at' => 'datetime',
             'pi_token' => 'encrypted',
             'model_key' => 'encrypted',
+            'worker_stop_required' => 'boolean',
             'claimed_at' => 'datetime',
             'warmed_at' => 'datetime',
             'ready_at' => 'datetime',

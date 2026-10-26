@@ -61,7 +61,7 @@ final readonly class HandleOperationIdempotency
         $this->idempotency->key = $key;
         $this->idempotency->fingerprint = hash('sha256', json_encode([
             'target' => array_map(static fn (mixed $value): mixed => $value instanceof Model ? $value->getKey() : $value, $route->parameters()),
-            'input' => $this->input($request->getContent(), $start->maxJsonBytes),
+            'input' => $this->input($request->getContent(), $start->maxJsonBytes, $start->secretInputs),
         ], JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION));
 
         try {
@@ -76,7 +76,8 @@ final readonly class HandleOperationIdempotency
         }
     }
 
-    private function input(string $content, ?int $limit): string
+    /** @param list<string> $secrets */
+    private function input(#[\SensitiveParameter] string $content, ?int $limit, array $secrets): string
     {
         try {
             if ($limit !== null) {
@@ -85,6 +86,18 @@ final readonly class HandleOperationIdempotency
                 $input = json_decode($content, flags: JSON_THROW_ON_ERROR);
                 if ($input instanceof stdClass) {
                     new TopLevelJsonObjectInspector()->inspect($content, array_keys(get_object_vars($input)));
+                }
+            }
+
+            foreach ($secrets as $path) {
+                $keys = explode('.', $path);
+                $last = array_pop($keys);
+                $object = $input;
+                foreach ($keys as $key) {
+                    $object = $object instanceof stdClass ? ($object->{$key} ?? null) : null;
+                }
+                if ($object instanceof stdClass) {
+                    unset($object->{$last});
                 }
             }
 

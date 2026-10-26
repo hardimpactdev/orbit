@@ -28,6 +28,7 @@ use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
+use App\Infrastructure\TaskVms\TaskVmWorker;
 use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Models\Instance;
 use App\Models\Task;
@@ -84,6 +85,7 @@ final readonly class RemoveTaskWorkspaceAction
     /** Waits before lease admission can snapshot an unavailable VM with reviewed work still to preserve. */
     public static function awaitVmPreservation(Task $group, Instance $instance): void
     {
+        app(TaskVmWorker::class)->stopGroup($group);
         $vm = TaskVm::forNode($instance->node_id);
         $reason = $vm?->state === TaskVmState::Destroying
             ? "The task VM of Instance [{$instance->name}] is already being destroyed."
@@ -103,6 +105,7 @@ final readonly class RemoveTaskWorkspaceAction
      */
     public function remove(Task $group): ?Instance
     {
+        app(TaskVmWorker::class)->stopGroup($group);
         $instance = $group->workspace()->first();
         if (! $instance instanceof Instance) {
             return null;

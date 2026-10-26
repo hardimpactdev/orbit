@@ -129,6 +129,10 @@ Each effect becomes an operation that wraps the code Tasks runs today:
 
 Provision optionally enrolls a Swamp worker after workspace readiness, under the [worker contract](/reference/tasks#optional-swamp-worker). The driver mints a short-lived token for one group; the Gateway stages it only for startup and keeps it out of operation records. The one base image supplies the pinned worker binary and public Orbit CA. The worker dials out and dies with the VM. This adds no sender to Pi or task lifecycle decisions.
 
+A separate keyed `tasks.worker` operation starts or replaces the worker on an open external group with an existing workspace. It resumes a parked VM and accepts fresh per-group enrollment without recreating the group. Optional provision enrollment remains an initial-start shortcut. Parking stays independent of worker enrollment; runtime credentials disappear at stop and the driver mints a fresh token for the next start. Fingerprints exclude enrollment secrets. Worker startup confirms process execution, and Swamp owns enrollment confirmation.
+
+Worker stop precedes group ending and workspace removal, including preservation paths that delay VM destruction. The VM keeps only a nonsecret cleanup marker so an uncertain start still requires a stop. A stop refusal holds the end or removal until the worker is confirmed stopped, or the VM is confirmed stopped or absent.
+
 To stop a waiting provision, the orchestrator cancels the group with `tasks:cancel`.
 
 #### Check

@@ -11,6 +11,7 @@ struct Fake {
     calls: Vec<Invocation>,
     active: bool,
     fail_start: bool,
+    fail_stop: bool,
 }
 impl Host for Fake {
     fn execute(&mut self, call: &Invocation) -> Result<CommandOutput, Failure> {
@@ -24,7 +25,10 @@ impl Host for Fake {
             self.active = !self.fail_start;
         }
         if call.argv.get(1).is_some_and(|v| v == "stop") {
-            self.active = false;
+            code = if self.fail_stop { 1 } else { 0 };
+            if !self.fail_stop {
+                self.active = false;
+            }
         }
         Ok(CommandOutput {
             code,
@@ -58,6 +62,7 @@ fn fixture() -> (Sandbox, Files, Account, Input, Fake) {
         home: root.join("home/orbit"),
     };
     let input = Input {
+        enrollment_id: "startup-2074".into(),
         workspace: root.join("home/orbit/work").display().to_string(),
         orchestrator_url: "wss://swamp.orbit".into(),
         labels: BTreeMap::from([("group".into(), "2074".into())]),
@@ -72,6 +77,7 @@ fn fixture() -> (Sandbox, Files, Account, Input, Fake) {
             calls: vec![],
             active: false,
             fail_start: false,
+            fail_stop: false,
         },
     )
 }
@@ -88,6 +94,16 @@ fn starts_direct_worker_after_loading_credential_and_erases_startup_file() {
     assert!(text.contains("KillMode=control-group"));
     assert!(text.contains("Restart=no"));
     assert!(text.contains(&format!("--ca-cert={CA}")));
+    assert_eq!(
+        text.lines()
+            .find(|line| line.starts_with("WorkingDirectory=")),
+        Some(format!("WorkingDirectory={}", input.workspace).as_str())
+    );
+    assert!(text.contains(&format!("Environment=\"HOME={}\"", account.home.display())));
+    assert!(text.contains(&format!(
+        "\"--cache-dir={}/.cache/swamp-worker\"",
+        account.home.display()
+    )));
     assert!(!format!("{:?}", host.calls).contains(token));
     assert_eq!(
         fs::metadata(files.path(UNIT_PATH)).unwrap().mode() & 0o777,
@@ -101,7 +117,102 @@ fn recovers_started_worker_without_staging_token_again() {
     input.enrollment_token = None;
     assert!(start(&files, &mut host, &account, &input).unwrap().started);
     input.labels.insert("group".into(), "other".into());
-    assert!(start(&files, &mut host, &account, &input).is_err());
+    assert!(!start(&files, &mut host, &account, &input).unwrap().started);
+}
+#[test]
+fn fresh_enrollment_replaces_the_running_worker_and_replay_does_not() {
+    let (_guard, files, account, mut input, mut host) = fixture();
+    start(&files, &mut host, &account, &input).unwrap();
+    host.calls.clear();
+    input.enrollment_id = "fresh-enrollment".into();
+    input.enrollment_token = Some("fresh.0123456789abcdef0123456789abcdef".into());
+    assert!(start(&files, &mut host, &account, &input).unwrap().started);
+    let stop_index = host
+        .calls
+        .iter()
+        .position(|c| c.argv == ["systemctl", "stop", UNIT])
+        .unwrap();
+    let start_index = host
+        .calls
+        .iter()
+        .position(|c| c.argv == ["systemctl", "start", UNIT])
+        .unwrap();
+    assert!(stop_index < start_index);
+    assert!(fs::read_to_string(files.path(UNIT_PATH))
+        .unwrap()
+        .contains("fresh-enrollment"));
+    host.calls.clear();
+    input.enrollment_token = None;
+    assert!(start(&files, &mut host, &account, &input).unwrap().started);
+    assert_eq!(host.calls.len(), 1);
+}
+#[test]
+fn stop_ends_the_service_and_removes_the_unit_and_credential_idempotently() {
+    let (_guard, files, account, input, mut host) = fixture();
+    start(&files, &mut host, &account, &input).unwrap();
+    fs::write(files.path(TOKEN), "leftover").unwrap();
+    stop(&files, &mut host).unwrap();
+    assert!(!host.active);
+    assert!(!files.path(UNIT_PATH).exists());
+    assert!(!files.path(TOKEN).exists());
+    stop(&files, &mut host).unwrap();
+}
+#[test]
+fn stop_refusal_keeps_the_unit_for_retry() {
+    let (_guard, files, account, input, mut host) = fixture();
+    start(&files, &mut host, &account, &input).unwrap();
+    host.fail_stop = true;
+    assert!(stop(&files, &mut host).is_err());
+    assert!(host.active);
+    assert!(files.path(UNIT_PATH).exists());
+}
+#[test]
+fn working_directory_escapes_only_systemd_specifiers() {
+    let (_guard, _files, account, mut input, _host) = fixture();
+    input.workspace = format!("{}/work %name $literal", account.home.display());
+    let text = unit(&input, &account);
+    assert_eq!(
+        text.lines()
+            .find(|line| line.starts_with("WorkingDirectory=")),
+        Some(
+            format!(
+                "WorkingDirectory={}/work %%name $literal",
+                account.home.display()
+            )
+            .as_str()
+        )
+    );
+}
+#[cfg(target_os = "linux")]
+#[test]
+fn generated_unit_passes_systemd_analyze_verify_when_available() {
+    use std::process::Command;
+    if Command::new("systemd-analyze")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
+        eprintln!("systemd-analyze is unavailable; unit verification skipped");
+        return;
+    }
+    let (guard, _files, account, input, _host) = fixture();
+    let path = guard.0.join(UNIT);
+    // Verify the generated service settings with an executable the Linux test host has installed.
+    fs::write(
+        &path,
+        unit(&input, &account).replace("/usr/local/bin/swamp", "/usr/bin/true"),
+    )
+    .unwrap();
+    let output = Command::new("systemd-analyze")
+        .args(["verify", "--man=no", "--generators=no"])
+        .arg(path)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 #[test]
 fn missing_credential_starts_nothing() {

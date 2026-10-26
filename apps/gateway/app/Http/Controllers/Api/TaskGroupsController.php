@@ -19,6 +19,7 @@ use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Actions\Tasks\StartTaskPublishAction;
 use App\Actions\Tasks\StartTaskScriptAction;
 use App\Actions\Tasks\StartTaskTurnAction;
+use App\Actions\Tasks\StartTaskWorkerAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\StoreTaskGroupCommentAction;
 use App\Actions\Tasks\UpdateTaskAction;
@@ -47,6 +48,7 @@ use App\Http\Requests\Tasks\StartTaskProvisionRequest;
 use App\Http\Requests\Tasks\StartTaskPublishRequest;
 use App\Http\Requests\Tasks\StartTaskScriptRequest;
 use App\Http\Requests\Tasks\StartTaskTurnRequest;
+use App\Http\Requests\Tasks\StartTaskWorkerRequest;
 use App\Http\Requests\Tasks\StoreTaskCommentRequest;
 use App\Http\Requests\Tasks\StoreTaskGroupCommentRequest;
 use App\Http\Requests\Tasks\UpdateTaskGroupRequest;
@@ -85,7 +87,7 @@ final class TaskGroupsController extends Controller
     }
 
     /** Starts tasks.provision and answers 202 with the queued operation. */
-    #[StartsOperation(OperationKinds::TasksProvision)]
+    #[StartsOperation(OperationKinds::TasksProvision, secretInputs: ['worker.enrollment_token'])]
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function provision(StartTaskProvisionRequest $request, Task $group, StartTaskProvisionAction $action): JsonResponse
     {
@@ -96,6 +98,16 @@ final class TaskGroupsController extends Controller
             'data' => OperationData::fromModel($operation)->toArray(),
             'meta' => $this->meta($request),
         ], 202);
+    }
+
+    #[StartsOperation(OperationKinds::TasksWorker, requiresKey: true, secretInputs: ['worker.enrollment_token'])]
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function worker(StartTaskWorkerRequest $request, Task $group, StartTaskWorkerAction $action): JsonResponse
+    {
+        $requestId = $request->attributes->getString('orbit.request_id');
+        $operation = $action->execute($group, $request->worker(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
+
+        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
     #[StartsOperation(OperationKinds::TasksPublish)]
