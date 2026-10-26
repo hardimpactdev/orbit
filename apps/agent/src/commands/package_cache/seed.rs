@@ -98,9 +98,22 @@ fn unpack(source: &Path, target: &Path) -> io::Result<()> {
             if !entry.unpack_in(&work)? {
                 return Err(io::Error::other("Registry archive escapes the cache"));
             }
-            if kind.is_dir() {
-                // Registry directory modes may omit search or write access (pngjs uses 0666).
-                fs::set_permissions(work.join(&path), fs::Permissions::from_mode(0o755))?;
+            if kind.is_dir() || kind.is_file() {
+                // Strip trailing slashes so metadata cannot follow a directory symlink.
+                let target = work.join(path.components().collect::<PathBuf>());
+                let metadata = fs::symlink_metadata(&target)?;
+                if (kind.is_dir() && !metadata.is_dir()) || (kind.is_file() && !metadata.is_file())
+                {
+                    return Err(io::Error::other(
+                        "Registry archive entry has an unexpected type",
+                    ));
+                }
+                let mode = if kind.is_dir() || entry.header().mode()? & 0o111 != 0 {
+                    0o755
+                } else {
+                    0o644
+                };
+                fs::set_permissions(target, fs::Permissions::from_mode(mode))?;
             }
         }
         let extracted =
@@ -140,9 +153,9 @@ fn artifact_failed(source: &Path, artifact: &Artifact, error: io::Error) -> Erro
 fn seed(shared: &Path, home: &Path, artifacts: &[Artifact]) -> Result<(), Error> {
     let inventory = inventory(shared).map_err(|e| failed("seed", shared, e))?;
     for a in artifacts {
-        let source = shared.join(&a.key);
         let integrity =
-            validate(a).map_err(|reason| artifact_failed(&source, a, io::Error::other(reason)))?;
+            validate(a).map_err(|reason| artifact_failed(shared, a, io::Error::other(reason)))?;
+        let source = shared.join(&a.key);
         let Some(digest) = inventory.get(&a.key) else {
             continue;
         };

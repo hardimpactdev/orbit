@@ -172,7 +172,7 @@ fn marker_wait_is_bounded_and_access_errors_are_immediate() {
 }
 
 #[test]
-fn bun_directories_remain_usable_when_archive_modes_lack_search_or_write() {
+fn bun_entries_normalize_archive_modes_for_private_cache_use() {
     for mode in [0o666, 0o555, 0o000] {
         let f = Fixture::new();
         let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
@@ -185,7 +185,12 @@ fn bun_directories_remain_usable_when_archive_modes_lack_search_or_write() {
             header.set_cksum();
             tar.append_data(&mut header, path, io::empty()).unwrap();
         }
-        for (path, mode) in [("package/CHANGELOG.md", 0o644), ("package/lib/run", 0o755)] {
+        for (path, mode) in [
+            ("package/CHANGELOG.md", 0o666),
+            ("package/lib/unreadable", 0o000),
+            ("package/lib/write-only", 0o200),
+            ("package/lib/run", 0o010),
+        ] {
             let mut header = tar::Header::new_gnu();
             header.set_mode(mode);
             header.set_size(2);
@@ -211,7 +216,13 @@ fn bun_directories_remain_usable_when_archive_modes_lack_search_or_write() {
             fs::metadata(target.join("lib")).unwrap().mode() & 0o777,
             0o755
         );
-        assert_eq!(fs::read(target.join("CHANGELOG.md")).unwrap(), b"{}");
+        for path in ["CHANGELOG.md", "lib/unreadable", "lib/write-only"] {
+            assert_eq!(
+                fs::metadata(target.join(path)).unwrap().mode() & 0o777,
+                0o644
+            );
+            assert_eq!(fs::read(target.join(path)).unwrap(), b"{}");
+        }
         assert_eq!(
             fs::metadata(target.join("lib/run")).unwrap().mode() & 0o777,
             0o755
@@ -256,4 +267,57 @@ fn extraction_failure_names_artifact_and_underlying_io_cause() {
             .count(),
         0
     );
+}
+
+#[test]
+fn invalid_artifact_keys_report_the_shared_root() {
+    for key in ["/untrusted.tgz", "../../untrusted.tgz"] {
+        let f = Fixture::new();
+        let mut a = cached(&f, &archive("package/package.json", None), true);
+        a.key = key.into();
+        let Error::Failed { path, reason, .. } = seed(&f.shared(), &f.home(), &[a]).unwrap_err()
+        else {
+            panic!("expected validation failure");
+        };
+        assert_eq!(path, f.shared().display().to_string());
+        assert!(
+            reason.contains("npm key does not match the archive"),
+            "{reason}"
+        );
+        assert!(!f.home().exists());
+    }
+}
+
+#[test]
+fn directory_entries_cannot_chmod_through_symlink_aliases() {
+    for directory in ["package/x/x/outside", "package/x/x/outside/"] {
+        let f = Fixture::new();
+        let cache = f.home().join(".bun/install/cache");
+        fs::create_dir_all(&cache).unwrap();
+        fs::set_permissions(&cache, fs::Permissions::from_mode(0o700)).unwrap();
+        let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        let mut tar = tar::Builder::new(encoder);
+        for (path, link) in [
+            ("package/x", Some(".")),
+            // This link passes lexical validation but resolves outside the extraction directory.
+            ("package/x/x/outside", Some("../..")),
+            (directory, None),
+        ] {
+            let mut header = tar::Header::new_gnu();
+            header.set_mode(0o755);
+            header.set_size(0);
+            if let Some(link) = link {
+                header.set_entry_type(tar::EntryType::Symlink);
+                header.set_link_name(link).unwrap();
+            } else {
+                header.set_entry_type(tar::EntryType::Directory);
+            }
+            header.set_cksum();
+            tar.append_data(&mut header, path, io::empty()).unwrap();
+        }
+        let a = cached(&f, &tar.into_inner().unwrap().finish().unwrap(), true);
+        assert!(seed(&f.shared(), &f.home(), &[a]).is_err());
+        assert_eq!(fs::metadata(&cache).unwrap().mode() & 0o777, 0o700);
+        assert_eq!(fs::read_dir(cache).unwrap().count(), 0);
+    }
 }
