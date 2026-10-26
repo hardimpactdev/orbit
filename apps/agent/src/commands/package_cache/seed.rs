@@ -108,7 +108,7 @@ fn unpack(source: &Path, target: &Path) -> io::Result<()> {
                         "Registry archive entry has an unexpected type",
                     ));
                 }
-                let mode = if kind.is_dir() || entry.header().mode()? & 0o111 != 0 {
+                let mode = if kind.is_dir() || entry.header().mode().unwrap_or(0o644) & 0o111 != 0 {
                     0o755
                 } else {
                     0o644
