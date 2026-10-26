@@ -16,4 +16,9 @@ globalArguments:
       script: scripts/dependencies
       check: composer check
       defaultBranch: main
+    - projectId: 18
+      repository: https://github.com/hardimpactdev/lindaretel.git
+      script: scripts/dependencies
+      check: composer check
+      defaultBranch: main
 methods: {}
