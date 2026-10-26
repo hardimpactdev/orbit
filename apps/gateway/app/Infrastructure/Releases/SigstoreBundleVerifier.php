@@ -6,6 +6,7 @@ namespace App\Infrastructure\Releases;
 
 use DateTimeImmutable;
 use Exception;
+use InvalidArgumentException;
 use OpenSSLAsymmetricKey;
 
 /**
@@ -40,9 +41,13 @@ final readonly class SigstoreBundleVerifier
      *
      * @throws ReleaseProvenanceRefused when the bundle does not verify
      * @throws ReleaseProvenanceUnavailable when the trust root is malformed
+     * @throws InvalidArgumentException when no subject is expected
      */
     public function verify(string $bundle, string $identity, string $issuer, array $subjects): void
     {
+        if ($subjects === []) {
+            throw new InvalidArgumentException('Provenance verification needs at least one expected subject.');
+        }
         $root = json_decode($this->trustRoot, true);
         if (! is_array($root) || ! is_array($root['tlogs'] ?? null) || ! is_array($root['certificateAuthorities'] ?? null)) {
             throw new ReleaseProvenanceUnavailable('The Sigstore trust root is not a trusted_root.json with tlogs and certificate authorities.', local: true);

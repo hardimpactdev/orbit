@@ -161,6 +161,13 @@ describe(SigstoreBundleVerifier::class, function (): void {
             ->toThrow(ReleaseProvenanceRefused::class, 'does not name [manifest.json]');
     });
 
+    it('requires at least one expected subject', function (): void {
+        $signer = SigstoreTestSigner::instance();
+
+        expect(fn () => new SigstoreBundleVerifier($signer->trustRoot())->verify($signer->bundle(['SHA256SUMS' => 'sums']), SigstoreTestSigner::identity(), ReleaseProvenance::Issuer, []))
+            ->toThrow(InvalidArgumentException::class, 'at least one expected subject');
+    });
+
     it('refuses a bundle with only RFC 3161 timestamps and no transparency log entry', function (): void {
         $signer = SigstoreTestSigner::instance();
         $bundle = json_decode($signer->bundle(['SHA256SUMS' => 'sums']), true, flags: JSON_THROW_ON_ERROR);
