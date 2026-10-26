@@ -7,7 +7,11 @@ pub fn install(
     deadline: Instant,
 ) -> Result<(), Failure> {
     let config = apt_check(input, &files.path(APT))?;
-    let mut host = AptHost { host, config };
+    let mut host = AptHost {
+        host,
+        config,
+        deadline,
+    };
     let recipe = &input.recipe;
     let policy = recipe::operations::Policy::install(files)?;
     let environment = vec![

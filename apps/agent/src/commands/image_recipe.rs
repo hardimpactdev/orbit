@@ -115,10 +115,26 @@ pub fn apt_check(input: &Input, directory: &Path) -> Result<PathBuf, Failure> {
 pub struct AptHost<'a, H> {
     pub host: &'a mut H,
     pub config: PathBuf,
+    pub deadline: Instant,
 }
 impl<H: Host> Host for AptHost<'_, H> {
     fn execute(&mut self, call: &Invocation) -> Result<recipe::Output, Failure> {
+        let remaining = self
+            .deadline
+            .checked_duration_since(Instant::now())
+            .ok_or_else(|| Failure::new("deadline", "Image phase execution budget expired"))?;
         let mut call = call.clone();
+        let packages = call.argv.first().is_some_and(|v| v == "apt-get")
+            && call
+                .argv
+                .iter()
+                .any(|v| v == "install" || v == "full-upgrade")
+            && !call.argv.iter().any(|v| v == "--simulate" || v == "-s");
+        call.timeout = if packages {
+            remaining
+        } else {
+            call.timeout.min(remaining)
+        };
         call.environment.retain(|(k, _)| k != "APT_CONFIG");
         call.environment
             .push(("APT_CONFIG".into(), self.config.display().to_string()));
@@ -133,12 +149,18 @@ impl<H: php_build::Host> php_build::Host for AptHost<'_, H> {
         self.host.ping(socket, deadline)
     }
 }
-pub fn apt_source(host: &mut impl Host, files: &Files, input: &Input) -> Result<(), Failure> {
+pub fn apt_source(
+    host: &mut impl Host,
+    files: &Files,
+    input: &Input,
+    deadline: Instant,
+) -> Result<(), Failure> {
     let directory = files.path(APT);
     apt_setup(files, input, &directory)?;
     let mut host = AptHost {
         host,
         config: apt_check(input, &directory)?,
+        deadline,
     };
     let mut call = Invocation::new(&["apt-get", "update"]);
     call.argv.extend(apt::fetch_options());
