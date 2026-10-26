@@ -803,6 +803,19 @@
       ]
     },
     {
+      "name": "gateway.drain-horizon",
+      "summary": "Gracefully stop the source Horizon Process before changing the serving release.",
+      "mutates": true,
+      "timeout_seconds": 3720,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_horizon_not_drained"
+      ]
+    },
+    {
       "name": "gateway.drain-scheduler",
       "summary": "Apply one fixed Gateway scheduler handoff step to an owned Process unit.",
       "mutates": true,

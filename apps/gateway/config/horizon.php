@@ -39,8 +39,8 @@ return [
             'queue' => 24,
         ],
     ],
-    // A release runs horizon:terminate. The master waits for its running jobs before it exits and its Process starts it
-    // again on the new release, so a new task-vms worker never runs beside an old one.
+    // Release switching drains the complete Horizon control group before publication. The master waits for its
+    // running jobs; the serving handoff then starts the stopped Process on the selected release.
     'fast_termination' => false,
     'memory_limit' => 256,
     'defaults' => [

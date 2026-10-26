@@ -119,7 +119,7 @@ The Redis server needs `maxmemory-policy noeviction`, so that it never drops a q
 
 ## Releases
 
-A release moves Horizon in the serving phase, right after the switch, and the old database jobs in the scheduler phase, after the scheduler's drain. The handoff records the Horizon step as `horizon`:
+A release drains Horizon before switching the serving link and starts it in the serving phase. It moves the old database jobs in the scheduler phase, after the scheduler's drain. The handoff records the Horizon step as `horizon`:
 
 | Outcome | When | What the handoff does |
 | --- | --- | --- |
@@ -130,11 +130,13 @@ A release moves Horizon in the serving phase, right after the switch, and the ol
 
 `horizon:terminate` reaches only a running master, so a stopped Horizon is started instead. The handoff never restarts an active unit, because a restart ends its running jobs.
 
-`horizon:terminate` sends SIGTERM to the Horizon master. Horizon does not use fast termination: the master waits until each worker has finished its running job, on the release that job started on, and then exits. The Process's restart policy then starts Horizon again, on the new release. A new `task-vms` worker therefore never starts while an old one runs, and task VM jobs stay in order.
+Before changing the serving release link, the release runner drains the Gateway's Horizon Process through `gateway.drain-horizon`. This applies to deployment, rollback and switch-back. The agent installs a temporary systemd stop policy: SIGTERM reaches only the master, the stop has no systemd timeout, and systemd never escalates to SIGKILL. It submits a stop and waits for both an inactive unit and an empty control group. Running jobs finish against the source release. The stopped unit cannot restart automatically. A missing Horizon Process needs no drain.
 
-The cost is the wait. A release during a base image build waits for one short step, not the whole build. The build is a [chain of jobs](/reference/compute-drivers#build-the-base-image), and the next step runs on the new release. Until the running jobs end, no new job starts on any queue, and `tasks:tick` waits too. The master waits at most the longest supervisor timeout, 1700 seconds, and then exits.
+The drain has a deadline of the longest supervisor job timeout plus 30 seconds. A timeout or unreadable observation refuses the release switch. The safe stop policy stays installed while a stop is incomplete. Do not force a restart; inspect the Process journal and let its jobs finish, then repeat the release. A completed drain removes its temporary policy. If the runner exits after draining, Horizon stays stopped; repeat the release or run the serving release's runtime handoff to start it.
 
-The release does not wait for the new master. A failure of the step fails the handoff with `gateway.release_units_failed`, and the release switches back.
+After the switch, the serving handoff starts the stopped Horizon Process on the selected release before recipe image reconciliation. Thus an old worker cannot reserve a job produced by the new release or read its recipe through the serving link. A switch failure leaves Horizon stopped on the source; run its runtime handoff before resuming normal work. Other Gateway requests can queue during the drain; their jobs wait in Redis. Job IDs, attempts, delays and chains are unchanged.
+
+For the first rollout of this drain code, prepare the reviewed commit and invoke deployment from that prepared release's Artisan entry point as `orbit`, with the normal shared configuration and stable release-layout paths. A runner already started from older code cannot acquire the new barrier. Later releases enter it from the serving release in the normal way.
 
 The scheduler phase restarts every other Gateway Process in the Gateway application with systemd, but never the `horizon` Process.
 
@@ -154,7 +156,7 @@ The key is `laravel_unique_job:` followed by the job class and its unique id, th
 
 ### Jobs across releases
 
-A job queued by one release can run on the next one, and during a release, on the one before. A change to a queued job's class, its constructor properties, or a table that a job reads, must work with both releases for one release. Remove the old form in a later release.
+A job queued by one release can run on the next one. The release drain prevents old workers from consuming work published after the serving link changes. A change to a queued job's class, its constructor properties, or a table that a job reads, must work with both releases for one release. Remove the old form in a later release.
 
 ## When Redis is down
 

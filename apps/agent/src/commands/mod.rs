@@ -37,6 +37,7 @@ mod gateway_checkout;
 mod gateway_database;
 mod gateway_drain;
 mod gateway_fpm;
+mod gateway_horizon;
 mod gateway_identity;
 mod gateway_recovery;
 mod gateway_releases;
@@ -167,6 +168,7 @@ pub fn all() -> Vec<Entry> {
         entry::<gateway_services::View>(),
         entry::<gateway_services::Hibernator>(),
         entry::<gateway_services::StartFleet>(),
+        entry::<gateway_horizon::Drain>(),
         entry::<gateway_scheduler::Drain>(),
         entry::<gateway_scheduler::Start>(),
         entry::<gateway_scheduler::Stop>(),

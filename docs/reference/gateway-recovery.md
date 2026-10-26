@@ -146,7 +146,7 @@ Only a release with a `REVISION` file is prepared. When the configuration cannot
 
 Prepare never touches the current release link, the database, or a running service other than the Gateway Node's agent.
 
-A Gateway whose current release predates this agent delivery cannot install the agent through its own deploy, because its code does not know the delivery. Upgrade it once by hand, as `orbit`. Prepare the new commit with the current code, then deploy that commit with the new release's own code:
+A Gateway whose current release predates this agent delivery or the Horizon publication barrier must enter deployment through the prepared release's code. Older deployment code cannot install the delivery or drain consumers before switching the serving link. Upgrade it once by hand, as `orbit`. Prepare the new commit with the current code, then deploy that commit with the new release's own code:
 
 ```bash
 php /home/orbit/orbit/apps/gateway/artisan gateway:release:prepare <SHA>
@@ -216,7 +216,9 @@ Deploy is the manual release. Before it changes anything, it:
 
 Before deploying a schema squash, finish the existing migration chain on the current release. The [contributor guide](/contributor-guide#3-implement-and-verify) describes the baseline loader and its requirements.
 
-Deploy then takes the pre-release database snapshot, runs `php artisan migrate --force`, and calls `gateway.switch-release` through `AgentCommandRunner`. The native command validates the prepared release and replaces `/home/orbit/orbit` with one atomic rename under the release target lock. Readers keep either the old or new release. Repeating the switch leaves the link unchanged. An in-place checkout or a link to something else is refused until `gateway:release:adopt`. A staging path that is not the requested release link is refused without replacing it.
+Deploy then takes the pre-release database snapshot, runs `php artisan migrate --force`, [drains Horizon](/reference/gateway-queue#releases), and calls `gateway.switch-release` through `AgentCommandRunner`. A drain failure reports `gateway.release_horizon_not_drained` and leaves the serving link unchanged. This barrier protects recipe publication; an incompatible schema or queued payload change still needs the full operator hold described below.
+
+The native command validates the prepared release and replaces `/home/orbit/orbit` with one atomic rename under the release target lock. Readers keep either the old or new release. Repeating the switch leaves the link unchanged. An in-place checkout or a link to something else is refused until `gateway:release:adopt`. A staging path that is not the requested release link is refused without replacing it.
 
 `gateway.inspect-release-source` reads the shared repository's credential-free origin for the Gateway's GitHub source policy. `gateway.check-release-forward` reads the current release and checks Git ancestry without starting Git or changing its index. It returns the current release identity for the release record. The Gateway sends the requested commit and explicit force flag; a non-forward commit refuses with `gateway.release_downgrade` unless force was requested.
 
@@ -396,7 +398,7 @@ The serving phase:
 1. publishes the Gateway Node's Caddyfile when the render changed, with a graceful Caddy reload;
 2. converges the PHP-FPM pool and the start hooks, as described below;
 3. installs the hibernator, agent-view, and [release units](#release-units) again and restarts agent-view. The units name the stable `/home/orbit/orbit/apps/gateway` path;
-4. moves [Laravel Horizon](/reference/gateway-queue#releases) to the new release, with `php artisan horizon:terminate` while it runs.
+4. starts [Laravel Horizon](/reference/gateway-queue#releases) after the pre-switch drain. A manual handoff of an active Process uses `php artisan horizon:terminate`.
 
 The scheduler phase:
 
