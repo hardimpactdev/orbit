@@ -18,7 +18,7 @@ beforeEach(function (): void {
     config(['database.connections.release_snapshot' => ['driver' => 'sqlite', 'database' => '/home/orbit/.orbit/gateway.sqlite']]);
     $this->agents = new FakeAgentCommandRunner;
     $commands = new GatewayReleaseCommands($this->agents);
-    $this->layout = new GatewayReleaseLayout('/home/orbit/orbit/apps/gateway', $commands);
+    $this->layout = new GatewayReleaseLayout('/home/orbit/orbit/apps/gateway');
     $this->database = new SqliteGatewayReleaseDatabase($commands, $this->layout, '/home/orbit/.orbit', '/home/orbit/.orbit/gateway-release-step.lock', connection: 'release_snapshot', keptSnapshots: 2, minimumFreeBytes: 1024);
 });
 

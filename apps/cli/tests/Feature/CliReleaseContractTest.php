@@ -107,7 +107,8 @@ function cli_release_fake_binary(string $path, string $platform): void
     $header = match ($platform) {
         'linux-x86_64' => "\x7fELF\x02\x01\x01".str_repeat("\0", 11)."\x3e\x00",
         'linux-aarch64' => "\x7fELF\x02\x01\x01".str_repeat("\0", 11)."\xb7\x00",
-        'macos-arm64' => "\xcf\xfa\xed\xfe\x0c\x00\x00\x01".str_repeat("\0", 12),
+        'macos-arm64', 'macos-aarch64' => "\xcf\xfa\xed\xfe\x0c\x00\x00\x01".str_repeat("\0", 12),
+        'macos-x86_64' => "\xcf\xfa\xed\xfe\x07\x00\x00\x01".str_repeat("\0", 12),
     };
 
     File::ensureDirectoryExists(dirname($path));
@@ -120,6 +121,13 @@ function cli_release_artifacts(): string
     cli_release_fake_binary($root.'/artifacts/orbit-linux-x64/linux-x64', 'linux-x86_64');
     cli_release_fake_binary($root.'/artifacts/orbit-linux-arm64/linux-arm', 'linux-aarch64');
     cli_release_fake_binary($root.'/artifacts/orbit-macos-arm64/mac-arm', 'macos-arm64');
+    // CI's tested agent delivery, as tools/combine_agent_delivery.py writes it.
+    $manifest = ['commit' => str_repeat('a', 40), 'version' => '0.5.0', 'artifacts' => []];
+    foreach (['linux-aarch64', 'linux-x86_64', 'macos-aarch64', 'macos-x86_64'] as $platform) {
+        cli_release_fake_binary($root.'/agent-delivery/orbit-agent-'.$platform, $platform);
+        $manifest['artifacts'][$platform] = ['path' => 'orbit-agent-'.$platform, 'sha256' => hash_file('sha256', $root.'/agent-delivery/orbit-agent-'.$platform)];
+    }
+    File::put($root.'/agent-delivery/manifest.json', json_encode($manifest, JSON_PRETTY_PRINT));
 
     return $root;
 }
@@ -133,6 +141,8 @@ function cli_release_assets(string $root, string $version): array
         cli_release_repo_root().'/bin/orbit-cli-release-assets',
         $version,
         $root.'/artifacts',
+        $root.'/agent-delivery',
+        'https://github.com/hardimpactdev/orbit/releases/download/cli-v'.$version,
         $root.'/release',
     ], $root);
 }
@@ -215,7 +225,7 @@ describe('CLI release version', function (): void {
 });
 
 describe('CLI release assets', function (): void {
-    it('names each binary for its platform and writes sorted SHA256SUMS', function (): void {
+    it('names each binary for its platform, adds the tested agent with its release URLs, and writes sorted SHA256SUMS', function (): void {
         $root = cli_release_artifacts();
 
         [$exitCode, , $stderr] = cli_release_assets($root, '0.4681.0');
@@ -224,6 +234,10 @@ describe('CLI release assets', function (): void {
             'orbit-0.4681.0-linux-aarch64',
             'orbit-0.4681.0-linux-x86_64',
             'orbit-0.4681.0-macos-arm64',
+            'orbit-agent-linux-aarch64',
+            'orbit-agent-linux-x86_64',
+            'orbit-agent-macos-aarch64',
+            'orbit-agent-macos-x86_64',
         ];
         $expectedSums = implode('', array_map(
             static fn (string $name): string => hash_file('sha256', $root.'/release/'.$name)."  {$name}\n",
@@ -232,12 +246,40 @@ describe('CLI release assets', function (): void {
         $files = array_map(basename(...), File::files($root.'/release'));
         sort($files);
 
+        $manifest = json_decode(File::get($root.'/release/manifest.json'), true);
+
         expect($exitCode)->toBe(0, $stderr)
-            ->and($files)->toBe(['SHA256SUMS', ...$names])
+            ->and($files)->toBe(['SHA256SUMS', 'manifest.json', ...$names])
             ->and(File::get($root.'/release/SHA256SUMS'))->toBe($expectedSums)
             ->and(File::get($root.'/release/orbit-0.4681.0-macos-arm64'))->toBe(File::get($root.'/artifacts/orbit-macos-arm64/mac-arm'))
-            ->and(fileperms($root.'/release/orbit-0.4681.0-linux-x86_64') & 0777)->toBe(0755);
+            ->and(File::get($root.'/release/orbit-agent-macos-x86_64'))->toBe(File::get($root.'/agent-delivery/orbit-agent-macos-x86_64'))
+            ->and(fileperms($root.'/release/orbit-0.4681.0-linux-x86_64') & 0777)->toBe(0755)
+            ->and($manifest['commit'])->toBe(str_repeat('a', 40))
+            ->and($manifest['artifacts']['linux-x86_64'])->toBe([
+                'path' => 'orbit-agent-linux-x86_64',
+                'sha256' => hash_file('sha256', $root.'/agent-delivery/orbit-agent-linux-x86_64'),
+                'url' => 'https://github.com/hardimpactdev/orbit/releases/download/cli-v0.4681.0/orbit-agent-linux-x86_64',
+            ]);
     });
+
+    it('refuses an agent binary that does not match its tested digest or platform', function (string $fault): void {
+        $root = cli_release_artifacts();
+        match ($fault) {
+            'digest' => File::append($root.'/agent-delivery/orbit-agent-linux-x86_64', 'changed'),
+            'platform' => cli_release_fake_binary($root.'/agent-delivery/orbit-agent-macos-x86_64', 'macos-aarch64'),
+            'missing' => File::delete($root.'/agent-delivery/orbit-agent-linux-aarch64'),
+        };
+
+        [$exitCode, , $stderr] = cli_release_assets($root, '0.4681.0');
+
+        expect($exitCode)->toBe(1)
+            ->and($stderr)->toContain(match ($fault) {
+                'digest' => 'does not match its tested digest',
+                'platform' => 'is not a macos-x86_64 executable',
+                'missing' => 'missing binary',
+            })
+            ->and($root.'/release')->not->toBeDirectory();
+    })->with(['digest', 'platform', 'missing']);
 
     it('refuses a binary built for another platform', function (): void {
         $root = cli_release_artifacts();
@@ -304,7 +346,7 @@ describe('CLI release workflow', function (): void {
             ->and($workflow)->toContain('bin/orbit-cli-release-version --on-main origin/main "$REQUESTED_COMMIT"')
             ->and($workflow)->toContain('bin/orbit-cli-release-version --tag --on-main origin/main "$REQUESTED_COMMIT"')
             ->and($workflow)->toContain('uses: ./.github/workflows/orbit-cli-binary.yml')
-            ->and($workflow)->toContain('bin/orbit-cli-release-assets "$VERSION" artifacts release')
+            ->and($workflow)->toContain('bin/orbit-cli-release-assets "$VERSION" artifacts agent-delivery "https://github.com/${REPOSITORY}/releases/download/${TAG}" release')
             ->and($workflow)->toContain('--latest=false')
             ->and($workflow)->toContain('Published releases are never replaced.')
             ->and(substr_count($workflow, 'contents: write'))->toBe(1)
@@ -404,7 +446,7 @@ describe('CLI release workflow', function (): void {
     it('never runs release-commit code with the write token', function (): void {
         $jobs = cli_release_workflow()['jobs'];
 
-        expect($jobs['publish']['permissions'])->toBe(['contents' => 'write'])
+        expect($jobs['publish']['permissions'])->toBe(['contents' => 'write', 'actions' => 'read'])
             ->and($jobs['publish']['steps'][0]['uses'])->toStartWith('actions/checkout@')
             ->and($jobs['publish']['steps'][0])->toMatchArray([
                 'name' => 'Check out the release scripts',
@@ -412,7 +454,7 @@ describe('CLI release workflow', function (): void {
             ])
             ->and($jobs['build'])->not->toHaveKey('permissions')
             ->and(cli_release_workflow()['permissions'])->toBe(['contents' => 'read'])
-            ->and($jobs['resolve']['permissions'])->toBe(['contents' => 'read', 'checks' => 'read']);
+            ->and($jobs['resolve']['permissions'])->toBe(['contents' => 'read', 'checks' => 'read', 'actions' => 'read']);
     });
 });
 

@@ -17,17 +17,42 @@ use Throwable;
 final readonly class NativeGatewayReleaseExecutionOwner implements GatewayReleaseExecutionOwner
 {
     /** @param (Closure(): int)|null $effectiveUid */
-    public function __construct(private GatewayReleaseLayout $layout, private GatewayReleaseCommands $commands, private ?Closure $effectiveUid = null) {}
+    public function __construct(private GatewayReleaseLayout $layout, private ?Closure $effectiveUid = null, private ?int $accountUid = null) {}
 
     public function assertAllowed(?string $sha = null): void
     {
         $uid = $this->effectiveUid === null ? posix_geteuid() : ($this->effectiveUid)();
-        if ($uid <= 0) {
+        $account = $this->accountUid ?? (posix_getpwnam('orbit')['uid'] ?? -1);
+        if ($uid <= 0 || $uid !== $account) {
             $this->refuse();
         }
         $home = Config::string('orbit.home');
         $connection = Config::string('database.default');
         $database = $this->database(Config::get('database.connections.'.$connection));
+        if (! str_starts_with($home, '/')) {
+            $this->refuse();
+        }
+        foreach ([$home, $this->layout->basePath(), $this->layout->sharedPath(), $this->layout->storagePath(), $this->layout->releasesPath()] as $path) {
+            $this->owned($path, $uid);
+            if (! is_dir($path)) {
+                $this->refuse();
+            }
+        }
+        foreach ([$database, $this->layout->environmentPath()] as $path) {
+            $this->owned($path, $uid);
+            if (! is_file($path)) {
+                $this->refuse();
+            }
+        }
+        foreach ([$home.'/gateway-release.lock', $home.'/gateway-release-step.lock', $home.'/backups', $home.'/recovery', $home.'/gateway-release.paused'] as $path) {
+            if (file_exists($path) || is_link($path)) {
+                $this->owned($path, $uid);
+                if (in_array($path, [$home.'/gateway-release.lock', $home.'/gateway-release-step.lock'], true)
+                    && (! is_file($path) || (fileperms($path) & 07777) !== 0600)) {
+                    $this->refuse();
+                }
+            }
+        }
         // The manager may retain a connection opened before configuration changed.
         try {
             $running = DB::connection();
@@ -46,10 +71,27 @@ final readonly class NativeGatewayReleaseExecutionOwner implements GatewayReleas
         } catch (Throwable) {
             $this->refuse();
         }
-        $caches = $this->commands->inspectOwner($this->layout, $home, $database, $uid,
-            is_string($sha) && GatewayReleaseCommit::isSha($sha) ? $sha : null,
-            app()->configurationIsCached() ? app()->getCachedConfigPath() : null);
-        foreach ($caches as $cache) {
+        $caches = [$this->layout->applicationPath.'/bootstrap/cache/config.php'];
+        if (app()->configurationIsCached()) {
+            $caches[] = app()->getCachedConfigPath();
+        }
+        if (is_string($sha) && GatewayReleaseCommit::isSha($sha)) {
+            $target = $this->layout->releasePath(substr($sha, 0, 12));
+            if (file_exists($target) || is_link($target)) {
+                $this->owned($target, $uid);
+                if (is_dir($target.'/apps/gateway/bootstrap/cache')) {
+                    $this->owned($target.'/apps/gateway/bootstrap/cache', $uid);
+                }
+                if (file_exists($target.'/apps/gateway/bootstrap/cache/config.php') || file_exists($target.'/REVISION')) {
+                    $caches[] = $target.'/apps/gateway/bootstrap/cache/config.php';
+                }
+            }
+        }
+        foreach (array_unique($caches) as $cache) {
+            $this->owned($cache, $uid);
+            if ((fileperms($cache) & 0077) !== 0) {
+                $this->refuse();
+            }
             $values = require $cache;
             if (! is_array($values) || data_get($values, 'orbit.home') !== $home
                 || data_get($values, 'orbit.gateway_checkout') !== $this->layout->applicationPath
@@ -70,12 +112,20 @@ final readonly class NativeGatewayReleaseExecutionOwner implements GatewayReleas
             $this->refuse();
         }
         $path = $configuration['database'] ?? null;
-        // Resolve the connection identity before the runner queries its serving Node.
         if (! is_string($path) || ! str_starts_with($path, '/') || ! is_file($path) || realpath($path) !== $path) {
             $this->refuse();
         }
 
         return $path;
+    }
+
+    private function owned(string $path, int $uid): void
+    {
+        clearstatcache(true, $path);
+        if (is_link($path) || ! file_exists($path) || fileowner($path) !== $uid || ! is_readable($path)
+            || (fileperms($path) & 0022) !== 0) {
+            $this->refuse();
+        }
     }
 
     private function refuse(): never

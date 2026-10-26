@@ -97,7 +97,7 @@ final readonly class GatewayReleaseLayout
         return 'releases/'.GatewayReleaseCommit::assertId($id);
     }
 
-    /** Read live state through the command boundary; path construction needs no observer. */
+    /** Reads live state from the layout itself; path construction needs no observer. */
     public function observe(?string $runningApplication = null): GatewayReleaseInventory
     {
         return ($this->observer ?? app(GatewayReleaseObserver::class))->inspect($this, $runningApplication);

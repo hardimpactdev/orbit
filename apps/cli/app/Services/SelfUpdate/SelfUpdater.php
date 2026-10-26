@@ -9,9 +9,8 @@ use Orbit\Sdk\Responses\Gateway\DesiredFleetStateResponse;
 use Orbit\Sdk\Responses\Gateway\FleetReleaseAssetResponse;
 
 /**
- * The two steps of `orbit self-update` (ADR 0202): on a managed Linux Node replace `orbit-agent` with the
- * Gateway's pin, and replace this CLI with the Gateway's CLI release. Each step reports a verified outcome and
- * never throws.
+ * The step of `orbit self-update` (ADR 0202): replace this CLI with the Gateway's CLI release. It reports a
+ * verified outcome and never throws. A Node gets `orbit-agent` from the Gateway's agent commands instead.
  *
  * The Gateway names the release; it never names where to download it. The CLI builds every URL from its own
  * release location, reads the checksum from the release's own `SHA256SUMS`, and requires it to equal the
@@ -19,9 +18,6 @@ use Orbit\Sdk\Responses\Gateway\FleetReleaseAssetResponse;
  */
 final readonly class SelfUpdater
 {
-    /** The installer's bound: the update lock wait, the copy, and the observer's health window. */
-    public const int AgentInstallSeconds = 180;
-
     private const string ReleaseVersion = '/\A0\.([1-9][0-9]{0,9})\.0\z/D';
 
     private const string VersionedBinary = '/\Aorbit-0\.[1-9][0-9]{0,9}\.0\z/D';
@@ -86,7 +82,7 @@ final readonly class SelfUpdater
         $after = new InstalledVersion($version, $asset->sha256);
 
         try {
-            $url = $this->expectedAsset($asset, $version, $this->location->cliAssetName($version, $platform), $this->location->cliAssetUrl($version, $platform), 'self_update');
+            $url = $this->expectedAsset($asset, $this->location->cliAssetName($version, $platform), $this->location->cliAssetUrl($version, $platform));
 
             if ($installed === $asset->sha256) {
                 return new SelfUpdateStep('cli', SelfUpdateOutcome::Unchanged, $link, $before, $after);
@@ -94,7 +90,7 @@ final readonly class SelfUpdater
 
             $this->guardVersion($currentVersion, $version, $allowDowngrade);
 
-            $this->confirmChecksum($this->location->cliChecksumsUrl($version), $asset, 'self_update');
+            $this->confirmChecksum($this->location->cliChecksumsUrl($version), $asset);
             $target = dirname($link).'/orbit-'.$version;
 
             if ($this->sha256($target) !== $asset->sha256) {
@@ -130,89 +126,15 @@ final readonly class SelfUpdater
         return new SelfUpdateStep('cli', SelfUpdateOutcome::Updated, $link, $before, $after);
     }
 
-    public function updateAgent(DesiredFleetStateResponse $state): SelfUpdateStep
-    {
-        $path = $this->host->agentBinaryPath();
-
-        if (! $this->host->isManagedNode()) {
-            return new SelfUpdateStep('agent', SelfUpdateOutcome::Skipped, reason: 'not_managed_node');
-        }
-
-        $platform = $this->host->platform();
-        $asset = $platform === null ? null : $state->agent->asset($platform);
-
-        if ($platform === null || $asset === null) {
-            return new SelfUpdateStep('agent', SelfUpdateOutcome::Skipped, $path, reason: 'platform_unsupported');
-        }
-
-        $version = $state->agent->version;
-        $installed = $this->sha256($path);
-        $before = new InstalledVersion($installed === $asset->sha256 ? $version : null, $installed);
-        $after = new InstalledVersion($version, $asset->sha256);
-
-        if ($installed === $asset->sha256) {
-            return new SelfUpdateStep('agent', SelfUpdateOutcome::Unchanged, $path, $before, $after);
-        }
-
-        if (! $this->host->isRoot()) {
-            return new SelfUpdateStep('agent', SelfUpdateOutcome::Skipped, $path, $before, $before, reason: 'root_required');
-        }
-
-        $commit = $state->agent->commit;
-        // The verified candidate waits beside the installed binary, in a directory only root can write.
-        $candidate = dirname($path).'/orbit-agent-candidate-'.bin2hex(random_bytes(8));
-
-        try {
-            $url = $this->expectedAsset($asset, $commit, $this->location->agentAssetName($platform), $this->location->agentAssetUrl($commit, $platform), 'agent');
-            $this->confirmChecksum($this->location->agentChecksumsUrl($commit), $asset, 'agent');
-            $this->installer->install(target: $candidate, url: $url, sha256: $asset->sha256, errorPrefix: 'agent', mode: 0700, owner: $this->host->agentOwner());
-            $replaced = $this->installAgent($candidate, $asset->sha256);
-        } catch (SelfUpdateFailure $failure) {
-            @unlink($candidate);
-
-            return new SelfUpdateStep('agent', SelfUpdateOutcome::Failed, $path, $before, $before, failure: $failure);
-        }
-
-        return new SelfUpdateStep('agent', $replaced ? SelfUpdateOutcome::Updated : SelfUpdateOutcome::Unchanged, $path, $before, $after);
-    }
-
-    /**
-     * Runs the agent's own installer from the verified candidate (ADR 0225): it replaces the binary under the
-     * update lock, restarts the observer, and restores the kept binary when the observer does not stay up.
-     *
-     * @throws SelfUpdateFailure
-     */
-    private function installAgent(string $candidate, string $sha256): bool
-    {
-        $envelope = json_encode([
-            'agent_sha256' => $sha256,
-            'deadline_ms' => self::AgentInstallSeconds * 1000,
-            'input' => ['candidate' => $candidate, 'sha256' => $sha256],
-        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
-        $result = Process::timeout(self::AgentInstallSeconds + 30)->input($envelope)->run([$candidate, 'command', 'agent.install']);
-        $lines = array_values(array_filter(explode("\n", $result->output()), static fn (string $line): bool => trim($line) !== ''));
-        $answer = json_decode((string) end($lines), true);
-
-        if (is_array($answer) && ($answer['ok'] ?? null) === true && is_array($answer['data'] ?? null)) {
-            return ($answer['data']['replaced'] ?? null) === true;
-        }
-
-        $error = is_array($answer) && is_array($answer['error'] ?? null) ? $answer['error'] : null;
-        $code = is_string($error['code'] ?? null) ? $error['code'] : 'agent.install_failed';
-        $message = is_string($error['message'] ?? null) ? $error['message'] : 'The orbit-agent installer returned no result.';
-
-        throw new SelfUpdateFailure($code, $message);
-    }
-
     /**
      * The Gateway's asset must be the Orbit release the CLI would name itself, with a well-formed version.
      *
      * @throws SelfUpdateFailure
      */
-    private function expectedAsset(FleetReleaseAssetResponse $asset, string $version, string $name, string $url, string $errorPrefix): string
+    private function expectedAsset(FleetReleaseAssetResponse $asset, string $name, string $url): string
     {
         if ($asset->name !== $name || $asset->url !== $url) {
-            throw new SelfUpdateFailure($errorPrefix.'.release_mismatch', "The Gateway names {$asset->url}, not the Orbit release asset {$url}.");
+            throw new SelfUpdateFailure('self_update.release_mismatch', "The Gateway names {$asset->url}, not the Orbit release asset {$url}.");
         }
 
         return $url;
@@ -249,18 +171,18 @@ final readonly class SelfUpdater
      *
      * @throws SelfUpdateFailure
      */
-    private function confirmChecksum(string $url, FleetReleaseAssetResponse $asset, string $errorPrefix): void
+    private function confirmChecksum(string $url, FleetReleaseAssetResponse $asset): void
     {
         $directory = sys_get_temp_dir().'/orbit-self-update-'.bin2hex(random_bytes(8));
 
         if (! @mkdir($directory, 0700) || is_link($directory)) {
-            throw new SelfUpdateFailure($errorPrefix.'.download_failed', 'Could not prepare a private directory for SHA256SUMS.');
+            throw new SelfUpdateFailure('self_update.download_failed', 'Could not prepare a private directory for SHA256SUMS.');
         }
 
         $path = $directory.'/SHA256SUMS';
 
         try {
-            $this->downloader->download($url, $path, ReleaseDownloader::ChecksumsMaxBytes, $errorPrefix);
+            $this->downloader->download($url, $path, ReleaseDownloader::ChecksumsMaxBytes, 'self_update');
             $contents = (string) @file_get_contents($path, length: ReleaseDownloader::ChecksumsMaxBytes);
         } finally {
             @unlink($path);
@@ -277,7 +199,7 @@ final readonly class SelfUpdater
             }
         }
 
-        throw new SelfUpdateFailure($errorPrefix.'.checksum_mismatch', "The release SHA256SUMS does not confirm the Gateway's checksum for {$asset->name}.");
+        throw new SelfUpdateFailure('self_update.checksum_mismatch', "The release SHA256SUMS does not confirm the Gateway's checksum for {$asset->name}.");
     }
 
     /** @throws SelfUpdateFailure */

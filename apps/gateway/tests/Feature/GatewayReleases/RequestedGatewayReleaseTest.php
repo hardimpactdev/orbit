@@ -93,16 +93,15 @@ describe('gateway:release:run', function (): void {
             ->error_code->toBe('gateway.release_interrupted');
     });
 
-    it('records a refused commit on its record without marking it failed for automatic releases', function (): void {
+    it('records a commit without a published release on its record without marking it failed for automatic releases', function (): void {
         $this->pipeline->adopt();
-        $this->pipeline->fixture->agents->refuse('gateway.prepare-release', 'gateway.release_commit_unknown');
 
-        expect(release_failure(fn () => $this->pipeline->deployer()->execute('abcdef1234567'))->errorCode)->toBe('gateway.release_commit_unknown')
+        expect(release_failure(fn () => $this->pipeline->deployer()->execute('abcdef1234567'))->errorCode)->toBe('gateway.release_agent_delivery_unavailable')
             ->and(GatewayRelease::query()->sole())
             ->outcome->toBe('failed')
             ->retryable->toBeTrue()
             ->sha->toBeNull()
-            ->and(GatewayRelease::query()->sole()->phases)->toBe(['prepare' => ['outcome' => 'failed', 'error_code' => 'gateway.release_commit_unknown']])
+            ->and(GatewayRelease::query()->sole()->phases)->toBe(['prepare' => ['outcome' => 'failed', 'error_code' => 'gateway.release_agent_delivery_unavailable']])
             ->and($this->pipeline->alerts)->toBe([]);
     });
 });

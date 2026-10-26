@@ -68,13 +68,7 @@ final class AppServiceProvider extends ServiceProvider
             ReleaseLocation::class,
             static fn (): ReleaseLocation => new ReleaseLocation(Config::string('orbit.self_update.releases')),
         );
-        $this->app->bind(
-            SelfUpdateHost::class,
-            static fn (): NativeSelfUpdateHost => new NativeSelfUpdateHost(
-                agentUnitPath: Config::string('orbit.self_update.agent_unit'),
-                agentBinaryPath: Config::string('orbit.self_update.agent_binary'),
-            ),
-        );
+        $this->app->bind(SelfUpdateHost::class, static fn (): NativeSelfUpdateHost => new NativeSelfUpdateHost);
         $this->app->singleton(
             GatewayConfigRepository::class,
             static fn (): GatewayConfigRepository => new GatewayConfigRepository(

@@ -21,8 +21,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub(super) mod delivery;
-
 command_errors! {
     enum Failure {
         Invalid {} => "gateway.release_layout_invalid", "The Gateway release layout is invalid.";
@@ -38,7 +36,6 @@ command_errors! {
         Link {} => "gateway.release_link_failed", "The shared environment and storage could not be linked into the release.";
         Dependencies {} => "gateway.release_dependencies_failed", "The release runtime dependencies could not be installed or verified.";
         Access {} => "gateway.release_access_failed", "The release cache or source permissions could not be set.";
-        Delivery {} => "gateway.release_agent_delivery_invalid", "The release has no valid published agent delivery for its source. Prepare its matching agent manifest before activation.";
         Revision {} => "gateway.release_revision_failed", "The release revision could not be published.";
         Configuration {} => "gateway.release_configuration_failed", "The release configuration could not be cached privately.";
         Migration {} => "gateway.release_migrate_failed", "The release migrations failed. The database may be partly migrated; the snapshot holds the state before.";
@@ -151,11 +148,6 @@ pub struct HandoffReport {
     succeeded: bool,
     report: serde_json::Map<String, Value>,
 }
-#[derive(schemars::JsonSchema, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct StepInput {
-    pub step_lock: PathBuf,
-}
 #[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Inspection {
     sha: Option<String>,
@@ -169,10 +161,6 @@ pub struct Preparation {
 #[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Changed {
     changed: bool,
-}
-#[derive(schemars::JsonSchema, Debug, Serialize)]
-pub struct StepState {
-    busy: bool,
 }
 #[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct SchemaState {
@@ -389,12 +377,6 @@ fn step_path(path: &Path) -> Result<(), Error> {
         }
     }
     Ok(())
-}
-fn step(input: &StepInput) -> Result<StepState, Error> {
-    step_path(&input.step_lock)?;
-    Ok(StepState {
-        busy: lock::is_busy(&input.step_lock).map_err(|_| Failure::LockUnavailable {})?,
-    })
 }
 pub(super) fn hold_step(path: &Path, deadline: Instant) -> Result<lock::Held, Error> {
     step_path(path)?;
@@ -709,13 +691,6 @@ fn finish(input: &FinishInput, host: &mut impl Host, deadline: Instant) -> Resul
     }
     let _step = hold_step(&input.step_lock, deadline)?;
     let result = (|| {
-        delivery::require(
-            &delivery::Input {
-                checkout: input.checkout.clone(),
-                sha: input.sha.clone(),
-            },
-            host,
-        )?;
         let cache_dir = app_directory(&path, "apps/gateway/bootstrap/cache")?;
         if prepared(&layout, id)?.as_ref() == Some(&input.sha)
             && owned(&cache_dir.join("config.php"))?
@@ -1003,16 +978,6 @@ command!(
         &mut Native(context),
         context.deadline()
     )
-);
-command!(
-    InspectStep,
-    "gateway.inspect-release-step",
-    StepInput,
-    StepState,
-    false,
-    30,
-    |_: &StepInput| None,
-    |input: StepInput, _: &Context| step(&input)
 );
 
 #[cfg(test)]

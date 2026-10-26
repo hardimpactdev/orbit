@@ -39,6 +39,22 @@ describe(GatewayReleaseRetry::class, function (): void {
             ->and($retry->retryable('gateway.release_verify_failed', str_repeat('b', 40), $current->id))->toBeTrue();
     });
 
+    it('never spends the budget while the commit waits for its published release', function (): void {
+        $sha = str_repeat('a', 40);
+        foreach (range(1, 4) as $attempt) {
+            retry_record(['error_code' => 'gateway.release_agent_delivery_unavailable']);
+        }
+        $retry = new GatewayReleaseRetry;
+
+        expect($retry->retryable('gateway.release_agent_delivery_unavailable', $sha))->toBeTrue()
+            ->and($retry->retryable('gateway.release_verify_failed', $sha))->toBeTrue();
+
+        retry_record(['error_code' => 'gateway.release_verify_failed']);
+        retry_record(['error_code' => null]);
+        expect($retry->retryable('gateway.release_verify_failed', $sha))->toBeFalse()
+            ->and($retry->retryable('gateway.release_agent_delivery_unavailable', $sha))->toBeTrue();
+    });
+
     it('makes a failure the commit causes final at once', function (): void {
         expect(new GatewayReleaseRetry()->retryable('gateway.release_downgrade', str_repeat('c', 40)))->toBeFalse();
     });

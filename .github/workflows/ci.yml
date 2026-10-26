@@ -711,7 +711,7 @@ jobs:
       - name: Run tests
         run: scripts/check-crates test --locked
       # The delivery of this exact source: both static Linux binaries, SHA256SUMS, and manifest.json (ADR 0225).
-      # The release workflow publishes this artifact once main's required checks pass; it never rebuilds.
+      # The Orbit CLI Release workflow publishes this artifact with the commit's release; it never rebuilds.
       - name: Build the agent delivery
         run: scripts/build-delivery "$RUNNER_TEMP/agent-delivery"
       - name: Upload the agent delivery

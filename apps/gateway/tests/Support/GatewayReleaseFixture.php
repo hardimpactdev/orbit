@@ -18,13 +18,14 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseBuilder;
 use App\Infrastructure\GatewayReleases\GatewayReleaseCommands;
 use App\Infrastructure\GatewayReleases\SqliteGatewayReleaseDatabase;
 use App\Models\Node;
+use Closure;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
- * Scripted agent answers for the Gateway release commands. The fixture keeps only what the agent reports:
- * the commits it can resolve, the releases it prepared, and the current one. It has no Git, release tree,
+ * Scripted agent answers for the Gateway release commands. The fixture keeps only the release state:
+ * the commits that have a published release, the releases it prepared, and the current one. It has no Git, release tree,
  * or file modes; Rust tests prove what each command does on a Node. The temporary directory holds what
  * Gateway PHP itself reads or writes: `ORBIT_HOME` and the files a test places for it.
  */
@@ -37,6 +38,11 @@ final class GatewayReleaseFixture
     public readonly GatewayReleaseLayout $layout;
 
     public readonly FakeAgentCommandRunner $agents;
+
+    public readonly RecordingReleaseAgent $releaseAgent;
+
+    /** @var (Closure(): GatewayReleaseInventory)|null replaces the recorded inventory, for a layout that turns unreadable */
+    public ?Closure $observed = null;
 
     /** @var list<string> the release application paths the builder granted Caddy access to */
     public array $accessGrants = [];
@@ -58,13 +64,14 @@ final class GatewayReleaseFixture
         $this->base = sys_get_temp_dir().'/orbit-release-'.Str::lower(Str::random(10));
         mkdir($this->base, 0700, true);
         $this->agents = $this->scriptedAgents();
+        $this->releaseAgent = new RecordingReleaseAgent($this->resolve(...));
         $this->layout = new GatewayReleaseLayout($this->base.'/orbit/apps/gateway', new readonly class($this) implements GatewayReleaseObserver
         {
             public function __construct(private GatewayReleaseFixture $fixture) {}
 
             public function inspect(GatewayReleaseLayout $layout, ?string $runningApplication = null): GatewayReleaseInventory
             {
-                return $this->fixture->releaseCommands()->inspect($layout, $runningApplication);
+                return $this->fixture->observed === null ? $this->fixture->inventory() : ($this->fixture->observed)();
             }
         });
     }
@@ -157,6 +164,7 @@ final class GatewayReleaseFixture
             commands: $this->releaseCommands(),
             readAccess: app(RepositoryReadAccess::class),
             web: $web ?? new NoWebBuild,
+            agent: $this->releaseAgent,
             checkoutAccess: function (string $application): void {
                 $this->accessGrants[] = $application;
             },
@@ -194,7 +202,6 @@ final class GatewayReleaseFixture
     private function scriptedAgents(): FakeAgentCommandRunner
     {
         return new FakeAgentCommandRunner()
-            ->answer('gateway.inspect-releases', fn (): array => $this->inventory())
             ->answer('gateway.switch-release', function (array $input): array {
                 $previous = $this->current;
                 $this->select($input['release']);
@@ -203,7 +210,6 @@ final class GatewayReleaseFixture
             })
             ->answer('gateway.check-release-forward', fn (): array => ['source' => $this->current, 'source_sha' => $this->preparedSha($this->current)])
             ->answer('gateway.inspect-release-source', ['origin' => self::Origin])
-            ->answer('gateway.inspect-release-step', ['busy' => false])
             ->answer('gateway.check-release-migrations', ['complete' => true])
             ->answer('gateway.inspect-release-preparation', ['sha' => null, 'origin' => self::Origin])
             ->answer('gateway.prepare-release', function (array $input): array {
@@ -217,7 +223,6 @@ final class GatewayReleaseFixture
 
                 return ['sha' => $sha, 'reused' => $reused];
             })
-            ->answer('gateway.inspect-release-agent-delivery', ['commit' => str_repeat('a', 40), 'version' => '0.5.0', 'installed' => true])
             ->answer('gateway.finish-release', function (array $input): array {
                 $this->prepared($input['sha']);
 
@@ -232,8 +237,8 @@ final class GatewayReleaseFixture
             });
     }
 
-    /** @return array<string, mixed> the `gateway.inspect-releases` answer for the recorded state */
-    private function inventory(): array
+    /** The release inventory of the recorded state, as the layout reads it. */
+    public function inventory(): GatewayReleaseInventory
     {
         $commits = $incomplete = $finished = [];
         foreach ($this->releases as $id => $release) {
@@ -248,14 +253,14 @@ final class GatewayReleaseFixture
         arsort($finished);
         $adopted = $this->current !== null && isset($commits[$this->current]);
 
-        return [
-            'current' => $this->current,
-            'state' => $adopted ? 'adopted' : ($this->inPlace ? 'in_place' : 'unreadable'),
-            'superseded' => false,
-            'commits' => $commits,
-            'incomplete' => $incomplete,
-            'retained' => array_map(strval(...), array_keys($finished)),
-        ];
+        return new GatewayReleaseInventory(
+            $this->current,
+            $adopted ? 'adopted' : ($this->inPlace ? 'in_place' : 'unreadable'),
+            false,
+            $commits,
+            $incomplete,
+            array_map(strval(...), array_keys($finished)),
+        );
     }
 
     /** The commit of a prepared release, or null when the release is missing or incomplete. */

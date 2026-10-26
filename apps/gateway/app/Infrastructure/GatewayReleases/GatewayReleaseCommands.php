@@ -6,9 +6,7 @@ namespace App\Infrastructure\GatewayReleases;
 
 use App\Domain\GatewayReleases\GatewayReleaseCommit;
 use App\Domain\GatewayReleases\GatewayReleaseException;
-use App\Domain\GatewayReleases\GatewayReleaseInventory;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
-use App\Domain\GatewayReleases\GatewayReleaseObserver;
 use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
@@ -17,15 +15,10 @@ use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\Gateway\GatewayCommandNode;
 use App\Models\Node;
 
-/** Release intent and error mapping; the agent owns Node observations and mutations. */
-final readonly class GatewayReleaseCommands implements GatewayReleaseObserver
+/** Release intent and error mapping; the agent owns the release mutations on the Gateway Node. */
+final readonly class GatewayReleaseCommands
 {
     public function __construct(private AgentCommandRunner $agents) {}
-
-    public function inspect(GatewayReleaseLayout $layout, ?string $runningApplication = null): GatewayReleaseInventory
-    {
-        return GatewayReleaseInventory::fromAgent($this->run($layout, 'gateway.inspect-releases', ['running_application' => $runningApplication], 'inspect', 'gateway.release_observation_failed'));
-    }
 
     public function switch(GatewayReleaseLayout $layout, string $id): ?string
     {
@@ -90,24 +83,6 @@ final readonly class GatewayReleaseCommands implements GatewayReleaseObserver
         return ['sha' => $result['sha'], 'reused' => $result['reused']];
     }
 
-    /** @return array{commit: string, version: string, installed: bool} */
-    public function inspectAgentDelivery(GatewayReleaseLayout $layout, string $sha): array
-    {
-        $result = $this->run($layout, 'gateway.inspect-release-agent-delivery', ['sha' => $sha], 'agent-delivery', 'gateway.release_agent_delivery_invalid');
-        if (! is_string($result['commit'] ?? null) || strlen($result['commit']) !== 40 || ! GatewayReleaseCommit::isSha($result['commit'])
-            || ! is_string($result['version'] ?? null) || $result['version'] === '' || ! is_bool($result['installed'] ?? null)) {
-            throw $this->malformed('agent-delivery', 'gateway.release_agent_delivery_invalid');
-        }
-
-        return ['commit' => $result['commit'], 'version' => $result['version'], 'installed' => $result['installed']];
-    }
-
-    /** @param array<string, mixed> $manifest */
-    public function installAgentDelivery(GatewayReleaseLayout $layout, string $sha, string $stepLock, array $manifest): void
-    {
-        $this->changed($layout, 'gateway.install-release-agent-delivery', ['sha' => $sha, 'step_lock' => $stepLock, 'manifest' => $manifest], 'agent-delivery', 'gateway.release_agent_delivery_invalid');
-    }
-
     public function finish(GatewayReleaseLayout $layout, string $sha, string $stepLock): void
     {
         $this->changed($layout, 'gateway.finish-release', ['sha' => $sha, 'step_lock' => $stepLock], 'revision', 'gateway.release_revision_failed');
@@ -170,16 +145,6 @@ final readonly class GatewayReleaseCommands implements GatewayReleaseObserver
         $this->changed(null, 'gateway.prune-web-builds', ['web_root' => $webRoot, 'retained' => $retained], 'web', 'gateway.release_web_install_failed');
     }
 
-    public function stepBusy(string $stepLock): bool
-    {
-        $result = $this->run(null, 'gateway.inspect-release-step', ['step_lock' => $stepLock], 'lock', 'gateway.release_lock_unavailable');
-        if (! is_bool($result['busy'] ?? null)) {
-            throw $this->malformed('lock', 'gateway.release_lock_unavailable');
-        }
-
-        return $result['busy'];
-    }
-
     public function databaseBytes(string $database): int
     {
         $result = $this->run(null, 'gateway.inspect-release-database', ['database' => $database], 'snapshot', 'gateway.release_snapshot_failed');
@@ -220,37 +185,6 @@ final readonly class GatewayReleaseCommands implements GatewayReleaseObserver
         } catch (GatewayReleaseException $error) {
             throw new GatewayReleaseException('finalize', 'gateway.release_schema_pending', 'Migration status is unavailable or migrations remain pending. Keep the hold.', previous: $error);
         }
-    }
-
-    /** @return list<string> */
-    public function inspectOwner(GatewayReleaseLayout $layout, string $home, string $database, int $callerUid, ?string $sha, ?string $runtimeCache): array
-    {
-        $result = $this->run($layout, 'gateway.inspect-release-owner', [
-            'orbit_home' => $home, 'database' => $database, 'caller_uid' => $callerUid,
-            'sha' => $sha, 'runtime_cache' => $runtimeCache,
-        ], 'owner', 'gateway.release_owner_invalid');
-        $current = $layout->applicationPath.'/bootstrap/cache/config.php';
-        $allowed = [$current];
-        if ($runtimeCache !== null) {
-            $allowed[] = $runtimeCache;
-        }
-        if ($sha !== null) {
-            $allowed[] = $layout->releaseApplicationPath(substr($sha, 0, 12)).'/bootstrap/cache/config.php';
-        }
-        $caches = $result['caches'] ?? null;
-        if (! is_array($caches) || ! array_is_list($caches) || ! in_array($current, $caches, true)
-            || ($runtimeCache !== null && ! in_array($runtimeCache, $caches, true))) {
-            throw $this->malformed('owner', 'gateway.release_owner_invalid');
-        }
-        $paths = [];
-        foreach ($caches as $cache) {
-            if (! is_string($cache) || ! in_array($cache, $allowed, true) || in_array($cache, $paths, true)) {
-                throw $this->malformed('owner', 'gateway.release_owner_invalid');
-            }
-            $paths[] = $cache;
-        }
-
-        return $paths;
     }
 
     /** @return array{path: string, sha256: string} */
@@ -411,12 +345,12 @@ final readonly class GatewayReleaseCommands implements GatewayReleaseObserver
                 'gateway.release_not_prepared', 'gateway.release_commit_invalid', 'gateway.release_commit_unknown' => 422,
                 'gateway.release_switch_failed', 'gateway.release_source_unknown',
                 'gateway.release_fetch_failed', 'gateway.release_worktree_failed', 'gateway.release_link_failed',
-                'gateway.release_dependencies_failed', 'gateway.release_access_failed', 'gateway.release_revision_failed', 'gateway.release_agent_delivery_invalid',
+                'gateway.release_dependencies_failed', 'gateway.release_access_failed', 'gateway.release_revision_failed',
                 'gateway.release_configuration_failed', 'gateway.release_lock_unavailable' => 500,
                 'gateway.release_snapshot_unavailable', 'gateway.release_snapshot_failed', 'gateway.release_migrate_failed', 'gateway.release_handoff_failed' => 500,
                 default => 409,
             };
-            if (in_array($command, ['gateway.inspect-release-preparation', 'gateway.prepare-release', 'gateway.install-release-agent-delivery', 'gateway.finish-release'], true)) {
+            if (in_array($command, ['gateway.inspect-release-preparation', 'gateway.prepare-release', 'gateway.finish-release'], true)) {
                 $step = match ($refused->errorCode) {
                     'gateway.release_commit_invalid' => 'resolve',
                     'gateway.release_layout_invalid', 'gateway.release_layout_missing', 'gateway.release_path_conflict' => 'layout',
@@ -425,7 +359,6 @@ final readonly class GatewayReleaseCommands implements GatewayReleaseObserver
                     'gateway.release_link_failed' => 'link',
                     'gateway.release_dependencies_failed' => 'dependencies',
                     'gateway.release_access_failed' => 'access',
-                    'gateway.release_agent_delivery_invalid' => 'agent-delivery',
                     'gateway.release_revision_failed' => 'revision',
                     'gateway.release_configuration_failed' => 'configuration',
                     'gateway.release_lock_unavailable', 'gateway.release_in_progress' => 'lock',

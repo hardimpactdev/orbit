@@ -189,34 +189,6 @@ fn populated(root: &Path, cgroup: &str) -> io::Result<bool> {
     }
 }
 
-/// Observe a step without creating or changing its lock file. A released flock can still
-/// belong to a service whose children are stopping, so admission checks both observations.
-pub fn is_busy(path: &Path) -> Result<bool, LockError> {
-    busy_in_cgroup(path, Path::new("/sys/fs/cgroup"))
-}
-
-fn busy_in_cgroup(path: &Path, root: &Path) -> Result<bool, LockError> {
-    use std::os::unix::fs::OpenOptionsExt;
-    let failure = |error: io::Error| LockError::Io(path.into(), error.to_string());
-    let file = match OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(path)
-    {
-        Ok(file) => file,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(failure(error)),
-    };
-    match rustix::fs::flock(&file, rustix::fs::FlockOperation::NonBlockingLockExclusive) {
-        Ok(()) => previous_cgroup(&file)
-            .map_err(failure)?
-            .map(|group| populated(root, &group).map_err(failure))
-            .unwrap_or(Ok(false)),
-        Err(rustix::io::Errno::WOULDBLOCK) => Ok(true),
-        Err(error) => Err(failure(error.into())),
-    }
-}
-
 fn acquire_in_cgroup(
     path: &Path,
     deadline: Instant,
@@ -406,41 +378,6 @@ mod tests {
         // A collected unit has no cgroup. A caller outside command supervision clears its old record.
         drop(acquire_in_cgroup(&path, Instant::now(), None, &root).unwrap());
         assert!(std::fs::read(&path).unwrap().is_empty());
-        std::fs::remove_dir_all(directory).unwrap();
-    }
-
-    #[test]
-    fn inspection_observes_prior_children_without_rewriting_the_lock_record() {
-        let directory = temporary();
-        let path = directory.join("step.lock");
-        let group = "/system.slice/orbit-command-prior.service";
-        let events = directory.join(&group[1..]).join("cgroup.events");
-        assert!(!busy_in_cgroup(&path, &directory).unwrap());
-        assert!(!path.exists());
-        std::fs::create_dir_all(events.parent().unwrap()).unwrap();
-        std::fs::write(&events, "populated 1\n").unwrap();
-        drop(acquire_in_cgroup(&path, Instant::now(), Some(group), &directory).unwrap());
-        let before = std::fs::read(&path).unwrap();
-        assert!(busy_in_cgroup(&path, &directory).unwrap());
-        assert_eq!(std::fs::read(&path).unwrap(), before);
-        std::fs::write(&events, "populated 0\n").unwrap();
-        assert!(!busy_in_cgroup(&path, &directory).unwrap());
-        assert_eq!(std::fs::read(&path).unwrap(), before);
-        std::fs::write(&events, "invalid\n").unwrap();
-        assert!(matches!(
-            busy_in_cgroup(&path, &directory),
-            Err(LockError::Io(..))
-        ));
-        assert_eq!(std::fs::read(&path).unwrap(), before);
-        std::fs::remove_file(&events).unwrap();
-        assert!(!busy_in_cgroup(&path, &directory).unwrap());
-        assert_eq!(std::fs::read(&path).unwrap(), before);
-        std::fs::write(&path, "invalid record\n").unwrap();
-        assert!(matches!(
-            busy_in_cgroup(&path, &directory),
-            Err(LockError::Io(..))
-        ));
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "invalid record\n");
         std::fs::remove_dir_all(directory).unwrap();
     }
 

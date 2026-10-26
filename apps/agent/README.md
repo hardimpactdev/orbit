@@ -2,7 +2,7 @@
 
 `orbit-agent` is a Rust service that runs on every managed Linux Node. It reports presence, Process state, task checkout Git state, and live log tails to the Gateway over a Reverb WebSocket. The service only observes: it listens on no port and accepts no remote commands.
 
-The [Node agent reference](../../docs/reference/node-agent.md) covers what it observes, how it connects, how the Gateway installs it, and how a tag releases it.
+The [Node agent reference](../../docs/reference/node-agent.md) covers what it observes, how it connects, how the Gateway installs it, and how each commit's release publishes it.
 
 ## Layout
 
@@ -13,7 +13,6 @@ The [Node agent reference](../../docs/reference/node-agent.md) covers what it ob
 - `tests/`: fixtures for log parsing and redaction.
 - `scripts/node-agent-viewer.ts`: joins a Node's presence channel and prints what its agent sends.
 - `scripts/build-delivery`: builds the delivery a Gateway pins: the static binaries, `SHA256SUMS`, and `manifest.json`.
-- `scripts/check-release-tag.sh`: checks that an `agent-v<commit>` release publishes the tested delivery of that commit.
 
 ## Checks
 

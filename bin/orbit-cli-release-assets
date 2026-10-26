@@ -5,19 +5,26 @@ set -Eeuo pipefail
 usage() {
     cat <<'EOF'
 Usage:
-  bin/orbit-cli-release-assets <version> <artifact-dir> <out-dir>
+  bin/orbit-cli-release-assets <version> <artifact-dir> <agent-dir> <download-url> <out-dir>
 
-Turns the Orbit CLI Binary workflow artifacts into Orbit CLI release assets.
-<artifact-dir> holds one directory per artifact, as actions/download-artifact
-writes them. <out-dir> must not exist yet.
+Turns the Orbit CLI Binary workflow artifacts and CI's tested agent delivery
+into the assets of one Orbit release. <artifact-dir> holds one directory per
+CLI artifact, as actions/download-artifact writes them. <agent-dir> is CI's
+agent-delivery artifact: the four agent binaries and manifest.json.
+<download-url> is the release's HTTPS download path, which the manifest names
+for each agent binary. <out-dir> must not exist yet.
 
   artifact                       release asset
   orbit-linux-x64/linux-x64      orbit-<version>-linux-x86_64
   orbit-linux-arm64/linux-arm    orbit-<version>-linux-aarch64
   orbit-macos-arm64/mac-arm      orbit-<version>-macos-arm64
+  <agent-dir>/orbit-agent-*      orbit-agent-linux-x86_64, orbit-agent-linux-aarch64,
+                                 orbit-agent-macos-aarch64, orbit-agent-macos-x86_64
+  <agent-dir>/manifest.json      manifest.json, with each binary's URL
 
-It refuses a version that is not 0.N.0, a missing or empty binary, and a
-binary built for another platform. It writes SHA256SUMS in sha256sum format,
+It refuses a version that is not 0.N.0, a missing or empty binary, a binary
+built for another platform, and an agent binary that does not match its
+tested digest. It writes SHA256SUMS in sha256sum format for every binary,
 sorted by asset name.
 EOF
 }
@@ -32,20 +39,25 @@ if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     exit 0
 fi
 
-[ "$#" -eq 3 ] || {
+[ "$#" -eq 5 ] || {
     usage >&2
     exit 2
 }
 
 version="$1"
 artifact_dir="$2"
-out_dir="$3"
+agent_dir="$3"
+download_url="${4%/}"
+out_dir="$5"
 
 [[ "$version" =~ ^0\.[1-9][0-9]*\.0$ ]] || fail "not a release version: ${version}"
 [ -d "$artifact_dir" ] || fail "artifact directory not found: ${artifact_dir}"
+[ -f "${agent_dir}/manifest.json" ] || fail "agent manifest not found: ${agent_dir}/manifest.json"
+[[ "$download_url" =~ ^https://[^[:space:]]+$ ]] || fail "not an HTTPS download URL: ${download_url}"
 [ ! -e "$out_dir" ] || fail "output directory already exists: ${out_dir}"
 
 command -v sha256sum >/dev/null 2>&1 || fail 'sha256sum is required.'
+command -v jq >/dev/null 2>&1 || fail 'jq is required.'
 
 # Leading bytes of each format: the ELF e_machine field or the Mach-O CPU type.
 header() {
@@ -63,8 +75,11 @@ check_platform() {
         linux-aarch64)
             [[ "$bytes" == 7f454c4602* && "${bytes:36:4}" == "b700" ]]
             ;;
-        macos-arm64)
+        macos-arm64|macos-aarch64)
             [[ "$bytes" == cffaedfe0c000001* ]]
+            ;;
+        macos-x86_64)
+            [[ "$bytes" == cffaedfe07000001* ]]
             ;;
     esac || fail "${path} is not a ${platform} executable"
 }
@@ -75,11 +90,27 @@ targets=(
     'orbit-macos-arm64/mac-arm:macos-arm64'
 )
 
+agent_platforms=(linux-aarch64 linux-x86_64 macos-aarch64 macos-x86_64)
+
 for target in "${targets[@]}"; do
     source_path="${artifact_dir}/${target%%:*}"
     [ -f "$source_path" ] || fail "missing binary: ${source_path}"
     [ -s "$source_path" ] || fail "empty binary: ${source_path}"
     check_platform "$source_path" "${target##*:}"
+done
+
+# The agent ships exactly as CI built and tested it: the manifest names each platform once, with its digest.
+[ "$(jq -r '.artifacts | keys | join(" ")' "${agent_dir}/manifest.json")" = "${agent_platforms[*]}" ] \
+    || fail "the agent manifest does not name exactly ${agent_platforms[*]}"
+for platform in "${agent_platforms[@]}"; do
+    source_path="${agent_dir}/orbit-agent-${platform}"
+    [ -f "$source_path" ] || fail "missing binary: ${source_path}"
+    [ -s "$source_path" ] || fail "empty binary: ${source_path}"
+    check_platform "$source_path" "$platform"
+    [ "$(jq -r --arg p "$platform" '.artifacts[$p].path' "${agent_dir}/manifest.json")" = "orbit-agent-${platform}" ] \
+        || fail "the agent manifest names another file for ${platform}"
+    [ "$(jq -r --arg p "$platform" '.artifacts[$p].sha256' "${agent_dir}/manifest.json")" = "$(sha256sum -- "$source_path" | cut -d ' ' -f 1)" ] \
+        || fail "${source_path} does not match its tested digest"
 done
 
 mkdir -p "$out_dir"
@@ -88,9 +119,16 @@ for target in "${targets[@]}"; do
     install -m 0755 "${artifact_dir}/${target%%:*}" "${out_dir}/orbit-${version}-${target##*:}"
 done
 
+for platform in "${agent_platforms[@]}"; do
+    install -m 0755 "${agent_dir}/orbit-agent-${platform}" "${out_dir}/orbit-agent-${platform}"
+done
+
+jq --arg base "$download_url" '.artifacts |= with_entries(.value.url = ($base + "/" + .value.path))' \
+    "${agent_dir}/manifest.json" > "${out_dir}/manifest.json"
+
 (
     cd "$out_dir"
-    LC_ALL=C sha256sum -- orbit-"${version}"-* | LC_ALL=C sort -k 2 > SHA256SUMS
+    LC_ALL=C sha256sum -- orbit-* | LC_ALL=C sort -k 2 > SHA256SUMS
     sha256sum --check --strict --quiet SHA256SUMS
 )
 

@@ -9,7 +9,6 @@ use App\Infrastructure\GatewayReleases\NativeGatewayReleaseExecutionOwner;
 use App\Models\GatewayRelease;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
-use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\GatewayReleasePipeline;
 
 beforeEach(function (): void {
@@ -33,9 +32,17 @@ beforeEach(function (): void {
         'database' => ['default' => 'release_owner', 'connections' => ['release_owner' => $this->configuration]],
     ];
     file_put_contents($this->cache, '<?php return '.var_export($this->values, true).';');
-    $this->agents = new FakeAgentCommandRunner()->answer('gateway.inspect-release-owner', ['caches' => [$this->cache]]);
-    $this->commands = $this->pipeline->fixture->releaseCommands($this->agents);
-    $this->owner = new NativeGatewayReleaseExecutionOwner($this->pipeline->fixture->layout, $this->commands);
+    chmod($this->cache, 0600);
+    // The shared state the Gateway account owns in the release layout.
+    $layout = $this->pipeline->fixture->layout;
+    foreach ([$layout->sharedPath(), $layout->storagePath(), $layout->releasesPath()] as $directory) {
+        mkdir($directory, 0700, true);
+    }
+    file_put_contents($layout->environmentPath(), "APP_KEY=base64:test\n");
+    chmod($layout->environmentPath(), 0600);
+    $this->owner = new NativeGatewayReleaseExecutionOwner($layout, accountUid: posix_geteuid());
+    // The Gateway Node in the release database, for the release commands that run before the refusal.
+    $this->pipeline->fixture->releaseCommands();
     app()->instance(GatewayReleaseExecutionOwner::class, $this->owner);
 });
 
@@ -46,16 +53,14 @@ afterEach(function (): void {
     $this->pipeline->cleanup();
 });
 
-it('refuses root and a native account refusal at public boundaries before locks or records', function (int $uid): void {
-    $this->agents->refuse('gateway.inspect-release-owner', 'gateway.release_owner_invalid');
-    app()->instance(GatewayReleaseExecutionOwner::class, new NativeGatewayReleaseExecutionOwner($this->pipeline->fixture->layout, $this->commands, static fn (): int => $uid));
+it('refuses root and a different account at public boundaries before locks or records', function (int $uid): void {
+    app()->instance(GatewayReleaseExecutionOwner::class, new NativeGatewayReleaseExecutionOwner($this->pipeline->fixture->layout, static fn (): int => $uid, posix_geteuid()));
     $before = $this->pipeline->fixture->currentId();
     foreach (['gateway:release:stage', 'gateway:release:deploy', 'gateway:release:finalize', 'gateway:release:abandon', 'gateway:release:inspect-process'] as $command) {
         $arguments = ['commit' => str_repeat('a', 40), ...(in_array($command, ['gateway:release:finalize', 'gateway:release:abandon'], true) ? ['record' => '1'] : []), ...($command === 'gateway:release:inspect-process' ? ['process' => '1'] : [])];
         expect(Artisan::call($command, $arguments))->toBe(1);
         expect(json_decode(Artisan::output(), true)['error_code'])->toBe('gateway.release_owner_invalid');
     }
-    expect($this->agents->calls)->toHaveCount($uid === 0 ? 0 : 5);
     expect(is_file($this->pipeline->home.'/gateway-release.lock'))->toBeFalse();
     expect(is_file($this->pipeline->home.'/gateway-release-step.lock'))->toBeFalse();
     expect(GatewayRelease::query()->count())->toBe(0);
@@ -64,18 +69,42 @@ it('refuses root and a native account refusal at public boundaries before locks 
     expect($this->pipeline->snapshots)->toBe(0);
 })->with(['root' => 0, 'different account' => 2147483647]);
 
-it('sends release owner intent and compares the verified cache with the live connection', function (): void {
-    $sha = str_repeat('a', 40);
-    $this->owner->assertAllowed($sha);
-    expect($this->agents->calls)->toBe([[
-        'node' => 'gateway', 'command' => 'gateway.inspect-release-owner', 'input' => [
-            'checkout' => $this->pipeline->fixture->layout->applicationPath,
-            'orbit_home' => $this->pipeline->home, 'database' => $this->database,
-            'caller_uid' => posix_geteuid(), 'sha' => $sha, 'runtime_cache' => $this->cache,
-        ],
-    ]]);
+it('accepts the owner of the shared state without the agent and refuses drifted lock files without repair', function (): void {
+    $this->owner->assertAllowed(str_repeat('a', 40));
     expect(is_file($this->pipeline->home.'/gateway-release.lock'))->toBeFalse();
+    foreach (['gateway-release.lock', 'gateway-release-step.lock'] as $name) {
+        $path = $this->pipeline->home.'/'.$name;
+        foreach (['permissive', 'symlink'] as $fault) {
+            if ($fault === 'symlink') {
+                symlink($this->database, $path);
+            } else {
+                file_put_contents($path, 'preserved');
+                chmod($path, 0644);
+            }
+            expect(fn () => $this->owner->assertAllowed())->toThrow(GatewayReleaseException::class);
+            if ($fault === 'symlink') {
+                expect(readlink($path))->toBe($this->database);
+            } else {
+                expect(file_get_contents($path))->toBe('preserved')->and(fileperms($path) & 0777)->toBe(0644);
+            }
+            unlink($path);
+        }
+    }
+    chmod($this->pipeline->fixture->layout->environmentPath(), 0666);
+    expect(fn () => $this->owner->assertAllowed())->toThrow(GatewayReleaseException::class)
+        ->and(fileperms($this->pipeline->fixture->layout->environmentPath()) & 0777)->toBe(0666);
 });
+
+it('refuses shared state of the wrong kind without changing it', function (string $fault): void {
+    $layout = $this->pipeline->fixture->layout;
+    match ($fault) {
+        'environment directory' => [unlink($layout->environmentPath()), mkdir($layout->environmentPath(), 0700)],
+        'releases file' => [rmdir($layout->releasesPath()), file_put_contents($layout->releasesPath(), ''), chmod($layout->releasesPath(), 0600)],
+    };
+
+    expect(fn () => $this->owner->assertAllowed())->toThrow(GatewayReleaseException::class);
+    expect($fault === 'environment directory' ? is_dir($layout->environmentPath()) : is_file($layout->releasesPath()))->toBeTrue();
+})->with(['environment directory', 'releases file']);
 
 it('refuses divergent connection or cached configuration before any release work', function (string $change): void {
     $other = $this->pipeline->home.'/other.sqlite';
@@ -98,6 +127,7 @@ it('refuses divergent connection or cached configuration before any release work
     };
     config(['database.connections.release_owner' => $configuration]);
     file_put_contents($this->cache, '<?php return '.var_export($values, true).';');
+    chmod($this->cache, 0600);
     $before = $this->pipeline->fixture->currentId();
     $hashes = [hash_file('sha256', $this->database), hash_file('sha256', $other)];
 
@@ -118,25 +148,12 @@ it('rejects a missing or aliased configured database before the runner queries t
     config(['database.connections.release_owner.database' => $path]);
     DB::purge('release_owner');
     expect(fn () => $this->owner->assertAllowed())->toThrow(GatewayReleaseException::class);
-    expect($this->agents->calls)->toBe([]);
     if ($fault === 'missing') {
         expect(file_exists($path))->toBeFalse();
     } else {
         expect(readlink($path))->toBe($this->database);
     }
 })->with(['missing', 'alias']);
-
-it('refuses malformed native cache paths before loading configuration', function (string $fault): void {
-    $caches = match ($fault) {
-        'missing' => [],
-        'foreign' => [$this->cache, '/unexpected.php'],
-        'duplicate' => [$this->cache, $this->cache],
-        'type' => [$this->cache, 7],
-        'map' => ['cache' => $this->cache],
-    };
-    $this->agents->answerMalformed('gateway.inspect-release-owner', ['caches' => $caches]);
-    expect(fn () => $this->owner->assertAllowed())->toThrow(GatewayReleaseException::class, 'invalid release command result');
-})->with(['missing', 'foreign', 'duplicate', 'type', 'map']);
 
 it('revalidates the refreshed target before snapshot or migration at the public stage boundary', function (): void {
     $layout = $this->pipeline->fixture->layout;
@@ -151,15 +168,10 @@ it('revalidates the refreshed target before snapshot or migration at the public 
     $this->pipeline->fixture->agents->answer('gateway.refresh-release-configuration', function (array $input) use ($target, $values, $targetCache, &$refreshed): array {
         expect($input['release'])->toBe(substr($target, 0, 12));
         file_put_contents($targetCache, '<?php return '.var_export($values, true).';');
+        chmod($targetCache, 0600);
         $refreshed = true;
 
         return ['changed' => true];
-    });
-    $currentCache = $this->cache;
-    $this->agents->answer('gateway.inspect-release-owner', static function (array $input) use ($target, $targetCache, $currentCache, &$refreshed): array {
-        expect($input['sha'])->toBe($target);
-
-        return ['caches' => $refreshed ? [$currentCache, $targetCache] : [$currentCache]];
     });
     app()->instance(GatewayReleaseDrain::class, new class implements GatewayReleaseDrain
     {

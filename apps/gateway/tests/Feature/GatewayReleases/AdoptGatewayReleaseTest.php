@@ -340,7 +340,7 @@ function adoption(
     $builder = $fixture->builder($web);
     $recorder = new GatewayReleaseRecorder(app(GatewayReleaseRecovery::class), app(GatewayReleaseRestore::class), $fixture->base.'/home');
     $guard = new GatewayReleaseGuard($fixture->layout, $fixture->releaseCommands());
-    $lock = new GatewayReleaseLock($fixture->base.'/home/gateway-release.lock', $fixture->releaseCommands());
+    $lock = new GatewayReleaseLock($fixture->base.'/home/gateway-release.lock');
     $deploy = new DeployGatewayReleaseAction(
         $lock,
         $builder,

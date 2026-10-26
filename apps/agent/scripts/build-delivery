@@ -6,7 +6,7 @@
 #
 #   --commit    The source commit the manifest names. Defaults to the last commit that changed apps/agent.
 #   --url-base  Adds a release URL to each artifact, such as
-#               https://github.com/hardimpactdev/orbit/releases/download/agent-v<commit>.
+#               https://github.com/hardimpactdev/orbit/releases/download/cli-v<version>, as a release names it.
 #   --target    A Rust target to build; repeat for more. Defaults to x86_64 and aarch64 musl.
 #               An installed `cross` builds every target; without it, cargo needs that target's C toolchain.
 set -euo pipefail

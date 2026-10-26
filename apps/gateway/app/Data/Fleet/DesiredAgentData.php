@@ -19,7 +19,7 @@ final class DesiredAgentData extends Data
     public function __construct(
         /** The Cargo version of the delivered build, such as `0.5.0`. */
         public string $version,
-        /** The full source commit; the release tag is `agent-v<commit>`. */
+        /** The last commit that changed the agent's sources; the binaries are assets of the Gateway commit's release. */
         public string $commit,
         /** One binary per platform that has a release URL. */
         public array $assets,

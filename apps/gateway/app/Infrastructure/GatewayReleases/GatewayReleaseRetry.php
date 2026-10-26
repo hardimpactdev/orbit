@@ -33,6 +33,14 @@ final readonly class GatewayReleaseRetry
     ];
 
     /**
+     * Refusals that wait for something outside the Gateway and change nothing, such as a commit whose release is
+     * not published yet. They never spend the budget, so a later attempt can still release the commit.
+     *
+     * @var list<string>
+     */
+    private const array Waiting = ['gateway.release_agent_delivery_unavailable'];
+
+    /**
      * The triggers whose attempts spend the budget. A rollback to the commit never does.
      *
      * @var list<string>
@@ -54,12 +62,16 @@ final readonly class GatewayReleaseRetry
         if (in_array($errorCode, self::Final, true)) {
             return false;
         }
+        if (in_array($errorCode, self::Waiting, true)) {
+            return true;
+        }
 
         try {
             $earlier = GatewayRelease::query()
                 ->where(static fn ($query) => $query->where('sha', $sha)->orWhere(static fn ($inner) => $inner->whereNull('sha')->where('requested', $sha)))
                 ->whereIn('trigger', self::Attempting)
                 ->whereIn('outcome', self::FailedAttempts)
+                ->where(static fn ($query) => $query->whereNull('error_code')->orWhereNotIn('error_code', self::Waiting))
                 ->when($except !== null, static fn ($query) => $query->whereKeyNot($except))
                 ->count();
         } catch (Throwable) {

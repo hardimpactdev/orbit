@@ -9,6 +9,7 @@ use App\Actions\GatewayReleases\SmokeGatewayReleaseAction;
 use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseException;
+use App\Domain\GatewayReleases\GatewayReleaseInventory;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
 use App\Domain\GatewayReleases\GatewayReleaseSmoke;
 use App\Domain\GatewayReleases\GatewayReleaseVerifier;
@@ -330,7 +331,7 @@ describe('gateway:release:deploy', function (): void {
 
     it('refuses a second release step while one holds the lock', function (): void {
         $sha = $this->fixture->commit('Locked');
-        $lock = new GatewayReleaseLock($this->fixture->base.'/home/gateway-release.lock', $this->fixture->releaseCommands());
+        $lock = new GatewayReleaseLock($this->fixture->base.'/home/gateway-release.lock');
         $order = new ReleaseSteps;
         $action = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order), lock: $lock);
 
@@ -425,13 +426,13 @@ describe('gateway:release:deploy', function (): void {
         adopt_release($this->fixture);
         $sha = $this->fixture->commit('Release while the inventory turns unreadable');
         $order = new ReleaseSteps;
-        $smoke = new readonly class($this->fixture->agents, $inventory) implements GatewayReleaseSmoke
+        $smoke = new readonly class($this->fixture, $inventory) implements GatewayReleaseSmoke
         {
-            public function __construct(private FakeAgentCommandRunner $agents, private Closure $inventory) {}
+            public function __construct(private GatewayReleaseFixture $fixture, private Closure $inventory) {}
 
             public function run(string $id, string $sha, ?DateTimeImmutable $since = null, array $skip = []): array
             {
-                ($this->inventory)($this->agents, $id);
+                $this->fixture->observed = fn (): GatewayReleaseInventory => ($this->inventory)($id);
 
                 return ['outcome' => 'passed', 'report' => ['passed' => true]];
             }
@@ -443,10 +444,8 @@ describe('gateway:release:deploy', function (): void {
             ->and($this->fixture->agents->commands())->not->toContain('gateway.remove-release')
             ->and($order->pruned)->toBeNull();
     })->with([
-        'refused' => [static fn (FakeAgentCommandRunner $agents) => $agents->refuse('gateway.inspect-releases', 'gateway.release_path_conflict')],
-        'empty' => [static fn (FakeAgentCommandRunner $agents, string $id) => $agents->answer('gateway.inspect-releases', [
-            'current' => $id, 'state' => 'unreadable', 'superseded' => false, 'commits' => [], 'incomplete' => [], 'retained' => [],
-        ])],
+        'refused' => [static fn (): GatewayReleaseInventory => throw new GatewayReleaseException('inspect', 'gateway.release_observation_failed', 'The release layout cannot be read.', 500)],
+        'empty' => [static fn (string $id): GatewayReleaseInventory => new GatewayReleaseInventory($id, 'unreadable', false, [], [], [])],
     ]);
 
     it('installs a missing web build from CI when it rolls back', function (): void {
@@ -609,7 +608,7 @@ describe('gateway:release:deploy', function (): void {
         $first = adopt_release($this->fixture);
         $this->fixture->agents->calls = [];
         $this->app->instance(ConfigureGatewayReleaseAction::class, new ConfigureGatewayReleaseAction(
-            new GatewayReleaseLock($this->fixture->base.'/home/gateway-release.lock', $this->fixture->releaseCommands()),
+            new GatewayReleaseLock($this->fixture->base.'/home/gateway-release.lock'),
             $this->fixture->layout,
             $this->fixture->builder(),
         ));
@@ -622,20 +621,6 @@ describe('gateway:release:deploy', function (): void {
             static fn (array $call): bool => ! str_starts_with($call['command'], 'gateway.inspect-')));
         expect(array_column($mutations, 'command'))->toBe(['gateway.refresh-release-configuration']);
         expect($mutations[0]['input']['release'])->toBe($first);
-    });
-
-    it('names a release whose id contains only digits with a string', function (): void {
-        $id = '983536432205';
-        // JSON decoding turns these object keys into integers, as this literal does.
-        $this->fixture->agents->answer('gateway.inspect-releases', [
-            'current' => $id, 'state' => 'adopted', 'superseded' => false,
-            'commits' => [$id => $id.str_repeat('a', 28)], 'incomplete' => ['777777777777' => 1], 'retained' => [$id],
-        ]);
-
-        expect($this->fixture->layout->retainedReleaseIds())->toBe([$id])
-            ->and($this->fixture->layout->incompleteReleaseIds())->toBe(['777777777777'])
-            ->and($this->fixture->layout->currentReleaseId())->toBe($id)
-            ->and($this->fixture->layout->preparedCommit($id))->toBe($id.str_repeat('a', 28));
     });
 
     it('keeps three releases by default, the current one and the two newest others', function (): void {
@@ -987,7 +972,7 @@ function release_deployer(
     $recorder = new GatewayReleaseRecorder(app(GatewayReleaseRecovery::class), app(GatewayReleaseRestore::class), $fixture->base.'/home');
 
     return new DeployGatewayReleaseAction(
-        $lock ?? new GatewayReleaseLock($fixture->base.'/home/gateway-release.lock', $fixture->releaseCommands()),
+        $lock ?? new GatewayReleaseLock($fixture->base.'/home/gateway-release.lock'),
         $builder,
         $database,
         new GatewayReleasePromoter(
@@ -1023,7 +1008,7 @@ function release_rollback(
     $recorder = new GatewayReleaseRecorder(app(GatewayReleaseRecovery::class), app(GatewayReleaseRestore::class), $fixture->base.'/home');
 
     return new RollbackGatewayReleaseAction(
-        new GatewayReleaseLock($fixture->base.'/home/gateway-release.lock', $fixture->releaseCommands()),
+        new GatewayReleaseLock($fixture->base.'/home/gateway-release.lock'),
         $fixture->layout,
         new GatewayReleasePromoter(
             $fixture->layout,

@@ -125,7 +125,7 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
 
     public function lock(): GatewayReleaseLock
     {
-        return new GatewayReleaseLock($this->home.'/gateway-release.lock', $this->fixture->releaseCommands());
+        return new GatewayReleaseLock($this->home.'/gateway-release.lock');
     }
 
     public function source(): GatewayReleaseSource

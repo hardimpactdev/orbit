@@ -3,8 +3,12 @@
 declare(strict_types=1);
 
 use App\Actions\GatewayReleases\PrepareGatewayReleaseAction;
+use App\Domain\GatewayReleases\GatewayReleaseAgent;
+use App\Domain\GatewayReleases\GatewayReleaseCommit;
 use App\Domain\GatewayReleases\GatewayReleaseException;
+use App\Domain\GatewayReleases\GatewayReleaseInventory;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
+use App\Domain\GatewayReleases\GatewayReleaseObserver;
 use App\Domain\GatewayReleases\GatewayReleaseWebBuild;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Nodes\NodeProvisioningException;
@@ -26,14 +30,49 @@ beforeEach(function (): void {
     $this->sha = str_repeat('a', 40);
     $this->agents = new FakeAgentCommandRunner;
     $this->commands = new GatewayReleaseCommands($this->agents);
-    $this->layout = new GatewayReleaseLayout('/home/orbit/orbit/apps/gateway', $this->commands);
     $this->steps = [];
+    // The layout holds a prepared release only when a test says so.
+    $this->held = null;
+    $this->layout = new GatewayReleaseLayout('/home/orbit/orbit/apps/gateway', new readonly class($this) implements GatewayReleaseObserver
+    {
+        public function __construct(private object $test) {}
+
+        public function inspect(GatewayReleaseLayout $layout, ?string $runningApplication = null): GatewayReleaseInventory
+        {
+            $commits = $this->test->held === null ? [] : [GatewayReleaseCommit::id($this->test->held) => $this->test->held];
+
+            return new GatewayReleaseInventory(null, 'unreadable', false, $commits, [], array_keys($commits));
+        }
+    });
+    // The commit's published release; a test that names none makes the release agent refuse.
+    $this->published = $this->sha;
+    $this->agent = new class($this) implements GatewayReleaseAgent
+    {
+        public function __construct(private object $test) {}
+
+        public function fetch(string $revision, Node $gateway): array
+        {
+            $revision = GatewayReleaseCommit::parse($revision);
+            $this->test->steps[] = 'fetch:'.$gateway->name;
+            if ($this->test->published === null || ! str_starts_with($this->test->published, $revision)) {
+                throw new GatewayReleaseException('agent-delivery', 'gateway.release_agent_delivery_unavailable', 'No published release yet.', 503);
+            }
+
+            return ['sha' => $this->test->published, 'manifest' => '{}'];
+        }
+
+        public function install(array $delivery, GatewayReleaseLayout $layout, Node $gateway): void
+        {
+            $this->test->steps[] = 'install';
+        }
+    };
     $this->web = Mockery::mock(GatewayReleaseWebBuild::class);
     $this->builder = new GatewayReleaseBuilder(
         layout: $this->layout,
         commands: $this->commands,
         readAccess: app(RepositoryReadAccess::class),
         web: $this->web,
+        agent: $this->agent,
         checkoutAccess: function (string $application): void {
             $this->steps[] = 'access:'.$application;
         },
@@ -47,7 +86,6 @@ beforeEach(function (): void {
 
             return ['sha' => $this->sha, 'reused' => false];
         })
-        ->answer('gateway.inspect-release-agent-delivery', ['commit' => $this->sha, 'version' => '0.5.0', 'installed' => true])
         ->answer('gateway.finish-release', function (): array {
             $this->steps[] = 'finish';
 
@@ -56,7 +94,7 @@ beforeEach(function (): void {
     Http::preventStrayRequests();
 });
 
-it('orders native preparation, web, access, and completion with the configured reservation', function (): void {
+it('orders the release agent, native preparation, web, access, and completion with the configured reservation', function (): void {
     GitHubTestSupport::storeApp();
     $this->web->shouldReceive('install')->once()->with('aaaaaaaaaaaa', $this->sha)->andReturnUsing(function (): bool {
         $this->steps[] = 'web';
@@ -68,11 +106,10 @@ it('orders native preparation, web, access, and completion with the configured r
 
     expect($release->sha)->toBe($this->sha)->and($release->id)->toBe('aaaaaaaaaaaa')->and($release->reused)->toBeFalse()
         ->and($release->path)->toBe('/home/orbit/releases/aaaaaaaaaaaa')->and($release->durationMs)->toBeGreaterThanOrEqual(0);
-    expect($this->steps)->toBe(['prepare', 'web', 'access:/home/orbit/releases/aaaaaaaaaaaa/apps/gateway', 'finish']);
+    expect($this->steps)->toBe(['fetch:gateway', 'prepare', 'install', 'web', 'access:/home/orbit/releases/aaaaaaaaaaaa/apps/gateway', 'finish']);
     expect($this->agents->calls)->toBe([
         ['node' => 'gateway', 'command' => 'gateway.inspect-release-preparation', 'input' => ['checkout' => $this->layout->applicationPath, 'revision' => $this->sha, 'minimum_free_bytes' => 3072, 'reserved_bytes' => 512]],
         ['node' => 'gateway', 'command' => 'gateway.prepare-release', 'input' => ['checkout' => $this->layout->applicationPath, 'revision' => $this->sha, 'minimum_free_bytes' => 3072, 'reserved_bytes' => 512, 'git_read' => null, 'step_lock' => '/home/orbit/.orbit/gateway-release-step.lock']],
-        ['node' => 'gateway', 'command' => 'gateway.inspect-release-agent-delivery', 'input' => ['checkout' => $this->layout->applicationPath, 'sha' => $this->sha]],
         ['node' => 'gateway', 'command' => 'gateway.finish-release', 'input' => ['checkout' => $this->layout->applicationPath, 'sha' => $this->sha, 'step_lock' => '/home/orbit/.orbit/gateway-release-step.lock']],
     ]);
     Http::assertNothingSent();
@@ -102,22 +139,36 @@ it('stops before repository access and mutation when native inspection refuses',
 
     expect(release_failure(fn () => $this->builder->prepare($this->sha))->errorCode)->toBe($code);
     expect($this->agents->commands())->toBe(['gateway.inspect-release-preparation']);
-    expect($this->steps)->toBe([]);
+    expect($this->steps)->toBe(['fetch:gateway']);
     Http::assertNothingSent();
 })->with(['gateway.release_disk_low', 'gateway.release_layout_missing', 'gateway.release_path_conflict']);
 
-it('restores a reused web build even when adoption requests no new web build', function (): void {
-    $this->agents->answer('gateway.prepare-release', ['sha' => $this->sha, 'reused' => true]);
-    $this->web->shouldReceive('install')->once()->with('aaaaaaaaaaaa', $this->sha)->andReturn(false);
+it('installs the agent of a release it already holds before any agent command, and restores its web build', function (): void {
+    $this->held = $this->sha;
+    $this->web->shouldReceive('install')->once()->with('aaaaaaaaaaaa', $this->sha)->andReturnUsing(function (): bool {
+        $this->steps[] = 'web';
+
+        return false;
+    });
 
     expect($this->builder->prepare($this->sha, withWeb: false)->reused)->toBeTrue();
-    expect($this->agents->commands())->toBe(['gateway.inspect-release-preparation', 'gateway.prepare-release', 'gateway.inspect-release-agent-delivery']);
-    expect($this->steps)->toBe([]);
+    expect($this->agents->calls)->toBe([]);
+    expect($this->steps)->toBe(['fetch:gateway', 'install', 'web']);
+});
+
+it('refuses before any agent command or change while the commit has no published release', function (): void {
+    $this->published = null;
+
+    $error = release_failure(fn () => $this->builder->prepare($this->sha));
+
+    expect($error->errorCode)->toBe('gateway.release_agent_delivery_unavailable')->and($error->step)->toBe('agent-delivery');
+    expect($this->agents->calls)->toBe([]);
+    expect($this->steps)->toBe(['fetch:gateway']);
 });
 
 it('skips web installation for a new adoption release', function (): void {
     expect($this->builder->prepare($this->sha, withWeb: false)->reused)->toBeFalse();
-    expect($this->steps)->toBe(['prepare', 'access:/home/orbit/releases/aaaaaaaaaaaa/apps/gateway', 'finish']);
+    expect($this->steps)->toBe(['fetch:gateway', 'prepare', 'install', 'access:/home/orbit/releases/aaaaaaaaaaaa/apps/gateway', 'finish']);
 });
 
 it('keeps the resolved commit and native failure phase and stops dependent steps', function (string $command, string $code, string $phase, int $status): void {
@@ -140,15 +191,15 @@ it('does not finish or grant access after web failure and attaches the resolved 
     $error = release_failure(fn () => $this->builder->prepare($this->sha));
 
     expect($error->errorCode)->toBe('gateway.release_web_build_missing')->and($error->sha)->toBe($this->sha);
-    expect($this->steps)->toBe(['prepare']);
-    expect($this->agents->commands())->toBe(['gateway.inspect-release-preparation', 'gateway.prepare-release', 'gateway.inspect-release-agent-delivery']);
+    expect($this->steps)->toBe(['fetch:gateway', 'prepare', 'install']);
+    expect($this->agents->commands())->toBe(['gateway.inspect-release-preparation', 'gateway.prepare-release']);
 });
 
 it('refuses invalid revision syntax without sending a command', function (string $revision): void {
     $error = release_failure(fn () => $this->builder->prepare($revision));
 
     expect($error->errorCode)->toBe('gateway.release_commit_invalid')->and($error->status)->toBe(422);
-    expect($this->agents->calls)->toBe([]);
+    expect($this->agents->calls)->toBe([])->and($this->steps)->toBe([]);
 })->with(['main', 'HEAD~1', 'abc12', '--upload-pack=x', 'abcdef1 ']);
 
 it('refreshes through the agent and removes web only after successful native removal', function (): void {
@@ -168,8 +219,7 @@ it('refreshes through the agent and removes web only after successful native rem
 
 it('prints the native prepared release as one JSON object', function (): void {
     $directory = sys_get_temp_dir().'/release-intent-'.bin2hex(random_bytes(6));
-    $this->agents->answer('gateway.inspect-release-step', ['busy' => false]);
-    $lock = new GatewayReleaseLock($directory.'/gateway-release.lock', $this->commands);
+    $lock = new GatewayReleaseLock($directory.'/gateway-release.lock');
     $this->web->shouldReceive('install')->once()->andReturn(true);
     app()->instance(PrepareGatewayReleaseAction::class, new PrepareGatewayReleaseAction($lock, $this->builder));
 
@@ -188,7 +238,7 @@ arch('release preparation has no local or SSH execution path')->expect(GatewayRe
 
 it('stops before completion when Caddy access fails and keeps the resolved commit', function (): void {
     $builder = new GatewayReleaseBuilder(
-        $this->layout, $this->commands, app(RepositoryReadAccess::class), $this->web,
+        $this->layout, $this->commands, app(RepositoryReadAccess::class), $this->web, $this->agent,
         static fn () => throw new NodeProvisioningException('checkout', 'gateway.checkout_access_failed', 'Access refused.'),
         '/home/orbit/.orbit/gateway-release-step.lock',
     );
@@ -196,58 +246,5 @@ it('stops before completion when Caddy access fails and keeps the resolved commi
     $error = release_failure(fn () => $builder->prepare($this->sha, withWeb: false));
 
     expect($error->errorCode)->toBe('gateway.release_access_failed')->and($error->step)->toBe('access')->and($error->sha)->toBe($this->sha);
-    expect($this->agents->commands())->toBe(['gateway.inspect-release-preparation', 'gateway.prepare-release', 'gateway.inspect-release-agent-delivery']);
+    expect($this->agents->commands())->toBe(['gateway.inspect-release-preparation', 'gateway.prepare-release']);
 });
-
-it('fetches the target agent delivery and installs it before finishing a new adoption checkout', function (): void {
-    $agentCommit = str_repeat('b', 40);
-    $base = 'https://github.com/hardimpactdev/orbit/releases/download/agent-v'.$agentCommit;
-    $manifest = ['commit' => $agentCommit, 'version' => '0.5.0', 'artifacts' => []];
-    foreach (['linux-x86_64', 'linux-aarch64', 'macos-aarch64', 'macos-x86_64'] as $platform) {
-        $manifest['artifacts'][$platform] = ['sha256' => str_repeat('c', 64), 'path' => 'orbit-agent-'.$platform, 'url' => $base.'/orbit-agent-'.$platform];
-    }
-    $this->agents->answer('gateway.inspect-release-agent-delivery', ['commit' => $agentCommit, 'version' => '0.5.0', 'installed' => false])
-        ->answer('gateway.inspect-release-source', ['origin' => 'git@github.com:hardimpactdev/orbit.git'])
-        ->answer('gateway.install-release-agent-delivery', function (array $input) use ($manifest): array {
-            expect($input['manifest'])->toBe($manifest)->and($input['sha'])->toBe($this->sha);
-            $this->steps[] = 'delivery';
-
-            return ['changed' => true];
-        });
-    Http::fake([$base.'/manifest.json' => Http::response($manifest)]);
-
-    $this->builder->prepare($this->sha, withWeb: false);
-
-    expect($this->steps)->toBe(['prepare', 'delivery', 'access:/home/orbit/releases/aaaaaaaaaaaa/apps/gateway', 'finish']);
-    Http::assertSentCount(1);
-});
-
-it('reports a delivery install that waits on another release step as a lock failure', function (): void {
-    $agentCommit = str_repeat('b', 40);
-    $base = 'https://github.com/hardimpactdev/orbit/releases/download/agent-v'.$agentCommit;
-    $this->agents->answer('gateway.inspect-release-agent-delivery', ['commit' => $agentCommit, 'version' => '0.5.0', 'installed' => false])
-        ->answer('gateway.inspect-release-source', ['origin' => 'git@github.com:hardimpactdev/orbit.git'])
-        ->refuse('gateway.install-release-agent-delivery', 'gateway.release_in_progress');
-    $artifacts = ['linux-x86_64' => ['sha256' => str_repeat('c', 64), 'path' => 'orbit-agent-linux-x86_64', 'url' => $base.'/orbit-agent-linux-x86_64']];
-    Http::fake([$base.'/manifest.json' => Http::response(['commit' => $agentCommit, 'version' => '0.5.0', 'artifacts' => $artifacts])]);
-
-    $error = release_failure(fn () => $this->builder->prepare($this->sha, withWeb: false));
-
-    expect($error->errorCode)->toBe('gateway.release_in_progress')->and($error->step)->toBe('lock')->and($error->status)->toBe(409);
-    expect($this->steps)->toBe(['prepare']);
-});
-
-it('refuses to finish a new release when its published delivery is absent or belongs to another source', function (mixed $body, int $status): void {
-    $this->agents->answer('gateway.inspect-release-agent-delivery', ['commit' => $this->sha, 'version' => '0.5.0', 'installed' => false])
-        ->answer('gateway.inspect-release-source', ['origin' => 'https://github.com/hardimpactdev/orbit.git']);
-    Http::fake(['https://github.com/*' => Http::response($body, $status)]);
-
-    $error = release_failure(fn () => $this->builder->prepare($this->sha, withWeb: false));
-
-    expect($error->errorCode)->toBe('gateway.release_agent_delivery_unavailable')->and($error->sha)->toBe($this->sha);
-    expect($this->steps)->toBe(['prepare']);
-    expect($this->agents->commands())->not->toContain('gateway.install-release-agent-delivery', 'gateway.finish-release');
-})->with([
-    'unpublished' => ['not found', 404],
-    'wrong source' => [['commit' => str_repeat('b', 40), 'version' => '0.5.0', 'artifacts' => []], 200],
-]);

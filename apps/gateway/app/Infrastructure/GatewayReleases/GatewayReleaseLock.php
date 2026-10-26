@@ -15,7 +15,8 @@ use Closure;
  */
 final readonly class GatewayReleaseLock
 {
-    public function __construct(private string $path, private GatewayReleaseCommands $commands) {}
+    /** @param string $cgroups the control-group file system, where a step command's service shows whether it still runs */
+    public function __construct(private string $path, private string $cgroups = '/sys/fs/cgroup') {}
 
     /**
      * @template TResult
@@ -64,19 +65,62 @@ final readonly class GatewayReleaseLock
 
     /**
      * Refuses while a command from an earlier release step still runs, for example a migration that went on after
-     * the process that started it died.
+     * the process that started it died. A step command writes its service's control group into the step lock, so a
+     * released lock whose service still has processes counts as running too.
      */
     private function assertNoStepRunning(): void
     {
         $step = $this->openPrivate($this->stepPath());
-        fclose($step);
-        if ($this->commands->stepBusy($this->stepPath())) {
-            throw new GatewayReleaseException(
-                step: 'lock',
-                errorCode: 'gateway.release_in_progress',
-                message: 'A command from an earlier release step still runs, such as a migration whose release process died. Wait for it to finish.',
-            );
+
+        try {
+            if (! flock($step, LOCK_EX | LOCK_NB)) {
+                throw $this->stepRunning();
+            }
+
+            try {
+                $group = stream_get_contents($step, 4098, 0);
+                if ($group === false) {
+                    throw $this->unavailable();
+                }
+                if ($group !== '' && $this->populated($group)) {
+                    throw $this->stepRunning();
+                }
+            } finally {
+                flock($step, LOCK_UN);
+            }
+        } finally {
+            fclose($step);
         }
+    }
+
+    /** Whether the recorded `orbit-command-*.service` control group still has processes. A removed group has none. */
+    private function populated(string $record): bool
+    {
+        $group = substr($record, 0, -1);
+        if (! str_ends_with($record, "\n") || strlen($group) > 4096 || preg_match('/[[:cntrl:]]/', $group) === 1
+            || preg_match('#\A(/[^/]+)+\z#', $group) !== 1 || array_intersect(explode('/', $group), ['.', '..']) !== []
+            || preg_match('/\Aorbit-command-.+\.service\z/', basename($group)) !== 1) {
+            throw $this->unavailable();
+        }
+        $events = @file_get_contents($this->cgroups.$group.'/cgroup.events');
+        if ($events === false) {
+            return false;
+        }
+
+        return match (preg_match('/^populated ([01])$/m', $events, $match) === 1 ? $match[1] : null) {
+            '0' => false,
+            '1' => true,
+            default => throw $this->unavailable(),
+        };
+    }
+
+    private function stepRunning(): GatewayReleaseException
+    {
+        return new GatewayReleaseException(
+            step: 'lock',
+            errorCode: 'gateway.release_in_progress',
+            message: 'A command from an earlier release step still runs, such as a migration whose release process died. Wait for it to finish.',
+        );
     }
 
     /** @return resource */
@@ -86,7 +130,7 @@ final readonly class GatewayReleaseLock
         // Exclusive creation never follows or changes an existing inode. Restore the caller's mask immediately.
         $mask = umask(0077);
         try {
-            $handle = @fopen($path, 'xe');
+            $handle = @fopen($path, 'x+e');
         } finally {
             umask($mask);
         }

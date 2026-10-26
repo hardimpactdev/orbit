@@ -15,21 +15,6 @@ interface SelfUpdateHost
     public function isRoot(): bool;
 
     /**
-     * Whether the Gateway manages this machine's `orbit-agent`: a Linux host whose agent unit carries the
-     * marker that the Gateway's agent converge writes.
-     */
-    public function isManagedNode(): bool;
-
-    public function agentBinaryPath(): string;
-
-    /**
-     * The user and group IDs the agent binary must have: root, as the Gateway's agent converge installs it.
-     *
-     * @return array{int, int}
-     */
-    public function agentOwner(): array;
-
-    /**
      * Ends the process after `orbit self-update` replaced the binary that runs it. The binary reads its own code
      * by path, and that path now holds the new binary, so the process must not load more code.
      */

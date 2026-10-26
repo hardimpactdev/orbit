@@ -25,7 +25,7 @@ it('defaults workflows to read-only tokens and grants writes only to named publi
     $writers = [];
     foreach (glob(base_path('../../.github/workflows/*.yml')) as $file) {
         $workflow = Yaml::parseFile($file);
-        expect($workflow['permissions'])->toBe(basename($file) === 'orbit-agent-release.yml' ? ['contents' => 'read', 'actions' => 'read'] : ['contents' => 'read']);
+        expect($workflow['permissions'])->toBe(['contents' => 'read']);
 
         foreach ($workflow['jobs'] as $name => $job) {
             $permissions = $job['permissions'] ?? $workflow['permissions'];
@@ -46,7 +46,7 @@ it('defaults workflows to read-only tokens and grants writes only to named publi
     expect($writers)->toBe([
         'ci.yml:publish-ci-cache' => ['actions' => 'read', 'contents' => 'write'],
         'git-build-watch.yml:publish' => ['issues' => 'write'],
-        'orbit-cli-release.yml:publish' => ['contents' => 'write'],
+        'orbit-cli-release.yml:publish' => ['contents' => 'write', 'actions' => 'read'],
         'php-build-mirror.yml:mirror' => ['contents' => 'write'],
     ]);
 });
@@ -81,23 +81,21 @@ it('publishes Git update issues only from the current main scheduled or manual r
     expect($publish['steps'])->toHaveCount(2);
 });
 
-it('publishes only the tested main agent delivery through its release App', function (): void {
-    $workflow = Yaml::parseFile(base_path('../../.github/workflows/orbit-agent-release.yml'));
-    $publish = $workflow['jobs']['publish'];
-    $steps = array_column($publish['steps'], null, 'name');
-    expect(array_keys($workflow['jobs']))->toBe(['publish']);
-    expect($workflow['on']['workflow_run'])->toBe(['workflows' => ['CI'], 'types' => ['completed'], 'branches' => ['main']]);
-    expect($publish['environment'])->toBe('agent-release');
-    expect($steps['Check out the tested commit']['with'])->toMatchArray(['persist-credentials' => false, 'ref' => '${{ steps.run.outputs.head }}']);
-    expect($steps['Find the CI run']['run'])->toContain('.head_branch', '.conclusion', 'main', 'success');
-    expect($steps['Download the tested delivery']['with'])->toMatchArray(['name' => 'agent-delivery', 'run-id' => '${{ steps.run.outputs.id }}']);
-    expect($steps['Validate the delivery and its tag']['run'])->toContain('apps/agent/scripts/check-release-tag.sh', '"$HEAD_SHA"');
-    expect($steps['Mint the release App token']['with'])->toBe(['app-id' => '${{ secrets.ORBIT_RELEASE_APP_ID }}', 'private-key' => '${{ secrets.ORBIT_RELEASE_APP_PRIVATE_KEY }}']);
-    expect($steps['Tag the commit and publish the delivery']['env']['GH_TOKEN'])->toBe('${{ steps.app.outputs.token }}');
-    expect($steps['Tag the commit and publish the delivery']['run'])->toContain('orbit-agent-linux-* orbit-agent-macos-* SHA256SUMS manifest.json', '--target "$COMMIT"');
-    foreach ($steps as $step) {
-        expect($step['run'] ?? '')->not->toContain('cargo build', 'cross build');
-    }
+it('publishes the tested main agent delivery with the commit release and no other credential', function (): void {
+    $workflow = Yaml::parseFile(base_path('../../.github/workflows/orbit-cli-release.yml'));
+    $resolve = array_column($workflow['jobs']['resolve']['steps'], null, 'name');
+    $publish = array_column($workflow['jobs']['publish']['steps'], null, 'name');
+
+    expect(glob(base_path('../../.github/workflows/orbit-agent-release.yml')))->toBe([]);
+    expect($resolve['Find the CI run with the tested agent delivery']['env']['RUN'])->toBe('${{ github.event.workflow_run.id }}');
+    expect($resolve['Find the CI run with the tested agent delivery']['run'])->toContain('branch=main&status=success', 'name=agent-delivery');
+    expect($publish['Download the tested agent delivery']['with'])->toBe([
+        'name' => 'agent-delivery', 'path' => 'agent-delivery', 'run-id' => '${{ needs.resolve.outputs.ci-run }}', 'github-token' => '${{ github.token }}',
+    ]);
+    expect($publish['Prepare release assets']['run'])->toContain('artifacts agent-delivery "https://github.com/${REPOSITORY}/releases/download/${TAG}" release');
+    expect($workflow['jobs']['publish'])->not->toHaveKey('environment');
+    $text = (string) file_get_contents(base_path('../../.github/workflows/orbit-cli-release.yml'));
+    expect($text)->not->toContain('secrets.', 'create-github-app-token', 'cargo build', 'cross build');
 });
 
 it('limits the recipe mirror write token to main and never triggers it for pull requests', function (): void {

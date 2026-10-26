@@ -30,8 +30,8 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 final class SelfUpdateCommand extends GatewayCommand
 {
-    /** Reasons a step does not apply to this machine. Any other skip leaves the machine `incomplete`. */
-    private const array NOT_APPLICABLE_REASONS = ['source_checkout', 'not_a_release_binary', 'platform_unsupported', 'not_managed_node'];
+    /** Reasons the step does not apply to this machine. Any other skip leaves the machine `incomplete`. */
+    private const array NOT_APPLICABLE_REASONS = ['source_checkout', 'not_a_release_binary', 'platform_unsupported'];
 
     #[\Override]
     protected $signature = 'self-update
@@ -40,10 +40,10 @@ final class SelfUpdateCommand extends GatewayCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Update this machine to the Gateway\'s release: the orbit CLI, and orbit-agent on a managed Node.';
+    protected $description = 'Update this machine\'s orbit CLI to the Gateway\'s release.';
 
     #[\Override]
-    protected $help = 'Reads the desired fleet state from the active Gateway, replaces this orbit binary with the Gateway\'s CLI release after a SHA-256 check, and on a managed Linux Node replaces orbit-agent when it differs from the pin and restarts it. Run it with sudo on a Node. A source checkout is left alone.';
+    protected $help = 'Reads the desired fleet state from the active Gateway and replaces this orbit binary with the Gateway\'s CLI release after a SHA-256 check. Run it with sudo on a Node. A source checkout is left alone.';
 
     public function handle(
         GatewayConfigRepository $repository,
@@ -65,15 +65,11 @@ final class SelfUpdateCommand extends GatewayCommand
         }
     }
 
-    /**
-     * Each binary changes under the self-update lock, so no other self-update or agent converge swaps it meanwhile.
-     * `agent.install` takes the lock for the agent itself; this command takes it only for the CLI.
-     */
+    /** The CLI changes under the self-update lock, so no other self-update or Gateway step swaps it meanwhile. */
     private function update(GatewayProfile $profile, GatewayConnectorFactory $connectors, SelfUpdater $updater, SelfUpdateHost $host, SelfUpdateLock $lock): int
     {
         $progress = $this->progressDisplay('Update Orbit');
         $progress->admit('state', 'Read desired state', 'Reading desired state', 'Read desired state');
-        $progress->admit('agent', 'Update agent', 'Updating agent', 'Agent up to date');
         $progress->admit('cli', 'Update CLI', 'Updating CLI', 'CLI up to date');
 
         try {
@@ -87,9 +83,9 @@ final class SelfUpdateCommand extends GatewayCommand
         }
 
         $progress->complete('state', ProgressState::Success, match (true) {
-            $state->cli->isAvailable() => "CLI {$state->cli->version}, agent {$state->agent->version}",
-            $state->cli->isPending() => "CLI {$state->cli->version} (pending), agent {$state->agent->version}",
-            default => "Agent {$state->agent->version}",
+            $state->cli->isAvailable() => "CLI {$state->cli->version}",
+            $state->cli->isPending() => "CLI {$state->cli->version} (pending)",
+            default => 'CLI release unavailable',
         });
 
         $version = config('app.version');
@@ -99,24 +95,15 @@ final class SelfUpdateCommand extends GatewayCommand
         $allowDowngrade = $this->option('allow-downgrade') === true
             || (is_string($downgradeTo) && $downgradeTo !== '' && $downgradeTo === $state->cli->version);
 
-        // The CLI goes last: when its first update turns the plain binary into a link, this process can load no
-        // more code from its path.
-        $agent = $progress->during('agent', static fn (): SelfUpdateStep => $updater->updateAgent($state));
-        $this->settle($progress, 'agent', $agent);
+        // When the first update turns the plain binary into a link, this process can load no more code from its path.
+        self::loadClassesUsedAfterReplacement();
+        $cli = $progress->during('cli', static fn (): SelfUpdateStep => $lock->hold(
+            $host->lockPath(),
+            static fn (): SelfUpdateStep => $updater->updateCli($state, $currentVersion, $allowDowngrade),
+        ));
+        $this->settle($progress, 'cli', $cli);
 
-        if ($agent->outcome === SelfUpdateOutcome::Failed) {
-            $cli = new SelfUpdateStep('cli', SelfUpdateOutcome::Skipped, reason: 'previous_step_failed');
-            $progress->complete('cli', ProgressState::Skipped, $this->skipReason($cli->reason));
-        } else {
-            self::loadClassesUsedAfterReplacement();
-            $cli = $progress->during('cli', static fn (): SelfUpdateStep => $lock->hold(
-                $host->lockPath(),
-                static fn (): SelfUpdateStep => $updater->updateCli($state, $currentVersion, $allowDowngrade),
-            ));
-            $this->settle($progress, 'cli', $cli);
-        }
-
-        $steps = [$agent, $cli];
+        $steps = [$cli];
         $outcome = $this->outcome($steps);
         $progress->finish(match ($outcome) {
             SelfUpdateOutcome::Failed => 'Update failed.',
@@ -188,9 +175,6 @@ final class SelfUpdateCommand extends GatewayCommand
             'source_checkout' => 'This orbit runs from a source checkout. Update it with git pull.',
             'not_a_release_binary' => 'This orbit is a PHAR run by php, not a release binary.',
             'platform_unsupported' => 'No release binary exists for this platform.',
-            'not_managed_node' => 'This machine is not a managed Node.',
-            'root_required' => 'Run orbit self-update with sudo to replace orbit-agent.',
-            'previous_step_failed' => 'Not started, because the agent update failed.',
             null => 'Skipped.',
             default => "The Gateway's CLI release is unavailable: {$reason}.",
         };
@@ -198,8 +182,7 @@ final class SelfUpdateCommand extends GatewayCommand
 
     /**
      * `failed` before `incomplete` before `pending` before `updated` before `unchanged`. A step skipped for a
-     * reason in INCOMPLETE_REASONS makes the command `incomplete`: it should have run and could not. A step that
-     * does not apply here, such as the agent on an operator Mac, does not.
+     * reason outside NOT_APPLICABLE_REASONS makes the command `incomplete`: it should have run and could not.
      *
      * @param  list<SelfUpdateStep>  $steps
      */
