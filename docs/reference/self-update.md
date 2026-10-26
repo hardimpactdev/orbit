@@ -98,6 +98,7 @@ The Gateway usually deploys a commit a minute after its checks pass, minutes bef
 | `unavailable` | `release_mismatch` | The tag points at another commit. |
 | `unavailable` | `release_incomplete` | The release lacks a binary, or `SHA256SUMS` lacks a valid line. |
 | `unavailable` | `release_unverified` | The release has no provenance bundle, or the bundle does not verify. A published release never changes, and no fallback stands in for it. |
+| `unavailable` | `provenance_unconfigured` | The Gateway cannot check provenance: its trust root or release repository setting is unusable ([Release provenance](/reference/gateway-recovery#release-provenance)). |
 | `unavailable` | `github_unavailable` | GitHub did not answer or refused the request, for example at its rate limit. |
 
 An available release is kept for its commit for 30 days, because a published release never changes. A fallback is checked against the commit's own release every 5 minutes. A `pending` or `unavailable` answer is kept for 60 seconds, or for 5 minutes after a fallback search found nothing. Only the desired-fleet-state endpoint and the scheduler resolve the state. The scheduler runs `php artisan orbit:desired-fleet-state` every 5 minutes, as a job on the [Gateway queue](/reference/gateway-queue#scheduled-work). The command prints the state as JSON. One caller resolves a commit at a time under a cache lock; the others wait up to 30 seconds and read its answer.

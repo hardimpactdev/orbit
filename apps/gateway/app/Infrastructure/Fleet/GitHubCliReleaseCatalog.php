@@ -14,6 +14,7 @@ use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubRepository;
 use App\Infrastructure\Releases\ReleaseProvenance;
 use App\Infrastructure\Releases\ReleaseProvenanceRefused;
+use App\Infrastructure\Releases\ReleaseProvenanceUnavailable;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use SensitiveParameter;
@@ -81,8 +82,10 @@ final readonly class GitHubCliReleaseCatalog implements CliReleaseCatalog
 
         try {
             $this->provenance->verify($release->tag(), [CliReleaseName::ChecksumsAsset => $sums]);
-        } catch (ReleaseProvenanceRefused $refusal) {
-            throw new CliReleaseLookupFailed($refusal->retryable ? CliReleaseUnavailableReason::GitHubUnavailable : CliReleaseUnavailableReason::ReleaseUnverified);
+        } catch (ReleaseProvenanceRefused) {
+            throw new CliReleaseLookupFailed(CliReleaseUnavailableReason::ReleaseUnverified);
+        } catch (ReleaseProvenanceUnavailable $unavailable) {
+            throw new CliReleaseLookupFailed($unavailable->local ? CliReleaseUnavailableReason::ProvenanceUnconfigured : CliReleaseUnavailableReason::GitHubUnavailable);
         }
 
         $checksums = $this->checksums($sums);

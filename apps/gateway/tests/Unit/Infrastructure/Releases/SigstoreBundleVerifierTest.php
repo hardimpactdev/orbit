@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Infrastructure\Releases\ReleaseProvenance;
 use App\Infrastructure\Releases\ReleaseProvenanceRefused;
+use App\Infrastructure\Releases\ReleaseProvenanceUnavailable;
 use App\Infrastructure\Releases\SigstoreBundleVerifier;
 use Tests\Support\SigstoreTestSigner;
 
@@ -130,8 +131,28 @@ describe(SigstoreBundleVerifier::class, function (): void {
         'another statement type' => [['statement' => ['_type' => 'https://in-toto.io/Statement/v0.1']], 'not an in-toto statement v1 with SLSA provenance v1'],
         'another predicate type' => [['statement' => ['predicateType' => 'https://in-toto.io/attestation/release/v0.2']], 'not an in-toto statement v1 with SLSA provenance v1'],
         'a subject digest of other bytes' => [['digests' => ['manifest.json' => str_repeat('0', 64)]], 'does not name [manifest.json] with the SHA-256'],
+        'a second URI SAN' => [['subject_alt_name' => 'URI:'.SigstoreTestSigner::identity().',URI:https://example.com/other'], 'The certificate does not name the signer'],
+        'an email SAN with the signer value' => [['subject_alt_name' => 'email:'.SigstoreTestSigner::identity()], 'The certificate does not name the signer'],
+        'an issuer as another string type' => [['issuer_extension' => 'ASN1:IA5STRING:'.ReleaseProvenance::Issuer], 'The certificate does not name the OIDC issuer'],
+        'an issuer with a long-form length' => [['issuer_extension' => 'DER:0c812b68747470733a2f2f746f6b656e2e616374696f6e732e67697468756275736572636f6e74656e742e636f6d'], 'The certificate does not name the OIDC issuer'],
+        'an issuer with a trailing byte' => [['issuer_extension' => 'DER:0c2b68747470733a2f2f746f6b656e2e616374696f6e732e67697468756275736572636f6e74656e742e636f6d00'], 'The certificate does not name the OIDC issuer'],
+        'a proof index outside the tree' => [['proof_index' => 5], 'The inclusion proof does not lead to its root hash.'],
+        'a proof index past a one-entry log' => [['single_leaf' => true, 'proof_index' => 1], 'The inclusion proof does not lead to its root hash.'],
+        'a proof with a surplus hash' => [['proof_hashes' => static fn (array $path): array => [...$path, hash('sha256', 'surplus', true)]], 'The inclusion proof does not lead to its root hash.'],
+        'a proof with a missing hash' => [['proof_hashes' => static fn (array $path): array => array_slice($path, 0, -1)], 'The inclusion proof does not lead to its root hash.'],
+        'a proof hash that is not 32 bytes' => [['proof_hashes' => static fn (array $path): array => [...array_slice($path, 0, -1), substr((string) end($path), 0, 31)]], 'is not 32 bytes'],
+        'a checkpoint under another key hint' => [['tamper' => 'checkpoint-hint'], 'The checkpoint signature does not verify with the Rekor key.'],
+        'a checkpoint of another log' => [['checkpoint_origin' => 'rekor.example - 1'], "is not a checkpoint of the entry's log"],
         'a subject named twice' => [['statement' => ['subject' => [['name' => 'SHA256SUMS', 'digest' => ['sha256' => '0']], ['name' => 'SHA256SUMS', 'digest' => ['sha256' => '1']]]]], 'one name twice'],
     ]);
+
+    it('verifies an entry that is alone in its log', function (): void {
+        $signer = SigstoreTestSigner::instance();
+
+        new SigstoreBundleVerifier($signer->trustRoot())->verify($signer->bundle(['SHA256SUMS' => 'sums'], ['single_leaf' => true]), SigstoreTestSigner::identity(), ReleaseProvenance::Issuer, ['SHA256SUMS' => hash('sha256', 'sums')]);
+
+        expect(true)->toBeTrue();
+    });
 
     it('refuses a bundle that does not name a required file', function (): void {
         $signer = SigstoreTestSigner::instance();
@@ -149,6 +170,17 @@ describe(SigstoreBundleVerifier::class, function (): void {
         expect(fn () => new SigstoreBundleVerifier($signer->trustRoot())->verify(json_encode($bundle, JSON_THROW_ON_ERROR), SigstoreTestSigner::identity(), ReleaseProvenance::Issuer, ['SHA256SUMS' => hash('sha256', 'sums')]))
             ->toThrow(ReleaseProvenanceRefused::class, 'exactly one transparency log entry');
     });
+
+    it('reports a malformed trust root as a Gateway fault, not as a refused release', function (string $trustRoot): void {
+        $signer = SigstoreTestSigner::instance();
+
+        expect(fn () => new SigstoreBundleVerifier($trustRoot)->verify($signer->bundle(['SHA256SUMS' => 'sums']), SigstoreTestSigner::identity(), ReleaseProvenance::Issuer, ['SHA256SUMS' => hash('sha256', 'sums')]))
+            ->toThrow(fn (ReleaseProvenanceUnavailable $unavailable) => expect($unavailable->local)->toBeTrue());
+    })->with([
+        'not JSON' => ['{"mediaType":'],
+        'no logs' => ['{"certificateAuthorities":[]}'],
+        'a malformed time' => [fn (): string => str_replace('2020-01-01T00:00:00Z', 'yesterday-ish', SigstoreTestSigner::instance()->trustRoot())],
+    ]);
 
     it('refuses a document that is not a Sigstore bundle v0.3', function (string $bundle): void {
         expect(fn () => new SigstoreBundleVerifier(public_good_trust_root())->verify($bundle, CLI_CLI_SIGNER, ReleaseProvenance::Issuer, CLI_CLI_SUBJECT))

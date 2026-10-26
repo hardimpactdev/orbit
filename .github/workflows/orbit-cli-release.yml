@@ -127,6 +127,10 @@ jobs:
           expected="$(printf '%s\n' SHA256SUMS manifest.json provenance.sigstore.json "orbit-${VERSION}-linux-aarch64" "orbit-${VERSION}-linux-x86_64" "orbit-${VERSION}-macos-arm64" \
             orbit-agent-linux-aarch64 orbit-agent-linux-x86_64 orbit-agent-macos-aarch64 orbit-agent-macos-x86_64 | LC_ALL=C sort)"
           assets="$(jq -r '.assets[].name' <<< "$release" | LC_ALL=C sort)"
+          if [ "$tagged" = "$COMMIT" ] && [ "$assets" = "$(grep -vx provenance.sigstore.json <<< "$expected")" ]; then
+            echo "::error::Release ${TAG} was published before release provenance and has no provenance.sigstore.json. Published releases are never replaced, so the Gateway never installs it."
+            exit 1
+          fi
           if [ "$tagged" != "$COMMIT" ] || [ "$assets" != "$expected" ]; then
             echo "::error::Release ${TAG} exists but does not match ${COMMIT} and the expected assets. Published releases are never replaced."
             exit 1

@@ -6,6 +6,7 @@ namespace Tests\Support;
 
 use App\Infrastructure\Releases\ReleaseProvenance;
 use App\Infrastructure\Releases\SigstoreBundleVerifier;
+use Closure;
 use LogicException;
 use OpenSSLAsymmetricKey;
 use OpenSSLCertificate;
@@ -15,8 +16,10 @@ use OpenSSLCertificate;
  * `actions/attest-build-provenance` writes them against Rekor v1. Each option changes one fact and keeps every other
  * part consistent, so a test that refuses it proves the one check that catches it.
  *
- * Options: `identity`, `issuer`, `statement` (fields merged into the statement), `digests` (name => SHA-256 to state
- * instead), `integrated_time`, `kind_version`, and `tamper`, one of: `dsse-signature`, `body-payload-hash`,
+ * Options: `identity`, `issuer`, `subject_alt_name` and `issuer_extension` (raw OpenSSL configuration values, such as
+ * `DER:<hex>`), `statement` (fields merged into the statement), `digests` (name => SHA-256 to state instead),
+ * `integrated_time`, `kind_version`, `proof_index`, `proof_hashes` (a closure that changes the audit path),
+ * `checkpoint_origin`, `single_leaf` (a log of only this entry), and `tamper`, one of: `checkpoint-hint`, `dsse-signature`, `body-payload-hash`,
  * `body-signature`, `body-verifier`, `set`, `inclusion-hash`, `checkpoint-signature`, `checkpoint-root`,
  * `no-promise`, `unknown-log`, `foreign-ca`.
  */
@@ -103,7 +106,13 @@ final class SigstoreTestSigner
         $leafKey = $this->key();
         $signer = $tamper === 'foreign-ca' ? $this->key() : $this->caKey;
         $issuerCertificate = $tamper === 'foreign-ca' ? $this->sign(['commonName' => 'foreign-ca'], $signer, null, $signer, 3650, 'ca') : $this->ca;
-        $leaf = $this->leaf($leafKey, $signer, $issuerCertificate, (string) ($options['identity'] ?? self::identity()), (string) ($options['issuer'] ?? ReleaseProvenance::Issuer));
+        $leaf = $this->leaf(
+            $leafKey,
+            $signer,
+            $issuerCertificate,
+            (string) ($options['subject_alt_name'] ?? 'URI:'.($options['identity'] ?? self::identity())),
+            (string) ($options['issuer_extension'] ?? 'ASN1:UTF8String:'.($options['issuer'] ?? ReleaseProvenance::Issuer)),
+        );
         openssl_x509_export($leaf, $leafPem);
         $leafPem = (string) $leafPem;
         $time = is_int($options['integrated_time'] ?? null) ? $options['integrated_time'] : time();
@@ -128,7 +137,7 @@ final class SigstoreTestSigner
         $loggedSignature = $tamper === 'body-signature' ? $this->signWith($this->key(), $pae) : $signature;
         $verifier = $leafPem;
         if ($tamper === 'body-verifier') {
-            openssl_x509_export($this->leaf($this->key(), $this->caKey, $this->ca, self::identity(), ReleaseProvenance::Issuer), $other);
+            openssl_x509_export($this->leaf($this->key(), $this->caKey, $this->ca, 'URI:'.self::identity(), 'ASN1:UTF8String:'.ReleaseProvenance::Issuer), $other);
             $verifier = (string) $other;
         }
         $body = json_encode([
@@ -144,8 +153,9 @@ final class SigstoreTestSigner
 
         $rekorKey = $tamper === 'unknown-log' ? $this->key() : $this->rekorKey;
         $logId = $tamper === 'unknown-log' ? hash('sha256', $this->der((string) openssl_pkey_get_details($rekorKey)['key']), true) : $this->logId();
-        $leaves = [hash('sha256', 'a', true), hash('sha256', 'b', true), hash('sha256', 'c', true), hash('sha256', "\x00".$body, true), hash('sha256', 'e', true)];
-        $index = 3;
+        $leaf = hash('sha256', "\x00".$body, true);
+        $leaves = ($options['single_leaf'] ?? false) === true ? [$leaf] : [hash('sha256', 'a', true), hash('sha256', 'b', true), hash('sha256', 'c', true), $leaf, hash('sha256', 'e', true)];
+        $index = count($leaves) === 1 ? 0 : 3;
         $root = $this->treeHash($leaves);
         $path = $this->auditPath($index, $leaves);
         if ($tamper === 'inclusion-hash') {
@@ -153,9 +163,13 @@ final class SigstoreTestSigner
         }
         $logIndex = 1_000_000 + $index;
         $set = json_encode(['body' => $encodedBody, 'integratedTime' => $time, 'logID' => bin2hex($logId), 'logIndex' => $tamper === 'set' ? $logIndex + 1 : $logIndex], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
-        $note = "rekor.test - 1\n".count($leaves)."\n".base64_encode($tamper === 'checkpoint-root' ? hash('sha256', 'other root', true) : $root)."\n";
+        if (($options['proof_hashes'] ?? null) instanceof Closure) {
+            $path = ($options['proof_hashes'])($path);
+        }
+        $note = ($options['checkpoint_origin'] ?? 'rekor.test - 1')."\n".count($leaves)."\n".base64_encode($tamper === 'checkpoint-root' ? hash('sha256', 'other root', true) : $root)."\n";
         $noteKey = $tamper === 'checkpoint-signature' ? $this->key() : $rekorKey;
-        $checkpoint = $note."\n\u{2014} rekor.test ".base64_encode(substr($logId, 0, 4).$this->signWith($noteKey, $note))."\n";
+        $hint = $tamper === 'checkpoint-hint' ? strrev(substr($logId, 0, 4)) : substr($logId, 0, 4);
+        $checkpoint = $note."\n\u{2014} rekor.test ".base64_encode($hint.$this->signWith($noteKey, $note))."\n";
 
         $entry = [
             'logIndex' => (string) $logIndex,
@@ -164,7 +178,7 @@ final class SigstoreTestSigner
             'integratedTime' => (string) $time,
             'inclusionPromise' => ['signedEntryTimestamp' => base64_encode($this->signWith($rekorKey, $set))],
             'inclusionProof' => [
-                'logIndex' => (string) $index,
+                'logIndex' => (string) ($options['proof_index'] ?? $index),
                 'rootHash' => base64_encode($root),
                 'treeSize' => (string) count($leaves),
                 'hashes' => array_map(base64_encode(...), $path),
@@ -191,13 +205,13 @@ final class SigstoreTestSigner
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
     }
 
-    private function leaf(OpenSSLAsymmetricKey $key, OpenSSLAsymmetricKey $caKey, OpenSSLCertificate $ca, string $identity, string $issuer): OpenSSLCertificate
+    private function leaf(OpenSSLAsymmetricKey $key, OpenSSLAsymmetricKey $caKey, OpenSSLCertificate $ca, string $subjectAltName, string $issuerExtension): OpenSSLCertificate
     {
         $configuration = (string) tempnam(sys_get_temp_dir(), 'orbit-sigstore-leaf-');
         try {
             file_put_contents($configuration, "[ req ]\ndistinguished_name = dn\n[ dn ]\n[ leaf ]\nbasicConstraints = critical,CA:FALSE\n"
-                ."keyUsage = critical,digitalSignature\nextendedKeyUsage = codeSigning\nsubjectAltName = critical,URI:{$identity}\n"
-                .SigstoreBundleVerifier::IssuerExtension." = ASN1:UTF8String:{$issuer}\n");
+                ."keyUsage = critical,digitalSignature\nextendedKeyUsage = codeSigning\nsubjectAltName = critical,{$subjectAltName}\n"
+                .SigstoreBundleVerifier::IssuerExtension." = {$issuerExtension}\n");
 
             return $this->sign(['commonName' => 'sigstore-test-leaf'], $key, $ca, $caKey, 1, 'leaf', $configuration);
         } finally {

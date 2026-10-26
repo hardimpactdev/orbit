@@ -457,6 +457,34 @@ describe('CLI release workflow', function (): void {
             ->and($jobs['resolve']['permissions'])->toBe(['contents' => 'read', 'checks' => 'read', 'actions' => 'read']);
     });
 
+    it('names the missing provenance bundle when the release of the commit exists without it', function (bool $withBundle, int $exitCode, string $output): void {
+        $bin = (string) cli_release_temp('orbit-cli-release-bin');
+        File::ensureDirectoryExists($bin);
+        $names = ['SHA256SUMS', 'manifest.json', 'orbit-0.2.0-linux-aarch64', 'orbit-0.2.0-linux-x86_64', 'orbit-0.2.0-macos-arm64',
+            'orbit-agent-linux-aarch64', 'orbit-agent-linux-x86_64', 'orbit-agent-macos-aarch64', 'orbit-agent-macos-x86_64', ...($withBundle ? ['provenance.sigstore.json'] : [])];
+        File::put($bin.'/release.json', json_encode(['assets' => array_map(static fn (string $name): array => ['name' => $name], $names)]));
+        File::put($bin.'/gh', "#!/bin/sh\ncase \"\$2\" in\n  */releases/tags/*) cat '{$bin}/release.json' ;;\n  *) echo \"\$COMMIT\" ;;\nesac\n");
+        chmod($bin.'/gh', 0755);
+        File::put($bin.'/output', '');
+
+        $steps = array_column(cli_release_workflow()['jobs']['resolve']['steps'], null, 'name');
+        $process = new Process(['bash', '-e', '-c', $steps['Check for an existing release']['run']], $bin, [
+            'PATH' => $bin.':'.getenv('PATH'),
+            'GITHUB_OUTPUT' => $bin.'/output',
+            'REPOSITORY' => 'hardimpactdev/orbit',
+            'COMMIT' => str_repeat('a', 40),
+            'VERSION' => '0.2.0',
+            'TAG' => 'cli-v0.2.0',
+        ]);
+        $process->run();
+
+        expect($process->getExitCode())->toBe($exitCode)
+            ->and($process->getOutput())->toContain($output);
+    })->with([
+        'a release from before provenance' => [false, 1, 'has no provenance.sigstore.json'],
+        'a complete release' => [true, 0, 'is already published'],
+    ]);
+
     it('signs every release file with the workflow identity and publishes the bundle with the release', function (): void {
         $jobs = cli_release_workflow()['jobs'];
         $names = array_column($jobs['publish']['steps'], 'name');

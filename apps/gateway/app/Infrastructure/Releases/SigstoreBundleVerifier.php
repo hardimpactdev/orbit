@@ -38,11 +38,15 @@ final readonly class SigstoreBundleVerifier
      * @param  string  $issuer  The exact OIDC issuer the certificate must name.
      * @param  array<string, string>  $subjects  The lowercase hex SHA-256 each named subject must have.
      *
-     * @throws ReleaseProvenanceRefused
+     * @throws ReleaseProvenanceRefused when the bundle does not verify
+     * @throws ReleaseProvenanceUnavailable when the trust root is malformed
      */
     public function verify(string $bundle, string $identity, string $issuer, array $subjects): void
     {
-        $root = $this->object(json_decode($this->trustRoot, true), 'The Sigstore trust root is not JSON.');
+        $root = json_decode($this->trustRoot, true);
+        if (! is_array($root) || ! is_array($root['tlogs'] ?? null) || ! is_array($root['certificateAuthorities'] ?? null)) {
+            throw new ReleaseProvenanceUnavailable('The Sigstore trust root is not a trusted_root.json with tlogs and certificate authorities.', local: true);
+        }
         $bundle = $this->object(json_decode($bundle, true), 'The provenance bundle is not JSON.');
         if (($bundle['mediaType'] ?? null) !== self::BundleType) {
             throw $this->refuse('The provenance bundle is not a Sigstore bundle v0.3.');
@@ -91,7 +95,7 @@ final readonly class SigstoreBundleVerifier
         $index = $this->integer($entry['logIndex'] ?? null, 'log index');
         $encodedBody = $entry['canonicalizedBody'] ?? null;
         $body = $this->bytes($encodedBody, 'log entry body');
-        $key = $this->rekorKey($root, $logId, $time);
+        [$key, $host] = $this->rekorKey($root, $logId, $time);
 
         $promise = $this->object($entry['inclusionPromise'] ?? null, 'The transparency log entry has no signed entry timestamp.');
         $timestamp = $this->bytes($promise['signedEntryTimestamp'] ?? null, 'signed entry timestamp');
@@ -101,43 +105,53 @@ final readonly class SigstoreBundleVerifier
         }
 
         $proof = $this->object($entry['inclusionProof'] ?? null, 'The transparency log entry has no inclusion proof.');
-        $rootHash = $this->bytes($proof['rootHash'] ?? null, 'inclusion proof root hash');
+        $rootHash = $this->hash($proof['rootHash'] ?? null, 'inclusion proof root hash');
         $treeSize = $this->integer($proof['treeSize'] ?? null, 'inclusion proof tree size');
         $hashes = $proof['hashes'] ?? null;
         if (! is_array($hashes) || ! array_is_list($hashes)) {
             throw $this->refuse('The inclusion proof has no hashes.');
         }
-        $path = array_map(fn (mixed $hash): string => $this->bytes($hash, 'inclusion proof hash'), $hashes);
+        $path = array_map(fn (mixed $hash): string => $this->hash($hash, 'inclusion proof hash'), $hashes);
         if (! hash_equals($rootHash, $this->inclusionRoot(hash('sha256', "\x00".$body, true), $this->integer($proof['logIndex'] ?? null, 'inclusion proof log index'), $treeSize, $path))) {
             throw $this->refuse('The inclusion proof does not lead to its root hash.');
         }
         $checkpoint = $this->object($proof['checkpoint'] ?? null, 'The inclusion proof has no checkpoint.')['envelope'] ?? null;
-        $this->checkpoint(is_string($checkpoint) ? $checkpoint : '', $key, $logId, $treeSize, $rootHash);
+        $this->checkpoint(is_string($checkpoint) ? $checkpoint : '', $key, $host, $logId, $treeSize, $rootHash);
 
         $this->body($body, $payload, $signature, $certificate);
 
         return $time;
     }
 
-    /** @param array<array-key, mixed> $root */
-    private function rekorKey(array $root, string $logId, int $time): OpenSSLAsymmetricKey
+    /**
+     * The first trust root log with the entry's log ID that holds an ECDSA P-256 key valid at the integrated time,
+     * and the host of that log, which names its checkpoints. A root can list one log ID more than once, for example
+     * a key with two validity ranges, so an unusable match does not end the search.
+     *
+     * @param  array<array-key, mixed>  $root
+     * @return array{OpenSSLAsymmetricKey, string}
+     */
+    private function rekorKey(array $root, string $logId, int $time): array
     {
+        $matched = false;
         foreach (is_array($root['tlogs'] ?? null) ? $root['tlogs'] : [] as $log) {
             $id = is_array($log) && is_array($log['logId'] ?? null) ? ($log['logId']['keyId'] ?? null) : null;
-            $publicKey = is_array($log) && is_array($log['publicKey'] ?? null) ? $log['publicKey'] : [];
             if (! is_string($id) || base64_decode($id, true) !== $logId) {
                 continue;
             }
+            $matched = true;
+            $publicKey = is_array($log['publicKey'] ?? null) ? $log['publicKey'] : [];
             $der = is_string($publicKey['rawBytes'] ?? null) ? base64_decode($publicKey['rawBytes'], true) : false;
             $key = is_string($der) ? openssl_pkey_get_public($this->pem($der, 'PUBLIC KEY')) : false;
-            if (($publicKey['keyDetails'] ?? null) !== self::RekorKeyType || $key === false || ! $this->within($publicKey['validFor'] ?? null, $time)) {
-                throw $this->refuse('The Rekor key of the entry is not an ECDSA P-256 key valid at its integrated time.');
+            $host = is_string($log['baseUrl'] ?? null) ? parse_url($log['baseUrl'], PHP_URL_HOST) : null;
+            if (($publicKey['keyDetails'] ?? null) === self::RekorKeyType && $key !== false && is_string($host) && $this->within($publicKey['validFor'] ?? null, $time)) {
+                return [$key, $host];
             }
-
-            return $key;
         }
 
-        throw $this->refuse('The transparency log entry names a log that the trust root does not hold.');
+        throw $this->refuse($matched
+            ? 'The Rekor key of the entry is not an ECDSA P-256 key valid at its integrated time.'
+            : 'The transparency log entry names a log that the trust root does not hold.');
     }
 
     /**
@@ -174,12 +188,18 @@ final readonly class SigstoreBundleVerifier
         return $sn === 0 ? $hash : '';
     }
 
-    /** A signed note whose tree size and root hash equal the proof's, signed by the entry's Rekor key. */
-    private function checkpoint(string $note, OpenSSLAsymmetricKey $key, string $logId, int $treeSize, string $rootHash): void
+    /**
+     * A signed note of the entry's log, `<host> - <tree ID>`, whose tree size and root hash equal the proof's, signed
+     * by the entry's Rekor key under its key hint.
+     */
+    private function checkpoint(string $note, OpenSSLAsymmetricKey $key, string $host, string $logId, int $treeSize, string $rootHash): void
     {
         $parts = explode("\n\n", $note, 2);
         $lines = explode("\n", $parts[0]);
-        if (count($parts) !== 2 || count($lines) < 3 || $lines[1] !== (string) $treeSize || base64_decode($lines[2], true) !== $rootHash) {
+        if (count($parts) !== 2 || count($lines) < 3 || preg_match('/\A'.preg_quote($host, '/').' - [0-9]+\z/D', $lines[0]) !== 1) {
+            throw $this->refuse('The checkpoint is not a checkpoint of the entry\'s log.');
+        }
+        if ($lines[1] !== (string) $treeSize || base64_decode($lines[2], true) !== $rootHash) {
             throw $this->refuse('The checkpoint does not hold the tree size and root hash of the inclusion proof.');
         }
         foreach (explode("\n", rtrim($parts[1], "\n")) as $line) {
@@ -319,11 +339,11 @@ final readonly class SigstoreBundleVerifier
         try {
             return new DateTimeImmutable($time)->getTimestamp();
         } catch (Exception) {
-            throw $this->refuse('The Sigstore trust root has a malformed time.');
+            throw new ReleaseProvenanceUnavailable("The Sigstore trust root has a malformed time [{$time}].", local: true);
         }
     }
 
-    /** The value of a DER UTF8String, or null for anything else. */
+    /** The value of a DER UTF8String with its minimal length encoding and no trailing bytes, or null. */
     private function utf8String(mixed $der): ?string
     {
         if (! is_string($der) || strlen($der) < 2 || $der[0] !== "\x0c") {
@@ -331,10 +351,13 @@ final readonly class SigstoreBundleVerifier
         }
         $length = ord($der[1]);
         $offset = 2;
-        if ($length > 0x80 && $length <= 0x82) {
+        if ($length === 0x81 || $length === 0x82) {
             $bytes = $length - 0x80;
             $length = (int) hexdec(bin2hex(substr($der, 2, $bytes)));
             $offset += $bytes;
+            if ($length < ($bytes === 1 ? 0x80 : 0x100)) {
+                return null;
+            }
         } elseif ($length >= 0x80) {
             return null;
         }
@@ -352,6 +375,17 @@ final readonly class SigstoreBundleVerifier
         }
 
         throw $this->refuse("The provenance bundle has no valid {$name}.");
+    }
+
+    /** A SHA-256 hash: base64 of exactly 32 bytes. */
+    private function hash(mixed $value, string $name): string
+    {
+        $hash = $this->bytes($value, $name);
+        if (strlen($hash) !== 32) {
+            throw $this->refuse("The provenance bundle has an {$name} that is not 32 bytes.");
+        }
+
+        return $hash;
     }
 
     private function bytes(mixed $value, string $name): string

@@ -16,6 +16,7 @@ use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Releases\ReleaseProvenance;
 use App\Infrastructure\Releases\ReleaseProvenanceRefused;
+use App\Infrastructure\Releases\ReleaseProvenanceUnavailable;
 use App\Models\Node;
 use Closure;
 use Illuminate\Support\Facades\Http;
@@ -26,9 +27,10 @@ use Throwable;
  * The agent a release pins, taken from its commit's public Orbit release, which holds the CLI and the agent
  * ([Node agent: Delivery](/reference/node-agent#delivery)). Prepare finds the release by the tag that points at the
  * commit, downloads the manifest and `SHA256SUMS` without authentication, and verifies their provenance
- * ([Release provenance](/reference/gateway-recovery#release-provenance)). It then checks the manifest against
- * `SHA256SUMS` and downloads the Gateway's binary against its digest, all before it changes anything. It then puts the manifest into the release and installs the binary on the
- * Gateway through the binary's own installer, so the running agent is never needed to install the agent.
+ * ([Release provenance](/reference/gateway-recovery#release-provenance)). It checks the manifest against
+ * `SHA256SUMS` and downloads the Gateway's binary against its digest, all before it changes anything. Install
+ * puts the manifest into the release and installs the binary on the Gateway through the binary's own installer,
+ * so the running agent is never needed to install the agent.
  */
 final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
 {
@@ -65,9 +67,11 @@ final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
         try {
             $this->provenance->verify($tag, ['manifest.json' => $manifest, 'SHA256SUMS' => $sums]);
         } catch (ReleaseProvenanceRefused $refusal) {
-            throw $refusal->retryable
-                ? $this->unavailable($sha, $refusal->getMessage())
-                : new GatewayReleaseException('agent-delivery', 'gateway.release_provenance_invalid', 'The release provenance does not verify: '.$refusal->getMessage(), 422, sha: $sha, previous: $refusal);
+            throw new GatewayReleaseException('agent-delivery', 'gateway.release_provenance_invalid', 'The release provenance does not verify: '.$refusal->getMessage(), 422, sha: $sha, previous: $refusal);
+        } catch (ReleaseProvenanceUnavailable $unavailable) {
+            throw $unavailable->local
+                ? new GatewayReleaseException('agent-delivery', 'gateway.release_provenance_unconfigured', 'The Gateway cannot verify release provenance: '.$unavailable->getMessage(), 503, sha: $sha, previous: $unavailable)
+                : $this->unavailable($sha, $unavailable->getMessage());
         }
         $this->validate($manifest, $this->checksums($sums, $sha), $base, $sha);
 

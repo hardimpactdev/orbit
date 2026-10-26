@@ -141,6 +141,13 @@ describe(GitHubCliReleaseCatalog::class, function (): void {
         'rate limited' => [static fn (): array => ['/repos/hardimpactdev/orbit/git/ref/tags/cli-v0.4681.0' => Http::response(['message' => 'API rate limit exceeded'], 403)], 'github_unavailable'],
     ]);
 
+    it('reports a trust root the Gateway cannot read as its own fault, not as an unverified release', function (): void {
+        fake_cli_release_github();
+        config(['orbit.cli_releases.trusted_root' => '/nonexistent/trusted_root.json']);
+
+        expect(find_fixture_cli_release())->toMatchArray(['status' => 'unavailable', 'reason' => 'provenance_unconfigured']);
+    });
+
     it('reports GitHub unavailable when the connection fails', function (): void {
         Http::fake(static fn () => throw new ConnectionException('Connection refused.'));
 

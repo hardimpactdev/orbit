@@ -38,19 +38,20 @@ final readonly class ReleaseProvenance
     /**
      * @param  array<string, string>  $files  The exact bytes of each release file the bundle must name.
      *
-     * @throws ReleaseProvenanceRefused retryable only when the bundle cannot be downloaded
+     * @throws ReleaseProvenanceRefused when the bundle is missing or does not verify
+     * @throws ReleaseProvenanceUnavailable when the bundle cannot be downloaded, or a Gateway setting is at fault
      */
     public function verify(string $tag, array $files): void
     {
         $repository = GitHubRepository::fromOrigin($this->repository);
         if (! $repository instanceof GitHubRepository) {
-            throw new ReleaseProvenanceRefused('The release repository is not a github.com repository.');
+            throw new ReleaseProvenanceUnavailable('The release repository is not a github.com repository.', local: true);
         }
         $base = 'https://github.com/'.$repository->owner.'/'.$repository->name;
         $bundle = $this->download($base.'/releases/download/'.rawurlencode($tag).'/'.self::Asset);
         $trustRoot = @file_get_contents($this->trustRoot);
         if (! is_string($trustRoot)) {
-            throw new ReleaseProvenanceRefused("The Sigstore trust root [{$this->trustRoot}] cannot be read.");
+            throw new ReleaseProvenanceUnavailable("The Sigstore trust root [{$this->trustRoot}] cannot be read.", local: true);
         }
 
         new SigstoreBundleVerifier($trustRoot)->verify(
@@ -66,13 +67,13 @@ final readonly class ReleaseProvenance
         try {
             $response = Http::timeout(30)->connectTimeout(10)->get($url);
         } catch (Throwable) {
-            throw new ReleaseProvenanceRefused("The provenance bundle [{$url}] cannot be downloaded.", retryable: true);
+            throw new ReleaseProvenanceUnavailable("The provenance bundle [{$url}] cannot be downloaded.", local: false);
         }
         if ($response->status() === 404) {
             throw new ReleaseProvenanceRefused("The release has no provenance bundle [{$url}].");
         }
         if (! $response->successful()) {
-            throw new ReleaseProvenanceRefused("The provenance bundle [{$url}] cannot be downloaded.", retryable: true);
+            throw new ReleaseProvenanceUnavailable("The provenance bundle [{$url}] cannot be downloaded.", local: false);
         }
         if (strlen($response->body()) > self::BundleMaxBytes) {
             throw new ReleaseProvenanceRefused('The provenance bundle is larger than '.self::BundleMaxBytes.' bytes.');

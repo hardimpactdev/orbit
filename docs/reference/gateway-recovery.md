@@ -181,6 +181,7 @@ The command prints one JSON object. Success exits 0 with `release`, `sha`, `path
 | `gateway.release_agent_delivery_unavailable` | No published release holds the commit yet, or its agent cannot be downloaded or does not match its digest. Nothing changed. The commit is tried again later. |
 | `gateway.release_agent_delivery_invalid` | The release's manifest does not match its files or `SHA256SUMS`, or the release directory already holds another manifest. |
 | `gateway.release_provenance_invalid` | The release has no `provenance.sigstore.json`, or the bundle does not [verify](#release-provenance). Nothing changed. The commit is marked failed and is not tried again automatically. |
+| `gateway.release_provenance_unconfigured` | The trust root cannot be read or is malformed, or `ORBIT_CLI_RELEASE_REPOSITORY` is not on github.com. Nothing changed. The commit is tried again later without spending its attempts. |
 | `gateway.release_agent_install_failed` | The release's agent could not be installed on the Gateway's own Node. The message names the installer's error code. |
 
 #### Release provenance
@@ -209,7 +210,15 @@ The certificate and the statement must pass these checks:
 7. The payload is an in-toto statement v1 with SLSA provenance v1.
 8. The statement names `SHA256SUMS` with the SHA-256 of the bytes the Gateway downloaded. For prepare, it also names `manifest.json` that way.
 
-The binaries chain through those two files as before. A bundle that fails any check refuses. So does a Rekor v2 entry, an entry without a signed entry timestamp, or a bundle with only RFC 3161 timestamps. A missing bundle refuses too. A bundle that cannot be downloaded because of a network or server error waits, as a missing release does.
+The checkpoint must also name the entry's log: its first line is the log host, a space, a hyphen, a space, and the tree ID. Every hash of the proof is 32 bytes. The issuer extension must be a minimal DER UTF8String with no trailing bytes.
+
+The verifier does not check the certificate's SCTs, its code-signing key usage, or that it is not a CA certificate. A pinned Fulcio CA issues only leaf certificates for code signing, valid for 10 minutes. The Rekor signature and inclusion proof then show that the signature was logged inside the certificate's validity. A forged certificate would need the Fulcio CA key, which these checks do not guard against anyway.
+
+The binaries chain through those two files as before.
+
+A bundle that fails any check refuses. So does a Rekor v2 entry, an entry without a signed entry timestamp, or a bundle with only RFC 3161 timestamps. A missing bundle refuses too. A bundle that cannot be downloaded because of a network or server error waits, as a missing release does.
+
+A trust root that cannot be read or parsed, or a release repository that is not on github.com, is a fault of the Gateway, not of the release. Prepare then refuses with `gateway.release_provenance_unconfigured`, which waits without spending the commit's attempts. The desired fleet state reports `provenance_unconfigured`.
 
 ##### Trust root
 
@@ -226,10 +235,13 @@ gh attestation trusted-root | head -n 1 | jq . > apps/gateway/resources/sigstore
 | Situation | What happens | Recovery |
 | --- | --- | --- |
 | A release has no bundle, or a bundle that does not verify | Prepare refuses with `gateway.release_provenance_invalid`. The desired fleet state reports `release_unverified` | None for that commit, because its release never changes. Deploy a later commit |
-| A commit from before release provenance | Its release has no bundle, so a deploy of it refuses | [Roll back](#roll-back) to a retained release instead. Rollback prepares nothing and needs no network |
+| A commit from before release provenance | Its release has no bundle, so a deploy of it refuses | [Roll back](#roll-back) to a retained release instead. Rollback prepares nothing and needs no release download |
 | Sigstore adds a new Fulcio CA or Rekor key | Sigstore publishes new keys in its TUF root before it uses them | Refresh the trust root and release it while the old keys still sign |
 | A release is signed with a key that the trust root lacks | Prepare refuses every new release. The desired fleet state stays unavailable | Override the trust root once, as described below |
 | The attest action signs with Rekor v2 or with RFC 3161 timestamps only | Every new release refuses | Revert the action's pin change, as described below |
+| Sigstore's Fulcio or Rekor is down while the publish job runs | The attest step fails, so the job fails before the release exists. The Gateway waits for the release | Run the release workflow with `workflow_dispatch` for the commit once Sigstore answers ([Publish a missed commit](/reference/cli-binaries#publish-a-missed-commit)) |
+| The repository becomes private | The attest action signs with GitHub's own Sigstore, with RFC 3161 timestamps only. Every new release refuses | Make the repository public again. Release provenance needs the public-good Sigstore |
+| The trust root path or the repository setting is wrong | Prepare refuses with `gateway.release_provenance_unconfigured` and tries again later. The desired fleet state reports `provenance_unconfigured` | Fix the setting and run [`gateway:release:configure`](#apply-an-env-change) |
 
 To override the trust root once:
 
@@ -1219,7 +1231,9 @@ These reasons explain the design. Check them before you propose a change.
 
 The Gateway is the fleet's trust anchor, so it alone proves where a release came from, and it does so before any Node sees the bytes. Asking GitHub's attestation API at runtime was rejected, because it needs an authenticated call. A signing key held by the workflow was rejected too, because it needs a secret and a rotation.
 
-No PHP Sigstore library exists in the locks, and a general one would carry far more code than the one bundle shape that `actions/attest-build-provenance` writes. So the verifier accepts only that shape, a Rekor v1 `dsse` entry with a signed entry timestamp, and refuses the rest. A format change then stops releases instead of weakening the check.
+No PHP Sigstore library exists in the locks, and a general one would carry far more code than the one bundle shape that `actions/attest-build-provenance` writes. A pinned external verifier, such as `cosign` or `sigstore-go` offline with a trusted root, or `gh attestation verify --bundle --custom-trusted-root`, was rejected too.
+
+It would be one more binary to pin, deliver, and update on the Gateway, beside the agent. Prepare would depend on a process outside PHP before any agent command. Its output would be one more contract for PHP to parse. So the verifier accepts only that shape, a Rekor v1 `dsse` entry with a signed entry timestamp, and refuses the rest. A format change then stops releases instead of weakening the check.
 
 The cost is a trust root to keep current and a verifier to teach a new format before the attest action changes it. Both changes reach the Gateway through a normal release, as long as they ship before the old format or keys stop.
 

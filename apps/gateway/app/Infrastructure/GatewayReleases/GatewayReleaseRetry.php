@@ -35,12 +35,13 @@ final readonly class GatewayReleaseRetry
     ];
 
     /**
-     * Refusals that wait for something outside the Gateway and change nothing, such as a commit whose release is
-     * not published yet. They never spend the budget, so a later attempt can still release the commit.
+     * Refusals that change nothing and say nothing about the commit: a release that is not published yet, or a
+     * Gateway setting that provenance needs and an operator must fix. They never spend the budget, so a later
+     * attempt can still release the commit.
      *
      * @var list<string>
      */
-    private const array Waiting = ['gateway.release_agent_delivery_unavailable'];
+    private const array Waiting = ['gateway.release_agent_delivery_unavailable', 'gateway.release_provenance_unconfigured'];
 
     /**
      * The triggers whose attempts spend the budget. A rollback to the commit never does.

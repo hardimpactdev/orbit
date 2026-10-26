@@ -7,6 +7,7 @@ use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\GatewayReleases\GatewayReleaseAgentDelivery;
+use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -36,6 +37,7 @@ beforeEach(function (): void {
     }
     $this->tags = "{$this->sha}\trefs/tags/{$this->tag}\n".str_repeat('c', 40)."\trefs/tags/cli-v0.6899.0\n";
     $this->listings = [];
+    $this->trustRoot = SigstoreTestSigner::instance()->trustRootPath();
     $this->installs = new FakeAgentCommandRunner;
     $this->installed = [];
     $this->delivery = fn (): GatewayReleaseAgentDelivery => new GatewayReleaseAgentDelivery(
@@ -50,7 +52,7 @@ beforeEach(function (): void {
                 return new CommandResult(exitCode: 0, stdout: $this->test->tags, stderr: '', durationMs: 1, truncated: false);
             }
         },
-        provenance: new ReleaseProvenance('https://github.com/hardimpactdev/orbit', SigstoreTestSigner::instance()->trustRootPath()),
+        provenance: new ReleaseProvenance('https://github.com/hardimpactdev/orbit', $this->trustRoot),
         repository: 'https://github.com/hardimpactdev/orbit',
         cacheDirectory: $this->base.'/home/agent-artifacts',
         runner: function (AgentDelivery $delivery): FakeAgentCommandRunner {
@@ -107,6 +109,25 @@ it('refuses a release whose provenance is missing or does not verify, before it 
     'no bundle, as in a release from before provenance' => [fn () => Http::response('Not Found', 404)],
     'a bundle for another manifest' => [fn () => Http::response(SigstoreTestSigner::instance()->bundle(['manifest.json' => '{}', 'SHA256SUMS' => $this->checksums]))],
     'a bundle from another workflow' => [fn () => Http::response(SigstoreTestSigner::instance()->bundle(['manifest.json' => json_encode($this->manifest), 'SHA256SUMS' => $this->checksums], ['identity' => 'https://github.com/hardimpactdev/orbit/.github/workflows/ci.yml@refs/heads/main']))],
+]);
+
+it('waits without failing the commit when a Gateway setting keeps provenance from being checked', function (Closure $trustRoot): void {
+    ($this->publish)();
+    $this->trustRoot = $trustRoot->call($this);
+
+    $error = release_failure(fn () => ($this->delivery)()->fetch($this->sha, $this->gateway));
+
+    expect($error->errorCode)->toBe('gateway.release_provenance_unconfigured')
+        ->and(new GatewayReleaseRetry()->retryable($error->errorCode, $this->sha))->toBeTrue()
+        ->and(file_exists($this->base.'/home/agent-artifacts'))->toBeFalse();
+})->with([
+    'a trust root path with a typo' => [fn (): string => $this->base.'/missing-trusted-root.json'],
+    'a trust root that is not JSON' => [function (): string {
+        mkdir($this->base, 0700, true);
+        file_put_contents($this->base.'/trusted_root.json', '<html>');
+
+        return $this->base.'/trusted_root.json';
+    }],
 ]);
 
 it('waits when the provenance bundle cannot be downloaded', function (): void {
