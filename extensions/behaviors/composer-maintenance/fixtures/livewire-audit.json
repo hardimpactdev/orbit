@@ -1,0 +1,16 @@
+{
+  "advisories": {
+    "livewire/livewire": [
+      {
+        "advisoryId": "PKSA-xhv3-nr94-h8db",
+        "title": "Livewire advisory one",
+        "link": "https://packagist.org/security-advisories/PKSA-xhv3-nr94-h8db"
+      },
+      {
+        "advisoryId": "PKSA-bgw4-5zmg-2njg",
+        "title": "Livewire advisory two",
+        "link": "https://packagist.org/security-advisories/PKSA-bgw4-5zmg-2njg"
+      }
+    ]
+  }
+}

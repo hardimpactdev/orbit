@@ -25,15 +25,7 @@ export function lockChanges(before: Lock, after: Lock): LockChange[] {
   return out.sort((x, y) => x.name.localeCompare(y.name));
 }
 
-/** Environment for a child process: an allowlist, so agent markers of the launching session never leak in. */
-export function cleanEnv(get: (k: string) => string | undefined, extra: Record<string, string> = {}): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const k of ["PATH", "HOME", "USER", "LOGNAME", "LANG", "TMPDIR", "COMPOSER_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"]) {
-    const v = get(k);
-    if (v !== undefined) env[k] = v;
-  }
-  return { ...env, TERM: "dumb", ...extra };
-}
+export { cleanEnv } from "../composer-maintenance/_lib/environment.ts";
 
 export function tail(text: string, bytes = 12000): string {
   return text.length <= bytes ? text : text.slice(text.length - bytes);

@@ -1,0 +1,34 @@
+name: Composer maintenance
+
+on:
+  pull_request:
+    paths:
+      - 'extensions/behaviors/composer-maintenance/**'
+      - '.github/workflows/composer-maintenance.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'extensions/behaviors/composer-maintenance/**'
+      - '.github/workflows/composer-maintenance.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  composer-maintenance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.8
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+      - name: Check formatting
+        run: deno fmt --check extensions/behaviors/composer-maintenance
+      - name: Lint extension
+        run: deno lint extensions/behaviors/composer-maintenance
+      - name: Test Composer maintenance (one worker)
+        run: deno test --allow-all extensions/behaviors/composer-maintenance/mod_test.ts tests/lib_test.ts

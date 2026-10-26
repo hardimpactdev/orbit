@@ -1,0 +1,23 @@
+manifestVersion: 1
+name: "@nckrtl/composer-maintenance"
+version: 2026.10.26.1
+visibility: private
+license: MIT
+description: Composer updates, locked detection, security exceptions, and dependency PR descriptions.
+repository: https://github.com/nckrtl/orbit-swamp
+paths:
+  base: manifest
+behaviors:
+  - mod.ts
+include:
+  - _lib/environment.ts
+  - _lib/io.ts
+  - _lib/policy.ts
+  - _lib/summary.ts
+additionalFiles:
+  - README.md
+  - LICENSE
+labels:
+  - composer
+  - dependencies
+  - security

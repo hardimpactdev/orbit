@@ -18,6 +18,15 @@ The earlier [dependency planner](docs/dependency-workflow-adoption.md) remains
 historical and is not part of this flow. External review-and-merge/topology
 admission stays closed. Live Swamp has not been updated by these changes.
 
+## Composer maintenance extension
+
+[`@nckrtl/composer-maintenance`](extensions/behaviors/composer-maintenance/README.md)
+provides `routine`, `detect`, `package`, and `summary` methods for a supplied
+checkout. It takes paths and policy as inputs, reads Composer lockfiles without
+`vendor/`, and records temporary Vet security exceptions. Its manifest is ready
+for private `nckrtl` collective distribution. It is not published or connected to
+the live dependency workflows; worker wiring is a later phase.
+
 ## Setup on Beast
 
 - `swamp` lives in `~/.local/bin`. `~/.config/swamp/env.sh` sets
