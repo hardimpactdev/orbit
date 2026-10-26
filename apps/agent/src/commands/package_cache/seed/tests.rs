@@ -236,7 +236,7 @@ fn bun_entries_normalize_archive_modes_for_private_cache_use() {
 fn extraction_failure_names_artifact_and_underlying_io_cause() {
     use std::io::Write;
     let f = Fixture::new();
-    let home = f.home().join("archive-context/".repeat(80));
+    let home = f.home().join("archive-context/".repeat(25));
     let mut header = tar::Header::new_gnu();
     header.set_path("package/CHANGELOG.md").unwrap();
     header.set_mode(0o644);
@@ -320,4 +320,25 @@ fn directory_entries_cannot_chmod_through_symlink_aliases() {
         assert_eq!(fs::metadata(&cache).unwrap().mode() & 0o777, 0o700);
         assert_eq!(fs::read_dir(cache).unwrap().count(), 0);
     }
+}
+
+#[test]
+fn unreadable_archive_file_mode_defaults_to_regular_permissions() {
+    let f = Fixture::new();
+    let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+    let mut tar = tar::Builder::new(encoder);
+    let mut header = tar::Header::new_gnu();
+    header.as_mut_bytes()[100..108].copy_from_slice(b"invalid!");
+    assert!(header.mode().is_err());
+    header.set_size(2);
+    header.set_cksum();
+    tar.append_data(&mut header, "package/package.json", &b"{}"[..])
+        .unwrap();
+    let a = cached(&f, &tar.into_inner().unwrap().finish().unwrap(), true);
+    seed(&f.shared(), &f.home(), &[a]).unwrap();
+    let target = f
+        .home()
+        .join(".bun/install/cache/demo@1.0.0@@@1/package.json");
+    assert_eq!(fs::read(&target).unwrap(), b"{}");
+    assert_eq!(fs::metadata(target).unwrap().mode() & 0o777, 0o644);
 }
