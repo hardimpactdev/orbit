@@ -4,16 +4,21 @@ version: 2026.10.26.1
 visibility: private
 license: MIT
 description: Composer updates, locked detection, security exceptions, and dependency PR descriptions.
-repository: https://github.com/nckrtl/orbit-swamp
-paths:
-  base: manifest
+repository: https://github.com/hardimpactdev/orbit-swamp
 behaviors:
-  - mod.ts
+  - composer-maintenance/mod.ts
 include:
-  - _lib/environment.ts
-  - _lib/io.ts
-  - _lib/policy.ts
-  - _lib/summary.ts
+  - composer-maintenance/_lib/io.ts
+  - composer-maintenance/_lib/policy.ts
+  - composer-maintenance/_lib/summary.ts
+  - _lib/maintenance/composer.ts
+  - _lib/maintenance/composer_summary.ts
+  - _lib/maintenance/context.ts
+  - _lib/maintenance/environment.ts
+  - _lib/maintenance/exceptions.ts
+  - _lib/maintenance/io.ts
+  - _lib/maintenance/changes.ts
+  - _lib/maintenance/summary.ts
 additionalFiles:
   - README.md
   - LICENSE

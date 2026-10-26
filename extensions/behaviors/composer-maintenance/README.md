@@ -103,24 +103,29 @@ Gateway, an LLM, or a host-side orchestration layer. Worker installation and
 workflow wiring are separate work. Existing workflows, models, the official
 `@swamp/software-factory`, and production serve are unchanged.
 
+The clean environment drops `NPM_TOKEN` and `COMPOSER_AUTH`. Private registries
+need explicit credential handling in a later change.
+
 ## Private distribution
 
-Keep this self-contained directory under `extensions/behaviors/`, following
-Swamp's
-[manifest-relative extension layout](https://swamp-club.com/manual/tutorials/publish-an-extension).
-`manifest.yaml` uses `paths.base: manifest` and `visibility: private` for the
-`nckrtl` collective. `swamp auth whoami --json` confirmed the collective's Team
-plan allows private extensions on 2026-10-26. Recommend private collective
-publishing from this source after review; no separate repository is needed. This
-PR does not publish. A later authorized release can use
-`swamp extension push extensions/behaviors/composer-maintenance/manifest.yaml`.
-Other repos can then pull `@nckrtl/composer-maintenance`; local development can
-use `swamp extension source add` with this directory.
+Keep this directory and `extensions/behaviors/_lib/maintenance/` together in the
+repository. The manifest resolves `behaviors` and `include` paths from
+`extensions/behaviors/`; it includes the shared helpers needed in the archive.
+`README.md` and `LICENSE` resolve from the manifest directory. See Swamp's
+[extension publishing guide](https://swamp-club.com/manual/tutorials/publish-an-extension).
+`visibility: private` targets the `nckrtl` collective. Nothing is published by
+this change. A later authorized release can run
+`swamp extension push extensions/behaviors/composer-maintenance/manifest.yaml`
+from the repository root. Other repos can then pull
+`@nckrtl/composer-maintenance`. For local development, work from this repository
+so relative imports can reach the shared helpers.
 
 ## Tests and sources
 
-CI uses `ubuntu-latest` for now. This personal repository has no available
-self-hosted runners. Org runner access must be arranged separately.
+CI uses the organization's private `self-hosted, hardimpact` runners. It checks
+the existing PHP 8.5 with JSON and uses `denoland/setup-deno@v2` for Deno 2.9.8.
+Deno installs into the runner-owned tool cache without sudo. A missing PHP
+runtime or JSON extension fails immediately.
 
 Run only this extension's tests (one worker):
 

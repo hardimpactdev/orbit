@@ -25,7 +25,7 @@ export function lockChanges(before: Lock, after: Lock): LockChange[] {
   return out.sort((x, y) => x.name.localeCompare(y.name));
 }
 
-export { cleanEnv } from "../composer-maintenance/_lib/environment.ts";
+export { cleanEnv } from "./maintenance/environment.ts";
 
 export function tail(text: string, bytes = 12000): string {
   return text.length <= bytes ? text : text.slice(text.length - bytes);

@@ -33,6 +33,15 @@ checkout. It takes paths and policy as inputs, reads Composer lockfiles without
 for private `nckrtl` collective distribution. It is not published or connected to
 the live dependency workflows; worker wiring is a later phase.
 
+## JavaScript maintenance extension
+
+[`@nckrtl/js-maintenance`](extensions/behaviors/js-maintenance/README.md) provides
+matching `routine`, `detect`, `package`, and `summary` methods for npm, Bun, Vite+,
+and Expo. JavaScript-only checkouts need no maintenance package or Composer.
+It shares path safety, clean child environments, exception records, and PR text
+with Composer maintenance. Its summary can cover both ecosystems in one run.
+It is not published or connected to live dependency workflows.
+
 ## Setup on Beast
 
 - `swamp` lives in `~/.local/bin`. `~/.config/swamp/env.sh` sets

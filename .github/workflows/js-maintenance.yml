@@ -1,0 +1,48 @@
+name: JavaScript maintenance
+
+on:
+  pull_request:
+    paths:
+      - 'extensions/behaviors/js-maintenance/**'
+      - 'extensions/behaviors/composer-maintenance/**'
+      - 'extensions/behaviors/_lib/maintenance/**'
+      - 'extensions/behaviors/_lib/composer_lock.ts'
+      - 'tests/lib_test.ts'
+      - '.github/workflows/js-maintenance.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'extensions/behaviors/js-maintenance/**'
+      - 'extensions/behaviors/composer-maintenance/**'
+      - 'extensions/behaviors/_lib/maintenance/**'
+      - 'extensions/behaviors/_lib/composer_lock.ts'
+      - 'tests/lib_test.ts'
+      - '.github/workflows/js-maintenance.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  js-maintenance:
+    runs-on: [self-hosted, hardimpact]
+    steps:
+      - uses: actions/checkout@v4
+      # Shared runners have no sudo. PHP is provided by the runner image.
+      - name: Check PHP
+        run: |
+          command -v php >/dev/null \
+            || { echo "::error::PHP 8.5 is missing from this runner image"; exit 1; }
+          php -r 'exit(PHP_MAJOR_VERSION === 8 && PHP_MINOR_VERSION === 5 ? 0 : 1);' \
+            || { echo "::error::PHP 8.5 is required, found $(php -r 'echo PHP_VERSION;')"; exit 1; }
+          php -r 'exit(extension_loaded("json") ? 0 : 1);' \
+            || { echo "::error::The PHP JSON extension is missing from this runner image"; exit 1; }
+          php -v
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.8
+      - name: Check formatting
+        run: deno fmt --check extensions/behaviors/js-maintenance extensions/behaviors/composer-maintenance extensions/behaviors/_lib/maintenance
+      - name: Lint extensions
+        run: deno lint extensions/behaviors/js-maintenance extensions/behaviors/composer-maintenance extensions/behaviors/_lib/maintenance
+      - name: Test maintenance (one worker)
+        run: deno test --allow-all extensions/behaviors/js-maintenance/mod_test.ts extensions/behaviors/composer-maintenance/mod_test.ts tests/lib_test.ts

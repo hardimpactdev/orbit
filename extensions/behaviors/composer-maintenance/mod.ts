@@ -1,4 +1,5 @@
 /** Composer maintenance in a supplied checkout, with no orchestration dependency. */
+import { type Context, parse, write } from "../_lib/maintenance/context.ts";
 import { z } from "npm:zod@4";
 import {
   AdvisorySchema,
@@ -62,30 +63,6 @@ const SummarySchema = z.strictObject({
   text: z.string(),
   changes: z.array(ChangeSchema),
 });
-
-type Context = {
-  signal?: AbortSignal;
-  writeResource: (
-    spec: string,
-    name: string,
-    data: Record<string, unknown>,
-  ) => Promise<{ name: string }>;
-};
-function parse<T>(schema: z.ZodType<T>, value: unknown): T {
-  const result = schema.safeParse(value);
-  if (!result.success) throw new MaintenanceFailure(result.error.message, 64);
-  return result.data;
-}
-async function write(
-  ctx: Context,
-  spec: string,
-  schema: z.ZodType,
-  value: unknown,
-) {
-  const data = schema.parse(value) as Record<string, unknown>;
-  const handle = await ctx.writeResource(spec, spec, data);
-  return { dataHandles: [handle] };
-}
 
 /** Swamp behavior: local commands and versioned schema 1 resources. */
 export const behavior = {

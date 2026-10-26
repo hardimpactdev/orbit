@@ -4,11 +4,13 @@ on:
   pull_request:
     paths:
       - 'extensions/behaviors/composer-maintenance/**'
+      - 'extensions/behaviors/_lib/maintenance/**'
       - '.github/workflows/composer-maintenance.yml'
   push:
     branches: [main]
     paths:
       - 'extensions/behaviors/composer-maintenance/**'
+      - 'extensions/behaviors/_lib/maintenance/**'
       - '.github/workflows/composer-maintenance.yml'
 
 permissions:
@@ -16,19 +18,25 @@ permissions:
 
 jobs:
   composer-maintenance:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, hardimpact]
     steps:
       - uses: actions/checkout@v4
+      # Shared runners have no sudo. PHP is provided by the runner image.
+      - name: Check PHP
+        run: |
+          command -v php >/dev/null \
+            || { echo "::error::PHP 8.5 is missing from this runner image"; exit 1; }
+          php -r 'exit(PHP_MAJOR_VERSION === 8 && PHP_MINOR_VERSION === 5 ? 0 : 1);' \
+            || { echo "::error::PHP 8.5 is required, found $(php -r 'echo PHP_VERSION;')"; exit 1; }
+          php -r 'exit(extension_loaded("json") ? 0 : 1);' \
+            || { echo "::error::The PHP JSON extension is missing from this runner image"; exit 1; }
+          php -v
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.9.8
-      - uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.4'
-          coverage: none
       - name: Check formatting
-        run: deno fmt --check extensions/behaviors/composer-maintenance
+        run: deno fmt --check extensions/behaviors/composer-maintenance extensions/behaviors/_lib/maintenance
       - name: Lint extension
-        run: deno lint extensions/behaviors/composer-maintenance
+        run: deno lint extensions/behaviors/composer-maintenance extensions/behaviors/_lib/maintenance
       - name: Test Composer maintenance (one worker)
         run: deno test --allow-all extensions/behaviors/composer-maintenance/mod_test.ts tests/lib_test.ts
