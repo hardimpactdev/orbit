@@ -380,9 +380,9 @@ Neither amendment opens the external review-and-merge/topology guards.
 [snapshot]: https://github.com/hardimpactdev/orbit/blob/2187129c471c20a34b6c91d5e1cb6c34878b8742/apps/gateway/app/Domain/Tasks/TaskWorkspaceSnapshot.php#L9-L23
 [tail]: https://github.com/hardimpactdev/orbit/blob/2187129c471c20a34b6c91d5e1cb6c34878b8742/apps/gateway/app/Domain/Tasks/TaskCheckOutputBuilder.php#L12-L49
 [reading]: https://github.com/hardimpactdev/orbit/blob/2187129c471c20a34b6c91d5e1cb6c34878b8742/apps/gateway/app/Infrastructure/Tasks/RemoteTaskCheckRunner.php#L181-L208
-[factory]: https://github.com/nckrtl/orbit-swamp/blob/91bf8a0d392395e490b09d617fe9e265785e571b/models/%40swamp/software-factory/orbit-groups.yaml#L65-L99
-[next-child]: https://github.com/nckrtl/orbit-swamp/blob/91bf8a0d392395e490b09d617fe9e265785e571b/models/%40swamp/software-factory/orbit-groups.yaml#L195-L224
-[prompts]: https://github.com/nckrtl/orbit-swamp/blob/91bf8a0d392395e490b09d617fe9e265785e571b/extensions/behaviors/_lib/gateway_stage.ts#L174-L215
+[factory]: https://github.com/hardimpactdev/orbit-swamp/blob/91bf8a0d392395e490b09d617fe9e265785e571b/models/%40swamp/software-factory/orbit-groups.yaml#L65-L99
+[next-child]: https://github.com/hardimpactdev/orbit-swamp/blob/91bf8a0d392395e490b09d617fe9e265785e571b/models/%40swamp/software-factory/orbit-groups.yaml#L195-L224
+[prompts]: https://github.com/hardimpactdev/orbit-swamp/blob/91bf8a0d392395e490b09d617fe9e265785e571b/extensions/behaviors/_lib/gateway_stage.ts#L174-L215
 [operations]: https://github.com/hardimpactdev/orbit/blob/2187129c471c20a34b6c91d5e1cb6c34878b8742/docs/reference/operations.md#L25-L128
 [owner]: https://github.com/hardimpactdev/orbit/blob/2187129c471c20a34b6c91d5e1cb6c34878b8742/apps/gateway/app/Domain/Tasks/TaskOperations.php#L32-L91
 [journal]: https://github.com/hardimpactdev/orbit/blob/2187129c471c20a34b6c91d5e1cb6c34878b8742/apps/gateway/app/Infrastructure/Tasks/RemoteWorkspaceOperationJournal.php#L25-L112

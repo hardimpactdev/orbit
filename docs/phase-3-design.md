@@ -28,10 +28,10 @@ Sources inspected:
   [Tasks](https://github.com/hardimpactdev/orbit/blob/4c7f73a821ae6ced158bf17abbf9d8b88c34b7b7/docs/reference/tasks.md),
   and [compute drivers](https://github.com/hardimpactdev/orbit/blob/4c7f73a821ae6ced158bf17abbf9d8b88c34b7b7/docs/reference/compute-drivers.md).
 - orbit-swamp main `baffd7b7b34d5add915486fece60434b9ac98aa4`, through PRs
-  [1](https://github.com/nckrtl/orbit-swamp/pull/1),
-  [2](https://github.com/nckrtl/orbit-swamp/pull/2),
-  [3](https://github.com/nckrtl/orbit-swamp/pull/3), and
-  [4](https://github.com/nckrtl/orbit-swamp/pull/4).
+  [1](https://github.com/hardimpactdev/orbit-swamp/pull/1),
+  [2](https://github.com/hardimpactdev/orbit-swamp/pull/2),
+  [3](https://github.com/hardimpactdev/orbit-swamp/pull/3), and
+  [4](https://github.com/hardimpactdev/orbit-swamp/pull/4).
 - Recall's Swamp topic and current decisions, read on 2026-10-23. Recorded group
   outcomes below come from Recall and the thread handoff. This slice made no live
   Gateway reads or mutations; GitHub merge metadata was independently rechecked.

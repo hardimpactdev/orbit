@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+"""Deploy origin/main to the existing Swamp Process on Services over SSH."""
+import json
+import os
+from pathlib import Path
+import shlex
+import subprocess
+import sys
+import tempfile
+
+NODE = 17
+APP = "/home/orbit/apps/orbit-swamp/default"
+SWAMP = "/home/orbit/.local/bin/swamp"
+
+CHECK_HOST = r'''
+set -eu
+app=$1
+swamp=$2
+[ "$(id -un)" = orbit ]
+[ -x "$swamp" ]
+[ -x /home/orbit/.swamp/deno/deno ]
+[ -d "$app/.swamp" ]
+'''
+
+ACTIVE = r'''
+"$1" run history --active --server ws://127.0.0.1:9417 --token-file "$2" --json
+'''
+
+PREFLIGHT = r'''
+set -eu
+python3 - "$1" "$2" "$3" <<'PREFLIGHT_PY'
+import json, subprocess, sys
+from pathlib import Path
+app, bundle, sha = sys.argv[1:]
+ref = "refs/remotes/bundle/main"
+
+def git(*args):
+    return subprocess.check_output(["git", "-C", app, *args], text=True,
+                                   errors="surrogateescape")
+
+if not (Path(app) / ".git").exists():
+    git("init", "--quiet", "-b", "main")
+git("diff", "--quiet")
+git("diff", "--cached", "--quiet")
+if git("branch", "--show-current").strip() != "main":
+    raise SystemExit("Services checkout must be on main")
+git("fetch", "--quiet", "--force", bundle, "refs/remotes/origin/main:" + ref)
+if git("rev-parse", ref + "^{commit}").strip() != sha:
+    raise SystemExit("Bundle main does not match the requested commit")
+head = subprocess.run(["git", "-C", app, "rev-parse", "--verify", "HEAD"],
+                      capture_output=True, text=True)
+if head.returncode == 0:
+    git("merge-base", "--is-ancestor", "HEAD", ref)
+    added = git("diff", "--name-only", "--no-renames", "--diff-filter=A", "-z", "HEAD", ref)
+else:
+    added = git("ls-tree", "-r", "--name-only", "-z", ref)
+untracked = [entry[3:] for entry in
+             git("status", "--porcelain", "-z", "--untracked-files=all").split("\0")
+             if entry.startswith("?? ")]
+for path in filter(None, added.split("\0")):
+    for local in untracked:
+        if path == local or path.startswith(local + "/") or local.startswith(path + "/"):
+            raise SystemExit("Untracked path conflicts with bundle main: " + repr(local))
+print(json.dumps({"changed": head.returncode != 0 or head.stdout.strip() != sha}))
+PREFLIGHT_PY
+'''
+
+UPDATE = r'''
+set -eu
+app=$1
+sha=$2
+if git -C "$app" rev-parse --verify HEAD >/dev/null 2>&1; then
+    git -C "$app" merge --ff-only --quiet refs/remotes/bundle/main
+else
+    git -C "$app" reset --quiet --hard refs/remotes/bundle/main
+fi
+[ "$(git -C "$app" rev-parse HEAD)" = "$sha" ]
+'''
+
+HEALTH = r'''
+set -eu
+python3 - "$1" "$2" <<'HEALTH_PY'
+import json, subprocess, sys, time
+for attempt in range(30):
+    try:
+        result = subprocess.run([
+            sys.argv[1], "run", "history", "--active", "--server", "ws://127.0.0.1:9417",
+            "--token-file", sys.argv[2], "--json",
+        ], capture_output=True, text=True, timeout=10)
+        ready = result.returncode == 0 and "runs" in json.loads(result.stdout)
+    except (subprocess.TimeoutExpired, json.JSONDecodeError):
+        ready = False
+    if ready:
+        print(json.dumps({"authenticated": True}))
+        break
+    time.sleep(1)
+else:
+    raise SystemExit("Swamp authenticated readiness check did not pass")
+HEALTH_PY
+'''
+
+
+
+def run(argv, *, source=None):
+    result = subprocess.run(argv, input=source, text=True, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, check=False)
+    if result.returncode:
+        # Deployment subprocesses handle code and metadata only, never secret values.
+        raise RuntimeError(f"{argv[0]} failed: {result.stderr.strip()}")
+    return result.stdout
+
+
+def orbit(*args):
+    return json.loads(run(["orbit", *args, "--json"]))
+
+
+def deploy():
+    root = Path(__file__).resolve().parent.parent
+    node = orbit("node:show", str(NODE))
+    if node["status"] != "active" or node["user"] != "orbit":
+        raise RuntimeError("Services must be active with managed user orbit")
+    processes = orbit("process:list", f"--node={NODE}")["processes"]
+    matches = [p for p in processes if p["name"] == "swamp-serve"]
+    if len(matches) != 1:
+        raise RuntimeError("Create exactly one swamp-serve Process on Services first")
+    process = matches[0]
+    if (process["runtime"] != "systemd" or process["user"] != "orbit"
+            or process["working_directory"] != APP):
+        raise RuntimeError("Swamp Process must use systemd, user orbit and the documented directory")
+    host = f'orbit@{node["wireguard_ip"]}'
+    options = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=8"]
+    if os.environ.get("SWAMP_SSH_IDENTITY"):
+        options += ["-i", os.environ["SWAMP_SSH_IDENTITY"]]
+
+    def remote(script, *args):
+        return run(["ssh", *options, host, shlex.join(["bash", "-s", "--", *args])], source=script)
+
+    remote(CHECK_HOST, APP, SWAMP)
+    token = "/home/orbit/.config/swamp/serve-driver-token"
+
+    def require_idle():
+        if json.loads(remote(ACTIVE, SWAMP, token))["runs"]:
+            raise RuntimeError("Swamp has active runs; deploy only when idle")
+
+    run(["git", "-C", str(root), "fetch", "--quiet", "origin", "main"])
+    sha = run(["git", "-C", str(root), "rev-parse", "origin/main"]).strip()
+    with tempfile.TemporaryDirectory(prefix="swamp-deploy-") as tmp:
+        bundle = str(Path(tmp) / "main.bundle")
+        run(["git", "-C", str(root), "bundle", "create", bundle, "refs/remotes/origin/main"])
+        incoming = remote("umask 077; mktemp /tmp/swamp-main.XXXXXXXX.bundle\n").strip()
+        try:
+            run(["scp", *options, "-q", bundle, f"{host}:{incoming}"])
+            require_idle()
+            preflight = json.loads(remote(PREFLIGHT, APP, incoming, sha))
+            if preflight["changed"]:
+                require_idle()
+                orbit("process:stop", str(process["id"]))
+                remote(UPDATE, APP, sha)
+                orbit("process:restart", str(process["id"]))
+            health = json.loads(remote(HEALTH, SWAMP, token))
+        finally:
+            remote('rm -f -- "$1"\n', incoming)
+    return {"status": "ok", "sha": sha, "node": NODE,
+            "process": process["id"], **preflight, **health}
+
+
+if __name__ == "__main__":
+    try:
+        print(json.dumps(deploy()))
+    except (OSError, ValueError, KeyError, RuntimeError) as error:
+        print(json.dumps({"status": "failed", "error": str(error)}))
+        sys.exit(1)

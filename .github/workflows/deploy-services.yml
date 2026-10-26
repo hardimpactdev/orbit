@@ -1,0 +1,22 @@
+name: Services deploy
+on:
+  pull_request:
+    paths:
+      - bin/deploy-services
+      - tests/deploy_services_test.py
+      - docs/services.md
+      - .github/workflows/deploy-services.yml
+  push:
+    branches: [main]
+    paths:
+      - bin/deploy-services
+      - tests/deploy_services_test.py
+      - .github/workflows/deploy-services.yml
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: [self-hosted, hardimpact]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - run: python3 -B -m unittest discover -s tests -p deploy_services_test.py -v

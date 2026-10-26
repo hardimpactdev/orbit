@@ -16,7 +16,13 @@ The [single-package workflow](docs/website-packages.md) handles one explicit maj
 
 The earlier [dependency planner](docs/dependency-workflow-adoption.md) remains
 historical and is not part of this flow. External review-and-merge/topology
-admission stays closed. Live Swamp has not been updated by these changes.
+admission stays closed.
+
+## Services deployment
+
+The orchestrator runs as an Orbit-managed Node Process on Services. Beast's
+original unit is stopped and disabled, with its files retained. See the
+[layout, bundle deployment and cutover procedure](docs/services.md).
 
 ## Composer maintenance extension
 
