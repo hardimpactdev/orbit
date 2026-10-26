@@ -146,6 +146,15 @@ Only a release with a `REVISION` file is prepared. When the configuration cannot
 
 Prepare never touches the current release link, the database, or a running service other than the Gateway Node's agent.
 
+A Gateway whose current release predates this agent delivery cannot install the agent through its own deploy, because its code does not know the delivery. Upgrade it once by hand, as `orbit`. Prepare the new commit with the current code, then deploy that commit with the new release's own code:
+
+```bash
+php /home/orbit/orbit/apps/gateway/artisan gateway:release:prepare <SHA>
+php /home/orbit/releases/<id>/apps/gateway/artisan gateway:release:deploy <SHA>
+```
+
+The second command fills in the release's manifest and installs its agent before any agent command, then deploys as usual.
+
 Prepare refuses before it fetches or writes when the releases directory has less free space than `ORBIT_GATEWAY_RELEASE_MIN_FREE_MB`, 1024 MiB by default. Each release has its own `vendor/` directories. Releases share the Git objects in `shared/orbit.git`, so a release costs about the size of its source and its two `vendor/` directories, about 115 MB without development packages.
 
 The command prints one JSON object. Success exits 0 with `release`, `sha`, `path`, `reused`, and `duration_ms`. A refused commit exits 2. Every other failure exits 1 with `error_code`, `step`, and `message`.
