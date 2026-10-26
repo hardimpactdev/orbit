@@ -124,7 +124,11 @@ pub fn verify(
         ))
     })?;
     let _work = work;
-    let mut host = AptHost { host, config };
+    let mut host = AptHost {
+        host,
+        config,
+        deadline,
+    };
     let observed = javascript::inspect(&mut host, files, &input.recipe.tools, Some(account))?;
     let assessment = assessment::assess(
         &mut host,
