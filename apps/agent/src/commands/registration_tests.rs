@@ -12,6 +12,11 @@ fn sh_git(directory: &Path, arguments: &[&str]) -> String {
             "user.email=orbit@example.test",
             "-c",
             "init.defaultBranch=main",
+            // A background maintenance run would add `objects/maintenance.lock` while a test compares the tree.
+            "-c",
+            "maintenance.auto=false",
+            "-c",
+            "gc.auto=0",
         ])
         .args(arguments)
         .current_dir(directory)
