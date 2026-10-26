@@ -124,7 +124,7 @@ jobs:
             exit 0
           fi
           tagged="$(gh api "repos/${REPOSITORY}/git/ref/tags/${TAG}" --jq .object.sha)"
-          expected="$(printf '%s\n' SHA256SUMS manifest.json "orbit-${VERSION}-linux-aarch64" "orbit-${VERSION}-linux-x86_64" "orbit-${VERSION}-macos-arm64" \
+          expected="$(printf '%s\n' SHA256SUMS manifest.json provenance.sigstore.json "orbit-${VERSION}-linux-aarch64" "orbit-${VERSION}-linux-x86_64" "orbit-${VERSION}-macos-arm64" \
             orbit-agent-linux-aarch64 orbit-agent-linux-x86_64 orbit-agent-macos-aarch64 orbit-agent-macos-x86_64 | LC_ALL=C sort)"
           assets="$(jq -r '.assets[].name' <<< "$release" | LC_ALL=C sort)"
           if [ "$tagged" != "$COMMIT" ] || [ "$assets" != "$expected" ]; then
@@ -147,9 +147,12 @@ jobs:
     name: Publish release
     needs: [resolve, build]
     runs-on: ubuntu-26.04
+    # id-token and attestations let the attest action sign with this job's own OIDC identity; no secret exists.
     permissions:
       contents: write
       actions: read
+      id-token: write
+      attestations: write
     env:
       GH_TOKEN: ${{ github.token }}
       REPOSITORY: ${{ github.repository }}
@@ -181,6 +184,19 @@ jobs:
       - name: Prepare release assets
         run: bin/orbit-cli-release-assets "$VERSION" artifacts agent-delivery "https://github.com/${REPOSITORY}/releases/download/${TAG}" release
 
+      # Sigstore signs every release file with this workflow's identity on main; the Gateway verifies the
+      # bundle before it installs an agent or names a CLI digest (docs/reference/cli-binaries.md#provenance).
+      - name: Attest the release files
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: release/*
+
+      - name: Add the provenance bundle
+        env:
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: install -m 0644 "$BUNDLE" release/provenance.sigstore.json
+
       - name: Remove an unfinished draft
         run: |
           set -euo pipefail
@@ -202,7 +218,7 @@ jobs:
             --target "$COMMIT" \
             --title "orbit ${VERSION}" \
             --latest=false \
-            --notes "$(printf 'Orbit CLI %s and orbit-agent, built from %s.\n\nCommit: %s\n\nVerify each download against SHA256SUMS. See https://orbit.nckrtl.com/docs/reference/cli-binaries.\n' "$VERSION" "$COMMIT" "$COMMIT")" \
+            --notes "$(printf 'Orbit CLI %s and orbit-agent, built from %s.\n\nCommit: %s\n\nVerify SHA256SUMS against provenance.sigstore.json, then each download against SHA256SUMS. See https://orbit.nckrtl.com/docs/reference/cli-binaries.\n' "$VERSION" "$COMMIT" "$COMMIT")" \
             2> "$errors"; then
             cat "$errors" >&2
             exit 0
@@ -233,6 +249,7 @@ jobs:
           tagged="$(gh api "repos/${REPOSITORY}/git/ref/tags/${TAG}" --jq .object.sha)"
           test "$tagged" = "$COMMIT"
           mkdir verify
-          gh release download "$TAG" --repo "$REPOSITORY" --pattern SHA256SUMS --dir verify
+          gh release download "$TAG" --repo "$REPOSITORY" --pattern SHA256SUMS --pattern provenance.sigstore.json --dir verify
           cmp verify/SHA256SUMS release/SHA256SUMS
+          cmp verify/provenance.sigstore.json release/provenance.sigstore.json
           echo "Published ${TAG} for ${COMMIT}."

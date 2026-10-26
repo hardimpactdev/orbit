@@ -4510,7 +4510,7 @@ export interface components {
             /** @enum {string} */
             status?: "available" | "pending" | "unavailable";
             /** @enum {string|null} */
-            reason?: "gateway_commit_unknown" | "history_unavailable" | "release_missing" | "release_mismatch" | "release_incomplete" | "github_unavailable" | null;
+            reason?: "gateway_commit_unknown" | "history_unavailable" | "release_missing" | "release_mismatch" | "release_incomplete" | "release_unverified" | "github_unavailable" | null;
             version?: string | null;
             tag?: string | null;
             commit?: string | null;

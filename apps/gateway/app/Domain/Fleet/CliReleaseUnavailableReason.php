@@ -22,6 +22,9 @@ enum CliReleaseUnavailableReason: string
     /** The release lacks a binary or a valid `SHA256SUMS` line. */
     case ReleaseIncomplete = 'release_incomplete';
 
+    /** The release has no provenance bundle, or its bundle does not verify. A published release never changes. */
+    case ReleaseUnverified = 'release_unverified';
+
     /** GitHub did not answer, or answered with something other than a release. */
     case GitHubUnavailable = 'github_unavailable';
 }

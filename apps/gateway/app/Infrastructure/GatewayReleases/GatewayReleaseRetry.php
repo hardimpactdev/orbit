@@ -30,6 +30,8 @@ final readonly class GatewayReleaseRetry
         'gateway.release_web_build_missing',
         'gateway.release_web_build_invalid',
         'gateway.release_smoke_missing',
+        // A published release never changes, so a release without valid provenance never gets it.
+        'gateway.release_provenance_invalid',
     ];
 
     /**

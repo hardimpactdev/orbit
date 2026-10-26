@@ -10,6 +10,7 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Tests\Feature\GitHub\GitHubTestSupport;
+use Tests\Support\SigstoreTestSigner;
 
 function find_fixture_cli_release(): array
 {
@@ -52,6 +53,7 @@ describe(GitHubCliReleaseCatalog::class, function (): void {
         ]);
 
         Http::assertSent(static fn (Request $request): bool => ! $request->hasHeader('Authorization'));
+        Http::assertSent(static fn (Request $request): bool => $request->url() === 'https://github.com/hardimpactdev/orbit/releases/download/cli-v0.4681.0/provenance.sigstore.json');
     });
 
     it('asks GitHub with a read-only App token when the App is installed on the repository', function (): void {
@@ -131,6 +133,10 @@ describe(GitHubCliReleaseCatalog::class, function (): void {
         ])], 'release_incomplete'],
         'SHA256SUMS without a binary' => [static fn (): array => ['/hardimpactdev/orbit/releases/download/cli-v0.4681.0/SHA256SUMS' => Http::response(implode("\n", array_slice(explode("\n", cli_release_fixture('SHA256SUMS')), 0, 2))."\n")], 'release_incomplete'],
         'SHA256SUMS in another format' => [static fn (): array => ['/hardimpactdev/orbit/releases/download/cli-v0.4681.0/SHA256SUMS' => Http::response(str_replace('  ', ' *', cli_release_fixture('SHA256SUMS')))], 'release_incomplete'],
+        'release without provenance' => [static fn (): array => ['/hardimpactdev/orbit/releases/download/cli-v0.4681.0/provenance.sigstore.json' => Http::response('Not Found', 404)], 'release_unverified'],
+        'provenance for another SHA256SUMS' => [static fn (): array => ['/hardimpactdev/orbit/releases/download/cli-v0.4681.0/provenance.sigstore.json' => Http::response(SigstoreTestSigner::instance()->bundle(['SHA256SUMS' => 'other']))], 'release_unverified'],
+        'provenance from another workflow' => [static fn (): array => ['/hardimpactdev/orbit/releases/download/cli-v0.4681.0/provenance.sigstore.json' => Http::response(SigstoreTestSigner::instance()->bundle(['SHA256SUMS' => cli_release_fixture('SHA256SUMS')], ['identity' => 'https://github.com/hardimpactdev/orbit/.github/workflows/orbit-cli-release.yml@refs/heads/feature']))], 'release_unverified'],
+        'provenance download error' => [static fn (): array => ['/hardimpactdev/orbit/releases/download/cli-v0.4681.0/provenance.sigstore.json' => Http::response('Bad Gateway', 502)], 'github_unavailable'],
         'GitHub error' => [static fn (): array => ['/repos/hardimpactdev/orbit/releases/tags/cli-v0.4681.0' => Http::response(['message' => 'Server Error'], 502)], 'github_unavailable'],
         'rate limited' => [static fn (): array => ['/repos/hardimpactdev/orbit/git/ref/tags/cli-v0.4681.0' => Http::response(['message' => 'API rate limit exceeded'], 403)], 'github_unavailable'],
     ]);

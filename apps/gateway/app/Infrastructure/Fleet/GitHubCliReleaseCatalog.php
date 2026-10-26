@@ -12,6 +12,8 @@ use App\Domain\Fleet\CliReleaseUnavailableReason;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubRepository;
+use App\Infrastructure\Releases\ReleaseProvenance;
+use App\Infrastructure\Releases\ReleaseProvenanceRefused;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use SensitiveParameter;
@@ -19,7 +21,9 @@ use Throwable;
 
 /**
  * Reads a published CLI release from GitHub. The tag must point at the commit, the release must be published
- * with every binary and `SHA256SUMS`, and `SHA256SUMS` must name each binary once. It asks GitHub with a
+ * with every binary and `SHA256SUMS`, its provenance must verify for that `SHA256SUMS`
+ * ([Release provenance](/reference/gateway-recovery#release-provenance)), and `SHA256SUMS` must name each
+ * binary once. It asks GitHub with a
  * read-only token of the Gateway's GitHub App when the App is installed on the repository, and anonymously
  * otherwise: the repository and its releases are public.
  */
@@ -34,6 +38,7 @@ final readonly class GitHubCliReleaseCatalog implements CliReleaseCatalog
     public function __construct(
         private GitHubAppStore $apps,
         private GitHubApi $github,
+        private ReleaseProvenance $provenance,
         private string $repositoryOrigin,
     ) {}
 
@@ -72,7 +77,15 @@ final readonly class GitHubCliReleaseCatalog implements CliReleaseCatalog
         }
 
         $urls = $this->assetUrls($rows, $repository, $release);
-        $checksums = $this->checksums($this->download($urls[CliReleaseName::ChecksumsAsset]));
+        $sums = $this->download($urls[CliReleaseName::ChecksumsAsset]);
+
+        try {
+            $this->provenance->verify($release->tag(), [CliReleaseName::ChecksumsAsset => $sums]);
+        } catch (ReleaseProvenanceRefused $refusal) {
+            throw new CliReleaseLookupFailed($refusal->retryable ? CliReleaseUnavailableReason::GitHubUnavailable : CliReleaseUnavailableReason::ReleaseUnverified);
+        }
+
+        $checksums = $this->checksums($sums);
         $assets = [];
 
         foreach (CliReleaseName::Platforms as $platform) {
