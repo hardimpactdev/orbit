@@ -96,6 +96,24 @@ The operation reserves the group and uses the same VM allocation and workspace p
 
 Success leaves the group `running`, its routed workspace `active` with its Route, or its unrouted workspace `source_resolved`. The task branch starts at the Project's default branch. No subtask starts and no check runs. The operation result is `{ instance_id, node_id, starting_commit, analysis_base }`, naming the workspace Instance, its Node, its start commit, and its immutable analysis pin. `starting_commit` is not necessarily the analysis base.
 
+##### Optional Swamp worker
+
+The provision API and generated MCP tool accept an optional `worker` object. Omit it to provision the usual workspace without a worker.
+
+| Field | Contract |
+| --- | --- |
+| `worker.orchestrator_url` | Required `wss://` URL without user information, query, or fragment; the VM must reach it for WebSocket control and HTTPS data |
+| `worker.enrollment_token` | Required secret in Swamp's `name.secret` format; the orchestrator mints a short-lived, single-machine token for this group |
+| `worker.labels` | Optional object of scheduling labels, such as `group=2074`; keys and values contain only letters, digits, dots, underscores, and hyphens |
+
+Orbit starts `swamp worker connect` as the VM's `orbit` account only after the workspace and its Route are ready. The worker uses that checkout as its working directory. The [base image](/reference/compute-drivers#swamp-worker) supplies the pinned binary and Orbit CA. The orchestrator owns token minting, expiry, revocation, and step placement. Enrollment alone is supported; an orchestrator that requires a separate server access token must expose a worker entry point that accepts enrollment without that extra credential.
+
+The Gateway stages the token encrypted outside operation records for at most 30 minutes while provisioning. A missing or expired staged token fails provision with `tasks.worker_enrollment_expired`. Operation input keeps only the public worker settings and an opaque startup reference. API output, Activity, logs, queue jobs, operation steps, and results never contain the token. Replays return the same operation and do not replace its enrollment.
+
+Systemd loads the secret from a mode-0600 startup file under `/run` into its runtime credential directory before starting the worker. Orbit then removes the startup file and the Gateway's staged copy. The running Swamp process retains the credential for reconnection; systemd removes its runtime copy when the service stops. No token is written to the image, checkout, unit text, command arguments, or persistent VM disk.
+
+The service reconnects across socket interruptions but does not restart after a process exit or VM reboot: the orchestrator replaces a failed worker through a new group and token. VM destruction stops the service, including its children. Cancelled or failed provision removes its staged credential.
+
 ##### Public provision identity
 
 `analysis_base` is null when the pin is unavailable, otherwise exactly `{base, instance_id, repository, branch}`. `base` is a full lowercase 40- or 64-hex Git commit object ID. `instance_id` is a positive integer equal to result `instance_id`; `repository` is the recorded Project repository identity and `branch` is the recorded workspace branch, both nonempty strings.

@@ -127,6 +127,8 @@ Each effect becomes an operation that wraps the code Tasks runs today:
 - The workspace starts at the default branch, as it does today.
 - The result holds the workspace Instance, its Node, the start commit, and nullable `analysis_base` under the [public provision identity contract](/reference/tasks#public-provision-identity). It copies the immutable recorded pin, not a fresh ref lookup; a start commit cannot substitute for a merge base. Missing or invalid pins remain unavailable on reads and replay.
 
+Provision optionally enrolls a Swamp worker after workspace readiness, under the [worker contract](/reference/tasks#optional-swamp-worker). The driver mints a short-lived token for one group; the Gateway stages it only for startup and keeps it out of operation records. The one base image supplies the pinned worker binary and public Orbit CA. The worker dials out and dies with the VM. This adds no sender to Pi or task lifecycle decisions.
+
 To stop a waiting provision, the orchestrator cancels the group with `tasks:cancel`.
 
 #### Check

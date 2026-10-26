@@ -43,6 +43,7 @@ use App\Http\Requests\Tasks\ListTaskGroupsRequest;
 use App\Http\Requests\Tasks\ShowTaskGroupRequest;
 use App\Http\Requests\Tasks\StartTaskAnalysisRequest;
 use App\Http\Requests\Tasks\StartTaskCheckRequest;
+use App\Http\Requests\Tasks\StartTaskProvisionRequest;
 use App\Http\Requests\Tasks\StartTaskPublishRequest;
 use App\Http\Requests\Tasks\StartTaskScriptRequest;
 use App\Http\Requests\Tasks\StartTaskTurnRequest;
@@ -86,10 +87,10 @@ final class TaskGroupsController extends Controller
     /** Starts tasks.provision and answers 202 with the queued operation. */
     #[StartsOperation(OperationKinds::TasksProvision)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function provision(EmptyTasksRequest $request, Task $group, StartTaskProvisionAction $action): JsonResponse
+    public function provision(StartTaskProvisionRequest $request, Task $group, StartTaskProvisionAction $action): JsonResponse
     {
         $requestId = $request->attributes->getString('orbit.request_id');
-        $operation = $action->execute($group, CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
+        $operation = $action->execute($group, CallerName::fromRequest($request), $requestId === '' ? null : $requestId, $request->worker());
 
         return response()->json([
             'data' => OperationData::fromModel($operation)->toArray(),

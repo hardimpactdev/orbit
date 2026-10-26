@@ -20215,7 +20215,20 @@ export interface operations {
         };
         requestBody?: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    worker?: {
+                        /** @description Orchestrator WebSocket URL without credentials, query, or fragment. */
+                        orchestrator_url: string;
+                        /**
+                         * Format: password
+                         * @description Short-lived single-group enrollment secret; used only for worker startup.
+                         */
+                        enrollment_token: string;
+                        labels?: {
+                            [key: string]: string;
+                        };
+                    };
+                };
             };
         };
         responses: {

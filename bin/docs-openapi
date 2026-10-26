@@ -1341,6 +1341,7 @@ EXAMPLE_BY_NAME = {
     'php_version': '8.5', 'source_path': '/srv/orbit/apps/acme/main', 'environments': ['production'], 'phase': 'before_activation', 'release': '20260914T101500Z', 'value': 'log', 'status': 'success', 'state': 'active',
     'force': True, 'offline': False, 'replace': True, 'converge': False, 'purge_data': False, 'include_worktrees': False,
     'source': '10.6.0.0/24', 'protocol': 'tcp', 'instance_id': 4, 'sqlite_source_path': '/home/acme/database/database.sqlite', 'apps': {'path': '/srv/orbit/apps'}, 'settings': {'apps': {'path': '/srv/orbit/apps'}},
+    'orchestrator_url': 'wss://swamp.orbit', 'enrollment_token': 'group-1.' + 'a' * 64,
     'title': 'Build Tasks', 'brief': 'Persist groups. Accept when create and list work.',
 }
 PHP_EXAMPLES = {
@@ -1849,6 +1850,14 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         keys = re.findall(r"'([a-z_]+)'\s*=>", sdkreq['body'])
         if keys:
             body_schema = {'type': 'object', 'properties': {k: {'type': 'boolean' if k in BOOLEAN_FIELDS else 'string'} for k in keys}}
+    if route['name'] == 'tasks:provision':
+        body_schema = {'type': 'object', 'additionalProperties': False, 'properties': {
+            'worker': {'type': 'object', 'additionalProperties': False, 'required': ['orchestrator_url', 'enrollment_token'], 'properties': {
+                'orchestrator_url': {'type': 'string', 'maxLength': 2048, 'pattern': r'^wss://[a-zA-Z0-9.-]+(?::[0-9]{1,5})?(?:/[a-zA-Z0-9._~!$&\x27()*+,;=:@/-]*)?$(?![\s\S])', 'description': 'Orchestrator WebSocket URL without credentials, query, or fragment.'},
+                'enrollment_token': {'type': 'string', 'maxLength': 4096, 'writeOnly': True, 'format': 'password', 'pattern': r'^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{16,}$(?![\s\S])', 'description': 'Short-lived single-group enrollment secret; used only for worker startup.'},
+                'labels': {'type': 'object', 'maxProperties': 32, 'propertyNames': {'pattern': r'^[A-Za-z0-9_.-]{1,64}$(?![\s\S])'}, 'additionalProperties': {'type': 'string', 'maxLength': 128, 'pattern': r'^[A-Za-z0-9_.-]+$(?![\s\S])'}},
+            }},
+        }}
     if route['name'] in ('conn:profile:settings:update', 'conn:profile:settings:patch'):
         body_schema, body_required = conn_settings_body(route['name']), True
     if route['name'] in ('process:create', 'process:update') and body_schema:

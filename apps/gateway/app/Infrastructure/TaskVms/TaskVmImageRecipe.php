@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\TaskVms;
 
+use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\TaskVms\TaskVmException;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentGuest;
@@ -15,7 +16,7 @@ final readonly class TaskVmImageRecipe
     /** Names the builder and smoke VMs or servers, followed by the build's time stamp. */
     public const string WorkPrefix = 'tvm-image-';
 
-    public function __construct(private GuestAgentCommandRunner $agents) {}
+    public function __construct(private GuestAgentCommandRunner $agents, private LeafCertificateSigner $certificates) {}
 
     public function owner(AgentGuest $guest): void
     {
@@ -70,6 +71,7 @@ final readonly class TaskVmImageRecipe
     {
         $this->agents->installGuest($guest);
         try {
+            $this->request($guest, 'image.trust-ca', ['certificate' => $this->certificates->rootCertificate()]);
             $result = $this->agents->runGuest($guest, 'image.clean');
         } catch (AgentCommandRefused $error) {
             if (! in_array($error->errorCode, ['task_vm.image_clean_failed', 'task_vm.image_identity_present'], true)) {

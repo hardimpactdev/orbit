@@ -28,9 +28,12 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Tasks\NativeTaskExecutionLock;
+use App\Infrastructure\TaskVms\TaskWorkerEnrollment;
 use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -42,18 +45,23 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskVm;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Tasks\ProvisionTaskGroupRequest;
 use Symfony\Component\Process\Process;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeTaskAnalysisRunner;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\RecordingTaskVmProvider;
 use Tests\Support\TaskAnalysisAdapterFixture;
 
 require_once __DIR__.'/../../Support/TaskCheckRunnerFixtures.php';
 use App\Domain\Tasks\TaskProvisionOperation;
 use App\Models\TaskWorkspaceLeaseRecord;
+use Illuminate\Support\Facades\Cache;
 use Tests\Support\TaskVmSettingsBuilder;
 
 use function Pest\Laravel\mock;
@@ -576,4 +584,160 @@ describe('tasks.provision', function (): void {
         expect($group->capacity_wait_reason)->toBe('Task VM: task VMs are not enabled on this Gateway.');
         expect(Operation::query()->count())->toBe(0);
     });
+});
+
+describe('optional provision worker', function (): void {
+    it('starts after workspace readiness without retaining the token in records or output', function (): void {
+        $group = provision_operation_group();
+        test_task_vm($group, $this->gatewayNode);
+        provision_operation_fakes();
+        $token = 'group-2074.'.str_repeat('a', 64);
+        $agents = (new FakeAgentCommandRunner)->answer('swamp.start-worker', function (array $input) use ($group, $token): array {
+            expect($group->fresh()->taskable->status)->toBe(InstanceState::SourceResolved);
+            expect($input['enrollment_token'])->toBe($token);
+            expect((array) $input['labels'])->toBe(['group' => (string) $group->id]);
+            expect($input['workspace'])->toBe($group->fresh()->taskable->checkout_path);
+
+            return ['started' => true];
+        });
+        app()->instance(AgentCommandRunner::class, $agents);
+        Log::spy();
+        $payload = ['worker' => ['orchestrator_url' => 'wss://swamp.orbit', 'enrollment_token' => $token, 'labels' => ['group' => (string) $group->id]]];
+        $response = $this->postJson('/api/v1/task-groups/'.$group->id.'/provision', $payload, ['Idempotency-Key' => 'worker.start'])->assertAccepted();
+        $operation = Operation::query()->findOrFail($response->json('data.id'));
+        $reference = $operation->input['worker']['enrollment_reference'];
+        expect(app(TaskWorkerEnrollment::class)->read($reference))->toBe($token);
+        expect(Cache::get('tasks:worker-enrollment:'.$reference))->not->toContain($token);
+        expect($response->getContent())->not->toContain($token);
+        app(OperationRunner::class)->run($operation->id);
+        expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded);
+        expect(app(TaskWorkerEnrollment::class)->read($reference))->toBeNull();
+        expect(json_encode($operation->toArray()))->not->toContain($token);
+        expect(json_encode($operation->steps()->get()->toArray()))->not->toContain($token);
+        expect(json_encode(DB::table('jobs')->get()->toArray()))->not->toContain($token);
+        expect(json_encode(DB::table('activity_log')->get()->toArray()))->not->toContain($token);
+        $this->getJson('/api/v1/operations/'.$operation->id)->assertOk()->assertDontSee($token);
+        $this->postJson('/api/v1/task-groups/'.$group->id.'/provision', $payload, ['Idempotency-Key' => 'worker.start'])->assertAccepted()->assertJsonPath('data.id', $operation->id);
+        expect($agents->calls)->toHaveCount(1);
+        Log::shouldNotHaveReceived('error');
+    });
+    it('starts no worker when enrollment is omitted', function (): void {
+        $group = provision_operation_group();
+        test_task_vm($group, $this->gatewayNode);
+        provision_operation_fakes();
+        $agents = new FakeAgentCommandRunner;
+        app()->instance(AgentCommandRunner::class, $agents);
+        $operation = provision_operation_start($group);
+        app(OperationRunner::class)->run($operation->id);
+        expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded);
+        expect($agents->calls)->toBe([]);
+    });
+    it('destroys the worker VM when a provisioned group is cancelled', function (): void {
+        $group = provision_operation_group();
+        $node = Node::query()->create([
+            'name' => 'worker-vm', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
+            'public_ssh_host' => '192.0.2.129', 'wireguard_ip' => '10.44.0.129',
+            'user' => 'orbit', 'settings' => ['apps' => ['path' => '/home/orbit/apps']],
+        ]);
+        $vm = test_task_vm($group, $node);
+        provision_operation_fakes();
+        bind_task_node_reachability();
+        $provider = new RecordingTaskVmProvider;
+        app()->instance(TaskVmProvider::class, $provider);
+        $agents = (new FakeAgentCommandRunner)->answer('swamp.start-worker', ['started' => true]);
+        app()->instance(AgentCommandRunner::class, $agents);
+        $response = $this->postJson('/api/v1/task-groups/'.$group->id.'/provision', ['worker' => [
+            'orchestrator_url' => 'wss://swamp.orbit', 'enrollment_token' => 'group.'.str_repeat('f', 64),
+        ]])->assertAccepted();
+        $operation = Operation::query()->findOrFail($response->json('data.id'));
+        app(OperationRunner::class)->run($operation->id);
+        expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded);
+        expect($agents->commands())->toBe(['swamp.start-worker']);
+        expect($agents->calls[0]['node'])->toBe($node->name);
+        $workspace = $group->refresh()->taskable;
+        expect($workspace)->toBeInstanceOf(Instance::class);
+        expect($provider->vmCalls)->toBe([]);
+        Queue::fake([DestroyTaskVm::class]);
+
+        // The worker is a guest service, so deleting its VM ends it without a second stop path.
+        $this->postJson('/api/v1/task-groups/'.$group->id.'/cancel')->assertOk()->assertJsonPath('data.status', 'cancelled');
+
+        expect($provider->vmCalls)->toBe(['destroy '.$vm->name]);
+        expect($vm->refresh()->state)->toBe(TaskVmState::Destroying);
+        expect(Instance::query()->find($workspace->id))->toBeNull();
+        expect($group->refresh()->taskable_id)->toBeNull();
+        Queue::assertPushed(DestroyTaskVm::class, fn (DestroyTaskVm $job): bool => $job->taskVmId === $vm->id);
+    });
+    it('clears staged enrollment when a waiting provision is cancelled', function (): void {
+        $group = provision_operation_group();
+        TaskVmSettingsBuilder::bind();
+        $response = $this->postJson('/api/v1/task-groups/'.$group->id.'/provision', ['worker' => ['orchestrator_url' => 'wss://swamp.orbit', 'enrollment_token' => 'group.'.str_repeat('b', 64)]])->assertAccepted();
+        $operation = Operation::query()->findOrFail($response->json('data.id'));
+        app(OperationRunner::class)->run($operation->id);
+        $this->postJson('/api/v1/task-groups/'.$group->id.'/cancel')->assertOk();
+        expect(app(TaskWorkerEnrollment::class)->read($operation->input['worker']['enrollment_reference']))->toBeNull();
+    });
+    it('withholds remote diagnostics and clears enrollment on startup failure', function (): void {
+        $group = provision_operation_group();
+        test_task_vm($group, $this->gatewayNode);
+        provision_operation_fakes();
+        $token = 'group.'.str_repeat('c', 64);
+        $agents = (new FakeAgentCommandRunner)->answer('swamp.start-worker', static fn (): array => throw new RuntimeException($token));
+        app()->instance(AgentCommandRunner::class, $agents);
+        Log::spy();
+        $response = $this->postJson('/api/v1/task-groups/'.$group->id.'/provision', ['worker' => ['orchestrator_url' => 'wss://swamp.orbit', 'enrollment_token' => $token]])->assertAccepted();
+        $operation = Operation::query()->findOrFail($response->json('data.id'));
+        app(OperationRunner::class)->run($operation->id);
+        expect($operation->refresh()->error_code)->toBe('tasks.worker_start_failed');
+        expect(app(TaskWorkerEnrollment::class)->read($operation->input['worker']['enrollment_reference']))->toBeNull();
+        Log::shouldHaveReceived('error')->withArgs(fn (string $message, array $context): bool => ! str_contains(json_encode([$message, $context]), $token));
+    });
+    it('rejects unsafe worker settings before recording an operation', function (array $worker): void {
+        $group = provision_operation_group();
+        $this->postJson('/api/v1/task-groups/'.$group->id.'/provision', ['worker' => $worker])->assertUnprocessable();
+        expect(Operation::query()->count())->toBe(0);
+    })->with([
+        'missing token' => [['orchestrator_url' => 'wss://swamp.orbit']],
+        'plaintext connection' => [['orchestrator_url' => 'ws://swamp.orbit', 'enrollment_token' => 'group.'.str_repeat('a', 64)]],
+        'url credential' => [['orchestrator_url' => 'wss://user:secret@swamp.orbit', 'enrollment_token' => 'group.'.str_repeat('a', 64)]],
+        'extra field' => [['orchestrator_url' => 'wss://swamp.orbit', 'enrollment_token' => 'group.'.str_repeat('a', 64), 'command' => 'arbitrary']],
+        'label injection' => [['orchestrator_url' => 'wss://swamp.orbit', 'enrollment_token' => 'group.'.str_repeat('a', 64), 'labels' => ['group' => "bad\nlabel"]]],
+    ]);
+});
+
+it('fails provision when the staged enrollment expires without passing a token to the VM', function (): void {
+    $group = provision_operation_group();
+    test_task_vm($group, $this->gatewayNode);
+    provision_operation_fakes();
+    $agents = (new FakeAgentCommandRunner)->answer('swamp.start-worker', function (array $input): array {
+        expect($input['enrollment_token'])->toBeNull();
+
+        return ['started' => false];
+    });
+    app()->instance(AgentCommandRunner::class, $agents);
+    $response = $this->postJson('/api/v1/task-groups/'.$group->id.'/provision', ['worker' => [
+        'orchestrator_url' => 'wss://swamp.orbit', 'enrollment_token' => 'expired.'.str_repeat('d', 64),
+    ]])->assertAccepted();
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+    $this->travel(31)->minutes();
+    app(OperationRunner::class)->run($operation->id);
+    expect($operation->refresh()->error_code)->toBe('tasks.worker_enrollment_expired');
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Failed);
+});
+
+it('removes worker startup material when the workspace Route fails before worker startup', function (): void {
+    $group = provision_operation_group();
+    $group->project->update(['task_workspace_routed' => true]);
+    test_task_vm($group, $this->gatewayNode);
+    provision_operation_fakes(routeFails: true);
+    $agents = new FakeAgentCommandRunner;
+    app()->instance(AgentCommandRunner::class, $agents);
+    $response = $this->postJson('/api/v1/task-groups/'.$group->id.'/provision', ['worker' => [
+        'orchestrator_url' => 'wss://swamp.orbit', 'enrollment_token' => 'group.'.str_repeat('e', 64),
+    ]])->assertAccepted();
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+    app(OperationRunner::class)->run($operation->id);
+    expect($operation->refresh()->error_code)->toBe('route.projection_failed');
+    expect($agents->calls)->toBe([]);
+    expect(app(TaskWorkerEnrollment::class)->read($operation->input['worker']['enrollment_reference']))->toBeNull();
 });

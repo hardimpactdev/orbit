@@ -311,7 +311,7 @@ describe('machine recipe structure and identity', function (): void {
         expect(array_values(array_intersect($document['base'], $topology)))->toBe($topology)
             ->and($recipe->tools['incus']->version)->toBe($document['tools']['incus']['version']);
         $imagePackages = ['openssh-server', ...TaskVmCloudInit::WorkspaceTools, ...$topology, ...TaskVmCloudInit::ChromiumLibraries];
-        $base = [...array_diff($development, ['php8.4-opentelemetry', 'php8.5-opentelemetry']), ...$imagePackages, 'rust', 'rust-std', 'cargo', 'clippy', 'rustfmt', 'pi'];
+        $base = [...array_diff($development, ['php8.4-opentelemetry', 'php8.5-opentelemetry']), ...$imagePackages, 'rust', 'rust-std', 'cargo', 'clippy', 'rustfmt', 'pi', 'swamp'];
         $profiles = [
             'operator' => $common,
             'gateway' => [...$common, 'caddy', 'logrotate', ...$php85],

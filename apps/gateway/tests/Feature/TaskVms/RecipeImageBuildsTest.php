@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Fleet\ConvergeFleetRecipeAction;
+use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Fleet\FleetServingRelease;
 use App\Domain\Problems\ProblemCollector;
 use App\Domain\Problems\ProblemRecovery;
@@ -78,6 +79,9 @@ function recipeImageTransport(Node $host): FakeIncusImageHost
     @mkdir($directory.'/sandbox-artifacts', 0700, true);
     file_put_contents($directory.'/sandbox-artifacts/pi-test', 'pinned pi bytes');
     config(['orbit.home' => $directory]);
+    $signer = Mockery::mock(LeafCertificateSigner::class);
+    $signer->shouldReceive('rootCertificate')->andReturn('public Orbit root certificate');
+    app()->instance(LeafCertificateSigner::class, $signer);
 
     return $incus;
 }

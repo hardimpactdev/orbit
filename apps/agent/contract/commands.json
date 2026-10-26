@@ -2072,6 +2072,33 @@
       ]
     },
     {
+      "name": "swamp.start-worker",
+      "summary": "Start a Swamp worker in the ready task VM workspace using a runtime credential.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "tasks.worker_invalid",
+        "tasks.worker_start_failed"
+      ]
+    },
+    {
+      "name": "image.trust-ca",
+      "summary": "Install the public Orbit CA in the task image system trust store.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.image_build_failed"
+      ]
+    },
+    {
       "name": "gateway.prepare-web-directory",
       "summary": "Prepare the Gateway web release directories for Caddy.",
       "mutates": true,

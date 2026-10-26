@@ -28193,7 +28193,45 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "additionalProperties": false
+                "additionalProperties": false,
+                "properties": {
+                  "worker": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "orchestrator_url",
+                      "enrollment_token"
+                    ],
+                    "properties": {
+                      "orchestrator_url": {
+                        "type": "string",
+                        "maxLength": 2048,
+                        "pattern": "^wss://[a-zA-Z0-9.-]+(?::[0-9]{1,5})?(?:/[a-zA-Z0-9._~!$&\\x27()*+,;=:@/-]*)?$(?![\\s\\S])",
+                        "description": "Orchestrator WebSocket URL without credentials, query, or fragment."
+                      },
+                      "enrollment_token": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "writeOnly": true,
+                        "format": "password",
+                        "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]{16,}$(?![\\s\\S])",
+                        "description": "Short-lived single-group enrollment secret; used only for worker startup."
+                      },
+                      "labels": {
+                        "type": "object",
+                        "maxProperties": 32,
+                        "propertyNames": {
+                          "pattern": "^[A-Za-z0-9_.-]{1,64}$(?![\\s\\S])"
+                        },
+                        "additionalProperties": {
+                          "type": "string",
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_.-]+$(?![\\s\\S])"
+                        }
+                      }
+                    }
+                  }
+                }
               }
             }
           }
@@ -28277,7 +28315,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/task-groups/1/provision\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/task-groups/1/provision\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"worker\": {\"orchestrator_url\": \"wss://swamp.orbit\", \"enrollment_token\": \"group-1.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}'\n"
           },
           {
             "lang": "php",

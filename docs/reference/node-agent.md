@@ -23,6 +23,8 @@ Fixed **service entry points** run under their own Linux systemd units. `service
 
 The observer listens on no port. Nothing reaches command mode over the network: only a process that SSH or the Gateway starts runs it. To build and check the agent, see [Bun and Rust projects](/reference/bun-and-rust-projects#node-agent).
 
+`swamp.start-worker` starts a task VM worker through fixed systemd runtime files and protected stdin input after its workspace is ready. `image.trust-ca` installs only the public Orbit CA in the image trust store. These commands expose no caller program or shell. [Task worker enrollment](/reference/tasks#optional-swamp-worker) owns their credential lifetime.
+
 ## Where it runs
 
 The Gateway installs the observer only on active managed Linux Nodes with a WireGuard address and a pinned SSH host key. Only those Nodes hold an agent secret. [Exporter selection](/reference/metrics#exporter-selection) uses the same boundary. The observer needs no role.

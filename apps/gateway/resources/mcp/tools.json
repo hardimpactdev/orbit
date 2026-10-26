@@ -9755,6 +9755,42 @@
             "maxLength": 128,
             "pattern": "^[A-Za-z0-9._:-]+$",
             "description": "A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409)."
+          },
+          "worker": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "orchestrator_url",
+              "enrollment_token"
+            ],
+            "properties": {
+              "orchestrator_url": {
+                "type": "string",
+                "maxLength": 2048,
+                "pattern": "^wss://[a-zA-Z0-9.-]+(?::[0-9]{1,5})?(?:/[a-zA-Z0-9._~!$&\\x27()*+,;=:@/-]*)?$(?![\\s\\S])",
+                "description": "Orchestrator WebSocket URL without credentials, query, or fragment."
+              },
+              "enrollment_token": {
+                "type": "string",
+                "maxLength": 4096,
+                "writeOnly": true,
+                "format": "password",
+                "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]{16,}$(?![\\s\\S])",
+                "description": "Short-lived single-group enrollment secret; used only for worker startup."
+              },
+              "labels": {
+                "type": "object",
+                "maxProperties": 32,
+                "propertyNames": {
+                  "pattern": "^[A-Za-z0-9_.-]{1,64}$(?![\\s\\S])"
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9_.-]+$(?![\\s\\S])"
+                }
+              }
+            }
           }
         },
         "additionalProperties": false,

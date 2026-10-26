@@ -906,6 +906,20 @@
                     "version": "1:7.0.1-ubuntu26.04-202609250512"
                 }
             }
+        },
+        "swamp": {
+            "version": "20261022.021804.0-sha.983e2929",
+            "source": "artifact",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://github.com/swamp-club/swamp/releases/download/v20261022.021804.0-sha.983e2929/swamp-linux-x86_64",
+                    "sha256": "940416b92781dad1d48aff0e4f42b48bbcb29fd92aca9bb8ed126aff0f6d135d"
+                },
+                "arm64": {
+                    "url": "https://github.com/swamp-club/swamp/releases/download/v20261022.021804.0-sha.983e2929/swamp-linux-aarch64",
+                    "sha256": "e330db5133f68255f3735c65e4f7508f879d34f6aa9a929a13f5a64fb5cbd88a"
+                }
+            }
         }
     },
     "common": [
@@ -1253,7 +1267,8 @@
         "libxkbcommon0",
         "libxrandr2",
         "php:8.5",
-        "php:8.4"
+        "php:8.4",
+        "swamp"
     ],
     "artifact_mirror": "https://github.com/hardimpactdev/orbit/releases/download/php-build-mirror",
     "git": {
