@@ -1,6 +1,6 @@
 use super::*;
 use crate::commands::recipe::WorkDir;
-use std::{collections::VecDeque, fs, os::unix::fs::PermissionsExt, sync::mpsc};
+use std::{collections::VecDeque, fs, sync::mpsc};
 
 /// Answers each client call from a queue, records the calls, and moves its clock only when the command sleeps.
 struct Fake {
@@ -319,11 +319,19 @@ fn invalid_requests_refuse_before_any_client_call() {
     refused(bash, "the client is mysql or psql");
 }
 
-/// A stand-in for `docker` that runs `body` with the arguments the command passes.
+/// A stand-in for `docker` that runs `body` with the arguments the command passes. `install` writes the executable,
+/// so this process never holds a writable descriptor that a parallel test's fork could keep open (`ETXTBSY`).
 fn program(work: &WorkDir, body: &str) -> Native {
+    let source = work.0.join("docker.sh");
     let path = work.0.join("docker");
-    fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::write(&source, format!("#!/bin/sh\n{body}\n")).unwrap();
+    let status = std::process::Command::new("install")
+        .args(["-m", "0755"])
+        .arg(&source)
+        .arg(&path)
+        .status()
+        .unwrap();
+    assert!(status.success());
     Native { program: path }
 }
 
