@@ -10,6 +10,22 @@ beforeAll(function (): void {
     RootCaFixture::prepare();
     RootCaFixture::prepare('alternate');
     RootCaFixture::prepare('short-lived', '/CN=Orbit Test Root', 1, ['basicConstraints=critical,CA:TRUE', 'keyUsage=critical,keyCertSign,cRLSign']);
+    RootCaFixture::prepare('windowed', notBefore: '20200101000000Z', notAfter: '20200201000000Z');
+});
+
+it('sets an explicit validity window instead of a lifetime', function (): void {
+    $home = sys_get_temp_dir().'/orbit-windowed-root-ca-'.bin2hex(random_bytes(8));
+    mkdir($home, 0o700);
+
+    try {
+        RootCaFixture::install($home, 'windowed');
+        $parsed = openssl_x509_parse((string) file_get_contents($home.'/root.pem'));
+        expect($parsed['validFrom_time_t'])->toBe(gmmktime(0, 0, 0, 1, 1, 2020))
+            ->and($parsed['validTo_time_t'])->toBe(gmmktime(0, 0, 0, 2, 1, 2020))
+            ->and($parsed['extensions']['basicConstraints'])->toBe('CA:TRUE');
+    } finally {
+        (new Filesystem)->deleteDirectory($home);
+    }
 });
 
 it('copies the real RSA-4096 CA into independent private fixture directories', function (): void {
