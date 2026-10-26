@@ -61,21 +61,23 @@ describe(DesiredFleetState::class, function (): void {
         $state = app(DesiredFleetState::class);
 
         $first = $state->current()->toArray();
-        Http::assertSentCount(3);
+        Http::assertSentCount(4);
         $this->travel(DesiredFleetState::AvailableSeconds - 60)->seconds();
 
         expect($state->current()->toArray())->toBe($first)
             ->and($state->cached()?->toArray())->toBe($first);
-        Http::assertSentCount(3);
+        Http::assertSentCount(4);
     });
 
     it('asks again after a minute while the release is missing', function (): void {
         fake_release_history();
         $published = false;
+        trust_cli_release_test_signer();
         Http::fake(static function (Request $request) use (&$published) {
             return match ((string) parse_url($request->url(), PHP_URL_PATH)) {
                 '/repos/hardimpactdev/orbit/git/ref/tags/cli-v0.4681.0' => $published ? Http::response(cli_release_fixture_json('tag-ref.json')) : Http::response(['message' => 'Not Found'], 404),
                 '/repos/hardimpactdev/orbit/releases/tags/cli-v0.4681.0' => Http::response(cli_release_fixture_json('release.json')),
+                '/hardimpactdev/orbit/releases/download/cli-v0.4681.0/provenance.sigstore.json' => cli_release_provenance(cli_release_fixture('SHA256SUMS')),
                 default => Http::response(cli_release_fixture('SHA256SUMS')),
             };
         });
@@ -121,7 +123,7 @@ describe(DesiredFleetState::class, function (): void {
                 ->and($this->state->cached()?->cliFallback())->toBeTrue();
             // Two pending answers ask for the commit's own tag. The fallback asks for it again, for the parent's
             // missing tag, then for the fixture's tag, release, and SHA256SUMS.
-            Http::assertSentCount(2 + 1 + 1 + 3);
+            Http::assertSentCount(2 + 1 + 1 + 4);
         });
 
         it('takes the highest release number, not the order of the history', function (): void {
@@ -147,6 +149,22 @@ describe(DesiredFleetState::class, function (): void {
             $this->travel(DesiredFleetState::FallbackAfterSeconds + 1)->seconds();
 
             expect($this->state->current()->cli->toArray())->toMatchArray(['version' => '0.4681.0', 'commit' => CLI_RELEASE_FIXTURE_COMMIT]);
+        });
+
+        it('skips an ancestor whose release has no provenance, as releases from before provenance do', function (): void {
+            $this->published[4682] = $this->middle;
+            $this->responses['/hardimpactdev/orbit/releases/download/cli-v0.4682.0/provenance.sigstore.json'] = Http::response('Not Found', 404);
+            $this->travel(DesiredFleetState::FallbackAfterSeconds + 1)->seconds();
+
+            expect($this->state->current()->cli->toArray())->toMatchArray(['status' => 'available', 'version' => '0.4681.0', 'commit' => CLI_RELEASE_FIXTURE_COMMIT]);
+        });
+
+        it('names no fallback for the commit\'s own release when its provenance does not verify', function (): void {
+            $this->published[4683] = $this->commit;
+            $this->responses['/hardimpactdev/orbit/releases/download/cli-v0.4683.0/provenance.sigstore.json'] = Http::response('Not Found', 404);
+            $this->travel(DesiredFleetState::FallbackAfterSeconds + 1)->seconds();
+
+            expect($this->state->current()->cli->toArray())->toMatchArray(['status' => 'unavailable', 'reason' => 'release_unverified']);
         });
 
         it('falls back when the commit\'s own release tags another commit or is incomplete', function (string $problem): void {

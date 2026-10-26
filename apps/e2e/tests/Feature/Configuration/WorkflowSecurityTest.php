@@ -46,7 +46,7 @@ it('defaults workflows to read-only tokens and grants writes only to named publi
     expect($writers)->toBe([
         'ci.yml:publish-ci-cache' => ['actions' => 'read', 'contents' => 'write'],
         'git-build-watch.yml:publish' => ['issues' => 'write'],
-        'orbit-cli-release.yml:publish' => ['contents' => 'write', 'actions' => 'read'],
+        'orbit-cli-release.yml:publish' => ['contents' => 'write', 'actions' => 'read', 'id-token' => 'write', 'attestations' => 'write'],
         'php-build-mirror.yml:mirror' => ['contents' => 'write'],
     ]);
 });
@@ -96,6 +96,9 @@ it('publishes the tested main agent delivery with the commit release and no othe
     expect($workflow['jobs']['publish'])->not->toHaveKey('environment');
     $text = (string) file_get_contents(base_path('../../.github/workflows/orbit-cli-release.yml'));
     expect($text)->not->toContain('secrets.', 'create-github-app-token', 'cargo build', 'cross build');
+    // Provenance is signed with the job's own OIDC identity, through the action's default job token.
+    expect($publish['Attest the release files']['uses'])->toStartWith('actions/attest-build-provenance@')
+        ->and($publish['Attest the release files']['with'])->toBe(['subject-path' => 'release/*']);
 });
 
 it('limits the recipe mirror write token to main and never triggers it for pull requests', function (): void {
