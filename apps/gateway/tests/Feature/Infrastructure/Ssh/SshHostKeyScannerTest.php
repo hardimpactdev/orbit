@@ -20,7 +20,7 @@ it('scans through the agent on the serving Gateway or the selected jump Node', f
     $runner = Mockery::mock(AgentCommandRunner::class);
     $runner->shouldReceive('run')->once()->withArgs(function (Node $node, string $command, array $input) use ($target): bool {
         return $node->id === $target->id && $node->architecture === $target->architecture
-            && $command === 'nodes.scan-host-key' && $input === ['host' => '192.0.2.10', 'port' => 2222];
+            && $command === 'node.scan-host-key' && $input === ['host' => '192.0.2.10', 'port' => 2222];
     })->andReturn(['type' => 'ssh-ed25519', 'value' => 'PUBLIC', 'fingerprint' => 'SHA256:approved']);
 
     $key = new SshHostKeyScanner($runner, $serving)->scan('192.0.2.10', 2222, $viaJump ? $jump : null);
@@ -32,8 +32,8 @@ it('keeps the typed refusal or transport diagnostics when the scan fails', funct
     $node = new Node(['name' => 'jump', 'platform' => 'linux']);
     $result = new CommandResult(255, '', 'transport failed', 25000, true);
     $failure = $transport
-        ? new AgentRunnerFailure('nodes.scan-host-key', AgentRunnerFailure::Timeout, 'Timed out.', result: $result)
-        : new AgentCommandRefused('nodes.scan-host-key', 'nodes.host_key_scan_failed', 'Scan refused.');
+        ? new AgentRunnerFailure('node.scan-host-key', AgentRunnerFailure::Timeout, 'Timed out.', result: $result)
+        : new AgentCommandRefused('node.scan-host-key', 'node.host_key_scan_failed', 'Scan refused.');
     $runner = Mockery::mock(AgentCommandRunner::class);
     $runner->shouldReceive('run')->once()->andThrow($failure);
 

@@ -93,7 +93,7 @@ it('refuses a source Git credential before the host can carry it into a guest', 
     $host = new IncusCarrierFixture;
     $transport = new IncusAgentTransport($host, 'orbit-tasks', 'tvm-image-check');
 
-    expect(fn () => $transport->run(['/usr/local/bin/orbit-agent', 'command', 'instances.checkout'], ProtectedInput::gitCredential('credential-sentinel'), 30))
+    expect(fn () => $transport->run(['/usr/local/bin/orbit-agent', 'command', 'instance.checkout'], ProtectedInput::gitCredential('credential-sentinel'), 30))
         ->toThrow(TaskVmException::class, 'A command that carries a GitHub credential cannot run on a task VM.');
     expect($host->calls)->toBe([])->and($host->staged)->toBe([]);
 });

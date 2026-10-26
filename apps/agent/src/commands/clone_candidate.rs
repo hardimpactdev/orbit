@@ -1,4 +1,4 @@
-//! `instances.inspect-clone-candidate`: checks that a candidate Instance's selected source is a clean Git checkout on
+//! `instance.inspect-clone-candidate`: checks that a candidate Instance's selected source is a clean Git checkout on
 //! its configured branch, and that the repository still holds its commit and the target branch. Git runs as the
 //! Instance user without hooks; the repository is fetched into a private scratch directory that the command removes.
 
@@ -18,14 +18,14 @@ use std::{
 
 command_errors! {
     pub enum CandidateError {
-        ReleaseMissing {} => "instances.clone_candidate_release_missing", "The production candidate has no selected release.";
-        SourceInvalid {} => "instances.clone_candidate_source_invalid", "The candidate source is not a Git checkout.";
-        ReleaseChanged {} => "instances.clone_candidate_release_changed", "The candidate selected another source meanwhile.";
-        BranchInvalid {} => "instances.clone_candidate_branch_invalid", "The candidate is not on its configured branch.";
-        Dirty {} => "instances.clone_candidate_dirty", "The candidate source has changes.";
-        RepositoryUnavailable { stderr: String } => "instances.clone_candidate_repository_unavailable", "The repository cannot be fetched.";
-        CommitUnavailable {} => "instances.clone_candidate_commit_unavailable", "The repository does not hold the candidate commit.";
-        TargetBranchMissing {} => "instances.clone_target_branch_missing", "The repository has no target branch.";
+        ReleaseMissing {} => "instance.clone_candidate_release_missing", "The production candidate has no selected release.";
+        SourceInvalid {} => "instance.clone_candidate_source_invalid", "The candidate source is not a Git checkout.";
+        ReleaseChanged {} => "instance.clone_candidate_release_changed", "The candidate selected another source meanwhile.";
+        BranchInvalid {} => "instance.clone_candidate_branch_invalid", "The candidate is not on its configured branch.";
+        Dirty {} => "instance.clone_candidate_dirty", "The candidate source has changes.";
+        RepositoryUnavailable { stderr: String } => "instance.clone_candidate_repository_unavailable", "The repository cannot be fetched.";
+        CommitUnavailable {} => "instance.clone_candidate_commit_unavailable", "The repository does not hold the candidate commit.";
+        TargetBranchMissing {} => "instance.clone_target_branch_missing", "The repository has no target branch.";
     }
 }
 
@@ -313,7 +313,7 @@ pub fn inspect(input: &CandidateInput) -> Result<Candidate, CandidateError> {
 pub struct InspectCloneCandidate;
 
 impl Command for InspectCloneCandidate {
-    const NAME: &'static str = "instances.inspect-clone-candidate";
+    const NAME: &'static str = "instance.inspect-clone-candidate";
     const SUMMARY: &'static str =
         "Check that a clone candidate's source is clean and its repository holds its commit.";
     const MUTATES: bool = false;

@@ -33,7 +33,7 @@ beforeEach(function (): void {
 
 describe('Project branch switch', function (): void {
     it('requests the branch switch and restoration for the same managed checkout', function (): void {
-        $agents = new FakeAgentCommandRunner()->answer('projects.update-source', []);
+        $agents = new FakeAgentCommandRunner()->answer('project.update-source', []);
         $this->app->instance(AgentCommandRunner::class, $agents);
         $mutator = $this->app->make(RemoteProjectUpdateSourceMutator::class);
         $instance = $this->fixture->defaultInstance;
@@ -42,10 +42,10 @@ describe('Project branch switch', function (): void {
         $mutator->restoreDefaultBranch($instance, 'main');
 
         expect($agents->calls)->toBe([
-            ['node' => $instance->node->name, 'command' => 'projects.update-source', 'input' => [
+            ['node' => $instance->node->name, 'command' => 'project.update-source', 'input' => [
                 'operation' => 'switch_branch', 'path' => $instance->checkout_path, 'branch' => 'other',
             ]],
-            ['node' => $instance->node->name, 'command' => 'projects.update-source', 'input' => [
+            ['node' => $instance->node->name, 'command' => 'project.update-source', 'input' => [
                 'operation' => 'restore_branch', 'path' => $instance->checkout_path, 'branch' => 'main',
             ]],
         ]);
@@ -178,7 +178,7 @@ describe('App repository reconciliation', function (): void {
     });
 
     it('maps a repository preflight refusal without changing the Project', function (): void {
-        $agents = new FakeAgentCommandRunner()->refuse('projects.update-source', 'projects.source_failed', ['step' => 'app-update-repository-preflight']);
+        $agents = new FakeAgentCommandRunner()->refuse('project.update-source', 'project.source_failed', ['step' => 'app-update-repository-preflight']);
         $this->app->instance(AgentCommandRunner::class, $agents);
         $mutator = $this->app->make(RemoteProjectUpdateSourceMutator::class);
 
@@ -196,7 +196,7 @@ describe('App repository reconciliation', function (): void {
     });
 
     it('runs remote origin updates only against checkout paths', function (): void {
-        $agents = new FakeAgentCommandRunner()->answer('projects.update-source', []);
+        $agents = new FakeAgentCommandRunner()->answer('project.update-source', []);
         $this->app->instance(AgentCommandRunner::class, $agents);
         $mutator = $this->app->make(RemoteProjectUpdateSourceMutator::class);
         $this->app->instance(ProjectUpdateSourceMutator::class, $mutator);
@@ -226,7 +226,7 @@ describe('App repository reconciliation', function (): void {
                 'status' => InstanceState::Active, 'task_workspace_owner_id' => $group->id,
             ]);
         }
-        $agents = new FakeAgentCommandRunner()->answer('projects.update-source', []);
+        $agents = new FakeAgentCommandRunner()->answer('project.update-source', []);
         $this->app->instance(AgentCommandRunner::class, $agents);
         $mutator = $this->app->make(RemoteProjectUpdateSourceMutator::class);
 
@@ -298,7 +298,7 @@ describe('App repository reconciliation', function (): void {
     ]);
 
     it('restores origin evidence written before rows named their Instance by its path', function (): void {
-        $agents = new FakeAgentCommandRunner()->answer('projects.update-source', []);
+        $agents = new FakeAgentCommandRunner()->answer('project.update-source', []);
         $this->app->instance(AgentCommandRunner::class, $agents);
 
         $this->app->make(RemoteProjectUpdateSourceMutator::class)->restoreOrigins([[
@@ -424,12 +424,12 @@ describe('App repository reconciliation', function (): void {
             ]);
         }
         $recorded = [];
-        $agents = new FakeAgentCommandRunner()->answer('projects.update-source', function (array $input) use (&$recorded, $checkouts): array {
+        $agents = new FakeAgentCommandRunner()->answer('project.update-source', function (array $input) use (&$recorded, $checkouts): array {
             if ($input['operation'] === 'set_origin') {
                 $row = collect($recorded)->firstWhere('path', $input['path']);
                 expect($row['attempted'])->toBeTrue()->and($row['mutated'])->toBeFalse();
                 if ($input['path'] === $checkouts[1]->checkout_path) {
-                    throw new AgentCommandRefused('projects.update-source', 'projects.source_failed', 'Origin refused.', ['step' => 'app-update-repository-origin']);
+                    throw new AgentCommandRefused('project.update-source', 'project.source_failed', 'Origin refused.', ['step' => 'app-update-repository-origin']);
                 }
             }
 
@@ -458,7 +458,7 @@ describe('App repository reconciliation', function (): void {
     });
 
     it('still reads the proposed repository with a credential from an ordinary checkout', function (): void {
-        $agents = new FakeAgentCommandRunner()->answer('projects.update-source', []);
+        $agents = new FakeAgentCommandRunner()->answer('project.update-source', []);
         $this->app->instance(AgentCommandRunner::class, $agents);
 
         $this->app->make(RemoteProjectUpdateSourceMutator::class)->preflightRepository(

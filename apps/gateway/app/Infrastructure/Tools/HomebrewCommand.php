@@ -19,7 +19,7 @@ final readonly class HomebrewCommand
 
     public function verifyScope(Node $node): void
     {
-        $scope = $this->run($node, 'tools.inspect-homebrew-scope', [], 'manager-probe');
+        $scope = $this->run($node, 'tool.inspect-homebrew-scope', [], 'manager-probe');
         if (! is_string($scope['prefix'] ?? null) || ! is_string($scope['home'] ?? null)) {
             throw new ToolManagerException('manager-probe', 'The agent returned an invalid Homebrew scope.');
         }
@@ -35,27 +35,27 @@ final readonly class HomebrewCommand
         } catch (AgentCommandRefused|AgentRunnerFailure $error) {
             $code = $error instanceof AgentCommandRefused ? $error->errorCode : null;
             $step = match ($code) {
-                'tools.homebrew_scope_absent' => 'manager-absent',
-                'tools.homebrew_scope_conflict' => 'manager-conflict',
-                'tools.homebrew_scope_unreadable' => 'manager-probe',
-                'tools.homebrew_candidate_invalid', 'tools.homebrew_bottle_unavailable' => 'candidate-version',
-                'tools.homebrew_cask_source' => 'cask-source',
-                'tools.homebrew_cask_artifact' => 'cask-artifact',
-                'tools.homebrew_cask_authorization' => 'cask-authorization',
-                'tools.homebrew_cask_checksum' => 'cask-checksum',
-                'tools.homebrew_cask_version' => 'cask-version',
+                'tool.homebrew_scope_absent' => 'manager-absent',
+                'tool.homebrew_scope_conflict' => 'manager-conflict',
+                'tool.homebrew_scope_unreadable' => 'manager-probe',
+                'tool.homebrew_candidate_invalid', 'tool.homebrew_bottle_unavailable' => 'candidate-version',
+                'tool.homebrew_cask_source' => 'cask-source',
+                'tool.homebrew_cask_artifact' => 'cask-artifact',
+                'tool.homebrew_cask_authorization' => 'cask-authorization',
+                'tool.homebrew_cask_checksum' => 'cask-checksum',
+                'tool.homebrew_cask_version' => 'cask-version',
                 default => $step,
             };
             $message = match ($code) {
-                'tools.homebrew_candidate_invalid' => 'The Homebrew formula did not provide a compatible verified bottle.',
-                'tools.homebrew_bottle_unavailable' => 'The Node has no compatible Homebrew bottle.',
-                'tools.homebrew_output_invalid' => 'The Homebrew command returned malformed output.',
-                'tools.homebrew_version_unsupported' => 'The Homebrew manager returned an unsupported version.',
-                'tools.homebrew_cask_source' => 'The Homebrew cask is not an official Homebrew cask.',
-                'tools.homebrew_cask_artifact' => 'The Homebrew cask artifact is not supported.',
-                'tools.homebrew_cask_authorization' => 'The Homebrew cask requires interactive or administrator authorization.',
-                'tools.homebrew_cask_checksum' => 'The Homebrew cask checksum policy was not satisfied.',
-                'tools.homebrew_cask_version' => 'The Homebrew cask version cannot be read.',
+                'tool.homebrew_candidate_invalid' => 'The Homebrew formula did not provide a compatible verified bottle.',
+                'tool.homebrew_bottle_unavailable' => 'The Node has no compatible Homebrew bottle.',
+                'tool.homebrew_output_invalid' => 'The Homebrew command returned malformed output.',
+                'tool.homebrew_version_unsupported' => 'The Homebrew manager returned an unsupported version.',
+                'tool.homebrew_cask_source' => 'The Homebrew cask is not an official Homebrew cask.',
+                'tool.homebrew_cask_artifact' => 'The Homebrew cask artifact is not supported.',
+                'tool.homebrew_cask_authorization' => 'The Homebrew cask requires interactive or administrator authorization.',
+                'tool.homebrew_cask_checksum' => 'The Homebrew cask checksum policy was not satisfied.',
+                'tool.homebrew_cask_version' => 'The Homebrew cask version cannot be read.',
                 default => 'The Homebrew command failed.',
             };
             throw new ToolManagerException($step, $message, previous: $error);

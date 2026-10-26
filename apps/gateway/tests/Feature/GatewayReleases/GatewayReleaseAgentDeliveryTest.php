@@ -7,13 +7,16 @@ use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\GatewayReleases\GatewayReleaseAgentDelivery;
+use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\Releases\ReleaseProvenance;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Http;
 use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\SigstoreTestSigner;
 
 beforeEach(function (): void {
     $this->base = sys_get_temp_dir().'/orbit-release-agent-'.bin2hex(random_bytes(6));
@@ -34,6 +37,7 @@ beforeEach(function (): void {
     }
     $this->tags = "{$this->sha}\trefs/tags/{$this->tag}\n".str_repeat('c', 40)."\trefs/tags/cli-v0.6899.0\n";
     $this->listings = [];
+    $this->trustRoot = SigstoreTestSigner::instance()->trustRootPath();
     $this->installs = new FakeAgentCommandRunner;
     $this->installed = [];
     $this->delivery = fn (): GatewayReleaseAgentDelivery => new GatewayReleaseAgentDelivery(
@@ -48,6 +52,7 @@ beforeEach(function (): void {
                 return new CommandResult(exitCode: 0, stdout: $this->test->tags, stderr: '', durationMs: 1, truncated: false);
             }
         },
+        provenance: new ReleaseProvenance('https://github.com/hardimpactdev/orbit', $this->trustRoot),
         repository: 'https://github.com/hardimpactdev/orbit',
         cacheDirectory: $this->base.'/home/agent-artifacts',
         runner: function (AgentDelivery $delivery): FakeAgentCommandRunner {
@@ -56,10 +61,14 @@ beforeEach(function (): void {
             return $this->installs;
         },
     );
-    $this->publish = function (?string $manifest = null): void {
+    // The release CI publishes: its provenance signs exactly the manifest and SHA256SUMS it serves, unless a test
+    // passes another bundle response.
+    $this->publish = function (?string $manifest = null, mixed $provenance = null): void {
+        $manifest ??= json_encode($this->manifest);
         Http::fake([
-            $this->download.'/manifest.json' => Http::response($manifest ?? json_encode($this->manifest)),
+            $this->download.'/manifest.json' => Http::response($manifest),
             $this->download.'/SHA256SUMS' => Http::response($this->checksums),
+            $this->download.'/provenance.sigstore.json' => $provenance ?? Http::response(SigstoreTestSigner::instance()->bundle(['manifest.json' => $manifest, 'SHA256SUMS' => $this->checksums])),
             ...array_map(static fn (string $body) => Http::response($body), array_combine(array_map(fn (string $name): string => $this->download.'/'.$name, array_keys($this->binaries)), $this->binaries)),
         ]);
     };
@@ -84,7 +93,48 @@ it('finds the commit by its release tag and verifies the Gateway binary without 
         ->and(glob($this->base.'/home/agent-artifacts/*'))->toHaveCount(1)
         ->and(is_dir($this->base.'/releases'))->toBeFalse();
     Http::assertSent(static fn ($request): bool => ! $request->hasHeader('Authorization'));
+    Http::assertSent(fn ($request): bool => $request->url() === $this->download.'/provenance.sigstore.json');
     Http::assertNotSent(static fn ($request): bool => str_ends_with($request->url(), 'linux-aarch64'));
+});
+
+it('refuses a release whose provenance is missing or does not verify, before it stages or downloads the agent', function (Closure $provenance): void {
+    ($this->publish)(provenance: $provenance->call($this));
+
+    $error = release_failure(fn () => ($this->delivery)()->fetch($this->sha, $this->gateway));
+
+    expect($error->errorCode)->toBe('gateway.release_provenance_invalid')->and($error->step)->toBe('agent-delivery')->and($error->sha)->toBe($this->sha)
+        ->and(file_exists($this->base.'/home/agent-artifacts'))->toBeFalse();
+    Http::assertNotSent(static fn ($request): bool => str_contains($request->url(), '/orbit-agent-'));
+})->with([
+    'no bundle, as in a release from before provenance' => [fn () => Http::response('Not Found', 404)],
+    'a bundle for another manifest' => [fn () => Http::response(SigstoreTestSigner::instance()->bundle(['manifest.json' => '{}', 'SHA256SUMS' => $this->checksums]))],
+    'a bundle from another workflow' => [fn () => Http::response(SigstoreTestSigner::instance()->bundle(['manifest.json' => json_encode($this->manifest), 'SHA256SUMS' => $this->checksums], ['identity' => 'https://github.com/hardimpactdev/orbit/.github/workflows/ci.yml@refs/heads/main']))],
+]);
+
+it('waits without failing the commit when a Gateway setting keeps provenance from being checked', function (Closure $trustRoot): void {
+    ($this->publish)();
+    $this->trustRoot = $trustRoot->call($this);
+
+    $error = release_failure(fn () => ($this->delivery)()->fetch($this->sha, $this->gateway));
+
+    expect($error->errorCode)->toBe('gateway.release_provenance_unconfigured')
+        ->and(new GatewayReleaseRetry()->retryable($error->errorCode, $this->sha))->toBeTrue()
+        ->and(file_exists($this->base.'/home/agent-artifacts'))->toBeFalse();
+})->with([
+    'a trust root path with a typo' => [fn (): string => $this->base.'/missing-trusted-root.json'],
+    'a trust root that is not JSON' => [function (): string {
+        mkdir($this->base, 0700, true);
+        file_put_contents($this->base.'/trusted_root.json', '<html>');
+
+        return $this->base.'/trusted_root.json';
+    }],
+]);
+
+it('waits when the provenance bundle cannot be downloaded', function (): void {
+    ($this->publish)(provenance: Http::response('Bad Gateway', 502));
+
+    expect(release_failure(fn () => ($this->delivery)()->fetch($this->sha, $this->gateway))->errorCode)->toBe('gateway.release_agent_delivery_unavailable')
+        ->and(file_exists($this->base.'/home/agent-artifacts'))->toBeFalse();
 });
 
 it('refuses while the commit has no published release, so a later attempt can find it', function (): void {

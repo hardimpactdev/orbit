@@ -46,7 +46,7 @@ function collector_unit_agents(CollectorActivationNode $node): FakeAgentCommandR
 
             return ['removed' => false];
         })
-        ->answer('processes.stage-unit', static function (array $input) use ($node): array {
+        ->answer('process.stage-unit', static function (array $input) use ($node): array {
             if ($node->unit === $input['content']) {
                 return ['staged' => false, 'previous' => true, 'state' => $node->state];
             }
@@ -54,7 +54,7 @@ function collector_unit_agents(CollectorActivationNode $node): FakeAgentCommandR
 
             return ['staged' => true, 'previous' => $node->unit !== '', 'state' => null];
         })
-        ->answer('processes.activate-unit', static function (array $input) use ($node): array {
+        ->answer('process.activate-unit', static function (array $input) use ($node): array {
             if ($input['change'] !== 'reload') {
                 $node->unit = $node->candidate;
             }
@@ -62,7 +62,7 @@ function collector_unit_agents(CollectorActivationNode $node): FakeAgentCommandR
 
             return ['backup_left' => false];
         })
-        ->answer('processes.status', static fn (): array => ['state' => $node->unit === '' ? 'absent' : $node->state]);
+        ->answer('process.status', static fn (): array => ['state' => $node->unit === '' ? 'absent' : $node->state]);
 }
 
 beforeEach(function (): void {
@@ -174,7 +174,7 @@ it('leaves an unchanged completed collector untouched', function (string $desire
     expect($this->process->refresh()->systemd_activation_hash)->toBeNull()
         ->and($this->process->systemd_activation_pending)->toBeFalse()
         ->and($this->source->refresh()->activation_pending)->toBeFalse()
-        ->and($agents->commands())->not->toContain('processes.activate-unit', 'processes.control');
+        ->and($agents->commands())->not->toContain('process.activate-unit', 'process.control');
 })->with([['running', 'active'], ['stopped', 'inactive']]);
 
 it('activates changed source once through unit convergence and leaves the next converge untouched', function (string $unit): void {
@@ -195,7 +195,7 @@ it('activates changed source once through unit convergence and leaves the next c
     $lifecycle = app(NativeAiRouterRuntimeLifecycle::class);
     $lifecycle->converge($this->node, $this->environment);
     $lifecycle->converge($this->node, $this->environment);
-    $starts = array_filter($agents->calls, static fn (array $call): bool => $call['command'] === 'processes.activate-unit' && $call['input']['desired'] === 'running');
+    $starts = array_filter($agents->calls, static fn (array $call): bool => $call['command'] === 'process.activate-unit' && $call['input']['desired'] === 'running');
     expect($starts)->toHaveCount(1)
         ->and($this->source->refresh()->activation_pending)->toBeFalse()
         ->and($this->process->refresh()->systemd_activation_pending)->toBeFalse();

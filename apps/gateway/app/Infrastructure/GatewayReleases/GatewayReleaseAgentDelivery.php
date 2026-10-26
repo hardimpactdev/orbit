@@ -14,6 +14,9 @@ use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\Releases\ReleaseProvenance;
+use App\Infrastructure\Releases\ReleaseProvenanceRefused;
+use App\Infrastructure\Releases\ReleaseProvenanceUnavailable;
 use App\Models\Node;
 use Closure;
 use Illuminate\Support\Facades\Http;
@@ -23,9 +26,11 @@ use Throwable;
 /**
  * The agent a release pins, taken from its commit's public Orbit release, which holds the CLI and the agent
  * ([Node agent: Delivery](/reference/node-agent#delivery)). Prepare finds the release by the tag that points at the
- * commit, downloads the manifest, `SHA256SUMS`, and the Gateway's binary without authentication, and checks every
- * digest before it changes anything. It then puts the manifest into the release and installs the binary on the
- * Gateway through the binary's own installer, so the running agent is never needed to install the agent.
+ * commit, downloads the manifest and `SHA256SUMS` without authentication, and verifies their provenance
+ * ([Release provenance](/reference/gateway-recovery#release-provenance)). It checks the manifest against
+ * `SHA256SUMS` and downloads the Gateway's binary against its digest, all before it changes anything. Install
+ * puts the manifest into the release and installs the binary on the Gateway through the binary's own installer,
+ * so the running agent is never needed to install the agent.
  */
 final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
 {
@@ -43,19 +48,32 @@ final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
      */
     public function __construct(
         private ProcessRunner $processes,
+        private ReleaseProvenance $provenance,
         private string $repository,
         private string $cacheDirectory,
         private Closure $runner,
     ) {}
 
-    /** A commit without a complete release yet refuses before anything changes, so a later attempt can find it. */
+    /**
+     * A commit without a complete release yet refuses before anything changes, so a later attempt can find it. A
+     * release whose provenance does not verify refuses for good, because a published release never changes.
+     */
     public function fetch(string $revision, Node $gateway): array
     {
         [$sha, $tag] = $this->release($revision);
         $base = rtrim($this->repository, '/').'/releases/download/'.rawurlencode($tag);
         $manifest = $this->download($base.'/manifest.json', $sha);
-        $checksums = $this->checksums($this->download($base.'/SHA256SUMS', $sha), $sha);
-        $this->validate($manifest, $checksums, $base, $sha);
+        $sums = $this->download($base.'/SHA256SUMS', $sha);
+        try {
+            $this->provenance->verify($tag, ['manifest.json' => $manifest, 'SHA256SUMS' => $sums]);
+        } catch (ReleaseProvenanceRefused $refusal) {
+            throw new GatewayReleaseException('agent-delivery', 'gateway.release_provenance_invalid', 'The release provenance does not verify: '.$refusal->getMessage(), 422, sha: $sha, previous: $refusal);
+        } catch (ReleaseProvenanceUnavailable $unavailable) {
+            throw $unavailable->local
+                ? new GatewayReleaseException('agent-delivery', 'gateway.release_provenance_unconfigured', 'The Gateway cannot verify release provenance: '.$unavailable->getMessage(), 503, sha: $sha, previous: $unavailable)
+                : $this->unavailable($sha, $unavailable->getMessage());
+        }
+        $this->validate($manifest, $this->checksums($sums, $sha), $base, $sha);
 
         // The binary goes into the shared artifact cache, where the install below and every Node install find it.
         $staged = $this->cacheDirectory.'/manifest-'.bin2hex(random_bytes(8)).'.json';

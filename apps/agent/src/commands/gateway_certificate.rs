@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    fs, io,
+    fs,
     os::unix::fs::{symlink, MetadataExt, PermissionsExt},
     path::{Path, PathBuf},
     time::Duration,
@@ -39,11 +39,7 @@ fn failed(stage: &str) -> Error {
     }
 }
 fn metadata(path: &Path) -> Result<Option<fs::Metadata>, Error> {
-    match fs::symlink_metadata(path) {
-        Ok(meta) => Ok(Some(meta)),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(_) => Err(failed("inspect")),
-    }
+    recipe::metadata(path).map_err(|_| failed("inspect"))
 }
 fn directory(path: &Path, uid: u32, group: Option<u32>) -> Result<bool, Error> {
     let Some(meta) = metadata(path)? else {
@@ -103,10 +99,7 @@ fn previous(files: &Files, gid: u32) -> Result<Option<Previous>, Error> {
     Ok(Some((target, bytes)))
 }
 fn validate(files: &Files, input: &Input, host: &mut impl Host) -> Result<(), Error> {
-    if contents(input)
-        .iter()
-        .any(|s| s.is_empty() || s.len() > 1024 * 1024 || s.contains('\0'))
-    {
+    if !contents(input).iter().all(|s| super::caddy::pem_input(s)) {
         return Err(Error::Invalid {});
     }
     let work = WorkDir::new().map_err(|_| failed("validate"))?;

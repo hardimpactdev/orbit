@@ -143,7 +143,7 @@ function role_runtime_agents(bool $firewall): FakeAgentCommandRunner
 
 function role_state_inspector(FakeAgentCommandRunner $agents, ?RoleInspectorSshExecutor $ssh = null, string $ciOutcome = 'matches'): NativeRoleStateInspector
 {
-    $agents->answer('ci-runners.host', ['outcome' => $ciOutcome]);
+    $agents->answer('ci-runner.host', ['outcome' => $ciOutcome]);
 
     return new NativeRoleStateInspector(
         $ssh ?? new RoleInspectorSshExecutor([]), new RoleInspectorKeys, new RoleInspectorKnownHosts,

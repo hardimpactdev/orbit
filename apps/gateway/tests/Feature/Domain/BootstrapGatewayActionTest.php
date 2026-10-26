@@ -37,6 +37,9 @@ use Tests\Support\RootCaFixture;
 beforeAll(function (): void {
     RootCaFixture::prepare();
     RootCaFixture::prepare('alternate');
+    RootCaFixture::prepare('not-a-ca', extensions: ['basicConstraints=critical,CA:FALSE']);
+    RootCaFixture::prepare('expired', notBefore: '20200101000000Z', notAfter: '20200201000000Z');
+    RootCaFixture::prepare('not-yet-valid', notBefore: '20990101000000Z', notAfter: '20991231000000Z');
 });
 
 it('records an observer failure and retries it through the same Gateway identity', function (): void {
@@ -469,6 +472,55 @@ it('rejects a mismatched complete root CA pair without replacing it', function (
         new Filesystem()->deleteDirectory($orbitHome);
     }
 });
+
+it('rejects an existing root CA that cannot sign now without replacing it', function (string $fixture): void {
+    $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
+    $ca = $orbitHome.'/ca';
+    mkdir($ca, 0o700, true);
+    RootCaFixture::install($ca, $fixture);
+    $originalKey = file_get_contents($ca.'/root.key');
+    $originalCertificate = file_get_contents($ca.'/root.pem');
+    $action = new BootstrapGatewayAction(
+        agent: app(NodeAgentRuntime::class),
+        assignRole: app(AssignRoleAction::class),
+        identity: new GatewayBootstrapIdentityValidator,
+        operatingSystem: bootstrap_gateway_resolute_guard(),
+        vpnSettings: app(VpnSettings::class),
+        processes: new FixtureProcessRunner,
+        commands: new FakeAgentCommandRunner()->answer('gateway.prepare-identity', ['wireguard_public_key' => base64_encode(str_repeat('x', 32))]),
+        vpn: gateway_vpn_noop(),
+        web: new class implements GatewayWebConverger
+        {
+            public function converge(Node $node, string $domain, string $wireguardIp): void
+            {
+                throw new LogicException('Web convergence must not run for an invalid CA pair.');
+            }
+        },
+        selfAccess: gateway_self_access_noop(),
+        dns: gateway_dns_noop(),
+        orbitHome: $orbitHome,
+    );
+
+    try {
+        expect(fn () => $action->execute(bootstrap_gateway_action_data()))
+            ->toThrow(function (NodeProvisioningException $exception): void {
+                expect($exception->step)
+                    ->toBe('ca-root-validate')
+                    ->and($exception->errorCode)
+                    ->toBe('ca.invalid_state');
+            });
+        expect(file_get_contents($ca.'/root.key'))
+            ->toBe($originalKey)
+            ->and(file_get_contents($ca.'/root.pem'))
+            ->toBe($originalCertificate);
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+})->with([
+    'without CA:TRUE' => ['not-a-ca'],
+    'that has expired' => ['expired'],
+    'that is not valid yet' => ['not-yet-valid'],
+]);
 
 it('rejects an existing root CA that is not RSA 4096', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.Str::uuid();

@@ -64,13 +64,13 @@ it('leaves a Composer non-Laravel source classified as PHP only', function (): v
 
 it('maps unsafe source metadata to the domain refusal', function (): void {
     [$configurator, $agents, $instance] = orb127_laravel_configurator('/home/orbit/acme');
-    $agents->answer('instances.inspect-development-profile', ['kind' => 'unsafe']);
+    $agents->answer('instance.inspect-development-profile', ['kind' => 'unsafe']);
 
     expect(fn () => $configurator->inspect($instance))
         ->toThrow(fn (RuntimeConvergenceException $exception) => expect($exception->errorCode)->toBe('app-dev.source_metadata_unsafe'));
     expect($agents->calls)->toBe([[
         'node' => 'laravel-configurator',
-        'command' => 'instances.inspect-development-profile',
+        'command' => 'instance.inspect-development-profile',
         'input' => ['application' => '/home/orbit/acme', 'owner' => 'orbit', 'entry_point' => 'artisan'],
     ]]);
 });
@@ -88,7 +88,7 @@ it('does not classify application metadata for an unrouted monorepo default', fu
 
 it('retains metadata safety checks for a monorepo with a Route', function (RouteStatus $status): void {
     [$configurator, $agents, $instance] = orb127_laravel_configurator('/home/orbit/acme');
-    $agents->answer('instances.inspect-development-profile', ['kind' => 'unsafe']);
+    $agents->answer('instance.inspect-development-profile', ['kind' => 'unsafe']);
     $instance->project->update(['type' => ProjectType::Monorepo]);
     $route = Route::query()->create([
         'project_id' => $instance->project_id,
@@ -107,7 +107,7 @@ it('retains metadata safety checks for a monorepo with a Route', function (Route
 
     expect(fn () => $configurator->inspect($instance))
         ->toThrow(fn (RuntimeConvergenceException $exception) => expect($exception->errorCode)->toBe('app-dev.source_metadata_unsafe'));
-    expect($agents->commands())->toBe(['instances.inspect-development-profile']);
+    expect($agents->commands())->toBe(['instance.inspect-development-profile']);
 })->with([RouteStatus::Pending, RouteStatus::Active, RouteStatus::Failed]);
 
 it('refuses malformed Composer metadata and conflicting Laravel declarations', function (): void {
@@ -129,11 +129,11 @@ it('refuses malformed Composer metadata and conflicting Laravel declarations', f
 it('sends a generated application key and quoted Project name to the managed account', function (): void {
     [$configurator, $agents, $instance] = orb127_laravel_configurator('/home/orbit/acme');
     $instance->project->update(['name' => 'Acme "Shop" $HOME']);
-    $agents->answer('instances.write-development-url', ['written' => true]);
+    $agents->answer('instance.write-development-url', ['written' => true]);
 
     $configurator->configureLaravelUrl($instance, 'https://feature.acme.test');
 
-    expect($agents->commands())->toBe(['instances.write-development-url']);
+    expect($agents->commands())->toBe(['instance.write-development-url']);
     $call = $agents->calls[0];
     $input = $call['input'];
     $key = Dotenv::parse($input['app_key'])['APP_KEY'];
@@ -155,13 +155,13 @@ it('sends stored application values and the requested URL on every call', functi
         ['env_key' => 'APP_KEY', 'env_value' => $key],
         ['env_key' => 'APP_NAME', 'env_value' => 'Stored Name'],
     ]);
-    $agents->answer('instances.write-development-url', ['written' => false]);
+    $agents->answer('instance.write-development-url', ['written' => false]);
 
     foreach (['https://feature.acme.test', 'https://next.acme.test'] as $url) {
         $configurator->configureLaravelUrl($instance, $url);
     }
 
-    expect($agents->commands())->toBe(['instances.write-development-url', 'instances.write-development-url']);
+    expect($agents->commands())->toBe(['instance.write-development-url', 'instance.write-development-url']);
     expect(array_column(array_column($agents->calls, 'input'), 'url'))
         ->toBe(['https://feature.acme.test', 'https://next.acme.test']);
     foreach ($agents->calls as $call) {
@@ -175,11 +175,11 @@ it('sends stored application values and the requested URL on every call', functi
 it('maps an agent URL refusal without retrying or changing stored environment', function (): void {
     [$configurator, $agents, $instance] = orb127_laravel_configurator('/home/orbit/acme');
     $instance->environmentValues()->create(['env_key' => 'APP_URL', 'env_value' => 'https://old.test']);
-    $agents->refuse('instances.write-development-url', 'instances.release_invalid', ['check' => 'ambiguous cache']);
+    $agents->refuse('instance.write-development-url', 'instance.release_invalid', ['check' => 'ambiguous cache']);
 
     expect(fn () => $configurator->configureLaravelUrl($instance, 'https://next.test'))
         ->toThrow(fn (RuntimeConvergenceException $exception) => expect($exception->errorCode)->toBe('app-dev.laravel_url_configuration_failed'));
-    expect($agents->commands())->toBe(['instances.write-development-url']);
+    expect($agents->commands())->toBe(['instance.write-development-url']);
     expect($instance->environmentValues()->where('env_key', 'APP_URL')->value('env_value'))->toBe('https://old.test');
 });
 

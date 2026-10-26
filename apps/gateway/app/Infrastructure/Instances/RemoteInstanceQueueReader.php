@@ -34,7 +34,7 @@ final readonly class RemoteInstanceQueueReader implements InstanceQueueReader
 
         // The agent runs its fixed report script; the only values from the caller are the validated state and limit.
         try {
-            $report = $this->agents->run($target->node, 'instances.read-queue', [
+            $report = $this->agents->run($target->node, 'instance.read-queue', [
                 'user' => $target->user,
                 'directory' => $directory->value,
                 'php' => $php->value,

@@ -53,7 +53,7 @@ final readonly class TmpfilesFootprintArtifact implements NodeFootprintArtifact
     public function apply(Node $node): bool
     {
         try {
-            return ($this->agents->run($node, 'nodes.publish-tmpfiles', ['rule' => self::Rule])['changed'] ?? false) === true;
+            return ($this->agents->run($node, 'node.publish-tmpfiles', ['rule' => self::Rule])['changed'] ?? false) === true;
         } catch (AgentCommandRefused|AgentRunnerFailure $exception) {
             throw new ResourceOperationException('node.footprint_tmpfiles_failed', 'The tmpfiles rule could not be published: '.$exception->getMessage(), 502, $exception);
         }

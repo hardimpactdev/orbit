@@ -277,7 +277,7 @@ fn adoption(
 }
 pub struct Adoption;
 impl Command for Adoption {
-    const NAME: &'static str = "tools.homebrew-formula-adoption";
+    const NAME: &'static str = "tool.homebrew-formula-adoption";
     const SUMMARY: &'static str =
         "Inspect one installed formula for explicit adoption without changing packages.";
     const MUTATES: bool = false;
@@ -300,7 +300,7 @@ impl Command for Adoption {
     }
 }
 impl Command for Candidate {
-    const NAME: &'static str = "tools.homebrew-formula-candidate";
+    const NAME: &'static str = "tool.homebrew-formula-candidate";
     const SUMMARY: &'static str = "Read one official Core formula's verified bottle candidate.";
     const MUTATES: bool = false;
     const TIMEOUT: Duration = Duration::from_secs(60);
@@ -359,19 +359,19 @@ macro_rules! mutation {
 }
 mutation!(
     Install,
-    "tools.homebrew-formula-install",
+    "tool.homebrew-formula-install",
     "Install one verified Core bottle.",
     Install
 );
 mutation!(
     Update,
-    "tools.homebrew-formula-update",
+    "tool.homebrew-formula-update",
     "Upgrade one verified Core bottle without unpinning it.",
     Update
 );
 mutation!(
     Remove,
-    "tools.homebrew-formula-remove",
+    "tool.homebrew-formula-remove",
     "Remove exactly one unprotected Core formula.",
     Remove
 );

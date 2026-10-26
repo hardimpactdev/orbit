@@ -446,7 +446,7 @@ describe('CLI release workflow', function (): void {
     it('never runs release-commit code with the write token', function (): void {
         $jobs = cli_release_workflow()['jobs'];
 
-        expect($jobs['publish']['permissions'])->toBe(['contents' => 'write', 'actions' => 'read'])
+        expect($jobs['publish']['permissions'])->toBe(['contents' => 'write', 'actions' => 'read', 'id-token' => 'write', 'attestations' => 'write'])
             ->and($jobs['publish']['steps'][0]['uses'])->toStartWith('actions/checkout@')
             ->and($jobs['publish']['steps'][0])->toMatchArray([
                 'name' => 'Check out the release scripts',
@@ -455,6 +455,57 @@ describe('CLI release workflow', function (): void {
             ->and($jobs['build'])->not->toHaveKey('permissions')
             ->and(cli_release_workflow()['permissions'])->toBe(['contents' => 'read'])
             ->and($jobs['resolve']['permissions'])->toBe(['contents' => 'read', 'checks' => 'read', 'actions' => 'read']);
+    });
+
+    it('names the missing provenance bundle when the release of the commit exists without it', function (bool $withBundle, int $exitCode, string $output): void {
+        $bin = (string) cli_release_temp('orbit-cli-release-bin');
+        File::ensureDirectoryExists($bin);
+        $names = ['SHA256SUMS', 'manifest.json', 'orbit-0.2.0-linux-aarch64', 'orbit-0.2.0-linux-x86_64', 'orbit-0.2.0-macos-arm64',
+            'orbit-agent-linux-aarch64', 'orbit-agent-linux-x86_64', 'orbit-agent-macos-aarch64', 'orbit-agent-macos-x86_64', ...($withBundle ? ['provenance.sigstore.json'] : [])];
+        File::put($bin.'/release.json', json_encode(['assets' => array_map(static fn (string $name): array => ['name' => $name], $names)]));
+        File::put($bin.'/gh', "#!/bin/sh\ncase \"\$2\" in\n  */releases/tags/*) cat '{$bin}/release.json' ;;\n  *) echo \"\$COMMIT\" ;;\nesac\n");
+        chmod($bin.'/gh', 0755);
+        File::put($bin.'/output', '');
+
+        $steps = array_column(cli_release_workflow()['jobs']['resolve']['steps'], null, 'name');
+        $process = new Process(['bash', '-e', '-c', $steps['Check for an existing release']['run']], $bin, [
+            'PATH' => $bin.':'.getenv('PATH'),
+            'GITHUB_OUTPUT' => $bin.'/output',
+            'REPOSITORY' => 'hardimpactdev/orbit',
+            'COMMIT' => str_repeat('a', 40),
+            'VERSION' => '0.2.0',
+            'TAG' => 'cli-v0.2.0',
+        ]);
+        $process->run();
+
+        expect($process->getExitCode())->toBe($exitCode)
+            ->and($process->getOutput())->toContain($output);
+    })->with([
+        'a release from before provenance' => [false, 1, 'has no provenance.sigstore.json'],
+        'a complete release' => [true, 0, 'is already published'],
+    ]);
+
+    it('signs every release file with the workflow identity and publishes the bundle with the release', function (): void {
+        $jobs = cli_release_workflow()['jobs'];
+        $names = array_column($jobs['publish']['steps'], 'name');
+        $steps = array_column($jobs['publish']['steps'], null, 'name');
+        $order = static fn (string $name): int => (int) array_search($name, $names, true);
+
+        expect($steps['Attest the release files'])->toBe([
+            'name' => 'Attest the release files',
+            'id' => 'attest',
+            'uses' => 'actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8',
+            'with' => ['subject-path' => 'release/*'],
+        ])
+            ->and($steps['Add the provenance bundle']['env'])->toBe(['BUNDLE' => '${{ steps.attest.outputs.bundle-path }}'])
+            ->and($steps['Add the provenance bundle']['run'])->toBe('install -m 0644 "$BUNDLE" release/provenance.sigstore.json')
+            // The subjects are the nine prepared files, and the bundle joins them before the one release create.
+            ->and($order('Prepare release assets'))->toBeLessThan($order('Attest the release files'))
+            ->and($order('Attest the release files'))->toBeLessThan($order('Add the provenance bundle'))
+            ->and($order('Add the provenance bundle'))->toBeLessThan($order('Publish GitHub release'))
+            ->and($steps['Publish GitHub release']['run'])->toContain('gh release create "$TAG" release/*')
+            ->and($steps['Verify the published release']['run'])->toContain('cmp verify/provenance.sigstore.json release/provenance.sigstore.json')
+            ->and(array_column($jobs['resolve']['steps'], 'run', 'name')['Check for an existing release'])->toContain('SHA256SUMS manifest.json provenance.sigstore.json');
     });
 });
 

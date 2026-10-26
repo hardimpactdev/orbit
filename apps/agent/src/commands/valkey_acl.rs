@@ -1,4 +1,4 @@
-//! `databases.write-valkey-acl`: writes `/data/users.acl` into the Docker volume of a Valkey Database server, before
+//! `database.write-valkey-acl`: writes `/data/users.acl` into the Docker volume of a Valkey Database server, before
 //! Valkey starts from it, or again to repair it (ADR 0221). A short-lived container without a network mounts the
 //! volume and reads the file from standard input, so the file never reaches an argument list, and replaces the old
 //! file with one rename. The first line is `default` with the SHA-256 hash of the admin password and every right, or
@@ -19,8 +19,8 @@ const WRITE: &str =
 
 command_errors! {
     pub enum ValkeyAclError {
-        Invalid { check: String } => "databases.valkey_acl_invalid", "The ACL request does not pass its checks.";
-        Failed { exit_code: i32 } => "databases.valkey_acl_failed", "The ACL container failed.";
+        Invalid { check: String } => "database.valkey_acl_invalid", "The ACL request does not pass its checks.";
+        Failed { exit_code: i32 } => "database.valkey_acl_failed", "The ACL container failed.";
     }
 }
 
@@ -181,7 +181,7 @@ pub fn write(input: &AclInput) -> Result<Written, ValkeyAclError> {
 pub struct WriteValkeyAcl;
 
 impl Command for WriteValkeyAcl {
-    const NAME: &'static str = "databases.write-valkey-acl";
+    const NAME: &'static str = "database.write-valkey-acl";
     const SUMMARY: &'static str = "Write the ACL file into a Valkey Database server's volume.";
     const MUTATES: bool = true;
     const TIMEOUT: Duration = Duration::from_secs(300);

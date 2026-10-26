@@ -7,7 +7,7 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
-    io::{self, Write},
+    io::Write,
     net::Ipv4Addr,
     os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt},
     path::{Path, PathBuf},
@@ -295,11 +295,7 @@ struct Runtime<H> {
 }
 
 fn metadata(path: &Path) -> Result<Option<fs::Metadata>> {
-    match fs::symlink_metadata(path) {
-        Ok(value) => Ok(Some(value)),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(_) => Err(ownership(path)),
-    }
+    super::recipe::metadata(path).map_err(|_| ownership(path))
 }
 
 fn write(path: &Path, bytes: &[u8], mode: u32) -> Result<()> {

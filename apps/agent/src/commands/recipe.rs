@@ -12,6 +12,7 @@ pub mod store;
 pub mod swamp;
 pub mod types;
 
+use super::caddy::chown;
 use crate::command::Context;
 use serde::Serialize;
 use std::{
@@ -258,11 +259,24 @@ impl Files {
         self.publish(path, content, 0o644, self.uid, self.gid, false)
     }
 }
-fn chown(path: &Path, uid: u32, gid: u32) -> io::Result<()> {
-    rustix::fs::chown(
-        path,
-        Some(rustix::fs::Uid::from_raw(uid)),
-        Some(rustix::fs::Gid::from_raw(gid)),
+
+/// The entry at `path` without following a final link, or none when nothing is there.
+pub fn metadata(path: &Path) -> io::Result<Option<fs::Metadata>> {
+    match fs::symlink_metadata(path) {
+        Ok(meta) => Ok(Some(meta)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+/// Swaps two existing paths in one rename, so a reader sees either the old or the new entry at each.
+pub fn exchange(first: &Path, second: &Path) -> io::Result<()> {
+    rustix::fs::renameat_with(
+        rustix::fs::CWD,
+        first,
+        rustix::fs::CWD,
+        second,
+        rustix::fs::RenameFlags::EXCHANGE,
     )
     .map_err(Into::into)
 }
@@ -284,5 +298,47 @@ impl WorkDir {
 impl Drop for WorkDir {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+#[cfg(test)]
+mod file_tests {
+    use super::*;
+
+    #[test]
+    fn metadata_reports_a_missing_path_as_none_and_never_follows_a_final_link() {
+        let work = WorkDir::new().unwrap();
+        assert!(metadata(&work.0.join("missing")).unwrap().is_none());
+        let target = work.0.join("target");
+        fs::write(&target, "kept").unwrap();
+        let link = work.0.join("link");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        assert!(metadata(&link).unwrap().unwrap().is_symlink());
+        let dangling = work.0.join("dangling");
+        std::os::unix::fs::symlink(work.0.join("gone"), &dangling).unwrap();
+        assert!(metadata(&dangling).unwrap().unwrap().is_symlink());
+        assert_eq!(
+            metadata(&target.join("child")).unwrap_err().kind(),
+            io::ErrorKind::NotADirectory
+        );
+    }
+
+    #[test]
+    fn exchange_swaps_two_entries_in_place_and_refuses_a_missing_one() {
+        let work = WorkDir::new().unwrap();
+        let (first, second) = (work.0.join("first"), work.0.join("second"));
+        fs::create_dir(&first).unwrap();
+        fs::write(first.join("name"), "first").unwrap();
+        fs::write(&second, "second").unwrap();
+        exchange(&first, &second).unwrap();
+        assert_eq!(fs::read_to_string(&first).unwrap(), "second");
+        assert_eq!(fs::read_to_string(second.join("name")).unwrap(), "first");
+        assert_eq!(
+            exchange(&first, &work.0.join("missing"))
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::NotFound
+        );
+        assert_eq!(fs::read_to_string(&first).unwrap(), "second");
     }
 }

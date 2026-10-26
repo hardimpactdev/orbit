@@ -14,7 +14,8 @@ interface GatewayReleaseAgent
      *
      * @return array{sha: string, manifest: string} the full commit and the published manifest
      *
-     * @throws GatewayReleaseException `gateway.release_agent_delivery_unavailable` while the commit has no release yet
+     * @throws GatewayReleaseException `gateway.release_agent_delivery_unavailable` while the commit has no release yet, and
+     *                                 `gateway.release_provenance_invalid` when its release has no valid provenance
      */
     public function fetch(string $revision, Node $gateway): array;
 

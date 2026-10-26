@@ -54,7 +54,7 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
     public function managerVersion(Node $node): string
     {
         $this->guardSupportedNode($node);
-        $data = $this->agentCommand($node, 'tools.homebrew-version', [], 'manager-version');
+        $data = $this->agentCommand($node, 'tool.homebrew-version', [], 'manager-version');
         if (! is_string($data['version'] ?? null)) {
             throw new ToolManagerException('manager-version', 'The agent returned an invalid Homebrew version.');
         }
@@ -69,7 +69,7 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
         if ($operation === ToolOperation::Remove) {
             throw new ToolManagerException('candidate-version', 'Homebrew casks do not provide a removal candidate version.');
         }
-        $data = $this->agentCommand($node, 'tools.homebrew-cask-candidate', $this->packageInput($node, $package), 'candidate-version');
+        $data = $this->agentCommand($node, 'tool.homebrew-cask-candidate', $this->packageInput($node, $package), 'candidate-version');
         if (! array_key_exists('version', $data) || ($data['version'] !== null && ! is_string($data['version']))) {
             throw new ToolManagerException('candidate-version', 'The agent returned an invalid Homebrew candidate.');
         }
@@ -81,7 +81,7 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
     {
         $this->guardSupportedNode($node);
 
-        return $this->homebrew->inventory($this->agentCommand($node, 'tools.homebrew-cask-inventory', [], 'installed-version'));
+        return $this->homebrew->inventory($this->agentCommand($node, 'tool.homebrew-cask-inventory', [], 'installed-version'));
     }
 
     public function installedVersion(Node $node, string $package): ?string
@@ -100,14 +100,14 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
     {
         $this->guardPackage($package);
         $this->guardSupportedNode($node);
-        $this->agentCommand($node, 'tools.homebrew-cask-install', $this->packageInput($node, $package, needsBottle: true), 'install');
+        $this->agentCommand($node, 'tool.homebrew-cask-install', $this->packageInput($node, $package, needsBottle: true), 'install');
     }
 
     public function update(Node $node, string $package): void
     {
         $this->guardPackage($package);
         $this->guardSupportedNode($node);
-        $this->agentCommand($node, 'tools.homebrew-cask-update', $this->packageInput($node, $package, needsBottle: true), 'update');
+        $this->agentCommand($node, 'tool.homebrew-cask-update', $this->packageInput($node, $package, needsBottle: true), 'update');
     }
 
     public function planRemoval(Node $node, string $package): ToolRemovalPlan
@@ -122,7 +122,7 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
     {
         $this->guardPackage($package);
         $this->guardSupportedNode($node);
-        $this->agentCommand($node, 'tools.homebrew-cask-remove', $this->packageInput($node, $package, needsBottle: true), 'remove');
+        $this->agentCommand($node, 'tool.homebrew-cask-remove', $this->packageInput($node, $package, needsBottle: true), 'remove');
     }
 
     private function guardMacCpu(Node $node): void
@@ -174,7 +174,7 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
         $this->guardPackage($package);
         $this->guardSupportedNode($node);
 
-        return $this->homebrew->adoption($this->agentCommand($node, 'tools.homebrew-cask-adoption', $this->packageInput($node, $package), 'installed-version'));
+        return $this->homebrew->adoption($this->agentCommand($node, 'tool.homebrew-cask-adoption', $this->packageInput($node, $package), 'installed-version'));
     }
 
     /** @return array<string, mixed> */

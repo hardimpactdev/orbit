@@ -115,11 +115,11 @@ describe(AptToolManager::class, function (): void {
 
     it('sends typed APT operations and preserves raw versions', function (): void {
         [$manager, $agent] = apt_tool_manager();
-        $agent->answer('tools.apt-version', ['version' => 'apt 3.2.0 (amd64)'])
-            ->answer('tools.apt-candidate', ['version' => '1:2.4.3-1ubuntu2'])
-            ->answer('tools.apt-inventory', ['packages' => [['name' => 'jq', 'version' => '1:2.4.3-1ubuntu2']]])
-            ->answer('tools.apt-install', [])->answer('tools.apt-update', [])->answer('tools.apt-remove', [])
-            ->answer('tools.apt-removal-plan', ['packages' => ['jq']]);
+        $agent->answer('tool.apt-version', ['version' => 'apt 3.2.0 (amd64)'])
+            ->answer('tool.apt-candidate', ['version' => '1:2.4.3-1ubuntu2'])
+            ->answer('tool.apt-inventory', ['packages' => [['name' => 'jq', 'version' => '1:2.4.3-1ubuntu2']]])
+            ->answer('tool.apt-install', [])->answer('tool.apt-update', [])->answer('tool.apt-remove', [])
+            ->answer('tool.apt-removal-plan', ['packages' => ['jq']]);
         $node = apt_tool_node();
         expect($manager->managerVersion($node))->toBe('apt 3.2.0 (amd64)');
         expect($manager->candidateVersion($node, 'jq', ToolOperation::Install))->toBe('1:2.4.3-1ubuntu2');
@@ -128,13 +128,13 @@ describe(AptToolManager::class, function (): void {
         $manager->update($node, 'jq');
         expect($manager->planRemoval($node, 'jq')->removesOnly('jq'))->toBeTrue();
         $manager->remove($node, 'jq');
-        expect($agent->commands())->toBe(['tools.apt-version', 'tools.apt-candidate', 'tools.apt-inventory', 'tools.apt-install', 'tools.apt-update', 'tools.apt-removal-plan', 'tools.apt-remove']);
+        expect($agent->commands())->toBe(['tool.apt-version', 'tool.apt-candidate', 'tool.apt-inventory', 'tool.apt-install', 'tool.apt-update', 'tool.apt-removal-plan', 'tool.apt-remove']);
         expect(array_column($agent->calls, 'input'))->toBe([[], ['package' => 'jq'], [], ['package' => 'jq'], ['package' => 'jq'], ['package' => 'jq'], ['package' => 'jq']]);
     });
 
     it('keeps absence separate from an unverifiable installed package', function (): void {
         [$manager, $agent] = apt_tool_manager();
-        $agent->answer('tools.apt-candidate', ['version' => null])->answer('tools.apt-inventory', ['packages' => [
+        $agent->answer('tool.apt-candidate', ['version' => null])->answer('tool.apt-inventory', ['packages' => [
             ['name' => 'jq', 'version' => '1.7.1'], ['name' => 'unreadable', 'version' => null],
             ['name' => 'duplicate', 'version' => '1'], ['name' => 'duplicate', 'version' => '2'],
         ]]);
@@ -148,16 +148,16 @@ describe(AptToolManager::class, function (): void {
 
     it('refuses plans that would remove dependencies or nothing', function (array $packages): void {
         [$manager, $agent] = apt_tool_manager();
-        $agent->answer('tools.apt-removal-plan', ['packages' => $packages]);
+        $agent->answer('tool.apt-removal-plan', ['packages' => $packages]);
         $plan = $manager->planRemoval(apt_tool_node(), 'jq');
         expect($plan->packages)->toBe($packages);
         expect($plan->removesOnly('jq'))->toBeFalse();
-        expect($agent->commands())->toBe(['tools.apt-removal-plan']);
+        expect($agent->commands())->toBe(['tool.apt-removal-plan']);
     })->with([[[]], [['jq', 'libonig5:amd64']]]);
 
     it('maps agent failures to the existing operation step without raw output', function (string $method, string $command, string $step): void {
         [$manager, $agent] = apt_tool_manager();
-        $agent->refuse($command, 'tools.apt_operation_failed');
+        $agent->refuse($command, 'tool.apt_operation_failed');
         expect(fn () => $manager->{$method}(apt_tool_node(), 'jq', ToolOperation::Install))
             ->toThrow(function (ToolManagerException $error) use ($step): void {
                 expect($error->step)->toBe($step);
@@ -165,11 +165,11 @@ describe(AptToolManager::class, function (): void {
             });
         expect($agent->commands())->toBe([$command]);
     })->with([
-        ['managerVersion', 'tools.apt-version', 'manager-version'],
-        ['candidateVersion', 'tools.apt-candidate', 'candidate-version'],
-        ['installedInventory', 'tools.apt-inventory', 'installed-version'],
-        ['install', 'tools.apt-install', 'install'], ['update', 'tools.apt-update', 'update'],
-        ['planRemoval', 'tools.apt-removal-plan', 'removal-plan'], ['remove', 'tools.apt-remove', 'remove'],
+        ['managerVersion', 'tool.apt-version', 'manager-version'],
+        ['candidateVersion', 'tool.apt-candidate', 'candidate-version'],
+        ['installedInventory', 'tool.apt-inventory', 'installed-version'],
+        ['install', 'tool.apt-install', 'install'], ['update', 'tool.apt-update', 'update'],
+        ['planRemoval', 'tool.apt-removal-plan', 'removal-plan'], ['remove', 'tool.apt-remove', 'remove'],
     ]);
 
     it('refuses malformed typed replies without reporting absent packages', function (string $method, string $command, array $data): void {
@@ -177,31 +177,31 @@ describe(AptToolManager::class, function (): void {
         $agent->answerMalformed($command, $data);
         expect(fn () => $manager->{$method}(apt_tool_node(), 'jq', ToolOperation::Install))->toThrow(ToolManagerException::class);
     })->with([
-        ['managerVersion', 'tools.apt-version', ['version' => null]],
-        ['candidateVersion', 'tools.apt-candidate', []],
-        ['installedInventory', 'tools.apt-inventory', ['packages' => null]],
-        ['installedInventory', 'tools.apt-inventory', ['packages' => [['name' => 'jq']]]],
-        ['planRemoval', 'tools.apt-removal-plan', ['packages' => [42]]],
+        ['managerVersion', 'tool.apt-version', ['version' => null]],
+        ['candidateVersion', 'tool.apt-candidate', []],
+        ['installedInventory', 'tool.apt-inventory', ['packages' => null]],
+        ['installedInventory', 'tool.apt-inventory', ['packages' => [['name' => 'jq']]]],
+        ['planRemoval', 'tool.apt-removal-plan', ['packages' => [42]]],
     ]);
 
     it('preserves protected package adoption policy and does not install', function (string $package): void {
         [$manager, $agent] = apt_tool_manager();
-        $agent->answer('tools.apt-version', ['version' => 'apt 3.2.0'])
-            ->answer('tools.apt-inventory', ['packages' => [['name' => $package, 'version' => '1.0.0'], ['name' => 'jq', 'version' => '1.7.1']]]);
+        $agent->answer('tool.apt-version', ['version' => 'apt 3.2.0'])
+            ->answer('tool.apt-inventory', ['packages' => [['name' => $package, 'version' => '1.0.0'], ['name' => 'jq', 'version' => '1.7.1']]]);
         expect($manager->inspectForAdoption(apt_tool_node(), $package))->toEqual(new ToolAdoptionFact('1.0.0', ToolInventoryPackage::BLOCK_PROTECTED));
         expect($manager->inspectForAdoption(apt_tool_node(), 'jq'))->toEqual(new ToolAdoptionFact('1.7.1', null));
         expect($manager->inspectForAdoption(apt_tool_node(), 'missing'))->toEqual(new ToolAdoptionFact(null, null));
-        expect(array_unique($agent->commands()))->toBe(['tools.apt-version', 'tools.apt-inventory']);
+        expect(array_unique($agent->commands()))->toBe(['tool.apt-version', 'tool.apt-inventory']);
     })->with(['docker.io', 'openssh-server', 'wireguard-tools', 'php8.5-sqlite3', 'git', 'git-man']);
 
     it('passes the caller probe budget to the agent and leaves unsupported nodes offline', function (): void {
-        $agent = new FakeAgentCommandRunner()->answer('tools.apt-inventory', ['packages' => []]);
+        $agent = new FakeAgentCommandRunner()->answer('tool.apt-inventory', ['packages' => []]);
         $budget = new ToolCommandBudget;
         $manager = new AptToolManager($agent, new DebianVersionNormalizer(new SemverVersionNormalizer), budget: $budget);
         $budget->limit(15, fn () => $manager->installedInventory(apt_tool_node()));
         expect($agent->deadlines)->toBe([15.0]);
         expect(fn () => $manager->install(apt_tool_node('macos'), 'jq'))->toThrow(ToolManagerException::class);
-        expect($agent->commands())->toBe(['tools.apt-inventory']);
+        expect($agent->commands())->toBe(['tool.apt-inventory']);
     });
 });
 

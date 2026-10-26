@@ -109,7 +109,7 @@ function check_runner_status(bool $alive, string $meanwhile = ''): array
 
 it('normalizes VP_HOME probe refusals without launching a check', function (string $code): void {
     $instance = check_runner_instance('/fast/apps/shop/task-8');
-    $probe = new FakeAgentCommandRunner()->refuse('tools.inspect-vp-scope', $code);
+    $probe = new FakeAgentCommandRunner()->refuse('tool.inspect-vp-scope', $code);
     $transport = new AppDevFakeSshExecutor;
     $runner = check_runner($transport, probe: $probe);
 
@@ -120,9 +120,9 @@ it('normalizes VP_HOME probe refusals without launching a check', function (stri
     expect($transport->commands)->toBeEmpty();
     expect($probe->calls)->toHaveCount(1);
 })->with([
-    'absent' => ['tools.vp_scope_absent'],
-    'conflict' => ['tools.vp_scope_conflict'],
-    'unreadable' => ['tools.vp_scope_unreadable'],
+    'absent' => ['tool.vp_scope_absent'],
+    'conflict' => ['tool.vp_scope_conflict'],
+    'unreadable' => ['tool.vp_scope_unreadable'],
 ]);
 
 it('releases the unstarted baseline reservation and retries after a VP_HOME probe timeout', function (): void {
@@ -137,7 +137,7 @@ it('releases the unstarted baseline reservation and retries after a VP_HOME prob
     ]);
     $timeout = new ProcessTimedOutException(new Process(['ssh', 'probe']), ProcessTimedOutException::TYPE_GENERAL);
     $probeCalls = 0;
-    $probe = new FakeAgentCommandRunner()->answer('tools.inspect-vp-scope', static function () use ($timeout, &$probeCalls): array {
+    $probe = new FakeAgentCommandRunner()->answer('tool.inspect-vp-scope', static function () use ($timeout, &$probeCalls): array {
         expect(TaskCheck::query()->sole()->pid)->toBe(0);
         if (++$probeCalls === 1) {
             throw $timeout;
@@ -194,7 +194,7 @@ it('normalizes thrown failures only during the known unstarted VP_HOME probe', f
     };
     $transport = new AppDevFakeSshExecutor;
 
-    expect(fn () => check_runner($transport, probe: new FakeAgentCommandRunner()->answer('tools.inspect-vp-scope', static fn (): array => throw $exception))->start($instance, 'true'))
+    expect(fn () => check_runner($transport, probe: new FakeAgentCommandRunner()->answer('tool.inspect-vp-scope', static fn (): array => throw $exception))->start($instance, 'true'))
         ->toThrow(function (TaskCheckException $normalized) use ($exception): void {
             expect($normalized->getPrevious())->toBe($exception);
         });
@@ -214,7 +214,7 @@ it('normalizes thrown failures only during the known unstarted VP_HOME probe', f
 
 it('polls and cancels independently of VP_HOME probe availability', function (): void {
     $instance = check_runner_instance('/fast/apps/shop/task-8');
-    $probe = new FakeAgentCommandRunner()->refuse('tools.inspect-vp-scope', 'tools.vp_scope_absent');
+    $probe = new FakeAgentCommandRunner()->refuse('tool.inspect-vp-scope', 'tool.vp_scope_absent');
     $transport = new AppDevFakeSshExecutor([
         new CommandResult(0, '{"state":"running"}', '', 1, false),
         new CommandResult(0, '{}', '', 1, false),

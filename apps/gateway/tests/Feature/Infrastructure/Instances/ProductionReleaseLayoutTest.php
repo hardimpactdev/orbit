@@ -153,11 +153,11 @@ it('uses the current-release root instead of a flat production home', function (
 
 it('prepares the recorded user, its source, and its branch, and reads the profile', function (): void {
     [$source, $agents, $instance] = production_home_lifecycle(fn (FakeAgentCommandRunner $agents) => $agents
-        ->answer('instances.prepare-production-user', [])
-        ->answer('instances.prepare-production-source', [])
-        ->answer('instances.resolve-production-source', ['branch' => 'main', 'commit' => str_repeat('a', 40)])
-        ->answer('instances.inspect-production-profile', ['kind' => 'none', 'entry_point' => null, 'composer' => null])
-        ->answer('instances.grant-production-caddy-access', []));
+        ->answer('instance.prepare-production-user', [])
+        ->answer('instance.prepare-production-source', [])
+        ->answer('instance.resolve-production-source', ['branch' => 'main', 'commit' => str_repeat('a', 40)])
+        ->answer('instance.inspect-production-profile', ['kind' => 'none', 'entry_point' => null, 'composer' => null])
+        ->answer('instance.grant-production-caddy-access', []));
 
     $source->prepareUser($instance);
     $source->prepareSource($instance, false);
@@ -169,8 +169,8 @@ it('prepares the recorded user, its source, and its branch, and reads the profil
     expect($resolution->branch)->toBe('main')
         ->and($profile->phpVersion)->toBeNull()
         ->and(array_column($agents->calls, 'command'))->toBe([
-            'instances.prepare-production-user', 'instances.prepare-production-source', 'instances.resolve-production-source',
-            'instances.inspect-production-profile', 'instances.grant-production-caddy-access',
+            'instance.prepare-production-user', 'instance.prepare-production-source', 'instance.resolve-production-source',
+            'instance.inspect-production-profile', 'instance.grant-production-caddy-access',
         ])
         ->and($agents->calls[0]['input'])->toBe(['user' => 'orbit-app-216', 'home' => '/home/orbit-app-216'])
         ->and(array_diff_key($agents->calls[1]['input'], ['git_read' => true]))->toBe([...$home, 'allow_existing' => false])
@@ -183,7 +183,7 @@ it('prepares the recorded user, its source, and its branch, and reads the profil
 });
 
 it('classifies the Composer metadata the agent read and refuses unsafe metadata', function (array $answer, ?string $errorCode): void {
-    [$source, , $instance] = production_home_lifecycle(fn (FakeAgentCommandRunner $agents) => $agents->answer('instances.inspect-production-profile', $answer));
+    [$source, , $instance] = production_home_lifecycle(fn (FakeAgentCommandRunner $agents) => $agents->answer('instance.inspect-production-profile', $answer));
 
     if ($errorCode === null) {
         expect($source->inspectProfile($instance)->phpVersion)->toBe('8.4');
@@ -220,9 +220,9 @@ it('leaves legacy flat production layouts outside release validation and cleanup
 
 it('validates and clears the selection and removes the home of the recorded identity', function (): void {
     [$layout, $agents, $instance] = production_home_lifecycle(fn (FakeAgentCommandRunner $agents) => $agents
-        ->answer('instances.validate-release-layout', ['current' => 'initial'])
-        ->answer('instances.clear-current-release', ['current' => null])
-        ->refuse('instances.remove-production-home', 'instances.release_invalid', ['check' => 'no process of the account runs']));
+        ->answer('instance.validate-release-layout', ['current' => 'initial'])
+        ->answer('instance.clear-current-release', ['current' => null])
+        ->refuse('instance.remove-production-home', 'instance.release_invalid', ['check' => 'no process of the account runs']));
 
     $layout->validateCurrent($instance);
     $layout->clearCurrent($instance);

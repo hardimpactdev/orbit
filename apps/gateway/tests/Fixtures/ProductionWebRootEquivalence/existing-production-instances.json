@@ -35,7 +35,7 @@
         "release_environment_link": "|../../.env|.env",
         "deployment_commands": [
             {
-                "command": "instances.prepare-release",
+                "command": "instance.prepare-release",
                 "input": {
                     "repository": "https://example.test/shop.git",
                     "user": "orbit-shop",
@@ -54,7 +54,7 @@
                 }
             },
             {
-                "command": "instances.activate-release",
+                "command": "instance.activate-release",
                 "input": {
                     "repository": "https://example.test/shop.git",
                     "user": "orbit-shop",
@@ -174,7 +174,7 @@
         "release_environment_link": "application_suffix='/apps/site'\n${application_suffix}|../../../../.env|\"${application_suffix#/}/.env\"",
         "deployment_commands": [
             {
-                "command": "instances.prepare-release",
+                "command": "instance.prepare-release",
                 "input": {
                     "repository": "https://example.test/site.git",
                     "user": "orbit-site",
@@ -193,7 +193,7 @@
                 }
             },
             {
-                "command": "instances.activate-release",
+                "command": "instance.activate-release",
                 "input": {
                     "repository": "https://example.test/site.git",
                     "user": "orbit-site",

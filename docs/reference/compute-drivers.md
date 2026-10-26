@@ -547,7 +547,7 @@ Image installer services use `UMask=0022`, matching recipe execution on Nodes. T
 
 Verification runs Node, pnpm, Bun, and Vite+ launchers only as `orbit` and compares their versions with inspection. Other guest-facing binaries must report the same version as root when run as `orbit`. Launcher caches remain owned by `orbit`. The cache-parent probe reads `/opt/orbit` as that user without writing to it.
 
-Cache failures carry a typed code, operation, path, and bounded, sanitized reason; checking the mount marker preserves access errors instead of treating them as a missing mount.
+Cache failures carry a typed code, operation, path, and bounded, sanitized reason. Seed failures identify the artifact key, package, and version and retain the underlying I/O cause, including archive extraction errors. Checking the mount marker preserves access errors instead of treating them as a missing mount.
 
 Existing images and VMs retain their permissions. After an image-builder fix, use `task-vms:build-recipe --rebuild` to replace the images, then recreate affected VMs. Attaching the cache again does not repair an old VM.
 
@@ -557,7 +557,9 @@ An unchanged commit reuses its snapshot. Changed or removed lock blobs replace t
 
 Fills run on the `builds` queue and add missing content, without running Project setup, Composer plugins, or package install scripts. Each artifact failure is recorded in the Gateway log with its cache key and host ID. The fill continues with the remaining artifacts and records successful archives in the host inventory before failing the job. Each job makes one attempt; the next mirror fetch retries pending Projects. A queue outage leaves source fetching usable.
 
-Composer consumes native archive cache files. npm consumes its integrity-addressed content cache; Bun consumes extracted cache directories, including registry archives whose root directory uses the package name, as DefinitelyTyped archives do. The JavaScript adapter reads npm lock versions 2 and 3, Bun text locks, and pnpm package inventories. pnpm locks contribute to the shared JavaScript inventory, but pnpm's own store is not seeded. Bundled, Git, local, and private packages remain normal downloads.
+Composer consumes native archive cache files. npm consumes its integrity-addressed content cache; Bun consumes extracted cache directories, including registry archives whose root directory uses the package name, as DefinitelyTyped archives do. Seed extraction sets archive directory entries to mode `0755` so archive modes cannot prevent the guest from extracting or using their contents. Regular files use mode `0644`, or `0755` when any archive execute bit is set. An unreadable file mode uses `0644`. Directory permission changes refuse symlinks.
+
+The JavaScript adapter reads npm lock versions 2 and 3, Bun text locks, and pnpm package inventories. pnpm locks contribute to the shared JavaScript inventory, but pnpm's own store is not seeded. Bundled, Git, local, and private packages remain normal downloads.
 
 Before workspace setup, Orbit copies the Project's missing shared cache files into the workspace's private manager caches. Task VM setup sets `COMPOSER_CACHE_DIR` to `$HOME/.cache/composer`, the same directory that receives the shared Composer archives, so a login shell uses the seeded cache. Metadata, locks, temporary files, and downloads on a miss stay private. The shared mount is always read-only; private copies use no hard links. A package added only on a task branch, an unsupported archive, or a fill not yet complete falls back to the manager's normal registry download.
 
@@ -608,9 +610,9 @@ A lock lets one operation at a time change the mirror of a Project. The lock cov
 #### Send branches to the VM
 
 1. The Gateway fetches the operation's branches into the mirror. Only `task-<id>` may be missing on GitHub.
-2. It calls `task-vms.read-git-refs` through the agent runner as the checkout account. The Gateway keeps IDs that the mirror holds as commits.
+2. It calls `task-vm.read-git-refs` through the agent runner as the checkout account. The Gateway keeps IDs that the mirror holds as commits.
 3. It packs the objects of the branches that are not in the history of those commits.
-4. It calls `task-vms.import-git-pack` through the agent runner and workspace executor. The command sets `refs/remotes/origin/<branch>` to the mirror's commit. A missing `task-<id>` loses its ref.
+4. It calls `task-vm.import-git-pack` through the agent runner and workspace executor. The command sets `refs/remotes/origin/<branch>` to the mirror's commit. A missing `task-<id>` loses its ref.
 5. When the default branch was sent, the VM points `refs/remotes/origin/HEAD` at it, as a clone does. The [`@orbit/ci-caches`](/reference/instance-setup#import-ci-main-caches) setup step reads the default branch there.
 6. In a separate optional transfer, it sends only the cache ref for the selected code SHA. Failure of this transfer does not undo source delivery.
 
@@ -642,7 +644,7 @@ The job records its start on the row. A job that has not finished 40 minutes aft
 
 1. The Gateway fetches the default branch and `task-<id>` into the mirror.
 2. It asks the VM for a pack of the approved commit. The pack leaves out the history of the mirror's commits of those branches.
-3. The Gateway calls `task-vms.export-git-pack` through the agent runner and the workspace executor. The command streams the pack to a private Gateway file through [bounded binary output](/reference/node-agent#commands).
+3. The Gateway calls `task-vm.export-git-pack` through the agent runner and the workspace executor. The command streams the pack to a private Gateway file through [bounded binary output](/reference/node-agent#commands).
 
 4. The Gateway indexes the pack into a quarantine object directory with `git index-pack --strict`. That command checks every object. The quarantine reads the mirror's objects but changes nothing in the mirror.
 5. It checks that the approved commit is a commit there, and that its history is complete.
@@ -1490,7 +1492,7 @@ Orbit prepares the group's topology in the VM after the group's baseline check, 
 
 Every other turn in the subtask follows one of these turns: a consult, a direction relay or review, a resolution, a deliverable correction, a nudge to continue, and the resume of an interrupted turn. These turns do not admit the topology again.
 
-To prepare the topology, the Gateway calls `task-vms.start-topology` and polls `task-vms.topology-status` on each tick. The subtask waits meanwhile with `Task VM: preparing the topology <nodes>.` The Rust agent starts the systemd unit `orbit-task-topology-<run>` as the managed account, with its home and workspace checkout. The unit runs the compiled `task-topology` service:
+To prepare the topology, the Gateway calls `task-vm.start-topology` and polls `task-vm.topology-status` on each tick. The subtask waits meanwhile with `Task VM: preparing the topology <nodes>.` The Rust agent starts the systemd unit `orbit-task-topology-<run>` as the managed account, with its home and workspace checkout. The unit runs the compiled `task-topology` service:
 
 | Step | What happens |
 | --- | --- |
@@ -1515,7 +1517,7 @@ The implementer and the reviewer use the topology with `bin/e2e-topology`, as th
 
 The reviewer proves each deliverable on the declared nodes with `bin/e2e-topology exec TASK-<group> NODE --argv=JSON --record=LABEL`. The harness writes the node, the command, the exit code, and the output to the [evidence log](/reference/incus-topologies#evidence-log). When the reviewer approves a subtask that declares a topology, Orbit reads the newest MiB of the evidence. The approval passes only when the evidence holds, for each node the subtask declares, a record that counts. Otherwise Orbit reminds the reviewer with the nodes that lack evidence, and the subtask is not approved.
 
-The [evidence log](/reference/incus-topologies#evidence-log) defines the JSON record. The Gateway sends the checkout path to `task-vms.read-topology-evidence`. The agent reads at most the newest MiB of the fixed `.e2e/evidence.jsonl` file as the managed account. A missing file supplies no evidence. The Gateway skips partial or malformed lines and applies the review rules. A record counts when:
+The [evidence log](/reference/incus-topologies#evidence-log) defines the JSON record. The Gateway sends the checkout path to `task-vm.read-topology-evidence`. The agent reads at most the newest MiB of the fixed `.e2e/evidence.jsonl` file as the managed account. A missing file supplies no evidence. The Gateway skips partial or malformed lines and applies the review rules. A record counts when:
 
 - its command exited 0;
 - it started after the implementer's last handoff and before Orbit reads the evidence;

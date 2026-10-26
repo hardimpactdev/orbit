@@ -22,8 +22,8 @@ it('streams the verified snapshot through both agents and closes its private out
     new ProtectedSqliteSnapshotTransfer($agents)->transfer($source, '/tmp/source-snapshot', $target, '/tmp/prepared-target', strlen($bytes), $digest);
 
     expect($agents->calls)->toBe([
-        ['node' => 'source', 'command' => 'instances.read-sqlite-snapshot', 'input' => ['path' => '/tmp/source-snapshot', 'bytes' => strlen($bytes), 'sha256' => $digest]],
-        ['node' => 'target', 'command' => 'instances.receive-sqlite-snapshot', 'input' => ['path' => '/tmp/prepared-target', 'base' => '/home/instance-2', 'bytes' => strlen($bytes), 'sha256' => $digest]],
+        ['node' => 'source', 'command' => 'instance.read-sqlite-snapshot', 'input' => ['path' => '/tmp/source-snapshot', 'bytes' => strlen($bytes), 'sha256' => $digest]],
+        ['node' => 'target', 'command' => 'instance.receive-sqlite-snapshot', 'input' => ['path' => '/tmp/prepared-target', 'base' => '/home/instance-2', 'bytes' => strlen($bytes), 'sha256' => $digest]],
     ])->and($agents->received)->toBe($bytes)
         ->and($agents->output?->write('after-close'))->toBeFalse();
 });
@@ -68,7 +68,7 @@ final class SnapshotTransferAgents implements AgentCommandRunner
     private function respond(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
     {
         $this->calls[] = ['node' => $node->name, 'command' => $command, 'input' => $input];
-        if ($command === 'instances.read-sqlite-snapshot') {
+        if ($command === 'instance.read-sqlite-snapshot') {
             $this->output = $output;
             if ($this->fail) {
                 throw new RuntimeException('private database diagnostic');

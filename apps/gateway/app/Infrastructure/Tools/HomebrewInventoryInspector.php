@@ -31,7 +31,7 @@ final readonly class HomebrewInventoryInspector
             return $this->unavailable(ToolInventoryScanState::Incomplete, $mac);
         }
         try {
-            $data = $this->homebrew->run($node, 'tools.homebrew-scan', $mac ? ['architecture' => $node->architecture] : [], 'inventory');
+            $data = $this->homebrew->run($node, 'tool.homebrew-scan', $mac ? ['architecture' => $node->architecture] : [], 'inventory');
         } catch (ToolManagerException $error) {
             $state = match ($error->step) {
                 'manager-absent' => ToolInventoryScanState::Absent,

@@ -5,8 +5,10 @@ declare(strict_types=1);
 use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
+use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Tests\Support\SigstoreTestSigner;
 
 const CLI_RELEASE_FIXTURE_COMMIT = '1f0e4c5d6b7a8c9d0e1f2a3b4c5d6e7f8a9b0c1d';
 
@@ -23,20 +25,39 @@ function cli_release_fixture_json(string $name): array
     return json_decode(cli_release_fixture($name), true, flags: JSON_THROW_ON_ERROR);
 }
 
+/** Verifies release provenance against the test signer's trust root, as CI's signature is verified against Sigstore's. */
+function trust_cli_release_test_signer(): void
+{
+    config(['orbit.cli_releases.trusted_root' => SigstoreTestSigner::instance()->trustRootPath()]);
+}
+
+/** The release's provenance bundle, signed for the `SHA256SUMS` the fake serves. */
+function cli_release_provenance(mixed $checksums): mixed
+{
+    $body = $checksums instanceof PromiseInterface ? (string) $checksums->wait()->getBody() : (string) $checksums;
+
+    return Http::response(SigstoreTestSigner::instance()->bundle(['SHA256SUMS' => $body]));
+}
+
 /**
- * Fakes GitHub for the fixture release `cli-v0.4681.0`. Each override replaces the response for a URL path.
+ * Fakes GitHub for the fixture release `cli-v0.4681.0`. Each override replaces the response for a URL path. The
+ * provenance bundle signs the `SHA256SUMS` that is served, unless an override replaces it.
  *
  * @param  array<string, mixed>  $overrides
  */
 function fake_cli_release_github(array $overrides = []): void
 {
+    $sums = '/hardimpactdev/orbit/releases/download/cli-v0.4681.0/SHA256SUMS';
+    $provenance = '/hardimpactdev/orbit/releases/download/cli-v0.4681.0/provenance.sigstore.json';
     $responses = [
         '/repos/hardimpactdev/orbit/git/ref/tags/cli-v0.4681.0' => Http::response(cli_release_fixture_json('tag-ref.json')),
         '/repos/hardimpactdev/orbit/releases/tags/cli-v0.4681.0' => Http::response(cli_release_fixture_json('release.json')),
-        '/hardimpactdev/orbit/releases/download/cli-v0.4681.0/SHA256SUMS' => Http::response(cli_release_fixture('SHA256SUMS')),
+        $sums => Http::response(cli_release_fixture('SHA256SUMS')),
         ...$overrides,
     ];
+    $responses[$provenance] ??= cli_release_provenance($responses[$sums]);
 
+    trust_cli_release_test_signer();
     Http::preventStrayRequests();
     Http::fake(static function (Request $request) use ($responses) {
         $path = (string) parse_url($request->url(), PHP_URL_PATH);
@@ -55,6 +76,7 @@ function fake_cli_release_github(array $overrides = []): void
  */
 function fake_cli_releases(array &$published, array &$responses = []): void
 {
+    trust_cli_release_test_signer();
     Http::preventStrayRequests();
     Http::fake(static function (Request $request) use (&$published, &$responses) {
         $path = (string) parse_url($request->url(), PHP_URL_PATH);
@@ -74,6 +96,7 @@ function fake_cli_releases(array &$published, array &$responses = []): void
                 str_contains($path, '/git/ref/tags/') => Http::response($fixture('tag-ref.json')),
                 str_contains($path, '/releases/tags/') => Http::response($fixture('release.json')),
                 str_ends_with($path, '/SHA256SUMS') => Http::response($fixture('SHA256SUMS')),
+                str_ends_with($path, '/provenance.sigstore.json') => cli_release_provenance($fixture('SHA256SUMS')),
                 default => Http::response(['message' => 'Not Found'], 404),
             };
         }

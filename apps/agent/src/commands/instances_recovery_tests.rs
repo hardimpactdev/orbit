@@ -79,7 +79,7 @@ fn fixed_worktree_removal_rechecks_each_shrinking_inventory_and_preserves_origin
             let before = tree_bytes(&repository);
             assert_eq!(
                 code(finalize_removal(input, &context())),
-                "instances.removal_refused"
+                "instance.removal_refused"
             );
             assert_eq!(tree_bytes(&repository), before);
             assert!(unknown.exists());
@@ -110,7 +110,7 @@ fn fixed_worktree_removal_rechecks_each_shrinking_inventory_and_preserves_origin
 
     fs::create_dir_all(&first).unwrap();
     fs::write(first.join("foreign"), "new work").unwrap();
-    assert_eq!(records[0].state(), "instances.removal_refused");
+    assert_eq!(records[0].state(), "instance.removal_refused");
     assert_eq!(
         fs::read_to_string(first.join("foreign")).unwrap(),
         "new work"
@@ -292,12 +292,12 @@ fn receipt_recovery_refuses_changed_or_ambiguous_worktree_administration_without
         let quarantine_link = fs::read(recorded.quarantine().join(".git")).unwrap();
         assert_eq!(
             code(ReadReceipt::run(recorded.receipt_input(), &context())),
-            "instances.removal_refused",
+            "instance.removal_refused",
             "{fault}"
         );
         assert_eq!(
             code(CleanReceipt::run(recorded.receipt_input(), &context())),
-            "instances.removal_refused",
+            "instance.removal_refused",
             "{fault}"
         );
         assert!(recorded.quarantine().is_dir() && sibling.is_dir());
@@ -327,10 +327,10 @@ fn a_receipt_does_not_authorize_a_replacement_quarantine() {
     fs::rename(&paths.quarantine, &kept).unwrap();
     fs::create_dir(&paths.quarantine).unwrap();
     fs::write(paths.quarantine.join("sentinel"), "keep").unwrap();
-    assert_eq!(recorded.state(), "instances.removal_refused");
+    assert_eq!(recorded.state(), "instance.removal_refused");
     assert_eq!(
         code(CleanReceipt::run(recorded.receipt_input(), &context())),
-        "instances.removal_refused"
+        "instance.removal_refused"
     );
     assert!(kept.join(".git").is_dir());
     assert_eq!(
@@ -362,10 +362,10 @@ fn missing_ambiguous_and_mismatched_recovery_evidence_refuses_without_further_de
             }
             _ => unreachable!(),
         }
-        assert_eq!(recorded.state(), "instances.removal_refused", "{fault}");
+        assert_eq!(recorded.state(), "instance.removal_refused", "{fault}");
         assert_eq!(
             code(finalize_removal(input, &context())),
-            "instances.removal_refused",
+            "instance.removal_refused",
             "{fault}"
         );
         assert!(preserved.is_dir() || recorded.checkout.is_dir() || paths.quarantine.is_dir());
@@ -459,7 +459,7 @@ fn finalization_rechecks_identity_branch_head_origin_and_inventory_even_with_for
         let before = worktree_inventory(&recorded.checkout);
         assert_eq!(
             code(finalize_removal(input, &context())),
-            "instances.removal_refused",
+            "instance.removal_refused",
             "{fault}"
         );
         assert!(recorded.checkout.join(".git").is_dir());
@@ -588,7 +588,7 @@ fn forced_independent_worktree_removal_allows_sibling_changes_but_refuses_its_ow
             if change.starts_with("own-") {
                 assert_eq!(
                     code(result),
-                    "instances.removal_refused",
+                    "instance.removal_refused",
                     "{change}/{quarantined}"
                 );
                 assert!(physical.is_dir());
@@ -631,7 +631,7 @@ fn a_new_dirty_worktree_is_refused_before_quarantine_and_force_can_resume_it() {
     let inventory = worktree_inventory(&repository);
     assert_eq!(
         code(finalize_removal(input, &context())),
-        "instances.removal_refused"
+        "instance.removal_refused"
     );
     assert_eq!(fs::read(worktree.join("unfinished")).unwrap(), b"keep work");
     assert!(!exists(&recorded.quarantine()));

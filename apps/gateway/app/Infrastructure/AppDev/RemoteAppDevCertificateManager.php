@@ -15,7 +15,7 @@ use App\Models\Node;
 use App\Models\Route;
 
 /**
- * The Orbit CA leaf certificates of development Routes, through the Node agent's `certificates.*-leaf` commands
+ * The Orbit CA leaf certificates of development Routes, through the Node agent's `certificate.*-leaf` commands
  * (docs/reference/routes.md). The Gateway signs each request; the Node keeps the key.
  */
 final readonly class RemoteAppDevCertificateManager
@@ -69,7 +69,7 @@ final readonly class RemoteAppDevCertificateManager
     {
         $instance->loadMissing('node');
         $account = $this->accounts->resolve($instance->node);
-        $result = AgentStep::run($this->agents, $instance->node, 'certificates.inspect-leaf', [
+        $result = AgentStep::run($this->agents, $instance->node, 'certificate.inspect-leaf', [
             'scope' => "app-instance-{$instance->id}",
             'home' => $account->home,
         ], 'certificate-inspect', 'app-dev.certificate_inspection_failed', 'App development');
@@ -154,13 +154,13 @@ final readonly class RemoteAppDevCertificateManager
             'user' => $account->user,
             'home' => $account->home,
         ];
-        $request = AgentStep::run($this->agents, $node, 'certificates.request-leaf', $leaf, 'certificate-request', 'app-dev.certificate_request_failed', 'App development');
+        $request = AgentStep::run($this->agents, $node, 'certificate.request-leaf', $leaf, 'certificate-request', 'app-dev.certificate_request_failed', 'App development');
 
         if (($request['state'] ?? null) === 'current') {
             return;
         }
 
-        AgentStep::run($this->agents, $node, 'certificates.publish-leaf', [
+        AgentStep::run($this->agents, $node, 'certificate.publish-leaf', [
             ...$leaf,
             'certificate' => $this->signer->sign($domain, StoredValue::string($request['request'] ?? null)),
             'root_certificate' => $rootCertificate,
@@ -184,7 +184,7 @@ final readonly class RemoteAppDevCertificateManager
             );
         }
 
-        AgentStep::run($this->agents, $node, 'certificates.remove-leaf', [
+        AgentStep::run($this->agents, $node, 'certificate.remove-leaf', [
             'scope' => $scope,
             'home' => $this->accounts->resolve($node)->home,
         ], 'certificate-remove', 'app-dev.certificate_remove_failed', 'App development');

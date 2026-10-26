@@ -1,4 +1,4 @@
-//! `instances.grant-development-caddy-access`: denies Caddy each development checkout, then grants it each Web root,
+//! `instance.grant-development-caddy-access`: denies Caddy each development checkout, then grants it each Web root,
 //! the Laravel public storage, and passage through the directories above them. Every writer of a checkout is the
 //! managed account or the operator, so the walk's ACL tools run as the managed account and act by name: an entry the
 //! account does not own fails the walk with "Operation not permitted", and the walk never skips it. Root acts only on
@@ -22,9 +22,9 @@ use std::{
 
 command_errors! {
     pub enum AccessError {
-        Invalid { check: String } => "instances.caddy_access_invalid", "A checkout or Web root does not pass its checks.";
-        Failed { reason: String } => "instances.caddy_access_failed", "The Caddy access walk failed; what it granted is restored.";
-        RecoveryFailed { snapshots: String } => "instances.caddy_access_recovery_failed", "The Caddy access walk failed and its recovery failed; the snapshots remain.";
+        Invalid { check: String } => "instance.caddy_access_invalid", "A checkout or Web root does not pass its checks.";
+        Failed { reason: String } => "instance.caddy_access_failed", "The Caddy access walk failed; what it granted is restored.";
+        RecoveryFailed { snapshots: String } => "instance.caddy_access_recovery_failed", "The Caddy access walk failed and its recovery failed; the snapshots remain.";
     }
 }
 
@@ -696,7 +696,7 @@ pub fn grant(input: &AccessInput) -> Result<Granted, AccessError> {
 pub struct GrantDevelopmentCaddyAccess;
 
 impl Command for GrantDevelopmentCaddyAccess {
-    const NAME: &'static str = "instances.grant-development-caddy-access";
+    const NAME: &'static str = "instance.grant-development-caddy-access";
     const SUMMARY: &'static str =
         "Deny Caddy development checkouts and grant it each Web root and the passage to it.";
     const MUTATES: bool = true;

@@ -513,7 +513,7 @@ it('passes a nondefault managed account into every baseline prerequisite command
         $accounts,
     )->converge($appProdNode, $appProdAssignment);
 
-    $inputs = array_column(array_filter($agents->calls, static fn (array $call): bool => $call['command'] === 'roles.install-prerequisites'), 'input');
+    $inputs = array_column(array_filter($agents->calls, static fn (array $call): bool => $call['command'] === 'role.install-prerequisites'), 'input');
     expect($inputs)->toHaveCount(3)
         ->and(array_unique(array_map(static fn (array $input): string => $input['user'].':'.$input['group'].':'.$input['home'], $inputs)))->toBe(['nckrtl:nckrtl:/srv/users/nckrtl'])
         ->and(array_column($inputs, 'apps_directory'))->toBe([false, true, false])
@@ -830,7 +830,7 @@ it('dispatches every assignment to its code-defined baseline', function (): void
         'ssh:database',
         'ssh:websocket',
         'ssh:ci-runner',
-        'program:ci-runners.host',
+        'program:ci-runner.host',
         'firewall:converge:ci-runner',
     );
 });
@@ -1046,7 +1046,7 @@ it('checks the remote operating system before every role convergence', function 
         'guard:unknown',
         'guard:unknown',
         'ssh:ci-runner',
-        'program:ci-runners.host',
+        'program:ci-runner.host',
         'firewall:converge:ci-runner',
     ]);
 });
@@ -1073,7 +1073,7 @@ it('stops baseline convergence when the remote operating system guard fails', fu
             Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
         ),
         $metricsFleet,
-        new NodeRoleOperatingSystemGuard((new FakeAgentCommandRunner)->answer('nodes.os-release', static function () use (&$events): array {
+        new NodeRoleOperatingSystemGuard((new FakeAgentCommandRunner)->answer('node.os-release', static function () use (&$events): array {
             $events[] = 'guard:app-dev';
 
             return ['id' => 'ubuntu', 'codename' => 'unsupported'];
@@ -1103,12 +1103,12 @@ function baseline_prerequisites(array &$events, ?Closure $fails = null, FakeAgen
 
             return ['changed' => false, 'version' => '2.10.2'];
         })
-        ->answer('roles.install-prerequisites', static function (array $input, Node $node) use (&$events, $fails): array {
+        ->answer('role.install-prerequisites', static function (array $input, Node $node) use (&$events, $fails): array {
             $role = array_find(RoleName::cases(), static fn (RoleName $role): bool => (new NodeBootstrapPackageCatalog)->forRole($node, $role) === $input['packages']
                 && ($role === RoleName::AppDev) === $input['apps_directory']);
             $events[] = 'ssh:'.($role->value ?? 'unknown');
             if ($fails !== null && $fails((string) ($role->value ?? 'unknown'))) {
-                throw new AgentCommandRefused('roles.install-prerequisites', 'roles.prerequisite_failed', 'Failed.', ['step' => 'packages', 'stderr' => 'failed']);
+                throw new AgentCommandRefused('role.install-prerequisites', 'role.prerequisite_failed', 'Failed.', ['step' => 'packages', 'stderr' => 'failed']);
             }
 
             return [];
@@ -1121,7 +1121,7 @@ function baseline_prerequisites(array &$events, ?Closure $fails = null, FakeAgen
 /** @param list<string> $events */
 function baseline_guard_agents(array &$events): FakeAgentCommandRunner
 {
-    return (new FakeAgentCommandRunner)->answer('nodes.os-release', static function (array $input, Node $node) use (&$events): array {
+    return (new FakeAgentCommandRunner)->answer('node.os-release', static function (array $input, Node $node) use (&$events): array {
         $role = match ($node->wireguard_ip) {
             '10.44.0.2' => 'gateway',
             '10.44.0.3' => 'vpn',
@@ -1646,9 +1646,9 @@ it('holds back fleet reconciliation during a deferral and reports that one was r
 
 function ci_role_baseline(array &$events): CiRunnerRoleBaseline
 {
-    $agents = (new FakeAgentCommandRunner)->answer('ci-runners.host', static function (array $input) use (&$events): array {
+    $agents = (new FakeAgentCommandRunner)->answer('ci-runner.host', static function (array $input) use (&$events): array {
         expect($input)->toBe(['action' => 'converge']);
-        $events[] = 'program:ci-runners.host';
+        $events[] = 'program:ci-runner.host';
 
         return ['outcome' => 'converged'];
     });

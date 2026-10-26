@@ -183,7 +183,7 @@ fn scan(
 }
 pub struct Scan;
 impl Command for Scan {
-    const NAME: &'static str = "tools.homebrew-scan";
+    const NAME: &'static str = "tool.homebrew-scan";
     const SUMMARY: &'static str =
         "Read formula and cask inventories independently without changing Tool intent.";
     const MUTATES: bool = false;

@@ -1,11 +1,11 @@
-//! `processes.*`: a Process's systemd unit or Docker container on its Node. Each command acts only on an artifact that
+//! `process.*`: a Process's systemd unit or Docker container on its Node. Each command acts only on an artifact that
 //! carries the Process's own marker: the unit's `X-Orbit-Process-ID=<id>` line, or the container's `orbit.managed`,
 //! `orbit.container.kind`, and `orbit.process.id` labels.
 //!
-//! A unit change is two calls, so the Gateway can record a pending activation between them: `processes.stage-unit`
-//! writes a candidate that `systemd-analyze verify` accepts, and `processes.activate-unit` publishes it with a backup
+//! A unit change is two calls, so the Gateway can record a pending activation between them: `process.stage-unit`
+//! writes a candidate that `systemd-analyze verify` accepts, and `process.activate-unit` publishes it with a backup
 //! of the unit it replaces, reloads systemd, sets the desired state, and restores the previous unit when that fails.
-//! `processes.converge-container` changes a container in one call: it creates a candidate beside the current
+//! `process.converge-container` changes a container in one call: it creates a candidate beside the current
 //! container, renames that one to a rollback name that records whether it ran, renames the candidate in, and undoes
 //! the change when a step fails. A later call finishes or undoes a change that a lost connection interrupted.
 
@@ -51,21 +51,21 @@ impl Output {
 
 command_errors! {
     pub enum ProcessError {
-        Invalid { check: String } => "processes.invalid", "The Process request does not pass its checks.";
-        NameCollision { step: String, artifact: String, output: Output } => "processes.name_collision", "An artifact with the Process's name is not the Process's own.";
-        NotFound { step: String } => "processes.not_found", "The Process has no runtime artifact.";
-        StartFailed { step: String, restored: bool, output: Output } => "processes.start_failed", "The Process did not start.";
-        StopFailed { step: String, restored: bool, output: Output } => "processes.stop_failed", "The Process did not stop.";
-        RestartFailed { step: String, output: Output } => "processes.restart_failed", "The Process did not restart.";
-        RemoveFailed { step: String, output: Output } => "processes.remove_failed", "The Process runtime could not be removed.";
-        StatusFailed { step: String, output: Output } => "processes.status_failed", "The Process status could not be read.";
-        LogsFailed { step: String, output: Output } => "processes.logs_failed", "The Process logs could not be read.";
-        ConvergeFailed { step: String, output: Output } => "processes.converge_failed", "A Process runtime step failed.";
-        CandidateInvalid { step: String, artifact: String, output: Output } => "processes.candidate_invalid", "The new runtime artifact does not pass its checks.";
-        ActivationFailed { step: String, output: Output } => "processes.activation_failed", "The new runtime artifact did not take over, and the previous one is back.";
-        RollbackFailed { step: String, output: Output } => "processes.rollback_failed", "Restoring the previous unit failed.";
-        RecoveryRequired { step: String, reason: String, output: Output } => "processes.recovery_required", "The runtime needs an operator to recover it.";
-        ViteCleanupFailed { step: String, output: Output } => "processes.vite_cleanup_failed", "The Vite environment file could not be removed.";
+        Invalid { check: String } => "process.invalid", "The Process request does not pass its checks.";
+        NameCollision { step: String, artifact: String, output: Output } => "process.name_collision", "An artifact with the Process's name is not the Process's own.";
+        NotFound { step: String } => "process.not_found", "The Process has no runtime artifact.";
+        StartFailed { step: String, restored: bool, output: Output } => "process.start_failed", "The Process did not start.";
+        StopFailed { step: String, restored: bool, output: Output } => "process.stop_failed", "The Process did not stop.";
+        RestartFailed { step: String, output: Output } => "process.restart_failed", "The Process did not restart.";
+        RemoveFailed { step: String, output: Output } => "process.remove_failed", "The Process runtime could not be removed.";
+        StatusFailed { step: String, output: Output } => "process.status_failed", "The Process status could not be read.";
+        LogsFailed { step: String, output: Output } => "process.logs_failed", "The Process logs could not be read.";
+        ConvergeFailed { step: String, output: Output } => "process.converge_failed", "A Process runtime step failed.";
+        CandidateInvalid { step: String, artifact: String, output: Output } => "process.candidate_invalid", "The new runtime artifact does not pass its checks.";
+        ActivationFailed { step: String, output: Output } => "process.activation_failed", "The new runtime artifact did not take over, and the previous one is back.";
+        RollbackFailed { step: String, output: Output } => "process.rollback_failed", "Restoring the previous unit failed.";
+        RecoveryRequired { step: String, reason: String, output: Output } => "process.recovery_required", "The runtime needs an operator to recover it.";
+        ViteCleanupFailed { step: String, output: Output } => "process.vite_cleanup_failed", "The Vite environment file could not be removed.";
     }
 }
 
@@ -640,7 +640,7 @@ pub struct StageInput {
 
 #[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Staged {
-    /// A candidate waits for `processes.activate-unit`; without one the unit already has this content.
+    /// A candidate waits for `process.activate-unit`; without one the unit already has this content.
     pub staged: bool,
     /// Whether the Process had a unit, which a publication replaces.
     pub previous: bool,
@@ -1496,7 +1496,7 @@ macro_rules! process_command {
 
 process_command!(
     CheckRelease,
-    "processes.check-release",
+    "process.check-release",
     "Tell whether a production Process has a selected release.",
     false,
     10,
@@ -1507,7 +1507,7 @@ process_command!(
 );
 process_command!(
     ReadStatus,
-    "processes.status",
+    "process.status",
     "Read the state of a Process's unit or container.",
     false,
     30,
@@ -1518,7 +1518,7 @@ process_command!(
 );
 process_command!(
     ControlProcess,
-    "processes.control",
+    "process.control",
     "Start, stop, or restart a Process's unit or container.",
     true,
     300,
@@ -1529,7 +1529,7 @@ process_command!(
 );
 process_command!(
     RemoveProcess,
-    "processes.remove",
+    "process.remove",
     "Delete a Process's unit or containers.",
     true,
     300,
@@ -1540,7 +1540,7 @@ process_command!(
 );
 process_command!(
     StageUnit,
-    "processes.stage-unit",
+    "process.stage-unit",
     "Write a Process unit candidate that systemd accepts.",
     true,
     60,
@@ -1551,7 +1551,7 @@ process_command!(
 );
 process_command!(
     ActivateUnit,
-    "processes.activate-unit",
+    "process.activate-unit",
     "Publish a Process unit candidate and set its desired state.",
     true,
     600,
@@ -1562,7 +1562,7 @@ process_command!(
 );
 process_command!(
     ConvergeContainer,
-    "processes.converge-container",
+    "process.converge-container",
     "Create or replace a Process's container and set its desired state.",
     true,
     900,
@@ -1573,7 +1573,7 @@ process_command!(
 );
 process_command!(
     ReadLogs,
-    "processes.logs",
+    "process.logs",
     "Read the newest lines of a Process's unit or container.",
     false,
     60,

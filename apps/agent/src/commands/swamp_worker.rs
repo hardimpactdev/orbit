@@ -13,8 +13,8 @@ const TOKEN: &str = "/run/orbit-swamp-worker-enrollment";
 pub const CA: &str = "/usr/local/share/ca-certificates/orbit-root.crt";
 command_errors! {
     pub enum Error {
-        Invalid {} => "tasks.worker_invalid", "The worker enrollment input is invalid.";
-        Failed {} => "tasks.worker_start_failed", "The task VM worker could not be started.";
+        Invalid {} => "swamp.worker_invalid", "The worker enrollment input is invalid.";
+        Failed {} => "swamp.worker_start_failed", "The task VM worker could not be started.";
     }
 }
 fn failed() -> Error {
@@ -230,7 +230,7 @@ pub struct Stopped {
 }
 command_errors! {
     pub enum StopError {
-        Failed {} => "tasks.worker_stop_failed", "The task VM worker could not be stopped.";
+        Failed {} => "swamp.worker_stop_failed", "The task VM worker could not be stopped.";
     }
 }
 pub struct Stop;

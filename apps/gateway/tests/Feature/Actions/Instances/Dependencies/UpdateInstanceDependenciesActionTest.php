@@ -84,9 +84,9 @@ function dependency_update_agent(callable $handler): FakeAgentCommandRunner
         return $apply ? ['exit_code' => $result->exitCode] : json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR);
     };
     $agents = new FakeAgentCommandRunner()
-        ->answer('instances.probe-dependency-update', static fn (array $input): array => $answer($input['ecosystem'].'-inspect', false))
-        ->answer('instances.update-dependencies', static fn (array $input): array => $answer($input['ecosystem'].'-apply', true))
-        ->answer('instances.read-dependency-files', static fn (): array => $answer('collect', false));
+        ->answer('instance.probe-dependency-update', static fn (array $input): array => $answer($input['ecosystem'].'-inspect', false))
+        ->answer('instance.update-dependencies', static fn (array $input): array => $answer($input['ecosystem'].'-apply', true))
+        ->answer('instance.read-dependency-files', static fn (): array => $answer('collect', false));
     app()->instance(AgentCommandRunner::class, $agents);
 
     return $agents;

@@ -55,7 +55,7 @@ it('reports an APT package with retained configuration as bounded absence', func
     $data = new NativeToolInspector(new ToolManagerRegistry([$manager]))->inspect($tool);
 
     expect($data->installed)->toBeFalse()->and($data->normalizedVersion)->toBeNull();
-    expect($agent->commands())->toBe(['tools.apt-inventory']);
+    expect($agent->commands())->toBe(['tool.apt-inventory']);
 });
 
 it('reports installed APT meta-packages as installed when Debian versions are not SemVer', function (
@@ -68,7 +68,7 @@ it('reports installed APT meta-packages as installed when Debian versions are no
     $data = new NativeToolInspector(new ToolManagerRegistry([$manager]))->inspect($tool);
 
     expect($data->installed)->toBeTrue()->and($data->normalizedVersion)->toBeNull();
-    expect($agent->commands())->toBe(['tools.apt-inventory']);
+    expect($agent->commands())->toBe(['tool.apt-inventory']);
 })->with([
     'postgresql-client meta-package' => ['postgresql-client', '16+257build1.1'],
     'golang-go meta-package' => ['golang-go', '2:1.24~2build1'],
@@ -160,7 +160,7 @@ it('inspects multiple Composer tools from one installed inventory command', func
         ->and($outcomes[2]->data()->installed)->toBeFalse()
         ->and($outcomes[2]->data()->normalizedVersion)->toBeNull();
     expect($agent->commands())->toBe([
-        'tools.composer-inventory',
+        'tool.composer-inventory',
     ]);
 });
 
@@ -245,7 +245,7 @@ it('marks Composer tools unverifiable when the inventory snapshot fails and keep
  */
 function native_apt_inspector_manager(array $packages): array
 {
-    $agent = new FakeAgentCommandRunner()->answer('tools.apt-inventory', ['packages' => $packages]);
+    $agent = new FakeAgentCommandRunner()->answer('tool.apt-inventory', ['packages' => $packages]);
 
     return [new AptToolManager($agent, new DebianVersionNormalizer(new SemverVersionNormalizer)), $agent];
 }
@@ -276,8 +276,8 @@ function native_apt_inspector_tool(string $package): Tool
 function native_composer_inspector_manager(array $results): array
 {
     $agent = new FakeAgentCommandRunner;
-    $agent->answer('tools.composer-inventory', static function () use (&$results): array {
-        return array_shift($results) ?? throw new AgentCommandRefused('tools.composer-inventory', 'tools.composer_operation_failed', 'secret diagnostic');
+    $agent->answer('tool.composer-inventory', static function () use (&$results): array {
+        return array_shift($results) ?? throw new AgentCommandRefused('tool.composer-inventory', 'tool.composer_operation_failed', 'secret diagnostic');
     });
 
     return [new ComposerToolManager(new SemverVersionNormalizer, $agent), $agent];
@@ -311,7 +311,7 @@ it('inspects all APT tools from one installed package inventory', function (): v
     expect($outcomes[0]->data()->normalizedVersion)->toBe('1.7.1')
         ->and($outcomes[1]->data()->installed)->toBeFalse()
         ->and($outcomes[2]->data()->installed)->toBeFalse();
-    expect($agent->commands())->toBe(['tools.apt-inventory']);
+    expect($agent->commands())->toBe(['tool.apt-inventory']);
 });
 
 it('isolates unfinished APT package state from healthy installed packages', function (): void {

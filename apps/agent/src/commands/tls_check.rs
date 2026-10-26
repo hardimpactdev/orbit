@@ -1,4 +1,4 @@
-//! `routes.verify-certificate`: checks from this Node that a workload serves a certificate for a Route's domain that
+//! `route.verify-certificate`: checks from this Node that a workload serves a certificate for a Route's domain that
 //! this Node's trust store accepts, as Router Caddy will need before it forwards the Route.
 
 use crate::command::{Command, Context, Platform, Privilege};
@@ -12,8 +12,8 @@ use std::{
 
 command_errors! {
     pub enum CertificateError {
-        Input {} => "routes.certificate_input_invalid", "The Route certificate check needs an IP address, port, and domain.";
-        Invalid { stderr: String } => "routes.certificate_invalid", "The workload does not serve a trusted certificate for the domain.";
+        Input {} => "route.certificate_input_invalid", "The Route certificate check needs an IP address, port, and domain.";
+        Invalid { stderr: String } => "route.certificate_invalid", "The workload does not serve a trusted certificate for the domain.";
     }
 }
 
@@ -74,7 +74,7 @@ fn certificate_process(input: &CertificateInput) -> Result<Process, CertificateE
 pub struct VerifyCertificate;
 
 impl Command for VerifyCertificate {
-    const NAME: &'static str = "routes.verify-certificate";
+    const NAME: &'static str = "route.verify-certificate";
     const SUMMARY: &'static str =
         "Check that a workload serves a trusted certificate for a Route's domain.";
     const MUTATES: bool = false;

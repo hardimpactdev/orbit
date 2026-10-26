@@ -25,7 +25,7 @@ final class GatewaySetupSteps
         return str_starts_with($exception->errorCode, 'instance.ci_caches_');
     }
 
-    /** The native operation name for `instances.run-lifecycle-step`. */
+    /** The native operation name for `instance.run-lifecycle-step`. */
     public static function program(string $operation): string
     {
         return match ($operation) {

@@ -25,7 +25,7 @@ For Ubuntu, the Gateway records the Node as `provisioning` and runs these steps 
 | Step | Work |
 | --- | --- |
 | 1 | Check the host key against the fingerprint. |
-| 2 | Validate and record the candidate architecture. Install the pinned agent through the bootstrap login, then run `nodes.bootstrap` for base packages and managed SSH access. |
+| 2 | Validate and record the candidate architecture. Install the pinned agent through the bootstrap login, then run `node.bootstrap` for base packages and managed SSH access. |
 | 3 | Connect as the managed user and verify the architecture with `agent.status`. |
 | 4 | Publish the Node's WireGuard peer and pin SSH over the tunnel. |
 | 5 | Install the `apt` [Tool Manager](/reference/tools#tool-managers) and converge each requested role. |
@@ -35,7 +35,7 @@ For Ubuntu, the Gateway records the Node as `provisioning` and runs these steps 
 | 9 | Reconcile the [Metrics exporters](/reference/metrics#exporter-selection). A [task VM](/reference/compute-drivers#task-vms) skips this step. |
 | 10 | Configure the [Node agent observer](/reference/node-agent) with its Node identity and secret, at step `agent`. |
 
-`nodes.bootstrap` creates a missing managed account, adds its SSH key, and validates passwordless sudo before publishing the rule. It preserves existing home and directory modes and refuses linked access paths.
+`node.bootstrap` creates a missing managed account, adds its SSH key, and validates passwordless sudo before publishing the rule. It preserves existing home and directory modes and refuses linked access paths.
 
 A [task VM's enrollment trusts its base image](/reference/compute-drivers#skip-what-the-image-holds) for the `app-dev` software. It keeps the VM-specific host key, WireGuard, firewall, Caddy, DNS, agent and secret, and Pi steps. Every other Node runs every program at enrollment.
 
@@ -107,7 +107,7 @@ Each failure names the check or step that stopped the request.
 
 `orbit node:role:add <node> ci-runner` prepares a Linux Node to host GitHub Actions runners in unprivileged Incus containers. The role is not a singleton or relocatable. Add it to an enrolled Node through the normal role-add path; `node:add --role` does not accept it. It can share every role except `gateway` and `vpn`, which hold fleet trust anchors. A Node that serves CI alone needs no app role, TLD, or Cluster. Beast can keep its app and database roles. Shark needs only `ci-runner` for CI; removing its existing roles is a separate operator decision.
 
-The role installs Incus, and the agent's `ci-runners.host` prepares the restricted `orbit-ci` project, the `orbitci0` bridge, the `orbit-ci-egress` ACL, and the default runner profile. The profile sets 6 CPUs, 12 GiB of memory, 8192 processes, and autostart, with privilege and nesting disabled. The project permits only that bridge and forbids VMs and host disk devices. The role uses the existing `default` storage pool, or creates a directory pool when it is absent. It never changes an existing pool or bridge IPv4 subnet. Incus chooses a subnet for a new bridge.
+The role installs Incus, and the agent's `ci-runner.host` prepares the restricted `orbit-ci` project, the `orbitci0` bridge, the `orbit-ci-egress` ACL, and the default runner profile. The profile sets 6 CPUs, 12 GiB of memory, 8192 processes, and autostart, with privilege and nesting disabled. The project permits only that bridge and forbids VMs and host disk devices. The role uses the existing `default` storage pool, or creates a directory pool when it is absent. It never changes an existing pool or bridge IPv4 subnet. Incus chooses a subnet for a new bridge.
 
 The ACL permits public IPv4 egress and rejects private, CGNAT, loopback, link-local, multicast, reserved IPv4, and all IPv6. Incus permits bridge DNS and DHCP before the ACL; this boundary does not claim to block those services. The normal managed firewall catalog owns the routed allowance on `orbitci0`, including adoption of the existing `orbit-ci-runners` comment. Role convergence repairs the project, profile, ACL, bridge settings, and managed firewall rule. Doctor checks their projection, packages, service, and firewall. Task VM stray checks recognize the role's project without an `operator_owned` entry.
 
@@ -215,7 +215,7 @@ The Gateway does not record a new Node until enrollment succeeds or a remote che
 | 2 | `account` | SSH as the existing account. Create no user and change no sudoers file. |
 | 3 | `machine-architecture` | Use the fixed staging probe to select the macOS agent artifact. Refuse a different platform before staging. |
 | 4 | `agent` | Stage the pinned binary in a unique absolute temporary path and run `agent.install` as the enrolled account. |
-| 5 | `identity` | Call `nodes.inspect-macos-enrollment` to verify the native platform, architecture, and WireGuard address. Do not write the registry yet. |
+| 5 | `identity` | Call `node.inspect-macos-enrollment` to verify the native platform, architecture, and WireGuard address. Do not write the registry yet. |
 | 6 | `ssh-pin` | Write the approved host key to the Gateway known_hosts file for the public host and the WireGuard address. |
 | 7 | `active` | Store the host key, fingerprint, observed identity, and `active` status. Skip apt, roles, firewall, DNS, exporters, and the observer service. |
 
@@ -290,7 +290,7 @@ The Gateway can enroll a Node that it reaches only through another Node. [Task V
 
 The Node records the jump Node in `ssh_jump_node_id`. While the Node has no active role, SSH to its public address goes through an `ssh` hop to the jump Node, as `<managed user>@<WireGuard address>:22` of the jump Node. The hop uses the same key, pinned host keys, and strict options as the command. See [An explicit hop, not ProxyJump](#an-explicit-hop-not-proxyjump).
 
-The read-only `nodes.scan-host-key` agent command scans and fingerprints the target on the jump Node, or on the serving Gateway when no jump is needed. It prefers Ed25519, then ECDSA P-256, then RSA. The target needs no installed agent. The Gateway compares the result with the expected fingerprint before pinning it or installing anything on the target. A task VM's expected fingerprint comes from its host, before any code in the VM runs.
+The read-only `node.scan-host-key` agent command scans and fingerprints the target on the jump Node, or on the serving Gateway when no jump is needed. It prefers Ed25519, then ECDSA P-256, then RSA. The target needs no installed agent. The Gateway compares the result with the expected fingerprint before pinning it or installing anything on the target. A task VM's expected fingerprint comes from its host, before any code in the VM runs.
 
 When the Node's host key is pinned, commands through its jump Node share one connection. Nodes behind different jump Nodes can have the same private address, and a new Node can reuse an address. So that connection is named after the jump Node, the target, and the target's pinned host key fingerprint. Before the key is pinned, each command opens its own connection. A jump Node without a WireGuard address fails with `vpn.peer_address_missing` before SSH.
 
@@ -361,7 +361,7 @@ The agent takes the Node's update lock, `/run/lock/orbit-self-update.lock`, befo
 | `peer-dns` | Active managed Linux peers with roles, excluding the VPN holder and the Gateway | The [split private DNS policy](/reference/private-dns#resolver-selection), without a tunnel restart. Its digest includes the routing domains and selected DNS server |
 | `private-dns` | The `vpn` Node, when it is not the Gateway's | The [private-DNS](/reference/private-dns) listener release, units, records, and catalog. It restarts the listener or dnsmasq only for a change |
 | `route-residue` | A Node that an [offline Route removal](/reference/routes#remove-a-route-from-an-unreachable-node) skipped | Caddy and PHP-FPM without the removed Route, then its certificates and firewall rules. A failure is `skipped` and retried later |
-| `tmpfiles` | Every Linux Node with an active `app-dev` role | `/etc/tmpfiles.d/orbit.conf`, through the agent's `nodes.publish-tmpfiles`. The daily `systemd-tmpfiles-clean` run empties each `/tmp/orbit-*` and `/dev/shm/orbit-*` directory a day after its contents last changed. It removes no other path and restarts nothing |
+| `tmpfiles` | Every Linux Node with an active `app-dev` role | `/etc/tmpfiles.d/orbit.conf`, through the agent's `node.publish-tmpfiles`. The daily `systemd-tmpfiles-clean` run empties each `/tmp/orbit-*` and `/dev/shm/orbit-*` directory a day after its contents last changed. It removes no other path and restarts nothing |
 | `ai-router` | The [AI router](/reference/ai-router) collector's Node | The collector script. A changed script restarts the collector, a Node-owned Process |
 
 Converge applies the artifacts in this order. The artifacts that [extensions contribute](/reference/extensions#plug-in-points), such as `ai-router`, come after core's. Each artifact has its own name.
@@ -436,9 +436,9 @@ For Caddy, the Gateway pins a release and the SHA-512 digest of its `.deb` for `
 
 ### Role prerequisites
 
-Each role installs its prerequisites through the agent's `roles.install-prerequisites`. The role guard first reads `ID` and `VERSION_CODENAME` with `nodes.os-release` and refuses a release the role does not support. The command checks the release again and installs the role's packages with `apt-get`, which waits up to 300 seconds for the dpkg locks. A healthy Docker CE installation replaces `docker.io`.
+Each role installs its prerequisites through the agent's `role.install-prerequisites`. The role guard first reads `ID` and `VERSION_CODENAME` with `node.os-release` and refuses a release the role does not support. The command checks the release again and installs the role's packages with `apt-get`, which waits up to 300 seconds for the dpkg locks. A healthy Docker CE installation replaces `docker.io`.
 
-For `app-dev`, it also creates `<home>/apps` for the managed user. For `app-dev` and `app-prod`, it prepares the shared Composer home, `/opt/orbit/composer`. A path that Orbit did not make fails the step with `roles.prerequisite_conflict` before any change.
+For `app-dev`, it also creates `<home>/apps` for the managed user. For `app-dev` and `app-prod`, it prepares the shared Composer home, `/opt/orbit/composer`. A path that Orbit did not make fails the step with `role.prerequisite_conflict` before any change.
 
 An application role then installs the JavaScript runtimes its [recipe profile](/reference/compute-drivers#role-and-base-tool-sets) pins: Node, Vite+, pnpm, and Bun. It sends `recipe.install-javascript`, the same command and verified archives as [recipe convergence](#converge-a-node-to-a-recipe), and it runs no downloaded installer. Image programs render the same call as `javascript-runtime`. Like recipe convergence, it replaces any root-owned launcher in `/usr/local/bin`. After it verifies the recipe Node, it removes the apt `nodejs` package, retires the NodeSource apt source, and removes Corepack links.
 
@@ -594,7 +594,7 @@ For a Node that does not answer, the API needs `force`, or the Gateway refuses w
 
 After an online removal, the machine keeps its WireGuard tunnel, which can still point DNS at Orbit. When a new bootstrap cannot resolve the package sources for that reason, and the request names at least one role and no `--dns-server` override, it clears only the DNS server and route-all domain that match Orbit's ownership record on the `orbit` link.
 
-The native `nodes.bootstrap` command holds the peer lock while it uses the machine's own DNS for the base packages and restores the earlier link values. It tries APT first, so working proxies and custom transports need no local DNS probe. After a failed update, it inspects source hosts without executing source text. It keeps operator overrides, refuses missing or changed ownership state, and changes no global resolver file or IP route. It attempts to restore both resolver properties on failure or interruption.
+The native `node.bootstrap` command holds the peer lock while it uses the machine's own DNS for the base packages and restores the earlier link values. It tries APT first, so working proxies and custom transports need no local DNS probe. After a failed update, it inspects source hosts without executing source text. It keeps operator overrides, refuses missing or changed ownership state, and changes no global resolver file or IP route. It attempts to restore both resolver properties on failure or interruption.
 
 Account setup starts only after packages and DNS restoration succeed. A Node added again without a role, or with a DNS server override, keeps its DNS as it is, and the bootstrap fails when the sources do not resolve.
 

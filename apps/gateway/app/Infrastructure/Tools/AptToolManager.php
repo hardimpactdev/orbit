@@ -83,7 +83,7 @@ final readonly class AptToolManager implements ReservesRolePackages, SupportsToo
 
     public function managerVersion(Node $node): string
     {
-        $version = $this->version($node, 'tools.apt-version', [], 'manager-version');
+        $version = $this->version($node, 'tool.apt-version', [], 'manager-version');
         if ($version === null) {
             throw new ToolManagerException('manager-version', 'The agent returned an invalid APT manager version.');
         }
@@ -95,12 +95,12 @@ final readonly class AptToolManager implements ReservesRolePackages, SupportsToo
     {
         $this->guardPackage($package);
 
-        return $this->version($node, 'tools.apt-candidate', ['package' => $package], 'candidate-version');
+        return $this->version($node, 'tool.apt-candidate', ['package' => $package], 'candidate-version');
     }
 
     public function installedInventory(Node $node): InstalledToolInventory
     {
-        $data = $this->command($node, 'tools.apt-inventory', [], 'installed-version');
+        $data = $this->command($node, 'tool.apt-inventory', [], 'installed-version');
         if (! is_array($data['packages'] ?? null) || ! array_is_list($data['packages'])) {
             throw new ToolManagerException('installed-version', 'The agent returned an invalid APT inventory.');
         }
@@ -197,7 +197,7 @@ final readonly class AptToolManager implements ReservesRolePackages, SupportsToo
     public function planRemoval(Node $node, string $package): ToolRemovalPlan
     {
         $this->guardPackage($package);
-        $data = $this->command($node, 'tools.apt-removal-plan', ['package' => $package], 'removal-plan');
+        $data = $this->command($node, 'tool.apt-removal-plan', ['package' => $package], 'removal-plan');
         if (! is_array($data['packages'] ?? null) || ! array_is_list($data['packages']) || array_filter($data['packages'], is_string(...)) !== $data['packages']) {
             throw new ToolManagerException('removal-plan', 'The agent returned an invalid APT removal plan.');
         }
@@ -225,7 +225,7 @@ final readonly class AptToolManager implements ReservesRolePackages, SupportsToo
     private function mutate(Node $node, string $package, string $step): void
     {
         $this->guardPackage($package);
-        $this->command($node, 'tools.apt-'.$step, ['package' => $package], $step);
+        $this->command($node, 'tool.apt-'.$step, ['package' => $package], $step);
     }
 
     /** @param array<string, mixed> $input */

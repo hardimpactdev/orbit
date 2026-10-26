@@ -163,7 +163,7 @@ it('pins the host and installs before native bootstrap using the selected login 
     };
     $firewall = Mockery::mock(NodeRoleFirewallManager::class);
     $firewall->shouldReceive('convergeBase')->once()->andReturnUsing(function () use ($agents): void {
-        expect(array_column($agents->calls, 'command'))->toBe(['stage-architecture', 'agent.install', 'nodes.bootstrap', 'agent.status']);
+        expect(array_column($agents->calls, 'command'))->toBe(['stage-architecture', 'agent.install', 'node.bootstrap', 'agent.status']);
     });
     $firewall->shouldReceive('trustWireGuardMembers')->once();
     $converger = base_node_converger($agents, $firewall, hosts: $hosts);
@@ -179,7 +179,7 @@ it('pins the host and installs before native bootstrap using the selected login 
     }
     expect($node->fresh()->ssh_host_fingerprint)->toBe('SHA256:pinned');
     expect($hosts->hosts)->toBe(['192.0.2.10:22:SHA256:pinned', '10.44.0.2:22:SHA256:pinned']);
-    expect(array_column($agents->calls, 'command'))->toBe(['stage-architecture', 'agent.install', 'nodes.bootstrap', 'agent.status', 'agent.status']);
+    expect(array_column($agents->calls, 'command'))->toBe(['stage-architecture', 'agent.install', 'node.bootstrap', 'agent.status', 'agent.status']);
     expect(array_map(fn (array $call) => $call['connection']->user, $agents->calls))->toBe([$bootstrap, $bootstrap, $bootstrap, $managed, $managed]);
     expect($agents->calls[2]['input'])->toBe(new NodeBootstrapCommandFactory(base_test_keys())->input($node, $managed));
     expect($agents->calls[4]['connection']->host)->toBe('10.44.0.2');
@@ -228,7 +228,7 @@ it('maps native failures and stops before networking', function (string $command
     expect(fn () => base_node_converger($agents, $firewall)->converge(base_provisionable_node(), new NodeProvisioningIdentity('root', 'nckrtl'), 'SHA256:pinned'))
         ->toThrow(function (NodeProvisioningException $e) use ($step, $publicCode, $code): void {
             expect($e->step)->toBe($step)->and($e->errorCode)->toBe($publicCode);
-            if ($code === 'nodes.bootstrap_os_unsupported') {
+            if ($code === 'node.bootstrap_os_unsupported') {
                 expect($e->getMessage())->toBe('Node operating system [ubuntu/unsupported] is not supported.');
             }
             if ($publicCode === 'node.orbit_ssh_failed') {
@@ -237,8 +237,8 @@ it('maps native failures and stops before networking', function (string $command
         });
 })->with([
     ['agent.install', 'agent.install_failed', 'agent-install', 'agent.install_failed'],
-    ['nodes.bootstrap', 'nodes.bootstrap_failed', 'base-host', 'node.bootstrap_failed'],
-    ['nodes.bootstrap', 'nodes.bootstrap_os_unsupported', 'base-host', 'node.bootstrap_failed'],
+    ['node.bootstrap', 'node.bootstrap_failed', 'base-host', 'node.bootstrap_failed'],
+    ['node.bootstrap', 'node.bootstrap_os_unsupported', 'base-host', 'node.bootstrap_failed'],
     ['agent.status', 'agent.identity_mismatch', 'orbit-ssh', 'node.orbit_ssh_failed'],
 ]);
 

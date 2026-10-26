@@ -406,13 +406,27 @@ mod tests {
         }
     }
 
+    /// Namespaces whose last word ends in one `s` but is not a plural: the mass nouns `analytics` and `metrics`, the
+    /// product `incus`, and the extension slug `documents`, because an extension's commands use its slug.
+    const NOT_PLURAL: &[&str] = &["analytics", "documents", "incus", "metrics"];
+
+    /// A namespace names one thing, as the CLI does: `instance.write-environment`, `instance.release_invalid`.
+    fn assert_singular(namespace: &str, name: &str) {
+        let word = namespace.rsplit(['-', '_']).next().unwrap_or(namespace);
+        assert!(
+            !word.ends_with('s') || word.ends_with("ss") || NOT_PLURAL.contains(&namespace),
+            "{name}: the namespace {namespace} is plural"
+        );
+    }
+
     #[test]
-    fn names_are_unique_and_namespaced() {
+    fn names_are_unique_and_in_singular_namespaces() {
         let mut seen = BTreeSet::new();
         for entry in all() {
             assert!(seen.insert(entry.name), "duplicate command {}", entry.name);
             let (area, action) = entry.name.split_once('.').expect("area.action");
             assert!(!area.is_empty() && !action.is_empty(), "{}", entry.name);
+            assert_singular(area, entry.name);
             assert!(
                 entry
                     .name
@@ -425,10 +439,13 @@ mod tests {
     }
 
     #[test]
-    fn command_errors_are_namespaced_and_never_repeat_a_common_error() {
+    fn command_errors_have_singular_namespaces_and_never_repeat_a_common_error() {
         for entry in all() {
             for code in entry.errors {
-                assert!(code.contains('.'), "{}: {code}", entry.name);
+                let (namespace, _) = code
+                    .split_once('.')
+                    .unwrap_or_else(|| panic!("{}: {code}", entry.name));
+                assert_singular(namespace, code);
                 assert!(!COMMON_ERRORS.contains(code), "{}: {code}", entry.name);
             }
         }
@@ -459,17 +476,17 @@ mod tests {
             "image.clean",
             "metrics.cadvisor",
             "metrics.node-exporter",
-            "nodes.bootstrap",
+            "node.bootstrap",
             "php.configure-runtime",
             "php.install-build",
             "recipe.apply",
             "recipe.install-javascript",
-            "roles.install-prerequisites",
-            "tools.apt-install",
-            "tools.apt-remove",
-            "tools.apt-update",
-            "tools.materialize-composer",
-            "tools.materialize-homebrew",
+            "role.install-prerequisites",
+            "tool.apt-install",
+            "tool.apt-remove",
+            "tool.apt-update",
+            "tool.materialize-composer",
+            "tool.materialize-homebrew",
         ];
         let firewall = [
             "firewall.gateway-vpn",
@@ -778,12 +795,12 @@ mod tests {
         let actual = std::fs::read_to_string(path).unwrap_or_default();
         assert!(
             actual == expected,
-            "contract/schemas.json is stale; run ORBIT_AGENT_WRITE_CONTRACT=1 cargo test contract_file schemas_file"
+            "contract/schemas.json is stale; run ORBIT_AGENT_WRITE_CONTRACT=1 cargo test --lib -- contract_file schemas_file"
         );
     }
 
     /// The Gateway and its tests read `contract/commands.json`. Rewrite it with
-    /// `ORBIT_AGENT_WRITE_CONTRACT=1 cargo test contract_file`.
+    /// `ORBIT_AGENT_WRITE_CONTRACT=1 cargo test --lib -- contract_file`.
     #[test]
     fn contract_file_matches_the_compiled_commands() {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/contract/commands.json");
@@ -794,7 +811,7 @@ mod tests {
         let actual = std::fs::read_to_string(path).unwrap_or_default();
         assert_eq!(
             actual, expected,
-            "contract/commands.json is stale; run ORBIT_AGENT_WRITE_CONTRACT=1 cargo test contract_file"
+            "contract/commands.json is stale; run ORBIT_AGENT_WRITE_CONTRACT=1 cargo test --lib -- contract_file"
         );
     }
 }

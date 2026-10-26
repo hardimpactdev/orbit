@@ -1,4 +1,4 @@
-//! `instances.*-development-*` deploys: a development default deploys in its own checkout, as the managed account.
+//! `instance.*-development-*` deploys: a development default deploys in its own checkout, as the managed account.
 //! A setup or teardown step holds an exclusive `flock` on the checkout directory while it runs, so the checkout and
 //! each step take the same lock without waiting. These replace the Bash of `DevelopmentCheckoutProgram`, check for
 //! check.
@@ -25,12 +25,12 @@ use std::{
 
 command_errors! {
     pub enum DevDeployError {
-        Invalid { check: String } => "instances.development_checkout_invalid", "The checkout does not pass its checks.";
-        Dirty { changes: String } => "instances.checkout_dirty", "The checkout has uncommitted changes to tracked files.";
-        Diverged {} => "instances.branch_diverged", "The local branch has commits that the target commit does not contain.";
-        NotOnBranch {} => "instances.commit_not_on_branch", "The branch does not contain the commit.";
-        Busy {} => "instances.lifecycle_busy", "A setup or teardown step is running in the checkout.";
-        StepFailed { step: String } => "instances.development_step_failed", "A checkout step failed.";
+        Invalid { check: String } => "instance.development_checkout_invalid", "The checkout does not pass its checks.";
+        Dirty { changes: String } => "instance.checkout_dirty", "The checkout has uncommitted changes to tracked files.";
+        Diverged {} => "instance.branch_diverged", "The local branch has commits that the target commit does not contain.";
+        NotOnBranch {} => "instance.commit_not_on_branch", "The branch does not contain the commit.";
+        Busy {} => "instance.lifecycle_busy", "A setup or teardown step is running in the checkout.";
+        StepFailed { step: String } => "instance.development_step_failed", "A checkout step failed.";
     }
 }
 
@@ -196,7 +196,7 @@ pub fn target(input: &TargetInput) -> Result<Target, DevDeployError> {
 pub struct ResolveTarget;
 
 impl Command for ResolveTarget {
-    const NAME: &'static str = "instances.resolve-development-target";
+    const NAME: &'static str = "instance.resolve-development-target";
     const SUMMARY: &'static str =
         "Fetch a development default's branch and name the commit a deploy checks out.";
     const MUTATES: bool = true;
@@ -346,7 +346,7 @@ pub fn checkout(input: &CheckoutInput) -> Result<Target, DevDeployError> {
 pub struct CheckoutDefault;
 
 impl Command for CheckoutDefault {
-    const NAME: &'static str = "instances.checkout-development-default";
+    const NAME: &'static str = "instance.checkout-development-default";
     const SUMMARY: &'static str = "Check out a commit on a development default's branch in place.";
     const MUTATES: bool = true;
     const TIMEOUT: Duration = Duration::from_secs(300);
@@ -434,7 +434,7 @@ pub fn step(
 pub struct RunStep;
 
 impl Command for RunStep {
-    const NAME: &'static str = "instances.run-development-step";
+    const NAME: &'static str = "instance.run-development-step";
     const SUMMARY: &'static str =
         "Run a development deploy step in a development default's checkout, live.";
     const MUTATES: bool = true;
@@ -555,7 +555,7 @@ fn ci_caches(input: &LifecycleInput) -> Result<RunDeployStepOutput, DeployStepEr
 }
 
 /// Runs one Project setup or teardown step with the lifecycle lock held and not inherited, as `step` runs a deploy
-/// step. Another step in the checkout refuses it at once with `instances.lifecycle_busy`.
+/// step. Another step in the checkout refuses it at once with `instance.lifecycle_busy`.
 pub fn lifecycle_step(input: &LifecycleInput) -> Result<RunDeployStepOutput, DevDeployError> {
     check(
         input.checkout.is_absolute() && canonical(&input.checkout),
@@ -599,7 +599,7 @@ fn lifecycle_error(error: DeployStepError) -> DevDeployError {
 pub struct RunLifecycleStep;
 
 impl Command for RunLifecycleStep {
-    const NAME: &'static str = "instances.run-lifecycle-step";
+    const NAME: &'static str = "instance.run-lifecycle-step";
     const SUMMARY: &'static str = "Run a Project setup or teardown step in an Instance checkout.";
     const MUTATES: bool = true;
     const TIMEOUT: Duration = Duration::from_secs(3600);

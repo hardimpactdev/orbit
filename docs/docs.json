@@ -163,7 +163,8 @@
               "solutions/migrate-unmanaged-executor-hostname",
               "solutions/sqlite-wal-default",
               "solutions/realtime-reverb",
-              "solutions/relocate-gateway-role"
+              "solutions/relocate-gateway-role",
+              "solutions/real-caddy-in-gateway-tests"
             ]
           }
         ]
@@ -1656,6 +1657,10 @@
     {
       "source": "/decisions/0225-make-node-changes-through-agent-commands",
       "destination": "/reference/node-agent#commands"
+    },
+    {
+      "source": "/decisions/0235-verify-release-provenance-on-the-gateway",
+      "destination": "/reference/gateway-recovery#release-provenance"
     }
   ]
 }

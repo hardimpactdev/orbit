@@ -1,4 +1,4 @@
-//! `instances.read-application-log`: the newest lines of an Instance's Laravel log. The caller never names a file:
+//! `instance.read-application-log`: the newest lines of an Instance's Laravel log. The caller never names a file:
 //! the command reads `storage/logs/laravel.log`, or else the newest `laravel-*.log` beside it, and only a regular file
 //! that sits directly in a real `storage/logs`, so a link in the checkout cannot point the read elsewhere.
 
@@ -15,7 +15,7 @@ use std::{
 
 command_errors! {
     pub enum LogError {
-        Unreadable {} => "instances.log_unreadable", "The application log cannot be read.";
+        Unreadable {} => "instance.log_unreadable", "The application log cannot be read.";
     }
 }
 
@@ -83,7 +83,7 @@ pub fn read(input: &LogInput) -> Result<Log, LogError> {
 pub struct ReadApplicationLog;
 
 impl Command for ReadApplicationLog {
-    const NAME: &'static str = "instances.read-application-log";
+    const NAME: &'static str = "instance.read-application-log";
     const SUMMARY: &'static str = "Read the newest lines of an Instance's Laravel log.";
     const MUTATES: bool = false;
     const TIMEOUT: Duration = Duration::from_secs(30);

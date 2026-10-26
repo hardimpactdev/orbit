@@ -10,7 +10,7 @@ use Tests\Support\FakeAgentCommandRunner;
 
 it('refuses a destination that the agent finds occupied and accepts a free one', function (bool $free): void {
     $node = Node::query()->create(['name' => 'destination', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '192.0.2.41', 'wireguard_ip' => '10.44.0.41', 'user' => 'orbit']);
-    $agents = new FakeAgentCommandRunner()->answer('instances.check-path-free', ['free' => $free]);
+    $agents = new FakeAgentCommandRunner()->answer('instance.check-path-free', ['free' => $free]);
     $guard = new RemoteInstanceDestinationGuard($agents);
     $assert = fn () => $guard->assertUnoccupied($node, StoragePath::parse('/home/orbit/apps/shop/main'));
 

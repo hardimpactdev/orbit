@@ -9,9 +9,9 @@ use serde_json::value::RawValue;
 use std::time::Duration;
 crate::command_errors! {
     pub enum Error {
-        Invalid {} => "tools.composer_input_invalid", "The Composer package or operation is invalid.";
-        Failed {} => "tools.composer_operation_failed", "The Composer operation failed.";
-        Output {} => "tools.composer_output_invalid", "Composer returned invalid or incomplete output.";
+        Invalid {} => "tool.composer_input_invalid", "The Composer package or operation is invalid.";
+        Failed {} => "tool.composer_operation_failed", "The Composer operation failed.";
+        Output {} => "tool.composer_output_invalid", "Composer returned invalid or incomplete output.";
     }
 }
 type Result<T> = std::result::Result<T, Error>;
@@ -333,7 +333,7 @@ macro_rules! read_command {
 }
 read_command!(
     Version,
-    "tools.composer-version",
+    "tool.composer-version",
     "Read the Composer manager version.",
     Empty,
     VersionOutput,
@@ -341,7 +341,7 @@ read_command!(
 );
 read_command!(
     Candidate,
-    "tools.composer-candidate",
+    "tool.composer-candidate",
     "Read one package's Composer dry-run candidate.",
     CandidateInput,
     CandidateOutput,
@@ -349,7 +349,7 @@ read_command!(
 );
 read_command!(
     Inventory,
-    "tools.composer-inventory",
+    "tool.composer-inventory",
     "Read installed Composer global package observations.",
     Empty,
     InventoryOutput,
@@ -357,7 +357,7 @@ read_command!(
 );
 read_command!(
     Plan,
-    "tools.composer-removal-plan",
+    "tool.composer-removal-plan",
     "Check removal of one Composer root requirement.",
     Input,
     PlanOutput,
@@ -388,19 +388,19 @@ macro_rules! mutation {
 }
 mutation!(
     Install,
-    "tools.composer-install",
+    "tool.composer-install",
     "Add one Composer global root requirement.",
     "require"
 );
 mutation!(
     Update,
-    "tools.composer-update",
+    "tool.composer-update",
     "Update one Composer global root and its dependencies.",
     "update"
 );
 mutation!(
     Remove,
-    "tools.composer-remove",
+    "tool.composer-remove",
     "Remove one Composer global root requirement.",
     "remove"
 );

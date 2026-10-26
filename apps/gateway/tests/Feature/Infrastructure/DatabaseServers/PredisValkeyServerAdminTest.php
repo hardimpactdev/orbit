@@ -66,7 +66,7 @@ final class ValkeyDockerTestSeed
 /** The Node writer is tested in Rust. This fake supplies its result to the private Predis fixture. */
 function valkey_agent(string $container, string $volume): FakeAgentCommandRunner
 {
-    return new FakeAgentCommandRunner()->answer('databases.write-valkey-acl', static function (array $input) use ($container, $volume): array {
+    return new FakeAgentCommandRunner()->answer('database.write-valkey-acl', static function (array $input) use ($container, $volume): array {
         expect($input)->toHaveKeys(['volume', 'image', 'acl'])
             ->and($input['volume'])->toBe($volume)
             ->and($input['image'])->toBe(DatabaseServerProcess::valkeyImage(ValkeyDockerTestSeed::TAG));

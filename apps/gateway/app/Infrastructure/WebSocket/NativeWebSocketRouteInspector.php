@@ -28,7 +28,7 @@ final readonly class NativeWebSocketRouteInspector implements WebSocketRouteInsp
         try {
             $result = $this->agents->run(
                 $instance->node,
-                'instances.inspect-laravel-routes',
+                'instance.inspect-laravel-routes',
                 ['user' => $user, 'home' => $home, 'application' => $instance->applicationDirectory(), 'php_version' => $version],
                 deadlineSeconds: 60,
             );

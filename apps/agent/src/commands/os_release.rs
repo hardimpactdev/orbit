@@ -1,4 +1,4 @@
-//! `nodes.os-release`: the `ID` and `VERSION_CODENAME` of `/etc/os-release`. Each must appear once, with an optional
+//! `node.os-release`: the `ID` and `VERSION_CODENAME` of `/etc/os-release`. Each must appear once, with an optional
 //! matching pair of quotes, as letters, digits, `.`, `_`, and `-`. The Gateway decides which releases it supports.
 
 use crate::command::{Command, Context, Platform, Privilege};
@@ -10,7 +10,7 @@ const OS_RELEASE: &str = "/etc/os-release";
 
 command_errors! {
     pub enum OsReleaseError {
-        Unreadable {} => "nodes.os_release_unreadable", "/etc/os-release is missing or malformed.";
+        Unreadable {} => "node.os_release_unreadable", "/etc/os-release is missing or malformed.";
     }
 }
 
@@ -66,7 +66,7 @@ pub fn parse(text: &str) -> Result<OsRelease, OsReleaseError> {
 pub struct ReadOsRelease;
 
 impl Command for ReadOsRelease {
-    const NAME: &'static str = "nodes.os-release";
+    const NAME: &'static str = "node.os-release";
     const SUMMARY: &'static str = "Read the operating system ID and codename of the Node.";
     const MUTATES: bool = false;
     const TIMEOUT: Duration = Duration::from_secs(10);

@@ -1,4 +1,4 @@
-//! `instances.*-dependenc*`: the dependency files of an Instance and the updates of its packages. Every read walks to
+//! `instance.*-dependenc*`: the dependency files of an Instance and the updates of its packages. Every read walks to
 //! its directory one component at a time without following a link, and refuses a file that is not regular. These
 //! replace the Python and Bash of `DependencyFilesProgram`, the `*DependencyUpdatePresenceProgram` probes, and the
 //! `*DependencyUpdateProgram` supervisors, rule for rule. Each answer keeps their JSON shape: a result, or
@@ -25,7 +25,7 @@ use std::{
 
 command_errors! {
     pub enum DependencyError {
-        Invalid { check: String } => "instances.dependency_input_invalid", "The dependency request does not pass its checks.";
+        Invalid { check: String } => "instance.dependency_input_invalid", "The dependency request does not pass its checks.";
     }
 }
 
@@ -510,7 +510,7 @@ fn probe_yarn(fd: &OwnedFd) -> Checked<Value> {
 pub struct ProbeUpdate;
 
 impl Command for ProbeUpdate {
-    const NAME: &'static str = "instances.probe-dependency-update";
+    const NAME: &'static str = "instance.probe-dependency-update";
     const SUMMARY: &'static str =
         "Check whether one package ecosystem of a directory is ready for an update.";
     const MUTATES: bool = false;
@@ -615,7 +615,7 @@ pub fn update(
 pub struct UpdateDependencies;
 
 impl Command for UpdateDependencies {
-    const NAME: &'static str = "instances.update-dependencies";
+    const NAME: &'static str = "instance.update-dependencies";
     const SUMMARY: &'static str =
         "Update one package ecosystem of a development checkout within its constraints.";
     const MUTATES: bool = true;
@@ -1044,7 +1044,7 @@ pub fn read_files(environment: &str, input: &FilesInput) -> Value {
 pub struct ReadFiles;
 
 impl Command for ReadFiles {
-    const NAME: &'static str = "instances.read-dependency-files";
+    const NAME: &'static str = "instance.read-dependency-files";
     const SUMMARY: &'static str =
         "Read the dependency manifests and lockfiles of a development checkout.";
     const MUTATES: bool = false;
@@ -1065,7 +1065,7 @@ impl Command for ReadFiles {
 pub struct ReadReleaseFiles;
 
 impl Command for ReadReleaseFiles {
-    const NAME: &'static str = "instances.read-release-dependency-files";
+    const NAME: &'static str = "instance.read-release-dependency-files";
     const SUMMARY: &'static str =
         "Read the dependency manifests and lockfiles of a production home's current release.";
     const MUTATES: bool = false;

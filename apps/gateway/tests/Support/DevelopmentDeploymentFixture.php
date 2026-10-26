@@ -36,9 +36,9 @@ final class DevelopmentDeploymentFixture
         $accounts = Mockery::mock(ManagedUserAccountResolver::class);
         $accounts->shouldReceive('resolve')->andReturn(new ManagedUserAccount('orbit', 'orbit', '/home/orbit'));
         $this->agents = new FakeAgentCommandRunner()
-            ->answer('instances.resolve-development-target', ['commit' => str_repeat('b', 40)])
-            ->answer('instances.checkout-development-default', static fn (array $input): array => ['commit' => $input['commit']])
-            ->answer('instances.run-development-step', ['exit_code' => 0, 'timed_out' => false, 'output' => [], 'truncated' => false]);
+            ->answer('instance.resolve-development-target', ['commit' => str_repeat('b', 40)])
+            ->answer('instance.checkout-development-default', static fn (array $input): array => ['commit' => $input['commit']])
+            ->answer('instance.run-development-step', ['exit_code' => 0, 'timed_out' => false, 'output' => [], 'truncated' => false]);
         $this->deployment = new RemoteDevelopmentDeployment(
             $this->agents, $accounts, app(CheckoutRemovalBoundary::class), app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class),
         );

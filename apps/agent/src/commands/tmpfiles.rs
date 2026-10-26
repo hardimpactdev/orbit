@@ -1,4 +1,4 @@
-//! `nodes.publish-tmpfiles`: Orbit's systemd-tmpfiles rule, `/etc/tmpfiles.d/orbit.conf`, root's `0644` file. It
+//! `node.publish-tmpfiles`: Orbit's systemd-tmpfiles rule, `/etc/tmpfiles.d/orbit.conf`, root's `0644` file. It
 //! writes the rule with one rename only when the file differs in content, owner, or mode, and says whether it did.
 
 use crate::command::{Command, Context, Platform, Privilege};
@@ -16,8 +16,8 @@ const PATH: &str = "/etc/tmpfiles.d/orbit.conf";
 
 command_errors! {
     pub enum TmpfilesError {
-        Invalid { check: String } => "nodes.tmpfiles_invalid", "The rule does not pass its checks.";
-        Failed { reason: String } => "nodes.tmpfiles_failed", "The rule could not be written.";
+        Invalid { check: String } => "node.tmpfiles_invalid", "The rule does not pass its checks.";
+        Failed { reason: String } => "node.tmpfiles_failed", "The rule could not be written.";
     }
 }
 
@@ -78,7 +78,7 @@ pub fn publish(path: &Path, rule: &str, owner: (u32, u32)) -> Result<Tmpfiles, T
 pub struct PublishTmpfiles;
 
 impl Command for PublishTmpfiles {
-    const NAME: &'static str = "nodes.publish-tmpfiles";
+    const NAME: &'static str = "node.publish-tmpfiles";
     const SUMMARY: &'static str = "Publish Orbit's tmpfiles rule for its scratch directories.";
     const MUTATES: bool = true;
     const TIMEOUT: Duration = Duration::from_secs(30);

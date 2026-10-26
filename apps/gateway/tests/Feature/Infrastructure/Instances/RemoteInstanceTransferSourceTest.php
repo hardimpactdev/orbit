@@ -25,7 +25,7 @@ it('stages private binary bytes on Gateway disk and removes them after materiali
     $bytes = "archive\0\xffcontents";
     $staged = null;
     $sink = null;
-    $agents->answer('instances.read-transfer-archive', function (array $input, Node $node, ?AgentBinaryOutput $output) use ($bytes, &$staged, &$sink): array {
+    $agents->answer('instance.read-transfer-archive', function (array $input, Node $node, ?AgentBinaryOutput $output) use ($bytes, &$staged, &$sink): array {
         expect($node->name)->toBe('staging-source')->and($input)->toBe(['archive' => '/tmp/orbit-transfer-source.tar']);
         $sink = $output;
         expect($output?->write($bytes))->toBeTrue();
@@ -35,7 +35,7 @@ it('stages private binary bytes on Gateway disk and removes them after materiali
 
         return ['bytes' => strlen($bytes)];
     });
-    $agents->answer('instances.materialize-transfer', function (array $input, Node $node, ?AgentBinaryOutput $output, ?AgentBinaryInput $binary) use ($bytes, $capture): array {
+    $agents->answer('instance.materialize-transfer', function (array $input, Node $node, ?AgentBinaryOutput $output, ?AgentBinaryInput $binary) use ($bytes, $capture): array {
         expect($node->name)->toBe('staging-destination')->and($input)->toBe([
             'destination' => '/srv/apps/destination', 'head' => $capture->head, 'branch' => 'main',
             'detached' => false, 'environment' => '/srv/apps/destination/.env',
@@ -50,7 +50,7 @@ it('stages private binary bytes on Gateway disk and removes them after materiali
         ->materialize($capture, $destination, StoragePath::parse('/srv/apps/destination'));
 
     expect($checkout->head)->toBe($capture->head)
-        ->and($agents->commands())->toBe(['instances.read-transfer-archive', 'instances.materialize-transfer'])
+        ->and($agents->commands())->toBe(['instance.read-transfer-archive', 'instance.materialize-transfer'])
         ->and(file_exists($staged))->toBeFalse()->and($sink?->write('closed'))->toBeFalse();
 });
 
@@ -58,7 +58,7 @@ it('removes partial staging and redacts download failures', function (): void {
     [$capture, $destination] = remote_transfer_capture();
     $before = glob(storage_path('app/transfer-staging/orbit-transfer-*')) ?: [];
     $agents = new FakeAgentCommandRunner;
-    $agents->answer('instances.read-transfer-archive', function (array $input, Node $node, ?AgentBinaryOutput $output): array {
+    $agents->answer('instance.read-transfer-archive', function (array $input, Node $node, ?AgentBinaryOutput $output): array {
         $output?->write('partial private archive');
         throw new RuntimeException('PRIVATE_TRANSPORT_DIAGNOSTIC');
     });
@@ -71,7 +71,7 @@ it('removes partial staging and redacts download failures', function (): void {
         });
 
     expect(glob(storage_path('app/transfer-staging/orbit-transfer-*')) ?: [])->toBe($before)
-        ->and($agents->commands())->toBe(['instances.read-transfer-archive']);
+        ->and($agents->commands())->toBe(['instance.read-transfer-archive']);
     Log::shouldHaveReceived('warning')->once()->with('Instance transfer archive staging failed.', [
         'step' => 'app-instance-transfer-download', 'exit_code' => null,
     ]);
@@ -81,11 +81,11 @@ it('maps materialization refusals to the operation step and removes the staging 
     [$capture, $destination] = remote_transfer_capture();
     $before = glob(storage_path('app/transfer-staging/orbit-transfer-*')) ?: [];
     $agents = new FakeAgentCommandRunner;
-    $agents->answer('instances.read-transfer-archive', function (array $input, Node $node, ?AgentBinaryOutput $output): array {
+    $agents->answer('instance.read-transfer-archive', function (array $input, Node $node, ?AgentBinaryOutput $output): array {
         $output?->write('archive');
 
         return ['bytes' => 7];
-    })->refuse('instances.materialize-transfer', 'instances.transfer_archive_invalid');
+    })->refuse('instance.materialize-transfer', 'instance.transfer_archive_invalid');
 
     expect(fn () => new RemoteInstanceTransferSource($agents, app(AgentContract::class))
         ->materialize($capture, $destination, StoragePath::parse('/srv/apps/destination')))
@@ -120,11 +120,11 @@ it('selects the transferred Laravel environment from Instance or Project intent'
     $instance->update(['root' => $instanceRoot, 'source_is_laravel' => $laravel]);
     $instance->project->update(['root' => $projectRoot]);
     $agents = new FakeAgentCommandRunner;
-    $agents->answer('instances.read-transfer-archive', function (array $input, Node $node, ?AgentBinaryOutput $output): array {
+    $agents->answer('instance.read-transfer-archive', function (array $input, Node $node, ?AgentBinaryOutput $output): array {
         $output?->write('archive');
 
         return ['bytes' => 7];
-    })->answer('instances.materialize-transfer', []);
+    })->answer('instance.materialize-transfer', []);
 
     new RemoteInstanceTransferSource($agents, app(AgentContract::class))
         ->materialize($capture, $destination, StoragePath::parse('/srv/apps/destination'));

@@ -102,7 +102,7 @@ Installation keeps `/etc/orbit` as a real directory owned by `root:root` with mo
 
 ## Install and recover
 
-Create validates the input and the target first. Then `schedules.install` installs the artifacts through the agent runner and holds the Schedule lock on the Node. Rust checks the calendar with `systemd-analyze calendar`, stages the new files, checks them with `systemd-analyze verify`, moves them in place, reloads systemd, and sets the timer to the desired state. It checks the timer state before the Schedule becomes `active`.
+Create validates the input and the target first. Then `schedule.install` installs the artifacts through the agent runner and holds the Schedule lock on the Node. Rust checks the calendar with `systemd-analyze calendar`, stages the new files, checks them with `systemd-analyze verify`, moves them in place, reloads systemd, and sets the timer to the desired state. It checks the timer state before the Schedule becomes `active`.
 
 An existing file at an owned path must be a regular file with the expected owner, mode, and `X-Orbit-Schedule-ID` marker. Otherwise installation stops with `schedule.artifact_conflict`, and Orbit does not overwrite, adopt, or delete the file. When a step fails, Rust restores the earlier files and timer state. A first installation removes only the files it created. When the restore fails too, the Schedule becomes `failed` with `schedule.rollback_failed`. Repeat the identical create to retry.
 

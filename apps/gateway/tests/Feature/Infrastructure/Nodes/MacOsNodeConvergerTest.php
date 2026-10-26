@@ -31,7 +31,7 @@ it('pins the connection and installs the command binary before native enrollment
         ->and($ssh->connections[0]->identityFile)
         ->toBe('/tmp/orbit-gateway-key')
         ->and($ssh->commands)
-        ->toBe(['probe', 'agent.install', 'nodes.inspect-macos-enrollment'])
+        ->toBe(['probe', 'agent.install', 'node.inspect-macos-enrollment'])
         ->and($ssh->inputs)->toBe([['address' => '10.44.0.40']]);
 
 });
@@ -54,16 +54,16 @@ it('stops when the existing account does not authorize the gateway key', functio
 
 it('maps native enrollment refusals to provisioning errors', function (string $agentCode, string $step, string $code): void {
     $ssh = new FakeMacAdmissionAgentRunner;
-    $ssh->inspectionFailure = new AgentCommandRefused('nodes.inspect-macos-enrollment', $agentCode, 'Refused');
+    $ssh->inspectionFailure = new AgentCommandRefused('node.inspect-macos-enrollment', $agentCode, 'Refused');
     $converger = macos_converger($ssh);
     expect(fn () => $converger->enroll(new Node(['name' => 'mini']), '192.0.2.40', 22, 'mini', '10.44.0.40', null, 'SHA256:pinned'))
         ->toThrow(function (NodeProvisioningException $exception) use ($step, $code): void {
             expect($exception->step)->toBe($step)->and($exception->errorCode)->toBe($code);
         });
 })->with([
-    ['nodes.macos_platform_mismatch', 'machine-architecture', 'node.platform_mismatch'],
-    ['nodes.macos_architecture_unavailable', 'machine-architecture', 'node.architecture_unavailable'],
-    ['nodes.macos_wireguard_required', 'identity', 'node.wireguard_required'],
+    ['node.macos_platform_mismatch', 'machine-architecture', 'node.platform_mismatch'],
+    ['node.macos_architecture_unavailable', 'machine-architecture', 'node.architecture_unavailable'],
+    ['node.macos_wireguard_required', 'identity', 'node.wireguard_required'],
 ]);
 
 it('stops before observation when the pinned agent cannot install', function (): void {

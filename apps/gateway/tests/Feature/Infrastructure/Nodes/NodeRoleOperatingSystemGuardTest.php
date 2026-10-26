@@ -14,11 +14,11 @@ function node_role_guard_node(): Node
 }
 
 it('accepts a supported Ubuntu release for every role', function (RoleName $role): void {
-    $agents = (new FakeAgentCommandRunner)->answer('nodes.os-release', ['id' => 'ubuntu', 'codename' => 'resolute']);
+    $agents = (new FakeAgentCommandRunner)->answer('node.os-release', ['id' => 'ubuntu', 'codename' => 'resolute']);
 
     (new NodeRoleOperatingSystemGuard($agents))->assert(node_role_guard_node(), $role);
 
-    expect($agents->commands())->toBe(['nodes.os-release']);
+    expect($agents->commands())->toBe(['node.os-release']);
 })->with(RoleName::cases());
 
 it('rejects nodes without a WireGuard address before the agent', function (): void {
@@ -34,7 +34,7 @@ it('rejects nodes without a WireGuard address before the agent', function (): vo
 });
 
 it('rejects unsupported operating systems with their name', function (RoleName $role, string $id, string $codename): void {
-    $agents = (new FakeAgentCommandRunner)->answer('nodes.os-release', ['id' => $id, 'codename' => $codename]);
+    $agents = (new FakeAgentCommandRunner)->answer('node.os-release', ['id' => $id, 'codename' => $codename]);
 
     expect(fn () => (new NodeRoleOperatingSystemGuard($agents))->assert(node_role_guard_node(), $role))
         ->toThrow(fn (NodeRoleOperationException $exception): bool => $exception->step === 'operating-system'
@@ -48,7 +48,7 @@ it('rejects unsupported operating systems with their name', function (RoleName $
 ]);
 
 it('rejects a Node whose os-release the agent cannot read', function (): void {
-    $agents = (new FakeAgentCommandRunner)->refuse('nodes.os-release', 'nodes.os_release_unreadable');
+    $agents = (new FakeAgentCommandRunner)->refuse('node.os-release', 'node.os_release_unreadable');
 
     expect(fn () => (new NodeRoleOperatingSystemGuard($agents))->assert(node_role_guard_node(), RoleName::Gateway))
         ->toThrow(fn (NodeRoleOperationException $exception): bool => $exception->getMessage() === 'Node [guard-node] role [gateway]. Node operating system [unknown/unknown] is not supported.'

@@ -51,7 +51,7 @@ function dependency_api_receipt(): array
 
 function dependency_api_remote(Closure $receipt): void
 {
-    app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner()->answer('instances.read-dependency-files', fn (): array => $receipt()));
+    app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner()->answer('instance.read-dependency-files', fn (): array => $receipt()));
 }
 
 function dependency_api_seed(Instance $instance): void
@@ -351,7 +351,7 @@ describe('single-instance dependency update API', function (): void {
         $receipt['files']['composer.json'] = ['content' => base64_encode($composerManifest), 'hash' => hash('sha256', $composerManifest), 'error' => null];
         $receipt['files']['composer.lock'] = ['content' => base64_encode($composerLock), 'hash' => hash('sha256', $composerLock), 'error' => null];
         app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner()
-            ->answer('instances.probe-dependency-update', function (array $input) use (&$kinds): array {
+            ->answer('instance.probe-dependency-update', function (array $input) use (&$kinds): array {
                 $kinds[] = $input['ecosystem'].'-inspect';
 
                 return match ($input['ecosystem']) {
@@ -360,12 +360,12 @@ describe('single-instance dependency update API', function (): void {
                     default => ['status' => 'absent'],
                 };
             })
-            ->answer('instances.update-dependencies', function (array $input) use (&$kinds): array {
+            ->answer('instance.update-dependencies', function (array $input) use (&$kinds): array {
                 $kinds[] = $input['ecosystem'].'-apply';
 
                 return ['exit_code' => 0];
             })
-            ->answer('instances.read-dependency-files', fn (): array => $receipt));
+            ->answer('instance.read-dependency-files', fn (): array => $receipt));
 
         $response = $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
             ->call('POST', "/api/v1/instances/{$instance->id}/dependencies/update", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}');

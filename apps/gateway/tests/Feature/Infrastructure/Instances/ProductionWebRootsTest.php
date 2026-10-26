@@ -25,8 +25,8 @@ describe('production web roots', function (): void {
     it('passes the served web roots to release preparation and activation only when a Route has one', function (): void {
         [$instance] = prodweb_instance();
         $agents = new FakeAgentCommandRunner()
-            ->answer('instances.prepare-release', ['name' => '20261009-a1', 'commit' => str_repeat('b', 40)])
-            ->answer('instances.activate-release', ['name' => '20261009-a1', 'commit' => str_repeat('b', 40)]);
+            ->answer('instance.prepare-release', ['name' => '20261009-a1', 'commit' => str_repeat('b', 40)])
+            ->answer('instance.activate-release', ['name' => '20261009-a1', 'commit' => str_repeat('b', 40)]);
         $deployment = new RemoteProductionDeployment($agents, app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class), static fn (): string => '20261009-a1');
         $deployment->prepare($instance, 'main');
         prodweb_route($instance, 'docs.example.com', 'apps/docs/public');
@@ -43,24 +43,24 @@ describe('production web roots', function (): void {
     it('prepares the selected release for a Route operation and asks for a deployment first', function (): void {
         [$instance] = prodweb_instance();
         prodweb_route($instance, 'docs.example.com', 'apps/docs/public');
-        $agents = new FakeAgentCommandRunner()->answer('instances.prepare-served-web-roots', ['name' => 'r1', 'commit' => str_repeat('a', 40)]);
+        $agents = new FakeAgentCommandRunner()->answer('instance.prepare-served-web-roots', ['name' => 'r1', 'commit' => str_repeat('a', 40)]);
         $manager = new RemoteProductionWebRootManager($agents);
         $manager->prepare($instance);
 
         expect($agents->calls[0]['input'])->toMatchArray(['user' => 'orbit-acme', 'home' => '/home/orbit-acme', 'served' => [['web_root' => 'apps/docs/public', 'directory' => 'apps/docs']]]);
-        $agents->refuse('instances.prepare-served-web-roots', 'instances.release_missing');
+        $agents->refuse('instance.prepare-served-web-roots', 'instance.release_missing');
         expect(fn () => $manager->prepare($instance))
             ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('route.web_root_release_missing'));
     });
 
     it('checks one web root in the selected release and names it when the release cannot serve it', function (): void {
         [$instance] = prodweb_instance();
-        $agents = new FakeAgentCommandRunner()->answer('instances.check-served-web-roots', []);
+        $agents = new FakeAgentCommandRunner()->answer('instance.check-served-web-roots', []);
         $manager = new RemoteProductionWebRootManager($agents);
         $manager->assertServable($instance, 'apps/docs/public');
 
         expect($agents->calls[0]['input']['served'])->toBe([['web_root' => 'apps/docs/public', 'directory' => 'apps/docs']]);
-        $agents->refuse('instances.check-served-web-roots', 'instances.release_invalid', ['check' => 'the selected release holds the web root as a directory']);
+        $agents->refuse('instance.check-served-web-roots', 'instance.release_invalid', ['check' => 'the selected release holds the web root as a directory']);
         expect(fn () => $manager->assertServable($instance, 'apps/docs/public'))
             ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('app-prod.web_root_invalid')
                 ->and($exception->getMessage())->toContain('apps/docs/public'));
@@ -68,7 +68,7 @@ describe('production web roots', function (): void {
 
     it('asks the agent to write APP_URL with a new key and the stored name for a served directory', function (): void {
         [$instance] = prodweb_instance();
-        $agents = new FakeAgentCommandRunner()->answer('instances.write-directory-url', ['written' => true]);
+        $agents = new FakeAgentCommandRunner()->answer('instance.write-directory-url', ['written' => true]);
 
         new RemoteProductionRouteApplicationUrlWriter($agents)->configureDirectoryUrl($instance, 'apps/docs', 'https://docs.example.com');
 

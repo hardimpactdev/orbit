@@ -78,37 +78,37 @@ final class VpStoreAgentRunner implements AgentCommandRunner
     {
         $this->deadlines[] = $deadlineSeconds;
         $this->agentCalls[] = ['command' => $command, 'input' => $input];
-        if ($command === 'tools.vp-version') {
+        if ($command === 'tool.vp-version') {
             $this->operations[] = 'vp-version';
 
             return ['version' => 'vp v'.$this->vpVersion];
         }
-        if ($command === 'tools.inspect-vp-scope') {
+        if ($command === 'tool.inspect-vp-scope') {
             $this->operations[] = 'scope';
 
             return ['binary' => '/opt/orbit/vite-plus/bin/vp'];
         }
-        if ($command === 'tools.read-vp-project') {
+        if ($command === 'tool.read-vp-project') {
             $this->operations[] = 'project';
 
             return $this->configuration;
         }
-        if ($command === 'tools.inspect-vp-store') {
+        if ($command === 'tool.inspect-vp-store') {
             $this->operations[] = 'inspect';
             $this->inputs[] = $input;
             if ($this->inspectionFails) {
-                throw new AgentCommandRefused($command, 'tools.store_invalid', 'Fixture inspection failed');
+                throw new AgentCommandRefused($command, 'tool.store_invalid', 'Fixture inspection failed');
             }
 
             return ['installed' => array_map(fn (array $environment): bool => $this->managedRuntimes === null ? $this->installed
                 : array_diff($this->runtimePaths($environment), $this->managedRuntimes) === [], $input['environments'])];
         }
-        if ($command === 'tools.install-vp-environment') {
+        if ($command === 'tool.install-vp-environment') {
             $this->operations[] = 'install';
             ($this->onInstall ?? static function (): void {})();
             $this->inputs[] = [...$input['environment'], 'npmrc' => $input['npmrc']];
             if ($this->installFails) {
-                throw new AgentCommandRefused($command, 'tools.store_failed', 'Fixture installation failed');
+                throw new AgentCommandRefused($command, 'tool.store_failed', 'Fixture installation failed');
             }
             if (! $this->installIncomplete) {
                 $this->installed = true;
@@ -119,7 +119,7 @@ final class VpStoreAgentRunner implements AgentCommandRunner
 
             return ['verified' => []];
         }
-        if ($command === 'tools.prune-vp-store') {
+        if ($command === 'tool.prune-vp-store') {
             $this->operations[] = 'prune';
             $this->inputs[] = $input;
             $removed = [];

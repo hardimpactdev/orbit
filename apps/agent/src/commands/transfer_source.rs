@@ -1,4 +1,4 @@
-//! `instances.transfer-source`: the Node halves of a development Instance transfer, as the managed account. `capture`
+//! `instance.transfer-source`: the Node halves of a development Instance transfer, as the managed account. `capture`
 //! archives the checkout (a worktree with a Git bundle of `HEAD`) and leaves the selected SQLite file out;
 //! `materialize` unpacks an archive into a new checkout and points it at the captured commit; `discard` removes a
 //! destination; `cleanup` removes the source after cutover.
@@ -19,8 +19,8 @@ use std::{
 
 command_errors! {
     pub enum TransferError {
-        Archive {} => "instances.transfer_archive_invalid", "The transfer archive or destination is invalid.";
-        Failed { step: String } => "instances.transfer_source_failed", "A transfer step failed on the Node.";
+        Archive {} => "instance.transfer_archive_invalid", "The transfer archive or destination is invalid.";
+        Failed { step: String } => "instance.transfer_source_failed", "A transfer step failed on the Node.";
     }
 }
 
@@ -319,7 +319,7 @@ pub fn transfer(input: &TransferInput) -> Result<TransferOutput, TransferError> 
 pub struct TransferSource;
 
 impl Command for TransferSource {
-    const NAME: &'static str = "instances.transfer-source";
+    const NAME: &'static str = "instance.transfer-source";
     const SUMMARY: &'static str = "Capture, discard, or clean up a development Instance transfer.";
     const MUTATES: bool = true;
     const TIMEOUT: Duration = Duration::from_secs(600);
@@ -463,7 +463,7 @@ fn read_archive(
 }
 pub struct ReadArchive;
 impl Command for ReadArchive {
-    const NAME: &'static str = "instances.read-transfer-archive";
+    const NAME: &'static str = "instance.read-transfer-archive";
     const SUMMARY: &'static str = "Stream a private captured checkout archive to the Gateway.";
     const MUTATES: bool = false;
     const TIMEOUT: Duration = Duration::from_secs(1800);
@@ -497,7 +497,7 @@ pub struct MaterializeInput {
 }
 pub struct Materialize;
 impl Command for Materialize {
-    const NAME: &'static str = "instances.materialize-transfer";
+    const NAME: &'static str = "instance.materialize-transfer";
     const SUMMARY: &'static str = "Materialize a received checkout archive as the managed account.";
     const MUTATES: bool = true;
     const TIMEOUT: Duration = Duration::from_secs(1800);

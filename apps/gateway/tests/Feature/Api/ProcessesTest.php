@@ -78,12 +78,12 @@ describe('ProcessUser', function (): void {
     });
 
     it('stores the named account, defaults to its passwd home, and renders User', function (): void {
-        $this->agents->answer('accounts.lookup', $this->nobody);
+        $this->agents->answer('account.lookup', $this->nobody);
         $this->postJson('/api/v1/processes', $this->userPayload)->assertCreated()
             ->assertJsonPath('data.user', 'nobody')
             ->assertJsonPath('data.runtime_config.user', 'nobody')
             ->assertJsonPath('data.working_directory', '/nonexistent');
-        expect($this->agents->calls)->toBe([['node' => $this->node->name, 'command' => 'accounts.lookup', 'input' => ['user' => 'nobody']]]);
+        expect($this->agents->calls)->toBe([['node' => $this->node->name, 'command' => 'account.lookup', 'input' => ['user' => 'nobody']]]);
         $process = Process::query()->sole();
         $target = app(ProcessTargetResolver::class)->forProcess($process);
         expect(new SystemdProcessRenderer()->render($process, $target))
@@ -93,7 +93,7 @@ describe('ProcessUser', function (): void {
     });
 
     it('creates the Process through MCP with the same user contract', function (): void {
-        $this->agents->answer('accounts.lookup', $this->nobody);
+        $this->agents->answer('account.lookup', $this->nobody);
         $tool = collect(ToolManifest::default()->definitions())->first(static fn ($definition): bool => $definition->name === 'process-create');
         expect($tool?->inputSchema['properties']['user']['type'])->toBe('string');
         $response = $this->postJson('/mcp', [
@@ -105,14 +105,14 @@ describe('ProcessUser', function (): void {
     });
 
     it('does not leak an agent failure or persist the Process', function (): void {
-        $this->agents->answer('accounts.lookup', static fn (): array => throw new RuntimeException('private SSH detail'));
+        $this->agents->answer('account.lookup', static fn (): array => throw new RuntimeException('private SSH detail'));
         $this->postJson('/api/v1/processes', $this->userPayload)->assertUnprocessable()
             ->assertJsonPath('error.code', 'process.user_unavailable')->assertDontSee('private SSH detail');
         expect(Process::query()->count())->toBe(0);
     });
 
     it('honors an explicit directory and includes the account in identity matching', function (): void {
-        $this->agents->answer('accounts.lookup', $this->nobody);
+        $this->agents->answer('account.lookup', $this->nobody);
         $payload = [...$this->userPayload, 'working_directory' => '/srv/worker'];
         $this->postJson('/api/v1/processes', $payload)->assertCreated()->assertJsonPath('data.working_directory', '/srv/worker');
         $this->postJson('/api/v1/processes', $payload)->assertOk();
@@ -153,8 +153,8 @@ describe('ProcessUser', function (): void {
 
     it('fails closed on an unavailable or unsafe account without storing a Process', function (?array $account): void {
         $account === null
-            ? $this->agents->refuse('accounts.lookup', 'accounts.missing')
-            : $this->agents->answer('accounts.lookup', [...$this->nobody, ...$account]);
+            ? $this->agents->refuse('account.lookup', 'account.missing')
+            : $this->agents->answer('account.lookup', [...$this->nobody, ...$account]);
         $this->postJson('/api/v1/processes', $this->userPayload)->assertUnprocessable()
             ->assertJsonPath('error.code', 'process.user_unavailable');
         expect(Process::query()->count())->toBe(0);

@@ -14,7 +14,7 @@ use App\Models\Node;
 use Throwable;
 
 /**
- * Copies a development SQLite database through the managed account's `instances.copy-sqlite` agent command
+ * Copies a development SQLite database through the managed account's `instance.copy-sqlite` agent command
  * (docs/reference/instance-cloning.md). On one Node the agent copies it in place. Between Nodes, the source agent
  * exports a snapshot, the Gateway moves it with the protected SQLite transfer, and the target agent installs it once
  * its size and digest match.
@@ -93,7 +93,7 @@ final readonly class RemoteInstanceSqliteCloner implements InstanceSqliteCloner
     private function run(Node $node, array $input): array
     {
         try {
-            return $this->agents->run($node, 'instances.copy-sqlite', $input);
+            return $this->agents->run($node, 'instance.copy-sqlite', $input);
         } catch (Throwable $exception) {
             throw $this->failed($exception);
         }

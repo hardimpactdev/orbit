@@ -17,9 +17,9 @@ use std::{
 const MAX_BYTES: u64 = 1 << 40;
 command_errors! {
     pub enum Error {
-        Invalid {} => "instances.sqlite_transfer_invalid", "The managed snapshot path, size, or digest is invalid.";
-        Refused {} => "instances.sqlite_transfer_refused", "The snapshot is not the expected private SQLite file.";
-        Failed {} => "instances.sqlite_transfer_failed", "The SQLite snapshot transfer failed.";
+        Invalid {} => "instance.sqlite_transfer_invalid", "The managed snapshot path, size, or digest is invalid.";
+        Refused {} => "instance.sqlite_transfer_refused", "The snapshot is not the expected private SQLite file.";
+        Failed {} => "instance.sqlite_transfer_failed", "The SQLite snapshot transfer failed.";
     }
 }
 #[derive(schemars::JsonSchema, Deserialize)]
@@ -215,7 +215,7 @@ fn receive(input: &ReceiveInput, context: &Context) -> Result<Output, Error> {
 }
 pub struct ReadSnapshot;
 impl Command for ReadSnapshot {
-    const NAME: &'static str = "instances.read-sqlite-snapshot";
+    const NAME: &'static str = "instance.read-sqlite-snapshot";
     const SUMMARY: &'static str = "Stream a verified private SQLite snapshot to the Gateway.";
     const MUTATES: bool = false;
     const TIMEOUT: Duration = Duration::from_secs(1800);
@@ -237,7 +237,7 @@ impl Command for ReadSnapshot {
 }
 pub struct ReceiveSnapshot;
 impl Command for ReceiveSnapshot {
-    const NAME: &'static str = "instances.receive-sqlite-snapshot";
+    const NAME: &'static str = "instance.receive-sqlite-snapshot";
     const SUMMARY: &'static str =
         "Receive a verified SQLite snapshot into its prepared account-owned file.";
     const MUTATES: bool = true;

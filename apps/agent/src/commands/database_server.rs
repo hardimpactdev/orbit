@@ -1,4 +1,4 @@
-//! `databases.server-admin`: runs the fixed MySQL or PostgreSQL admin client inside a Database server's container with
+//! `database.server-admin`: runs the fixed MySQL or PostgreSQL admin client inside a Database server's container with
 //! `docker container exec`. The root password reaches the client through one environment variable, never an argument
 //! or a file; the SQL goes on its standard input. A copy dumps and loads inside the container, so data never leaves it.
 
@@ -14,9 +14,9 @@ use std::{
 
 command_errors! {
     pub enum DatabaseServerError {
-        Invalid { check: String } => "databases.server_admin_invalid", "The admin request does not pass its checks.";
-        Failed { exit_code: i32, stderr: String } => "databases.server_admin_failed", "The admin client failed.";
-        NotReady {} => "databases.server_not_ready", "The server did not accept a query before the deadline.";
+        Invalid { check: String } => "database.server_admin_invalid", "The admin request does not pass its checks.";
+        Failed { exit_code: i32, stderr: String } => "database.server_admin_failed", "The admin client failed.";
+        NotReady {} => "database.server_not_ready", "The server did not accept a query before the deadline.";
     }
 }
 
@@ -280,7 +280,7 @@ fn admin(
 pub struct DatabaseServerAdmin;
 
 impl Command for DatabaseServerAdmin {
-    const NAME: &'static str = "databases.server-admin";
+    const NAME: &'static str = "database.server-admin";
     const SUMMARY: &'static str =
         "Run the admin client of a Database server's container, or copy a database inside it.";
     const MUTATES: bool = true;

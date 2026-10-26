@@ -47,6 +47,8 @@ An installed Gateway caches its configuration, so an edit takes effect only afte
 
 Other `ORBIT_` keys belong to one feature, and the page for that feature documents them.
 
+[Release provenance](/reference/gateway-recovery#release-provenance) documents `ORBIT_CLI_RELEASE_TRUSTED_ROOT`, which replaces the committed Sigstore trust root only during a key-rotation recovery.
+
 `ORBIT_AGENT_DELIVERY` selects the agent delivery manifest, and `ORBIT_AGENT_CONTRACT` selects its exported command contract. The [Node agent](/reference/node-agent#commands) page describes their release and development use. Keep the manifest, contract, and binary from the same build.
 
 [Gateway disk retention](/reference/gateway-recovery#disk-retention) documents `ORBIT_JOURNAL_MAX_MB`, `ORBIT_JOURNAL_KEEP_FREE_MB`, `ORBIT_JOURNAL_RUNTIME_MAX_MB`, `ORBIT_JOURNAL_DAYS`, `ORBIT_LOG_ROTATE_MB`, and `ORBIT_LOG_ROTATE_KEEP`. Queue record retention uses `ORBIT_FAILED_JOBS_HOURS` and `ORBIT_JOB_BATCH_HOURS`. Their defaults are in `config/retention.php`.

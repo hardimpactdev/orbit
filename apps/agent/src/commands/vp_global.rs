@@ -16,13 +16,13 @@ use std::{
 use tokio::io::{AsyncRead, AsyncReadExt};
 crate::command_errors! {
     pub enum Error {
-        Invalid {} => "tools.vp_input_invalid", "The Vite+ package coordinate is invalid.";
-        Protected {} => "tools.vp_package_protected", "The recipe's pnpm runtime is protected.";
-        Absent {} => "tools.vp_scope_absent", "The Vite+ global scope is absent for the enrolled account.";
-        Conflict {} => "tools.vp_scope_conflict", "The Vite+ global scope conflicts with the enrolled account.";
-        Unreadable {} => "tools.vp_scope_unreadable", "The Vite+ global scope cannot be inspected.";
-        Failed {} => "tools.vp_operation_failed", "The Vite+ operation failed.";
-        Output {} => "tools.vp_output_invalid", "Vite+ returned invalid or incomplete output.";
+        Invalid {} => "tool.vp_input_invalid", "The Vite+ package coordinate is invalid.";
+        Protected {} => "tool.vp_package_protected", "The recipe's pnpm runtime is protected.";
+        Absent {} => "tool.vp_scope_absent", "The Vite+ global scope is absent for the enrolled account.";
+        Conflict {} => "tool.vp_scope_conflict", "The Vite+ global scope conflicts with the enrolled account.";
+        Unreadable {} => "tool.vp_scope_unreadable", "The Vite+ global scope cannot be inspected.";
+        Failed {} => "tool.vp_operation_failed", "The Vite+ operation failed.";
+        Output {} => "tool.vp_output_invalid", "Vite+ returned invalid or incomplete output.";
     }
 }
 type Result<T> = std::result::Result<T, Error>;
@@ -261,7 +261,7 @@ macro_rules! read_command {
 }
 read_command!(
     Version,
-    "tools.vp-version",
+    "tool.vp-version",
     "Read the account's Vite+ manager version.",
     Empty,
     VersionOutput,
@@ -269,7 +269,7 @@ read_command!(
 );
 read_command!(
     Candidate,
-    "tools.vp-candidate",
+    "tool.vp-candidate",
     "Read Vite+'s normal registry candidate for one package.",
     PackageInput,
     VersionOutput,
@@ -280,7 +280,7 @@ read_command!(
 );
 read_command!(
     Inventory,
-    "tools.vp-inventory",
+    "tool.vp-inventory",
     "Read Vite+ global package observations without changing Tool intent.",
     Empty,
     InventoryOutput,
@@ -288,7 +288,7 @@ read_command!(
 );
 read_command!(
     Plan,
-    "tools.vp-removal-plan",
+    "tool.vp-removal-plan",
     "Check removal of exactly one Vite+ global package.",
     PackageInput,
     RemovalOutput,
@@ -326,19 +326,19 @@ macro_rules! mutation {
 }
 mutation!(
     Install,
-    "tools.vp-install",
+    "tool.vp-install",
     "Install one Vite+ global package with its normal Node selection.",
     Install
 );
 mutation!(
     Update,
-    "tools.vp-update",
+    "tool.vp-update",
     "Update one Vite+ global package and reconcile its Node runtime.",
     Update
 );
 mutation!(
     Remove,
-    "tools.vp-remove",
+    "tool.vp-remove",
     "Remove exactly one Vite+ global package.",
     Remove
 );

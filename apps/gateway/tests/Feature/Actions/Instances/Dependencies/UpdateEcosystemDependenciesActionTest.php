@@ -25,7 +25,7 @@ function ecosystem_update_instance(): Instance
 }
 
 it('trusts only a verified Vite+ that Orbit manages', function (?array $vp, ?string $errorCode, ?string $path): void {
-    $agents = new FakeAgentCommandRunner()->answer('instances.probe-dependency-update', ['status' => 'present', 'vp' => $vp]);
+    $agents = new FakeAgentCommandRunner()->answer('instance.probe-dependency-update', ['status' => 'present', 'vp' => $vp]);
     $inspection = new UpdateEcosystemDependenciesAction($agents)->inspect(ecosystem_update_instance(), 'pnpm');
 
     expect($inspection->errorCode)->toBe($errorCode)
@@ -39,8 +39,8 @@ it('trusts only a verified Vite+ that Orbit manages', function (?array $vp, ?str
 ]);
 
 it('reads the update exit status and a runner timeout', function (?int $exitCode, string $status, ?string $errorCode): void {
-    $agents = new FakeAgentCommandRunner()->answer('instances.update-dependencies', fn (): array => $exitCode === null
-        ? throw new AgentRunnerFailure('instances.update-dependencies', AgentRunnerFailure::Timeout, 'slow')
+    $agents = new FakeAgentCommandRunner()->answer('instance.update-dependencies', fn (): array => $exitCode === null
+        ? throw new AgentRunnerFailure('instance.update-dependencies', AgentRunnerFailure::Timeout, 'slow')
         : ['exit_code' => $exitCode]);
     $result = new UpdateEcosystemDependenciesAction($agents)->apply(ecosystem_update_instance(), 'npm', '/opt/orbit/vite-plus/bin/vp');
 

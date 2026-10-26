@@ -3,14 +3,14 @@
 //! until Caddy reloads, and a failed reload puts it back; a restore undoes a publish that a later step rolled back.
 //! Every operation holds the Caddy publication lock and uses the Caddy runtime of the shared certificate commands.
 
-use super::caddy::{chown, group_id, lock};
+use super::caddy::{chown, group_id, lock, write_certificate_file};
 use super::caddy_certificate::{Native, Runtime};
 use crate::command::{Command, Context, Platform, Privilege};
 use crate::command_errors;
 use serde::{Deserialize, Serialize};
 use std::{
     fs, io,
-    os::unix::fs::{symlink, DirBuilderExt, OpenOptionsExt, PermissionsExt},
+    os::unix::fs::{symlink, DirBuilderExt},
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -128,14 +128,7 @@ impl Paths {
 
     /// Writes a new `0640` file that the caddy group `gid` reads.
     fn write_file(&self, path: &Path, content: &str, gid: u32) -> io::Result<()> {
-        fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o640)
-            .open(path)
-            .and_then(|mut file| io::Write::write_all(&mut file, content.as_bytes()))?;
-        chown(path, self.uid, gid)?;
-        fs::set_permissions(path, fs::Permissions::from_mode(0o640))
+        write_certificate_file(path, content.as_bytes(), self.uid, gid)
     }
 
     /// Creates a new `0750` directory that the caddy group `gid` reads.

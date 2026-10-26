@@ -259,7 +259,7 @@ it('prepares production config before resetting opcache and reports refresh skip
     }
     $agents = new FakeAgentCommandRunner;
     $prepared = false;
-    $agents->answer('instances.refresh-config-cache', function (array $input) use ($instance, $exit, $receipt, &$prepared): array {
+    $agents->answer('instance.refresh-config-cache', function (array $input) use ($instance, $exit, $receipt, &$prepared): array {
         expect($input)->toBe([
             'user' => $instance->production_user,
             'home' => $instance->production_home,
@@ -270,7 +270,7 @@ it('prepares production config before resetting opcache and reports refresh skip
             throw new RuntimeException('SECRET SSH failure');
         }
         if ($exit !== 0) {
-            throw new AgentCommandRefused('instances.refresh-config-cache', 'instances.release_step_failed', 'SECRET config output', ['step' => 'rebuild the configuration cache']);
+            throw new AgentCommandRefused('instance.refresh-config-cache', 'instance.release_step_failed', 'SECRET config output', ['step' => 'rebuild the configuration cache']);
         }
         $prepared = true;
 

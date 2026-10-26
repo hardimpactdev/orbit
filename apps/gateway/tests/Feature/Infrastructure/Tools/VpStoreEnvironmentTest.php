@@ -60,8 +60,8 @@ function vp_store_fixture(): array
     $prepare = new PrepareVpEnvironmentAction($vp, $agent, app(ToolManagerScopeLock::class));
     // Pruning reports what the scripted Node removed or found in use.
     $agents = new FakeAgentCommandRunner()
-        ->answer('instances.prune-releases', static fn (): array => ['removed' => $agent->removedReleases, 'in_use' => $agent->busyReleases])
-        ->answer('instances.run-deploy-step', static function () use ($agent): array {
+        ->answer('instance.prune-releases', static fn (): array => ['removed' => $agent->removedReleases, 'in_use' => $agent->busyReleases])
+        ->answer('instance.run-deploy-step', static function () use ($agent): array {
             $agent->operations[] = 'build';
 
             return ['exit_code' => $agent->buildFails ? 1 : 0, 'timed_out' => false, 'output' => [], 'truncated' => false];
@@ -86,10 +86,10 @@ it('installs and records missing runtimes as the owner before building and never
     expect($agent->operations)->toContain('install', 'build', 'prune')->not->toContain('vp-upgrade', 'resolve');
     expect(array_search('install', $agent->operations))->toBeLessThan(array_search('build', $agent->operations));
     expect($instance->fresh()->getAttribute('vp_environment'))->toMatchArray(['status' => 'active', 'vp_version' => '0.3.3', 'package_manager_version' => '11.12.0']);
-    $install = array_values(array_filter($agent->agentCalls, fn (array $call): bool => $call['command'] === 'tools.install-vp-environment'))[0];
+    $install = array_values(array_filter($agent->agentCalls, fn (array $call): bool => $call['command'] === 'tool.install-vp-environment'))[0];
     expect($install['input']['npmrc'])->toContain('private.example');
     expect($install['input']['environment'])->toMatchArray(['node_version' => '24.22.0', 'package_manager' => 'npm']);
-    expect($agent->agentCalls[0])->toBe(['command' => 'tools.read-vp-project', 'input' => ['path' => '/home/orbit-app-1/releases/candidate', 'user' => 'orbit-app-1']]);
+    expect($agent->agentCalls[0])->toBe(['command' => 'tool.read-vp-project', 'input' => ['path' => '/home/orbit-app-1/releases/candidate', 'user' => 'orbit-app-1']]);
     Http::assertNothingSent();
 });
 
@@ -299,7 +299,7 @@ it('batches Doctor reads and classifies failed requirements separately from acti
 
 it('maps unreadable project data to the requirements error before any store operation', function (): void {
     [, $agent, $instance, , $vp] = vp_store_fixture();
-    $agents = new FakeAgentCommandRunner()->refuse('tools.read-vp-project', 'tools.project_invalid');
+    $agents = new FakeAgentCommandRunner()->refuse('tool.read-vp-project', 'tool.project_invalid');
     $prepare = new PrepareVpEnvironmentAction($vp, $agents, app(ToolManagerScopeLock::class));
 
     expect(fn () => $prepare->prepare($instance, $instance->checkout_path, 'npm-build', 'vp run build'))
@@ -314,7 +314,7 @@ it('reads development requirements as the enrolled account', function (): void {
     $instance->node->roles()->delete();
     $instance->node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
     $instance->unsetRelation('node');
-    $agents = new FakeAgentCommandRunner()->answer('tools.read-vp-project', ['package' => [], 'locks' => [], 'workspaces' => [], 'npmrc' => '']);
+    $agents = new FakeAgentCommandRunner()->answer('tool.read-vp-project', ['package' => [], 'locks' => [], 'workspaces' => [], 'npmrc' => '']);
     $prepare = new PrepareVpEnvironmentAction($vp, $agents, app(ToolManagerScopeLock::class));
 
     expect($prepare->prepare($instance, $instance->checkout_path, 'npm-build', 'vp run build'))->toBeNull();

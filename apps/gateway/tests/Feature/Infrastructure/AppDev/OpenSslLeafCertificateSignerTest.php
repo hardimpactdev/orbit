@@ -17,6 +17,7 @@ beforeAll(function (): void {
     foreach (['leaf-signer', 'leaf-signer-alternate'] as $name) {
         RootCaFixture::prepare($name, '/CN=Orbit Test Root', 1, ['basicConstraints=critical,CA:TRUE', 'keyUsage=critical,keyCertSign,cRLSign']);
     }
+    RootCaFixture::prepare('leaf-signer-not-a-ca', '/CN=Orbit Test Root', 1, ['basicConstraints=critical,CA:FALSE']);
 });
 
 it('signs a target CSR for only the gateway-approved hostname', function (): void {
@@ -282,6 +283,28 @@ it('rejects root CA material that is not RSA 4096', function (): void {
         )->toBeTrue();
 
         expect(fn () => new OpenSslLeafCertificateSigner($processes, $orbitHome)->rootCertificate())
+            ->toThrow(RuntimeException::class, 'material is invalid');
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
+
+it('rejects a root certificate without CA:TRUE before it signs', function (): void {
+    $orbitHome = sys_get_temp_dir().'/orbit-leaf-signer-'.Str::uuid();
+    $ca = "{$orbitHome}/ca";
+    mkdir(directory: $ca, permissions: 0o700, recursive: true);
+    $processes = new class implements ProcessRunner
+    {
+        public function run(ProcessInvocation $invocation): CommandResult
+        {
+            throw new LogicException('The signer must not run OpenSSL with an invalid root.');
+        }
+    };
+
+    try {
+        RootCaFixture::install($ca, 'leaf-signer-not-a-ca');
+
+        expect(fn () => new OpenSslLeafCertificateSigner($processes, $orbitHome)->sign('site.app-dev.orbit', 'request'))
             ->toThrow(RuntimeException::class, 'material is invalid');
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);

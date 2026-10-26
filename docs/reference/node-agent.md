@@ -23,13 +23,13 @@ Fixed **service entry points** run under their own Linux systemd units. `service
 
 The observer listens on no port. Nothing reaches command mode over the network: only a process that SSH or the Gateway starts runs it. To build and check the agent, see [Bun and Rust projects](/reference/bun-and-rust-projects#node-agent).
 
-`swamp.start-worker` starts a task VM worker through fixed systemd runtime files and protected stdin input after its workspace is ready. `swamp.stop-worker` stops that service and its children, then removes its runtime unit. `image.trust-ca` installs only the public Orbit CA in the image trust store. These commands expose no caller program or shell. [Task worker enrollment](/reference/tasks#optional-swamp-worker) owns their credential lifetime.
+`swamp.start-worker` starts a task VM worker through fixed systemd runtime files and protected stdin input after its workspace is ready. `swamp.stop-worker` stops that service and its children, then removes its runtime unit. Worker command errors use the `swamp.*` namespace; the Gateway reports task-operation failures as `tasks.*`. `image.trust-ca` installs only the public Orbit CA in the image trust store. These commands expose no caller program or shell. [Task worker enrollment](/reference/tasks#optional-swamp-worker) owns their credential lifetime.
 
 ## Where it runs
 
 The Gateway installs the observer only on active managed Linux Nodes with a WireGuard address and a pinned SSH host key. Only those Nodes hold an agent secret. [Exporter selection](/reference/metrics#exporter-selection) uses the same boundary. The observer needs no role.
 
-A macOS Node uses the command binary as its enrolled account. Enrollment installs it through `agent.install`, then calls `nodes.inspect-macos-enrollment` to read the native architecture and verify the existing WireGuard address. The command reads kernel identity and interface addresses without a shell or network change. macOS has no observer, agent secret, or LaunchAgent.
+A macOS Node uses the command binary as its enrolled account. Enrollment installs it through `agent.install`, then calls `node.inspect-macos-enrollment` to read the native architecture and verify the existing WireGuard address. The command reads kernel identity and interface addresses without a shell or network change. macOS has no observer, agent secret, or LaunchAgent.
 
 ## What it observes
 
@@ -188,15 +188,17 @@ Each lock records the transient service's control group before the command start
 
 Target and resource locks live in `/run/orbit-agent/locks/<uid>`, one directory per account. The root process that starts the mutation creates it, owned by the account with mode 0700, and passes it to the service in `ORBIT_AGENT_LOCK_DIR`. The supervised process refuses with `agent.lock_unavailable` unless it owns that directory and no one else can enter it. It opens lock files without following links. Only root writes `/run`, so no other account can create, hold, or replace these locks.
 
-A root command and an account command on the same target do not exclude each other. Commands that must serialize a shared mutation use the same privilege and lock key. So both `.env` writers, `instances.write-environment` and `instances.write-development-url`, are owner commands: root holds the `environment:` lock, and the write runs as the file's owner.
+A root command and an account command on the same target do not exclude each other. Commands that must serialize a shared mutation use the same privilege and lock key. So both `.env` writers, `instance.write-environment` and `instance.write-development-url`, are owner commands: root holds the `environment:` lock, and the write runs as the file's owner.
 
 Every root command that runs `apt-get` or `dpkg` holds the shared `packages` resource. Every command that changes UFW rules holds `firewall`. A mutation with neither a target nor a resource changes only state that one Gateway operation owns at a time, such as one Instance's checkout during its own deploy.
 
 ### The contract
 
-Rust defines each command: its input, output, error codes, bound, privilege, and whether it mutates. `apps/agent/contract/commands.json` is written from those definitions, and a Rust test fails when the file is stale. The Gateway reads privileges and bounds from that file. `ORBIT_AGENT_CONTRACT` can select a different contract file; a relative path resolves from the Gateway directory. Rewrite the file with `ORBIT_AGENT_WRITE_CONTRACT=1 cargo test contract_file` in `apps/agent`.
+A command name is `<namespace>.<action>`, and an error code is `<namespace>.<reason>`. A namespace is singular, as in the CLI: `instance.inspect-release` refuses with `instance.release_invalid`. An action can name a collection, such as `incus.images`. Four namespaces end in `s` but are not plurals: the mass nouns `analytics` and `metrics`, the product `incus`, and the extension slug `documents`. The Gateway Node's start-hook drop-in runs `orbit-agent service documents.prepare-cleanup`, so that name stays with the extension slug. Service entry points are not commands: `schedules-run` and `schedules-complete` are written into every Schedule's units on its Node, so they keep their names. A Rust test refuses any other namespace whose last word ends in one `s`; `process` ends in two.
 
-`apps/agent/contract/schemas.json` holds the JSON Schema of each command's input and output, derived from the same Rust types. `ORBIT_AGENT_WRITE_CONTRACT=1 cargo test schemas_file` rewrites it. Rust tests keep every input object closed to unknown fields in the schema, and decode a generated input of every command with an unknown field at each level to prove the real decoder refuses it.
+Rust defines each command: its input, output, error codes, bound, privilege, and whether it mutates. `apps/agent/contract/commands.json` is written from those definitions, and a Rust test fails when the file is stale. The Gateway reads privileges and bounds from that file. `ORBIT_AGENT_CONTRACT` can select a different contract file; a relative path resolves from the Gateway directory. Rewrite the file with `ORBIT_AGENT_WRITE_CONTRACT=1 cargo test --lib -- contract_file` in `apps/agent`.
+
+`apps/agent/contract/schemas.json` holds the JSON Schema of each command's input and output, derived from the same Rust types. `ORBIT_AGENT_WRITE_CONTRACT=1 cargo test --lib -- schemas_file` rewrites it. Rust tests keep every input object closed to unknown fields in the schema, and decode a generated input of every command with an unknown field at each level to prove the real decoder refuses it.
 
 The PHP test fakes refuse a command, error code, or binary stream that the contract does not declare. They check each input in its wire form, where `{}` and `[]` differ, and each answer against the output schema. A test of the Gateway's own guard against a malformed result says so with `answerMalformed`.
 
@@ -256,7 +258,7 @@ Command mode currently runs as the enrolled macOS account. A future LaunchAgent 
 
 ### Live output
 
-A command that runs project code can publish its output while it runs. `instances.run-deploy-step` runs one production deploy step as the Instance owner, and `instances.run-development-step` runs one development deploy step as the managed account. Each step runs in its own session. When its shell ends, or at the step's `timeout_seconds`, its process group gets TERM and then KILL 100 milliseconds later, so a process the step left behind cannot hold its output or outlive it. A stopped step exits with 143.
+A command that runs project code can publish its output while it runs. `instance.run-deploy-step` runs one production deploy step as the Instance owner, and `instance.run-development-step` runs one development deploy step as the managed account. Each step runs in its own session. When its shell ends, or at the step's `timeout_seconds`, its process group gets TERM and then KILL 100 milliseconds later, so a process the step left behind cannot hold its output or outlive it. A stopped step exits with 143.
 
 While a step runs, its command joins the operation's channel, `private-operation.{id}`, and publishes each redacted output line as a `client-output` event, as [Realtime events: Deploy step output](/reference/events#deploy-step-output) describes. `POST /api/v1/agent/broadcasting/auth` signs that channel for the agent of the Node that runs the operation, while the operation runs or waits. Publishing is best effort: when Reverb is down, the step still runs, and its result still carries the output for the record.
 
@@ -414,7 +416,7 @@ These reads ask the view first and fall back when it is not fresh.
 | --- | --- | --- |
 | Process list `runtime_status` | A status the Gateway observed after its own start, stop, or restart wins for 30 seconds. Otherwise the view answers. | [Prometheus](/reference/metrics#process-runtime-status), then SSH |
 | Readiness while a hibernated Instance [wakes](/reference/app-dev-runtime-hibernation#wake) | The view answers every 0.5 seconds. A `failed` answer, or the timeout, is checked once over SSH. | SSH every 0.5 seconds |
-| The hibernator's [idle halt](/reference/app-dev-runtime-hibernation#idle-window-and-sweep) | When the view shows the Process stopped, the hibernator skips the stop. | `processes.control`, which checks ownership and stops |
+| The hibernator's [idle halt](/reference/app-dev-runtime-hibernation#idle-window-and-sweep) | When the view shows the Process stopped, the hibernator skips the stop. | `process.control`, which checks ownership and stops |
 | The [scheduler tick](/reference/tasks#session-routing)'s check for new commits | `commits` is greater than 0 | `git` over SSH |
 | The line diff of an active [task](/reference/tasks#tokens-and-line-diff) | `diff.added` and `diff.removed`, unless truncated | `git diff --shortstat` over SSH |
 
@@ -453,7 +455,9 @@ Each Gateway release pins one agent build: the delivery in its commit's [release
 
 The Gateway reads it from `apps/agent/delivery/manifest.json` in its checkout, or from the path in `ORBIT_AGENT_DELIVERY`. Git does not track the file. The Gateway picks a Node's artifact by its platform and recorded architecture. It uses the file beside the manifest when it exists, and otherwise downloads the URL once into `ORBIT_HOME/agent-artifacts/<sha256>`. It checks the SHA-256 before every use. An existing local artifact with the wrong digest refuses; only an absent local file uses the published URL. `apps/agent/scripts/build-delivery` writes the same layout for CI and for a topology.
 
-[Preparing a Gateway release](/reference/gateway-recovery#prepare-a-release) takes the manifest from the commit's published release, in PHP and without the agent. It checks every digest against the release's `SHA256SUMS` before any agent command. It then writes the manifest into the release and installs the pin on the Gateway's own Node; for a release the Gateway already holds, that also comes before any agent command. Preparation, including adoption, refuses without it. The release's private configuration cache selects this checkout's manifest, so a shared environment override cannot keep the previous release's pin. Repeating preparation verifies the existing manifest.
+[Preparing a Gateway release](/reference/gateway-recovery#prepare-a-release) takes the manifest from the commit's published release, in PHP and without the agent. It first verifies the release's [provenance](/reference/gateway-recovery#release-provenance): a Sigstore bundle that proves the release workflow on `main` signed the manifest and `SHA256SUMS`. It then checks every digest against `SHA256SUMS` before any agent command.
+
+Prepare then writes the manifest into the release and installs the pin on the Gateway's own Node; for a release the Gateway already holds, that also comes before any agent command. Preparation, including adoption, refuses without it. The release's private configuration cache selects this checkout's manifest, so a shared environment override cannot keep the previous release's pin. Repeating preparation verifies the existing manifest.
 
 The manifest also supplies the Linux pins in the [recipe identity](/reference/compute-drivers#recipe-identity). The recipe source carries no separate agent version or hashes.
 
@@ -573,7 +577,7 @@ The agent ships in the one public release that each green `main` commit gets, be
 | `orbit-agent-macos-x86_64` | Command binary for Intel Macs |
 | `manifest.json` | The delivery manifest, with each binary's URL in this release |
 
-The release's `SHA256SUMS` lists the agent binaries with the CLI binaries. A Gateway release of a commit waits for that commit's release, because [prepare](/reference/gateway-recovery#prepare-a-release) takes the agent from it.
+The release's `SHA256SUMS` lists the agent binaries with the CLI binaries, and its `provenance.sigstore.json` [signs](/reference/cli-binaries#provenance) the manifest and `SHA256SUMS` with the other files. A Gateway release of a commit waits for that commit's release, because [prepare](/reference/gateway-recovery#prepare-a-release) takes the agent from it.
 
 ## Limits
 
@@ -612,7 +616,7 @@ The agent runs on every Node, so memory matters. A Rust agent uses about 5 MB. P
 
 A workflow artifact needs a GitHub login and expires, so the commit's release publishes the tested artifact as release assets with permanent URLs, beside the CLI. One release per commit needs no separate tag, token, or App. Building on each Node would put a Rust toolchain on production hosts. Resolving the latest release at install time would let an unreviewed build reach Nodes. So each Gateway release pins the exact digests of its own commit's delivery, and every reader takes the pin from it.
 
-The Gateway fetches and installs that delivery itself in PHP, so installing the agent never needs the agent.
+The Gateway fetches and installs that delivery itself in PHP, so installing the agent never needs the agent. It verifies the release's provenance first, so only files that the release workflow on `main` signed reach a Node.
 
 ### The view in a file cache
 

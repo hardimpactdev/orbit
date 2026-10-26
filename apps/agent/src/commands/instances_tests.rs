@@ -230,34 +230,34 @@ fn inspection_names_each_refused_identity_check() {
     };
     assert_eq!(
         with(&|input| input.checkout = sandbox.base.join("outside")),
-        "instances.path_mismatch"
+        "instance.path_mismatch"
     );
     assert_eq!(
         with(&|input| input.checkout = sandbox.project.join("linked")),
-        "instances.path_mismatch"
+        "instance.path_mismatch"
     );
     assert_eq!(
         with(&|input| input.checkout = sandbox.project.join("missing")),
-        "instances.path_mismatch"
+        "instance.path_mismatch"
     );
     assert_eq!(
         with(&|input| input.user = "someone-else".into()),
-        "instances.ownership_mismatch"
+        "instance.ownership_mismatch"
     );
     assert_eq!(
         with(&|input| input.prepare_id = "another-attempt".into()),
-        "instances.ownership_mismatch"
+        "instance.ownership_mismatch"
     );
     assert_eq!(
         with(&|input| input.layout = "worktree".into()),
-        "instances.layout_mismatch"
+        "instance.layout_mismatch"
     );
     assert_eq!(
         with(&|input| input.branch = "main".into()),
-        "instances.branch_mismatch"
+        "instance.branch_mismatch"
     );
     sh_git(&checkout, &["remote", "remove", "origin"]);
-    assert_eq!(with(&|_| {}), "instances.origin_mismatch");
+    assert_eq!(with(&|_| {}), "instance.origin_mismatch");
     assert!(checkout.join(".git").is_dir());
 }
 
@@ -367,14 +367,14 @@ fn removal_refuses_dirty_or_unpublished_source_unless_forced() {
             remove_input(&sandbox, &dirty, "dev"),
             &context()
         )),
-        "instances.unsafe_content"
+        "instance.unsafe_content"
     );
     assert_eq!(
         code(remove_source(
             remove_input(&sandbox, &unpublished, "unpublished"),
             &context()
         )),
-        "instances.unsafe_content"
+        "instance.unsafe_content"
     );
     assert!(dirty.join("new.txt").is_file());
     assert!(unpublished.join(".git").is_dir());
@@ -398,14 +398,14 @@ fn removal_refuses_a_source_that_changed_after_inspection() {
     input.force = true;
     assert_eq!(
         code(remove_source(input, &context())),
-        "instances.source_changed"
+        "instance.source_changed"
     );
     let mut input = remove_input(&sandbox, &checkout, "dev");
     input.source_identity = "1:1".into();
     input.force = true;
     assert_eq!(
         code(remove_source(input, &context())),
-        "instances.source_changed"
+        "instance.source_changed"
     );
     assert!(checkout.join(".git").is_dir());
 }
@@ -422,19 +422,19 @@ fn removal_refuses_each_identity_mismatch_even_when_forced() {
     };
     assert_eq!(
         forced(&|input| input.grouping_directory = sandbox.root.clone()),
-        "instances.path_mismatch"
+        "instance.path_mismatch"
     );
     assert_eq!(
         forced(&|input| input.user = "someone-else".into()),
-        "instances.ownership_mismatch"
+        "instance.ownership_mismatch"
     );
     assert_eq!(
         forced(&|input| input.branch = "main".into()),
-        "instances.branch_mismatch"
+        "instance.branch_mismatch"
     );
     assert_eq!(
         forced(&|input| input.repository_identity = "example.test/acme/other".into()),
-        "instances.origin_mismatch"
+        "instance.origin_mismatch"
     );
     sh_git(
         &checkout,
@@ -445,7 +445,7 @@ fn removal_refuses_each_identity_mismatch_even_when_forced() {
             "ssh://git@example.test/acme/site.git\n",
         ],
     );
-    assert_eq!(forced(&|_| {}), "instances.origin_mismatch");
+    assert_eq!(forced(&|_| {}), "instance.origin_mismatch");
     assert!(checkout.join(".git").is_dir());
 }
 
@@ -476,7 +476,7 @@ fn removal_refuses_a_live_linked_worktree_and_ignores_a_prunable_one() {
     let inventory = String::from_utf8(decode(&observed.worktrees)).unwrap();
     assert!(inventory.contains(&format!("worktree {}\0", checkout.display())));
     assert!(inventory.contains(&format!("worktree {}\0", linked.display())));
-    assert_eq!(forced(), "instances.worktrees_mismatch");
+    assert_eq!(forced(), "instance.worktrees_mismatch");
     assert_eq!(recovery::tree_bytes(&checkout), before);
     assert_eq!(recovery::tree_bytes(&linked), sibling_before);
     fs::remove_dir_all(&linked).unwrap();
@@ -504,7 +504,7 @@ fn removal_refuses_shared_git_administration_as_a_layout_mismatch() {
     input.force = true;
     assert_eq!(
         code(remove_source(input, &context())),
-        "instances.layout_mismatch"
+        "instance.layout_mismatch"
     );
     assert!(shared.is_dir());
 }
@@ -651,7 +651,7 @@ fn preparation_records_the_journal_once_and_refuses_another_digest() {
     );
     assert_eq!(
         code(recorded.prepare(&"0".repeat(64))),
-        "instances.removal_refused"
+        "instance.removal_refused"
     );
 }
 
@@ -685,14 +685,14 @@ fn finalization_refuses_dirty_source_or_a_replaced_directory_before_moving_it() 
     fs::write(checkout.join("new.txt"), "work\n").unwrap();
     assert_eq!(
         code(finalize_removal(recorded.finalization(), &context())),
-        "instances.removal_refused"
+        "instance.removal_refused"
     );
     fs::remove_file(checkout.join("new.txt")).unwrap();
     let mut replaced = recorded.finalization();
     replaced.source_identity = "1:1".into();
     assert_eq!(
         code(finalize_removal(replaced, &context())),
-        "instances.removal_refused"
+        "instance.removal_refused"
     );
     assert!(checkout.join(".git").is_dir());
     assert!(!exists(&recorded.quarantine()));

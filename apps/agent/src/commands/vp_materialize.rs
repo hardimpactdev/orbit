@@ -20,10 +20,10 @@ use std::{
 };
 crate::command_errors! {
     pub enum Error {
-        Invalid {} => "tools.vp_materialize_invalid", "The Vite+ recipe or account is invalid.";
-        Conflict {} => "tools.vp_materialize_conflict", "The Vite+ scope or a runtime launcher has conflicting ownership or content.";
-        Failed {} => "tools.vp_materialize_failed", "The Vite+ manager could not be materialized.";
-        Restore {} => "tools.vp_materialize_restore_failed", "The Vite+ runtime check failed and its previous launchers could not be restored.";
+        Invalid {} => "tool.vp_materialize_invalid", "The Vite+ recipe or account is invalid.";
+        Conflict {} => "tool.vp_materialize_conflict", "The Vite+ scope or a runtime launcher has conflicting ownership or content.";
+        Failed {} => "tool.vp_materialize_failed", "The Vite+ manager could not be materialized.";
+        Restore {} => "tool.vp_materialize_restore_failed", "The Vite+ runtime check failed and its previous launchers could not be restored.";
     }
 }
 type Result<T> = std::result::Result<T, Error>;
@@ -211,7 +211,7 @@ fn materialize(
 }
 pub struct Materialize;
 impl Command for Materialize {
-    const NAME: &'static str = "tools.materialize-vp";
+    const NAME: &'static str = "tool.materialize-vp";
     const SUMMARY: &'static str = "Prepare the Linux Vite+ scope and verify its managed launchers.";
     const MUTATES: bool = true;
     const TIMEOUT: Duration = Duration::from_secs(900);

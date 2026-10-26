@@ -90,6 +90,7 @@ use App\Infrastructure\GatewayReleases\SystemdGatewayReleaseDrain;
 use App\Infrastructure\GatewayReleases\SystemdGatewayReleaseUnitStarter;
 use App\Infrastructure\GitHub\GitHubActionsReader;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\Releases\ReleaseProvenance;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Models\Node;
 use Illuminate\Contracts\Foundation\Application;
@@ -179,6 +180,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
             GatewayReleaseAgent::class,
             static fn (Application $app): GatewayReleaseAgentDelivery => new GatewayReleaseAgentDelivery(
                 processes: $app->make(ProcessRunner::class),
+                provenance: $app->make(ReleaseProvenance::class),
                 repository: Config::string('orbit.cli_releases.repository'),
                 cacheDirectory: rtrim(Config::string('orbit.home'), '/').'/agent-artifacts',
                 runner: static fn (AgentDelivery $delivery): AgentCommandRunner => new NativeAgentCommandRunner($app->make(AgentContract::class), $delivery, $app->make(AgentTransports::class)),

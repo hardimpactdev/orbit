@@ -65,7 +65,7 @@ fn read(input: &Input) -> Result<Output, Error> {
 
 pub struct ReadTopologyEvidence;
 impl Command for ReadTopologyEvidence {
-    const NAME: &'static str = "task-vms.read-topology-evidence";
+    const NAME: &'static str = "task-vm.read-topology-evidence";
     const SUMMARY: &'static str = "Read the newest MiB of a task VM checkout's topology evidence.";
     const MUTATES: bool = false;
     const TIMEOUT: Duration = Duration::from_secs(30);

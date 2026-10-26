@@ -18,8 +18,6 @@ use Throwable;
 
 final readonly class OpenSslGatewayCertificateIssuer implements GatewayCertificateIssuer
 {
-    private const string LEAF_VALIDITY_DAYS = '397';
-
     public function __construct(
         private ProcessRunner $processes,
         private OpenSslGatewayCertificateValidator $validator,
@@ -205,13 +203,7 @@ final readonly class OpenSslGatewayCertificateIssuer implements GatewayCertifica
                 "/CN={$hostname}",
             ],
         );
-        $contents = <<<EXTENSIONS
-            [gateway]
-            basicConstraints = critical,CA:FALSE
-            keyUsage = critical,digitalSignature,keyEncipherment
-            extendedKeyUsage = serverAuth
-            subjectAltName = DNS:{$hostname},IP:{$wireguardIp}
-            EXTENSIONS;
+        $contents = OrbitLeafCertificate::extensions('gateway', "DNS:{$hostname},IP:{$wireguardIp}");
 
         if (file_put_contents($extensionsPath, $contents) === false) {
             throw new NodeProvisioningException(
@@ -240,7 +232,7 @@ final readonly class OpenSslGatewayCertificateIssuer implements GatewayCertifica
                 '-out',
                 $paths->certificatePath,
                 '-days',
-                self::LEAF_VALIDITY_DAYS,
+                (string) OrbitLeafCertificate::ValidityDays,
                 '-sha256',
                 '-extfile',
                 $extensionsPath,

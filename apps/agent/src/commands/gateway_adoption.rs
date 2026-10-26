@@ -1,7 +1,7 @@
 //! The filesystem transitions of release adoption. Every path comes from one release layout.
 pub mod preparation;
 
-use super::recipe::{self, Host, Invocation, Native};
+use super::recipe::{self, exchange, Host, Invocation, Native};
 use crate::{
     command::{Command, Context, Platform, Privilege},
     command_errors,
@@ -80,11 +80,7 @@ pub(super) fn hex(s: &str, len: usize) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 fn meta(path: &Path) -> Result<Option<fs::Metadata>, Error> {
-    match fs::symlink_metadata(path) {
-        Ok(m) => Ok(Some(m)),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(_) => Err(Error::Unsafe {}),
-    }
+    recipe::metadata(path).map_err(|_| Error::Unsafe {})
 }
 pub(super) fn owned(path: &Path) -> Result<Option<fs::Metadata>, Error> {
     let m = meta(path)?;
@@ -207,16 +203,6 @@ impl Layout {
         directory(&path.join("apps"))?;
         directory(&path.join("apps/gateway"))
     }
-}
-fn exchange(first: &Path, second: &Path) -> io::Result<()> {
-    rustix::fs::renameat_with(
-        rustix::fs::CWD,
-        first,
-        rustix::fs::CWD,
-        second,
-        rustix::fs::RenameFlags::EXCHANGE,
-    )
-    .map_err(Into::into)
 }
 fn mark_storage(layout: &Layout, host: &mut impl Host) -> Result<Vec<String>, Error> {
     let current = layout.current.to_str().ok_or(Error::Invalid {})?;

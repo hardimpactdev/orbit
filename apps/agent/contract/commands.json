@@ -30,7 +30,7 @@
       ]
     },
     {
-      "name": "task-vms.start-topology",
+      "name": "task-vm.start-topology",
       "summary": "Start one bounded topology preparation as the managed account.",
       "mutates": true,
       "timeout_seconds": 60,
@@ -44,7 +44,7 @@
       ]
     },
     {
-      "name": "task-vms.topology-status",
+      "name": "task-vm.topology-status",
       "summary": "Read a topology result, boot identity, or conservative systemd state.",
       "mutates": false,
       "timeout_seconds": 30,
@@ -1080,7 +1080,7 @@
       ]
     },
     {
-      "name": "tools.inspect-vp-store",
+      "name": "tool.inspect-vp-store",
       "summary": "Inspect exact immutable deployment runtimes without locks or network access.",
       "mutates": false,
       "timeout_seconds": 30,
@@ -1089,13 +1089,13 @@
         "macos": "account"
       },
       "errors": [
-        "tools.store_invalid",
-        "tools.store_failed",
-        "tools.store_lock_timeout"
+        "tool.store_invalid",
+        "tool.store_failed",
+        "tool.store_lock_timeout"
       ]
     },
     {
-      "name": "tools.install-vp-environment",
+      "name": "tool.install-vp-environment",
       "summary": "Verify and publish missing Node and package-manager runtimes as the store owner.",
       "mutates": true,
       "timeout_seconds": 600,
@@ -1104,13 +1104,13 @@
         "macos": "account"
       },
       "errors": [
-        "tools.store_invalid",
-        "tools.store_failed",
-        "tools.store_lock_timeout"
+        "tool.store_invalid",
+        "tool.store_failed",
+        "tool.store_lock_timeout"
       ]
     },
     {
-      "name": "tools.prune-vp-store",
+      "name": "tool.prune-vp-store",
       "summary": "Collect only unreferenced runtimes with an Orbit deployment receipt.",
       "mutates": true,
       "timeout_seconds": 120,
@@ -1119,13 +1119,13 @@
         "macos": "account"
       },
       "errors": [
-        "tools.store_invalid",
-        "tools.store_failed",
-        "tools.store_lock_timeout"
+        "tool.store_invalid",
+        "tool.store_failed",
+        "tool.store_lock_timeout"
       ]
     },
     {
-      "name": "tools.read-vp-project",
+      "name": "tool.read-vp-project",
       "summary": "Read Project runtime requirements as its account without executing hooks.",
       "mutates": false,
       "timeout_seconds": 60,
@@ -1134,11 +1134,11 @@
         "macos": "owner"
       },
       "errors": [
-        "tools.project_invalid"
+        "tool.project_invalid"
       ]
     },
     {
-      "name": "tools.inspect-vp-scope",
+      "name": "tool.inspect-vp-scope",
       "summary": "Find the enrolled account's existing Vite+ scope without changing it.",
       "mutates": false,
       "timeout_seconds": 30,
@@ -1147,13 +1147,13 @@
         "macos": "account"
       },
       "errors": [
-        "tools.vp_scope_absent",
-        "tools.vp_scope_conflict",
-        "tools.vp_scope_unreadable"
+        "tool.vp_scope_absent",
+        "tool.vp_scope_conflict",
+        "tool.vp_scope_unreadable"
       ]
     },
     {
-      "name": "tools.materialize-vp",
+      "name": "tool.materialize-vp",
       "summary": "Prepare the Linux Vite+ scope and verify its managed launchers.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -1162,14 +1162,14 @@
         "macos": null
       },
       "errors": [
-        "tools.vp_materialize_invalid",
-        "tools.vp_materialize_conflict",
-        "tools.vp_materialize_failed",
-        "tools.vp_materialize_restore_failed"
+        "tool.vp_materialize_invalid",
+        "tool.vp_materialize_conflict",
+        "tool.vp_materialize_failed",
+        "tool.vp_materialize_restore_failed"
       ]
     },
     {
-      "name": "tools.composer-version",
+      "name": "tool.composer-version",
       "summary": "Read the Composer manager version.",
       "mutates": false,
       "timeout_seconds": 900,
@@ -1178,13 +1178,13 @@
         "macos": null
       },
       "errors": [
-        "tools.composer_input_invalid",
-        "tools.composer_operation_failed",
-        "tools.composer_output_invalid"
+        "tool.composer_input_invalid",
+        "tool.composer_operation_failed",
+        "tool.composer_output_invalid"
       ]
     },
     {
-      "name": "tools.composer-candidate",
+      "name": "tool.composer-candidate",
       "summary": "Read one package's Composer dry-run candidate.",
       "mutates": false,
       "timeout_seconds": 900,
@@ -1193,13 +1193,13 @@
         "macos": null
       },
       "errors": [
-        "tools.composer_input_invalid",
-        "tools.composer_operation_failed",
-        "tools.composer_output_invalid"
+        "tool.composer_input_invalid",
+        "tool.composer_operation_failed",
+        "tool.composer_output_invalid"
       ]
     },
     {
-      "name": "tools.composer-inventory",
+      "name": "tool.composer-inventory",
       "summary": "Read installed Composer global package observations.",
       "mutates": false,
       "timeout_seconds": 900,
@@ -1208,13 +1208,13 @@
         "macos": null
       },
       "errors": [
-        "tools.composer_input_invalid",
-        "tools.composer_operation_failed",
-        "tools.composer_output_invalid"
+        "tool.composer_input_invalid",
+        "tool.composer_operation_failed",
+        "tool.composer_output_invalid"
       ]
     },
     {
-      "name": "tools.composer-removal-plan",
+      "name": "tool.composer-removal-plan",
       "summary": "Check removal of one Composer root requirement.",
       "mutates": false,
       "timeout_seconds": 900,
@@ -1223,13 +1223,13 @@
         "macos": null
       },
       "errors": [
-        "tools.composer_input_invalid",
-        "tools.composer_operation_failed",
-        "tools.composer_output_invalid"
+        "tool.composer_input_invalid",
+        "tool.composer_operation_failed",
+        "tool.composer_output_invalid"
       ]
     },
     {
-      "name": "tools.composer-install",
+      "name": "tool.composer-install",
       "summary": "Add one Composer global root requirement.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -1238,13 +1238,13 @@
         "macos": null
       },
       "errors": [
-        "tools.composer_input_invalid",
-        "tools.composer_operation_failed",
-        "tools.composer_output_invalid"
+        "tool.composer_input_invalid",
+        "tool.composer_operation_failed",
+        "tool.composer_output_invalid"
       ]
     },
     {
-      "name": "tools.composer-update",
+      "name": "tool.composer-update",
       "summary": "Update one Composer global root and its dependencies.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -1253,13 +1253,13 @@
         "macos": null
       },
       "errors": [
-        "tools.composer_input_invalid",
-        "tools.composer_operation_failed",
-        "tools.composer_output_invalid"
+        "tool.composer_input_invalid",
+        "tool.composer_operation_failed",
+        "tool.composer_output_invalid"
       ]
     },
     {
-      "name": "tools.composer-remove",
+      "name": "tool.composer-remove",
       "summary": "Remove one Composer global root requirement.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -1268,13 +1268,13 @@
         "macos": null
       },
       "errors": [
-        "tools.composer_input_invalid",
-        "tools.composer_operation_failed",
-        "tools.composer_output_invalid"
+        "tool.composer_input_invalid",
+        "tool.composer_operation_failed",
+        "tool.composer_output_invalid"
       ]
     },
     {
-      "name": "tools.inspect-homebrew-scope",
+      "name": "tool.inspect-homebrew-scope",
       "summary": "Inspect the enrolled account's Homebrew prefix without changing it.",
       "mutates": false,
       "timeout_seconds": 30,
@@ -1283,15 +1283,15 @@
         "macos": "account"
       },
       "errors": [
-        "tools.homebrew_account_invalid",
-        "tools.homebrew_scope_absent",
-        "tools.homebrew_scope_conflict",
-        "tools.homebrew_scope_unreadable",
-        "tools.homebrew_materialize_failed"
+        "tool.homebrew_account_invalid",
+        "tool.homebrew_scope_absent",
+        "tool.homebrew_scope_conflict",
+        "tool.homebrew_scope_unreadable",
+        "tool.homebrew_materialize_failed"
       ]
     },
     {
-      "name": "tools.materialize-homebrew",
+      "name": "tool.materialize-homebrew",
       "summary": "Prepare the owned Linux Homebrew prefix and verify its pinned release.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -1300,15 +1300,15 @@
         "macos": null
       },
       "errors": [
-        "tools.homebrew_account_invalid",
-        "tools.homebrew_scope_absent",
-        "tools.homebrew_scope_conflict",
-        "tools.homebrew_scope_unreadable",
-        "tools.homebrew_materialize_failed"
+        "tool.homebrew_account_invalid",
+        "tool.homebrew_scope_absent",
+        "tool.homebrew_scope_conflict",
+        "tool.homebrew_scope_unreadable",
+        "tool.homebrew_materialize_failed"
       ]
     },
     {
-      "name": "tools.homebrew-version",
+      "name": "tool.homebrew-version",
       "summary": "Read the verified Homebrew manager version.",
       "mutates": false,
       "timeout_seconds": 60,
@@ -1317,25 +1317,25 @@
         "macos": "account"
       },
       "errors": [
-        "tools.homebrew_input_invalid",
-        "tools.homebrew_scope_absent",
-        "tools.homebrew_scope_conflict",
-        "tools.homebrew_scope_unreadable",
-        "tools.homebrew_operation_failed",
-        "tools.homebrew_output_invalid",
-        "tools.homebrew_version_unsupported",
-        "tools.homebrew_bottle_unavailable",
-        "tools.homebrew_package_protected",
-        "tools.homebrew_candidate_invalid",
-        "tools.homebrew_cask_source",
-        "tools.homebrew_cask_artifact",
-        "tools.homebrew_cask_authorization",
-        "tools.homebrew_cask_checksum",
-        "tools.homebrew_cask_version"
+        "tool.homebrew_input_invalid",
+        "tool.homebrew_scope_absent",
+        "tool.homebrew_scope_conflict",
+        "tool.homebrew_scope_unreadable",
+        "tool.homebrew_operation_failed",
+        "tool.homebrew_output_invalid",
+        "tool.homebrew_version_unsupported",
+        "tool.homebrew_bottle_unavailable",
+        "tool.homebrew_package_protected",
+        "tool.homebrew_candidate_invalid",
+        "tool.homebrew_cask_source",
+        "tool.homebrew_cask_artifact",
+        "tool.homebrew_cask_authorization",
+        "tool.homebrew_cask_checksum",
+        "tool.homebrew_cask_version"
       ]
     },
     {
-      "name": "tools.homebrew-formula-inventory",
+      "name": "tool.homebrew-formula-inventory",
       "summary": "Read installed formula versions without loading formula definitions.",
       "mutates": false,
       "timeout_seconds": 60,
@@ -1344,25 +1344,25 @@
         "macos": "account"
       },
       "errors": [
-        "tools.homebrew_input_invalid",
-        "tools.homebrew_scope_absent",
-        "tools.homebrew_scope_conflict",
-        "tools.homebrew_scope_unreadable",
-        "tools.homebrew_operation_failed",
-        "tools.homebrew_output_invalid",
-        "tools.homebrew_version_unsupported",
-        "tools.homebrew_bottle_unavailable",
-        "tools.homebrew_package_protected",
-        "tools.homebrew_candidate_invalid",
-        "tools.homebrew_cask_source",
-        "tools.homebrew_cask_artifact",
-        "tools.homebrew_cask_authorization",
-        "tools.homebrew_cask_checksum",
-        "tools.homebrew_cask_version"
+        "tool.homebrew_input_invalid",
+        "tool.homebrew_scope_absent",
+        "tool.homebrew_scope_conflict",
+        "tool.homebrew_scope_unreadable",
+        "tool.homebrew_operation_failed",
+        "tool.homebrew_output_invalid",
+        "tool.homebrew_version_unsupported",
+        "tool.homebrew_bottle_unavailable",
+        "tool.homebrew_package_protected",
+        "tool.homebrew_candidate_invalid",
+        "tool.homebrew_cask_source",
+        "tool.homebrew_cask_artifact",
+        "tool.homebrew_cask_authorization",
+        "tool.homebrew_cask_checksum",
+        "tool.homebrew_cask_version"
       ]
     },
     {
-      "name": "tools.homebrew-formula-candidate",
+      "name": "tool.homebrew-formula-candidate",
       "summary": "Read one official Core formula's verified bottle candidate.",
       "mutates": false,
       "timeout_seconds": 60,
@@ -1371,25 +1371,25 @@
         "macos": "account"
       },
       "errors": [
-        "tools.homebrew_input_invalid",
-        "tools.homebrew_scope_absent",
-        "tools.homebrew_scope_conflict",
-        "tools.homebrew_scope_unreadable",
-        "tools.homebrew_operation_failed",
-        "tools.homebrew_output_invalid",
-        "tools.homebrew_version_unsupported",
-        "tools.homebrew_bottle_unavailable",
-        "tools.homebrew_package_protected",
-        "tools.homebrew_candidate_invalid",
-        "tools.homebrew_cask_source",
-        "tools.homebrew_cask_artifact",
-        "tools.homebrew_cask_authorization",
-        "tools.homebrew_cask_checksum",
-        "tools.homebrew_cask_version"
+        "tool.homebrew_input_invalid",
+        "tool.homebrew_scope_absent",
+        "tool.homebrew_scope_conflict",
+        "tool.homebrew_scope_unreadable",
+        "tool.homebrew_operation_failed",
+        "tool.homebrew_output_invalid",
+        "tool.homebrew_version_unsupported",
+        "tool.homebrew_bottle_unavailable",
+        "tool.homebrew_package_protected",
+        "tool.homebrew_candidate_invalid",
+        "tool.homebrew_cask_source",
+        "tool.homebrew_cask_artifact",
+        "tool.homebrew_cask_authorization",
+        "tool.homebrew_cask_checksum",
+        "tool.homebrew_cask_version"
       ]
     },
     {
-      "name": "tools.homebrew-formula-adoption",
+      "name": "tool.homebrew-formula-adoption",
       "summary": "Inspect one installed formula for explicit adoption without changing packages.",
       "mutates": false,
       "timeout_seconds": 60,
@@ -1398,25 +1398,25 @@
         "macos": "account"
       },
       "errors": [
-        "tools.homebrew_input_invalid",
-        "tools.homebrew_scope_absent",
-        "tools.homebrew_scope_conflict",
-        "tools.homebrew_scope_unreadable",
-        "tools.homebrew_operation_failed",
-        "tools.homebrew_output_invalid",
-        "tools.homebrew_version_unsupported",
-        "tools.homebrew_bottle_unavailable",
-        "tools.homebrew_package_protected",
-        "tools.homebrew_candidate_invalid",
-        "tools.homebrew_cask_source",
-        "tools.homebrew_cask_artifact",
-        "tools.homebrew_cask_authorization",
-        "tools.homebrew_cask_checksum",
-        "tools.homebrew_cask_version"
+        "tool.homebrew_input_invalid",
+        "tool.homebrew_scope_absent",
+        "tool.homebrew_scope_conflict",
+        "tool.homebrew_scope_unreadable",
+        "tool.homebrew_operation_failed",
+        "tool.homebrew_output_invalid",
+        "tool.homebrew_version_unsupported",
+        "tool.homebrew_bottle_unavailable",
+        "tool.homebrew_package_protected",
+        "tool.homebrew_candidate_invalid",
+        "tool.homebrew_cask_source",
+        "tool.homebrew_cask_artifact",
+        "tool.homebrew_cask_authorization",
+        "tool.homebrew_cask_checksum",
+        "tool.homebrew_cask_version"
       ]
     },
     {
-      "name": "tools.homebrew-formula-install",
+      "name": "tool.homebrew-formula-install",
       "summary": "Install one verified Core bottle.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -1425,25 +1425,25 @@
         "macos": "account"
       },
       "errors": [
-        "tools.homebrew_input_invalid",
-        "tools.homebrew_scope_absent",
-        "tools.homebrew_scope_conflict",
-        "tools.homebrew_scope_unreadable",
-        "tools.homebrew_operation_failed",
-        "tools.homebrew_output_invalid",
-        "tools.homebrew_version_unsupported",
-        "tools.homebrew_bottle_unavailable",
-        "tools.homebrew_package_protected",
-        "tools.homebrew_candidate_invalid",
-        "tools.homebrew_cask_source",
-        "tools.homebrew_cask_artifact",
-        "tools.homebrew_cask_authorization",
-        "tools.homebrew_cask_checksum",
-        "tools.homebrew_cask_version"
+        "tool.homebrew_input_invalid",
+        "tool.homebrew_scope_absent",
+        "tool.homebrew_scope_conflict",
+        "tool.homebrew_scope_unreadable",
+        "tool.homebrew_operation_failed",
+        "tool.homebrew_output_invalid",
+        "tool.homebrew_version_unsupported",
+        "tool.homebrew_bottle_unavailable",
+        "tool.homebrew_package_protected",
+        "tool.homebrew_candidate_invalid",
+        "tool.homebrew_cask_source",
+        "tool.homebrew_cask_artifact",
+        "tool.homebrew_cask_authorization",
+        "tool.homebrew_cask_checksum",
+        "tool.homebrew_cask_version"
       ]
     },
     {
-      "name": "tools.homebrew-formula-update",
+      "name": "tool.homebrew-formula-update",
       "summary": "Upgrade one verified Core bottle without unpinning it.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -1452,25 +1452,25 @@
         "macos": "account"
       },
       "errors": [
-        "tools.homebrew_input_invalid",
-        "tools.homebrew_scope_absent",
-        "tools.homebrew_scope_conflict",
-        "tools.homebrew_scope_unreadable",
-        "tools.homebrew_operation_failed",
-        "tools.homebrew_output_invalid",
-        "tools.homebrew_version_unsupported",
-        "tools.homebrew_bottle_unavailable",
-        "tools.homebrew_package_protected",
-        "tools.homebrew_candidate_invalid",
-        "tools.homebrew_cask_source",
-        "tools.homebrew_cask_artifact",
-        "tools.homebrew_cask_authorization",
-        "tools.homebrew_cask_checksum",
-        "tools.homebrew_cask_version"
+        "tool.homebrew_input_invalid",
+        "tool.homebrew_scope_absent",
+        "tool.homebrew_scope_conflict",
+        "tool.homebrew_scope_unreadable",
+        "tool.homebrew_operation_failed",
+        "tool.homebrew_output_invalid",
+        "tool.homebrew_version_unsupported",
+        "tool.homebrew_bottle_unavailable",
+        "tool.homebrew_package_protected",
+        "tool.homebrew_candidate_invalid",
+        "tool.homebrew_cask_source",
+        "tool.homebrew_cask_artifact",
+        "tool.homebrew_cask_authorization",
+        "tool.homebrew_cask_checksum",
+        "tool.homebrew_cask_version"
       ]
     },
     {
-      "name": "tools.homebrew-formula-remove",
+      "name": "tool.homebrew-formula-remove",
       "summary": "Remove exactly one unprotected Core formula.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -1479,25 +1479,25 @@
         "macos": "account"
       },
       "errors": [
-        "tools.homebrew_input_invalid",
-        "tools.homebrew_scope_absent",
-        "tools.homebrew_scope_conflict",
-        "tools.homebrew_scope_unreadable",
-        "tools.homebrew_operation_failed",
-        "tools.homebrew_output_invalid",
-        "tools.homebrew_version_unsupported",
-        "tools.homebrew_bottle_unavailable",
-        "tools.homebrew_package_protected",
-        "tools.homebrew_candidate_invalid",
-        "tools.homebrew_cask_source",
-        "tools.homebrew_cask_artifact",
-        "tools.homebrew_cask_authorization",
-        "tools.homebrew_cask_checksum",
-        "tools.homebrew_cask_version"
+        "tool.homebrew_input_invalid",
+        "tool.homebrew_scope_absent",
+        "tool.homebrew_scope_conflict",
+        "tool.homebrew_scope_unreadable",
+        "tool.homebrew_operation_failed",
+        "tool.homebrew_output_invalid",
+        "tool.homebrew_version_unsupported",
+        "tool.homebrew_bottle_unavailable",
+        "tool.homebrew_package_protected",
+        "tool.homebrew_candidate_invalid",
+        "tool.homebrew_cask_source",
+        "tool.homebrew_cask_artifact",
+        "tool.homebrew_cask_authorization",
+        "tool.homebrew_cask_checksum",
+        "tool.homebrew_cask_version"
       ]
     },
     {
-      "name": "tools.homebrew-cask-inventory",
+      "name": "tool.homebrew-cask-inventory",
       "summary": "Read installed official cask versions.",
       "mutates": false,
       "timeout_seconds": 60,
@@ -1506,25 +1506,25 @@
         "macos": "account"
       },
       "errors": [
-        "tools.homebrew_input_invalid",
-        "tools.homebrew_scope_absent",
-        "tools.homebrew_scope_conflict",
-        "tools.homebrew_scope_unreadable",
-        "tools.homebrew_operation_failed",
-        "tools.homebrew_output_invalid",
-        "tools.homebrew_version_unsupported",
-        "tools.homebrew_bottle_unavailable",
-        "tools.homebrew_package_protected",
-        "tools.homebrew_candidate_invalid",
-        "tools.homebrew_cask_source",
-        "tools.homebrew_cask_artifact",
-        "tools.homebrew_cask_authorization",
-        "tools.homebrew_cask_checksum",
-        "tools.homebrew_cask_version"
+        "tool.homebrew_input_invalid",
+        "tool.homebrew_scope_absent",
+        "tool.homebrew_scope_conflict",
+        "tool.homebrew_scope_unreadable",
+        "tool.homebrew_operation_failed",
+        "tool.homebrew_output_invalid",
+        "tool.homebrew_version_unsupported",
+        "tool.homebrew_bottle_unavailable",
+        "tool.homebrew_package_protected",
+        "tool.homebrew_candidate_invalid",
+        "tool.homebrew_cask_source",
+        "tool.homebrew_cask_artifact",
+        "tool.homebrew_cask_authorization",
+        "tool.homebrew_cask_checksum",
+        "tool.homebrew_cask_version"
       ]
     },
     {
-      "name": "tools.homebrew-cask-candidate",
+      "name": "tool.homebrew-cask-candidate",
       "summary": "Read the safe official cask candidate.",
       "mutates": false,
       "timeout_seconds": 60,
@@ -1533,25 +1533,25 @@
         "macos": "account"
       },
       "errors": [
-        "tools.homebrew_input_invalid",
-        "tools.homebrew_scope_absent",
-        "tools.homebrew_scope_conflict",
-        "tools.homebrew_scope_unreadable",
-        "tools.homebrew_operation_failed",
-        "tools.homebrew_output_invalid",
-        "tools.homebrew_version_unsupported",
-        "tools.homebrew_bottle_unavailable",
-        "tools.homebrew_package_protected",
-        "tools.homebrew_candidate_invalid",
-        "tools.homebrew_cask_source",
-        "tools.homebrew_cask_artifact",
-        "tools.homebrew_cask_authorization",
-        "tools.homebrew_cask_checksum",
-        "tools.homebrew_cask_version"
+        "tool.homebrew_input_invalid",
+        "tool.homebrew_scope_absent",
+        "tool.homebrew_scope_conflict",
+        "tool.homebrew_scope_unreadable",
+        "tool.homebrew_operation_failed",
+        "tool.homebrew_output_invalid",
+        "tool.homebrew_version_unsupported",
+        "tool.homebrew_bottle_unavailable",
+        "tool.homebrew_package_protected",
+        "tool.homebrew_candidate_invalid",
+        "tool.homebrew_cask_source",
+        "tool.homebrew_cask_artifact",
+        "tool.homebrew_cask_authorization",
+        "tool.homebrew_cask_checksum",
+        "tool.homebrew_cask_version"
       ]
     },
     {
-      "name": "tools.homebrew-cask-adoption",
+      "name": "tool.homebrew-cask-adoption",
       "summary": "Inspect an installed cask for explicit adoption.",
       "mutates": false,
       "timeout_seconds": 60,
@@ -1560,25 +1560,25 @@
         "macos": "account"
       },
       "errors": [
-        "tools.homebrew_input_invalid",
-        "tools.homebrew_scope_absent",
-        "tools.homebrew_scope_conflict",
-        "tools.homebrew_scope_unreadable",
-        "tools.homebrew_operation_failed",
-        "tools.homebrew_output_invalid",
-        "tools.homebrew_version_unsupported",
-        "tools.homebrew_bottle_unavailable",
-        "tools.homebrew_package_protected",
-        "tools.homebrew_candidate_invalid",
-        "tools.homebrew_cask_source",
-        "tools.homebrew_cask_artifact",
-        "tools.homebrew_cask_authorization",
-        "tools.homebrew_cask_checksum",
-        "tools.homebrew_cask_version"
+        "tool.homebrew_input_invalid",
+        "tool.homebrew_scope_absent",
+        "tool.homebrew_scope_conflict",
+        "tool.homebrew_scope_unreadable",
+        "tool.homebrew_operation_failed",
+        "tool.homebrew_output_invalid",
+        "tool.homebrew_version_unsupported",
+        "tool.homebrew_bottle_unavailable",
+        "tool.homebrew_package_protected",
+        "tool.homebrew_candidate_invalid",
+        "tool.homebrew_cask_source",
+        "tool.homebrew_cask_artifact",
+        "tool.homebrew_cask_authorization",
+        "tool.homebrew_cask_checksum",
+        "tool.homebrew_cask_version"
       ]
     },
     {
-      "name": "tools.homebrew-cask-install",
+      "name": "tool.homebrew-cask-install",
       "summary": "Install one safe official cask.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -1587,25 +1587,25 @@
         "macos": "account"
       },
       "errors": [
-        "tools.homebrew_input_invalid",
-        "tools.homebrew_scope_absent",
-        "tools.homebrew_scope_conflict",
-        "tools.homebrew_scope_unreadable",
-        "tools.homebrew_operation_failed",
-        "tools.homebrew_output_invalid",
-        "tools.homebrew_version_unsupported",
-        "tools.homebrew_bottle_unavailable",
-        "tools.homebrew_package_protected",
-        "tools.homebrew_candidate_invalid",
-        "tools.homebrew_cask_source",
-        "tools.homebrew_cask_artifact",
-        "tools.homebrew_cask_authorization",
-        "tools.homebrew_cask_checksum",
-        "tools.homebrew_cask_version"
+        "tool.homebrew_input_invalid",
+        "tool.homebrew_scope_absent",
+        "tool.homebrew_scope_conflict",
+        "tool.homebrew_scope_unreadable",
+        "tool.homebrew_operation_failed",
+        "tool.homebrew_output_invalid",
+        "tool.homebrew_version_unsupported",
+        "tool.homebrew_bottle_unavailable",
+        "tool.homebrew_package_protected",
+        "tool.homebrew_candidate_invalid",
+        "tool.homebrew_cask_source",
+        "tool.homebrew_cask_artifact",
+        "tool.homebrew_cask_authorization",
+        "tool.homebrew_cask_checksum",
+        "tool.homebrew_cask_version"
       ]
     },
     {
-      "name": "tools.homebrew-cask-update",
+      "name": "tool.homebrew-cask-update",
       "summary": "Upgrade one safe official cask.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -1614,25 +1614,25 @@
         "macos": "account"
       },
       "errors": [
-        "tools.homebrew_input_invalid",
-        "tools.homebrew_scope_absent",
-        "tools.homebrew_scope_conflict",
-        "tools.homebrew_scope_unreadable",
-        "tools.homebrew_operation_failed",
-        "tools.homebrew_output_invalid",
-        "tools.homebrew_version_unsupported",
-        "tools.homebrew_bottle_unavailable",
-        "tools.homebrew_package_protected",
-        "tools.homebrew_candidate_invalid",
-        "tools.homebrew_cask_source",
-        "tools.homebrew_cask_artifact",
-        "tools.homebrew_cask_authorization",
-        "tools.homebrew_cask_checksum",
-        "tools.homebrew_cask_version"
+        "tool.homebrew_input_invalid",
+        "tool.homebrew_scope_absent",
+        "tool.homebrew_scope_conflict",
+        "tool.homebrew_scope_unreadable",
+        "tool.homebrew_operation_failed",
+        "tool.homebrew_output_invalid",
+        "tool.homebrew_version_unsupported",
+        "tool.homebrew_bottle_unavailable",
+        "tool.homebrew_package_protected",
+        "tool.homebrew_candidate_invalid",
+        "tool.homebrew_cask_source",
+        "tool.homebrew_cask_artifact",
+        "tool.homebrew_cask_authorization",
+        "tool.homebrew_cask_checksum",
+        "tool.homebrew_cask_version"
       ]
     },
     {
-      "name": "tools.homebrew-cask-remove",
+      "name": "tool.homebrew-cask-remove",
       "summary": "Remove one cask after checking uninstall safety.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -1641,25 +1641,25 @@
         "macos": "account"
       },
       "errors": [
-        "tools.homebrew_input_invalid",
-        "tools.homebrew_scope_absent",
-        "tools.homebrew_scope_conflict",
-        "tools.homebrew_scope_unreadable",
-        "tools.homebrew_operation_failed",
-        "tools.homebrew_output_invalid",
-        "tools.homebrew_version_unsupported",
-        "tools.homebrew_bottle_unavailable",
-        "tools.homebrew_package_protected",
-        "tools.homebrew_candidate_invalid",
-        "tools.homebrew_cask_source",
-        "tools.homebrew_cask_artifact",
-        "tools.homebrew_cask_authorization",
-        "tools.homebrew_cask_checksum",
-        "tools.homebrew_cask_version"
+        "tool.homebrew_input_invalid",
+        "tool.homebrew_scope_absent",
+        "tool.homebrew_scope_conflict",
+        "tool.homebrew_scope_unreadable",
+        "tool.homebrew_operation_failed",
+        "tool.homebrew_output_invalid",
+        "tool.homebrew_version_unsupported",
+        "tool.homebrew_bottle_unavailable",
+        "tool.homebrew_package_protected",
+        "tool.homebrew_candidate_invalid",
+        "tool.homebrew_cask_source",
+        "tool.homebrew_cask_artifact",
+        "tool.homebrew_cask_authorization",
+        "tool.homebrew_cask_checksum",
+        "tool.homebrew_cask_version"
       ]
     },
     {
-      "name": "tools.homebrew-scan",
+      "name": "tool.homebrew-scan",
       "summary": "Read formula and cask inventories independently without changing Tool intent.",
       "mutates": false,
       "timeout_seconds": 180,
@@ -1668,25 +1668,25 @@
         "macos": "account"
       },
       "errors": [
-        "tools.homebrew_input_invalid",
-        "tools.homebrew_scope_absent",
-        "tools.homebrew_scope_conflict",
-        "tools.homebrew_scope_unreadable",
-        "tools.homebrew_operation_failed",
-        "tools.homebrew_output_invalid",
-        "tools.homebrew_version_unsupported",
-        "tools.homebrew_bottle_unavailable",
-        "tools.homebrew_package_protected",
-        "tools.homebrew_candidate_invalid",
-        "tools.homebrew_cask_source",
-        "tools.homebrew_cask_artifact",
-        "tools.homebrew_cask_authorization",
-        "tools.homebrew_cask_checksum",
-        "tools.homebrew_cask_version"
+        "tool.homebrew_input_invalid",
+        "tool.homebrew_scope_absent",
+        "tool.homebrew_scope_conflict",
+        "tool.homebrew_scope_unreadable",
+        "tool.homebrew_operation_failed",
+        "tool.homebrew_output_invalid",
+        "tool.homebrew_version_unsupported",
+        "tool.homebrew_bottle_unavailable",
+        "tool.homebrew_package_protected",
+        "tool.homebrew_candidate_invalid",
+        "tool.homebrew_cask_source",
+        "tool.homebrew_cask_artifact",
+        "tool.homebrew_cask_authorization",
+        "tool.homebrew_cask_checksum",
+        "tool.homebrew_cask_version"
       ]
     },
     {
-      "name": "tools.inspect-composer-scope",
+      "name": "tool.inspect-composer-scope",
       "summary": "Read Composer root requirements from the owned shared scope.",
       "mutates": false,
       "timeout_seconds": 30,
@@ -1695,15 +1695,15 @@
         "macos": null
       },
       "errors": [
-        "tools.composer_account_invalid",
-        "tools.composer_scope_absent",
-        "tools.composer_scope_conflict",
-        "tools.composer_scope_unreadable",
-        "tools.composer_materialize_failed"
+        "tool.composer_account_invalid",
+        "tool.composer_scope_absent",
+        "tool.composer_scope_conflict",
+        "tool.composer_scope_unreadable",
+        "tool.composer_materialize_failed"
       ]
     },
     {
-      "name": "tools.materialize-composer",
+      "name": "tool.materialize-composer",
       "summary": "Install Composer prerequisites and prepare the account-owned shared scope.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -1712,15 +1712,15 @@
         "macos": null
       },
       "errors": [
-        "tools.composer_account_invalid",
-        "tools.composer_scope_absent",
-        "tools.composer_scope_conflict",
-        "tools.composer_scope_unreadable",
-        "tools.composer_materialize_failed"
+        "tool.composer_account_invalid",
+        "tool.composer_scope_absent",
+        "tool.composer_scope_conflict",
+        "tool.composer_scope_unreadable",
+        "tool.composer_materialize_failed"
       ]
     },
     {
-      "name": "tools.apt-version",
+      "name": "tool.apt-version",
       "summary": "Read the APT manager version.",
       "mutates": false,
       "timeout_seconds": 900,
@@ -1729,13 +1729,13 @@
         "macos": null
       },
       "errors": [
-        "tools.apt_input_invalid",
-        "tools.apt_operation_failed",
-        "tools.apt_output_invalid"
+        "tool.apt_input_invalid",
+        "tool.apt_operation_failed",
+        "tool.apt_output_invalid"
       ]
     },
     {
-      "name": "tools.apt-candidate",
+      "name": "tool.apt-candidate",
       "summary": "Read APT's normal candidate for one package.",
       "mutates": false,
       "timeout_seconds": 900,
@@ -1744,13 +1744,13 @@
         "macos": null
       },
       "errors": [
-        "tools.apt_input_invalid",
-        "tools.apt_operation_failed",
-        "tools.apt_output_invalid"
+        "tool.apt_input_invalid",
+        "tool.apt_operation_failed",
+        "tool.apt_output_invalid"
       ]
     },
     {
-      "name": "tools.apt-inventory",
+      "name": "tool.apt-inventory",
       "summary": "Read installed APT package versions and unverifiable states.",
       "mutates": false,
       "timeout_seconds": 900,
@@ -1759,13 +1759,13 @@
         "macos": null
       },
       "errors": [
-        "tools.apt_input_invalid",
-        "tools.apt_operation_failed",
-        "tools.apt_output_invalid"
+        "tool.apt_input_invalid",
+        "tool.apt_operation_failed",
+        "tool.apt_output_invalid"
       ]
     },
     {
-      "name": "tools.apt-removal-plan",
+      "name": "tool.apt-removal-plan",
       "summary": "Read every package APT would remove.",
       "mutates": false,
       "timeout_seconds": 900,
@@ -1774,13 +1774,13 @@
         "macos": null
       },
       "errors": [
-        "tools.apt_input_invalid",
-        "tools.apt_operation_failed",
-        "tools.apt_output_invalid"
+        "tool.apt_input_invalid",
+        "tool.apt_operation_failed",
+        "tool.apt_output_invalid"
       ]
     },
     {
-      "name": "tools.apt-install",
+      "name": "tool.apt-install",
       "summary": "Install exactly the requested APT package with no recommendations.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -1789,13 +1789,13 @@
         "macos": null
       },
       "errors": [
-        "tools.apt_input_invalid",
-        "tools.apt_operation_failed",
-        "tools.apt_output_invalid"
+        "tool.apt_input_invalid",
+        "tool.apt_operation_failed",
+        "tool.apt_output_invalid"
       ]
     },
     {
-      "name": "tools.apt-update",
+      "name": "tool.apt-update",
       "summary": "Update exactly the requested APT package to its normal candidate.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -1804,13 +1804,13 @@
         "macos": null
       },
       "errors": [
-        "tools.apt_input_invalid",
-        "tools.apt_operation_failed",
-        "tools.apt_output_invalid"
+        "tool.apt_input_invalid",
+        "tool.apt_operation_failed",
+        "tool.apt_output_invalid"
       ]
     },
     {
-      "name": "tools.apt-remove",
+      "name": "tool.apt-remove",
       "summary": "Remove the requested APT package without purging or autoremoving.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -1819,13 +1819,13 @@
         "macos": null
       },
       "errors": [
-        "tools.apt_input_invalid",
-        "tools.apt_operation_failed",
-        "tools.apt_output_invalid"
+        "tool.apt_input_invalid",
+        "tool.apt_operation_failed",
+        "tool.apt_output_invalid"
       ]
     },
     {
-      "name": "tools.vp-version",
+      "name": "tool.vp-version",
       "summary": "Read the account's Vite+ manager version.",
       "mutates": false,
       "timeout_seconds": 900,
@@ -1834,17 +1834,17 @@
         "macos": "account"
       },
       "errors": [
-        "tools.vp_input_invalid",
-        "tools.vp_package_protected",
-        "tools.vp_scope_absent",
-        "tools.vp_scope_conflict",
-        "tools.vp_scope_unreadable",
-        "tools.vp_operation_failed",
-        "tools.vp_output_invalid"
+        "tool.vp_input_invalid",
+        "tool.vp_package_protected",
+        "tool.vp_scope_absent",
+        "tool.vp_scope_conflict",
+        "tool.vp_scope_unreadable",
+        "tool.vp_operation_failed",
+        "tool.vp_output_invalid"
       ]
     },
     {
-      "name": "tools.vp-candidate",
+      "name": "tool.vp-candidate",
       "summary": "Read Vite+'s normal registry candidate for one package.",
       "mutates": false,
       "timeout_seconds": 900,
@@ -1853,17 +1853,17 @@
         "macos": "account"
       },
       "errors": [
-        "tools.vp_input_invalid",
-        "tools.vp_package_protected",
-        "tools.vp_scope_absent",
-        "tools.vp_scope_conflict",
-        "tools.vp_scope_unreadable",
-        "tools.vp_operation_failed",
-        "tools.vp_output_invalid"
+        "tool.vp_input_invalid",
+        "tool.vp_package_protected",
+        "tool.vp_scope_absent",
+        "tool.vp_scope_conflict",
+        "tool.vp_scope_unreadable",
+        "tool.vp_operation_failed",
+        "tool.vp_output_invalid"
       ]
     },
     {
-      "name": "tools.vp-inventory",
+      "name": "tool.vp-inventory",
       "summary": "Read Vite+ global package observations without changing Tool intent.",
       "mutates": false,
       "timeout_seconds": 900,
@@ -1872,17 +1872,17 @@
         "macos": "account"
       },
       "errors": [
-        "tools.vp_input_invalid",
-        "tools.vp_package_protected",
-        "tools.vp_scope_absent",
-        "tools.vp_scope_conflict",
-        "tools.vp_scope_unreadable",
-        "tools.vp_operation_failed",
-        "tools.vp_output_invalid"
+        "tool.vp_input_invalid",
+        "tool.vp_package_protected",
+        "tool.vp_scope_absent",
+        "tool.vp_scope_conflict",
+        "tool.vp_scope_unreadable",
+        "tool.vp_operation_failed",
+        "tool.vp_output_invalid"
       ]
     },
     {
-      "name": "tools.vp-removal-plan",
+      "name": "tool.vp-removal-plan",
       "summary": "Check removal of exactly one Vite+ global package.",
       "mutates": false,
       "timeout_seconds": 900,
@@ -1891,17 +1891,17 @@
         "macos": "account"
       },
       "errors": [
-        "tools.vp_input_invalid",
-        "tools.vp_package_protected",
-        "tools.vp_scope_absent",
-        "tools.vp_scope_conflict",
-        "tools.vp_scope_unreadable",
-        "tools.vp_operation_failed",
-        "tools.vp_output_invalid"
+        "tool.vp_input_invalid",
+        "tool.vp_package_protected",
+        "tool.vp_scope_absent",
+        "tool.vp_scope_conflict",
+        "tool.vp_scope_unreadable",
+        "tool.vp_operation_failed",
+        "tool.vp_output_invalid"
       ]
     },
     {
-      "name": "tools.vp-install",
+      "name": "tool.vp-install",
       "summary": "Install one Vite+ global package with its normal Node selection.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -1910,17 +1910,17 @@
         "macos": "account"
       },
       "errors": [
-        "tools.vp_input_invalid",
-        "tools.vp_package_protected",
-        "tools.vp_scope_absent",
-        "tools.vp_scope_conflict",
-        "tools.vp_scope_unreadable",
-        "tools.vp_operation_failed",
-        "tools.vp_output_invalid"
+        "tool.vp_input_invalid",
+        "tool.vp_package_protected",
+        "tool.vp_scope_absent",
+        "tool.vp_scope_conflict",
+        "tool.vp_scope_unreadable",
+        "tool.vp_operation_failed",
+        "tool.vp_output_invalid"
       ]
     },
     {
-      "name": "tools.vp-update",
+      "name": "tool.vp-update",
       "summary": "Update one Vite+ global package and reconcile its Node runtime.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -1929,17 +1929,17 @@
         "macos": "account"
       },
       "errors": [
-        "tools.vp_input_invalid",
-        "tools.vp_package_protected",
-        "tools.vp_scope_absent",
-        "tools.vp_scope_conflict",
-        "tools.vp_scope_unreadable",
-        "tools.vp_operation_failed",
-        "tools.vp_output_invalid"
+        "tool.vp_input_invalid",
+        "tool.vp_package_protected",
+        "tool.vp_scope_absent",
+        "tool.vp_scope_conflict",
+        "tool.vp_scope_unreadable",
+        "tool.vp_operation_failed",
+        "tool.vp_output_invalid"
       ]
     },
     {
-      "name": "tools.vp-remove",
+      "name": "tool.vp-remove",
       "summary": "Remove exactly one Vite+ global package.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -1948,13 +1948,13 @@
         "macos": "account"
       },
       "errors": [
-        "tools.vp_input_invalid",
-        "tools.vp_package_protected",
-        "tools.vp_scope_absent",
-        "tools.vp_scope_conflict",
-        "tools.vp_scope_unreadable",
-        "tools.vp_operation_failed",
-        "tools.vp_output_invalid"
+        "tool.vp_input_invalid",
+        "tool.vp_package_protected",
+        "tool.vp_scope_absent",
+        "tool.vp_scope_conflict",
+        "tool.vp_scope_unreadable",
+        "tool.vp_operation_failed",
+        "tool.vp_output_invalid"
       ]
     },
     {
@@ -2081,8 +2081,8 @@
         "macos": null
       },
       "errors": [
-        "tasks.worker_invalid",
-        "tasks.worker_start_failed"
+        "swamp.worker_invalid",
+        "swamp.worker_start_failed"
       ]
     },
     {
@@ -2095,7 +2095,7 @@
         "macos": null
       },
       "errors": [
-        "tasks.worker_stop_failed"
+        "swamp.worker_stop_failed"
       ]
     },
     {
@@ -2181,9 +2181,9 @@
         "macos": null
       },
       "errors": [
-        "services.ordering_unsafe",
-        "services.ordering_failed",
-        "services.ordering_recovery_failed"
+        "service.ordering_unsafe",
+        "service.ordering_failed",
+        "service.ordering_recovery_failed"
       ]
     },
     {
@@ -2196,9 +2196,9 @@
         "macos": null
       },
       "errors": [
-        "services.ordering_unsafe",
-        "services.ordering_failed",
-        "services.ordering_recovery_failed"
+        "service.ordering_unsafe",
+        "service.ordering_failed",
+        "service.ordering_recovery_failed"
       ]
     },
     {
@@ -2810,7 +2810,7 @@
       ]
     },
     {
-      "name": "nodes.prepare-storage-root",
+      "name": "node.prepare-storage-root",
       "summary": "Check a storage root the managed user owns, and create its missing directories.",
       "mutates": true,
       "timeout_seconds": 30,
@@ -2819,11 +2819,11 @@
         "macos": null
       },
       "errors": [
-        "nodes.storage_root_unusable"
+        "node.storage_root_unusable"
       ]
     },
     {
-      "name": "nodes.publish-tmpfiles",
+      "name": "node.publish-tmpfiles",
       "summary": "Publish Orbit's tmpfiles rule for its scratch directories.",
       "mutates": true,
       "timeout_seconds": 30,
@@ -2832,8 +2832,8 @@
         "macos": null
       },
       "errors": [
-        "nodes.tmpfiles_invalid",
-        "nodes.tmpfiles_failed"
+        "node.tmpfiles_invalid",
+        "node.tmpfiles_failed"
       ]
     },
     {
@@ -2882,7 +2882,7 @@
       ]
     },
     {
-      "name": "ci-runners.host",
+      "name": "ci-runner.host",
       "summary": "Converge, inspect, or remove the CI role's reserved Incus host resources.",
       "mutates": true,
       "timeout_seconds": 180,
@@ -2891,11 +2891,11 @@
         "macos": null
       },
       "errors": [
-        "ci_runners.host_failed"
+        "ci_runner.host_failed"
       ]
     },
     {
-      "name": "instances.read-queue",
+      "name": "instance.read-queue",
       "summary": "Report an Instance's Horizon queue, without job payloads.",
       "mutates": false,
       "timeout_seconds": 30,
@@ -2904,12 +2904,12 @@
         "macos": null
       },
       "errors": [
-        "instances.queue_invalid",
-        "instances.queue_failed"
+        "instance.queue_invalid",
+        "instance.queue_failed"
       ]
     },
     {
-      "name": "databases.write-valkey-acl",
+      "name": "database.write-valkey-acl",
       "summary": "Write the ACL file into a Valkey Database server's volume.",
       "mutates": true,
       "timeout_seconds": 300,
@@ -2918,8 +2918,8 @@
         "macos": null
       },
       "errors": [
-        "databases.valkey_acl_invalid",
-        "databases.valkey_acl_failed"
+        "database.valkey_acl_invalid",
+        "database.valkey_acl_failed"
       ]
     },
     {
@@ -2976,7 +2976,7 @@
       ]
     },
     {
-      "name": "nodes.os-release",
+      "name": "node.os-release",
       "summary": "Read the operating system ID and codename of the Node.",
       "mutates": false,
       "timeout_seconds": 10,
@@ -2985,11 +2985,11 @@
         "macos": null
       },
       "errors": [
-        "nodes.os_release_unreadable"
+        "node.os_release_unreadable"
       ]
     },
     {
-      "name": "nodes.bootstrap",
+      "name": "node.bootstrap",
       "summary": "Install base packages and prepare managed SSH access, restoring retained Orbit DNS.",
       "mutates": true,
       "timeout_seconds": 660,
@@ -2998,16 +2998,16 @@
         "macos": null
       },
       "errors": [
-        "nodes.bootstrap_invalid",
-        "nodes.bootstrap_os_unsupported",
-        "nodes.bootstrap_unsafe",
-        "nodes.bootstrap_dns_refused",
-        "nodes.bootstrap_failed",
-        "nodes.bootstrap_dns_recovery_failed"
+        "node.bootstrap_invalid",
+        "node.bootstrap_os_unsupported",
+        "node.bootstrap_unsafe",
+        "node.bootstrap_dns_refused",
+        "node.bootstrap_failed",
+        "node.bootstrap_dns_recovery_failed"
       ]
     },
     {
-      "name": "nodes.inspect-macos-enrollment",
+      "name": "node.inspect-macos-enrollment",
       "summary": "Verify the existing Mac architecture and enrolled WireGuard address.",
       "mutates": false,
       "timeout_seconds": 10,
@@ -3016,13 +3016,13 @@
         "macos": "account"
       },
       "errors": [
-        "nodes.macos_platform_mismatch",
-        "nodes.macos_architecture_unavailable",
-        "nodes.macos_wireguard_required"
+        "node.macos_platform_mismatch",
+        "node.macos_architecture_unavailable",
+        "node.macos_wireguard_required"
       ]
     },
     {
-      "name": "nodes.scan-host-key",
+      "name": "node.scan-host-key",
       "summary": "Scan and fingerprint a target before trusting its SSH identity.",
       "mutates": false,
       "timeout_seconds": 25,
@@ -3031,13 +3031,13 @@
         "macos": null
       },
       "errors": [
-        "nodes.host_key_input_invalid",
-        "nodes.host_key_scan_failed",
-        "nodes.host_key_invalid"
+        "node.host_key_input_invalid",
+        "node.host_key_scan_failed",
+        "node.host_key_invalid"
       ]
     },
     {
-      "name": "roles.install-prerequisites",
+      "name": "role.install-prerequisites",
       "summary": "Install a role's packages, and the Composer home and JavaScript runtime of an application role.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -3046,13 +3046,13 @@
         "macos": null
       },
       "errors": [
-        "roles.os_unsupported",
-        "roles.prerequisite_conflict",
-        "roles.prerequisite_failed"
+        "role.os_unsupported",
+        "role.prerequisite_conflict",
+        "role.prerequisite_failed"
       ]
     },
     {
-      "name": "instances.inspect-source",
+      "name": "instance.inspect-source",
       "summary": "Read the evidence of a development source before its removal.",
       "mutates": false,
       "timeout_seconds": 300,
@@ -3061,20 +3061,20 @@
         "macos": null
       },
       "errors": [
-        "instances.path_mismatch",
-        "instances.ownership_mismatch",
-        "instances.layout_mismatch",
-        "instances.origin_mismatch",
-        "instances.branch_mismatch",
-        "instances.worktrees_mismatch",
-        "instances.unsafe_content",
-        "instances.source_changed",
-        "instances.removal_refused",
-        "instances.source_step_failed"
+        "instance.path_mismatch",
+        "instance.ownership_mismatch",
+        "instance.layout_mismatch",
+        "instance.origin_mismatch",
+        "instance.branch_mismatch",
+        "instance.worktrees_mismatch",
+        "instance.unsafe_content",
+        "instance.source_changed",
+        "instance.removal_refused",
+        "instance.source_step_failed"
       ]
     },
     {
-      "name": "instances.remove-source",
+      "name": "instance.remove-source",
       "summary": "Check an active development checkout again and delete it.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -3083,20 +3083,20 @@
         "macos": null
       },
       "errors": [
-        "instances.path_mismatch",
-        "instances.ownership_mismatch",
-        "instances.layout_mismatch",
-        "instances.origin_mismatch",
-        "instances.branch_mismatch",
-        "instances.worktrees_mismatch",
-        "instances.unsafe_content",
-        "instances.source_changed",
-        "instances.removal_refused",
-        "instances.source_step_failed"
+        "instance.path_mismatch",
+        "instance.ownership_mismatch",
+        "instance.layout_mismatch",
+        "instance.origin_mismatch",
+        "instance.branch_mismatch",
+        "instance.worktrees_mismatch",
+        "instance.unsafe_content",
+        "instance.source_changed",
+        "instance.removal_refused",
+        "instance.source_step_failed"
       ]
     },
     {
-      "name": "instances.prepare-source-removal",
+      "name": "instance.prepare-source-removal",
       "summary": "Record the removal journal of a development source.",
       "mutates": true,
       "timeout_seconds": 120,
@@ -3105,20 +3105,20 @@
         "macos": null
       },
       "errors": [
-        "instances.path_mismatch",
-        "instances.ownership_mismatch",
-        "instances.layout_mismatch",
-        "instances.origin_mismatch",
-        "instances.branch_mismatch",
-        "instances.worktrees_mismatch",
-        "instances.unsafe_content",
-        "instances.source_changed",
-        "instances.removal_refused",
-        "instances.source_step_failed"
+        "instance.path_mismatch",
+        "instance.ownership_mismatch",
+        "instance.layout_mismatch",
+        "instance.origin_mismatch",
+        "instance.branch_mismatch",
+        "instance.worktrees_mismatch",
+        "instance.unsafe_content",
+        "instance.source_changed",
+        "instance.removal_refused",
+        "instance.source_step_failed"
       ]
     },
     {
-      "name": "instances.finalize-source-removal",
+      "name": "instance.finalize-source-removal",
       "summary": "Quarantine a recorded development source, write its receipt, and delete it.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -3127,20 +3127,20 @@
         "macos": null
       },
       "errors": [
-        "instances.path_mismatch",
-        "instances.ownership_mismatch",
-        "instances.layout_mismatch",
-        "instances.origin_mismatch",
-        "instances.branch_mismatch",
-        "instances.worktrees_mismatch",
-        "instances.unsafe_content",
-        "instances.source_changed",
-        "instances.removal_refused",
-        "instances.source_step_failed"
+        "instance.path_mismatch",
+        "instance.ownership_mismatch",
+        "instance.layout_mismatch",
+        "instance.origin_mismatch",
+        "instance.branch_mismatch",
+        "instance.worktrees_mismatch",
+        "instance.unsafe_content",
+        "instance.source_changed",
+        "instance.removal_refused",
+        "instance.source_step_failed"
       ]
     },
     {
-      "name": "instances.read-removal-receipt",
+      "name": "instance.read-removal-receipt",
       "summary": "Report how much of a receipt-backed source removal is left.",
       "mutates": false,
       "timeout_seconds": 120,
@@ -3149,20 +3149,20 @@
         "macos": null
       },
       "errors": [
-        "instances.path_mismatch",
-        "instances.ownership_mismatch",
-        "instances.layout_mismatch",
-        "instances.origin_mismatch",
-        "instances.branch_mismatch",
-        "instances.worktrees_mismatch",
-        "instances.unsafe_content",
-        "instances.source_changed",
-        "instances.removal_refused",
-        "instances.source_step_failed"
+        "instance.path_mismatch",
+        "instance.ownership_mismatch",
+        "instance.layout_mismatch",
+        "instance.origin_mismatch",
+        "instance.branch_mismatch",
+        "instance.worktrees_mismatch",
+        "instance.unsafe_content",
+        "instance.source_changed",
+        "instance.removal_refused",
+        "instance.source_step_failed"
       ]
     },
     {
-      "name": "instances.clean-removal-receipt",
+      "name": "instance.clean-removal-receipt",
       "summary": "Delete what is left of a receipt-backed source removal.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -3171,20 +3171,20 @@
         "macos": null
       },
       "errors": [
-        "instances.path_mismatch",
-        "instances.ownership_mismatch",
-        "instances.layout_mismatch",
-        "instances.origin_mismatch",
-        "instances.branch_mismatch",
-        "instances.worktrees_mismatch",
-        "instances.unsafe_content",
-        "instances.source_changed",
-        "instances.removal_refused",
-        "instances.source_step_failed"
+        "instance.path_mismatch",
+        "instance.ownership_mismatch",
+        "instance.layout_mismatch",
+        "instance.origin_mismatch",
+        "instance.branch_mismatch",
+        "instance.worktrees_mismatch",
+        "instance.unsafe_content",
+        "instance.source_changed",
+        "instance.removal_refused",
+        "instance.source_step_failed"
       ]
     },
     {
-      "name": "instances.read-source-removal-state",
+      "name": "instance.read-source-removal-state",
       "summary": "Report the state of a recorded source removal and release its empty parent.",
       "mutates": true,
       "timeout_seconds": 120,
@@ -3193,20 +3193,20 @@
         "macos": null
       },
       "errors": [
-        "instances.path_mismatch",
-        "instances.ownership_mismatch",
-        "instances.layout_mismatch",
-        "instances.origin_mismatch",
-        "instances.branch_mismatch",
-        "instances.worktrees_mismatch",
-        "instances.unsafe_content",
-        "instances.source_changed",
-        "instances.removal_refused",
-        "instances.source_step_failed"
+        "instance.path_mismatch",
+        "instance.ownership_mismatch",
+        "instance.layout_mismatch",
+        "instance.origin_mismatch",
+        "instance.branch_mismatch",
+        "instance.worktrees_mismatch",
+        "instance.unsafe_content",
+        "instance.source_changed",
+        "instance.removal_refused",
+        "instance.source_step_failed"
       ]
     },
     {
-      "name": "instances.check-publication",
+      "name": "instance.check-publication",
       "summary": "Check whether the origin publishes a commit.",
       "mutates": false,
       "timeout_seconds": 300,
@@ -3215,20 +3215,20 @@
         "macos": null
       },
       "errors": [
-        "instances.path_mismatch",
-        "instances.ownership_mismatch",
-        "instances.layout_mismatch",
-        "instances.origin_mismatch",
-        "instances.branch_mismatch",
-        "instances.worktrees_mismatch",
-        "instances.unsafe_content",
-        "instances.source_changed",
-        "instances.removal_refused",
-        "instances.source_step_failed"
+        "instance.path_mismatch",
+        "instance.ownership_mismatch",
+        "instance.layout_mismatch",
+        "instance.origin_mismatch",
+        "instance.branch_mismatch",
+        "instance.worktrees_mismatch",
+        "instance.unsafe_content",
+        "instance.source_changed",
+        "instance.removal_refused",
+        "instance.source_step_failed"
       ]
     },
     {
-      "name": "instances.inspect-laravel-routes",
+      "name": "instance.inspect-laravel-routes",
       "summary": "Read whether a production release's Laravel routes claim the Reverb paths.",
       "mutates": false,
       "timeout_seconds": 60,
@@ -3237,12 +3237,12 @@
         "macos": null
       },
       "errors": [
-        "instances.path_mismatch",
-        "instances.laravel_routes_unreadable"
+        "instance.path_mismatch",
+        "instance.laravel_routes_unreadable"
       ]
     },
     {
-      "name": "instances.prepare-development-source",
+      "name": "instance.prepare-development-source",
       "summary": "Create a development Instance's checkout, or check the one an earlier attempt made.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -3251,13 +3251,13 @@
         "macos": null
       },
       "errors": [
-        "instances.source_invalid",
-        "instances.source_busy",
-        "instances.git_failed"
+        "instance.source_invalid",
+        "instance.source_busy",
+        "instance.git_failed"
       ]
     },
     {
-      "name": "instances.inspect-development-source",
+      "name": "instance.inspect-development-source",
       "summary": "Check a development Instance's prepared checkout and read its origin, branch, and commit.",
       "mutates": false,
       "timeout_seconds": 120,
@@ -3266,13 +3266,13 @@
         "macos": null
       },
       "errors": [
-        "instances.source_invalid",
-        "instances.source_busy",
-        "instances.git_failed"
+        "instance.source_invalid",
+        "instance.source_busy",
+        "instance.git_failed"
       ]
     },
     {
-      "name": "instances.resolve-development-source",
+      "name": "instance.resolve-development-source",
       "summary": "Fetch a development Instance's origin and check out its branch.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -3281,13 +3281,13 @@
         "macos": null
       },
       "errors": [
-        "instances.source_invalid",
-        "instances.source_busy",
-        "instances.git_failed"
+        "instance.source_invalid",
+        "instance.source_busy",
+        "instance.git_failed"
       ]
     },
     {
-      "name": "instances.inspect-registration-source",
+      "name": "instance.inspect-registration-source",
       "summary": "Read a checkout, or its worktree set, with the identity and digest that registration keeps.",
       "mutates": false,
       "timeout_seconds": 60,
@@ -3296,12 +3296,12 @@
         "macos": null
       },
       "errors": [
-        "instances.registration_invalid",
-        "instances.git_failed"
+        "instance.registration_invalid",
+        "instance.git_failed"
       ]
     },
     {
-      "name": "instances.relocate-registration-source",
+      "name": "instance.relocate-registration-source",
       "summary": "Adopt a registered source set in place, or move it into the apps directory and resume an interrupted move.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -3310,12 +3310,12 @@
         "macos": null
       },
       "errors": [
-        "instances.registration_invalid",
-        "instances.git_failed"
+        "instance.registration_invalid",
+        "instance.git_failed"
       ]
     },
     {
-      "name": "instances.laravel-registration-receipt",
+      "name": "instance.laravel-registration-receipt",
       "summary": "Keep, restore, or drop the Laravel URL files that registration rewrites.",
       "mutates": true,
       "timeout_seconds": 30,
@@ -3324,12 +3324,12 @@
         "macos": null
       },
       "errors": [
-        "instances.registration_invalid",
-        "instances.git_failed"
+        "instance.registration_invalid",
+        "instance.git_failed"
       ]
     },
     {
-      "name": "instances.prepare-release",
+      "name": "instance.prepare-release",
       "summary": "Clone a new production release of a branch and link its environment and shared paths.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -3338,14 +3338,14 @@
         "macos": null
       },
       "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
+        "instance.release_invalid",
+        "instance.commit_not_on_branch",
+        "instance.release_step_failed",
+        "instance.release_missing"
       ]
     },
     {
-      "name": "instances.activate-release",
+      "name": "instance.activate-release",
       "summary": "Check a production release, grant Caddy its web roots, and select it as current.",
       "mutates": true,
       "timeout_seconds": 300,
@@ -3354,14 +3354,14 @@
         "macos": null
       },
       "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
+        "instance.release_invalid",
+        "instance.commit_not_on_branch",
+        "instance.release_step_failed",
+        "instance.release_missing"
       ]
     },
     {
-      "name": "instances.inspect-release",
+      "name": "instance.inspect-release",
       "summary": "Check and read the selected production release, or a named retained one.",
       "mutates": false,
       "timeout_seconds": 120,
@@ -3370,14 +3370,14 @@
         "macos": null
       },
       "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
+        "instance.release_invalid",
+        "instance.commit_not_on_branch",
+        "instance.release_step_failed",
+        "instance.release_missing"
       ]
     },
     {
-      "name": "instances.list-releases",
+      "name": "instance.list-releases",
       "summary": "List the production releases that pass their checks, and the selected one.",
       "mutates": false,
       "timeout_seconds": 120,
@@ -3386,14 +3386,14 @@
         "macos": null
       },
       "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
+        "instance.release_invalid",
+        "instance.commit_not_on_branch",
+        "instance.release_step_failed",
+        "instance.release_missing"
       ]
     },
     {
-      "name": "instances.prune-releases",
+      "name": "instance.prune-releases",
       "summary": "Remove production releases beyond the retained count that no process uses.",
       "mutates": true,
       "timeout_seconds": 300,
@@ -3402,14 +3402,14 @@
         "macos": null
       },
       "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
+        "instance.release_invalid",
+        "instance.commit_not_on_branch",
+        "instance.release_step_failed",
+        "instance.release_missing"
       ]
     },
     {
-      "name": "instances.inspect-repository-binding",
+      "name": "instance.inspect-repository-binding",
       "summary": "Read the repository URL that each production marker and release records.",
       "mutates": false,
       "timeout_seconds": 120,
@@ -3418,14 +3418,14 @@
         "macos": null
       },
       "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
+        "instance.release_invalid",
+        "instance.commit_not_on_branch",
+        "instance.release_step_failed",
+        "instance.release_missing"
       ]
     },
     {
-      "name": "instances.rebind-repository",
+      "name": "instance.rebind-repository",
       "summary": "Move the repository URL that production markers and releases record to the Project's new URL.",
       "mutates": true,
       "timeout_seconds": 300,
@@ -3434,14 +3434,14 @@
         "macos": null
       },
       "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
+        "instance.release_invalid",
+        "instance.commit_not_on_branch",
+        "instance.release_step_failed",
+        "instance.release_missing"
       ]
     },
     {
-      "name": "instances.prepare-served-web-roots",
+      "name": "instance.prepare-served-web-roots",
       "summary": "Link the environment and grant Caddy each Route web root in a production Instance's selected release.",
       "mutates": true,
       "timeout_seconds": 300,
@@ -3450,14 +3450,14 @@
         "macos": null
       },
       "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
+        "instance.release_invalid",
+        "instance.commit_not_on_branch",
+        "instance.release_step_failed",
+        "instance.release_missing"
       ]
     },
     {
-      "name": "instances.check-served-web-roots",
+      "name": "instance.check-served-web-roots",
       "summary": "Check that a production Instance's selected release can serve each Route web root.",
       "mutates": false,
       "timeout_seconds": 120,
@@ -3466,14 +3466,14 @@
         "macos": null
       },
       "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
+        "instance.release_invalid",
+        "instance.commit_not_on_branch",
+        "instance.release_step_failed",
+        "instance.release_missing"
       ]
     },
     {
-      "name": "instances.run-deploy-step",
+      "name": "instance.run-deploy-step",
       "summary": "Run a production deploy step as the Instance user and publish its output live.",
       "mutates": true,
       "timeout_seconds": 3600,
@@ -3482,12 +3482,12 @@
         "macos": null
       },
       "errors": [
-        "instances.deploy_step_invalid",
-        "instances.deploy_step_start_failed"
+        "instance.deploy_step_invalid",
+        "instance.deploy_step_start_failed"
       ]
     },
     {
-      "name": "instances.read-application-log",
+      "name": "instance.read-application-log",
       "summary": "Read the newest lines of an Instance's Laravel log.",
       "mutates": false,
       "timeout_seconds": 30,
@@ -3496,11 +3496,11 @@
         "macos": null
       },
       "errors": [
-        "instances.log_unreadable"
+        "instance.log_unreadable"
       ]
     },
     {
-      "name": "instances.check-path-free",
+      "name": "instance.check-path-free",
       "summary": "Check that nothing occupies the path of a new Instance source.",
       "mutates": false,
       "timeout_seconds": 30,
@@ -3509,20 +3509,20 @@
         "macos": null
       },
       "errors": [
-        "instances.path_mismatch",
-        "instances.ownership_mismatch",
-        "instances.layout_mismatch",
-        "instances.origin_mismatch",
-        "instances.branch_mismatch",
-        "instances.worktrees_mismatch",
-        "instances.unsafe_content",
-        "instances.source_changed",
-        "instances.removal_refused",
-        "instances.source_step_failed"
+        "instance.path_mismatch",
+        "instance.ownership_mismatch",
+        "instance.layout_mismatch",
+        "instance.origin_mismatch",
+        "instance.branch_mismatch",
+        "instance.worktrees_mismatch",
+        "instance.unsafe_content",
+        "instance.source_changed",
+        "instance.removal_refused",
+        "instance.source_step_failed"
       ]
     },
     {
-      "name": "instances.read-environment",
+      "name": "instance.read-environment",
       "summary": "Read an Instance's .env, or check that it can be read or replaced.",
       "mutates": false,
       "timeout_seconds": 60,
@@ -3531,11 +3531,11 @@
         "macos": null
       },
       "errors": [
-        "instances.environment_input_invalid"
+        "instance.environment_input_invalid"
       ]
     },
     {
-      "name": "instances.inspect-environment-sync",
+      "name": "instance.inspect-environment-sync",
       "summary": "Check that an Instance's .env can be replaced, then read its existing workload keys.",
       "mutates": false,
       "timeout_seconds": 60,
@@ -3544,11 +3544,11 @@
         "macos": null
       },
       "errors": [
-        "instances.environment_input_invalid"
+        "instance.environment_input_invalid"
       ]
     },
     {
-      "name": "instances.write-environment",
+      "name": "instance.write-environment",
       "summary": "Replace an Instance's .env, or merge Orbit's keys into .env.testing.",
       "mutates": true,
       "timeout_seconds": 60,
@@ -3557,11 +3557,11 @@
         "macos": null
       },
       "errors": [
-        "instances.environment_input_invalid"
+        "instance.environment_input_invalid"
       ]
     },
     {
-      "name": "instances.inspect-development-profile",
+      "name": "instance.inspect-development-profile",
       "summary": "Read a development checkout's Composer metadata, refusing a link or another owner.",
       "mutates": false,
       "timeout_seconds": 60,
@@ -3570,14 +3570,14 @@
         "macos": null
       },
       "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
+        "instance.release_invalid",
+        "instance.commit_not_on_branch",
+        "instance.release_step_failed",
+        "instance.release_missing"
       ]
     },
     {
-      "name": "instances.write-development-url",
+      "name": "instance.write-development-url",
       "summary": "Write APP_URL into a development application's .env and cached configuration.",
       "mutates": true,
       "timeout_seconds": 60,
@@ -3586,14 +3586,14 @@
         "macos": null
       },
       "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
+        "instance.release_invalid",
+        "instance.commit_not_on_branch",
+        "instance.release_step_failed",
+        "instance.release_missing"
       ]
     },
     {
-      "name": "instances.grant-development-caddy-access",
+      "name": "instance.grant-development-caddy-access",
       "summary": "Deny Caddy development checkouts and grant it each Web root and the passage to it.",
       "mutates": true,
       "timeout_seconds": 600,
@@ -3602,13 +3602,13 @@
         "macos": null
       },
       "errors": [
-        "instances.caddy_access_invalid",
-        "instances.caddy_access_failed",
-        "instances.caddy_access_recovery_failed"
+        "instance.caddy_access_invalid",
+        "instance.caddy_access_failed",
+        "instance.caddy_access_recovery_failed"
       ]
     },
     {
-      "name": "instances.inspect-clone-candidate",
+      "name": "instance.inspect-clone-candidate",
       "summary": "Check that a clone candidate's source is clean and its repository holds its commit.",
       "mutates": false,
       "timeout_seconds": 120,
@@ -3617,18 +3617,18 @@
         "macos": null
       },
       "errors": [
-        "instances.clone_candidate_release_missing",
-        "instances.clone_candidate_source_invalid",
-        "instances.clone_candidate_release_changed",
-        "instances.clone_candidate_branch_invalid",
-        "instances.clone_candidate_dirty",
-        "instances.clone_candidate_repository_unavailable",
-        "instances.clone_candidate_commit_unavailable",
-        "instances.clone_target_branch_missing"
+        "instance.clone_candidate_release_missing",
+        "instance.clone_candidate_source_invalid",
+        "instance.clone_candidate_release_changed",
+        "instance.clone_candidate_branch_invalid",
+        "instance.clone_candidate_dirty",
+        "instance.clone_candidate_repository_unavailable",
+        "instance.clone_candidate_commit_unavailable",
+        "instance.clone_target_branch_missing"
       ]
     },
     {
-      "name": "instances.copy-sqlite",
+      "name": "instance.copy-sqlite",
       "summary": "Copy, export, install, or remove a development SQLite database.",
       "mutates": true,
       "timeout_seconds": 600,
@@ -3637,12 +3637,12 @@
         "macos": null
       },
       "errors": [
-        "instances.sqlite_copy_refused",
-        "instances.sqlite_copy_failed"
+        "instance.sqlite_copy_refused",
+        "instance.sqlite_copy_failed"
       ]
     },
     {
-      "name": "instances.read-sqlite-snapshot",
+      "name": "instance.read-sqlite-snapshot",
       "summary": "Stream a verified private SQLite snapshot to the Gateway.",
       "mutates": false,
       "timeout_seconds": 1800,
@@ -3651,14 +3651,14 @@
         "macos": null
       },
       "errors": [
-        "instances.sqlite_transfer_invalid",
-        "instances.sqlite_transfer_refused",
-        "instances.sqlite_transfer_failed"
+        "instance.sqlite_transfer_invalid",
+        "instance.sqlite_transfer_refused",
+        "instance.sqlite_transfer_failed"
       ],
       "output_max_bytes": 1099511627776
     },
     {
-      "name": "instances.receive-sqlite-snapshot",
+      "name": "instance.receive-sqlite-snapshot",
       "summary": "Receive a verified SQLite snapshot into its prepared account-owned file.",
       "mutates": true,
       "timeout_seconds": 1800,
@@ -3667,9 +3667,9 @@
         "macos": null
       },
       "errors": [
-        "instances.sqlite_transfer_invalid",
-        "instances.sqlite_transfer_refused",
-        "instances.sqlite_transfer_failed"
+        "instance.sqlite_transfer_invalid",
+        "instance.sqlite_transfer_refused",
+        "instance.sqlite_transfer_failed"
       ],
       "input_max_bytes": 1099511627776
     },
@@ -3702,7 +3702,7 @@
       ]
     },
     {
-      "name": "instances.prepare-sqlite-seed",
+      "name": "instance.prepare-sqlite-seed",
       "summary": "Take or clean up the source snapshot of a SQLite seed.",
       "mutates": true,
       "timeout_seconds": 120,
@@ -3711,13 +3711,13 @@
         "macos": null
       },
       "errors": [
-        "instances.sqlite_seed_refused",
-        "instances.sqlite_seed_failed",
-        "instances.sqlite_seed_unconfirmed"
+        "instance.sqlite_seed_refused",
+        "instance.sqlite_seed_failed",
+        "instance.sqlite_seed_unconfirmed"
       ]
     },
     {
-      "name": "instances.install-sqlite-seed",
+      "name": "instance.install-sqlite-seed",
       "summary": "Prepare, install, or clean up the target of a SQLite seed.",
       "mutates": true,
       "timeout_seconds": 120,
@@ -3726,13 +3726,13 @@
         "macos": null
       },
       "errors": [
-        "instances.sqlite_seed_refused",
-        "instances.sqlite_seed_failed",
-        "instances.sqlite_seed_unconfirmed"
+        "instance.sqlite_seed_refused",
+        "instance.sqlite_seed_failed",
+        "instance.sqlite_seed_unconfirmed"
       ]
     },
     {
-      "name": "instances.transfer-source",
+      "name": "instance.transfer-source",
       "summary": "Capture, discard, or clean up a development Instance transfer.",
       "mutates": true,
       "timeout_seconds": 600,
@@ -3741,12 +3741,12 @@
         "macos": null
       },
       "errors": [
-        "instances.transfer_archive_invalid",
-        "instances.transfer_source_failed"
+        "instance.transfer_archive_invalid",
+        "instance.transfer_source_failed"
       ]
     },
     {
-      "name": "instances.read-transfer-archive",
+      "name": "instance.read-transfer-archive",
       "summary": "Stream a private captured checkout archive to the Gateway.",
       "mutates": false,
       "timeout_seconds": 1800,
@@ -3755,13 +3755,13 @@
         "macos": null
       },
       "errors": [
-        "instances.transfer_archive_invalid",
-        "instances.transfer_source_failed"
+        "instance.transfer_archive_invalid",
+        "instance.transfer_source_failed"
       ],
       "output_max_bytes": 1099511627776
     },
     {
-      "name": "instances.materialize-transfer",
+      "name": "instance.materialize-transfer",
       "summary": "Materialize a received checkout archive as the managed account.",
       "mutates": true,
       "timeout_seconds": 1800,
@@ -3770,8 +3770,8 @@
         "macos": null
       },
       "errors": [
-        "instances.transfer_archive_invalid",
-        "instances.transfer_source_failed"
+        "instance.transfer_archive_invalid",
+        "instance.transfer_source_failed"
       ],
       "input_max_bytes": 1099511627776
     },
@@ -3953,7 +3953,7 @@
       ]
     },
     {
-      "name": "routes.verify-certificate",
+      "name": "route.verify-certificate",
       "summary": "Check that a workload serves a trusted certificate for a Route's domain.",
       "mutates": false,
       "timeout_seconds": 15,
@@ -3962,12 +3962,12 @@
         "macos": null
       },
       "errors": [
-        "routes.certificate_input_invalid",
-        "routes.certificate_invalid"
+        "route.certificate_input_invalid",
+        "route.certificate_invalid"
       ]
     },
     {
-      "name": "routes.verify-http",
+      "name": "route.verify-http",
       "summary": "Check HTTP reachability of a public Process Route from its Ingress.",
       "mutates": false,
       "timeout_seconds": 15,
@@ -3976,12 +3976,12 @@
         "macos": null
       },
       "errors": [
-        "routes.http_input_invalid",
-        "routes.http_unreachable"
+        "route.http_input_invalid",
+        "route.http_unreachable"
       ]
     },
     {
-      "name": "task-vms.read-topology-evidence",
+      "name": "task-vm.read-topology-evidence",
       "summary": "Read the newest MiB of a task VM checkout's topology evidence.",
       "mutates": false,
       "timeout_seconds": 30,
@@ -3995,7 +3995,7 @@
       ]
     },
     {
-      "name": "task-vms.read-git-refs",
+      "name": "task-vm.read-git-refs",
       "summary": "Read checkout refs and its worktree-private CI baseline for pack transfer.",
       "mutates": false,
       "timeout_seconds": 60,
@@ -4009,7 +4009,7 @@
       ]
     },
     {
-      "name": "task-vms.export-git-pack",
+      "name": "task-vm.export-git-pack",
       "summary": "Stream a thin pack of the approved checkout commit to the Gateway.",
       "mutates": false,
       "timeout_seconds": 1800,
@@ -4026,7 +4026,7 @@
       "output_max_bytes": 2147483648
     },
     {
-      "name": "task-vms.import-git-pack",
+      "name": "task-vm.import-git-pack",
       "summary": "Import a mirror pack and set approved checkout refs without network access.",
       "mutates": true,
       "timeout_seconds": 1800,
@@ -4593,7 +4593,7 @@
       ]
     },
     {
-      "name": "projects.update-source",
+      "name": "project.update-source",
       "summary": "Check, change, or restore a development checkout's origin or default branch.",
       "mutates": true,
       "timeout_seconds": 300,
@@ -4602,11 +4602,11 @@
         "macos": null
       },
       "errors": [
-        "projects.source_failed"
+        "project.source_failed"
       ]
     },
     {
-      "name": "databases.server-admin",
+      "name": "database.server-admin",
       "summary": "Run the admin client of a Database server's container, or copy a database inside it.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -4615,9 +4615,9 @@
         "macos": null
       },
       "errors": [
-        "databases.server_admin_invalid",
-        "databases.server_admin_failed",
-        "databases.server_not_ready"
+        "database.server_admin_invalid",
+        "database.server_admin_failed",
+        "database.server_not_ready"
       ]
     },
     {
@@ -4722,12 +4722,12 @@
         "macos": null
       },
       "errors": [
-        "schedules.target_unavailable",
-        "schedules.artifact_conflict",
-        "schedules.calendar_invalid",
-        "schedules.rollback_failed",
-        "schedules.failed",
-        "schedules.run_active"
+        "schedule.target_unavailable",
+        "schedule.artifact_conflict",
+        "schedule.calendar_invalid",
+        "schedule.rollback_failed",
+        "schedule.failed",
+        "schedule.run_active"
       ]
     },
     {
@@ -4740,16 +4740,16 @@
         "macos": null
       },
       "errors": [
-        "schedules.target_unavailable",
-        "schedules.artifact_conflict",
-        "schedules.calendar_invalid",
-        "schedules.rollback_failed",
-        "schedules.failed",
-        "schedules.run_active"
+        "schedule.target_unavailable",
+        "schedule.artifact_conflict",
+        "schedule.calendar_invalid",
+        "schedule.rollback_failed",
+        "schedule.failed",
+        "schedule.run_active"
       ]
     },
     {
-      "name": "schedules.install",
+      "name": "schedule.install",
       "summary": "Write a Schedule's units and set its timer.",
       "mutates": true,
       "timeout_seconds": 90,
@@ -4758,16 +4758,16 @@
         "macos": null
       },
       "errors": [
-        "schedules.target_unavailable",
-        "schedules.artifact_conflict",
-        "schedules.calendar_invalid",
-        "schedules.rollback_failed",
-        "schedules.failed",
-        "schedules.run_active"
+        "schedule.target_unavailable",
+        "schedule.artifact_conflict",
+        "schedule.calendar_invalid",
+        "schedule.rollback_failed",
+        "schedule.failed",
+        "schedule.run_active"
       ]
     },
     {
-      "name": "schedules.activate",
+      "name": "schedule.activate",
       "summary": "Enable and start a Schedule's timer.",
       "mutates": true,
       "timeout_seconds": 45,
@@ -4776,16 +4776,16 @@
         "macos": null
       },
       "errors": [
-        "schedules.target_unavailable",
-        "schedules.artifact_conflict",
-        "schedules.calendar_invalid",
-        "schedules.rollback_failed",
-        "schedules.failed",
-        "schedules.run_active"
+        "schedule.target_unavailable",
+        "schedule.artifact_conflict",
+        "schedule.calendar_invalid",
+        "schedule.rollback_failed",
+        "schedule.failed",
+        "schedule.run_active"
       ]
     },
     {
-      "name": "schedules.run",
+      "name": "schedule.run",
       "summary": "Start one run of a Schedule.",
       "mutates": true,
       "timeout_seconds": 15,
@@ -4794,16 +4794,16 @@
         "macos": null
       },
       "errors": [
-        "schedules.target_unavailable",
-        "schedules.artifact_conflict",
-        "schedules.calendar_invalid",
-        "schedules.rollback_failed",
-        "schedules.failed",
-        "schedules.run_active"
+        "schedule.target_unavailable",
+        "schedule.artifact_conflict",
+        "schedule.calendar_invalid",
+        "schedule.rollback_failed",
+        "schedule.failed",
+        "schedule.run_active"
       ]
     },
     {
-      "name": "schedules.logs",
+      "name": "schedule.logs",
       "summary": "Read a Schedule's newest journal entries.",
       "mutates": false,
       "timeout_seconds": 10,
@@ -4812,16 +4812,16 @@
         "macos": null
       },
       "errors": [
-        "schedules.target_unavailable",
-        "schedules.artifact_conflict",
-        "schedules.calendar_invalid",
-        "schedules.rollback_failed",
-        "schedules.failed",
-        "schedules.run_active"
+        "schedule.target_unavailable",
+        "schedule.artifact_conflict",
+        "schedule.calendar_invalid",
+        "schedule.rollback_failed",
+        "schedule.failed",
+        "schedule.run_active"
       ]
     },
     {
-      "name": "schedules.remove",
+      "name": "schedule.remove",
       "summary": "Delete a Schedule's units.",
       "mutates": true,
       "timeout_seconds": 60,
@@ -4830,16 +4830,16 @@
         "macos": null
       },
       "errors": [
-        "schedules.target_unavailable",
-        "schedules.artifact_conflict",
-        "schedules.calendar_invalid",
-        "schedules.rollback_failed",
-        "schedules.failed",
-        "schedules.run_active"
+        "schedule.target_unavailable",
+        "schedule.artifact_conflict",
+        "schedule.calendar_invalid",
+        "schedule.rollback_failed",
+        "schedule.failed",
+        "schedule.run_active"
       ]
     },
     {
-      "name": "accounts.lookup",
+      "name": "account.lookup",
       "summary": "Read a local account's primary group, home, and shell.",
       "mutates": false,
       "timeout_seconds": 10,
@@ -4848,11 +4848,11 @@
         "macos": null
       },
       "errors": [
-        "accounts.missing"
+        "account.missing"
       ]
     },
     {
-      "name": "processes.check-release",
+      "name": "process.check-release",
       "summary": "Tell whether a production Process has a selected release.",
       "mutates": false,
       "timeout_seconds": 10,
@@ -4861,25 +4861,25 @@
         "macos": null
       },
       "errors": [
-        "processes.invalid",
-        "processes.name_collision",
-        "processes.not_found",
-        "processes.start_failed",
-        "processes.stop_failed",
-        "processes.restart_failed",
-        "processes.remove_failed",
-        "processes.status_failed",
-        "processes.logs_failed",
-        "processes.converge_failed",
-        "processes.candidate_invalid",
-        "processes.activation_failed",
-        "processes.rollback_failed",
-        "processes.recovery_required",
-        "processes.vite_cleanup_failed"
+        "process.invalid",
+        "process.name_collision",
+        "process.not_found",
+        "process.start_failed",
+        "process.stop_failed",
+        "process.restart_failed",
+        "process.remove_failed",
+        "process.status_failed",
+        "process.logs_failed",
+        "process.converge_failed",
+        "process.candidate_invalid",
+        "process.activation_failed",
+        "process.rollback_failed",
+        "process.recovery_required",
+        "process.vite_cleanup_failed"
       ]
     },
     {
-      "name": "processes.status",
+      "name": "process.status",
       "summary": "Read the state of a Process's unit or container.",
       "mutates": false,
       "timeout_seconds": 30,
@@ -4888,25 +4888,25 @@
         "macos": null
       },
       "errors": [
-        "processes.invalid",
-        "processes.name_collision",
-        "processes.not_found",
-        "processes.start_failed",
-        "processes.stop_failed",
-        "processes.restart_failed",
-        "processes.remove_failed",
-        "processes.status_failed",
-        "processes.logs_failed",
-        "processes.converge_failed",
-        "processes.candidate_invalid",
-        "processes.activation_failed",
-        "processes.rollback_failed",
-        "processes.recovery_required",
-        "processes.vite_cleanup_failed"
+        "process.invalid",
+        "process.name_collision",
+        "process.not_found",
+        "process.start_failed",
+        "process.stop_failed",
+        "process.restart_failed",
+        "process.remove_failed",
+        "process.status_failed",
+        "process.logs_failed",
+        "process.converge_failed",
+        "process.candidate_invalid",
+        "process.activation_failed",
+        "process.rollback_failed",
+        "process.recovery_required",
+        "process.vite_cleanup_failed"
       ]
     },
     {
-      "name": "processes.control",
+      "name": "process.control",
       "summary": "Start, stop, or restart a Process's unit or container.",
       "mutates": true,
       "timeout_seconds": 300,
@@ -4915,25 +4915,25 @@
         "macos": null
       },
       "errors": [
-        "processes.invalid",
-        "processes.name_collision",
-        "processes.not_found",
-        "processes.start_failed",
-        "processes.stop_failed",
-        "processes.restart_failed",
-        "processes.remove_failed",
-        "processes.status_failed",
-        "processes.logs_failed",
-        "processes.converge_failed",
-        "processes.candidate_invalid",
-        "processes.activation_failed",
-        "processes.rollback_failed",
-        "processes.recovery_required",
-        "processes.vite_cleanup_failed"
+        "process.invalid",
+        "process.name_collision",
+        "process.not_found",
+        "process.start_failed",
+        "process.stop_failed",
+        "process.restart_failed",
+        "process.remove_failed",
+        "process.status_failed",
+        "process.logs_failed",
+        "process.converge_failed",
+        "process.candidate_invalid",
+        "process.activation_failed",
+        "process.rollback_failed",
+        "process.recovery_required",
+        "process.vite_cleanup_failed"
       ]
     },
     {
-      "name": "processes.remove",
+      "name": "process.remove",
       "summary": "Delete a Process's unit or containers.",
       "mutates": true,
       "timeout_seconds": 300,
@@ -4942,25 +4942,25 @@
         "macos": null
       },
       "errors": [
-        "processes.invalid",
-        "processes.name_collision",
-        "processes.not_found",
-        "processes.start_failed",
-        "processes.stop_failed",
-        "processes.restart_failed",
-        "processes.remove_failed",
-        "processes.status_failed",
-        "processes.logs_failed",
-        "processes.converge_failed",
-        "processes.candidate_invalid",
-        "processes.activation_failed",
-        "processes.rollback_failed",
-        "processes.recovery_required",
-        "processes.vite_cleanup_failed"
+        "process.invalid",
+        "process.name_collision",
+        "process.not_found",
+        "process.start_failed",
+        "process.stop_failed",
+        "process.restart_failed",
+        "process.remove_failed",
+        "process.status_failed",
+        "process.logs_failed",
+        "process.converge_failed",
+        "process.candidate_invalid",
+        "process.activation_failed",
+        "process.rollback_failed",
+        "process.recovery_required",
+        "process.vite_cleanup_failed"
       ]
     },
     {
-      "name": "processes.stage-unit",
+      "name": "process.stage-unit",
       "summary": "Write a Process unit candidate that systemd accepts.",
       "mutates": true,
       "timeout_seconds": 60,
@@ -4969,25 +4969,25 @@
         "macos": null
       },
       "errors": [
-        "processes.invalid",
-        "processes.name_collision",
-        "processes.not_found",
-        "processes.start_failed",
-        "processes.stop_failed",
-        "processes.restart_failed",
-        "processes.remove_failed",
-        "processes.status_failed",
-        "processes.logs_failed",
-        "processes.converge_failed",
-        "processes.candidate_invalid",
-        "processes.activation_failed",
-        "processes.rollback_failed",
-        "processes.recovery_required",
-        "processes.vite_cleanup_failed"
+        "process.invalid",
+        "process.name_collision",
+        "process.not_found",
+        "process.start_failed",
+        "process.stop_failed",
+        "process.restart_failed",
+        "process.remove_failed",
+        "process.status_failed",
+        "process.logs_failed",
+        "process.converge_failed",
+        "process.candidate_invalid",
+        "process.activation_failed",
+        "process.rollback_failed",
+        "process.recovery_required",
+        "process.vite_cleanup_failed"
       ]
     },
     {
-      "name": "processes.activate-unit",
+      "name": "process.activate-unit",
       "summary": "Publish a Process unit candidate and set its desired state.",
       "mutates": true,
       "timeout_seconds": 600,
@@ -4996,25 +4996,25 @@
         "macos": null
       },
       "errors": [
-        "processes.invalid",
-        "processes.name_collision",
-        "processes.not_found",
-        "processes.start_failed",
-        "processes.stop_failed",
-        "processes.restart_failed",
-        "processes.remove_failed",
-        "processes.status_failed",
-        "processes.logs_failed",
-        "processes.converge_failed",
-        "processes.candidate_invalid",
-        "processes.activation_failed",
-        "processes.rollback_failed",
-        "processes.recovery_required",
-        "processes.vite_cleanup_failed"
+        "process.invalid",
+        "process.name_collision",
+        "process.not_found",
+        "process.start_failed",
+        "process.stop_failed",
+        "process.restart_failed",
+        "process.remove_failed",
+        "process.status_failed",
+        "process.logs_failed",
+        "process.converge_failed",
+        "process.candidate_invalid",
+        "process.activation_failed",
+        "process.rollback_failed",
+        "process.recovery_required",
+        "process.vite_cleanup_failed"
       ]
     },
     {
-      "name": "processes.converge-container",
+      "name": "process.converge-container",
       "summary": "Create or replace a Process's container and set its desired state.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -5023,25 +5023,25 @@
         "macos": null
       },
       "errors": [
-        "processes.invalid",
-        "processes.name_collision",
-        "processes.not_found",
-        "processes.start_failed",
-        "processes.stop_failed",
-        "processes.restart_failed",
-        "processes.remove_failed",
-        "processes.status_failed",
-        "processes.logs_failed",
-        "processes.converge_failed",
-        "processes.candidate_invalid",
-        "processes.activation_failed",
-        "processes.rollback_failed",
-        "processes.recovery_required",
-        "processes.vite_cleanup_failed"
+        "process.invalid",
+        "process.name_collision",
+        "process.not_found",
+        "process.start_failed",
+        "process.stop_failed",
+        "process.restart_failed",
+        "process.remove_failed",
+        "process.status_failed",
+        "process.logs_failed",
+        "process.converge_failed",
+        "process.candidate_invalid",
+        "process.activation_failed",
+        "process.rollback_failed",
+        "process.recovery_required",
+        "process.vite_cleanup_failed"
       ]
     },
     {
-      "name": "processes.logs",
+      "name": "process.logs",
       "summary": "Read the newest lines of a Process's unit or container.",
       "mutates": false,
       "timeout_seconds": 60,
@@ -5050,25 +5050,25 @@
         "macos": null
       },
       "errors": [
-        "processes.invalid",
-        "processes.name_collision",
-        "processes.not_found",
-        "processes.start_failed",
-        "processes.stop_failed",
-        "processes.restart_failed",
-        "processes.remove_failed",
-        "processes.status_failed",
-        "processes.logs_failed",
-        "processes.converge_failed",
-        "processes.candidate_invalid",
-        "processes.activation_failed",
-        "processes.rollback_failed",
-        "processes.recovery_required",
-        "processes.vite_cleanup_failed"
+        "process.invalid",
+        "process.name_collision",
+        "process.not_found",
+        "process.start_failed",
+        "process.stop_failed",
+        "process.restart_failed",
+        "process.remove_failed",
+        "process.status_failed",
+        "process.logs_failed",
+        "process.converge_failed",
+        "process.candidate_invalid",
+        "process.activation_failed",
+        "process.rollback_failed",
+        "process.recovery_required",
+        "process.vite_cleanup_failed"
       ]
     },
     {
-      "name": "certificates.request-leaf",
+      "name": "certificate.request-leaf",
       "summary": "Reuse a valid development leaf certificate, or make a new key and its signing request.",
       "mutates": true,
       "timeout_seconds": 60,
@@ -5077,11 +5077,11 @@
         "macos": null
       },
       "errors": [
-        "certificates.leaf_failed"
+        "certificate.leaf_failed"
       ]
     },
     {
-      "name": "certificates.publish-leaf",
+      "name": "certificate.publish-leaf",
       "summary": "Install a signed development leaf for the managed account and Caddy, and reload Caddy.",
       "mutates": true,
       "timeout_seconds": 60,
@@ -5090,11 +5090,11 @@
         "macos": null
       },
       "errors": [
-        "certificates.leaf_failed"
+        "certificate.leaf_failed"
       ]
     },
     {
-      "name": "certificates.inspect-leaf",
+      "name": "certificate.inspect-leaf",
       "summary": "Report whether a development leaf exists for the managed account and for Caddy.",
       "mutates": false,
       "timeout_seconds": 15,
@@ -5103,11 +5103,11 @@
         "macos": null
       },
       "errors": [
-        "certificates.leaf_failed"
+        "certificate.leaf_failed"
       ]
     },
     {
-      "name": "certificates.remove-leaf",
+      "name": "certificate.remove-leaf",
       "summary": "Remove a development leaf for the managed account and for Caddy.",
       "mutates": true,
       "timeout_seconds": 30,
@@ -5116,11 +5116,11 @@
         "macos": null
       },
       "errors": [
-        "certificates.leaf_failed"
+        "certificate.leaf_failed"
       ]
     },
     {
-      "name": "instances.read-dependency-files",
+      "name": "instance.read-dependency-files",
       "summary": "Read the dependency manifests and lockfiles of a development checkout.",
       "mutates": false,
       "timeout_seconds": 120,
@@ -5129,11 +5129,11 @@
         "macos": null
       },
       "errors": [
-        "instances.dependency_input_invalid"
+        "instance.dependency_input_invalid"
       ]
     },
     {
-      "name": "instances.read-release-dependency-files",
+      "name": "instance.read-release-dependency-files",
       "summary": "Read the dependency manifests and lockfiles of a production home's current release.",
       "mutates": false,
       "timeout_seconds": 120,
@@ -5142,11 +5142,11 @@
         "macos": null
       },
       "errors": [
-        "instances.dependency_input_invalid"
+        "instance.dependency_input_invalid"
       ]
     },
     {
-      "name": "instances.probe-dependency-update",
+      "name": "instance.probe-dependency-update",
       "summary": "Check whether one package ecosystem of a directory is ready for an update.",
       "mutates": false,
       "timeout_seconds": 45,
@@ -5155,11 +5155,11 @@
         "macos": null
       },
       "errors": [
-        "instances.dependency_input_invalid"
+        "instance.dependency_input_invalid"
       ]
     },
     {
-      "name": "instances.update-dependencies",
+      "name": "instance.update-dependencies",
       "summary": "Update one package ecosystem of a development checkout within its constraints.",
       "mutates": true,
       "timeout_seconds": 630,
@@ -5168,11 +5168,11 @@
         "macos": null
       },
       "errors": [
-        "instances.dependency_input_invalid"
+        "instance.dependency_input_invalid"
       ]
     },
     {
-      "name": "instances.resolve-development-target",
+      "name": "instance.resolve-development-target",
       "summary": "Fetch a development default's branch and name the commit a deploy checks out.",
       "mutates": true,
       "timeout_seconds": 300,
@@ -5181,16 +5181,16 @@
         "macos": null
       },
       "errors": [
-        "instances.development_checkout_invalid",
-        "instances.checkout_dirty",
-        "instances.branch_diverged",
-        "instances.commit_not_on_branch",
-        "instances.lifecycle_busy",
-        "instances.development_step_failed"
+        "instance.development_checkout_invalid",
+        "instance.checkout_dirty",
+        "instance.branch_diverged",
+        "instance.commit_not_on_branch",
+        "instance.lifecycle_busy",
+        "instance.development_step_failed"
       ]
     },
     {
-      "name": "instances.checkout-development-default",
+      "name": "instance.checkout-development-default",
       "summary": "Check out a commit on a development default's branch in place.",
       "mutates": true,
       "timeout_seconds": 300,
@@ -5199,16 +5199,16 @@
         "macos": null
       },
       "errors": [
-        "instances.development_checkout_invalid",
-        "instances.checkout_dirty",
-        "instances.branch_diverged",
-        "instances.commit_not_on_branch",
-        "instances.lifecycle_busy",
-        "instances.development_step_failed"
+        "instance.development_checkout_invalid",
+        "instance.checkout_dirty",
+        "instance.branch_diverged",
+        "instance.commit_not_on_branch",
+        "instance.lifecycle_busy",
+        "instance.development_step_failed"
       ]
     },
     {
-      "name": "instances.run-development-step",
+      "name": "instance.run-development-step",
       "summary": "Run a development deploy step in a development default's checkout, live.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -5217,16 +5217,16 @@
         "macos": null
       },
       "errors": [
-        "instances.development_checkout_invalid",
-        "instances.checkout_dirty",
-        "instances.branch_diverged",
-        "instances.commit_not_on_branch",
-        "instances.lifecycle_busy",
-        "instances.development_step_failed"
+        "instance.development_checkout_invalid",
+        "instance.checkout_dirty",
+        "instance.branch_diverged",
+        "instance.commit_not_on_branch",
+        "instance.lifecycle_busy",
+        "instance.development_step_failed"
       ]
     },
     {
-      "name": "instances.run-lifecycle-step",
+      "name": "instance.run-lifecycle-step",
       "summary": "Run a Project setup or teardown step in an Instance checkout.",
       "mutates": true,
       "timeout_seconds": 3600,
@@ -5235,16 +5235,16 @@
         "macos": null
       },
       "errors": [
-        "instances.development_checkout_invalid",
-        "instances.checkout_dirty",
-        "instances.branch_diverged",
-        "instances.commit_not_on_branch",
-        "instances.lifecycle_busy",
-        "instances.development_step_failed"
+        "instance.development_checkout_invalid",
+        "instance.checkout_dirty",
+        "instance.branch_diverged",
+        "instance.commit_not_on_branch",
+        "instance.lifecycle_busy",
+        "instance.development_step_failed"
       ]
     },
     {
-      "name": "instances.prepare-production-user",
+      "name": "instance.prepare-production-user",
       "summary": "Create a production Instance's system account and private home, or check them.",
       "mutates": true,
       "timeout_seconds": 60,
@@ -5253,14 +5253,14 @@
         "macos": null
       },
       "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
+        "instance.release_invalid",
+        "instance.commit_not_on_branch",
+        "instance.release_step_failed",
+        "instance.release_missing"
       ]
     },
     {
-      "name": "instances.prepare-production-source",
+      "name": "instance.prepare-production-source",
       "summary": "Clone a production Instance's repository into its initial release and record the source markers.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -5269,14 +5269,14 @@
         "macos": null
       },
       "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
+        "instance.release_invalid",
+        "instance.commit_not_on_branch",
+        "instance.release_step_failed",
+        "instance.release_missing"
       ]
     },
     {
-      "name": "instances.resolve-production-source",
+      "name": "instance.resolve-production-source",
       "summary": "Check out a branch in a production Instance's initial release and link its environment.",
       "mutates": true,
       "timeout_seconds": 900,
@@ -5285,14 +5285,14 @@
         "macos": null
       },
       "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
+        "instance.release_invalid",
+        "instance.commit_not_on_branch",
+        "instance.release_step_failed",
+        "instance.release_missing"
       ]
     },
     {
-      "name": "instances.inspect-production-profile",
+      "name": "instance.inspect-production-profile",
       "summary": "Read a production checkout's Composer metadata, refusing files the user does not own.",
       "mutates": false,
       "timeout_seconds": 60,
@@ -5301,14 +5301,14 @@
         "macos": null
       },
       "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
+        "instance.release_invalid",
+        "instance.commit_not_on_branch",
+        "instance.release_step_failed",
+        "instance.release_missing"
       ]
     },
     {
-      "name": "instances.grant-production-caddy-access",
+      "name": "instance.grant-production-caddy-access",
       "summary": "Deny Caddy a production home except a path to the selected web root.",
       "mutates": true,
       "timeout_seconds": 300,
@@ -5317,14 +5317,14 @@
         "macos": null
       },
       "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
+        "instance.release_invalid",
+        "instance.commit_not_on_branch",
+        "instance.release_step_failed",
+        "instance.release_missing"
       ]
     },
     {
-      "name": "instances.validate-release-layout",
+      "name": "instance.validate-release-layout",
       "summary": "Check a production home, its releases, and the release that current selects.",
       "mutates": false,
       "timeout_seconds": 120,
@@ -5333,14 +5333,14 @@
         "macos": null
       },
       "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
+        "instance.release_invalid",
+        "instance.commit_not_on_branch",
+        "instance.release_step_failed",
+        "instance.release_missing"
       ]
     },
     {
-      "name": "instances.clear-current-release",
+      "name": "instance.clear-current-release",
       "summary": "Check a production home and remove its current link.",
       "mutates": true,
       "timeout_seconds": 120,
@@ -5349,14 +5349,14 @@
         "macos": null
       },
       "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
+        "instance.release_invalid",
+        "instance.commit_not_on_branch",
+        "instance.release_step_failed",
+        "instance.release_missing"
       ]
     },
     {
-      "name": "instances.remove-production-home",
+      "name": "instance.remove-production-home",
       "summary": "Remove a production Instance's home, system account, and source state.",
       "mutates": true,
       "timeout_seconds": 600,
@@ -5365,14 +5365,14 @@
         "macos": null
       },
       "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
+        "instance.release_invalid",
+        "instance.commit_not_on_branch",
+        "instance.release_step_failed",
+        "instance.release_missing"
       ]
     },
     {
-      "name": "instances.write-directory-url",
+      "name": "instance.write-directory-url",
       "summary": "Write APP_URL into the stable .env of a production Instance's served application directory.",
       "mutates": true,
       "timeout_seconds": 60,
@@ -5381,14 +5381,14 @@
         "macos": null
       },
       "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
+        "instance.release_invalid",
+        "instance.commit_not_on_branch",
+        "instance.release_step_failed",
+        "instance.release_missing"
       ]
     },
     {
-      "name": "instances.refresh-config-cache",
+      "name": "instance.refresh-config-cache",
       "summary": "Rebuild the Laravel configuration cache of a production Instance's current release, if it has one.",
       "mutates": true,
       "timeout_seconds": 120,
@@ -5397,10 +5397,10 @@
         "macos": null
       },
       "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
+        "instance.release_invalid",
+        "instance.commit_not_on_branch",
+        "instance.release_step_failed",
+        "instance.release_missing"
       ]
     },
     {

@@ -14,7 +14,7 @@ use LogicException;
 use Throwable;
 
 /**
- * Answers `databases.write-valkey-acl` and records each input with the Node it ran on. Every other agent command goes
+ * Answers `database.write-valkey-acl` and records each input with the Node it ran on. Every other agent command goes
  * to `$others`, the runner the container held before.
  */
 final class FakeValkeyAclAgent implements AgentCommandRunner
@@ -35,7 +35,7 @@ final class FakeValkeyAclAgent implements AgentCommandRunner
 
     public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
     {
-        if ($command !== 'databases.write-valkey-acl') {
+        if ($command !== 'database.write-valkey-acl') {
             return ($this->others ?? throw new LogicException("Unexpected agent command [{$command}]."))->run($node, $command, $input, $deadlineSeconds, $output, $binaryInput);
         }
         FakeAgentCommandRunner::admit($node, $command, $input, $output, $binaryInput);
@@ -59,7 +59,7 @@ final class FakeValkeyAclAgent implements AgentCommandRunner
         }
 
         if ($this->outcome === 'failed') {
-            throw new AgentCommandRefused($command, 'databases.valkey_acl_failed', 'The ACL container failed.', ['exit_code' => 125]);
+            throw new AgentCommandRefused($command, 'database.valkey_acl_failed', 'The ACL container failed.', ['exit_code' => 125]);
         }
 
         return [];

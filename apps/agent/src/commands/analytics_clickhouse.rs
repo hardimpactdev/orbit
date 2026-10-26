@@ -7,7 +7,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
-    io::{self, Read},
+    io::Read,
     os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
     time::Duration,
@@ -46,11 +46,7 @@ fn failed(stage: &str) -> Error {
     }
 }
 fn metadata(path: &Path) -> Result<Option<fs::Metadata>, Error> {
-    match fs::symlink_metadata(path) {
-        Ok(meta) => Ok(Some(meta)),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(_) => Err(failed("inspect")),
-    }
+    super::recipe::metadata(path).map_err(|_| failed("inspect"))
 }
 fn previous(files: &Files, path: &Path) -> Result<Option<Vec<u8>>, Error> {
     let Some(meta) = metadata(path)? else {

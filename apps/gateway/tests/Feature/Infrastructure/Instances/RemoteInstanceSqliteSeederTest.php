@@ -55,12 +55,12 @@ function seed_agents(array $target, array $refusals = []): FakeAgentCommandRunne
     $digest = str_repeat('d', 64);
 
     return new FakeAgentCommandRunner()
-        ->answer('instances.prepare-sqlite-seed', static fn (array $input): array => $input['mode'] === 'prepare'
+        ->answer('instance.prepare-sqlite-seed', static fn (array $input): array => $input['mode'] === 'prepare'
             ? ['bytes' => 4096, 'sha256' => $digest, 'snapshot' => $input['snapshot_path']]
             : [])
-        ->answer('instances.install-sqlite-seed', static function (array $input) use ($target, $refusals): array {
+        ->answer('instance.install-sqlite-seed', static function (array $input) use ($target, $refusals): array {
             if (isset($refusals[$input['mode']])) {
-                throw new AgentCommandRefused('instances.install-sqlite-seed', $refusals[$input['mode']], 'Refused.');
+                throw new AgentCommandRefused('instance.install-sqlite-seed', $refusals[$input['mode']], 'Refused.');
             }
 
             return $target[$input['mode']];
@@ -74,7 +74,7 @@ it('takes a snapshot, moves it to the incoming file, installs it, and cleans up 
     expect($seeder->seed(seed_source(), seed_target(), SEED_SOURCE))->toEqual(SqliteSeedResult::changed());
 
     $calls = array_map(static fn (array $call): string => $call['command'].':'.$call['input']['mode'], $agents->calls);
-    expect($calls)->toBe(['instances.prepare-sqlite-seed:prepare', 'instances.install-sqlite-seed:prepare', 'instances.install-sqlite-seed:install', 'instances.prepare-sqlite-seed:cleanup'])
+    expect($calls)->toBe(['instance.prepare-sqlite-seed:prepare', 'instance.install-sqlite-seed:prepare', 'instance.install-sqlite-seed:install', 'instance.prepare-sqlite-seed:cleanup'])
         ->and($moves[0][1])->toBe('/tmp/orbit-sqlite-abc-1')
         ->and($moves[0][2])->toBe(4096)
         ->and($agents->calls[0]['input'])->toMatchArray(['base' => '/srv/apps/acme', 'source_path' => SEED_SOURCE, 'source_user' => 'orbit', 'transport_user' => 'orbit'])
@@ -94,7 +94,7 @@ it('reports an earlier install as unchanged and resumes a moved snapshot without
 ]);
 
 it('cleans up the source and fails preflight when the target refuses', function (): void {
-    $agents = seed_agents([], ['prepare' => 'instances.sqlite_seed_refused']);
+    $agents = seed_agents([], ['prepare' => 'instance.sqlite_seed_refused']);
 
     expect(fn () => seed_seeder($agents)[0]->seed(seed_source(), seed_target(), SEED_SOURCE))
         ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('sqlite.seed_preflight_failed'));
@@ -113,9 +113,9 @@ it('maps each install outcome', function (string $refusal, ?string $errorCode, b
     }
     expect(end($agents->calls)['input']['mode'] === 'cleanup')->toBe($cleansSource);
 })->with([
-    'refused' => ['instances.sqlite_seed_refused', 'sqlite.seed_failed', true],
-    'failed' => ['instances.sqlite_seed_failed', 'sqlite.seed_failed', false],
-    'unconfirmed' => ['instances.sqlite_seed_unconfirmed', null, false],
+    'refused' => ['instance.sqlite_seed_refused', 'sqlite.seed_failed', true],
+    'failed' => ['instance.sqlite_seed_failed', 'sqlite.seed_failed', false],
+    'unconfirmed' => ['instance.sqlite_seed_unconfirmed', null, false],
 ]);
 
 it('fails the transfer safely and keeps both halves for a retry', function (): void {

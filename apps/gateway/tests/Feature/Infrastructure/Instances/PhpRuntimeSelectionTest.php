@@ -214,7 +214,7 @@ function orb170_source_configurator(ProjectType $type, string $composer, string 
         'starting_commit' => str_repeat('a', 40),
         'status' => 'source_resolved',
     ]);
-    $agents = new FakeAgentCommandRunner()->answer('instances.inspect-development-profile', ['kind' => 'composer', 'entry_point' => $entryPointKind, 'composer' => base64_encode($composer)]);
+    $agents = new FakeAgentCommandRunner()->answer('instance.inspect-development-profile', ['kind' => 'composer', 'entry_point' => $entryPointKind, 'composer' => base64_encode($composer)]);
 
     return [
         new RemoteDevelopmentInstanceConfigurator(

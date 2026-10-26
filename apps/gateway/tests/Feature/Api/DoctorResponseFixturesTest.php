@@ -28,7 +28,7 @@ describe('doctor discovery fixtures', function (): void {
         $ssh = doctor_fixture_bind(new NodeInspectionData(true, 'macos', 'arm64', true), [
             'formulae' => ['state' => 'complete', 'packages' => [doctor_fixture_package('jq', '1.7.1'), doctor_fixture_package('ripgrep', '14.1.1')]],
             'casks' => ['state' => 'complete', 'packages' => [doctor_fixture_package('font-hack', '2.0.0'), doctor_fixture_package('docker', '4.39.0', 'authorization_required')]],
-        ], new FakeAgentCommandRunner()->answer('tools.vp-inventory', ['packages' => [['name' => 'left-pad', 'version' => '1.0.0']], 'scan_complete' => true]));
+        ], new FakeAgentCommandRunner()->answer('tool.vp-inventory', ['packages' => [['name' => 'left-pad', 'version' => '1.0.0']], 'scan_complete' => true]));
         $toolsBefore = Tool::query()->count();
 
         $response = $this->postJson('/api/v1/doctor', [
@@ -66,7 +66,7 @@ describe('doctor discovery fixtures', function (): void {
         doctor_fixture_bind(new NodeInspectionData(true, 'linux', 'amd64', true), [
             'formulae' => ['state' => 'complete', 'packages' => [doctor_fixture_package('ripgrep', '14.1.1')]],
             'casks' => ['state' => 'unsupported', 'packages' => []],
-        ], new FakeAgentCommandRunner()->answer('tools.homebrew-formula-inventory', ['packages' => []])->refuse('tools.vp-inventory', 'tools.vp_scope_absent'));
+        ], new FakeAgentCommandRunner()->answer('tool.homebrew-formula-inventory', ['packages' => []])->refuse('tool.vp-inventory', 'tool.vp_scope_absent'));
 
         $response = $this->postJson('/api/v1/doctor', [
             'node_id' => $node->id,
@@ -120,7 +120,7 @@ describe('doctor discovery fixtures', function (): void {
         doctor_fixture_bind(new NodeInspectionData(true, 'linux', 'amd64', true), [
             'formulae' => ['state' => 'incomplete', 'packages' => []],
             'casks' => ['state' => 'unsupported', 'packages' => []],
-        ], new FakeAgentCommandRunner()->refuse('tools.vp-inventory', 'tools.vp_output_invalid'));
+        ], new FakeAgentCommandRunner()->refuse('tool.vp-inventory', 'tool.vp_output_invalid'));
 
         $response = $this->postJson('/api/v1/doctor', [
             'node_id' => $node->id,
@@ -139,8 +139,8 @@ describe('doctor discovery fixtures', function (): void {
     it('records absent managers as informational and ignores unsupported casks', function (): void {
         $node = doctor_fixture_node('linux-node', '10.44.0.4');
         $ssh = doctor_fixture_bind(new NodeInspectionData(true, 'linux', 'amd64', true), [], new FakeAgentCommandRunner()
-            ->refuse('tools.homebrew-scan', 'tools.homebrew_scope_absent')
-            ->refuse('tools.vp-inventory', 'tools.vp_scope_absent'));
+            ->refuse('tool.homebrew-scan', 'tool.homebrew_scope_absent')
+            ->refuse('tool.vp-inventory', 'tool.vp_scope_absent'));
 
         $response = $this->postJson('/api/v1/doctor', [
             'node_id' => $node->id,
@@ -194,7 +194,7 @@ function doctor_fixture_bind(NodeInspectionData $inspection, array $observations
     });
     $agents ??= new FakeAgentCommandRunner;
     if ($observations !== []) {
-        $agents->answer('tools.homebrew-scan', $observations);
+        $agents->answer('tool.homebrew-scan', $observations);
     }
     app()->instance(AgentCommandRunner::class, $agents);
     $ssh = new ToolManagerFakeSshExecutor([]);
