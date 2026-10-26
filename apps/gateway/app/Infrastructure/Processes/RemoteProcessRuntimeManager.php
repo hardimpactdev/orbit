@@ -29,20 +29,16 @@ use SensitiveParameter;
  */
 final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManager
 {
-    /** The `process.*` refusals that fail a step with their own code. */
-    private const array OWN_CODES = [
-        'process.start_failed',
-        'process.stop_failed',
-        'process.restart_failed',
-        'process.remove_failed',
-        'process.status_failed',
-        'process.logs_failed',
-    ];
-
-    /** The other `process.*` refusals and their error code; `{runtime}` is `systemd` or `docker`. */
+    /** Each `process.*` refusal and its error code; `{runtime}` is `systemd` or `docker`. */
     private const array ERRORS = [
         'process.name_collision' => 'process.runtime_name_collision',
         'process.not_found' => 'process.runtime_not_found',
+        'process.start_failed' => 'process.start_failed',
+        'process.stop_failed' => 'process.stop_failed',
+        'process.restart_failed' => 'process.restart_failed',
+        'process.remove_failed' => 'process.remove_failed',
+        'process.status_failed' => 'process.status_failed',
+        'process.logs_failed' => 'process.logs_failed',
         'process.converge_failed' => 'process.{runtime}_converge_failed',
         'process.candidate_invalid' => 'process.{runtime}_candidate_invalid',
         'process.activation_failed' => 'process.{runtime}_activation_failed',
@@ -363,7 +359,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         string $errorCode,
         ?string $change,
     ): ProcessOperationException {
-        $code = in_array($refused->errorCode, self::OWN_CODES, true) ? $refused->errorCode : self::ERRORS[$refused->errorCode] ?? null;
+        $code = self::ERRORS[$refused->errorCode] ?? null;
 
         if ($code === null) {
             return new ProcessOperationException(

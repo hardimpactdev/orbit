@@ -795,12 +795,12 @@ mod tests {
         let actual = std::fs::read_to_string(path).unwrap_or_default();
         assert!(
             actual == expected,
-            "contract/schemas.json is stale; run ORBIT_AGENT_WRITE_CONTRACT=1 cargo test contract_file schemas_file"
+            "contract/schemas.json is stale; run ORBIT_AGENT_WRITE_CONTRACT=1 cargo test --lib -- contract_file schemas_file"
         );
     }
 
     /// The Gateway and its tests read `contract/commands.json`. Rewrite it with
-    /// `ORBIT_AGENT_WRITE_CONTRACT=1 cargo test contract_file`.
+    /// `ORBIT_AGENT_WRITE_CONTRACT=1 cargo test --lib -- contract_file`.
     #[test]
     fn contract_file_matches_the_compiled_commands() {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/contract/commands.json");
@@ -811,7 +811,7 @@ mod tests {
         let actual = std::fs::read_to_string(path).unwrap_or_default();
         assert_eq!(
             actual, expected,
-            "contract/commands.json is stale; run ORBIT_AGENT_WRITE_CONTRACT=1 cargo test contract_file"
+            "contract/commands.json is stale; run ORBIT_AGENT_WRITE_CONTRACT=1 cargo test --lib -- contract_file"
         );
     }
 }
