@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\TaskVms;
 
+use App\Domain\Fleet\FleetServingRelease;
 use App\Domain\Fleet\RecipeMaintenanceAlerts;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmImageBuildState;
@@ -21,11 +22,14 @@ use Throwable;
 /** Desired identity is persisted before dispatch; a busy host catches up on the next scheduler check. */
 final readonly class RecipeImageBuilds
 {
-    public function __construct(private RecipeLoader $loader, private TaskVmSettings $settings, private TaskVmImageBuildChain $chain, private RecipeMaintenanceAlerts $alerts, private UpCloudServers $servers) {}
+    public function __construct(private RecipeLoader $loader, private TaskVmSettings $settings, private TaskVmImageBuildChain $chain, private RecipeMaintenanceAlerts $alerts, private UpCloudServers $servers, private ?string $recipePath = null) {}
 
     /** @return list<TaskVmImageBuild> */
     public function reconcile(?int $hostId = null, bool $retry = false, bool $rebuild = false): array
     {
+        if (app(FleetServingRelease::class)->supersedes()) {
+            return [];
+        }
         $recipe = $this->currentRecipe();
         if ($rebuild && ($retry || $hostId !== null)) {
             throw new TaskVmException('task_vm.image_build_failed', 'A cold rebuild targets every configured backend and cannot be combined with --retry.');
@@ -111,9 +115,7 @@ final readonly class RecipeImageBuilds
 
     public function currentRecipe(): MachineRecipe
     {
-        $path = rtrim(config()->string('orbit.gateway_checkout'), '/').'/resources/machine-software/recipe.json';
-
-        return $this->loader->load(is_link(dirname(config()->string('orbit.gateway_checkout'), 2)) ? $path : null);
+        return $this->loader->load($this->recipePath);
     }
 
     private function desire(MachineRecipe $recipe): int

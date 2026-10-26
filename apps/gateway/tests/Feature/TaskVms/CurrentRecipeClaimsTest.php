@@ -70,6 +70,7 @@ it('records a current recipe and base fingerprint and keeps its VM across a depl
     $document['ubuntu']['snapshot'] = new DateTimeImmutable($document['ubuntu']['snapshot'])->modify('+1 day')->format('Ymd\THis\Z');
     file_put_contents($release.'/resources/machine-software/recipe.json', json_encode($document, JSON_THROW_ON_ERROR));
     config(['orbit.gateway_checkout' => $directory.'/orbit/apps/gateway']);
+    app()->when(RecipeImageBuilds::class)->needs('$recipePath')->give($release.'/resources/machine-software/recipe.json');
     try {
         expect(app(RecipeImageBuilds::class)->currentRecipe()->identity)->not->toBe($build->recipe_identity);
         expect(app(AllocateTaskVmAction::class)->execute($group)->id)->toBe($vm->id);

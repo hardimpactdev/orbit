@@ -87,6 +87,7 @@ final readonly class RecipeImageBuildSteps
             }
             switch ($phase) {
                 case 'reset':
+                    $this->agents->install($node);
                     $this->image->delete($host, $node, $name);
                     $this->image->delete($host, $node, $name.'-smoke');
                     break;

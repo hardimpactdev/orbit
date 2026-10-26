@@ -1051,6 +1051,8 @@ Each host uses [ADR 0206's chain model](/decisions/0206-build-task-vm-images-as-
 
 Each phase is a separate queued job. No workspace or Project setup runs and neither package caches nor CI cache refs enter an image.
 
+Image reconciliation reads the recipe bundled with its running Gateway release. A superseded Gateway process skips image reconciliation. A queued Incus image phase picked up by an old worker waits for a worker on the current release, without changing the build record. Before the Incus reset phase, Orbit installs the pinned host agent, so image builds do not depend on the fleet rollout reaching that host first.
+
 The agent implements the image phases in Rust and reuses the Node recipe's package, archive, JavaScript, and PHP installers. Image APT uses only its recorded snapshot configuration. The agent installed before the first phase remains the Gateway delivery pin.
 
 Rust toolchain installation reads the verified archive's component manifests and copies their declared files; it executes no installer script from the archive. It assembles the complete toolchain in a temporary directory beside the installed prefix, then replaces that prefix. This removes obsolete files on an upgrade. It records the artifact pins only after publishing the binary links, and repairs those links on repeated execution.

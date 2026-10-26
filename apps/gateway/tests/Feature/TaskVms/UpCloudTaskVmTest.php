@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\TaskVms\AllocateTaskVmAction;
+use App\Domain\Fleet\FleetServingRelease;
 use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCapacityException;
@@ -315,6 +316,8 @@ function tvm_up_image_artifact(): void
     $document['tools']['pi']['artifacts']['amd64']['sha256'] = hash('sha256', 'pinned pi bytes');
     file_put_contents($resources.'/recipe.json', json_encode($document, JSON_THROW_ON_ERROR));
     config(['orbit.home' => $directory, 'orbit.gateway_checkout' => $directory.'/orbit/apps/gateway']);
+    app()->when(RecipeImageBuilds::class)->needs('$recipePath')->give($resources.'/recipe.json');
+    app()->instance(FleetServingRelease::class, new FleetServingRelease($directory.'/releases/current/apps/gateway'));
     test()->imageArtifactDirectory = $directory;
 }
 
@@ -467,6 +470,8 @@ describe('placement', function (): void {
         $document = json_decode(file_get_contents(resource_path('machine-software/recipe.json')), true, flags: JSON_THROW_ON_ERROR);
         file_put_contents($path, json_encode($document, JSON_THROW_ON_ERROR));
         config(['orbit.gateway_checkout' => $directory.'/orbit/apps/gateway']);
+        app()->when(RecipeImageBuilds::class)->needs('$recipePath')->give($resources.'/recipe.json');
+        app()->instance(FleetServingRelease::class, new FleetServingRelease($directory.'/releases/current/apps/gateway'));
         $document['ubuntu']['snapshot'] = new DateTimeImmutable($document['ubuntu']['snapshot'])->modify('+1 day')->format('Ymd\THis\Z');
         $hostId = $this->host->id;
         $this->upcloud->beforeTemplateList = static function () use ($path, $document, $hostId): void {
@@ -1195,6 +1200,8 @@ describe('recipe-driven UpCloud base image refresh', function (): void {
         $document = json_decode(file_get_contents(resource_path('machine-software/recipe.json')), true, flags: JSON_THROW_ON_ERROR);
         file_put_contents($path, json_encode($document, JSON_THROW_ON_ERROR));
         config(['orbit.gateway_checkout' => $directory.'/orbit/apps/gateway']);
+        app()->when(RecipeImageBuilds::class)->needs('$recipePath')->give($resources.'/recipe.json');
+        app()->instance(FleetServingRelease::class, new FleetServingRelease($directory.'/releases/current/apps/gateway'));
         try {
             $identity = app(RecipeImageBuilds::class)->currentRecipe()->identity;
             $this->upcloud->template('orbit-task-base-20261011000000', $identity);

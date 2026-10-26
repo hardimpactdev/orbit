@@ -13,6 +13,7 @@ use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageBuildStep;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\AgentCommands\GuestAgentCommandRunner;
@@ -34,8 +35,11 @@ use App\Models\ProblemFingerprint;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Sleep;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeGuestAgentCommandRunner;
+use Tests\Support\Fleet\FleetFixtures;
 use Tests\Support\RecipeImageAnswers;
 use Tests\Support\TaskVmSettingsBuilder;
 
@@ -101,6 +105,8 @@ function recipeImageCurrent(string $document): void
     }
     file_put_contents($directory.'/orbit/apps/gateway/resources/machine-software/recipe.json', $document);
     config(['orbit.gateway_checkout' => $directory.'/orbit/apps/gateway']);
+    app()->when(RecipeImageBuilds::class)->needs('$recipePath')->give($directory.'/releases/current/apps/gateway/resources/machine-software/recipe.json');
+    app()->instance(FleetServingRelease::class, new FleetServingRelease($directory.'/releases/current/apps/gateway'));
 }
 
 function runRecipeImageBuild(TaskVmImageBuild $build, bool $promote = true): void
@@ -1050,4 +1056,70 @@ it('refuses a cold rebuild instead of changing the desired Node recipe', functio
 
     expect(DB::table('task_vm_image_recipe')->where('id', 1)->first())->toEqual($desired);
     $this->assertDatabaseCount('task_vm_image_builds', 0);
+});
+
+it('reads its own recipe schema even after the serving symlink moves to a different schema', function (): void {
+    $expected = app(RecipeLoader::class)->load();
+    $directory = FleetFixtures::inPlace();
+    FleetFixtures::adopt(FleetFixtures::Commit);
+    $resources = config()->string('orbit.gateway_checkout').'/resources/machine-software';
+    mkdir($resources, 0700, true);
+    file_put_contents($resources.'/recipe.json', '{"schema_version":999,"future_field":true}');
+    try {
+        $actual = app(RecipeImageBuilds::class)->currentRecipe();
+        expect($actual->identity)->toBe($expected->identity);
+        expect(app(RecipeLoader::class)->decode($actual->json)->identity)->toBe($expected->identity);
+    } finally {
+        File::deleteDirectory($directory);
+    }
+});
+
+it('leaves new recipe work untouched until a worker from the serving release picks it up', function (): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $build = app(RecipeImageBuilds::class)->reconcile()[0];
+    $before = $build->getRawOriginal();
+    $directory = FleetFixtures::inPlace();
+    FleetFixtures::adopt(FleetFixtures::Commit);
+    FleetFixtures::runFrom(FleetFixtures::Commit);
+    $newer = str_repeat('b', 40);
+    FleetFixtures::adopt($newer);
+    Bus::fake();
+    try {
+        expect(app(RecipeImageBuilds::class)->reconcile())->toBe([]);
+        Bus::assertNothingDispatched();
+        $job = new BuildRecipeImageStep($build->id, 'base', 'reset')->withFakeQueueInteractions();
+        $job->handle(app(RecipeImageBuildSteps::class));
+        $job->assertReleased(5);
+        expect($build->refresh()->getRawOriginal())->toBe($before);
+        expect($incus->events)->toBe([]);
+
+        FleetFixtures::runFrom($newer);
+        $job = new BuildRecipeImageStep($build->id, 'base', 'reset')->withFakeQueueInteractions();
+        $job->handle(app(RecipeImageBuildSteps::class));
+        $job->assertNotReleased();
+        expect($build->refresh()->state)->toBe(TaskVmImageBuildState::Running);
+        expect($build->steps[0]['error'])->toBeNull();
+        expect($build->steps[0]['seconds'])->not->toBeNull();
+        expect(app(AgentCommandRunner::class)->installs)->toBe([$host->name]);
+    } finally {
+        File::deleteDirectory($directory);
+    }
+});
+
+it('installs the pinned host agent before any Incus build command', function (): void {
+    $host = recipeImageHost();
+    recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $build = app(RecipeImageBuilds::class)->reconcile()[0];
+    $agents = app(AgentCommandRunner::class);
+    expect($agents)->toBeInstanceOf(FakeAgentCommandRunner::class);
+    $agents->failInstall(new AgentRunnerFailure('agent.install', AgentRunnerFailure::Transport, 'Agent staging failed.'));
+    $job = new BuildRecipeImageStep($build->id, 'base', 'reset')->withFakeQueueInteractions();
+
+    expect(fn () => $job->handle(app(RecipeImageBuildSteps::class)))->toThrow(TaskVmException::class, 'Agent staging failed.');
+    expect($agents->installs)->toBe([$host->name]);
+    expect($agents->calls)->toBe([]);
+    expect($build->refresh()->state)->toBe(TaskVmImageBuildState::Failed);
 });
