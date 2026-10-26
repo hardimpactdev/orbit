@@ -21,6 +21,7 @@ use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\AgentCommands\AgentStep;
+use App\Infrastructure\Certificates\OrbitRootCa;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -331,36 +332,10 @@ final readonly class BootstrapGatewayAction
         $certificate = file_get_contents($certificatePath);
         $privateKey = file_get_contents($privateKeyPath);
 
-        if (! is_string($certificate) || ! is_string($privateKey)) {
-            return false;
-        }
-
-        $parsedCertificate = openssl_x509_read(certificate: $certificate);
-        $parsedPrivateKey = openssl_pkey_get_private($privateKey);
-        $privateKeyDetails = $parsedPrivateKey !== false
-            ? openssl_pkey_get_details($parsedPrivateKey)
-            : false;
-        $details = $parsedCertificate !== false ? openssl_x509_parse($parsedCertificate) : false;
-        $basicConstraints = is_array($details)
-            ? $details['extensions']['basicConstraints'] ?? null
-            : null;
-        $validFrom = is_array($details) ? $details['validFrom_time_t'] : null;
-        $validTo = is_array($details) ? $details['validTo_time_t'] : null;
-        $now = time();
-
         return
-            $parsedCertificate !== false
-            && $parsedPrivateKey !== false
-            && is_array($privateKeyDetails)
-            && ($privateKeyDetails['type'] ?? null) === OPENSSL_KEYTYPE_RSA
-            && ($privateKeyDetails['bits'] ?? null) === 4096
-            && is_string($basicConstraints)
-            && str_contains($basicConstraints, 'CA:TRUE')
-            && is_int($validFrom)
-            && $validFrom <= $now
-            && is_int($validTo)
-            && $validTo >= $now
-            && openssl_x509_check_private_key($parsedCertificate, $parsedPrivateKey);
+            is_string($certificate)
+            && is_string($privateKey)
+            && OrbitRootCa::pairIsValid($certificate, $privateKey, time());
     }
 
     private function publishCertificateAuthorityPair(

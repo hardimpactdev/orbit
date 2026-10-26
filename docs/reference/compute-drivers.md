@@ -541,7 +541,7 @@ Image installer services use `UMask=0022`, matching recipe execution on Nodes. T
 
 Verification runs Node, pnpm, Bun, and Vite+ launchers only as `orbit` and compares their versions with inspection. Other guest-facing binaries must report the same version as root when run as `orbit`. Launcher caches remain owned by `orbit`. The cache-parent probe reads `/opt/orbit` as that user without writing to it.
 
-Cache failures carry a typed code, operation, path, and bounded, sanitized reason; checking the mount marker preserves access errors instead of treating them as a missing mount.
+Cache failures carry a typed code, operation, path, and bounded, sanitized reason. Seed failures identify the artifact key, package, and version and retain the underlying I/O cause, including archive extraction errors. Checking the mount marker preserves access errors instead of treating them as a missing mount.
 
 Existing images and VMs retain their permissions. After an image-builder fix, use `task-vms:build-recipe --rebuild` to replace the images, then recreate affected VMs. Attaching the cache again does not repair an old VM.
 
@@ -551,7 +551,9 @@ An unchanged commit reuses its snapshot. Changed or removed lock blobs replace t
 
 Fills run on the `builds` queue and add missing content, without running Project setup, Composer plugins, or package install scripts. Each artifact failure is recorded in the Gateway log with its cache key and host ID. The fill continues with the remaining artifacts and records successful archives in the host inventory before failing the job. Each job makes one attempt; the next mirror fetch retries pending Projects. A queue outage leaves source fetching usable.
 
-Composer consumes native archive cache files. npm consumes its integrity-addressed content cache; Bun consumes extracted cache directories, including registry archives whose root directory uses the package name, as DefinitelyTyped archives do. The JavaScript adapter reads npm lock versions 2 and 3, Bun text locks, and pnpm package inventories. pnpm locks contribute to the shared JavaScript inventory, but pnpm's own store is not seeded. Bundled, Git, local, and private packages remain normal downloads.
+Composer consumes native archive cache files. npm consumes its integrity-addressed content cache; Bun consumes extracted cache directories, including registry archives whose root directory uses the package name, as DefinitelyTyped archives do. Seed extraction sets archive directory entries to mode `0755` so archive modes cannot prevent the guest from extracting or using their contents. Regular files use mode `0644`, or `0755` when any archive execute bit is set. An unreadable file mode uses `0644`. Directory permission changes refuse symlinks.
+
+The JavaScript adapter reads npm lock versions 2 and 3, Bun text locks, and pnpm package inventories. pnpm locks contribute to the shared JavaScript inventory, but pnpm's own store is not seeded. Bundled, Git, local, and private packages remain normal downloads.
 
 Before workspace setup, Orbit copies the Project's missing shared cache files into the workspace's private manager caches. Task VM setup sets `COMPOSER_CACHE_DIR` to `$HOME/.cache/composer`, the same directory that receives the shared Composer archives, so a login shell uses the seeded cache. Metadata, locks, temporary files, and downloads on a miss stay private. The shared mount is always read-only; private copies use no hard links. A package added only on a task branch, an unsupported archive, or a fill not yet complete falls back to the manager's normal registry download.
 
@@ -1078,6 +1080,8 @@ Pi delivery uses `pi.receive-artifact` to send bounded chunks of the pinned bina
 Each control delivery shares a 1,440-second budget, including staging and transfers. The Incus recipe job allows that budget plus a 60-second margin. Pi uploads use a 900-second transfer limit within that budget. The receiver retains partial bytes for a resumed transfer and rejects conflicting repeated chunks. It discards a complete artifact whose digest is wrong. Digest verification and atomic rename publish only complete input.
 
 The guest service bounds the whole process group to 1,440 seconds, with 30 seconds to stop its children. This covers the observed eight-minute cold package install with margin. One guest lock prevents two phases from changing the builder at once. The Gateway reports a lost SSH channel with its stderr and an unknown phase outcome, then reconnects. A confirmed systemd timeout is reported as a timeout. Strict package checks remain unchanged.
+
+Image APT installs and full upgrades use the phase's remaining execution budget. Every package command shares that deadline, including exact Debian artifacts and the PHP build. A cold install can keep downloading beyond the generic command limit without gaining a fresh phase budget. Inventory and fetch commands retain their own shorter limits.
 
 The native service writes bounded diagnostics to its private phase log. Observations return a redacted tail when a phase fails. Direct verification returns typed failure details.
 

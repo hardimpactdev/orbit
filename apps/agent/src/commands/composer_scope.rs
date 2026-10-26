@@ -38,11 +38,7 @@ pub struct Output {
 #[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Done {}
 fn metadata(path: &Path) -> Result<Option<fs::Metadata>> {
-    match fs::symlink_metadata(path) {
-        Ok(meta) => Ok(Some(meta)),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(_) => Err(Error::Unreadable {}),
-    }
+    recipe::metadata(path).map_err(|_| Error::Unreadable {})
 }
 fn check(path: &Path, uid: u32, gid: u32, directory: bool) -> Result<bool> {
     let Some(meta) = metadata(path)? else {

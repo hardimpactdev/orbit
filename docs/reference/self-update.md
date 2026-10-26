@@ -78,8 +78,9 @@ The Gateway builds the state from its own commit, its Git history, GitHub, and i
 1. The commit is the Gateway version: `APP_VERSION`, or the commit of the Gateway release. A version such as `dev` is not a commit.
 2. The Gateway's own Git checkout counts the commit with `git rev-list --count`. That count `N` names the release `cli-v0.N.0`. A shallow clone has no valid count.
 3. GitHub confirms the release. The tag must point at the commit. The release must be published with every binary and `SHA256SUMS`.
-4. Each CLI asset's `sha256` is its line in that `SHA256SUMS`. Each binary must have one line.
-5. The agent part comes from the pin in the Gateway code.
+4. The release's `provenance.sigstore.json` must [verify](/reference/gateway-recovery#release-provenance) for the exact `SHA256SUMS` the Gateway downloaded.
+5. Each CLI asset's `sha256` is its line in that `SHA256SUMS`. Each binary must have one line.
+6. The agent part comes from the pin in the Gateway code.
 
 The Gateway asks GitHub with a read-only token of its [GitHub App](/reference/github-app) when the App is installed on the repository, and anonymously otherwise. `ORBIT_CLI_RELEASE_REPOSITORY` in the Gateway `.env` names another repository; the default is `https://github.com/hardimpactdev/orbit`.
 
@@ -96,6 +97,8 @@ The Gateway usually deploys a commit a minute after its checks pass, minutes bef
 | `unavailable` | `history_unavailable` | The Gateway checkout is shallow or Git failed, so the version is unknown. |
 | `unavailable` | `release_mismatch` | The tag points at another commit. |
 | `unavailable` | `release_incomplete` | The release lacks a binary, or `SHA256SUMS` lacks a valid line. |
+| `unavailable` | `release_unverified` | The release has no provenance bundle, or the bundle does not verify. A published release never changes, and no fallback stands in for it. |
+| `unavailable` | `provenance_unconfigured` | The Gateway cannot check provenance: its trust root or release repository setting is unusable ([Release provenance](/reference/gateway-recovery#release-provenance)). |
 | `unavailable` | `github_unavailable` | GitHub did not answer or refused the request, for example at its rate limit. |
 
 An available release is kept for its commit for 30 days, because a published release never changes. A fallback is checked against the commit's own release every 5 minutes. A `pending` or `unavailable` answer is kept for 60 seconds, or for 5 minutes after a fallback search found nothing. Only the desired-fleet-state endpoint and the scheduler resolve the state. The scheduler runs `php artisan orbit:desired-fleet-state` every 5 minutes, as a job on the [Gateway queue](/reference/gateway-queue#scheduled-work). The command prints the state as JSON. One caller resolves a commit at a time under a cache lock; the others wait up to 30 seconds and read its answer.
@@ -108,7 +111,7 @@ When the commit's release stays `release_missing`, `release_mismatch`, or `relea
 
 1. It takes the 50 newest commits before the Gateway's commit on the first-parent history of `main`. Commits of merged branches never have a release, so the search skips them.
 2. It keeps only the commits whose CLI build inputs match the Gateway's commit. The [build inputs](#cli-build-inputs) are listed below.
-3. It tries their releases from the highest release number down, and checks each one as it checks its own release. A release number whose tag points at another commit is skipped.
+3. It tries their releases from the highest release number down. It checks each one as it checks its own release. A tag on another commit or a release without valid provenance is skipped.
 4. The first available release becomes `cli`, with `status` `available`, that ancestor's `commit`, and the `reason` of the commit's own release.
 
 #### CLI build inputs
@@ -271,6 +274,12 @@ The Gateway deploys before CI publishes the CLI release. Reporting that as a fai
 ### Every active peer may read the state
 
 A managed Node updates itself from this state whether or not it has access to the Gateway. The state holds only public release names and checksums, so a peer needs no access edge to read it.
+
+### The CLI trusts the Gateway's provenance check
+
+The Gateway verifies a release's [provenance](/reference/gateway-recovery#release-provenance) before it names a CLI digest. `orbit self-update` and the Node's `cli.install` take that digest from the Gateway, over WireGuard with the pinned Orbit root certificate, and require the release's own `SHA256SUMS` to agree. So they install only bytes the Gateway verified, and they do not verify the Sigstore bundle themselves.
+
+A check in the CLI would add nothing against a compromised Gateway. Such a Gateway already chooses the agent that every Node runs as root. An attacker would also need to forge a GitHub release to win anything on an operator machine. The check would also carry a pinned trust root in every installed binary. After a Sigstore key rotation, an old CLI could then not verify the release that would update it, and each machine would need a manual reinstall. One check on the Gateway keeps one trust root, which a Gateway release updates.
 
 ### Replace by rename after every check
 

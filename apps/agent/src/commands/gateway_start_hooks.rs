@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use std::{
     collections::BTreeSet,
     fs,
-    io::{self, Read},
+    io::Read,
     os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
     path::Path,
 };
@@ -132,11 +132,7 @@ pub(super) fn validate<'a>(
         .collect()
 }
 fn metadata(path: &Path) -> Result<Option<fs::Metadata>, Error> {
-    match fs::symlink_metadata(path) {
-        Ok(meta) => Ok(Some(meta)),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(_) => Err(unsafe_path(path)),
-    }
+    recipe::metadata(path).map_err(|_| unsafe_path(path))
 }
 fn check_directory(files: &Files, path: &Path) -> Result<(), Error> {
     for parent in path.ancestors() {

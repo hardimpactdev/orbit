@@ -385,6 +385,7 @@ use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
 use App\Infrastructure\Projects\NativeProjectUpdateProjectionMutator;
 use App\Infrastructure\Projects\RemoteProjectUpdateSourceMutator;
 use App\Infrastructure\Releases\HttpReleaseAlertWebhook;
+use App\Infrastructure\Releases\ReleaseProvenance;
 use App\Infrastructure\RemotePrograms\SshProgramRunner;
 use App\Infrastructure\Routes\NativeClusterRouterReplacementProjector;
 use App\Infrastructure\Routes\NativeCustomProxyRouteProjector;
@@ -693,10 +694,18 @@ final class ApplicationServiceProvider extends ServiceProvider
             ),
         );
         $this->app->bind(
+            ReleaseProvenance::class,
+            static fn (): ReleaseProvenance => new ReleaseProvenance(
+                repository: Config::string('orbit.cli_releases.repository'),
+                trustRoot: Config::string('orbit.cli_releases.trusted_root'),
+            ),
+        );
+        $this->app->bind(
             CliReleaseCatalog::class,
             static fn ($app): GitHubCliReleaseCatalog => new GitHubCliReleaseCatalog(
                 apps: $app->make(GitHubAppStore::class),
                 github: $app->make(GitHubApi::class),
+                provenance: $app->make(ReleaseProvenance::class),
                 repositoryOrigin: Config::string('orbit.cli_releases.repository'),
             ),
         );

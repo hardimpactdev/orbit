@@ -98,6 +98,23 @@ fn unpack(source: &Path, target: &Path) -> io::Result<()> {
             if !entry.unpack_in(&work)? {
                 return Err(io::Error::other("Registry archive escapes the cache"));
             }
+            if kind.is_dir() || kind.is_file() {
+                // Strip trailing slashes so metadata cannot follow a directory symlink.
+                let target = work.join(path.components().collect::<PathBuf>());
+                let metadata = fs::symlink_metadata(&target)?;
+                if (kind.is_dir() && !metadata.is_dir()) || (kind.is_file() && !metadata.is_file())
+                {
+                    return Err(io::Error::other(
+                        "Registry archive entry has an unexpected type",
+                    ));
+                }
+                let mode = if kind.is_dir() || entry.header().mode().unwrap_or(0o644) & 0o111 != 0 {
+                    0o755
+                } else {
+                    0o644
+                };
+                fs::set_permissions(target, fs::Permissions::from_mode(mode))?;
+            }
         }
         let extracted =
             work.join(root.ok_or_else(|| io::Error::other("Registry archive is empty"))?);
@@ -111,18 +128,41 @@ fn unpack(source: &Path, target: &Path) -> io::Result<()> {
     let _ = fs::remove_dir_all(work);
     result
 }
+fn artifact_failed(source: &Path, artifact: &Artifact, error: io::Error) -> Error {
+    use std::error::Error as _;
+    let mut reasons = vec![error.to_string()];
+    let mut cause = error.source();
+    while let Some(error) = cause {
+        reasons.push(error.to_string());
+        cause = error.source();
+    }
+    // Keep the cause before archive context so the reason's size limit cannot hide it.
+    reasons.reverse();
+    failed(
+        "seed",
+        source,
+        format!(
+            "{}@{} [{}]: {}",
+            artifact.package,
+            artifact.version,
+            artifact.key,
+            reasons.join(": ")
+        ),
+    )
+}
 fn seed(shared: &Path, home: &Path, artifacts: &[Artifact]) -> Result<(), Error> {
     let inventory = inventory(shared).map_err(|e| failed("seed", shared, e))?;
     for a in artifacts {
-        let integrity = validate(a).map_err(|reason| failed("seed", shared, reason))?;
+        let integrity =
+            validate(a).map_err(|reason| artifact_failed(shared, a, io::Error::other(reason)))?;
+        let source = shared.join(&a.key);
         let Some(digest) = inventory.get(&a.key) else {
             continue;
         };
-        let source = shared.join(&a.key);
         if !source.is_file() {
             continue;
         }
-        if hex(&hash(&source, "sha256").map_err(|e| failed("seed", &source, e))?) != *digest {
+        if hex(&hash(&source, "sha256").map_err(|e| artifact_failed(&source, a, e))?) != *digest {
             continue;
         }
         if a.manager == "composer" {
@@ -132,7 +172,7 @@ fn seed(shared: &Path, home: &Path, artifacts: &[Artifact]) -> Result<(), Error>
                     .join(".cache/composer/files")
                     .join(a.key.strip_prefix("composer/").unwrap()),
             )
-            .map_err(|e| failed("seed", shared, e))?;
+            .map_err(|e| artifact_failed(&source, a, e))?;
         } else {
             let integrity = integrity.unwrap();
             let content = hex(&integrity.wanted);
@@ -142,11 +182,11 @@ fn seed(shared: &Path, home: &Path, artifacts: &[Artifact]) -> Result<(), Error>
                 .join(&content[..2])
                 .join(&content[2..4])
                 .join(&content[4..]);
-            copy(&source, &target).map_err(|e| failed("seed", shared, e))?;
+            copy(&source, &target).map_err(|e| artifact_failed(&source, a, e))?;
             let target = home
                 .join(".bun/install/cache")
                 .join(format!("{}@{}@@@1", a.package, a.version));
-            unpack(&source, &target).map_err(|e| failed("seed", shared, e))?;
+            unpack(&source, &target).map_err(|e| artifact_failed(&source, a, e))?;
         }
     }
     Ok(())
