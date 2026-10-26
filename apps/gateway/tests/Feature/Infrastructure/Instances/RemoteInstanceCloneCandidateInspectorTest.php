@@ -16,7 +16,7 @@ use Tests\Support\FakeAgentCommandRunner;
 
 it('returns bound development source evidence from the agent inspection', function (): void {
     $candidate = orb198_clone_candidate();
-    $agents = new FakeAgentCommandRunner()->answer('instances.inspect-clone-candidate', ['source' => '/srv/orbit/apps/acme', 'commit' => str_repeat('a', 40)]);
+    $agents = new FakeAgentCommandRunner()->answer('instance.inspect-clone-candidate', ['source' => '/srv/orbit/apps/acme', 'commit' => str_repeat('a', 40)]);
 
     $source = orb198_clone_candidate_inspector($agents)->inspect($candidate, 'release');
 
@@ -43,7 +43,7 @@ it('returns bound development source evidence from the agent inspection', functi
 
 it('uses the production runtime identity and configured deployment branch for the selected release', function (): void {
     $candidate = orb198_clone_candidate('production');
-    $agents = new FakeAgentCommandRunner()->answer('instances.inspect-clone-candidate', ['source' => '/home/orbit-app-1/releases/20260912010101-one', 'commit' => str_repeat('b', 64)]);
+    $agents = new FakeAgentCommandRunner()->answer('instance.inspect-clone-candidate', ['source' => '/home/orbit-app-1/releases/20260912010101-one', 'commit' => str_repeat('b', 64)]);
 
     $source = orb198_clone_candidate_inspector($agents)->inspect($candidate, 'target-release');
 
@@ -62,9 +62,9 @@ it('uses the production runtime identity and configured deployment branch for th
         ]);
 });
 
-it('maps each agent refusal to its clone error', function (string $refusal, string $errorCode): void {
+it('returns each agent clone refusal as its clone error', function (string $errorCode): void {
     $candidate = orb198_clone_candidate();
-    $agents = new FakeAgentCommandRunner()->refuse('instances.inspect-clone-candidate', $refusal);
+    $agents = new FakeAgentCommandRunner()->refuse('instance.inspect-clone-candidate', $errorCode);
 
     expect(fn () => orb198_clone_candidate_inspector($agents)->inspect($candidate, 'main'))
         ->toThrow(function (ResourceOperationException $exception) use ($errorCode): void {
@@ -73,19 +73,19 @@ it('maps each agent refusal to its clone error', function (string $refusal, stri
                 ->and($exception->getMessage())->toBe('The candidate is not eligible for cloning.');
         });
 })->with([
-    ['instances.clone_candidate_dirty', 'instance.clone_candidate_dirty'],
-    ['instances.clone_candidate_release_missing', 'instance.clone_candidate_release_missing'],
-    ['instances.clone_candidate_release_changed', 'instance.clone_candidate_release_changed'],
-    ['instances.clone_candidate_source_invalid', 'instance.clone_candidate_source_invalid'],
-    ['instances.clone_candidate_branch_invalid', 'instance.clone_candidate_branch_invalid'],
-    ['instances.clone_candidate_commit_unavailable', 'instance.clone_candidate_commit_unavailable'],
-    ['instances.clone_target_branch_missing', 'instance.clone_target_branch_missing'],
+    'instance.clone_candidate_dirty',
+    'instance.clone_candidate_release_missing',
+    'instance.clone_candidate_release_changed',
+    'instance.clone_candidate_source_invalid',
+    'instance.clone_candidate_branch_invalid',
+    'instance.clone_candidate_commit_unavailable',
+    'instance.clone_target_branch_missing',
 ]);
 
 it('redacts URL credentials and token-shaped words from the fetch stderr', function (): void {
     $candidate = orb198_clone_candidate();
     $token = 'ghp_'.str_repeat('a', 36);
-    $agents = new FakeAgentCommandRunner()->refuse('instances.inspect-clone-candidate', 'instances.clone_candidate_repository_unavailable', [
+    $agents = new FakeAgentCommandRunner()->refuse('instance.inspect-clone-candidate', 'instance.clone_candidate_repository_unavailable', [
         'stderr' => "fatal: unable to access 'https://nick:{$token}@example.test/acme.git/'\nbearer ".str_repeat('Q', 48),
     ]);
 
@@ -107,16 +107,16 @@ it('refuses another refusal, a transport failure, or a malformed answer as unava
                 ->and($exception->status)->toBe($status);
         });
 })->with([
-    'another refusal' => [fn () => new FakeAgentCommandRunner()->refuse('instances.inspect-clone-candidate', 'agent.deadline_exceeded'), 409],
-    'transport failure' => [fn () => new FakeAgentCommandRunner()->answer('instances.inspect-clone-candidate', fn () => throw new RuntimeException('SSH unavailable.')), 502],
-    'short commit' => [fn () => new FakeAgentCommandRunner()->answerMalformed('instances.inspect-clone-candidate', ['source' => '/srv/orbit/apps/acme', 'commit' => 'abcd']), 409],
-    'uppercase commit' => [fn () => new FakeAgentCommandRunner()->answerMalformed('instances.inspect-clone-candidate', ['source' => '/srv/orbit/apps/acme', 'commit' => str_repeat('A', 40)]), 409],
-    'missing source' => [fn () => new FakeAgentCommandRunner()->answerMalformed('instances.inspect-clone-candidate', ['commit' => str_repeat('a', 40)]), 409],
+    'another refusal' => [fn () => new FakeAgentCommandRunner()->refuse('instance.inspect-clone-candidate', 'agent.deadline_exceeded'), 409],
+    'transport failure' => [fn () => new FakeAgentCommandRunner()->answer('instance.inspect-clone-candidate', fn () => throw new RuntimeException('SSH unavailable.')), 502],
+    'short commit' => [fn () => new FakeAgentCommandRunner()->answerMalformed('instance.inspect-clone-candidate', ['source' => '/srv/orbit/apps/acme', 'commit' => 'abcd']), 409],
+    'uppercase commit' => [fn () => new FakeAgentCommandRunner()->answerMalformed('instance.inspect-clone-candidate', ['source' => '/srv/orbit/apps/acme', 'commit' => str_repeat('A', 40)]), 409],
+    'missing source' => [fn () => new FakeAgentCommandRunner()->answerMalformed('instance.inspect-clone-candidate', ['commit' => str_repeat('a', 40)]), 409],
 ]);
 
 it('refuses a production answer that is not the recorded selected release', function (): void {
     $candidate = orb198_clone_candidate('production');
-    $agents = new FakeAgentCommandRunner()->answer('instances.inspect-clone-candidate', ['source' => '/home/orbit-app-1/releases/different', 'commit' => str_repeat('c', 40)]);
+    $agents = new FakeAgentCommandRunner()->answer('instance.inspect-clone-candidate', ['source' => '/home/orbit-app-1/releases/different', 'commit' => str_repeat('c', 40)]);
 
     expect(fn () => orb198_clone_candidate_inspector($agents)->inspect($candidate, 'main'))
         ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.clone_candidate_source_invalid'));

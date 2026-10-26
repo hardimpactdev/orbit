@@ -46,7 +46,7 @@ final readonly class RemoteInstanceEnvironmentAccess implements InstanceEnvironm
     public function readWritableEnvironment(InstanceEnvironmentContext $context, int $requiredCapacityBytes): string
     {
         try {
-            $outcome = $this->agents->run($context->node, 'instances.inspect-environment-sync', [
+            $outcome = $this->agents->run($context->node, 'instance.inspect-environment-sync', [
                 ...$this->contextInput($context),
                 'required_capacity' => $requiredCapacityBytes,
             ]);
@@ -96,7 +96,7 @@ final readonly class RemoteInstanceEnvironmentAccess implements InstanceEnvironm
     private function replace(InstanceEnvironmentContext $context, #[SensitiveParameter] string $contents, string $file, ?array $managedKeys = null): InstanceEnvironmentWriteResult
     {
         try {
-            $outcome = $this->agents->run($context->node, 'instances.write-environment', [
+            $outcome = $this->agents->run($context->node, 'instance.write-environment', [
                 ...$this->input($context, $managedKeys === null ? 'write' : 'merge'),
                 'file' => $file,
                 'managed_keys' => $managedKeys ?? [],
@@ -124,7 +124,7 @@ final readonly class RemoteInstanceEnvironmentAccess implements InstanceEnvironm
     private function inspect(InstanceEnvironmentContext $context, string $mode, int $requiredCapacityBytes = 0): array
     {
         try {
-            return $this->agents->run($context->node, 'instances.read-environment', [...$this->input($context, $mode), 'required_capacity' => $requiredCapacityBytes]);
+            return $this->agents->run($context->node, 'instance.read-environment', [...$this->input($context, $mode), 'required_capacity' => $requiredCapacityBytes]);
         } catch (Throwable) {
             $mode === 'write-check' ? $this->failWritePreflight() : $this->failRead();
         }

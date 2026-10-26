@@ -184,11 +184,11 @@ describe(VpToolManager::class, function (): void {
 
     it('requests one typed command per global operation on Linux and macOS', function (string $platform): void {
         [$manager, $agent] = vp_tool_manager();
-        $agent->answer('tools.vp-version', ['version' => 'vp v0.3.3'])
-            ->answer('tools.vp-candidate', ['version' => '0.150.0'])
-            ->answer('tools.vp-inventory', ['packages' => [['name' => '@openai/codex', 'version' => '0.150.0']], 'scan_complete' => true])
-            ->answer('tools.vp-install', [])->answer('tools.vp-update', [])
-            ->answer('tools.vp-removal-plan', ['packages' => ['@openai/codex']])->answer('tools.vp-remove', []);
+        $agent->answer('tool.vp-version', ['version' => 'vp v0.3.3'])
+            ->answer('tool.vp-candidate', ['version' => '0.150.0'])
+            ->answer('tool.vp-inventory', ['packages' => [['name' => '@openai/codex', 'version' => '0.150.0']], 'scan_complete' => true])
+            ->answer('tool.vp-install', [])->answer('tool.vp-update', [])
+            ->answer('tool.vp-removal-plan', ['packages' => ['@openai/codex']])->answer('tool.vp-remove', []);
         $node = vp_tool_node($platform);
         expect($manager->managerVersion($node))->toBe('vp v0.3.3');
         expect($manager->candidateVersion($node, '@openai/codex', ToolOperation::Install))->toBe('0.150.0');
@@ -197,29 +197,29 @@ describe(VpToolManager::class, function (): void {
         $manager->update($node, '@openai/codex');
         expect($manager->planRemoval($node, '@openai/codex')->packages)->toBe(['@openai/codex']);
         $manager->remove($node, '@openai/codex');
-        expect($agent->commands())->toBe(['tools.vp-version', 'tools.vp-candidate', 'tools.vp-inventory', 'tools.vp-install', 'tools.vp-update', 'tools.vp-removal-plan', 'tools.vp-remove']);
+        expect($agent->commands())->toBe(['tool.vp-version', 'tool.vp-candidate', 'tool.vp-inventory', 'tool.vp-install', 'tool.vp-update', 'tool.vp-removal-plan', 'tool.vp-remove']);
         expect(array_column($agent->calls, 'input'))->toBe([[], ['package' => '@openai/codex'], [], ['package' => '@openai/codex'], ['package' => '@openai/codex'], ['package' => '@openai/codex'], ['package' => '@openai/codex']]);
     })->with(['linux', 'macos']);
 
     it('maps scope refusals consistently for reads and mutations', function (string $code, string $step): void {
         [$manager, $agent] = vp_tool_manager();
-        $agent->refuse('tools.vp-inventory', $code)->refuse('tools.vp-remove', $code);
+        $agent->refuse('tool.vp-inventory', $code)->refuse('tool.vp-remove', $code);
         foreach ([fn () => $manager->installedInventory(vp_tool_node()), fn () => $manager->remove(vp_tool_node(), 'typescript')] as $call) {
             expect($call)->toThrow(function (ToolManagerException $error) use ($step): void {
                 expect($error->step)->toBe($step);
                 expect($error->result)->toBeNull();
             });
         }
-        expect($agent->commands())->toBe(['tools.vp-inventory', 'tools.vp-remove']);
+        expect($agent->commands())->toBe(['tool.vp-inventory', 'tool.vp-remove']);
     })->with([
-        ['tools.vp_scope_absent', 'manager-absent'],
-        ['tools.vp_scope_conflict', 'manager-conflict'],
-        ['tools.vp_scope_unreadable', 'manager-probe'],
+        ['tool.vp_scope_absent', 'manager-absent'],
+        ['tool.vp_scope_conflict', 'manager-conflict'],
+        ['tool.vp_scope_unreadable', 'manager-probe'],
     ]);
 
     it('maps typed operation refusals without exposing manager output', function (string $method, string $command, string $step): void {
         [$manager, $agent] = vp_tool_manager();
-        $agent->refuse($command, 'tools.vp_operation_failed');
+        $agent->refuse($command, 'tool.vp_operation_failed');
         expect(fn () => $manager->{$method}(vp_tool_node(), 'typescript', ToolOperation::Install))
             ->toThrow(function (ToolManagerException $error) use ($step): void {
                 expect($error->step)->toBe($step);
@@ -227,13 +227,13 @@ describe(VpToolManager::class, function (): void {
             });
         expect($agent->commands())->toBe([$command]);
     })->with([
-        ['managerVersion', 'tools.vp-version', 'manager-version'],
-        ['candidateVersion', 'tools.vp-candidate', 'candidate-version'],
-        ['installedInventory', 'tools.vp-inventory', 'installed-version'],
-        ['install', 'tools.vp-install', 'install'],
-        ['update', 'tools.vp-update', 'update'],
-        ['planRemoval', 'tools.vp-removal-plan', 'removal-plan'],
-        ['remove', 'tools.vp-remove', 'remove'],
+        ['managerVersion', 'tool.vp-version', 'manager-version'],
+        ['candidateVersion', 'tool.vp-candidate', 'candidate-version'],
+        ['installedInventory', 'tool.vp-inventory', 'installed-version'],
+        ['install', 'tool.vp-install', 'install'],
+        ['update', 'tool.vp-update', 'update'],
+        ['planRemoval', 'tool.vp-removal-plan', 'removal-plan'],
+        ['remove', 'tool.vp-remove', 'remove'],
     ]);
 
     it('refuses malformed typed agent results', function (string $method, string $command, array $data): void {
@@ -241,16 +241,16 @@ describe(VpToolManager::class, function (): void {
         $agent->answerMalformed($command, $data);
         expect(fn () => $manager->{$method}(vp_tool_node(), 'typescript', ToolOperation::Install))->toThrow(ToolManagerException::class);
     })->with([
-        ['managerVersion', 'tools.vp-version', ['version' => []]],
-        ['candidateVersion', 'tools.vp-candidate', []],
-        ['installedInventory', 'tools.vp-inventory', ['packages' => [], 'scan_complete' => null]],
-        ['installedInventory', 'tools.vp-inventory', ['packages' => [['name' => 'typescript']], 'scan_complete' => true]],
-        ['planRemoval', 'tools.vp-removal-plan', ['packages' => [42]]],
+        ['managerVersion', 'tool.vp-version', ['version' => []]],
+        ['candidateVersion', 'tool.vp-candidate', []],
+        ['installedInventory', 'tool.vp-inventory', ['packages' => [], 'scan_complete' => null]],
+        ['installedInventory', 'tool.vp-inventory', ['packages' => [['name' => 'typescript']], 'scan_complete' => true]],
+        ['planRemoval', 'tool.vp-removal-plan', ['packages' => [42]]],
     ]);
 
     it('keeps individual Tools verifiable beside ambiguous and unmanageable observations', function (): void {
         [$manager, $agent] = vp_tool_manager();
-        $agent->answer('tools.vp-inventory', ['packages' => [
+        $agent->answer('tool.vp-inventory', ['packages' => [
             ['name' => 'JSONStream', 'version' => '1.3.5'],
             ['name' => 'typescript', 'version' => '5.7.3'],
             ['name' => 'unreadable', 'version' => null],
@@ -263,24 +263,24 @@ describe(VpToolManager::class, function (): void {
         expect($inventory->versionFor('absent'))->toBeNull();
         expect(fn () => $inventory->versionFor('dup'))->toThrow(ToolManagerException::class);
         expect(fn () => $inventory->versionFor('unreadable'))->toThrow(ToolManagerException::class);
-        expect($agent->commands())->toBe(['tools.vp-inventory']);
+        expect($agent->commands())->toBe(['tool.vp-inventory']);
     });
 
     it('protects pnpm adoption while leaving missing packages absent', function (): void {
         [$manager, $agent] = vp_tool_manager();
-        $agent->answer('tools.vp-inventory', ['packages' => [['name' => 'pnpm', 'version' => '12.0.0']], 'scan_complete' => true]);
+        $agent->answer('tool.vp-inventory', ['packages' => [['name' => 'pnpm', 'version' => '12.0.0']], 'scan_complete' => true]);
         expect($manager->inspectForAdoption(vp_tool_node(), 'pnpm'))->toEqual(new ToolAdoptionFact('12.0.0', ToolInventoryPackage::BLOCK_PROTECTED));
         expect($manager->inspectForAdoption(vp_tool_node(), 'missing'))->toEqual(new ToolAdoptionFact(null, null));
-        expect($agent->commands())->toBe(['tools.vp-inventory', 'tools.vp-inventory']);
+        expect($agent->commands())->toBe(['tool.vp-inventory', 'tool.vp-inventory']);
     });
 
     it('materializes Linux from verified pins and only inspects the macOS scope', function (): void {
         [$manager, $agent] = vp_tool_manager();
-        $agent->answer('tools.materialize-vp', ['binary' => '/opt/orbit/vite-plus/bin/vp', 'changed' => true])
-            ->answer('tools.inspect-vp-scope', ['binary' => '/Users/mini/.vite-plus/bin/vp']);
+        $agent->answer('tool.materialize-vp', ['binary' => '/opt/orbit/vite-plus/bin/vp', 'changed' => true])
+            ->answer('tool.inspect-vp-scope', ['binary' => '/Users/mini/.vite-plus/bin/vp']);
         $manager->materialize(vp_tool_node());
         $manager->materialize(vp_tool_node('macos', [], 'mini'));
-        expect($agent->commands())->toBe(['tools.materialize-vp', 'tools.inspect-vp-scope']);
+        expect($agent->commands())->toBe(['tool.materialize-vp', 'tool.inspect-vp-scope']);
         $input = $agent->calls[0]['input'];
         expect($input)->toMatchArray(['user' => 'orbit', 'architecture' => 'amd64']);
         expect(array_keys($input['tools']))->toEqualCanonicalizing(['node', 'vp-cli', 'vp', 'pnpm']);
@@ -290,12 +290,12 @@ describe(VpToolManager::class, function (): void {
 
     it('gates project requirements against the observed recipe manager without upgrading', function (): void {
         [$manager, $agent] = vp_tool_manager();
-        $agent->answer('tools.vp-version', ['version' => 'vp v0.3.3']);
+        $agent->answer('tool.vp-version', ['version' => 'vp v0.3.3']);
         $manager->ensureVersion(vp_tool_node(), '0.3.3');
         expect(fn () => $manager->ensureVersion(vp_tool_node(), '0.4.0'))->toThrow(ToolManagerException::class);
         expect($manager->normalizeVersion('v1.2.3'))->toBe('1.2.3');
         expect($manager->normalizeVersion('latest'))->toBeNull();
-        expect($agent->commands())->toBe(['tools.vp-version', 'tools.vp-version']);
+        expect($agent->commands())->toBe(['tool.vp-version', 'tool.vp-version']);
     });
 });
 

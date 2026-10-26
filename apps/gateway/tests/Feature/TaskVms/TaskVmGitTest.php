@@ -98,8 +98,8 @@ function tvm_git_expect_no_token(): void
 describe('send branches to the VM', function (): void {
     it('maps an agent read refusal and sends no pack after it', function (): void {
         $agents = Mockery::mock(WorkspaceAgentCommandRunner::class);
-        $agents->shouldReceive('runInWorkspace')->once()->withArgs(fn ($node, $execute, $command, $input): bool => $command === 'task-vms.read-git-refs' && $input === ['checkout' => $this->root.'/vm'])
-            ->andThrow(new AgentCommandRefused('task-vms.read-git-refs', 'task_vm.git_unreadable', 'The checkout cannot be read.'));
+        $agents->shouldReceive('runInWorkspace')->once()->withArgs(fn ($node, $execute, $command, $input): bool => $command === 'task-vm.read-git-refs' && $input === ['checkout' => $this->root.'/vm'])
+            ->andThrow(new AgentCommandRefused('task-vm.read-git-refs', 'task_vm.git_unreadable', 'The checkout cannot be read.'));
         $git = new TaskVmGit(app(ProcessRunner::class), $agents, $this->mirrors, ['https', 'file']);
 
         expect(fn () => $git->send($this->project, new Node(['name' => 'task-vm']), $this->root.'/vm', ['main' => $this->main], tvm_git_vm(), 'tasks.fetch_failed'))

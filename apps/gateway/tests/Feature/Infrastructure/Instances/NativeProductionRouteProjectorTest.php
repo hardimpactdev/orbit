@@ -74,14 +74,14 @@ it('creates an Instance Route with the native production projector on a separate
     ))['route'];
 
     $calls = collect($agents->calls);
-    $routerCertificateIndex = $calls->search(static fn (array $call): bool => $call['command'] === 'certificates.publish-leaf' && $call['input']['scope'] === "route-{$route->id}-router");
+    $routerCertificateIndex = $calls->search(static fn (array $call): bool => $call['command'] === 'certificate.publish-leaf' && $call['input']['scope'] === "route-{$route->id}-router");
     $routerSiteIndex = $calls->search(static fn (array $call): bool => $call['command'] === 'caddy.publish' && str_contains($call['input']['content'], "route-{$route->id}-router/current/cert.pem"));
     expect($route->status)->toBe(RouteStatus::Active)
         ->and($route->targets->sole()->instance_id)->toBe($instance->id)
         ->and($routerCertificateIndex)->not->toBeFalse()
         ->and($routerSiteIndex)->not->toBeFalse()
         ->and($routerCertificateIndex)->toBeLessThan($routerSiteIndex)
-        ->and(orb199_route_checks($agents))->toBe(['firewall.route-lan', 'routes.verify-certificate']);
+        ->and(orb199_route_checks($agents))->toBe(['firewall.route-lan', 'route.verify-certificate']);
 });
 
 it('refuses to project production without its dedicated PHP-FPM service', function (): void {
@@ -128,15 +128,15 @@ it('projects a production workload through a remote Router over LAN without publ
 
     expect($productionPhp->converged)->toBe([$instance->id])
         ->and($firewall->converged)->toBe([[$workload->id, RoleName::AppProd, 'orbit']])
-        ->and(RouteProjectionAgentAnswers::scopes($agents, 'certificates.publish-leaf'))->toBe([
+        ->and(RouteProjectionAgentAnswers::scopes($agents, 'certificate.publish-leaf'))->toBe([
             ['node' => $workload->name, 'scope' => "app-instance-{$instance->id}"],
             ['node' => $router->name, 'scope' => "route-{$route->id}-router"],
         ])
-        ->and(collect($agents->calls)->whereIn('command', ['firewall.route-lan', 'routes.verify-certificate'])->values()->all())->toBe([
+        ->and(collect($agents->calls)->whereIn('command', ['firewall.route-lan', 'route.verify-certificate'])->values()->all())->toBe([
             ['node' => $workload->name, 'command' => 'firewall.route-lan', 'input' => [
                 'operation' => 'converge', 'route_id' => $route->id, 'router' => '10.10.0.20', 'workload' => '10.10.0.10',
             ]],
-            ['node' => $router->name, 'command' => 'routes.verify-certificate', 'input' => [
+            ['node' => $router->name, 'command' => 'route.verify-certificate', 'input' => [
                 'address' => '10.10.0.10', 'port' => 443, 'domain' => $route->domain,
             ]],
         ])
@@ -165,7 +165,7 @@ it('uses WireGuard without a Route-specific firewall rule when workload LAN is a
     $projector->prepareRouteFirewall($instance, $route);
     $projector->verifyWorkload($instance, $route);
 
-    expect($agents->commands())->toBe(['routes.verify-certificate'])
+    expect($agents->commands())->toBe(['route.verify-certificate'])
         ->and($agents->calls[0]['input'])->toBe(['address' => '10.44.0.10', 'port' => 443, 'domain' => $route->domain]);
 });
 
@@ -210,7 +210,7 @@ it('refuses incompatible LAN and missing Router placement with bounded errors', 
 it('refuses an invalid workload leaf before Router Caddy and DNS publication', function (): void {
     [$instance, $route] = orb199_production_route_models();
     [$projector, $agents, $processes] = orb199_production_route_projector();
-    $agents->refuse('routes.verify-certificate', 'routes.certificate_invalid', ['stderr' => 'untrusted']);
+    $agents->refuse('route.verify-certificate', 'route.certificate_invalid', ['stderr' => 'untrusted']);
 
     expect(function () use ($projector, $instance, $route): void {
         $projector->prepareWorkloadCaddy($instance, $route);
@@ -369,7 +369,7 @@ function orb199_production_route_projector(): array
 /** @return list<string> The Route firewall and workload TLS commands, in order. */
 function orb199_route_checks(FakeAgentCommandRunner $agents): array
 {
-    return array_values(array_intersect($agents->commands(), ['firewall.route-lan', 'routes.verify-certificate']));
+    return array_values(array_intersect($agents->commands(), ['firewall.route-lan', 'route.verify-certificate']));
 }
 
 final class Orb199ProductionRouteProcessRunner implements ProcessRunner

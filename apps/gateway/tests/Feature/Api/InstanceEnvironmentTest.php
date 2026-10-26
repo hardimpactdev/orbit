@@ -885,7 +885,7 @@ it('preflights from encrypted-size metadata before decrypting or writing', funct
 
 it('synchronizes through one inspection and retains the workload-key refusal', function (array $existing, bool $allowed): void {
     $this->instance->environmentValues()->create(['env_key' => 'KEY', 'env_value' => 'value']);
-    $agents = new FakeAgentCommandRunner()->answer('instances.inspect-environment-sync', [
+    $agents = new FakeAgentCommandRunner()->answer('instance.inspect-environment-sync', [
         'preflight' => ['state' => 'ok', 'installed' => false],
         'existing' => $existing,
     ]);
@@ -901,7 +901,7 @@ it('synchronizes through one inspection and retains the workload-key refusal', f
         $response->assertConflict()->assertJsonPath('error.code', 'env.sync_would_drop_keys');
         expect($this->access->writes)->toBe([]);
     }
-    expect(array_column($agents->calls, 'command'))->toBe(['instances.inspect-environment-sync'])
+    expect(array_column($agents->calls, 'command'))->toBe(['instance.inspect-environment-sync'])
         ->and($this->access->reads)->toBe(0)
         ->and($this->access->writePreflights)->toBe(0);
 })->with([

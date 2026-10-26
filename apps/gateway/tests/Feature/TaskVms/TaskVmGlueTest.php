@@ -222,8 +222,8 @@ describe('publish and fetch', function (): void {
             expect([$job->connection, $job->commit, $job->branch])->toBe(['gateway', $commit, $branch])
                 // Each transfer reads refs and imports a pack through the workspace agent runner.
                 ->and(array_column(app(WorkspaceAgentCommandRunner::class)->calls, 'command'))->toBe([
-                    'task-vms.read-git-refs', 'task-vms.import-git-pack',
-                    'task-vms.read-git-refs', 'task-vms.import-git-pack',
+                    'task-vm.read-git-refs', 'task-vm.import-git-pack',
+                    'task-vm.read-git-refs', 'task-vm.import-git-pack',
                 ])
                 ->and($transport->sent)->toHaveCount(2);
 

@@ -13,7 +13,7 @@ use App\Models\Instance;
 use Throwable;
 
 /**
- * Reads the newest lines of an Instance's Laravel log through the Node agent's `instances.read-application-log`,
+ * Reads the newest lines of an Instance's Laravel log through the Node agent's `instance.read-application-log`,
  * which picks the file itself, so a link in the checkout cannot point the read elsewhere.
  */
 final readonly class RemoteInstanceLogReader implements InstanceLogReader
@@ -32,7 +32,7 @@ final readonly class RemoteInstanceLogReader implements InstanceLogReader
         }
 
         try {
-            $log = $this->agents->run($instance->node, 'instances.read-application-log', [
+            $log = $this->agents->run($instance->node, 'instance.read-application-log', [
                 'directory' => $path->value,
                 'lines' => $lines,
                 'max_bytes' => LogReadLimit::Bytes,

@@ -1,4 +1,4 @@
-//! `roles.install-prerequisites`: a role's Ubuntu packages, and for application roles the managed user's `apps`
+//! `role.install-prerequisites`: a role's Ubuntu packages, and for application roles the managed user's `apps`
 //! directory and the shared Composer home. The machine recipe installs their JavaScript runtimes. A healthy Docker CE
 //! installation replaces `docker.io`. Every step is idempotent, and a path conflict refuses before a change.
 
@@ -23,9 +23,9 @@ const DPKG_LOCK: &str = "DPkg::Lock::Timeout=300";
 
 command_errors! {
     pub enum PrerequisiteError {
-        Unsupported { id: String, codename: String } => "roles.os_unsupported", "The Node operating system is not supported.";
-        Conflict { path: String } => "roles.prerequisite_conflict", "A path Orbit manages is not what Orbit made.";
-        Failed { step: String, stderr: String } => "roles.prerequisite_failed", "A prerequisite step failed.";
+        Unsupported { id: String, codename: String } => "role.os_unsupported", "The Node operating system is not supported.";
+        Conflict { path: String } => "role.prerequisite_conflict", "A path Orbit manages is not what Orbit made.";
+        Failed { step: String, stderr: String } => "role.prerequisite_failed", "A prerequisite step failed.";
     }
 }
 
@@ -330,7 +330,7 @@ fn install(
 pub struct InstallPrerequisites;
 
 impl Command for InstallPrerequisites {
-    const NAME: &'static str = "roles.install-prerequisites";
+    const NAME: &'static str = "role.install-prerequisites";
     const SUMMARY: &'static str =
         "Install a role's packages, and the Composer home and JavaScript runtime of an application role.";
     const MUTATES: bool = true;

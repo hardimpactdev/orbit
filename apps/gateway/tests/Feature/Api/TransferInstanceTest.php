@@ -216,8 +216,8 @@ it('passes the selected SQLite and checkout layout to the agents', function (str
         ->postJson($this->transferUrl, ['node_id' => $this->destinationNode->id, 'sqlite_source_path' => $sqlite])
         ->assertCreated()->assertJsonPath('data.transfer.status', 'completed');
 
-    $capture = array_find($transport->agents->calls, static fn (array $call): bool => $call['command'] === 'instances.transfer-source');
-    $target = array_find($transport->agents->calls, static fn (array $call): bool => $call['command'] === 'instances.install-sqlite-seed');
+    $capture = array_find($transport->agents->calls, static fn (array $call): bool => $call['command'] === 'instance.transfer-source');
+    $target = array_find($transport->agents->calls, static fn (array $call): bool => $call['command'] === 'instance.install-sqlite-seed');
     expect($capture['input'])->toMatchArray(['layout' => $layout, 'sqlite_source' => $sqlite])
         ->and($target['input']['relative_path'])->toBe('database/selected [1].sqlite')
         ->and($this->instance->refresh()->node_id)->toBe($this->destinationNode->id);

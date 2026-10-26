@@ -16,7 +16,7 @@ use Closure;
 use Illuminate\Support\Facades\Config;
 
 /**
- * The checkout steps of a Project update, through the managed account's `projects.update-source` agent command
+ * The checkout steps of a Project update, through the managed account's `project.update-source` agent command
  * (docs/reference/projects.md#update-a-project).
  */
 final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSourceMutator
@@ -156,7 +156,7 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
     private function run(Instance $instance, array $input, string $step, string $errorCode): void
     {
         try {
-            AgentStep::run($this->agents, $instance->node, 'projects.update-source', $input, $step, $errorCode, 'App development');
+            AgentStep::run($this->agents, $instance->node, 'project.update-source', $input, $step, $errorCode, 'App development');
         } catch (RuntimeConvergenceException $exception) {
             throw new ResourceOperationException(
                 errorCode: $exception->errorCode,

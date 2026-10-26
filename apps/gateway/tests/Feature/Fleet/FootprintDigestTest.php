@@ -158,7 +158,7 @@ describe('footprint digests', function (): void {
 
     it('publishes the tmpfiles rule on active Linux app-dev Nodes only', function (): void {
         $ssh = new ScriptedSshExecutor;
-        $agents = (new FakeAgentCommandRunner)->answer('nodes.publish-tmpfiles', ['changed' => false]);
+        $agents = (new FakeAgentCommandRunner)->answer('node.publish-tmpfiles', ['changed' => false]);
         $artifact = new TmpfilesFootprintArtifact($agents);
         $dev = FleetFixtures::node('dev', [RoleName::AppDev]);
         $pending = FleetFixtures::node('pending');
@@ -174,9 +174,9 @@ describe('footprint digests', function (): void {
 
         expect($artifact->apply($dev))->toBeFalse()
             ->and($agents->calls[0]['input'])->toBe(['rule' => TmpfilesFootprintArtifact::Rule])
-            ->and(new TmpfilesFootprintArtifact((new FakeAgentCommandRunner)->answer('nodes.publish-tmpfiles', ['changed' => true]))->apply($dev))->toBeTrue();
+            ->and(new TmpfilesFootprintArtifact((new FakeAgentCommandRunner)->answer('node.publish-tmpfiles', ['changed' => true]))->apply($dev))->toBeTrue();
 
-        $refused = (new FakeAgentCommandRunner)->refuse('nodes.publish-tmpfiles', 'nodes.tmpfiles_failed', ['reason' => 'cannot move']);
+        $refused = (new FakeAgentCommandRunner)->refuse('node.publish-tmpfiles', 'node.tmpfiles_failed', ['reason' => 'cannot move']);
         expect(fn () => new TmpfilesFootprintArtifact($refused)->apply($dev))->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('node.footprint_tmpfiles_failed');
         });

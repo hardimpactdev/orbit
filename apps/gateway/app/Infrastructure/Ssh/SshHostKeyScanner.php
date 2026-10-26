@@ -25,7 +25,7 @@ final readonly class SshHostKeyScanner implements HostKeyScanner
         }
 
         try {
-            $key = $this->agents->run($scanner, 'nodes.scan-host-key', ['host' => $host, 'port' => $port]);
+            $key = $this->agents->run($scanner, 'node.scan-host-key', ['host' => $host, 'port' => $port]);
         } catch (AgentCommandRefused|AgentRunnerFailure $exception) {
             throw new SshHostKeyScanException(
                 message: "Could not scan the SSH host key for [{$host}:{$port}].",

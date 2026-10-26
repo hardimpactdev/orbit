@@ -24,7 +24,7 @@ final readonly class TaskVmTopologyEvidenceReader
     public function read(Node $node, Instance $instance, CarbonInterface $since): TaskTopologyEvidence
     {
         try {
-            $result = AgentStep::run($this->agents, $node, 'task-vms.read-topology-evidence', [
+            $result = AgentStep::run($this->agents, $node, 'task-vm.read-topology-evidence', [
                 'checkout' => (string) $instance->checkout_path,
             ], 'task-topology', 'task_vm.topology_failed', 'Task VM topology', 30);
         } catch (RuntimeConvergenceException $exception) {

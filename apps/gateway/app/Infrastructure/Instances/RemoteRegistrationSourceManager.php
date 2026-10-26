@@ -29,7 +29,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
     public function inspect(Node $node, string $sourcePath, bool $includeWorktrees): array
     {
         $account = $this->account($node);
-        $rows = $this->run($node, 'instances.inspect-registration-source', [
+        $rows = $this->run($node, 'instance.inspect-registration-source', [
             'path' => $sourcePath,
             'include_worktrees' => $includeWorktrees,
             'user' => $account->user,
@@ -384,7 +384,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
      */
     private function runRelocation(Node $node, string $operation, array $payload): mixed
     {
-        return $this->run($node, 'instances.relocate-registration-source', ['operation' => $operation, 'members' => $payload], step: 'registration-source-relocate', errorCode: 'instance.registration_incomplete')['identities'] ?? null;
+        return $this->run($node, 'instance.relocate-registration-source', ['operation' => $operation, 'members' => $payload], step: 'registration-source-relocate', errorCode: 'instance.registration_incomplete')['identities'] ?? null;
     }
 
     /**
@@ -442,7 +442,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
     private function runLaravelReceipt(Instance $instance, string $operation): void
     {
         $instance->loadMissing('node');
-        $this->run($instance->node, 'instances.laravel-registration-receipt', [
+        $this->run($instance->node, 'instance.laravel-registration-receipt', [
             'checkout' => $instance->checkout_path,
             'instance_id' => $instance->id,
             'operation' => $operation,

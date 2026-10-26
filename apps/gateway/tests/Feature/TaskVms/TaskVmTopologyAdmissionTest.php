@@ -34,8 +34,8 @@ function topology_admission_agents(array $results): FakeAgentCommandRunner
         return $result;
     };
     $agents = new FakeAgentCommandRunner()
-        ->answer('task-vms.start-topology', $next)
-        ->answer('task-vms.topology-status', $next);
+        ->answer('task-vm.start-topology', $next)
+        ->answer('task-vm.topology-status', $next);
     app()->instance(AgentCommandRunner::class, $agents);
 
     return $agents;
@@ -87,7 +87,7 @@ it('starts the preparation unit once, waits while it runs, and admits the subtas
     expect($vm?->topology_state)->toBe(TaskVmTopologyState::Preparing)
         ->and($vm?->topology->toArray())->toBe(['app-prod+ingress'])
         ->and($vm?->topology_run)->toMatch('/\A[0-9a-f]{16}\z/')
-        ->and($start)->toBe(['node' => 'tvm-1', 'command' => 'task-vms.start-topology', 'input' => [
+        ->and($start)->toBe(['node' => 'tvm-1', 'command' => 'task-vm.start-topology', 'input' => [
             'run' => $vm?->topology_run, 'checkout' => '/home/orbit/apps/orbit/workspace',
             'issue' => 'TASK-'.$this->group->id, 'nodes' => ['app-prod+ingress'], 'vpn_subnet' => '10.44.0.0/24',
         ]]);
@@ -97,7 +97,7 @@ it('starts the preparation unit once, waits while it runs, and admits the subtas
 
     expect($this->vm->fresh()?->topology_state)->toBe(TaskVmTopologyState::Ready)
         ->and($agents->calls)->toHaveCount(4)
-        ->and($agents->calls[1])->toBe(['node' => 'tvm-1', 'command' => 'task-vms.topology-status', 'input' => ['run' => $vm?->topology_run]]);
+        ->and($agents->calls[1])->toBe(['node' => 'tvm-1', 'command' => 'task-vm.topology-status', 'input' => ['run' => $vm?->topology_run]]);
 });
 
 it('prepares the union again when a later subtask declares more than the ready topology holds', function (): void {
@@ -130,14 +130,14 @@ it('asks for assistance with the step and the redacted log when the unit fails, 
 
 it('waits when the unit state cannot be read, and fails when it cannot start', function (): void {
     $this->vm->update(['topology' => ['app-dev'], 'topology_state' => TaskVmTopologyState::Preparing, 'topology_run' => 'abcdef0123456789']);
-    topology_admission_agents([new AgentRunnerFailure('task-vms.topology-status', AgentRunnerFailure::MalformedResult, 'Malformed result')]);
+    topology_admission_agents([new AgentRunnerFailure('task-vm.topology-status', AgentRunnerFailure::MalformedResult, 'Malformed result')]);
     $subtask = topology_admission_subtask($this->group, ['app-dev']);
 
     expect(fn () => app(TaskTopologyAdmission::class)->prepare($this->group, $subtask))->toThrow(TaskCapacityException::class, 'could not be read');
     expect($this->vm->fresh()?->topology_state)->toBe(TaskVmTopologyState::Preparing);
 
     $this->vm->update(['topology_state' => null]);
-    topology_admission_agents([new AgentRunnerFailure('task-vms.start-topology', AgentRunnerFailure::Transport, 'sudo: a password is required'), ['state' => 'lost']]);
+    topology_admission_agents([new AgentRunnerFailure('task-vm.start-topology', AgentRunnerFailure::Transport, 'sudo: a password is required'), ['state' => 'lost']]);
     expect(fn () => app(TaskTopologyAdmission::class)->prepare($this->group, $subtask))->toThrow(TaskTopologyFailedException::class, 'failed at step start. The end of its log: sudo: a password is required');
 });
 
@@ -153,7 +153,7 @@ it('counts the agent evidence records since the handoff', function (): void {
         'v' => 1, 'start' => CarbonImmutable::now()->utc()->subMinutes($minutes)->format('Y-m-d\\TH:i:s.v\\Z'), 'end' => CarbonImmutable::now()->utc()->format('Y-m-d\\TH:i:s.v\\Z'),
         'duration_ms' => 10, 'label' => $label, 'node' => $node, 'exit' => $exit, 'argv' => ['orbit', 'node:list'],
     ], JSON_THROW_ON_ERROR)."\n";
-    $agents = new FakeAgentCommandRunner()->answer('task-vms.read-topology-evidence', ['content_base64' => base64_encode(
+    $agents = new FakeAgentCommandRunner()->answer('task-vm.read-topology-evidence', ['content_base64' => base64_encode(
         $line(60, 'before handoff', 'app-dev', 0).$line(10, 'ingress check', 'app-prod', 1).$line(5, 'node list', 'app-dev', 0),
     )]);
     app()->instance(AgentCommandRunner::class, $agents);
@@ -163,20 +163,20 @@ it('counts the agent evidence records since the handoff', function (): void {
     expect($evidence->missing(['app-dev', 'app-prod']))->toBe(['app-prod'])
         ->and($agents->calls)->toBe([[
             'node' => $this->vm->node->name,
-            'command' => 'task-vms.read-topology-evidence',
+            'command' => 'task-vm.read-topology-evidence',
             'input' => ['checkout' => '/home/orbit/apps/orbit/workspace'],
         ]]);
 });
 
 it('keeps a run whose unit started although the start call failed, and fails one without a unit', function (): void {
     $subtask = topology_admission_subtask($this->group, ['app-dev']);
-    topology_admission_agents([new AgentRunnerFailure('task-vms.start-topology', AgentRunnerFailure::Timeout, 'Connection timed out'), ['state' => 'running']]);
+    topology_admission_agents([new AgentRunnerFailure('task-vm.start-topology', AgentRunnerFailure::Timeout, 'Connection timed out'), ['state' => 'running']]);
 
     expect(fn () => app(TaskTopologyAdmission::class)->prepare($this->group, $subtask))->toThrow(TaskCapacityException::class, 'preparing the topology app-dev');
     expect($this->vm->fresh()?->topology_state)->toBe(TaskVmTopologyState::Preparing);
 
     $this->vm->update(['topology_state' => null]);
-    topology_admission_agents([new AgentRunnerFailure('task-vms.start-topology', AgentRunnerFailure::Timeout, 'Connection timed out'), ['state' => 'lost']]);
+    topology_admission_agents([new AgentRunnerFailure('task-vm.start-topology', AgentRunnerFailure::Timeout, 'Connection timed out'), ['state' => 'lost']]);
     expect(fn () => app(TaskTopologyAdmission::class)->prepare($this->group, $subtask))->toThrow(TaskTopologyFailedException::class, 'failed at step start. The end of its log: Connection timed out');
 });
 
@@ -186,14 +186,14 @@ it('prepares the topology again when the VM restarted since it was ready', funct
 
     expect(fn () => app(TaskTopologyAdmission::class)->prepare($this->group, topology_admission_subtask($this->group, ['app-dev'])))
         ->toThrow(TaskCapacityException::class, 'Task VM: preparing the topology app-dev.');
-    expect($agents->calls[0])->toBe(['node' => 'tvm-1', 'command' => 'task-vms.topology-status', 'input' => ['run' => 'abcdef0123456789']])
-        ->and($agents->calls[1]['command'])->toBe('task-vms.start-topology')
+    expect($agents->calls[0])->toBe(['node' => 'tvm-1', 'command' => 'task-vm.topology-status', 'input' => ['run' => 'abcdef0123456789']])
+        ->and($agents->calls[1]['command'])->toBe('task-vm.start-topology')
         ->and($this->vm->fresh()?->topology_state)->toBe(TaskVmTopologyState::Preparing)
         ->and($this->vm->fresh()?->topology_run)->not->toBe('abcdef0123456789');
 });
 
 it('counts no topology evidence without the JSON record file', function (): void {
-    app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner()->answer('task-vms.read-topology-evidence', ['content_base64' => null]));
+    app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner()->answer('task-vm.read-topology-evidence', ['content_base64' => null]));
 
     $evidence = app(TaskTopologyAdmission::class)->evidence($this->group, CarbonImmutable::now()->subMinutes(30));
 
@@ -201,7 +201,7 @@ it('counts no topology evidence without the JSON record file', function (): void
 });
 
 it('refuses unreadable topology evidence instead of accepting a review without it', function (): void {
-    app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner()->refuse('task-vms.read-topology-evidence', 'task_vm.evidence_unreadable'));
+    app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner()->refuse('task-vm.read-topology-evidence', 'task_vm.evidence_unreadable'));
 
     expect(fn () => app(TaskTopologyAdmission::class)->evidence($this->group, CarbonImmutable::now()->subMinutes(30)))
         ->toThrow(TaskCheckException::class, 'Orbit could not read the topology evidence log');

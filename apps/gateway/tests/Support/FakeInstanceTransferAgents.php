@@ -49,7 +49,7 @@ final class FakeInstanceTransferAgents
     public function __construct()
     {
         $this->agents = new FakeAgentCommandRunner;
-        $this->agents->answer('instances.transfer-source', function (array $input): array {
+        $this->agents->answer('instance.transfer-source', function (array $input): array {
             if ($input['operation'] === 'capture') {
                 return ['head' => str_repeat('a', 40), 'branch' => 'main', 'detached' => false,
                     'archive' => '/tmp/orbit-transfer-source.tar', 'common' => null, 'refs' => ['main']];
@@ -65,15 +65,15 @@ final class FakeInstanceTransferAgents
             }
 
             return [];
-        })->answer('instances.read-transfer-archive', static function (array $input, Node $node, ?AgentBinaryOutput $output): array {
+        })->answer('instance.read-transfer-archive', static function (array $input, Node $node, ?AgentBinaryOutput $output): array {
             $output?->write('archive');
 
             return ['bytes' => 7];
-        })->answer('instances.materialize-transfer', function (): array {
+        })->answer('instance.materialize-transfer', function (): array {
             $this->destinationExists = true;
 
             return [];
-        })->answer('instances.prepare-sqlite-seed', function (array $input): array {
+        })->answer('instance.prepare-sqlite-seed', function (array $input): array {
             if ($input['mode'] === 'cleanup') {
                 if ($this->failSourceCleanup) {
                     throw new RuntimeException('Injected source cleanup failure.');
@@ -89,7 +89,7 @@ final class FakeInstanceTransferAgents
             $this->snapshot ??= $this->sourceBytes;
 
             return ['bytes' => strlen($this->snapshot), 'sha256' => hash('sha256', $this->snapshot), 'snapshot' => $input['snapshot_path']];
-        })->answer('instances.install-sqlite-seed', function (array $input): array {
+        })->answer('instance.install-sqlite-seed', function (array $input): array {
             if ($input['mode'] === 'cleanup') {
                 if ($this->failTargetCleanup) {
                     throw new RuntimeException('Injected target cleanup failure.');
@@ -109,12 +109,12 @@ final class FakeInstanceTransferAgents
             $this->received = null;
 
             return ['state' => 'changed'];
-        })->answer('instances.read-sqlite-snapshot', function (array $input, Node $node, ?AgentBinaryOutput $output): array {
+        })->answer('instance.read-sqlite-snapshot', function (array $input, Node $node, ?AgentBinaryOutput $output): array {
             $snapshot = $this->snapshot ?? throw new RuntimeException('No prepared snapshot.');
             $output?->write($snapshot);
 
             return ['bytes' => strlen($snapshot), 'sha256' => hash('sha256', $snapshot)];
-        })->answer('instances.receive-sqlite-snapshot', function (array $input, Node $node, ?AgentBinaryOutput $output, ?AgentBinaryInput $binary): array {
+        })->answer('instance.receive-sqlite-snapshot', function (array $input, Node $node, ?AgentBinaryOutput $output, ?AgentBinaryInput $binary): array {
             $body = $binary?->envelope('') ?? throw new RuntimeException('No snapshot body.');
             $this->received = ProcessInput::contents($body);
             $this->copiedDigests[] = $input['sha256'];
@@ -139,6 +139,6 @@ final class FakeInstanceTransferAgents
 
     public function captures(): int
     {
-        return count(array_filter($this->agents->calls, static fn (array $call): bool => $call['command'] === 'instances.transfer-source' && $call['input']['operation'] === 'capture'));
+        return count(array_filter($this->agents->calls, static fn (array $call): bool => $call['command'] === 'instance.transfer-source' && $call['input']['operation'] === 'capture'));
     }
 }

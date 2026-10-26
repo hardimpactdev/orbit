@@ -14,7 +14,7 @@ final class ResolvedVp
     {
         return new VpToolManager(
             new SemverVersionNormalizer,
-            $probe ?? new FakeAgentCommandRunner()->answer('tools.inspect-vp-scope', ['binary' => $home.'/bin/vp']),
+            $probe ?? new FakeAgentCommandRunner()->answer('tool.inspect-vp-scope', ['binary' => $home.'/bin/vp']),
         );
     }
 }

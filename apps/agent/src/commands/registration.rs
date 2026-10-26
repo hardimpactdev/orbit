@@ -1,4 +1,4 @@
-//! `instances.*-registration-*`: adopt an existing checkout as a development Instance. Inspection reads its Git
+//! `instance.*-registration-*`: adopt an existing checkout as a development Instance. Inspection reads its Git
 //! identity and a digest of its content; relocation moves it, or its whole worktree set, into the Project's apps
 //! directory and resumes from any interruption; the Laravel receipt keeps the URL files that registration rewrites.
 //! These replace the Python that `RemoteRegistrationSourceManager` sent, step for step.
@@ -19,8 +19,8 @@ use std::{
 
 command_errors! {
     pub enum RegistrationError {
-        Invalid { check: String } => "instances.registration_invalid", "The source does not match its registration evidence.";
-        GitFailed { step: String } => "instances.git_failed", "A Git step failed.";
+        Invalid { check: String } => "instance.registration_invalid", "The source does not match its registration evidence.";
+        GitFailed { step: String } => "instance.git_failed", "A Git step failed.";
     }
 }
 
@@ -301,7 +301,7 @@ pub fn inspect(input: &InspectInput) -> Result<Vec<SourceRow>, RegistrationError
 }
 
 impl Command for InspectRegistrationSource {
-    const NAME: &'static str = "instances.inspect-registration-source";
+    const NAME: &'static str = "instance.inspect-registration-source";
     const SUMMARY: &'static str = "Read a checkout, or its worktree set, with the identity and digest that registration keeps.";
     const MUTATES: bool = false;
     const TIMEOUT: Duration = Duration::from_secs(60);
@@ -674,7 +674,7 @@ pub fn relocate(
 }
 
 impl Command for RelocateRegistrationSource {
-    const NAME: &'static str = "instances.relocate-registration-source";
+    const NAME: &'static str = "instance.relocate-registration-source";
     const SUMMARY: &'static str = "Adopt a registered source set in place, or move it into the apps directory and resume an interrupted move.";
     const MUTATES: bool = true;
     const TIMEOUT: Duration = Duration::from_secs(900);
@@ -913,7 +913,7 @@ pub fn receipt(input: &ReceiptInput) -> Result<(), RegistrationError> {
 }
 
 impl Command for LaravelRegistrationReceipt {
-    const NAME: &'static str = "instances.laravel-registration-receipt";
+    const NAME: &'static str = "instance.laravel-registration-receipt";
     const SUMMARY: &'static str =
         "Keep, restore, or drop the Laravel URL files that registration rewrites.";
     const MUTATES: bool = true;

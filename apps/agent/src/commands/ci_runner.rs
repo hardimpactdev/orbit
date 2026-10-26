@@ -1,4 +1,4 @@
-//! `ci-runners.host`: the CI role's reserved Incus host resources (ADR 0213): the `orbit-ci` project, the `orbitci0`
+//! `ci-runner.host`: the CI role's reserved Incus host resources (ADR 0213): the `orbit-ci` project, the `orbitci0`
 //! bridge with its egress ACL, and the project's default profile. It never creates, registers, changes, or deletes a
 //! runner. Removal refuses while the project holds any instance, stopped ones included.
 
@@ -39,7 +39,7 @@ const NETWORK_CONFIG: [(&str, &str); 5] = [
 
 command_errors! {
     pub enum CiHostError {
-        Failed { reason: String } => "ci_runners.host_failed", "The CI host step failed.";
+        Failed { reason: String } => "ci_runner.host_failed", "The CI host step failed.";
     }
 }
 
@@ -334,7 +334,7 @@ fn act(host: &mut impl Host, input: &HostInput) -> Result<HostOutcome, CiHostErr
 pub struct CiRunnerHost;
 
 impl Command for CiRunnerHost {
-    const NAME: &'static str = "ci-runners.host";
+    const NAME: &'static str = "ci-runner.host";
     const SUMMARY: &'static str =
         "Converge, inspect, or remove the CI role's reserved Incus host resources.";
     const MUTATES: bool = true;

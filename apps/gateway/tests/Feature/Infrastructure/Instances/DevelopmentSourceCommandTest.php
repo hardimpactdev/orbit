@@ -34,8 +34,8 @@ describe('development source commands', function (): void {
 
     it('requests preparation and inspection with the same source identity', function (): void {
         [$source, $agents, $instance] = developmentSourceFixture();
-        $agents->answer('instances.prepare-development-source', ['created' => true])
-            ->answer('instances.inspect-development-source', ['origin' => 'https://example.test/site.git', 'branch' => 'dev', 'commit' => str_repeat('a', 40)]);
+        $agents->answer('instance.prepare-development-source', ['created' => true])
+            ->answer('instance.inspect-development-source', ['origin' => 'https://example.test/site.git', 'branch' => 'dev', 'commit' => str_repeat('a', 40)]);
 
         $source->prepare($instance, false);
         $source->prepare($instance, true);
@@ -49,8 +49,8 @@ describe('development source commands', function (): void {
             'prepare_id' => 'attempt-1', 'seed_repository' => null,
         ];
         expect($agents->commands())->toBe([
-            'instances.prepare-development-source', 'instances.prepare-development-source',
-            'instances.inspect-development-source', 'instances.inspect-development-source',
+            'instance.prepare-development-source', 'instance.prepare-development-source',
+            'instance.inspect-development-source', 'instance.inspect-development-source',
         ]);
         expect(array_column($agents->calls, 'input'))->toEqual([
             [...$identity, 'allow_existing' => false, 'seed_commit' => null, 'network' => true, 'git_read' => GitReadEnvironment::none()],
@@ -64,7 +64,7 @@ describe('development source commands', function (): void {
         [$source, $agents, $instance] = developmentSourceFixture($name);
         $instance->update(['branch_override' => $override]);
         config(['orbit.git.checkout_protocols' => ['https', 'ssh']]);
-        $agents->answer('instances.resolve-development-source', ['branch' => $selected, 'commit' => str_repeat('a', 40)]);
+        $agents->answer('instance.resolve-development-source', ['branch' => $selected, 'commit' => str_repeat('a', 40)]);
 
         $resolved = $source->resolve($instance);
 
@@ -91,7 +91,7 @@ describe('development source commands', function (): void {
             'checkout_path' => '/srv/orbit/apps/site/default', 'source_layout' => 'checkout', 'status' => InstanceState::Active,
             'seed_commit' => str_repeat('d', 40), 'seed_path' => '/srv/orbit/apps/site/default',
         ]);
-        $agents->answer('instances.prepare-development-source', function (array $input) use ($instance): array {
+        $agents->answer('instance.prepare-development-source', function (array $input) use ($instance): array {
             expect($instance->fresh()->source_layout)->toBe('worktree')
                 ->and($instance->fresh()->seed_selected)->toBeTrue();
             expect($input['seed_repository'])->toBe('/srv/orbit/apps/site/default')
@@ -113,7 +113,7 @@ describe('development source commands', function (): void {
 
     it('refuses source results that disagree with branch intent or omit a commit', function (array $result): void {
         [$source, $agents, $instance] = developmentSourceFixture();
-        $agents->answerMalformed('instances.resolve-development-source', $result);
+        $agents->answerMalformed('instance.resolve-development-source', $result);
 
         expect(fn () => $source->resolve($instance))->toThrow(function (RuntimeConvergenceException $exception): void {
             expect($exception->errorCode)->toBe('instance.source_identity_invalid');
@@ -126,17 +126,17 @@ describe('development source commands', function (): void {
 
     it('uses the read-only idle inspection for rename and compares canonical repository identity', function (): void {
         [$source, $agents, $instance] = developmentSourceFixture();
-        $agents->answer('instances.inspect-development-source', ['origin' => 'git@example.test:site.git', 'branch' => 't3code/login']);
+        $agents->answer('instance.inspect-development-source', ['origin' => 'git@example.test:site.git', 'branch' => 't3code/login']);
 
         $source->assertBranchCheckedOut($instance, 't3code/login');
         expect(fn () => $source->assertBranchCheckedOut($instance, 'dev'))
             ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.branch_not_checked_out'));
-        $agents->answer('instances.inspect-development-source', ['origin' => 'https://example.test/site.git', 'branch' => null]);
+        $agents->answer('instance.inspect-development-source', ['origin' => 'https://example.test/site.git', 'branch' => null]);
         expect(fn () => $source->assertBranchCheckedOut($instance, 'dev'))
             ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.branch_not_checked_out'));
         $source->assertBranchCheckedOut($instance, null);
 
-        expect(array_unique($agents->commands()))->toBe(['instances.inspect-development-source']);
+        expect(array_unique($agents->commands()))->toBe(['instance.inspect-development-source']);
         expect($agents->calls[0]['input'])->toBe([
             'repository' => 'https://example.test/site.git', 'checkout' => '/srv/orbit/apps/site/dev',
             'root' => '/srv/orbit/apps', 'user' => 'orbit', 'group' => 'orbit', 'prepare_id' => 'attempt-1',
@@ -146,7 +146,7 @@ describe('development source commands', function (): void {
 
     it('maps a busy rename inspection to lifecycle busy', function (): void {
         [$source, $agents, $instance] = developmentSourceFixture();
-        $agents->refuse('instances.inspect-development-source', 'instances.source_busy');
+        $agents->refuse('instance.inspect-development-source', 'instance.source_busy');
 
         expect(fn () => $source->assertBranchCheckedOut($instance, 'dev'))
             ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.lifecycle_busy'));
@@ -154,7 +154,7 @@ describe('development source commands', function (): void {
 
     it('maps a preparation refusal without changing the reserved status', function (): void {
         [$source, $agents, $instance] = developmentSourceFixture();
-        $agents->refuse('instances.prepare-development-source', 'instances.source_invalid');
+        $agents->refuse('instance.prepare-development-source', 'instance.source_invalid');
 
         expect(fn () => $source->prepare($instance, false))
             ->toThrow(fn (RuntimeConvergenceException $exception) => expect($exception->errorCode)->toBe('instance.clone_failed'));
@@ -173,7 +173,7 @@ describe('development source commands', function (): void {
         });
         [$source, $agents, $instance] = developmentSourceFixture();
         $instance->project->update(['repository_url' => 'git@github.com:acme/private.git', 'source_access' => ProjectSourceAccess::GhCli]);
-        $agents->answer('instances.prepare-development-source', ['created' => true]);
+        $agents->answer('instance.prepare-development-source', ['created' => true]);
 
         if ($token === null) {
             expect(fn () => $source->prepare($instance, false))

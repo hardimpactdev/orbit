@@ -1,4 +1,4 @@
-//! `instances.*-release`: the release layout of a production Instance. A home `/home/<user>` holds `releases/<name>`
+//! `instance.*-release`: the release layout of a production Instance. A home `/home/<user>` holds `releases/<name>`
 //! checkouts, a `current` link to the selected one, and the stable `.env`. Each command checks the root-owned layout
 //! marker first. It runs as root, and Git and every file it writes in the home run as the production user, so the
 //! release stays the user's alone. These replace the Bash that `RemoteProductionDeployment` sent, check for check.
@@ -23,10 +23,10 @@ pub const STATE_ROOT: &str = "/var/lib/orbit/app-instance-sources";
 
 command_errors! {
     pub enum ReleaseError {
-        Invalid { check: String } => "instances.release_invalid", "The release home or the release does not pass its checks.";
-        CommitNotOnBranch {} => "instances.commit_not_on_branch", "The branch does not contain the commit.";
-        StepFailed { step: String } => "instances.release_step_failed", "A release step failed.";
-        ReleaseMissing {} => "instances.release_missing", "No release is selected yet.";
+        Invalid { check: String } => "instance.release_invalid", "The release home or the release does not pass its checks.";
+        CommitNotOnBranch {} => "instance.commit_not_on_branch", "The branch does not contain the commit.";
+        StepFailed { step: String } => "instance.release_step_failed", "A release step failed.";
+        ReleaseMissing {} => "instance.release_missing", "No release is selected yet.";
     }
 }
 
@@ -861,7 +861,7 @@ fn no_link_on_the_way(base: &Path, path: &Path) -> bool {
 }
 
 impl Command for PrepareRelease {
-    const NAME: &'static str = "instances.prepare-release";
+    const NAME: &'static str = "instance.prepare-release";
     const SUMMARY: &'static str =
         "Clone a new production release of a branch and link its environment and shared paths.";
     const MUTATES: bool = true;
@@ -954,7 +954,7 @@ pub fn check_served(input: &ServedInput, layout: &Layout) -> Result<(), ReleaseE
 pub struct PrepareServedWebRoots;
 
 impl Command for PrepareServedWebRoots {
-    const NAME: &'static str = "instances.prepare-served-web-roots";
+    const NAME: &'static str = "instance.prepare-served-web-roots";
     const SUMMARY: &'static str =
         "Link the environment and grant Caddy each Route web root in a production Instance's selected release.";
     const MUTATES: bool = true;
@@ -979,7 +979,7 @@ impl Command for PrepareServedWebRoots {
 pub struct CheckServedWebRoots;
 
 impl Command for CheckServedWebRoots {
-    const NAME: &'static str = "instances.check-served-web-roots";
+    const NAME: &'static str = "instance.check-served-web-roots";
     const SUMMARY: &'static str =
         "Check that a production Instance's selected release can serve each Route web root.";
     const MUTATES: bool = false;
@@ -1064,7 +1064,7 @@ pub fn activate(input: &ActivateInput, layout: &Layout) -> Result<Release, Relea
 }
 
 impl Command for ActivateRelease {
-    const NAME: &'static str = "instances.activate-release";
+    const NAME: &'static str = "instance.activate-release";
     const SUMMARY: &'static str =
         "Check a production release, grant Caddy its web roots, and select it as current.";
     const MUTATES: bool = true;
@@ -1124,7 +1124,7 @@ pub fn inspect(input: &InspectInput, layout: &Layout) -> Result<InspectOutput, R
 }
 
 impl Command for InspectRelease {
-    const NAME: &'static str = "instances.inspect-release";
+    const NAME: &'static str = "instance.inspect-release";
     const SUMMARY: &'static str =
         "Check and read the selected production release, or a named retained one.";
     const MUTATES: bool = false;
@@ -1185,7 +1185,7 @@ pub fn list(home: &ReleaseHome, layout: &Layout) -> Result<ListOutput, ReleaseEr
 }
 
 impl Command for ListReleases {
-    const NAME: &'static str = "instances.list-releases";
+    const NAME: &'static str = "instance.list-releases";
     const SUMMARY: &'static str =
         "List the production releases that pass their checks, and the selected one.";
     const MUTATES: bool = false;
@@ -1386,7 +1386,7 @@ pub fn prune(
 }
 
 impl Command for PruneReleases {
-    const NAME: &'static str = "instances.prune-releases";
+    const NAME: &'static str = "instance.prune-releases";
     const SUMMARY: &'static str =
         "Remove production releases beyond the retained count that no process uses.";
     const MUTATES: bool = true;
@@ -1509,7 +1509,7 @@ pub fn inspect_binding(
 }
 
 impl Command for InspectRepositoryBinding {
-    const NAME: &'static str = "instances.inspect-repository-binding";
+    const NAME: &'static str = "instance.inspect-repository-binding";
     const SUMMARY: &'static str =
         "Read the repository URL that each production marker and release records.";
     const MUTATES: bool = false;
@@ -1672,7 +1672,7 @@ pub fn rebind(input: &RebindInput, layout: &Layout) -> Result<(), ReleaseError> 
 }
 
 impl Command for RebindRepository {
-    const NAME: &'static str = "instances.rebind-repository";
+    const NAME: &'static str = "instance.rebind-repository";
     const SUMMARY: &'static str = "Move the repository URL that production markers and releases record to the Project's new URL.";
     const MUTATES: bool = true;
     const TIMEOUT: Duration = Duration::from_secs(300);

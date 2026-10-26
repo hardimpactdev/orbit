@@ -9,9 +9,9 @@ use std::{net::IpAddr, time::Duration};
 
 command_errors! {
     pub enum Error {
-        Invalid {} => "nodes.host_key_input_invalid", "The host key scan needs one host and a nonzero port.";
-        Failed { stage: String, exit_code: i32, stderr: String } => "nodes.host_key_scan_failed", "The SSH host key could not be scanned or fingerprinted.";
-        Malformed {} => "nodes.host_key_invalid", "The SSH host returned no valid supported host key.";
+        Invalid {} => "node.host_key_input_invalid", "The host key scan needs one host and a nonzero port.";
+        Failed { stage: String, exit_code: i32, stderr: String } => "node.host_key_scan_failed", "The SSH host key could not be scanned or fingerprinted.";
+        Malformed {} => "node.host_key_invalid", "The SSH host returned no valid supported host key.";
     }
 }
 
@@ -118,7 +118,7 @@ fn scan(input: Input, host: &mut impl Host) -> Result<HostKey, Error> {
 
 pub struct Scan;
 impl Command for Scan {
-    const NAME: &'static str = "nodes.scan-host-key";
+    const NAME: &'static str = "node.scan-host-key";
     const SUMMARY: &'static str = "Scan and fingerprint a target before trusting its SSH identity.";
     const MUTATES: bool = false;
     const TIMEOUT: Duration = Duration::from_secs(25);

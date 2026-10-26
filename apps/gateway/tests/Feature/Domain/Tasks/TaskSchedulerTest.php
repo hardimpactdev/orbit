@@ -1909,9 +1909,9 @@ it('releases the baseline claim and retries after a VP_HOME probe failure', func
     $spawner = scheduler_recording_spawner();
     scheduler_bind_claim($instance, $spawner);
     $probeCalls = 0;
-    $probe = new FakeAgentCommandRunner()->answer('tools.inspect-vp-scope', static function () use (&$probeCalls): array {
+    $probe = new FakeAgentCommandRunner()->answer('tool.inspect-vp-scope', static function () use (&$probeCalls): array {
         if (++$probeCalls === 1) {
-            throw new AgentCommandRefused('tools.inspect-vp-scope', 'tools.vp_scope_absent', 'Absent');
+            throw new AgentCommandRefused('tool.inspect-vp-scope', 'tool.vp_scope_absent', 'Absent');
         }
 
         return ['binary' => '/opt/orbit/vite-plus/bin/vp'];

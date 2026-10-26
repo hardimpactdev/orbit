@@ -26,7 +26,7 @@ function environment_access_context(bool $production = false): InstanceEnvironme
 }
 
 it('checks and reads the recorded file as its user, and asks a production home to be the user home', function (bool $production): void {
-    $agents = new FakeAgentCommandRunner()->answer('instances.read-environment', fn (array $input): array => $input['mode'] === 'read'
+    $agents = new FakeAgentCommandRunner()->answer('instance.read-environment', fn (array $input): array => $input['mode'] === 'read'
         ? ['state' => 'ok', 'content' => base64_encode("APP_KEY=x\n"), 'installed' => false]
         : ['state' => 'ok', 'installed' => false]);
     $access = new RemoteInstanceEnvironmentAccess($agents);
@@ -44,7 +44,7 @@ it('checks and reads the recorded file as its user, and asks a production home t
 })->with(['development' => false, 'production' => true]);
 
 it('checks writability and reads the workload file in one command before synchronization', function (bool $production): void {
-    $agents = new FakeAgentCommandRunner()->answer('instances.inspect-environment-sync', [
+    $agents = new FakeAgentCommandRunner()->answer('instance.inspect-environment-sync', [
         'preflight' => ['state' => 'ok', 'installed' => false],
         'existing' => ['state' => 'ok', 'content' => base64_encode("APP_KEY=secret\n"), 'installed' => false],
     ]);
@@ -59,8 +59,8 @@ it('checks writability and reads the workload file in one command before synchro
 })->with(['development' => false, 'production' => true]);
 
 it('preserves distinct write and read refusals from a synchronization inspection', function (?array $outcome, string $errorCode): void {
-    $agents = new FakeAgentCommandRunner()->answerMalformed('instances.inspect-environment-sync', fn (): array => $outcome
-        ?? throw new AgentRunnerFailure('instances.inspect-environment-sync', AgentRunnerFailure::Transport, 'password=secret'));
+    $agents = new FakeAgentCommandRunner()->answerMalformed('instance.inspect-environment-sync', fn (): array => $outcome
+        ?? throw new AgentRunnerFailure('instance.inspect-environment-sync', AgentRunnerFailure::Transport, 'password=secret'));
 
     expect(fn () => new RemoteInstanceEnvironmentAccess($agents)->readWritableEnvironment(environment_access_context(), 4096))
         ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe($errorCode)
@@ -79,8 +79,8 @@ it('preserves distinct write and read refusals from a synchronization inspection
 ]);
 
 it('maps a missing file, a refusal, and a runner failure of a read to their errors', function (string $state, string $errorCode): void {
-    $agents = new FakeAgentCommandRunner()->answer('instances.read-environment', fn (): array => $state === 'runner'
-        ? throw new AgentRunnerFailure('instances.read-environment', AgentRunnerFailure::Transport, 'password=secret')
+    $agents = new FakeAgentCommandRunner()->answer('instance.read-environment', fn (): array => $state === 'runner'
+        ? throw new AgentRunnerFailure('instance.read-environment', AgentRunnerFailure::Transport, 'password=secret')
         : ['state' => $state, 'installed' => false]);
 
     expect(fn () => new RemoteInstanceEnvironmentAccess($agents)->read(environment_access_context()))
@@ -93,14 +93,14 @@ it('maps a missing file, a refusal, and a runner failure of a read to their erro
 ]);
 
 it('refuses a write destination the agent cannot confirm', function (): void {
-    $agents = new FakeAgentCommandRunner()->answer('instances.read-environment', ['state' => 'refused', 'installed' => false]);
+    $agents = new FakeAgentCommandRunner()->answer('instance.read-environment', ['state' => 'refused', 'installed' => false]);
 
     expect(fn () => new RemoteInstanceEnvironmentAccess($agents)->assertEnvironmentWritable(environment_access_context(), 0))
         ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('env.write_preflight_failed'));
 });
 
 it('reads each write outcome, and an outcome after the rename as unconfirmed', function (array $outcome, string $expected): void {
-    $agents = new FakeAgentCommandRunner()->answer('instances.write-environment', $outcome);
+    $agents = new FakeAgentCommandRunner()->answer('instance.write-environment', $outcome);
     $access = new RemoteInstanceEnvironmentAccess($agents);
 
     try {
@@ -122,13 +122,13 @@ it('reads each write outcome, and an outcome after the rename as unconfirmed', f
 ]);
 
 it('treats a lost write acknowledgement as unconfirmed', function (): void {
-    $agents = new FakeAgentCommandRunner()->answer('instances.write-environment', fn (): array => throw new AgentRunnerFailure('instances.write-environment', AgentRunnerFailure::MissingResult, 'lost'));
+    $agents = new FakeAgentCommandRunner()->answer('instance.write-environment', fn (): array => throw new AgentRunnerFailure('instance.write-environment', AgentRunnerFailure::MissingResult, 'lost'));
 
     expect(new RemoteInstanceEnvironmentAccess($agents)->write(environment_access_context(), "APP_KEY=x\n")->confirmed)->toBeFalse();
 });
 
 it('merges the managed keys into .env.testing and leaves a tracked one alone', function (): void {
-    $agents = new FakeAgentCommandRunner()->answer('instances.write-environment', ['state' => 'tracked', 'installed' => false]);
+    $agents = new FakeAgentCommandRunner()->answer('instance.write-environment', ['state' => 'tracked', 'installed' => false]);
     $access = new RemoteInstanceEnvironmentAccess($agents);
 
     $result = $access->mergeTesting(environment_access_context(), "DB_DATABASE=testing\n", ['DB_DATABASE']);
@@ -136,7 +136,7 @@ it('merges the managed keys into .env.testing and leaves a tracked one alone', f
     expect($result->tracked)->toBeTrue()
         ->and($agents->calls[0]['input'])->toMatchArray(['mode' => 'merge', 'file' => '.env.testing', 'managed_keys' => ['DB_DATABASE']]);
 
-    $agents->answer('instances.write-environment', ['state' => 'tracking_unknown', 'installed' => false]);
+    $agents->answer('instance.write-environment', ['state' => 'tracking_unknown', 'installed' => false]);
     expect(fn () => $access->mergeTesting(environment_access_context(), "DB_DATABASE=testing\n", ['DB_DATABASE']))
         ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('env.testing_tracking_unknown'));
 });

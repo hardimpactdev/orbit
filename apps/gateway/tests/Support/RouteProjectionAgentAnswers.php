@@ -27,11 +27,11 @@ final class RouteProjectionAgentAnswers
     public static function register(FakeAgentCommandRunner $agents, ?Closure $refuse = null): FakeAgentCommandRunner
     {
         $answers = [
-            'certificates.request-leaf' => ['state' => 'request', 'request' => self::CERTIFICATE_REQUEST],
-            'certificates.publish-leaf' => [],
-            'certificates.inspect-leaf' => ['present' => true],
-            'certificates.remove-leaf' => [],
-            'routes.verify-certificate' => [],
+            'certificate.request-leaf' => ['state' => 'request', 'request' => self::CERTIFICATE_REQUEST],
+            'certificate.publish-leaf' => [],
+            'certificate.inspect-leaf' => ['present' => true],
+            'certificate.remove-leaf' => [],
+            'route.verify-certificate' => [],
             'caddy.publish' => ['result' => 'published'],
         ];
 
@@ -85,9 +85,9 @@ final class RouteProjectionAgentAnswers
     private static function refusal(string $command): AgentCommandRefused
     {
         return match ($command) {
-            'routes.verify-certificate' => new AgentCommandRefused($command, 'routes.certificate_invalid', 'The workload does not serve a trusted certificate for the domain.', ['stderr' => 'injected failure']),
+            'route.verify-certificate' => new AgentCommandRefused($command, 'route.certificate_invalid', 'The workload does not serve a trusted certificate for the domain.', ['stderr' => 'injected failure']),
             'caddy.publish' => new AgentCommandRefused($command, 'caddy.publication_failed', 'The Caddy publication failed.', ['stage' => 'reload', 'message' => 'injected failure']),
-            default => new AgentCommandRefused($command, 'certificates.leaf_failed', 'A certificate step failed on the Node.', ['step' => 'injected']),
+            default => new AgentCommandRefused($command, 'certificate.leaf_failed', 'A certificate step failed on the Node.', ['step' => 'injected']),
         };
     }
 }

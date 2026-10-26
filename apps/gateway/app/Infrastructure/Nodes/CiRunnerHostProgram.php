@@ -8,7 +8,7 @@ use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Shared\StoredValue;
 use App\Models\Node;
 
-/** The CI role's fixed host actions, through the agent's `ci-runners.host`. */
+/** The CI role's fixed host actions, through the agent's `ci-runner.host`. */
 final readonly class CiRunnerHostProgram
 {
     public function __construct(private AgentCommandRunner $agents) {}
@@ -20,6 +20,6 @@ final readonly class CiRunnerHostProgram
      */
     public function run(Node $node, string $action): string
     {
-        return StoredValue::string($this->agents->run($node, 'ci-runners.host', ['action' => $action])['outcome'] ?? null);
+        return StoredValue::string($this->agents->run($node, 'ci-runner.host', ['action' => $action])['outcome'] ?? null);
     }
 }

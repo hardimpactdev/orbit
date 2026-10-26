@@ -6,7 +6,7 @@ namespace App\Infrastructure\Certificates;
 
 /**
  * The lifetime and extensions of every leaf the Orbit root CA signs: the Gateway's own leaves and
- * the development leaves of Nodes. The agent's `certificates.request-leaf` reuses a current leaf
+ * the development leaves of Nodes. The agent's `certificate.request-leaf` reuses a current leaf
  * only while it still carries this policy.
  */
 final readonly class OrbitLeafCertificate

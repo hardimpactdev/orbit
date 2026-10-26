@@ -46,13 +46,13 @@ function sqlite_clone_intent(): array
 it('requests one local copy on the shared Node with both checkout boundaries', function (): void {
     [$project, $node, $source] = sqlite_clone_intent();
     $target = sqlite_cloner_instance($project, $node, 'feature', '/apps/feature');
-    $agents = new FakeAgentCommandRunner()->answer('instances.copy-sqlite', ['bytes' => 4096, 'sha256' => str_repeat('a', 64), 'mode' => 0640]);
+    $agents = new FakeAgentCommandRunner()->answer('instance.copy-sqlite', ['bytes' => 4096, 'sha256' => str_repeat('a', 64), 'mode' => 0640]);
     $transfer = Mockery::mock(SqliteSnapshotTransfer::class);
     $transfer->shouldNotReceive('transfer');
 
     new RemoteInstanceSqliteCloner($agents, $transfer)->copy($source, '/apps/default/database.sqlite', $target, '/apps/feature/database.sqlite');
 
-    expect($agents->calls)->toBe([['node' => 'source', 'command' => 'instances.copy-sqlite', 'input' => [
+    expect($agents->calls)->toBe([['node' => 'source', 'command' => 'instance.copy-sqlite', 'input' => [
         'operation' => 'local', 'checkout' => '/apps/default', 'source' => '/apps/default/database.sqlite',
         'target_checkout' => '/apps/feature', 'target' => '/apps/feature/database.sqlite',
     ]]]);
@@ -61,7 +61,7 @@ it('requests one local copy on the shared Node with both checkout boundaries', f
 it('exports transfers installs and always requests source cleanup across Nodes', function (bool $transferFails): void {
     [$project, $node, $source] = sqlite_clone_intent();
     $target = sqlite_cloner_instance($project, sqlite_cloner_node('target', '10.44.0.12'), 'feature', '/apps/feature');
-    $agents = new FakeAgentCommandRunner()->answer('instances.copy-sqlite', static fn (array $input): array => $input['operation'] === 'export'
+    $agents = new FakeAgentCommandRunner()->answer('instance.copy-sqlite', static fn (array $input): array => $input['operation'] === 'export'
         ? ['bytes' => 4096, 'sha256' => str_repeat('a', 64), 'mode' => 0640] : []);
     $transfer = Mockery::mock(SqliteSnapshotTransfer::class);
     $transfer->shouldReceive('transfer')->once()->withArgs(function (SqliteSeedPlacement $from, string $fromPath, SqliteSeedPlacement $to, string $toPath, int $bytes, string $digest) use ($source, $target, $agents): bool {
@@ -97,7 +97,7 @@ it('maps native refusals and malformed reports to the public clone failure', fun
     [$project, $node, $source] = sqlite_clone_intent();
     $target = sqlite_cloner_instance($project, $node, 'feature', '/apps/feature');
     $agents = new FakeAgentCommandRunner;
-    $malformed ? $agents->answer('instances.copy-sqlite', ['bytes' => 'bad']) : $agents->refuse('instances.copy-sqlite', 'instances.sqlite_copy_refused');
+    $malformed ? $agents->answer('instance.copy-sqlite', ['bytes' => 'bad']) : $agents->refuse('instance.copy-sqlite', 'instance.sqlite_copy_refused');
 
     expect(fn () => new RemoteInstanceSqliteCloner($agents, Mockery::mock(SqliteSnapshotTransfer::class))->copy($source, '/apps/default/database.sqlite', $target, '/apps/feature/database.sqlite'))
         ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('instance.database_clone_failed'));
@@ -105,7 +105,7 @@ it('maps native refusals and malformed reports to the public clone failure', fun
 
 it('requests removal within the owning checkout', function (): void {
     [, , $source] = sqlite_clone_intent();
-    $agents = new FakeAgentCommandRunner()->answer('instances.copy-sqlite', []);
+    $agents = new FakeAgentCommandRunner()->answer('instance.copy-sqlite', []);
 
     new RemoteInstanceSqliteCloner($agents, Mockery::mock(SqliteSnapshotTransfer::class))->remove($source, '/apps/default/database.sqlite');
 

@@ -18,7 +18,7 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
 
 /**
- * A role's prerequisites through the agent: the pinned Caddy package, then `roles.install-prerequisites`, then, for an
+ * A role's prerequisites through the agent: the pinned Caddy package, then `role.install-prerequisites`, then, for an
  * application role, the recipe's pinned JavaScript runtimes. Each answers a command result, so each role keeps its own
  * failure.
  */
@@ -51,7 +51,7 @@ final readonly class RolePrerequisites
         }
 
         try {
-            $this->agents->run($node, 'roles.install-prerequisites', $this->input($node, $role, $account));
+            $this->agents->run($node, 'role.install-prerequisites', $this->input($node, $role, $account));
             $javascript = self::application($role) ? NodeRecipeProgram::javascript($node, $role) : null;
             if ($javascript !== null) {
                 $this->agents->run($node, 'recipe.install-javascript', $javascript);

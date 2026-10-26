@@ -53,12 +53,12 @@ final readonly class ComposerToolManager implements SupportsToolAdoption, ToolMa
     {
         $this->guardSupportedNode($node);
 
-        $this->command($node, 'tools.materialize-composer', ['user' => $node->user], 'materialize');
+        $this->command($node, 'tool.materialize-composer', ['user' => $node->user], 'materialize');
     }
 
     public function managerVersion(Node $node): string
     {
-        $version = $this->version($node, 'tools.composer-version', [], 'manager-version');
+        $version = $this->version($node, 'tool.composer-version', [], 'manager-version');
         if ($version === null) {
             throw new ToolManagerException('manager-version', 'The agent returned an invalid Composer manager version.');
         }
@@ -74,12 +74,12 @@ final readonly class ComposerToolManager implements SupportsToolAdoption, ToolMa
             throw new ToolManagerException('candidate-version', 'This Composer operation does not select a candidate version.');
         }
 
-        return $this->version($node, 'tools.composer-candidate', ['package' => $package, 'operation' => $operation->value], 'candidate-version');
+        return $this->version($node, 'tool.composer-candidate', ['package' => $package, 'operation' => $operation->value], 'candidate-version');
     }
 
     public function installedInventory(Node $node): InstalledToolInventory
     {
-        $data = $this->command($node, 'tools.composer-inventory', [], 'installed-version');
+        $data = $this->command($node, 'tool.composer-inventory', [], 'installed-version');
         if (! is_array($data['packages'] ?? null) || ! array_is_list($data['packages'])) {
             throw new ToolManagerException('installed-version', 'The agent returned an invalid Composer inventory.');
         }
@@ -145,7 +145,7 @@ final readonly class ComposerToolManager implements SupportsToolAdoption, ToolMa
     public function planRemoval(Node $node, string $package): ToolRemovalPlan
     {
         $this->guardPackage($package);
-        $data = $this->command($node, 'tools.composer-removal-plan', ['package' => $package], 'removal-plan');
+        $data = $this->command($node, 'tool.composer-removal-plan', ['package' => $package], 'removal-plan');
         if (($data['packages'] ?? null) !== [$package]) {
             throw new ToolManagerException('removal-plan', 'The agent returned an invalid Composer removal plan.');
         }
@@ -189,7 +189,7 @@ final readonly class ComposerToolManager implements SupportsToolAdoption, ToolMa
      */
     private function adoptionRoots(Node $node): array
     {
-        $data = $this->command($node, 'tools.inspect-composer-scope', [], 'manager-probe');
+        $data = $this->command($node, 'tool.inspect-composer-scope', [], 'manager-probe');
         if (! is_array($data['roots'] ?? null) || ! array_is_list($data['roots']) || array_filter($data['roots'], is_string(...)) !== $data['roots']) {
             throw new ToolManagerException('manager-probe', 'The agent returned an invalid Composer scope.');
         }
@@ -207,8 +207,8 @@ final readonly class ComposerToolManager implements SupportsToolAdoption, ToolMa
             return $this->agents->run($node, $command, $input, $this->budget?->seconds());
         } catch (AgentCommandRefused|AgentRunnerFailure $exception) {
             $step = match ($step === 'manager-probe' && $exception instanceof AgentCommandRefused ? $exception->errorCode : null) {
-                'tools.composer_scope_absent' => 'manager-absent',
-                'tools.composer_scope_conflict' => 'manager-conflict',
+                'tool.composer_scope_absent' => 'manager-absent',
+                'tool.composer_scope_conflict' => 'manager-conflict',
                 default => $step,
             };
             throw new ToolManagerException($step, 'The Composer operation failed.', previous: $exception);
@@ -229,6 +229,6 @@ final readonly class ComposerToolManager implements SupportsToolAdoption, ToolMa
     private function mutate(Node $node, string $package, string $step): void
     {
         $this->guardPackage($package);
-        $this->command($node, 'tools.composer-'.$step, ['package' => $package], $step);
+        $this->command($node, 'tool.composer-'.$step, ['package' => $package], $step);
     }
 }

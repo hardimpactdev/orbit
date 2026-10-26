@@ -417,7 +417,7 @@ fn convergence_refuses_a_project_with_its_own_networks_before_changing_it() {
     let before = incus.objects.clone();
     incus.calls.clear();
     let error = act_on(&mut incus, "converge").unwrap_err();
-    assert_eq!(error.code(), "ci_runners.host_failed");
+    assert_eq!(error.code(), "ci_runner.host_failed");
     assert_eq!(
         error,
         failed("orbit-ci must share the default project networks")
@@ -449,7 +449,7 @@ fn incus_errors_are_not_mistaken_for_an_absent_resource() {
     for action in ["converge", "inspect", "remove", "purge"] {
         incus.calls.clear();
         let error = act_on(&mut incus, action).unwrap_err();
-        assert_eq!(error.code(), "ci_runners.host_failed");
+        assert_eq!(error.code(), "ci_runner.host_failed");
         assert_eq!(incus.calls.len(), 1, "{action}");
         assert_eq!(incus.calls[0][0], "query");
     }
@@ -469,7 +469,7 @@ fn truncated_output_fails_instead_of_reading_a_partial_answer() {
         }
     }
     let error = act(&mut Truncated, &HostInput::Inspect {}).unwrap_err();
-    assert_eq!(error.code(), "ci_runners.host_failed");
+    assert_eq!(error.code(), "ci_runner.host_failed");
 }
 
 #[test]

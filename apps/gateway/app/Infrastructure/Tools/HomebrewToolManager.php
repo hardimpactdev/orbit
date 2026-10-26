@@ -55,13 +55,13 @@ final readonly class HomebrewToolManager implements SupportsToolAdoption, ToolMa
             return;
         }
 
-        $this->agentCommand($node, 'tools.materialize-homebrew', ['user' => $node->user], 'materialize');
+        $this->agentCommand($node, 'tool.materialize-homebrew', ['user' => $node->user], 'materialize');
     }
 
     public function managerVersion(Node $node): string
     {
         $this->guardSupportedNode($node);
-        $data = $this->agentCommand($node, 'tools.homebrew-version', [], 'manager-version');
+        $data = $this->agentCommand($node, 'tool.homebrew-version', [], 'manager-version');
         if (! is_string($data['version'] ?? null)) {
             throw new ToolManagerException('manager-version', 'The agent returned an invalid Homebrew version.');
         }
@@ -76,7 +76,7 @@ final readonly class HomebrewToolManager implements SupportsToolAdoption, ToolMa
         if ($operation === ToolOperation::Remove) {
             throw new ToolManagerException('candidate-version', 'Homebrew does not provide a removal candidate version.');
         }
-        $data = $this->agentCommand($node, 'tools.homebrew-formula-candidate', $this->packageInput($node, $package), 'candidate-version');
+        $data = $this->agentCommand($node, 'tool.homebrew-formula-candidate', $this->packageInput($node, $package), 'candidate-version');
         if (! array_key_exists('version', $data) || ($data['version'] !== null && ! is_string($data['version']))) {
             throw new ToolManagerException('candidate-version', 'The agent returned an invalid Homebrew candidate.');
         }
@@ -88,7 +88,7 @@ final readonly class HomebrewToolManager implements SupportsToolAdoption, ToolMa
     {
         $this->guardSupportedNode($node);
 
-        return $this->homebrew->inventory($this->agentCommand($node, 'tools.homebrew-formula-inventory', [], 'installed-version'));
+        return $this->homebrew->inventory($this->agentCommand($node, 'tool.homebrew-formula-inventory', [], 'installed-version'));
     }
 
     public function installedVersion(Node $node, string $package): ?string
@@ -107,14 +107,14 @@ final readonly class HomebrewToolManager implements SupportsToolAdoption, ToolMa
     {
         $this->guardPackage($package);
         $this->guardSupportedNode($node);
-        $this->agentCommand($node, 'tools.homebrew-formula-install', $this->packageInput($node, $package, needsBottle: true), 'install');
+        $this->agentCommand($node, 'tool.homebrew-formula-install', $this->packageInput($node, $package, needsBottle: true), 'install');
     }
 
     public function update(Node $node, string $package): void
     {
         $this->guardPackage($package);
         $this->guardSupportedNode($node);
-        $this->agentCommand($node, 'tools.homebrew-formula-update', $this->packageInput($node, $package, needsBottle: true), 'update');
+        $this->agentCommand($node, 'tool.homebrew-formula-update', $this->packageInput($node, $package, needsBottle: true), 'update');
     }
 
     public function planRemoval(Node $node, string $package): ToolRemovalPlan
@@ -129,7 +129,7 @@ final readonly class HomebrewToolManager implements SupportsToolAdoption, ToolMa
     {
         $this->guardPackage($package);
         $this->guardSupportedNode($node);
-        $this->agentCommand($node, 'tools.homebrew-formula-remove', $this->packageInput($node, $package, needsBottle: false), 'remove');
+        $this->agentCommand($node, 'tool.homebrew-formula-remove', $this->packageInput($node, $package, needsBottle: false), 'remove');
     }
 
     private function guardMacCpu(Node $node): void
@@ -181,7 +181,7 @@ final readonly class HomebrewToolManager implements SupportsToolAdoption, ToolMa
         $this->guardPackage($package);
         $this->guardSupportedNode($node);
 
-        return $this->homebrew->adoption($this->agentCommand($node, 'tools.homebrew-formula-adoption', $this->packageInput($node, $package), 'installed-version'));
+        return $this->homebrew->adoption($this->agentCommand($node, 'tool.homebrew-formula-adoption', $this->packageInput($node, $package), 'installed-version'));
     }
 
     /** @return array<string, mixed> */

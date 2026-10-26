@@ -19,7 +19,7 @@ use std::{
 
 command_errors! {
     pub enum LeafError {
-        Failed { step: String } => "certificates.leaf_failed", "A certificate step failed on the Node.";
+        Failed { step: String } => "certificate.leaf_failed", "A certificate step failed on the Node.";
     }
 }
 
@@ -532,7 +532,7 @@ fn remove(files: &Files, input: &ScopeInput) -> Result<Published, LeafError> {
 pub struct RequestLeaf;
 
 impl Command for RequestLeaf {
-    const NAME: &'static str = "certificates.request-leaf";
+    const NAME: &'static str = "certificate.request-leaf";
     const SUMMARY: &'static str =
         "Reuse a valid development leaf certificate, or make a new key and its signing request.";
     const MUTATES: bool = true;
@@ -558,7 +558,7 @@ impl Command for RequestLeaf {
 pub struct PublishLeaf;
 
 impl Command for PublishLeaf {
-    const NAME: &'static str = "certificates.publish-leaf";
+    const NAME: &'static str = "certificate.publish-leaf";
     const SUMMARY: &'static str =
         "Install a signed development leaf for the managed account and Caddy, and reload Caddy.";
     const MUTATES: bool = true;
@@ -584,7 +584,7 @@ impl Command for PublishLeaf {
 pub struct InspectLeaf;
 
 impl Command for InspectLeaf {
-    const NAME: &'static str = "certificates.inspect-leaf";
+    const NAME: &'static str = "certificate.inspect-leaf";
     const SUMMARY: &'static str =
         "Report whether a development leaf exists for the managed account and for Caddy.";
     const MUTATES: bool = false;
@@ -606,7 +606,7 @@ impl Command for InspectLeaf {
 pub struct RemoveLeaf;
 
 impl Command for RemoveLeaf {
-    const NAME: &'static str = "certificates.remove-leaf";
+    const NAME: &'static str = "certificate.remove-leaf";
     const SUMMARY: &'static str =
         "Remove a development leaf for the managed account and for Caddy.";
     const MUTATES: bool = true;

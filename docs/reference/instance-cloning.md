@@ -52,7 +52,7 @@ The result names the new Instance, its branch, its preview domain, and its selec
 
 The candidate is an active development Instance with its checkout, or an active production Instance with a selected release. A development candidate must have its recorded branch checked out, not another branch or a detached `HEAD`. Its source must have no staged, unstaged, untracked, or submodule change. Its current commit must be in the Project repository. The Gateway checks this on the candidate's Node using its recorded source identity.
 
-The [Node agent](/reference/node-agent#commands)'s `instances.inspect-clone-candidate` runs the inspection. Its Git runs as the Instance user: the managed user for a development candidate, and the production user for a production one. Rust walks the indexed submodules at every depth and checks that each is initialized, at its recorded commit, and clean, including untracked files. Submodule paths are read as NUL-delimited data, never shell source. 
+The [Node agent](/reference/node-agent#commands)'s `instance.inspect-clone-candidate` runs the inspection. Its Git runs as the Instance user: the managed user for a development candidate, and the production user for a production one. Rust walks the indexed submodules at every depth and checks that each is initialized, at its recorded commit, and clean, including untracked files. Submodule paths are read as NUL-delimited data, never shell source. 
 
 Every Git invocation passes `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false`. Only the repository fetch gets the credential environment. It fetches into a private scratch directory that the agent removes. `instance.clone_candidate_repository_unavailable` carries the fetch's stderr in `details.stderr`, at most 1,000 characters, with URL credentials and token-shaped words replaced by `[REDACTED]`.
 
@@ -62,9 +62,9 @@ A checkout's hooks and custom filesystem monitor do not run during that check. T
 
 The destination must be an active Linux Node with an active `app-prod` role. The Project can have one production Instance per Node. In an active Cluster, the Cluster needs an active Router.
 
-The [Node agent](/reference/node-agent#commands) prepares the destination: `instances.prepare-production-user` creates the system account `orbit-app-<project>` and its private home, `instances.prepare-production-source` clones the repository into `releases/initial` and records the root-owned source markers, `instances.resolve-production-source` checks out the branch and links `.env`, and `instances.grant-production-caddy-access` lets Caddy reach only the web root.
+The [Node agent](/reference/node-agent#commands) prepares the destination: `instance.prepare-production-user` creates the system account `orbit-app-<project>` and its private home, `instance.prepare-production-source` clones the repository into `releases/initial` and records the root-owned source markers, `instance.resolve-production-source` checks out the branch and links `.env`, and `instance.grant-production-caddy-access` lets Caddy reach only the web root.
 
-Source preparation creates `/var/lib/orbit/app-instance-sources` and its missing parents on a fresh Node; each Instance's marker directory is private to root. `instances.inspect-production-profile` reads the Composer metadata, and refuses any file in the checkout that the production user does not own. For a nested Laravel app, classification uses `composer.json` and `artisan` in the [application directory](/reference/projects#application-directory) derived from the effective web root; Git identity checks still use the complete repository. Foreign file ownership, unsafe source metadata, and failed directory scans still stop the clone.
+Source preparation creates `/var/lib/orbit/app-instance-sources` and its missing parents on a fresh Node; each Instance's marker directory is private to root. `instance.inspect-production-profile` reads the Composer metadata, and refuses any file in the checkout that the production user does not own. For a nested Laravel app, classification uses `composer.json` and `artisan` in the [application directory](/reference/projects#application-directory) derived from the effective web root; Git identity checks still use the complete repository. Foreign file ownership, unsafe source metadata, and failed directory scans still stop the clone.
 
 ## What the clone gets
 
@@ -100,10 +100,10 @@ A missing Node TLD returns `route.tld_required`. A domain that another Route own
 
 The [Node agent](/reference/node-agent#commands) does the work on each Node as root:
 
-- `instances.prepare-sqlite-seed` takes the snapshot as the candidate's user.
-- `instances.install-sqlite-seed` installs it as a new file, never over an existing database.
+- `instance.prepare-sqlite-seed` takes the snapshot as the candidate's user.
+- `instance.install-sqlite-seed` installs it as a new file, never over an existing database.
 
-The Gateway transfers the snapshot with `instances.read-sqlite-snapshot` and `instances.receive-sqlite-snapshot` through the agent runner. These account commands accept only managed snapshot paths and verify the SQLite header, exact size, and SHA-256. Binary framing bounds each snapshot to 1 TiB. Upload preserves the prepared file's inode, so the target's ownership receipt remains valid. No general file upload or `scp` path handles database contents.
+The Gateway transfers the snapshot with `instance.read-sqlite-snapshot` and `instance.receive-sqlite-snapshot` through the agent runner. These account commands accept only managed snapshot paths and verify the SQLite header, exact size, and SHA-256. Binary framing bounds each snapshot to 1 TiB. Upload preserves the prepared file's inode, so the target's ownership receipt remains valid. No general file upload or `scp` path handles database contents.
 
 Each records its progress under `/var/lib/orbit/app-instance-sqlite-seeds`, so a retry resumes or cleans up what an earlier run left.
 

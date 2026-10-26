@@ -19,7 +19,7 @@ use App\Infrastructure\AgentCommands\AgentStep;
 use App\Models\Instance;
 
 /**
- * A production Instance's home before and around its releases, through the Node agent's `instances.*` commands
+ * A production Instance's home before and around its releases, through the Node agent's `instance.*` commands
  * (docs/reference/node-agent.md): the system account, the initial clone, its branch and Composer profile, Caddy's
  * access, the check of `current`, and removal.
  */
@@ -36,14 +36,14 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
         $instance->loadMissing('node');
         [$user, $home] = $this->identity($instance);
 
-        $this->run($instance, 'instances.prepare-production-user', ['user' => $user, 'home' => $home], 'production-user', 'app-prod.user_conflict');
+        $this->run($instance, 'instance.prepare-production-user', ['user' => $user, 'home' => $home], 'production-user', 'app-prod.user_conflict');
     }
 
     public function prepareSource(Instance $instance, bool $allowExisting): void
     {
         $instance->loadMissing(['project', 'node']);
 
-        $this->run($instance, 'instances.prepare-production-source', [
+        $this->run($instance, 'instance.prepare-production-source', [
             ...$this->home($instance),
             'allow_existing' => $allowExisting,
             'git_read' => $this->gitRead($instance),
@@ -59,7 +59,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
             throw $this->failure('production-source-resolve', 'instance.branch_resolution_failed');
         }
 
-        $result = $this->run($instance, 'instances.resolve-production-source', [
+        $result = $this->run($instance, 'instance.resolve-production-source', [
             ...$this->releaseHome($instance),
             'branch' => $branch,
             'clone_target' => $instance->clone_candidate_id !== null,
@@ -84,7 +84,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
             throw $this->failure('production-source-classification', 'app-prod.source_metadata_unsafe');
         }
 
-        $result = $this->run($instance, 'instances.inspect-production-profile', [
+        $result = $this->run($instance, 'instance.inspect-production-profile', [
             'user' => $user,
             'relative_root' => $root,
             'checkout' => $checkout,
@@ -105,7 +105,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
             throw $this->failure('production-caddy-access', 'app-prod.source_metadata_unsafe');
         }
 
-        $this->run($instance, 'instances.grant-production-caddy-access', [
+        $this->run($instance, 'instance.grant-production-caddy-access', [
             'user' => $user,
             'home' => $home,
             'relative_root' => $root,
@@ -117,7 +117,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
     {
         if ($instance->usesProductionReleaseLayout()) {
             $instance->loadMissing(['project', 'node']);
-            $this->run($instance, 'instances.validate-release-layout', $this->releaseHome($instance), 'production-release-layout', 'app-prod.source_metadata_unsafe');
+            $this->run($instance, 'instance.validate-release-layout', $this->releaseHome($instance), 'production-release-layout', 'app-prod.source_metadata_unsafe');
         }
     }
 
@@ -125,7 +125,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
     {
         if ($instance->usesProductionReleaseLayout()) {
             $instance->loadMissing(['project', 'node']);
-            $this->run($instance, 'instances.clear-current-release', $this->releaseHome($instance), 'production-release-layout', 'app-prod.source_metadata_unsafe');
+            $this->run($instance, 'instance.clear-current-release', $this->releaseHome($instance), 'production-release-layout', 'app-prod.source_metadata_unsafe');
         }
     }
 
@@ -137,7 +137,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
             throw $this->failure('production-source-cleanup', 'app-prod.identity_missing');
         }
 
-        $this->run($instance, 'instances.remove-production-home', $this->home($instance), 'production-source-cleanup', 'app-prod.source_cleanup_failed');
+        $this->run($instance, 'instance.remove-production-home', $this->home($instance), 'production-source-cleanup', 'app-prod.source_cleanup_failed');
     }
 
     /**

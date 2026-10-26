@@ -15,7 +15,7 @@ use App\Models\Route;
 
 /**
  * The web roots that a production Instance's Routes serve, in its selected release, through the Node agent's
- * `instances.prepare-served-web-roots` and `instances.check-served-web-roots` (docs/reference/deployments.md).
+ * `instance.prepare-served-web-roots` and `instance.check-served-web-roots` (docs/reference/deployments.md).
  */
 final readonly class RemoteProductionWebRootManager implements ProductionWebRootManager
 {
@@ -30,7 +30,7 @@ final readonly class RemoteProductionWebRootManager implements ProductionWebRoot
             return;
         }
 
-        $this->run($instance, 'instances.prepare-served-web-roots', $applications, 'app-prod-web-roots');
+        $this->run($instance, 'instance.prepare-served-web-roots', $applications, 'app-prod-web-roots');
     }
 
     public function assertServable(Instance $instance, string $webRoot): void
@@ -38,9 +38,9 @@ final readonly class RemoteProductionWebRootManager implements ProductionWebRoot
         $instance->loadMissing(['project', 'node']);
 
         try {
-            $this->run($instance, 'instances.check-served-web-roots', [['web_root' => $webRoot, 'directory' => RouteWebRoot::relativeDirectory($webRoot)]], 'app-prod-web-root-check');
+            $this->run($instance, 'instance.check-served-web-roots', [['web_root' => $webRoot, 'directory' => RouteWebRoot::relativeDirectory($webRoot)]], 'app-prod-web-root-check');
         } catch (RuntimeConvergenceException $exception) {
-            if (AgentStep::refusal($exception)?->errorCode !== 'instances.release_invalid') {
+            if (AgentStep::refusal($exception)?->errorCode !== 'instance.release_invalid') {
                 throw $exception;
             }
 
@@ -75,7 +75,7 @@ final readonly class RemoteProductionWebRootManager implements ProductionWebRoot
                 'served' => array_map(static fn (array $application): array => ['web_root' => $application['web_root'], 'directory' => $application['directory']], $served),
             ], $step, 'app-prod.web_root_invalid', 'App production');
         } catch (RuntimeConvergenceException $exception) {
-            if (AgentStep::refusal($exception)?->errorCode === 'instances.release_missing') {
+            if (AgentStep::refusal($exception)?->errorCode === 'instance.release_missing') {
                 throw new ResourceOperationException(
                     errorCode: 'route.web_root_release_missing',
                     message: 'Deploy the production Instance before a Route with a web root serves it.',

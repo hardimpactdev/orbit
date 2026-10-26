@@ -70,7 +70,7 @@ Authorized reads return the commands. [Activity](/cli/activity) records no input
 
 ## Checkout access
 
-The Gateway prepares a development checkout as the Node's managed user. The checkout and the files in it stay owned by that user and group. Every Gateway Git command on the checkout runs as the managed user. The [agent commands](/reference/node-agent#commands) `instances.prepare-development-source`, `instances.inspect-development-source`, and `instances.resolve-development-source` run these steps, and each one first checks that every parent of the checkout is a real directory under the apps root. Production releases are unchanged.
+The Gateway prepares a development checkout as the Node's managed user. The checkout and the files in it stay owned by that user and group. Every Gateway Git command on the checkout runs as the managed user. The [agent commands](/reference/node-agent#commands) `instance.prepare-development-source`, `instance.inspect-development-source`, and `instance.resolve-development-source` run these steps, and each one first checks that every parent of the checkout is a real directory under the apps root. Production releases are unchanged.
 
 Every Gateway Git call sets `core.hooksPath=/dev/null` and `core.fsmonitor=false`, so a hook path or a filesystem monitor in `.git/config` never runs. A linked worktree is added without a checkout; the branch checkout at resolve writes its files. Caddy can read only the web root and the public storage target; [Caddy access](/reference/routes#caddy-access) describes the walk.
 
@@ -117,7 +117,7 @@ That root is the checkout. A `default` Instance deploys in its checkout too, so 
 
 Setup and teardown export `VP_HOME` to the Node's [resolved Vite+ store](/reference/tools#tool-managers). Project-local `vp` processes inherit that value even in these non-login shells, rather than using the default `~/.vite-plus`.
 
-The agent's `instances.run-lifecycle-step` runs each step. Commands read no input. Orbit retains only a bounded 1 KiB stderr tail internally; public errors do not include command output. When a step ends, for any reason, Orbit kills its process group, so background processes do not survive the step. Each run holds a lifecycle lock on the Instance: an exclusive `flock` on its checkout directory, so the lock leaves no file behind. If another operation holds that lock during `instance:create`, Orbit keeps the active Instance and records `error_code: instance.lifecycle_busy`.
+The agent's `instance.run-lifecycle-step` runs each step. Commands read no input. Orbit retains only a bounded 1 KiB stderr tail internally; public errors do not include command output. When a step ends, for any reason, Orbit kills its process group, so background processes do not survive the step. Each run holds a lifecycle lock on the Instance: an exclusive `flock` on its checkout directory, so the lock leaves no file behind. If another operation holds that lock during `instance:create`, Orbit keeps the active Instance and records `error_code: instance.lifecycle_busy`.
 
 An identical create retry then reports that setup must run; use `instance:setup` to retry the list. A busy lock never removes the Instance.
 

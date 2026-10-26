@@ -9,21 +9,21 @@ use std::{collections::BTreeMap, path::Path, time::Duration};
 
 crate::command_errors! {
     pub enum Error {
-        Invalid {} => "tools.homebrew_input_invalid", "The Homebrew command input is invalid.";
-        Absent {} => "tools.homebrew_scope_absent", "The Homebrew prefix is absent for the enrolled account.";
-        Conflict {} => "tools.homebrew_scope_conflict", "The Homebrew prefix ownership or origin conflicts with the enrolled account.";
-        Unreadable {} => "tools.homebrew_scope_unreadable", "The Homebrew prefix cannot be inspected.";
-        Failed {} => "tools.homebrew_operation_failed", "The Homebrew operation failed.";
-        Output {} => "tools.homebrew_output_invalid", "Homebrew returned invalid or incomplete output.";
-        Version {} => "tools.homebrew_version_unsupported", "The Homebrew manager has an unsupported version.";
-        Bottle {} => "tools.homebrew_bottle_unavailable", "The Node has no supported Homebrew bottle tag.";
-        Protected {} => "tools.homebrew_package_protected", "The Homebrew package is a protected Node prerequisite.";
-        Candidate {} => "tools.homebrew_candidate_invalid", "The Homebrew formula did not provide a compatible verified bottle.";
-        CaskSource {} => "tools.homebrew_cask_source", "The Homebrew cask is not an official Homebrew cask.";
-        CaskArtifact {} => "tools.homebrew_cask_artifact", "The Homebrew cask artifact is not supported.";
-        CaskAuthorization {} => "tools.homebrew_cask_authorization", "The Homebrew cask requires interactive or administrator authorization.";
-        CaskChecksum {} => "tools.homebrew_cask_checksum", "The Homebrew cask checksum policy was not satisfied.";
-        CaskVersion {} => "tools.homebrew_cask_version", "The Homebrew cask version cannot be read.";
+        Invalid {} => "tool.homebrew_input_invalid", "The Homebrew command input is invalid.";
+        Absent {} => "tool.homebrew_scope_absent", "The Homebrew prefix is absent for the enrolled account.";
+        Conflict {} => "tool.homebrew_scope_conflict", "The Homebrew prefix ownership or origin conflicts with the enrolled account.";
+        Unreadable {} => "tool.homebrew_scope_unreadable", "The Homebrew prefix cannot be inspected.";
+        Failed {} => "tool.homebrew_operation_failed", "The Homebrew operation failed.";
+        Output {} => "tool.homebrew_output_invalid", "Homebrew returned invalid or incomplete output.";
+        Version {} => "tool.homebrew_version_unsupported", "The Homebrew manager has an unsupported version.";
+        Bottle {} => "tool.homebrew_bottle_unavailable", "The Node has no supported Homebrew bottle tag.";
+        Protected {} => "tool.homebrew_package_protected", "The Homebrew package is a protected Node prerequisite.";
+        Candidate {} => "tool.homebrew_candidate_invalid", "The Homebrew formula did not provide a compatible verified bottle.";
+        CaskSource {} => "tool.homebrew_cask_source", "The Homebrew cask is not an official Homebrew cask.";
+        CaskArtifact {} => "tool.homebrew_cask_artifact", "The Homebrew cask artifact is not supported.";
+        CaskAuthorization {} => "tool.homebrew_cask_authorization", "The Homebrew cask requires interactive or administrator authorization.";
+        CaskChecksum {} => "tool.homebrew_cask_checksum", "The Homebrew cask checksum policy was not satisfied.";
+        CaskVersion {} => "tool.homebrew_cask_version", "The Homebrew cask version cannot be read.";
     }
 }
 type Result<T> = std::result::Result<T, Error>;
@@ -280,14 +280,14 @@ macro_rules! scope_read {
 }
 scope_read!(
     Version,
-    "tools.homebrew-version",
+    "tool.homebrew-version",
     "Read the verified Homebrew manager version.",
     VersionOutput,
     version
 );
 scope_read!(
     FormulaInventory,
-    "tools.homebrew-formula-inventory",
+    "tool.homebrew-formula-inventory",
     "Read installed formula versions without loading formula definitions.",
     InventoryOutput,
     |host: &mut recipe::Native<'_>, scope: &homebrew_scope::Output, _: Platform| formula_inventory(

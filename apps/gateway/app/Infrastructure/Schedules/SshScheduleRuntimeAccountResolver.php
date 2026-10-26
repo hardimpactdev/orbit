@@ -28,7 +28,7 @@ final readonly class SshScheduleRuntimeAccountResolver implements ScheduleRuntim
         }
 
         try {
-            $account = $this->agents->run($node, 'accounts.lookup', ['user' => $user]);
+            $account = $this->agents->run($node, 'account.lookup', ['user' => $user]);
         } catch (AgentCommandRefused) {
             $this->unavailable();
         } catch (Throwable) {

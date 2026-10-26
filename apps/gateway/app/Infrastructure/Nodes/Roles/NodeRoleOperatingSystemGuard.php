@@ -13,7 +13,7 @@ use App\Infrastructure\AgentCommands\AgentStep;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
 
-/** Refuses a role on an operating system the role does not support, from the agent's `nodes.os-release`. */
+/** Refuses a role on an operating system the role does not support, from the agent's `node.os-release`. */
 final readonly class NodeRoleOperatingSystemGuard
 {
     public function __construct(
@@ -34,7 +34,7 @@ final readonly class NodeRoleOperatingSystemGuard
         }
 
         try {
-            $release = $this->agents->run($node, 'nodes.os-release');
+            $release = $this->agents->run($node, 'node.os-release');
         } catch (AgentCommandRefused $refused) {
             throw $this->unsupported($node, $role, UbuntuRelease::unsupportedText(), AgentStep::output($refused));
         }

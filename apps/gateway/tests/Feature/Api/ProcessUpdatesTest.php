@@ -171,7 +171,7 @@ it('keeps every omitted field when only ports change', function (string $transpo
 ]);
 
 it('keeps the systemd user and working directory when only restart policy changes', function (): void {
-    $agents = new FakeAgentCommandRunner()->answer('accounts.lookup', ['user' => 'svc-worker', 'uid' => 1001, 'group' => 'svc-worker', 'home' => '/home/worker', 'shell' => '/bin/sh']);
+    $agents = new FakeAgentCommandRunner()->answer('account.lookup', ['user' => 'svc-worker', 'uid' => 1001, 'group' => 'svc-worker', 'home' => '/home/worker', 'shell' => '/bin/sh']);
     app()->instance(AgentCommandRunner::class, $agents);
     $process = Process::query()->create([
         'owner_type' => Node::class, 'owner_id' => $this->node->id, 'name' => 'worker',

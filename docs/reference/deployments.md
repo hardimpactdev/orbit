@@ -46,7 +46,7 @@ A new release without such a directory fails at source preparation. Like any oth
 
 Production Instances keep shared directories in the Instance home. Before any `before_activation` step, Orbit links each declared path from the new release to `<home>/<path>`. A first deployment creates the persistent directory. If it is empty, Orbit seeds it from the directory in the new release. Later deployments keep its contents and discard the release copy. These operations run as the Instance user. Deploy steps must preserve these links.
 
-The [agent commands](/reference/node-agent#commands) `instances.prepare-release`, `instances.activate-release`, `instances.inspect-release`, `instances.list-releases`, and `instances.prune-releases` do this work. Each starts as root and first checks the layout marker, which root owns. It runs Git and every file change in the home as the Instance user.
+The [agent commands](/reference/node-agent#commands) `instance.prepare-release`, `instance.activate-release`, `instance.inspect-release`, `instance.list-releases`, and `instance.prune-releases` do this work. Each starts as root and first checks the layout marker, which root owns. It runs Git and every file change in the home as the Instance user.
 
 Laravel app Projects default to `storage`, relative to the application directory. For root `apps/site/public`, the default is `apps/site/storage`, linked to `<home>/apps/site/storage`. Other Project types default to no shared paths.
 
@@ -119,7 +119,7 @@ Each step has `name`, `command`, `timeout_seconds`, and `required`. Names use lo
 
 A new step appends unless `before` or `after` names another step in this Project's development deploy list. The fields are exclusive. Updates without placement keep their position. Names cannot be renamed. Each list permits at most 32 steps and 3,600 seconds of total timeout. Unknown names, duplicate names, invalid fields, unknown placement, self-placement, and limit violations are refused without changing the list. Node access follows the Project's owning Node. Activity records never include commands.
 
-The Node agent fetches the branch with `instances.resolve-development-target`, checks the commit out in place with `instances.checkout-development-default`, and runs each step with `instances.run-development-step`, all as the managed account. Checkout refuses tracked changes, which the deploy output lists, and a local branch with commits that the target lacks. A setup or teardown step that runs in the checkout makes each of them refuse with `instance.lifecycle_busy`.
+The Node agent fetches the branch with `instance.resolve-development-target`, checks the commit out in place with `instance.checkout-development-default`, and runs each step with `instance.run-development-step`, all as the managed account. Checkout refuses tracked changes, which the deploy output lists, and a local branch with commits that the target lacks. A setup or teardown step that runs in the checkout makes each of them refuse with `instance.lifecycle_busy`.
 
 Required steps must pass before Orbit records the commit as deployed. A failed best-effort step (`required: false`) is reported but does not fail the deployment, and the files it wrote stay. Use required steps for installs, builds, and migrations, and best-effort steps for cache warm-up.
 
@@ -134,7 +134,7 @@ Production steps belong to an Instance and run before or after activation.
 | `command` | Non-empty UTF-8 of at most 16 KiB, without a NUL byte. |
 | `timeout_seconds` | 1 through 900. The default is 300. |
 
-A production step runs as the Instance owner at the release's repository root, through the Node agent's `instances.run-deploy-step`. Its output is redacted and streams live on the operation's channel, as [Live output](/reference/node-agent#live-output) describes.
+A production step runs as the Instance owner at the release's repository root, through the Node agent's `instance.run-deploy-step`. Its output is redacted and streams live on the operation's channel, as [Live output](/reference/node-agent#live-output) describes.
 
 A new step goes to the end of its phase. `before` or `after` places it next to another step of the same phase. The two fields are exclusive. An Instance has at most 32 steps, and their timeouts add up to at most 3,600 seconds. The Gateway refuses a change that breaks a rule and stores nothing.
 

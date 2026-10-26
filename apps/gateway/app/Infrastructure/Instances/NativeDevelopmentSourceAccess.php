@@ -17,7 +17,7 @@ use Illuminate\Support\Collection;
 
 /**
  * Lets Caddy read a development Instance's Web roots and nothing else of its checkout, through the Node agent's
- * `instances.grant-development-caddy-access` (docs/reference/caddy.md).
+ * `instance.grant-development-caddy-access` (docs/reference/caddy.md).
  */
 final readonly class NativeDevelopmentSourceAccess implements DevelopmentSourceAccess
 {
@@ -35,7 +35,7 @@ final readonly class NativeDevelopmentSourceAccess implements DevelopmentSourceA
             return;
         }
 
-        AgentStep::run($this->agents, $instance->node, 'instances.grant-development-caddy-access', [
+        AgentStep::run($this->agents, $instance->node, 'instance.grant-development-caddy-access', [
             'user' => $this->accounts->resolve($instance->node)->user,
             'sites' => $sites->map(static fn (DevelopmentSite $site): array => [
                 'checkout' => StoragePath::parse($site->checkoutPath)->value,

@@ -1,4 +1,4 @@
-//! `instances.*-development-*` for a Laravel application in a development checkout: its Composer metadata, and its
+//! `instance.*-development-*` for a Laravel application in a development checkout: its Composer metadata, and its
 //! `APP_URL` in `.env` and in a cached configuration. These run as the managed account, which owns the checkout, and
 //! replace the Bash and Python of `RemoteDevelopmentInstanceConfigurator`, rule for rule. The `.env` line rules are
 //! shared with the production writer.
@@ -82,7 +82,7 @@ pub fn profile(input: &ProfileInput) -> Result<Profile, ReleaseError> {
 pub struct InspectProfile;
 
 impl Command for InspectProfile {
-    const NAME: &'static str = "instances.inspect-development-profile";
+    const NAME: &'static str = "instance.inspect-development-profile";
     const SUMMARY: &'static str =
         "Read a development checkout's Composer metadata, refusing a link or another owner.";
     const MUTATES: bool = false;
@@ -339,7 +339,7 @@ pub fn write_url(input: &UrlInput) -> Result<Written, ReleaseError> {
 pub struct WriteUrl;
 
 impl Command for WriteUrl {
-    const NAME: &'static str = "instances.write-development-url";
+    const NAME: &'static str = "instance.write-development-url";
     const SUMMARY: &'static str =
         "Write APP_URL into a development application's .env and cached configuration.";
     const MUTATES: bool = true;
@@ -348,7 +348,7 @@ impl Command for WriteUrl {
     type Output = Written;
     type Error = ReleaseError;
 
-    /// Root holds the same `environment:` lock as `instances.write-environment`; the write itself runs as the owner.
+    /// Root holds the same `environment:` lock as `instance.write-environment`; the write itself runs as the owner.
     fn privilege(platform: Platform) -> Option<Privilege> {
         super::linux_only(platform, Privilege::Owner)
     }

@@ -47,7 +47,7 @@ final class LocalTaskGitAgent implements WorkspaceAgentCommandRunner
     private function respond(Node $node, Closure $execute, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
     {
         $this->calls[] = ['command' => $command, 'input' => $input];
-        if ($command === 'task-vms.import-git-pack') {
+        if ($command === 'task-vm.import-git-pack') {
             if ($this->beforeImport !== null) {
                 ($this->beforeImport)($input);
             }
@@ -69,7 +69,7 @@ final class LocalTaskGitAgent implements WorkspaceAgentCommandRunner
 
             return ['imported' => true];
         }
-        if ($command === 'task-vms.export-git-pack') {
+        if ($command === 'task-vm.export-git-pack') {
             if ($output === null) {
                 throw new LogicException('Export requires a binary sink.');
             }
@@ -93,7 +93,7 @@ final class LocalTaskGitAgent implements WorkspaceAgentCommandRunner
 
             return ['bytes' => $this->reportedBytes ?? strlen($pack)];
         }
-        if ($command !== 'task-vms.read-git-refs') {
+        if ($command !== 'task-vm.read-git-refs') {
             throw new LogicException('Unexpected workspace command: '.$command);
         }
         if ($this->refs !== null) {

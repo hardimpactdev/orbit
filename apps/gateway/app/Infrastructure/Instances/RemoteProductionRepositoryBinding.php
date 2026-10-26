@@ -22,7 +22,7 @@ final readonly class RemoteProductionRepositoryBinding implements ProductionRepo
     public function inspect(Instance $instance): ProductionRepositoryRecord
     {
         [$user, $home] = $this->identity($instance);
-        $result = $this->run($instance, 'instances.inspect-repository-binding', ['user' => $user, 'home' => $home, 'instance' => $instance->id]);
+        $result = $this->run($instance, 'instance.inspect-repository-binding', ['user' => $user, 'home' => $home, 'instance' => $instance->id]);
         $markers = is_array($result['markers'] ?? null) ? $result['markers'] : throw $this->failure();
         $listed = is_array($result['releases'] ?? null) ? $result['releases'] : throw $this->failure();
         $layout = isset($markers['release-layout']) ? $this->markerRepository($markers['release-layout'], [$user, $home, 'initial']) : null;
@@ -70,7 +70,7 @@ final readonly class RemoteProductionRepositoryBinding implements ProductionRepo
             return;
         }
 
-        $this->run($instance, 'instances.rebind-repository', ['user' => $user, 'home' => $home, 'instance' => $instance->id, 'changes' => $changes]);
+        $this->run($instance, 'instance.rebind-repository', ['user' => $user, 'home' => $home, 'instance' => $instance->id, 'changes' => $changes]);
     }
 
     /** @return array{string, string} */

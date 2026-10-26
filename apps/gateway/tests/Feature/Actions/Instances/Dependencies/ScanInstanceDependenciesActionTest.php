@@ -56,8 +56,8 @@ function dependency_scan_receipt(string $manager = 'npm'): array
 function dependency_scan_remote(Closure $response): void
 {
     app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner()
-        ->answer('instances.read-dependency-files', fn (): array => $response())
-        ->answer('instances.read-release-dependency-files', fn (): array => $response()));
+        ->answer('instance.read-dependency-files', fn (): array => $response())
+        ->answer('instance.read-release-dependency-files', fn (): array => $response()));
 }
 
 /** @return array<string, mixed> */
@@ -488,7 +488,7 @@ describe('coordinated instance dependency scans', function (): void {
         $instance->project->update(['type' => 'monorepo', 'root' => 'apps/gateway/public']);
         $instance->update(['source_is_laravel' => true]);
         $receipt = dependency_scan_project_receipt(['apps/gateway' => 'composer', 'apps/sibling' => 'composer', 'packages/widget' => 'npm']);
-        $agents = new FakeAgentCommandRunner()->answer('instances.read-dependency-files', $receipt);
+        $agents = new FakeAgentCommandRunner()->answer('instance.read-dependency-files', $receipt);
         app()->instance(AgentCommandRunner::class, $agents);
 
         $result = app(ScanInstanceDependenciesAction::class)->execute($instance);
@@ -528,7 +528,7 @@ describe('coordinated instance dependency scans', function (): void {
     it('selects discovery only for monorepos and accepts a single source result', function (string $type): void {
         $instance = dependency_scan_instance();
         $instance->project->update(['type' => $type]);
-        $agents = new FakeAgentCommandRunner()->answer('instances.read-dependency-files', dependency_scan_source_receipt('', 'composer'));
+        $agents = new FakeAgentCommandRunner()->answer('instance.read-dependency-files', dependency_scan_source_receipt('', 'composer'));
         app()->instance(AgentCommandRunner::class, $agents);
 
         $result = app(ScanInstanceDependenciesAction::class)->execute($instance);

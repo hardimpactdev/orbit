@@ -21,21 +21,21 @@ describe('registration source facts', function (): void {
     it('sends the managed account and maps agent rows to repository facts', function (): void {
         [$manager, $agents, $instance] = registrationFixture();
         $row = registrationRow();
-        $agents->answer('instances.inspect-registration-source', ['rows' => [$row]]);
+        $agents->answer('instance.inspect-registration-source', ['rows' => [$row]]);
 
         $facts = $manager->inspect($instance->node, '/incoming/site', true);
 
         expect($facts)->toEqual([registrationFacts()]);
         expect($agents->calls)->toBe([[
             'node' => $instance->node->name,
-            'command' => 'instances.inspect-registration-source',
+            'command' => 'instance.inspect-registration-source',
             'input' => ['path' => '/incoming/site', 'include_worktrees' => true, 'user' => 'orbit', 'group' => 'orbit'],
         ]]);
     });
 
     it('refuses invalid or mixed repository evidence from inspection', function (array $rows): void {
         [$manager, $agents, $instance] = registrationFixture();
-        $agents->answerMalformed('instances.inspect-registration-source', ['rows' => $rows]);
+        $agents->answerMalformed('instance.inspect-registration-source', ['rows' => $rows]);
 
         expect(fn () => $manager->inspect($instance->node, '/incoming/site', false))
             ->toThrow(function (ResourceOperationException $exception): void {
@@ -65,7 +65,7 @@ describe('registration source facts', function (): void {
 
     it('maps inspection refusals to the registration source error', function (): void {
         [$manager, $agents, $instance] = registrationFixture();
-        $agents->refuse('instances.inspect-registration-source', 'instances.registration_invalid');
+        $agents->refuse('instance.inspect-registration-source', 'instance.registration_invalid');
 
         expect(fn () => $manager->inspect($instance->node, '/incoming/site', false))
             ->toThrow(function (RuntimeConvergenceException $exception): void {
@@ -77,7 +77,7 @@ describe('registration source facts', function (): void {
 describe('retained registration evidence', function (): void {
     it('permits normal edits after the destination becomes authoritative', function (): void {
         [$manager, $agents, $instance] = registrationFixture();
-        $agents->answer('instances.inspect-registration-source', ['rows' => [registrationRow([
+        $agents->answer('instance.inspect-registration-source', ['rows' => [registrationRow([
             'path' => $instance->checkout_path,
             'branch' => 'work', 'commit' => str_repeat('b', 40), 'source_digest' => str_repeat('c', 64),
         ])]]);
@@ -89,12 +89,12 @@ describe('retained registration evidence', function (): void {
         $manager->validateRetained($instance->node, registrationFacts(), $instance->checkout_path);
         $manager->relocate($instance, registrationFacts());
 
-        expect($agents->commands())->toBe(['instances.inspect-registration-source']);
+        expect($agents->commands())->toBe(['instance.inspect-registration-source']);
     });
 
     it('refuses changed retained path layout or repository identity', function (array $change): void {
         [$manager, $agents, $instance] = registrationFixture();
-        $agents->answer('instances.inspect-registration-source', ['rows' => [registrationRow($change)]]);
+        $agents->answer('instance.inspect-registration-source', ['rows' => [registrationRow($change)]]);
 
         expect(fn () => $manager->validateRetained($instance->node, registrationFacts(), '/incoming/site'))
             ->toThrow(function (ResourceOperationException $exception): void {
@@ -108,7 +108,7 @@ describe('retained registration evidence', function (): void {
 
     it('requires the preserved branch commit and digest during relocation recovery', function (array $change): void {
         [$manager, $agents, $instance] = registrationFixture();
-        $agents->answer('instances.inspect-registration-source', ['rows' => [registrationRow($change)]]);
+        $agents->answer('instance.inspect-registration-source', ['rows' => [registrationRow($change)]]);
 
         expect(fn () => $manager->validateRelocationRecovery($instance->node, registrationFacts(), '/incoming/site'))
             ->toThrow(function (ResourceOperationException $exception): void {
@@ -123,9 +123,9 @@ describe('retained registration evidence', function (): void {
 
     it('accepts unchanged recovery evidence and maps failed inspection to a conflict', function (): void {
         [$manager, $agents, $instance] = registrationFixture();
-        $agents->answer('instances.inspect-registration-source', ['rows' => [registrationRow()]]);
+        $agents->answer('instance.inspect-registration-source', ['rows' => [registrationRow()]]);
         $manager->validateRelocationRecovery($instance->node, registrationFacts(), '/incoming/site');
-        $agents->refuse('instances.inspect-registration-source', 'instances.git_failed');
+        $agents->refuse('instance.inspect-registration-source', 'instance.git_failed');
 
         foreach (['validateRetained', 'validateRelocationRecovery'] as $method) {
             expect(fn () => $manager->$method($instance->node, registrationFacts(), '/incoming/site'))
@@ -142,7 +142,7 @@ describe('registration relocation checkpoints', function (): void {
         $instance->update(['name' => 'main', 'checkout_path' => '/incoming/site']);
         $instance->name = 'default';
         $instance->checkout_path = '/srv/orbit/apps/site/default';
-        $agents->answer('instances.relocate-registration-source', function (array $input) use ($instance): array {
+        $agents->answer('instance.relocate-registration-source', function (array $input) use ($instance): array {
             $stored = $instance->fresh();
             expect($stored->name)->toBe('main')->and($stored->checkout_path)->toBe('/incoming/site');
             if ($input['operation'] === 'prepare') {
@@ -183,10 +183,10 @@ describe('registration relocation checkpoints', function (): void {
     it('repeats only the unfinished phase after a lost response', function (string $lost, string $state, array $operations): void {
         [$manager, $agents, $instance] = registrationFixture();
         $interrupted = false;
-        $agents->answer('instances.relocate-registration-source', function (array $input) use ($instance, $lost, &$interrupted): array {
+        $agents->answer('instance.relocate-registration-source', function (array $input) use ($instance, $lost, &$interrupted): array {
             if (! $interrupted && $input['operation'] === $lost) {
                 $interrupted = true;
-                throw new AgentRunnerFailure('instances.relocate-registration-source', AgentRunnerFailure::MissingResult, 'Connection lost.');
+                throw new AgentRunnerFailure('instance.relocate-registration-source', AgentRunnerFailure::MissingResult, 'Connection lost.');
             }
 
             return ['identities' => [['id' => $instance->id, 'source_device' => 12, 'source_inode' => 34]]];
@@ -210,7 +210,7 @@ describe('registration relocation checkpoints', function (): void {
             'registration_authoritative_path' => $instance->checkout_path,
             'registration_source_device' => 12, 'registration_source_inode' => 34,
         ]);
-        $agents->refuse('instances.relocate-registration-source', 'instances.registration_invalid');
+        $agents->refuse('instance.relocate-registration-source', 'instance.registration_invalid');
 
         expect(fn () => $manager->relocate($instance, registrationFacts()))
             ->toThrow(function (RuntimeConvergenceException $exception): void {
@@ -224,7 +224,7 @@ describe('registration relocation checkpoints', function (): void {
 
     it('refuses incomplete preparation identities before asking for cleanup', function (array $identities): void {
         [$manager, $agents, $instance] = registrationFixture();
-        $agents->answerMalformed('instances.relocate-registration-source', ['identities' => $identities]);
+        $agents->answerMalformed('instance.relocate-registration-source', ['identities' => $identities]);
 
         expect(fn () => $manager->relocate($instance, registrationFacts()))
             ->toThrow(function (ResourceOperationException $exception): void {
@@ -254,14 +254,14 @@ describe('registration relocation checkpoints', function (): void {
             worktreePaths: ['/incoming/site', '/incoming/other'], sourceDigest: str_repeat('c', 64),
         );
         $interrupted = false;
-        $agents->answer('instances.relocate-registration-source', function (array $input) use ($first, $second, &$interrupted): array {
+        $agents->answer('instance.relocate-registration-source', function (array $input) use ($first, $second, &$interrupted): array {
             expect(array_column($input['members'], 'id'))->toBe([$first->id, $second->id]);
             $state = $input['operation'] === 'prepare' ? 'relocating' : 'original_cleanup';
             expect($first->fresh()->registration_relocation_state)->toBe($state)
                 ->and($second->fresh()->registration_relocation_state)->toBe($state);
             if (! $interrupted) {
                 $interrupted = true;
-                throw new AgentRunnerFailure('instances.relocate-registration-source', AgentRunnerFailure::MissingResult, 'Connection lost after one source moved.');
+                throw new AgentRunnerFailure('instance.relocate-registration-source', AgentRunnerFailure::MissingResult, 'Connection lost after one source moved.');
             }
             if ($input['operation'] === 'cleanup') {
                 expect(array_column($input['members'], 'source_inode'))->toBe([34, 56]);
@@ -321,15 +321,15 @@ describe('in-place registration', function (): void {
         [$manager, $agents, $instance] = registrationFixture();
         $instance->update(['checkout_path' => '/incoming/site']);
         $interrupted = false;
-        $agents->answer('instances.inspect-registration-source', ['rows' => [registrationRow([
+        $agents->answer('instance.inspect-registration-source', ['rows' => [registrationRow([
             'source_digest' => str_repeat('c', 64),
         ])]]);
-        $agents->answer('instances.relocate-registration-source', function (array $input) use ($instance, $lost, &$interrupted): array {
+        $agents->answer('instance.relocate-registration-source', function (array $input) use ($instance, $lost, &$interrupted): array {
             expect($instance->fresh()->registration_relocation_state)
                 ->toBe($input['operation'] === 'adopt' ? 'relocating' : 'destination_verified');
             if (! $interrupted && $input['operation'] === $lost) {
                 $interrupted = true;
-                throw new AgentRunnerFailure('instances.relocate-registration-source', AgentRunnerFailure::MissingResult, 'Connection lost.');
+                throw new AgentRunnerFailure('instance.relocate-registration-source', AgentRunnerFailure::MissingResult, 'Connection lost.');
             }
 
             return ['identities' => []];
@@ -341,7 +341,7 @@ describe('in-place registration', function (): void {
 
         $manager->relocate($instance, registrationFacts());
 
-        $mutations = array_filter($agents->calls, static fn (array $call): bool => $call['command'] === 'instances.relocate-registration-source');
+        $mutations = array_filter($agents->calls, static fn (array $call): bool => $call['command'] === 'instance.relocate-registration-source');
         expect(array_column(array_column($mutations, 'input'), 'operation'))->toBe($operations);
         expect($instance->refresh()->registration_relocation_state)->toBe('relocated')
             ->and($instance->registration_source_device)->toBeNull()
@@ -357,7 +357,7 @@ describe('Laravel rollback receipts', function (): void {
     it('addresses the application directory for each receipt step', function (string $root, string $application): void {
         [$manager, $agents, $instance] = registrationFixture();
         $instance->root = $root;
-        $agents->answer('instances.laravel-registration-receipt', []);
+        $agents->answer('instance.laravel-registration-receipt', []);
 
         $manager->prepareLaravelRollback($instance);
         $manager->restoreLaravelConfiguration($instance);
@@ -376,7 +376,7 @@ describe('Laravel rollback receipts', function (): void {
 
     it('maps a refused rollback receipt to the Laravel error', function (): void {
         [$manager, $agents, $instance] = registrationFixture();
-        $agents->refuse('instances.laravel-registration-receipt', 'instances.registration_invalid');
+        $agents->refuse('instance.laravel-registration-receipt', 'instance.registration_invalid');
 
         expect(fn () => $manager->prepareLaravelRollback($instance))
             ->toThrow(function (RuntimeConvergenceException $exception): void {

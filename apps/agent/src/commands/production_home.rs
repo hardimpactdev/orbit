@@ -200,7 +200,7 @@ pub fn prepare_user(input: &UserInput, layout: &Layout) -> Result<Prepared, Rele
 pub struct PrepareUser;
 
 impl Command for PrepareUser {
-    const NAME: &'static str = "instances.prepare-production-user";
+    const NAME: &'static str = "instance.prepare-production-user";
     const SUMMARY: &'static str =
         "Create a production Instance's system account and private home, or check them.";
     const MUTATES: bool = true;
@@ -397,7 +397,7 @@ pub fn prepare_source(input: &SourceInput, layout: &Layout) -> Result<Prepared, 
 pub struct PrepareSource;
 
 impl Command for PrepareSource {
-    const NAME: &'static str = "instances.prepare-production-source";
+    const NAME: &'static str = "instance.prepare-production-source";
     const SUMMARY: &'static str =
         "Clone a production Instance's repository into its initial release and record the source markers.";
     const MUTATES: bool = true;
@@ -555,7 +555,7 @@ pub fn resolve(input: &ResolveInput, layout: &Layout) -> Result<Resolved, Releas
 pub struct ResolveSource;
 
 impl Command for ResolveSource {
-    const NAME: &'static str = "instances.resolve-production-source";
+    const NAME: &'static str = "instance.resolve-production-source";
     const SUMMARY: &'static str =
         "Check out a branch in a production Instance's initial release and link its environment.";
     const MUTATES: bool = true;
@@ -690,7 +690,7 @@ pub(super) fn composer_profile(
 pub struct InspectProfile;
 
 impl Command for InspectProfile {
-    const NAME: &'static str = "instances.inspect-production-profile";
+    const NAME: &'static str = "instance.inspect-production-profile";
     const SUMMARY: &'static str =
         "Read a production checkout's Composer metadata, refusing files the user does not own.";
     const MUTATES: bool = false;
@@ -833,7 +833,7 @@ pub fn grant_caddy(input: &CaddyInput, layout: &Layout) -> Result<Prepared, Rele
 pub struct GrantCaddy;
 
 impl Command for GrantCaddy {
-    const NAME: &'static str = "instances.grant-production-caddy-access";
+    const NAME: &'static str = "instance.grant-production-caddy-access";
     const SUMMARY: &'static str =
         "Deny Caddy a production home except a path to the selected web root.";
     const MUTATES: bool = true;
@@ -942,7 +942,7 @@ pub fn clear_current(input: &LayoutInput, layout: &Layout) -> Result<Selection, 
 pub struct ValidateLayout;
 
 impl Command for ValidateLayout {
-    const NAME: &'static str = "instances.validate-release-layout";
+    const NAME: &'static str = "instance.validate-release-layout";
     const SUMMARY: &'static str =
         "Check a production home, its releases, and the release that current selects.";
     const MUTATES: bool = false;
@@ -963,7 +963,7 @@ impl Command for ValidateLayout {
 pub struct ClearCurrent;
 
 impl Command for ClearCurrent {
-    const NAME: &'static str = "instances.clear-current-release";
+    const NAME: &'static str = "instance.clear-current-release";
     const SUMMARY: &'static str = "Check a production home and remove its current link.";
     const MUTATES: bool = true;
     const TIMEOUT: Duration = Duration::from_secs(120);
@@ -1176,7 +1176,7 @@ pub fn write_directory_url(
 pub struct WriteDirectoryUrl;
 
 impl Command for WriteDirectoryUrl {
-    const NAME: &'static str = "instances.write-directory-url";
+    const NAME: &'static str = "instance.write-directory-url";
     const SUMMARY: &'static str =
         "Write APP_URL into the stable .env of a production Instance's served application directory.";
     const MUTATES: bool = true;
@@ -1287,7 +1287,7 @@ mv -f -- "$APP_CONFIG_CACHE" "$cache"
 pub struct RefreshConfigCache;
 
 impl Command for RefreshConfigCache {
-    const NAME: &'static str = "instances.refresh-config-cache";
+    const NAME: &'static str = "instance.refresh-config-cache";
     const SUMMARY: &'static str =
         "Rebuild the Laravel configuration cache of a production Instance's current release, if it has one.";
     const MUTATES: bool = true;
@@ -1404,7 +1404,7 @@ pub fn remove(input: &Home, layout: &Layout) -> Result<Removed, ReleaseError> {
 pub struct RemoveHome;
 
 impl Command for RemoveHome {
-    const NAME: &'static str = "instances.remove-production-home";
+    const NAME: &'static str = "instance.remove-production-home";
     const SUMMARY: &'static str =
         "Remove a production Instance's home, system account, and source state.";
     const MUTATES: bool = true;

@@ -113,7 +113,7 @@ Each record has one source, the same one that its one-shot read uses.
 
 The agent follows a daily log file to the next day's file. When an earlier file becomes the newest again, it continues where it left that file, so no line is sent twice. It starts from the beginning of a file that was truncated.
 
-The agent follows a systemd Process with `journalctl --unit {unit} --output short-iso --utc`, the command of the one-shot read, `processes.logs`. So both reads select the same entries, and each journal line is the same text in both. `journalctl` is part of systemd on every supported Ubuntu Node. When it is missing, or it stops while the agent follows, the stream ends with `source_unavailable`.
+The agent follows a systemd Process with `journalctl --unit {unit} --output short-iso --utc`, the command of the one-shot read, `process.logs`. So both reads select the same entries, and each journal line is the same text in both. `journalctl` is part of systemd on every supported Ubuntu Node. When it is missing, or it stops while the agent follows, the stream ends with `source_unavailable`.
 
 The agent first reads the cursor of the unit's newest entry. It reads the first lines from that entry backwards and then follows from the next entry, so an entry written in between is sent exactly once.
 

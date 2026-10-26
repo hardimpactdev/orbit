@@ -239,7 +239,7 @@ For Project types other than `laravel-package`, Orbit treats a source as Laravel
 | `composer.json` is a symlink, is not a regular file, or is not owned by the Node's managed user; or `artisan` exists without `composer.json` | `app-dev.source_metadata_unsafe` |
 | `composer.json` is invalid JSON, or no supported PHP version meets its constraint | `app-dev.php_version_unsupported` |
 
-Detection reads files only. It runs no Composer, Artisan, or application code, and it installs no dependencies. The [Node agent](/reference/node-agent#commands) reads them as the managed user with `instances.inspect-development-profile`, and writes `APP_URL` with `instances.write-development-url`.
+Detection reads files only. It runs no Composer, Artisan, or application code, and it installs no dependencies. The [Node agent](/reference/node-agent#commands) reads them as the managed user with `instance.inspect-development-profile`, and writes `APP_URL` with `instance.write-development-url`.
 
 ### Symfony applications
 

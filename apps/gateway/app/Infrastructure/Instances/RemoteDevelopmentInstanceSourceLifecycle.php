@@ -53,7 +53,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
             $instance->update(['source_layout' => InstanceSourceLayout::Worktree->value]);
         }
         $taskVm = $this->onTaskVm($instance);
-        $this->run($instance, 'instances.prepare-development-source', [
+        $this->run($instance, 'instance.prepare-development-source', [
             ...$this->source($instance),
             'allow_existing' => $allowExisting,
             'seed_commit' => $instance->seed_commit,
@@ -75,7 +75,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
         if ($taskVm) {
             $this->sendToTaskVm($instance, $defaultBranch);
         }
-        $result = $this->run($instance, 'instances.resolve-development-source', [
+        $result = $this->run($instance, 'instance.resolve-development-source', [
             ...$source,
             'instance_name' => $instance->name,
             'default_branch' => $defaultBranch,
@@ -140,7 +140,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
     {
         $input = [...$this->source($instance), 'verify_origin' => $verifyOrigin, 'require_idle' => $requireIdle];
 
-        return $this->run($instance, 'instances.inspect-development-source', $input, $step, 'instance.source_identity_invalid', busy: $requireIdle);
+        return $this->run($instance, 'instance.inspect-development-source', $input, $step, 'instance.source_identity_invalid', busy: $requireIdle);
     }
 
     /**
@@ -156,7 +156,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
             return AgentStep::run($this->agents, $instance->node, $command, $input, $step, $errorCode, 'App development');
         } catch (RuntimeConvergenceException $exception) {
             $refused = AgentStep::refusal($exception);
-            throw $busy && $refused?->errorCode === 'instances.source_busy' ? $refused : $exception;
+            throw $busy && $refused?->errorCode === 'instance.source_busy' ? $refused : $exception;
         }
     }
 

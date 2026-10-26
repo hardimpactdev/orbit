@@ -137,14 +137,14 @@ it('keeps the workspace executor around the read, mismatch installation, and res
         return $journaled->run($command->arguments, $command->protectedInput, $command->timeout);
     };
 
-    $result = agentRunner($base)->runInWorkspace($node, $execute, 'task-vms.read-git-refs', ['checkout' => '/home/orbit/worktree'], 42.0);
+    $result = agentRunner($base)->runInWorkspace($node, $execute, 'task-vm.read-git-refs', ['checkout' => '/home/orbit/worktree'], 42.0);
 
     expect($result)->toBe(['haves' => [], 'baseline' => null, 'head' => null, 'branch' => 'main'])
         ->and($base->calls)->toBeEmpty()
         ->and($base->staged)->toHaveCount(1)
         ->and(array_map(static fn (RemoteCommand $command): string => $command->arguments[array_key_last($command->arguments)], $commands))
-        ->toBe(['task-vms.read-git-refs', 'agent.install', 'task-vms.read-git-refs'])
-        ->and($commands[0]->arguments)->toBe(['/usr/local/bin/orbit-agent', 'command', 'task-vms.read-git-refs'])
+        ->toBe(['task-vm.read-git-refs', 'agent.install', 'task-vm.read-git-refs'])
+        ->and($commands[0]->arguments)->toBe(['/usr/local/bin/orbit-agent', 'command', 'task-vm.read-git-refs'])
         ->and($commands[1]->arguments)->toBe(['sudo', '-n', '/var/tmp/orbit-agent-candidate-1', 'command', 'agent.install'])
         ->and($commands[0]->maxOutputBytes)->toBe(AgentTransport::ResultBytes)
         ->and($commands[0]->timeout)->toBeLessThanOrEqual(57.0)
@@ -159,7 +159,7 @@ it('does not bypass a workspace executor refusal or dispatch another command', f
         throw new RuntimeException('Workspace lease no longer held.');
     };
 
-    expect(fn () => agentRunner($base)->runInWorkspace(agentRunnerNode(), $execute, 'task-vms.read-git-refs', ['checkout' => '/home/orbit/worktree']))
+    expect(fn () => agentRunner($base)->runInWorkspace(agentRunnerNode(), $execute, 'task-vm.read-git-refs', ['checkout' => '/home/orbit/worktree']))
         ->toThrow(RuntimeException::class, 'Workspace lease no longer held.')
         ->and($calls)->toBe(1)
         ->and($base->calls)->toBeEmpty()
@@ -182,7 +182,7 @@ it('streams a pack after an old agent mismatch without buffering its body in res
     };
     $file = tmpfile();
     $sink = new AgentBinaryOutput($file, 100);
-    $result = agentRunner($base)->runInWorkspace(agentRunnerNode(), $execute, 'task-vms.export-git-pack', ['checkout' => '/home/orbit/repo', 'commit' => str_repeat('a', 40), 'haves' => []], output: $sink);
+    $result = agentRunner($base)->runInWorkspace(agentRunnerNode(), $execute, 'task-vm.export-git-pack', ['checkout' => '/home/orbit/repo', 'commit' => str_repeat('a', 40), 'haves' => []], output: $sink);
     rewind($file);
 
     expect($result)->toBe(['bytes' => 6])
@@ -200,7 +200,7 @@ it('never installs or replays an interrupted or oversized binary transfer', func
     $file = tmpfile();
     $sink = new AgentBinaryOutput($file, $bound);
 
-    expect(fn () => agentRunner($base)->runInWorkspace(agentRunnerNode(), $execute, 'task-vms.export-git-pack', [], output: $sink))
+    expect(fn () => agentRunner($base)->runInWorkspace(agentRunnerNode(), $execute, 'task-vm.export-git-pack', [], output: $sink))
         ->toThrow(fn (AgentRunnerFailure $error): bool => $error->kind === $kind && $error->result?->stdout !== 'PACK')
         ->and($transport->calls)->toHaveCount(1)
         ->and($base->staged)->toBeEmpty();
@@ -242,8 +242,8 @@ it('sends only a typed GitHub token on input marked as carrying a credential', f
     $runner = agentRunner($transport);
     $access = GitReadEnvironment::forGitHubToken('secret-token');
 
-    $runner->run(agentRunnerNode(), 'instances.check-publication', ['origin' => 'git@github.com:acme/site.git', 'commit' => str_repeat('a', 40), 'git_read' => $access]);
-    $runner->run(Node::query()->firstOrFail(), 'instances.check-publication', ['origin' => 'git@github.com:acme/site.git', 'commit' => str_repeat('a', 40), 'git_read' => GitReadEnvironment::none()]);
+    $runner->run(agentRunnerNode(), 'instance.check-publication', ['origin' => 'git@github.com:acme/site.git', 'commit' => str_repeat('a', 40), 'git_read' => $access]);
+    $runner->run(Node::query()->firstOrFail(), 'instance.check-publication', ['origin' => 'git@github.com:acme/site.git', 'commit' => str_repeat('a', 40), 'git_read' => GitReadEnvironment::none()]);
 
     expect($transport->calls[0]['envelope']['input']['git_read'])->toBe(['github_token' => 'secret-token'])
         ->and($transport->calls[0]['credential'])->toBeTrue()
@@ -660,7 +660,7 @@ it('replays the complete private binary input after mismatch and keeps every cal
     fclose($source);
     $execute = static fn (RemoteCommand $command): CommandResult => $journaled->run($command->arguments, $command->protectedInput, $command->timeout);
 
-    $result = agentRunner($base)->runInWorkspace($node, $execute, 'task-vms.import-git-pack', [
+    $result = agentRunner($base)->runInWorkspace($node, $execute, 'task-vm.import-git-pack', [
         'checkout' => '/home/orbit/worktree', 'default_branch' => null, 'updates' => [],
     ], binaryInput: $binary);
 
@@ -679,7 +679,7 @@ it('rejects binary input missing from a binary command or supplied to a JSON com
     $transport = new ScriptedAgentTransport([]);
     $runner = agentRunner($transport);
     $node = agentRunnerNode();
-    expect(fn () => $runner->run($node, 'task-vms.import-git-pack'))->toThrow(LogicException::class);
+    expect(fn () => $runner->run($node, 'task-vm.import-git-pack'))->toThrow(LogicException::class);
     $source = tmpfile();
     fwrite($source, 'body');
     $path = stream_get_meta_data($source)['uri'];

@@ -49,7 +49,7 @@ it('maps native observations and sends the derived execution context in one call
 
 it('reports failed or incomplete native observations as unavailable', function (bool $refused): void {
     if ($refused) {
-        $this->agents->refuse('doctor.inspect-schedule', 'schedules.failed');
+        $this->agents->refuse('doctor.inspect-schedule', 'schedule.failed');
     } else {
         $this->agents->answerMalformed('doctor.inspect-schedule', ['artifacts_present' => true]);
     }

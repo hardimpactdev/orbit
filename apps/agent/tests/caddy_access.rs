@@ -110,7 +110,7 @@ impl Fixture {
             None => "/usr/local/bin:/usr/bin:/bin".into(),
         };
         self.agent.start(
-            "instances.grant-development-caddy-access",
+            "instance.grant-development-caddy-access",
             json!({"user":self.user, "sites":sites}),
             &path,
         )
@@ -280,7 +280,7 @@ fn unsafe_web_links_refuse_before_any_acl_change() {
         let before = f.acl(&["checkout", "outside"]);
         refused(
             &f.call(vec![f.site("checkout", "web/site")], None),
-            "instances.caddy_access_invalid",
+            "instance.caddy_access_invalid",
         );
         assert_eq!(f.acl(&["checkout", "outside"]), before);
     }
@@ -375,9 +375,9 @@ fn recovery_restores_grants_and_retains_private_snapshots_only_on_failure() {
             refused(
                 &value,
                 if fail_recovery {
-                    "instances.caddy_access_recovery_failed"
+                    "instance.caddy_access_recovery_failed"
                 } else {
-                    "instances.caddy_access_failed"
+                    "instance.caddy_access_failed"
                 },
             );
             assert!(!fs::read_dir(f.path("checkout/.git")).unwrap().any(|e| e
@@ -445,7 +445,7 @@ fn foreign_owned_entries_fail_and_restore_grants() {
         let before =
             f.recursive_acl("checkout/web/site") + &f.acl(&["checkout/web", "checkout", ""]);
         let value = f.call(vec![f.site("checkout", "web/site")], None);
-        refused(&value, "instances.caddy_access_failed");
+        refused(&value, "instance.caddy_access_failed");
         assert!(value["error"]["details"]["reason"]
             .as_str()
             .unwrap()
@@ -517,7 +517,7 @@ fn unreadable_web_root_and_storage_refuse_and_restore() {
             f.recursive_acl("checkout/web/site")
         };
         let value = f.call(vec![site], None);
-        refused(&value, "instances.caddy_access_failed");
+        refused(&value, "instance.caddy_access_failed");
         assert!(value["error"]["details"]["reason"]
             .as_str()
             .unwrap()
@@ -588,7 +588,7 @@ fn restores_root_owned_passage_after_failure_then_grants_it() {
     let before = snapshot();
     refused(
         &f.call(vec![f.site("checkout", "web/site")], Some(FAIL_GRANT)),
-        "instances.caddy_access_failed",
+        "instance.caddy_access_failed",
     );
     assert_eq!(snapshot(), before);
     f.grant(vec![f.site("checkout", "web/site")]);

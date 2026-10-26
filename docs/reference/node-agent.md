@@ -27,7 +27,7 @@ The observer listens on no port. Nothing reaches command mode over the network: 
 
 The Gateway installs the observer only on active managed Linux Nodes with a WireGuard address and a pinned SSH host key. Only those Nodes hold an agent secret. [Exporter selection](/reference/metrics#exporter-selection) uses the same boundary. The observer needs no role.
 
-A macOS Node uses the command binary as its enrolled account. Enrollment installs it through `agent.install`, then calls `nodes.inspect-macos-enrollment` to read the native architecture and verify the existing WireGuard address. The command reads kernel identity and interface addresses without a shell or network change. macOS has no observer, agent secret, or LaunchAgent.
+A macOS Node uses the command binary as its enrolled account. Enrollment installs it through `agent.install`, then calls `node.inspect-macos-enrollment` to read the native architecture and verify the existing WireGuard address. The command reads kernel identity and interface addresses without a shell or network change. macOS has no observer, agent secret, or LaunchAgent.
 
 ## What it observes
 
@@ -186,15 +186,17 @@ Each lock records the transient service's control group before the command start
 
 Target and resource locks live in `/run/orbit-agent/locks/<uid>`, one directory per account. The root process that starts the mutation creates it, owned by the account with mode 0700, and passes it to the service in `ORBIT_AGENT_LOCK_DIR`. The supervised process refuses with `agent.lock_unavailable` unless it owns that directory and no one else can enter it. It opens lock files without following links. Only root writes `/run`, so no other account can create, hold, or replace these locks.
 
-A root command and an account command on the same target do not exclude each other. Commands that must serialize a shared mutation use the same privilege and lock key. So both `.env` writers, `instances.write-environment` and `instances.write-development-url`, are owner commands: root holds the `environment:` lock, and the write runs as the file's owner.
+A root command and an account command on the same target do not exclude each other. Commands that must serialize a shared mutation use the same privilege and lock key. So both `.env` writers, `instance.write-environment` and `instance.write-development-url`, are owner commands: root holds the `environment:` lock, and the write runs as the file's owner.
 
 Every root command that runs `apt-get` or `dpkg` holds the shared `packages` resource. Every command that changes UFW rules holds `firewall`. A mutation with neither a target nor a resource changes only state that one Gateway operation owns at a time, such as one Instance's checkout during its own deploy.
 
 ### The contract
 
-Rust defines each command: its input, output, error codes, bound, privilege, and whether it mutates. `apps/agent/contract/commands.json` is written from those definitions, and a Rust test fails when the file is stale. The Gateway reads privileges and bounds from that file. `ORBIT_AGENT_CONTRACT` can select a different contract file; a relative path resolves from the Gateway directory. Rewrite the file with `ORBIT_AGENT_WRITE_CONTRACT=1 cargo test contract_file` in `apps/agent`.
+A command name is `<namespace>.<action>`, and an error code is `<namespace>.<reason>`. A namespace is singular, as in the CLI: `instance.inspect-release` refuses with `instance.release_invalid`. An action can name a collection, such as `incus.images`. Four namespaces end in `s` but are not plurals: the mass nouns `analytics` and `metrics`, the product `incus`, and the extension slug `documents`. The Gateway Node's start-hook drop-in runs `orbit-agent service documents.prepare-cleanup`, so that name stays with the extension slug. Service entry points are not commands: `schedules-run` and `schedules-complete` are written into every Schedule's units on its Node, so they keep their names. A Rust test refuses any other namespace whose last word ends in one `s`; `process` ends in two.
 
-`apps/agent/contract/schemas.json` holds the JSON Schema of each command's input and output, derived from the same Rust types. `ORBIT_AGENT_WRITE_CONTRACT=1 cargo test schemas_file` rewrites it. Rust tests keep every input object closed to unknown fields in the schema, and decode a generated input of every command with an unknown field at each level to prove the real decoder refuses it.
+Rust defines each command: its input, output, error codes, bound, privilege, and whether it mutates. `apps/agent/contract/commands.json` is written from those definitions, and a Rust test fails when the file is stale. The Gateway reads privileges and bounds from that file. `ORBIT_AGENT_CONTRACT` can select a different contract file; a relative path resolves from the Gateway directory. Rewrite the file with `ORBIT_AGENT_WRITE_CONTRACT=1 cargo test --lib -- contract_file` in `apps/agent`.
+
+`apps/agent/contract/schemas.json` holds the JSON Schema of each command's input and output, derived from the same Rust types. `ORBIT_AGENT_WRITE_CONTRACT=1 cargo test --lib -- schemas_file` rewrites it. Rust tests keep every input object closed to unknown fields in the schema, and decode a generated input of every command with an unknown field at each level to prove the real decoder refuses it.
 
 The PHP test fakes refuse a command, error code, or binary stream that the contract does not declare. They check each input in its wire form, where `{}` and `[]` differ, and each answer against the output schema. A test of the Gateway's own guard against a malformed result says so with `answerMalformed`.
 
@@ -254,7 +256,7 @@ Command mode currently runs as the enrolled macOS account. A future LaunchAgent 
 
 ### Live output
 
-A command that runs project code can publish its output while it runs. `instances.run-deploy-step` runs one production deploy step as the Instance owner, and `instances.run-development-step` runs one development deploy step as the managed account. Each step runs in its own session. When its shell ends, or at the step's `timeout_seconds`, its process group gets TERM and then KILL 100 milliseconds later, so a process the step left behind cannot hold its output or outlive it. A stopped step exits with 143.
+A command that runs project code can publish its output while it runs. `instance.run-deploy-step` runs one production deploy step as the Instance owner, and `instance.run-development-step` runs one development deploy step as the managed account. Each step runs in its own session. When its shell ends, or at the step's `timeout_seconds`, its process group gets TERM and then KILL 100 milliseconds later, so a process the step left behind cannot hold its output or outlive it. A stopped step exits with 143.
 
 While a step runs, its command joins the operation's channel, `private-operation.{id}`, and publishes each redacted output line as a `client-output` event, as [Realtime events: Deploy step output](/reference/events#deploy-step-output) describes. `POST /api/v1/agent/broadcasting/auth` signs that channel for the agent of the Node that runs the operation, while the operation runs or waits. Publishing is best effort: when Reverb is down, the step still runs, and its result still carries the output for the record.
 
@@ -412,7 +414,7 @@ These reads ask the view first and fall back when it is not fresh.
 | --- | --- | --- |
 | Process list `runtime_status` | A status the Gateway observed after its own start, stop, or restart wins for 30 seconds. Otherwise the view answers. | [Prometheus](/reference/metrics#process-runtime-status), then SSH |
 | Readiness while a hibernated Instance [wakes](/reference/app-dev-runtime-hibernation#wake) | The view answers every 0.5 seconds. A `failed` answer, or the timeout, is checked once over SSH. | SSH every 0.5 seconds |
-| The hibernator's [idle halt](/reference/app-dev-runtime-hibernation#idle-window-and-sweep) | When the view shows the Process stopped, the hibernator skips the stop. | `processes.control`, which checks ownership and stops |
+| The hibernator's [idle halt](/reference/app-dev-runtime-hibernation#idle-window-and-sweep) | When the view shows the Process stopped, the hibernator skips the stop. | `process.control`, which checks ownership and stops |
 | The [scheduler tick](/reference/tasks#session-routing)'s check for new commits | `commits` is greater than 0 | `git` over SSH |
 | The line diff of an active [task](/reference/tasks#tokens-and-line-diff) | `diff.added` and `diff.removed`, unless truncated | `git diff --shortstat` over SSH |
 

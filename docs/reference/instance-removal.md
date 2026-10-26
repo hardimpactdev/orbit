@@ -58,7 +58,7 @@ The Gateway also refuses these Instances:
 
 The Gateway permits removal after a transfer fails before cutover and finishes rollback, including cleanup of its owned SQLite seed files. Failed or unconfirmed seed cleanup keeps the transfer open. Normal and forced removal follow this rule. `--force` cannot bypass an open transfer, and the other removal checks still apply.
 
-For a completed development checkout, the Gateway compares the checkout with its record. The checks on the Node run as [agent commands](/reference/node-agent#commands), such as `instances.inspect-source`, and each refused check returns its own refusal code, such as `instances.origin_mismatch`. Each origin check reads the `remote.origin.url` stored in the checkout and ignores `insteadOf` rewrites. The agent derives the origin's repository identity by the Gateway's rule; both sides test the same cases in `apps/agent/contract/fixtures/repository-identity.json`. A [failed create](#failed-creation) can leave no checkout or an incomplete one.
+For a completed development checkout, the Gateway compares the checkout with its record. The checks on the Node run as [agent commands](/reference/node-agent#commands), such as `instance.inspect-source`, and each refused check returns its own refusal code, such as `instance.origin_mismatch`. Each origin check reads the `remote.origin.url` stored in the checkout and ignores `insteadOf` rewrites. The agent derives the origin's repository identity by the Gateway's rule; both sides test the same cases in `apps/agent/contract/fixtures/repository-identity.json`. A [failed create](#failed-creation) can leave no checkout or an incomplete one.
 
 | Code | Refused check |
 | --- | --- |

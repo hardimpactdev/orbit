@@ -15,8 +15,8 @@ use Throwable;
 
 /**
  * Reads the dependency manifests and lockfiles of an Instance through the Node agent: a development checkout with
- * `instances.read-dependency-files`, and a production home's current release with
- * `instances.read-release-dependency-files` (docs/reference/instance-dependency-contracts.md). It checks that the
+ * `instance.read-dependency-files`, and a production home's current release with
+ * `instance.read-release-dependency-files` (docs/reference/instance-dependency-contracts.md). It checks that the
  * answer names the recorded source.
  */
 final readonly class CollectInstanceDependencyFilesAction
@@ -49,7 +49,7 @@ final readonly class CollectInstanceDependencyFilesAction
 
         try {
             // In monorepo mode the application selects only the no-top-level-directories fallback.
-            $receipt = $this->agents->run($node, $production ? 'instances.read-release-dependency-files' : 'instances.read-dependency-files', [
+            $receipt = $this->agents->run($node, $production ? 'instance.read-release-dependency-files' : 'instance.read-dependency-files', [
                 'path' => $path,
                 'application' => $application,
                 'monorepo' => $monorepo,

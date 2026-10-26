@@ -433,11 +433,11 @@ function certificate_order_bind_projectors(
     CertificateOrderPhpFpm $php,
 ): void {
     app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner()
-        ->answer('routes.verify-certificate', [])
-        ->answer('routes.verify-http', static function (array $input, Node $node) use ($nodes): array {
+        ->answer('route.verify-certificate', [])
+        ->answer('route.verify-http', static function (array $input, Node $node) use ($nodes): array {
             $nodes->forwarding[] = [$node->wireguard_ip, $input['address'], (string) $input['port']];
             if ($nodes->failHttp) {
-                throw new AgentCommandRefused('routes.verify-http', 'routes.http_unreachable', 'Unreachable.');
+                throw new AgentCommandRefused('route.verify-http', 'route.http_unreachable', 'Unreachable.');
             }
 
             return [];
@@ -634,21 +634,21 @@ final class CertificateOrderNodes
 
                 return ['result' => 'published'];
             })
-            ->answer('certificates.request-leaf', function (array $input, Node $node): array {
-                return $this->hasCertificate($this->reach($node, 'certificates.request-leaf'), $input['scope'])
+            ->answer('certificate.request-leaf', function (array $input, Node $node): array {
+                return $this->hasCertificate($this->reach($node, 'certificate.request-leaf'), $input['scope'])
                     ? ['state' => 'current']
                     : ['state' => 'request', 'request' => RouteProjectionAgentAnswers::CERTIFICATE_REQUEST];
             })
-            ->answer('certificates.publish-leaf', function (array $input, Node $node): array {
-                $this->issue($this->reach($node, 'certificates.publish-leaf'), $input['scope']);
+            ->answer('certificate.publish-leaf', function (array $input, Node $node): array {
+                $this->issue($this->reach($node, 'certificate.publish-leaf'), $input['scope']);
 
                 return [];
             })
-            ->answer('certificates.inspect-leaf', function (array $input, Node $node): array {
-                return ['present' => $this->hasCertificate($this->reach($node, 'certificates.inspect-leaf'), $input['scope'])];
+            ->answer('certificate.inspect-leaf', function (array $input, Node $node): array {
+                return ['present' => $this->hasCertificate($this->reach($node, 'certificate.inspect-leaf'), $input['scope'])];
             })
-            ->answer('certificates.remove-leaf', function (array $input, Node $node): array {
-                $host = $this->reach($node, 'certificates.remove-leaf');
+            ->answer('certificate.remove-leaf', function (array $input, Node $node): array {
+                $host = $this->reach($node, 'certificate.remove-leaf');
                 if ($this->names($host, $input['scope'])) {
                     $this->removedWhileNamed[] = "{$host}:{$input['scope']}";
                 }

@@ -53,7 +53,7 @@ describe('managed dependency collection', function (): void {
         $instance = dependency_collection_instance($production);
         $instance->root = $webRoot;
         $root = ($production ? '/home/app_sample/releases/selected' : '/home/orbit/project').$suffix;
-        $command = $production ? 'instances.read-release-dependency-files' : 'instances.read-dependency-files';
+        $command = $production ? 'instance.read-release-dependency-files' : 'instance.read-dependency-files';
         $agents = dependency_collection_agents($command, dependency_collection_receipt($root, $production ? 'selected' : null));
 
         $files = app(CollectInstanceDependencyFilesAction::class)->execute($instance);
@@ -77,7 +77,7 @@ describe('managed dependency collection', function (): void {
             orbit_test_set_app_placement_role($instance->node, true);
         }
         $instance->forceFill($attributes);
-        $agents = dependency_collection_agents('instances.read-dependency-files', []);
+        $agents = dependency_collection_agents('instance.read-dependency-files', []);
 
         expect(fn () => app(CollectInstanceDependencyFilesAction::class)->execute($instance))
             ->toThrow(DependencyCollectionException::class, 'dependencies.unsafe_source');
@@ -100,7 +100,7 @@ describe('managed dependency collection', function (): void {
             'error' => $receipt = ['error' => 'dependencies.source_changed'],
             'unsafe-error' => $receipt = ['error' => 'password=secret'],
         };
-        dependency_collection_agents('instances.read-dependency-files', $receipt);
+        dependency_collection_agents('instance.read-dependency-files', $receipt);
 
         expect(fn () => app(CollectInstanceDependencyFilesAction::class)->execute(dependency_collection_instance()))
             ->toThrow(function (DependencyCollectionException $error) use ($code): void {
@@ -117,7 +117,7 @@ describe('managed dependency collection', function (): void {
     it('retains per-file failures separately from absence', function (): void {
         $receipt = dependency_collection_receipt();
         $receipt['files']['package.json']['error'] = 'dependencies.unreadable_source';
-        dependency_collection_agents('instances.read-dependency-files', $receipt);
+        dependency_collection_agents('instance.read-dependency-files', $receipt);
 
         $files = app(CollectInstanceDependencyFilesAction::class)->execute(dependency_collection_instance());
 
@@ -126,7 +126,7 @@ describe('managed dependency collection', function (): void {
     });
 
     it('discards the text of a runner failure', function (): void {
-        dependency_collection_agents('instances.read-dependency-files', fn (): array => throw new AgentRunnerFailure('instances.read-dependency-files', AgentRunnerFailure::Transport, 'password=secret'));
+        dependency_collection_agents('instance.read-dependency-files', fn (): array => throw new AgentRunnerFailure('instance.read-dependency-files', AgentRunnerFailure::Transport, 'password=secret'));
 
         expect(fn () => app(CollectInstanceDependencyFilesAction::class)->execute(dependency_collection_instance()))
             ->toThrow(function (DependencyCollectionException $error): void {

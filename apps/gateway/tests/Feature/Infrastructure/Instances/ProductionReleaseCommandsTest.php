@@ -14,14 +14,14 @@ use Tests\Support\FakeAgentCommandRunner;
 // in apps/agent/src/commands/production_tests.rs prove what each command does to a release home.
 
 it('prepares a release of the branch from the home the Instance records', function (string $root, string $suffix, string $storage): void {
-    [$deployment, $agents, $instance] = release_commands(fn (FakeAgentCommandRunner $agents) => $agents->answer('instances.prepare-release', ['name' => '20260911-a1', 'commit' => str_repeat('a', 40)]));
+    [$deployment, $agents, $instance] = release_commands(fn (FakeAgentCommandRunner $agents) => $agents->answer('instance.prepare-release', ['name' => '20260911-a1', 'commit' => str_repeat('a', 40)]));
     $instance->update(['root' => $root]);
 
     $release = $deployment->prepare($instance->refresh(), 'release');
 
     $input = $agents->calls[0]['input'];
     expect($release)->toEqual(new DeploymentRelease('20260911-a1', '/home/orbit-app-1/releases/20260911-a1', str_repeat('a', 40)))
-        ->and($agents->commands())->toBe(['instances.prepare-release'])
+        ->and($agents->commands())->toBe(['instance.prepare-release'])
         ->and(array_diff_key($input, ['git_read' => true]))->toBe([
             'repository' => 'https://example.test/deployment.git', 'user' => 'orbit-app-1', 'home' => '/home/orbit-app-1',
             'instance' => $instance->id, 'relative_root' => $root, 'application_suffix' => $suffix, 'served' => [],
@@ -32,21 +32,21 @@ it('prepares a release of the branch from the home the Instance records', functi
 describe('a release pinned to a commit', function (): void {
     it('asks for the commit and returns the release at it', function (): void {
         $commit = str_repeat('c', 40);
-        [$deployment, $agents, $instance] = release_commands(fn (FakeAgentCommandRunner $agents) => $agents->answer('instances.prepare-release', ['name' => '20260911-a1', 'commit' => $commit]));
+        [$deployment, $agents, $instance] = release_commands(fn (FakeAgentCommandRunner $agents) => $agents->answer('instance.prepare-release', ['name' => '20260911-a1', 'commit' => $commit]));
 
         expect($deployment->prepare($instance, 'release', $commit)->commit)->toBe($commit)
             ->and($agents->calls[0]['input']['commit'])->toBe($commit);
     });
 
     it('refuses a commit the branch does not contain', function (): void {
-        [$deployment, , $instance] = release_commands(fn (FakeAgentCommandRunner $agents) => $agents->refuse('instances.prepare-release', 'instances.commit_not_on_branch'));
+        [$deployment, , $instance] = release_commands(fn (FakeAgentCommandRunner $agents) => $agents->refuse('instance.prepare-release', 'instance.commit_not_on_branch'));
 
         expect(fn () => $deployment->prepare($instance, 'release', str_repeat('d', 40)))
             ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('deployment.commit_not_on_branch'));
     });
 
     it('rejects an answer that names another commit', function (): void {
-        [$deployment, , $instance] = release_commands(fn (FakeAgentCommandRunner $agents) => $agents->answer('instances.prepare-release', ['name' => '20260911-a1', 'commit' => str_repeat('a', 40)]));
+        [$deployment, , $instance] = release_commands(fn (FakeAgentCommandRunner $agents) => $agents->answer('instance.prepare-release', ['name' => '20260911-a1', 'commit' => str_repeat('a', 40)]));
 
         expect(fn () => $deployment->prepare($instance, 'release', str_repeat('c', 40)))
             ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('deployment.receipt_invalid'));
@@ -61,7 +61,7 @@ describe('a release pinned to a commit', function (): void {
 });
 
 it('sends a GitHub App token only as Git read access for a covered repository', function (): void {
-    [$deployment, $agents, $instance] = release_commands(fn (FakeAgentCommandRunner $agents) => $agents->answer('instances.prepare-release', ['name' => '20260911-a1', 'commit' => str_repeat('a', 40)]));
+    [$deployment, $agents, $instance] = release_commands(fn (FakeAgentCommandRunner $agents) => $agents->answer('instance.prepare-release', ['name' => '20260911-a1', 'commit' => str_repeat('a', 40)]));
     $instance->project->update(['repository_url' => 'git@github.com:acme/deployment.git']);
     GitHubTestSupport::storeApp();
     Http::fake([
@@ -79,7 +79,7 @@ it('sends a GitHub App token only as Git read access for a covered repository', 
 
 it('activates the recorded release and checks the answer', function (string $answered, bool $accepted): void {
     $release = new DeploymentRelease('20260911-a1', '/home/orbit-app-1/releases/20260911-a1', str_repeat('a', 40));
-    [$deployment, $agents, $instance] = release_commands(fn (FakeAgentCommandRunner $agents) => $agents->answer('instances.activate-release', ['name' => '20260911-a1', 'commit' => $answered]));
+    [$deployment, $agents, $instance] = release_commands(fn (FakeAgentCommandRunner $agents) => $agents->answer('instance.activate-release', ['name' => '20260911-a1', 'commit' => $answered]));
 
     if ($accepted) {
         expect($deployment->activate($instance, $release))->toBe($release);
@@ -92,7 +92,7 @@ it('activates the recorded release and checks the answer', function (string $ans
 
 it('reads the selected release, or none, and a retained one by name', function (): void {
     [$deployment, $agents, $instance] = release_commands(fn (FakeAgentCommandRunner $agents) => $agents->answer(
-        'instances.inspect-release',
+        'instance.inspect-release',
         static fn (array $input): array => ['release' => ($input['name'] ?? null) === null ? null : ['name' => $input['name'], 'commit' => str_repeat('a', 40)]],
     ));
 
@@ -110,7 +110,7 @@ it('rejects traversal before it asks the agent to inspect a release', function (
 });
 
 it('lists the retained releases with the nullable selection', function (?string $selected): void {
-    [$deployment, , $instance] = release_commands(fn (FakeAgentCommandRunner $agents) => $agents->answer('instances.list-releases', [
+    [$deployment, , $instance] = release_commands(fn (FakeAgentCommandRunner $agents) => $agents->answer('instance.list-releases', [
         'selected' => $selected,
         'releases' => [['name' => 'initial', 'commit' => str_repeat('a', 40)], ['name' => '20260101000000-a', 'commit' => str_repeat('b', 40)]],
     ]));
@@ -119,7 +119,7 @@ it('lists the retained releases with the nullable selection', function (?string 
 })->with(['selected' => 'initial', 'none selected' => null]);
 
 it('rejects a listing that repeats a release or selects one it does not list', function (array $answer): void {
-    [$deployment, , $instance] = release_commands(fn (FakeAgentCommandRunner $agents) => $agents->answer('instances.list-releases', $answer));
+    [$deployment, , $instance] = release_commands(fn (FakeAgentCommandRunner $agents) => $agents->answer('instance.list-releases', $answer));
 
     expect(fn () => $deployment->releases($instance))
         ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('deployment.receipt_invalid'));
@@ -130,7 +130,7 @@ it('rejects a listing that repeats a release or selects one it does not list', f
 ]);
 
 it('prunes to the retained count around the selected and previous releases', function (): void {
-    [$deployment, $agents, $instance] = release_commands(fn (FakeAgentCommandRunner $agents) => $agents->answer('instances.prune-releases', ['removed' => ['20260101000000-a'], 'in_use' => ['initial']]));
+    [$deployment, $agents, $instance] = release_commands(fn (FakeAgentCommandRunner $agents) => $agents->answer('instance.prune-releases', ['removed' => ['20260101000000-a'], 'in_use' => ['initial']]));
     $selected = new DeploymentRelease('20260104000000-d', '/home/orbit-app-1/releases/20260104000000-d', str_repeat('a', 40));
     $previous = new DeploymentRelease('20260103000000-c', '/home/orbit-app-1/releases/20260103000000-c', str_repeat('b', 40));
 

@@ -18,7 +18,7 @@ use App\Models\Instance;
  * `<home>/env/<directory>/.env`, which each release links to. It reads `artisan` and `.env.example`
  * from the selected release, and does nothing before the first release or for a directory without
  * `artisan`. A new file gets its own key. A cached configuration in a release keeps its value until
- * the next deployment rebuilds it. The Node agent's `instances.write-directory-url` writes the file as the production
+ * the next deployment rebuilds it. The Node agent's `instance.write-directory-url` writes the file as the production
  * user.
  */
 final readonly class RemoteProductionRouteApplicationUrlWriter implements RouteApplicationUrlWriter
@@ -39,7 +39,7 @@ final readonly class RemoteProductionRouteApplicationUrlWriter implements RouteA
         $directory = $relativeDirectory === '' ? '' : RelativeWebRoot::validate($relativeDirectory);
         $storedName = $instance->environmentValues()->where('env_key', 'APP_NAME')->first()?->env_value;
         $storedName = is_string($storedName) && $storedName !== '' && ! str_contains($storedName, '{{') ? $storedName : null;
-        AgentStep::run($this->agents, $instance->node, 'instances.write-directory-url', [
+        AgentStep::run($this->agents, $instance->node, 'instance.write-directory-url', [
             'user' => $user,
             'home' => $home,
             'directory' => $directory,

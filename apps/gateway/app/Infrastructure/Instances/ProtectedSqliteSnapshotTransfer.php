@@ -35,13 +35,13 @@ final readonly class ProtectedSqliteSnapshotTransfer implements SqliteSnapshotTr
                 $this->fail();
             }
             $output = new AgentBinaryOutput($temporary, $expectedBytes);
-            $this->agents->run($source->node, 'instances.read-sqlite-snapshot', [
+            $this->agents->run($source->node, 'instance.read-sqlite-snapshot', [
                 'path' => $sourcePath, 'bytes' => $expectedBytes, 'sha256' => $expectedDigest,
             ], output: $output);
             if ($output->bytes() !== $expectedBytes || hash_file('sha256', $path) !== $expectedDigest) {
                 $this->fail();
             }
-            $this->agents->run($target->node, 'instances.receive-sqlite-snapshot', [
+            $this->agents->run($target->node, 'instance.receive-sqlite-snapshot', [
                 'path' => $targetPath, 'base' => $target->basePath, 'bytes' => $expectedBytes, 'sha256' => $expectedDigest,
             ], binaryInput: AgentBinaryInput::fromFile($path, $expectedBytes));
         } catch (Throwable) {

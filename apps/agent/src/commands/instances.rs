@@ -1,4 +1,4 @@
-//! `instances.*`: development source inspection and removal, and the read of a production release's Laravel routes.
+//! `instance.*`: development source inspection and removal, and the read of a production release's Laravel routes.
 //! Every refusal leaves the source in place and names the check that refused in its log line.
 
 use super::source::*;
@@ -13,16 +13,16 @@ use std::{
 
 command_errors! {
     pub enum SourceError {
-        PathMismatch {} => "instances.path_mismatch", "The source path is not the recorded one.";
-        OwnershipMismatch {} => "instances.ownership_mismatch", "The source is not owned by the managed account.";
-        LayoutMismatch {} => "instances.layout_mismatch", "The source does not have the recorded Git layout.";
-        OriginMismatch {} => "instances.origin_mismatch", "The source origin is not the Project repository.";
-        BranchMismatch {} => "instances.branch_mismatch", "The source is not on the recorded branch.";
-        WorktreesMismatch {} => "instances.worktrees_mismatch", "Another linked worktree uses the source.";
-        UnsafeContent {} => "instances.unsafe_content", "The source has dirty or unpublished content.";
-        SourceChanged {} => "instances.source_changed", "The source changed after its inspection.";
-        Refused {} => "instances.removal_refused", "The removal evidence does not match the recorded removal.";
-        Failed { step: String } => "instances.source_step_failed", "A source step failed.";
+        PathMismatch {} => "instance.path_mismatch", "The source path is not the recorded one.";
+        OwnershipMismatch {} => "instance.ownership_mismatch", "The source is not owned by the managed account.";
+        LayoutMismatch {} => "instance.layout_mismatch", "The source does not have the recorded Git layout.";
+        OriginMismatch {} => "instance.origin_mismatch", "The source origin is not the Project repository.";
+        BranchMismatch {} => "instance.branch_mismatch", "The source is not on the recorded branch.";
+        WorktreesMismatch {} => "instance.worktrees_mismatch", "Another linked worktree uses the source.";
+        UnsafeContent {} => "instance.unsafe_content", "The source has dirty or unpublished content.";
+        SourceChanged {} => "instance.source_changed", "The source changed after its inspection.";
+        Refused {} => "instance.removal_refused", "The removal evidence does not match the recorded removal.";
+        Failed { step: String } => "instance.source_step_failed", "A source step failed.";
     }
 }
 
@@ -99,7 +99,7 @@ pub struct InspectSourceOutput {
 }
 
 impl Command for InspectSource {
-    const NAME: &'static str = "instances.inspect-source";
+    const NAME: &'static str = "instance.inspect-source";
     const SUMMARY: &'static str = "Read the evidence of a development source before its removal.";
     const MUTATES: bool = false;
     const TIMEOUT: Duration = Duration::from_secs(300);
@@ -341,7 +341,7 @@ pub fn linked_worktrees(checkout: &Path, inventory: &[u8]) -> Result<usize, Sour
 }
 
 impl Command for RemoveSource {
-    const NAME: &'static str = "instances.remove-source";
+    const NAME: &'static str = "instance.remove-source";
     const SUMMARY: &'static str = "Check an active development checkout again and delete it.";
     const MUTATES: bool = true;
     const TIMEOUT: Duration = Duration::from_secs(900);
@@ -527,7 +527,7 @@ fn safe_name(value: &str) -> bool {
 }
 
 impl Command for PrepareRemoval {
-    const NAME: &'static str = "instances.prepare-source-removal";
+    const NAME: &'static str = "instance.prepare-source-removal";
     const SUMMARY: &'static str = "Record the removal journal of a development source.";
     const MUTATES: bool = true;
     const TIMEOUT: Duration = Duration::from_secs(120);
@@ -680,7 +680,7 @@ pub struct FinalizeRemovalOutput {
 }
 
 impl Command for FinalizeRemoval {
-    const NAME: &'static str = "instances.finalize-source-removal";
+    const NAME: &'static str = "instance.finalize-source-removal";
     const SUMMARY: &'static str =
         "Quarantine a recorded development source, write its receipt, and delete it.";
     const MUTATES: bool = true;
@@ -1302,7 +1302,7 @@ fn check_quarantine_git_file(receipt: &Receipt, admin: &Path) -> Result<bool, So
 pub struct ReadReceipt;
 
 impl Command for ReadReceipt {
-    const NAME: &'static str = "instances.read-removal-receipt";
+    const NAME: &'static str = "instance.read-removal-receipt";
     const SUMMARY: &'static str = "Report how much of a receipt-backed source removal is left.";
     const MUTATES: bool = false;
     const TIMEOUT: Duration = Duration::from_secs(120);
@@ -1423,7 +1423,7 @@ pub struct ReceiptOutput {
 }
 
 impl Command for CleanReceipt {
-    const NAME: &'static str = "instances.clean-removal-receipt";
+    const NAME: &'static str = "instance.clean-removal-receipt";
     const SUMMARY: &'static str = "Delete what is left of a receipt-backed source removal.";
     const MUTATES: bool = true;
     const TIMEOUT: Duration = Duration::from_secs(900);
@@ -1594,7 +1594,7 @@ pub struct ReadRemovalStateInput {
 }
 
 impl Command for ReadRemovalState {
-    const NAME: &'static str = "instances.read-source-removal-state";
+    const NAME: &'static str = "instance.read-source-removal-state";
     const SUMMARY: &'static str =
         "Report the state of a recorded source removal and release its empty parent.";
     const MUTATES: bool = true;
@@ -1749,7 +1749,7 @@ pub struct PublicationOutput {
 }
 
 impl Command for CheckPublication {
-    const NAME: &'static str = "instances.check-publication";
+    const NAME: &'static str = "instance.check-publication";
     const SUMMARY: &'static str = "Check whether the origin publishes a commit.";
     const MUTATES: bool = false;
     const TIMEOUT: Duration = Duration::from_secs(300);
@@ -1794,8 +1794,8 @@ pub struct LaravelRoutesOutput {
 
 command_errors! {
     pub enum LaravelRoutesError {
-        PathMismatch {} => "instances.path_mismatch", "The application is not inside the selected release.";
-        RoutesUnreadable {} => "instances.laravel_routes_unreadable", "Laravel did not list its routes.";
+        PathMismatch {} => "instance.path_mismatch", "The application is not inside the selected release.";
+        RoutesUnreadable {} => "instance.laravel_routes_unreadable", "Laravel did not list its routes.";
     }
 }
 
@@ -1847,7 +1847,7 @@ pub fn routes_collide(uris: &[String]) -> bool {
 }
 
 impl Command for InspectLaravelRoutes {
-    const NAME: &'static str = "instances.inspect-laravel-routes";
+    const NAME: &'static str = "instance.inspect-laravel-routes";
     const SUMMARY: &'static str =
         "Read whether a production release's Laravel routes claim the Reverb paths.";
     const MUTATES: bool = false;
@@ -1972,7 +1972,7 @@ pub struct PathFree {
 }
 
 impl Command for CheckPathFree {
-    const NAME: &'static str = "instances.check-path-free";
+    const NAME: &'static str = "instance.check-path-free";
     const SUMMARY: &'static str = "Check that nothing occupies the path of a new Instance source.";
     const MUTATES: bool = false;
     const TIMEOUT: Duration = Duration::from_secs(30);

@@ -56,7 +56,7 @@ function remote_database_server_admin(FakeAgentCommandRunner $agents): RemoteDat
 
 it('runs SQL through the agent with the root password in the protected envelope', function (): void {
     $server = remote_database_server();
-    $agents = new FakeAgentCommandRunner()->answer('databases.server-admin', ['output' => "app\tutf8\nlogs\n"]);
+    $agents = new FakeAgentCommandRunner()->answer('database.server-admin', ['output' => "app\tutf8\nlogs\n"]);
 
     expect(remote_database_server_admin($agents)->execute($server, "SHOW DATABASES;\n"))->toBe(['app', 'logs'])
         ->and($agents->calls[0]['input'])->toBe([
@@ -72,7 +72,7 @@ it('runs SQL through the agent with the root password in the protected envelope'
 it('runs PostgreSQL over authenticated TCP with psql error stopping', function (): void {
     $server = remote_database_server();
     $server->update(['driver' => 'pgsql', 'tag' => '18']);
-    $agents = new FakeAgentCommandRunner()->answer('databases.server-admin', ['output' => "app\n"]);
+    $agents = new FakeAgentCommandRunner()->answer('database.server-admin', ['output' => "app\n"]);
 
     expect(remote_database_server_admin($agents)->execute($server, "SELECT datname FROM pg_database;\n"))->toBe(['app'])
         ->and($agents->calls[0]['input'])->toMatchArray([
@@ -83,7 +83,7 @@ it('runs PostgreSQL over authenticated TCP with psql error stopping', function (
 
 it('maps a failed command to database.server_command_failed without its output', function (string $operation): void {
     $server = remote_database_server();
-    $agents = new FakeAgentCommandRunner()->refuse('databases.server-admin', 'databases.server_admin_failed', ['exit_code' => 1, 'stderr' => 'secret']);
+    $agents = new FakeAgentCommandRunner()->refuse('database.server-admin', 'database.server_admin_failed', ['exit_code' => 1, 'stderr' => 'secret']);
     $admin = remote_database_server_admin($agents);
 
     expect(fn () => $operation === 'execute' ? $admin->execute($server, 'SELECT 1;') : $admin->copyDatabase($server, 'app', 'app_copy'))
@@ -95,7 +95,7 @@ it('maps a failed command to database.server_command_failed without its output',
 
 it('copies a MySQL database inside the container and refuses a name that is not an identifier', function (): void {
     $server = remote_database_server();
-    $agents = new FakeAgentCommandRunner()->answer('databases.server-admin', []);
+    $agents = new FakeAgentCommandRunner()->answer('database.server-admin', []);
     $admin = remote_database_server_admin($agents);
 
     $admin->copyDatabase($server, 'app', 'app_copy');
@@ -107,8 +107,8 @@ it('copies a MySQL database inside the container and refuses a name that is not 
 
 it('waits for the root login over TCP and reports a timeout', function (): void {
     $server = remote_database_server();
-    $ready = new FakeAgentCommandRunner()->answer('databases.server-admin', []);
-    $late = new FakeAgentCommandRunner()->refuse('databases.server-admin', 'databases.server_not_ready');
+    $ready = new FakeAgentCommandRunner()->answer('database.server-admin', []);
+    $late = new FakeAgentCommandRunner()->refuse('database.server-admin', 'database.server_not_ready');
 
     expect(remote_database_server_admin($ready)->waitUntilReady($server, 30))->toBeTrue()
         ->and($ready->calls[0]['input'])->toMatchArray([

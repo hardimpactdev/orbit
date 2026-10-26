@@ -16,9 +16,9 @@ const CONTENT: &[u8] =
     b"# Managed by Orbit.\n[Unit]\nAfter=wg-quick@orbit.service\nWants=wg-quick@orbit.service\n";
 command_errors! {
     pub enum Error {
-        Unsafe { path: String } => "services.ordering_unsafe", "Service ordering needs an owned regular file and directories.";
-        Failed { stage: String } => "services.ordering_failed", "Service ordering failed.";
-        RecoveryFailed {} => "services.ordering_recovery_failed", "Service ordering failed and its prior state could not be restored.";
+        Unsafe { path: String } => "service.ordering_unsafe", "Service ordering needs an owned regular file and directories.";
+        Failed { stage: String } => "service.ordering_failed", "Service ordering failed.";
+        RecoveryFailed {} => "service.ordering_recovery_failed", "Service ordering failed and its prior state could not be restored.";
     }
 }
 #[derive(schemars::JsonSchema, Deserialize)]

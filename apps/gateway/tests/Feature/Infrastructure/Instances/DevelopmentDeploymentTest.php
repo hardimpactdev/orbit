@@ -42,7 +42,7 @@ it('deploys the selected branch commit and publishes a seed only after every req
         ->and($result->commit)->toBe(str_repeat('b', 40))
         ->and($instance->fresh()->seed_path)->toBe($this->fixture->home)
         ->and($instance->fresh()->seed_commit)->toBe(str_repeat('b', 40))
-        ->and($this->fixture->agents->commands())->toBe(['instances.resolve-development-target', 'instances.checkout-development-default', 'instances.run-development-step'])
+        ->and($this->fixture->agents->commands())->toBe(['instance.resolve-development-target', 'instance.checkout-development-default', 'instance.run-development-step'])
         ->and($this->fixture->agents->calls[0]['input'])->toMatchArray(['home' => $this->fixture->home, 'branch' => 'main', 'commit' => null])
         ->and($this->fixture->agents->calls[1]['input']['commit'])->toBe(str_repeat('b', 40))
         ->and($this->fixture->agents->calls[2]['input'])->toMatchArray(['home' => $this->fixture->home, 'script' => 'project-install', 'step' => 'install']);
@@ -62,17 +62,17 @@ it('keeps the previous seed after a failed step and retries the ordered steps on
     $instance->update(['seed_path' => $this->fixture->home, 'seed_commit' => str_repeat('a', 40), 'seed_repository' => $this->fixture->home]);
     plain_steps($instance, [new DevelopmentDeployStep('install', 'project-install'), new DevelopmentDeployStep('verify', 'project-verify')]);
     $agents = $this->fixture->agents;
-    $agents->answer('instances.run-development-step', ['exit_code' => 1, 'timed_out' => false, 'output' => [['stream' => 'stderr', 'value' => 'Install failed']], 'truncated' => false]);
+    $agents->answer('instance.run-development-step', ['exit_code' => 1, 'timed_out' => false, 'output' => [['stream' => 'stderr', 'value' => 'Install failed']], 'truncated' => false]);
 
     $failed = plain_deploy($instance);
 
     expect($failed->failure?->errorCode)->toBe('deployment.step_failed')
         ->and($failed->commit)->toBe(str_repeat('b', 40))
         ->and($instance->fresh()->seed_commit)->toBe(str_repeat('a', 40))
-        ->and($agents->commands())->toBe(['instances.resolve-development-target', 'instances.checkout-development-default', 'instances.run-development-step']);
+        ->and($agents->commands())->toBe(['instance.resolve-development-target', 'instance.checkout-development-default', 'instance.run-development-step']);
 
     $agents->calls = [];
-    $agents->answer('instances.run-development-step', ['exit_code' => 0, 'timed_out' => false, 'output' => [], 'truncated' => false]);
+    $agents->answer('instance.run-development-step', ['exit_code' => 0, 'timed_out' => false, 'output' => [], 'truncated' => false]);
     $retried = plain_deploy($instance);
     expect($retried->succeeded)->toBeTrue()
         ->and($instance->fresh()->seed_commit)->toBe(str_repeat('b', 40))
@@ -89,18 +89,18 @@ it('passes a pinned commit to the agent and maps a commit outside the branch wit
         ->and($instance->fresh()->seed_commit)->toBe($commit);
 
     $agents->calls = [];
-    $agents->refuse('instances.resolve-development-target', 'instances.commit_not_on_branch');
+    $agents->refuse('instance.resolve-development-target', 'instance.commit_not_on_branch');
     $refused = plain_deploy($instance, str_repeat('f', 40));
     expect($refused->failure?->errorCode)->toBe('deployment.commit_not_on_branch')
         ->and($refused->commit)->toBe(str_repeat('f', 40))
-        ->and($agents->commands())->toBe(['instances.resolve-development-target'])
+        ->and($agents->commands())->toBe(['instance.resolve-development-target'])
         ->and($instance->fresh()->seed_commit)->toBe($commit);
 });
 
 it('maps checkout refusals without running steps or publishing a seed', function (string $code, string $expected): void {
     $instance = $this->fixture->instance;
     plain_steps($instance, [new DevelopmentDeployStep('install', 'project-install')]);
-    $this->fixture->agents->refuse('instances.checkout-development-default', $code, ['changes' => 'public/index.php']);
+    $this->fixture->agents->refuse('instance.checkout-development-default', $code, ['changes' => 'public/index.php']);
     $events = [];
 
     $result = plain_deploy($instance, request: new DeploymentRequest(static function ($event) use (&$events): void {
@@ -109,20 +109,20 @@ it('maps checkout refusals without running steps or publishing a seed', function
 
     expect($result->failure?->errorCode)->toBe($expected)
         ->and($instance->fresh()->seed_commit)->toBeNull()
-        ->and($this->fixture->agents->commands())->toBe(['instances.resolve-development-target', 'instances.checkout-development-default']);
-    if ($code === 'instances.checkout_dirty') {
+        ->and($this->fixture->agents->commands())->toBe(['instance.resolve-development-target', 'instance.checkout-development-default']);
+    if ($code === 'instance.checkout_dirty') {
         expect(implode('', $events))->toContain('public/index.php');
     }
 })->with([
-    ['instances.checkout_dirty', 'deployment.checkout_dirty'],
-    ['instances.branch_diverged', 'deployment.branch_diverged'],
-    ['instances.lifecycle_busy', 'instance.lifecycle_busy'],
+    ['instance.checkout_dirty', 'deployment.checkout_dirty'],
+    ['instance.branch_diverged', 'deployment.branch_diverged'],
+    ['instance.lifecycle_busy', 'instance.lifecycle_busy'],
 ]);
 
 it('sends the step timeout and records the agent exit status and output', function (): void {
     $instance = $this->fixture->instance;
     plain_steps($instance, [new DevelopmentDeployStep('hang', 'project-wait', timeoutSeconds: 1)]);
-    $this->fixture->agents->answer('instances.run-development-step', ['exit_code' => 143, 'output' => [['stream' => 'stdout', 'value' => 'started']], 'truncated' => false, 'timed_out' => true]);
+    $this->fixture->agents->answer('instance.run-development-step', ['exit_code' => 143, 'output' => [['stream' => 'stdout', 'value' => 'started']], 'truncated' => false, 'timed_out' => true]);
 
     $result = plain_deploy($instance);
 

@@ -28,9 +28,9 @@ Creating a new file works, and overwriting from a regular file works. Only an ov
 
 ## Solution
 
-Node commands publish files through Rust filesystem APIs. They create a fresh candidate, write it with the required mode and ownership, then rename it onto the live path. This avoids the uutils standard-input overwrite problem and makes each file replacement atomic. Metrics configuration and exporter commands use this sequence. The agent's `processes.stage-unit` writes each Process unit to `/etc/orbit/systemd-candidates` and verifies it with `systemd-analyze`; `processes.activate-unit` then renames it into place.
+Node commands publish files through Rust filesystem APIs. They create a fresh candidate, write it with the required mode and ownership, then rename it onto the live path. This avoids the uutils standard-input overwrite problem and makes each file replacement atomic. Metrics configuration and exporter commands use this sequence. The agent's `process.stage-unit` writes each Process unit to `/etc/orbit/systemd-candidates` and verifies it with `systemd-analyze`; `process.activate-unit` then renames it into place.
 
-Before staging a systemd candidate, `processes.stage-unit` reads the existing unit and checks its Process ownership marker. If its content matches a recorded successful activation, or belongs to a legacy Process with no pending activation, and its active or inactive state matches the desired state, convergence returns without writing a candidate, reloading systemd, or restarting the Process. Changed unit content still follows the candidate-and-verify sequence; an unchanged specification does not justify skipping recovery of an incomplete update.
+Before staging a systemd candidate, `process.stage-unit` reads the existing unit and checks its Process ownership marker. If its content matches a recorded successful activation, or belongs to a legacy Process with no pending activation, and its active or inactive state matches the desired state, convergence returns without writing a candidate, reloading systemd, or restarting the Process. Changed unit content still follows the candidate-and-verify sequence; an unchanged specification does not justify skipping recovery of an incomplete update.
 
 ## Limits
 

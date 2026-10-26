@@ -218,7 +218,7 @@ it('keeps installed APT meta-packages healthy when live versions are not SemVer'
         'installed_version' => $rawVersion,
         'status' => 'installed',
     ]);
-    $agent = new FakeAgentCommandRunner()->answer('tools.apt-inventory', ['packages' => [['name' => $package, 'version' => $rawVersion]]]);
+    $agent = new FakeAgentCommandRunner()->answer('tool.apt-inventory', ['packages' => [['name' => $package, 'version' => $rawVersion]]]);
     $inspector = new NativeToolInspector(new ToolManagerRegistry([tool_probe_apt_manager($agent)]));
 
     $report = tool_doctor_probe($inspector)
@@ -228,7 +228,7 @@ it('keeps installed APT meta-packages healthy when live versions are not SemVer'
         ->toBe(1)
         ->and($report->issues)
         ->toBeEmpty();
-    expect($agent->commands())->toBe(['tools.apt-inventory']);
+    expect($agent->commands())->toBe(['tool.apt-inventory']);
 })->with([
     'postgresql-client' => ['postgresql-client', '16+257build1.1'],
     'golang-go' => ['golang-go', '2:1.24~2build1'],
@@ -448,7 +448,7 @@ it('inspects multiple Composer tools with one installed-package command and keep
     expect(array_map(static fn ($issue): string => $issue->code, $report->issues))
         ->toBe(['tool.not_installed']);
     expect($report->issues[0]->resourceId)->toBe($missing->id);
-    expect($composerAgent->commands())->toBe(['tools.composer-inventory']);
+    expect($composerAgent->commands())->toBe(['tool.composer-inventory']);
     expect($first->id)->toBeLessThan($missing->id);
     expect($second->id)->toBeLessThan($first->id);
 });
@@ -483,8 +483,8 @@ it('marks a failed Composer snapshot unverifiable and continues other managers w
         'package' => 'jq',
         'status' => 'installed',
     ]);
-    $composerAgent = new FakeAgentCommandRunner()->refuse('tools.composer-inventory', 'tools.composer_operation_failed');
-    $agent = new FakeAgentCommandRunner()->answer('tools.apt-inventory', ['packages' => [['name' => 'jq', 'version' => '1:2.4.3-1ubuntu2']]]);
+    $composerAgent = new FakeAgentCommandRunner()->refuse('tool.composer-inventory', 'tool.composer_operation_failed');
+    $agent = new FakeAgentCommandRunner()->answer('tool.apt-inventory', ['packages' => [['name' => 'jq', 'version' => '1:2.4.3-1ubuntu2']]]);
     $inspector = new NativeToolInspector(new ToolManagerRegistry([
         tool_probe_composer_manager($composerAgent),
         tool_probe_apt_manager($agent),
@@ -500,8 +500,8 @@ it('marks a failed Composer snapshot unverifiable and continues other managers w
         ->toBe([$first->id, $second->id]);
     expect($report->issues[0]->observed)->toBe('unverifiable');
     expect(json_encode($report))->not->toContain('secret');
-    expect($composerAgent->commands())->toBe(['tools.composer-inventory']);
-    expect($agent->commands())->toBe(['tools.apt-inventory']);
+    expect($composerAgent->commands())->toBe(['tool.composer-inventory']);
+    expect($agent->commands())->toBe(['tool.apt-inventory']);
     expect($jq->package)->toBe('jq');
 });
 
@@ -536,8 +536,8 @@ it('reads a fresh Composer inventory on repeated doctor inspections', function (
     expect($before->issues)->toBeEmpty();
     expect($after->issues[0]->code)->toBe('tool.version_mismatch');
     expect($composerAgent->commands())->toBe([
-        'tools.composer-inventory',
-        'tools.composer-inventory',
+        'tool.composer-inventory',
+        'tool.composer-inventory',
     ]);
 });
 
@@ -600,7 +600,7 @@ function tool_probe_linux_node(): Node
 function tool_probe_composer_inspector(array $results): array
 {
     $agent = new FakeAgentCommandRunner;
-    $agent->answer('tools.composer-inventory', static function () use (&$results): array {
+    $agent->answer('tool.composer-inventory', static function () use (&$results): array {
         return array_shift($results);
     });
 
@@ -810,7 +810,7 @@ it('keeps a conflicting unowned linux prefix informational when another manager 
     ]);
     $toolsBefore = Tool::query()->count();
     $managersBefore = ToolManagerRecord::query()->count();
-    [$ssh, $agent] = tool_doctor_bind_inventory([], 'tools.vp_scope_absent', 'tools.homebrew_scope_conflict');
+    [$ssh, $agent] = tool_doctor_bind_inventory([], 'tool.vp_scope_absent', 'tool.homebrew_scope_conflict');
 
     $report = tool_doctor_probe(tool_doctor_installed_inspector(), app(SharedInstalledPackageInventory::class))
         ->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'amd64', true)));
@@ -826,7 +826,7 @@ it('keeps a conflicting unowned linux prefix informational when another manager 
         ->and(Tool::query()->count())->toBe($toolsBefore)
         ->and(ToolManagerRecord::query()->count())->toBe($managersBefore);
     tool_doctor_assert_read_only($ssh);
-    expect($agent->commands())->toBe(['tools.homebrew-scan', 'tools.vp-inventory']);
+    expect($agent->commands())->toBe(['tool.homebrew-scan', 'tool.vp-inventory']);
 });
 
 it('marks a conflicting scope unverifiable only for a tool that uses that manager', function (): void {
@@ -838,7 +838,7 @@ it('marks a conflicting scope unverifiable only for a tool that uses that manage
         'package' => 'jq',
         'status' => 'installed',
     ]);
-    tool_doctor_bind_inventory([], 'tools.vp_scope_absent', 'tools.homebrew_scope_conflict');
+    tool_doctor_bind_inventory([], 'tool.vp_scope_absent', 'tool.homebrew_scope_conflict');
 
     $report = tool_doctor_probe(tool_doctor_installed_inspector(), app(SharedInstalledPackageInventory::class))
         ->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'amd64', true)));
@@ -856,7 +856,7 @@ it('reports an incomplete scan as unverifiable even when the node has no tools',
     [$ssh, $agent] = tool_doctor_bind_inventory([
         'formulae' => ['state' => 'incomplete', 'packages' => []],
         'casks' => ['state' => 'unsupported', 'packages' => []],
-    ], 'tools.vp_output_invalid');
+    ], 'tool.vp_output_invalid');
 
     $report = tool_doctor_probe(tool_doctor_unused_inspector(), app(SharedInstalledPackageInventory::class))
         ->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'amd64', true)));
@@ -870,7 +870,7 @@ it('reports an incomplete scan as unverifiable even when the node has no tools',
         ])
         ->and(Tool::query()->count())->toBe(0);
     tool_doctor_assert_read_only($ssh);
-    expect($agent->commands())->toBe(['tools.homebrew-scan', 'tools.vp-inventory']);
+    expect($agent->commands())->toBe(['tool.homebrew-scan', 'tool.vp-inventory']);
 });
 
 it('discovers an unsupported cask through the shared inventory without writing tools', function (): void {
@@ -917,7 +917,7 @@ it('discovers an unsupported cask through the shared inventory without writing t
         expect(strtolower((string) $query['query']))->not->toMatch('/\b(insert|update|delete|replace)\b/');
     }
     tool_doctor_assert_read_only($ssh);
-    expect($agent->commands())->toBe(['tools.homebrew-scan', 'tools.vp-inventory']);
+    expect($agent->commands())->toBe(['tool.homebrew-scan', 'tool.vp-inventory']);
     expect(json_encode($report))->not->toContain($sha)->not->toContain('/opt/homebrew')->not->toContain('/Users/mini');
 });
 
@@ -925,8 +925,8 @@ it('reports a timed out inventory command as unverifiable without writing tools'
     $node = tool_probe_linux_node();
     $toolsBefore = Tool::query()->count();
     $managersBefore = ToolManagerRecord::query()->count();
-    $agent = new FakeAgentCommandRunner()->answer('tools.homebrew-scan', static fn (): array => throw new AgentRunnerFailure('tools.homebrew-scan', AgentRunnerFailure::Timeout, 'Timed out.'))
-        ->answer('tools.vp-inventory', ['packages' => [], 'scan_complete' => true]);
+    $agent = new FakeAgentCommandRunner()->answer('tool.homebrew-scan', static fn (): array => throw new AgentRunnerFailure('tool.homebrew-scan', AgentRunnerFailure::Timeout, 'Timed out.'))
+        ->answer('tool.vp-inventory', ['packages' => [], 'scan_complete' => true]);
     app()->instance(AgentCommandRunner::class, $agent);
     DB::flushQueryLog();
     DB::enableQueryLog();
@@ -1034,14 +1034,14 @@ function tool_doctor_bind_inventory(array $observations, array|string $vp, ?stri
     $ssh = new ToolManagerFakeSshExecutor([]);
     $agent = new FakeAgentCommandRunner;
     if ($brewRefusal !== null) {
-        $agent->refuse('tools.homebrew-scan', $brewRefusal);
+        $agent->refuse('tool.homebrew-scan', $brewRefusal);
     } else {
-        $agent->answer('tools.homebrew-scan', $observations);
+        $agent->answer('tool.homebrew-scan', $observations);
     }
     if (is_string($vp)) {
-        $agent->refuse('tools.vp-inventory', $vp);
+        $agent->refuse('tool.vp-inventory', $vp);
     } else {
-        $agent->answer('tools.vp-inventory', ['packages' => $vp, 'scan_complete' => true]);
+        $agent->answer('tool.vp-inventory', ['packages' => $vp, 'scan_complete' => true]);
     }
     app()->instance(SshExecutor::class, $ssh);
     app()->instance(AgentCommandRunner::class, $agent);

@@ -14,7 +14,7 @@ use Throwable;
 
 /**
  * After an environment change, rebuilds a production Instance's cached configuration through the Node agent's
- * `instances.refresh-config-cache`, then refreshes its PHP cache.
+ * `instance.refresh-config-cache`, then refreshes its PHP cache.
  */
 final readonly class RemoteInstanceEnvironmentRuntimeRefresher implements InstanceEnvironmentRuntimeRefresher
 {
@@ -36,7 +36,7 @@ final readonly class RemoteInstanceEnvironmentRuntimeRefresher implements Instan
         }
 
         try {
-            $outcome = $this->agents->run($context->node, 'instances.refresh-config-cache', [
+            $outcome = $this->agents->run($context->node, 'instance.refresh-config-cache', [
                 'user' => $context->executionUser,
                 'home' => $context->path,
                 'version' => $instance->selected_php_version,

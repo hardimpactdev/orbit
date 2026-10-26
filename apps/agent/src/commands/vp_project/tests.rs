@@ -199,7 +199,7 @@ fn production_reader_cannot_read_owner_private_files() {
         assert!(output.status.success());
         serde_json::from_slice::<Value>(&output.stdout).unwrap()
     };
-    assert_eq!(invoke()["error"]["code"], "tools.project_invalid");
+    assert_eq!(invoke()["error"]["code"], "tool.project_invalid");
     fs::set_permissions(secret, fs::Permissions::from_mode(0o644)).unwrap();
     // nobody's home does not exist; absence of account .npmrc is allowed.
     assert_eq!(invoke()["ok"], true);

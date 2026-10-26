@@ -15,7 +15,7 @@ use Throwable;
 
 /**
  * Checks and updates one package ecosystem of a development checkout through the Node agent's
- * `instances.probe-dependency-update` and `instances.update-dependencies`
+ * `instance.probe-dependency-update` and `instance.update-dependencies`
  * (docs/reference/instance-dependency-contracts.md). Composer runs itself; npm, pnpm, and Bun run through a verified
  * Vite+. A present Yarn project refuses, because no Yarn update is supported.
  */
@@ -58,7 +58,7 @@ final readonly class UpdateEcosystemDependenciesAction
         }
 
         try {
-            $payload = $this->agents->run($instance->node, 'instances.probe-dependency-update', [
+            $payload = $this->agents->run($instance->node, 'instance.probe-dependency-update', [
                 'directory' => $instance->dependencyDirectory(),
                 'ecosystem' => $ecosystem,
             ]);
@@ -93,7 +93,7 @@ final readonly class UpdateEcosystemDependenciesAction
         }
 
         try {
-            $result = $this->agents->run($instance->node, 'instances.update-dependencies', [
+            $result = $this->agents->run($instance->node, 'instance.update-dependencies', [
                 'directory' => $instance->dependencyDirectory(),
                 'ecosystem' => $ecosystem,
                 'vp' => $vitePlus,

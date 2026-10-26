@@ -54,7 +54,7 @@ fn stopped_binary_reader_exits_after_deadline_instead_of_blocking_on_final_json(
         "input": {"checkout": work.0, "commit": commit, "haves": []}
     });
     let mut child = Command::new(binary)
-        .args(["command", "task-vms.export-git-pack"])
+        .args(["command", "task-vm.export-git-pack"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
