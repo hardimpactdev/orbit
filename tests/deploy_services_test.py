@@ -34,6 +34,8 @@ class DeployTest(unittest.TestCase):
         self.corrupt_bundle = False
         self.wrong_sha = False
         self.fail_update = False
+        self.fail_cleanup = False
+        self.rewrite_bundle_ref = False
         self.git("init", "-q", "-b", "main", str(self.origin))
         self.git("-C", str(self.origin), "config", "user.name", "Test")
         self.git("-C", str(self.origin), "config", "user.email", "test@example.test")
@@ -42,7 +44,9 @@ class DeployTest(unittest.TestCase):
         self.git("-C", str(self.origin), "commit", "-qm", "First")
         self.git("clone", "-q", str(self.origin), str(self.source))
         (self.source / "bin").mkdir()
-        self.target.mkdir()
+        restore = self.root / "restore.bundle"
+        self.git("-C", str(self.origin), "bundle", "create", str(restore), "main")
+        self.git("clone", "-q", "-b", "main", str(restore), str(self.target))
         (self.target / ".swamp").mkdir()
         (self.target / ".swamp/history").write_text("retained")
         self.process = {"id": 300, "name": "swamp-serve", "runtime": "systemd",
@@ -76,8 +80,15 @@ class DeployTest(unittest.TestCase):
                 self.events.append("update")
                 if self.fail_update:
                     raise RuntimeError("Checkout update failed")
+                if self.rewrite_bundle_ref:
+                    self.git("-C", str(self.target), "update-ref", "refs/remotes/bundle/main",
+                             "HEAD")
             if source == deploy.HEALTH:
                 return '{"authenticated":true}'
+            if source == 'rm -f -- "$1"\n' and self.fail_cleanup:
+                incoming = Path(shlex.split(argv[-1])[-1])
+                self.addCleanup(incoming.unlink, missing_ok=True)
+                raise RuntimeError("Cleanup unavailable")
             return self.original_run(shlex.split(argv[-1]), source=source)
         if argv[0] == "scp":
             self.events.append("scp")
@@ -166,7 +177,7 @@ class DeployTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "active runs"):
             self.execute()
         self.assertNotIn("process:stop", self.calls)
-        self.assertFalse((self.target / ".git").exists())
+        self.assertEqual((self.target / "version").read_text(), "one")
 
     def test_wrong_process_account_prevents_remote_work(self):
         self.process["user"] = "root"
@@ -175,11 +186,13 @@ class DeployTest(unittest.TestCase):
         self.assertNotIn("process:stop", self.calls)
 
     def test_run_starting_during_preflight_prevents_stop(self):
+        (self.origin / "version").write_text("two")
+        self.git("-C", str(self.origin), "commit", "-qam", "Second")
         self.active_responses = [[], [{"id": "just-started"}]]
         with self.assertRaisesRegex(RuntimeError, "active runs"):
             self.execute()
         self.assertNotIn("process:stop", self.calls)
-        self.assertFalse((self.target / "version").exists())
+        self.assertEqual((self.target / "version").read_text(), "one")
 
     def test_divergent_checkout_keeps_serve_running(self):
         self.execute()
@@ -230,14 +243,50 @@ class DeployTest(unittest.TestCase):
                 self.assertEqual((self.target / local).read_text(), "keep local")
                 (self.target / local).unlink()
 
-    def test_first_deploy_preserves_untracked_file_that_main_adds(self):
-        (self.target / "version").write_text("keep local")
-        with self.assertRaisesRegex(RuntimeError, "Untracked path conflicts"):
-            self.execute()
-        self.assertNotIn("process:stop", self.calls)
-        self.assertEqual((self.target / "version").read_text(), "keep local")
+    def test_missing_checkout_or_unborn_head_requires_manual_restore(self):
+        for state in ("missing", "unborn"):
+            with self.subTest(state=state):
+                self.target = self.root / state
+                self.target.mkdir()
+                self.process["working_directory"] = str(self.target)
+                if state == "unborn":
+                    self.git("init", "-q", "-b", "main", str(self.target))
+                (self.target / ".swamp.yaml").write_text("keep local")
+                with self.assertRaisesRegex(RuntimeError, "existing HEAD"):
+                    self.execute()
+                self.assertNotIn("process:stop", self.calls)
+                self.assertEqual((self.target / ".swamp.yaml").read_text(), "keep local")
+                if state == "missing":
+                    self.assertFalse((self.target / ".git").exists())
+
+    def test_update_uses_validated_sha_after_bundle_ref_changes(self):
+        (self.origin / "version").write_text("two")
+        self.git("-C", str(self.origin), "commit", "-qam", "Second")
+        expected = self.git("-C", str(self.origin), "rev-parse", "HEAD")
+        self.rewrite_bundle_ref = True
+        result = self.execute()
+        self.assertEqual(result["sha"], expected)
+        self.assertEqual(self.git("-C", str(self.target), "rev-parse", "HEAD"), expected)
+        self.assertEqual((self.target / "version").read_text(), "two")
+
+    def test_cleanup_failure_keeps_original_result_or_error(self):
+        self.fail_cleanup = True
+        for fails in (False, True):
+            with self.subTest(deploy_fails=fails):
+                self.active = [{"id": "busy"}] if fails else []
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr):
+                    if fails:
+                        with self.assertRaisesRegex(RuntimeError, "active runs"):
+                            self.execute()
+                    else:
+                        self.assertEqual(self.execute()["status"], "ok")
+                self.assertIn("Bundle cleanup failed", stderr.getvalue())
+                self.assertIn("Cleanup unavailable", stderr.getvalue())
 
     def test_failure_after_stop_leaves_serve_stopped(self):
+        (self.origin / "version").write_text("two")
+        self.git("-C", str(self.origin), "commit", "-qam", "Second")
         self.fail_update = True
         with self.assertRaisesRegex(RuntimeError, "Checkout update failed"):
             self.execute()

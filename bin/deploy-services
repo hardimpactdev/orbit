@@ -39,7 +39,11 @@ def git(*args):
                                    errors="surrogateescape")
 
 if not (Path(app) / ".git").exists():
-    git("init", "--quiet", "-b", "main")
+    raise SystemExit("Services checkout needs an existing HEAD; restore it from a bundle first")
+head = subprocess.run(["git", "-C", app, "rev-parse", "--verify", "HEAD"],
+                      capture_output=True, text=True)
+if head.returncode != 0:
+    raise SystemExit("Services checkout needs an existing HEAD; restore it from a bundle first")
 git("diff", "--quiet")
 git("diff", "--cached", "--quiet")
 if git("branch", "--show-current").strip() != "main":
@@ -47,13 +51,8 @@ if git("branch", "--show-current").strip() != "main":
 git("fetch", "--quiet", "--force", bundle, "refs/remotes/origin/main:" + ref)
 if git("rev-parse", ref + "^{commit}").strip() != sha:
     raise SystemExit("Bundle main does not match the requested commit")
-head = subprocess.run(["git", "-C", app, "rev-parse", "--verify", "HEAD"],
-                      capture_output=True, text=True)
-if head.returncode == 0:
-    git("merge-base", "--is-ancestor", "HEAD", ref)
-    added = git("diff", "--name-only", "--no-renames", "--diff-filter=A", "-z", "HEAD", ref)
-else:
-    added = git("ls-tree", "-r", "--name-only", "-z", ref)
+git("merge-base", "--is-ancestor", "HEAD", sha)
+added = git("diff", "--name-only", "--no-renames", "--diff-filter=A", "-z", "HEAD", sha)
 untracked = [entry[3:] for entry in
              git("status", "--porcelain", "-z", "--untracked-files=all").split("\0")
              if entry.startswith("?? ")]
@@ -61,7 +60,7 @@ for path in filter(None, added.split("\0")):
     for local in untracked:
         if path == local or path.startswith(local + "/") or local.startswith(path + "/"):
             raise SystemExit("Untracked path conflicts with bundle main: " + repr(local))
-print(json.dumps({"changed": head.returncode != 0 or head.stdout.strip() != sha}))
+print(json.dumps({"changed": head.stdout.strip() != sha}))
 PREFLIGHT_PY
 '''
 
@@ -69,11 +68,7 @@ UPDATE = r'''
 set -eu
 app=$1
 sha=$2
-if git -C "$app" rev-parse --verify HEAD >/dev/null 2>&1; then
-    git -C "$app" merge --ff-only --quiet refs/remotes/bundle/main
-else
-    git -C "$app" reset --quiet --hard refs/remotes/bundle/main
-fi
+git -C "$app" merge --ff-only --quiet "$sha"
 [ "$(git -C "$app" rev-parse HEAD)" = "$sha" ]
 '''
 
@@ -159,7 +154,10 @@ def deploy():
                 orbit("process:restart", str(process["id"]))
             health = json.loads(remote(HEALTH, SWAMP, token))
         finally:
-            remote('rm -f -- "$1"\n', incoming)
+            try:
+                remote('rm -f -- "$1"\n', incoming)
+            except (OSError, RuntimeError) as error:
+                print(f"Bundle cleanup failed for {incoming}: {error}", file=sys.stderr)
     return {"status": "ok", "sha": sha, "node": NODE,
             "process": process["id"], **preflight, **health}
 

@@ -58,18 +58,26 @@ describes this reverse proxy arrangement.
 
 From a separate checkout of
 [hardimpactdev/orbit-swamp](https://github.com/hardimpactdev/orbit-swamp) on a host
-with GitHub, Orbit CLI and SSH access to Services, run:
+with GitHub access, Orbit CLI access to the Gateway, and SSH access as `orbit`
+to Services (`10.44.0.3`), run:
 
 ```sh
 bin/deploy-services
 ```
+
+Nick's Mac can deploy and successfully deployed main at `1ebd12e`. Beast
+currently cannot: SSH to `orbit@10.44.0.3` fails with
+`Permission denied (publickey)`. WireGuard and Gateway access alone do not
+permit deployment. Other hosts need a working SSH identity for that account.
 
 The command resolves Node 17 through Orbit, fetches `origin/main`, and sends a
 git bundle over SSH. Services needs no GitHub credential. After transfer, it
 checks active runs through the authenticated server and fetches the bundle
 into `refs/remotes/bundle/main`. Before stopping the Process, it verifies the
 requested commit, the `main` branch, no tracked edits, a fast-forward from
-`HEAD` (except on first deploy), and no untracked path that main adds or replaces.
+an existing `HEAD`, and no untracked path that main adds or replaces. The script
+requires an existing checkout and running authenticated serve; use the manual
+restore below to bootstrap them.
 A bad bundle, divergent checkout or conflicting local file leaves serve running.
 An unrelated untracked model remains in place. If `HEAD` already equals the
 requested commit, deployment checks readiness without stopping or restarting.
@@ -78,13 +86,16 @@ For a changed commit, it checks active runs again immediately before stopping
 the Process. Serve's default 30-second shutdown drain is the backstop for a run
 that starts in the remaining gap: it waits for in-flight runs before aborting
 them at the deadline. The command then advances the checkout with
-`--ff-only` and restarts through Orbit. An update failure after the stop leaves
-the Process stopped for inspection. A restart or readiness failure also needs
-inspection; check the Process state before retrying.
+`git merge --ff-only <validated-sha>` and restarts through Orbit. The update
+uses the commit SHA even if another deploy changes the bundle ref. An update
+failure after the stop leaves the Process stopped for inspection. A restart or
+readiness failure also needs inspection; check the Process state before retrying.
 
 Readiness uses an authenticated loopback Swamp command, retrying timeouts and
 invalid JSON during startup. The command prints one JSON result with the
 commit, Process ID and whether the checkout changed.
+Failure to remove the temporary bundle is logged to stderr without replacing
+the deployment result or its original error.
 
 Python 3, git, SSH and scp are required on the deploying host. SSH uses the
 normal host configuration; `SWAMP_SSH_IDENTITY` can select an existing identity
@@ -94,7 +105,7 @@ separately; a normal deployment never copies or replaces them.
 The Services deploy CI job runs the deployment tests on the shared
 `hardimpactdev` runners with labels `self-hosted` and `hardimpact`.
 
-## Initial move from Beast
+## Initial move or manual restore
 
 Inventory binaries, definitions, local paths, vault metadata, schedules and
 active runs first. Services needs Swamp, Deno, git and curl, plus the Orbit root
@@ -103,19 +114,42 @@ An access refusal needs orchestrator approval before adding an access edge.
 
 Announce cutover, pause the active schedules with `swamp workflow schedule
 pause`, and wait for `swamp run history --active` to be empty. Stop and disable
-Beast's user unit, leaving its checkout and files in place. With all writers
-stopped, copy the entire `.swamp/` directory, including SQLite sidecar files,
-local vault keys, server tokens and paused schedule state. Copy the repository
-marker `.swamp.yaml` alongside it before running the first deploy. Transfer secret files
-with scp, without displaying their contents. Copy the matching Swamp binary,
-Deno/cache and user configuration; adjust path-only `env.sh` for `/home/orbit`.
+Beast's user unit, leaving its checkout and files in place. Keep Services'
+Process stopped during restore. Before copying runtime state, restore the
+tracked checkout manually. From a fresh checkout of `main` on a deploying host,
+create a bundle containing the `main` branch and transfer it:
+
+```sh
+git bundle create /tmp/swamp-restore.bundle main
+scp /tmp/swamp-restore.bundle orbit@10.44.0.3:/tmp/swamp-restore.bundle
+```
+
+On Services as `orbit`, clone into an absent or empty application directory:
+
+```sh
+mkdir -p /home/orbit/apps/orbit-swamp
+git clone /tmp/swamp-restore.bundle -b main /home/orbit/apps/orbit-swamp/default
+rm /tmp/swamp-restore.bundle
+```
+
+For an existing nonempty checkout, preserve it separately before restoring;
+do not overwrite runtime state. The clone restores `.swamp.yaml` and an
+existing `HEAD`. Do not copy `.swamp.yaml` before cloning or use
+`bin/deploy-services` to initialize an empty checkout.
+
+With all writers stopped, copy the entire `.swamp/` directory, including SQLite
+sidecar files, local vault keys, server tokens and paused schedule state.
+Transfer secret files with scp, without displaying their contents. Copy the
+matching Swamp binary, Deno/cache and user configuration; adjust path-only
+`env.sh` for `/home/orbit`.
 Load that file at the start of `~/.bashrc`, before its noninteractive return,
 so SSH deployment commands inherit the API key path without exposing its value.
 Preserve any untracked behavior definitions separately from the git bundle.
 
-Restore the bundled checkout before starting serve. Create the stopped Node
-Process with the definition above, verify the restored state, then start it
-through Orbit. Use `bin/deploy-services` for subsequent updates from main.
+Reuse Process 281, or recreate a missing record with the definition above.
+Verify the restored state, then start the Process through Orbit. Confirm that
+authenticated `swamp run history --active --server` works before using
+`bin/deploy-services` for subsequent updates from main.
 Create the private Route with `orbit route:create swamp.orbit --node=17
 --upstream=http://127.0.0.1:9417 --publication=private`. Restore only the schedules
 that were active before cutover. Verify health and authenticated commands from
