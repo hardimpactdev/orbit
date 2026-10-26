@@ -3477,7 +3477,7 @@
             "type": "string",
             "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
             "maxLength": 63,
-            "description": "Instance name; default is reserved for the default development source"
+            "description": "Instance name; default, or the Project default branch name, means the default development source"
           },
           "root": {
             "type": "string",

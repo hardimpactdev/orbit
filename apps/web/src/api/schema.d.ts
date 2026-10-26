@@ -4748,6 +4748,7 @@ export interface components {
             status?: string;
             source_count?: number;
             completed_count?: number;
+            name_converted_from?: string | null;
         };
         Project: {
             id?: number;
@@ -9758,7 +9759,7 @@ export interface operations {
                 "application/json": {
                     project_id: number;
                     node_id: number;
-                    /** @description Instance name; default is reserved for the default development source */
+                    /** @description Instance name; default, or the Project default branch name, means the default development source */
                     name: string;
                     /** @description Optional relative web-root override */
                     root?: string;
@@ -9779,7 +9780,10 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["Instance"];
+                        data: components["schemas"]["Instance"] & {
+                            /** @description The requested name when a development create used `default` because the name equals the Project default branch. Null otherwise, and always null on an `app-prod` Node. */
+                            name_converted_from: string | null;
+                        };
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -9791,7 +9795,10 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["Instance"];
+                        data: components["schemas"]["Instance"] & {
+                            /** @description The requested name when a development create used `default` because the name equals the Project default branch. Null otherwise, and always null on an `app-prod` Node. */
+                            name_converted_from: string | null;
+                        };
                         meta: components["schemas"]["Meta"];
                     };
                 };

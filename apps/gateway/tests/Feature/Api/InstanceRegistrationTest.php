@@ -311,6 +311,49 @@ it('resolves a Project by canonical repository identity and returns bounded sour
         ->not->toHaveKey('source_path');
 });
 
+it('registers a name that equals the Project default branch as the default Instance', function (string $source): void {
+    Project::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $this->registrationSource->facts = [registration_facts(path: $source)];
+
+    $this
+        ->postJson('/api/v1/instances/register', ['source_path' => $source, 'instance_name' => 'main'])
+        ->assertOk()
+        ->assertJsonPath('data.instance.name', 'default')
+        ->assertJsonPath('data.instance.checkout_path', '/srv/orbit/apps/acme/default')
+        ->assertJsonPath('data.name_converted_from', 'main');
+
+    $this
+        ->postJson('/api/v1/instances/register', ['source_path' => $source, 'instance_name' => 'main'])
+        ->assertOk()
+        ->assertJsonPath('data.instance.name', 'default')
+        ->assertJsonPath('data.name_converted_from', 'main');
+
+    expect(Instance::query()->sole()->name)->toBe('default');
+})->with(['a source that qualifies as default' => '/work/acme', 'another source' => '/work/acme-copy']);
+
+it('reports no name conversion for another registration name', function (): void {
+    Project::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $this->registrationSource->facts = [registration_facts(path: '/work/acme-copy')];
+
+    $this
+        ->postJson('/api/v1/instances/register', ['source_path' => '/work/acme-copy', 'instance_name' => 'feature'])
+        ->assertOk()
+        ->assertJsonPath('data.instance.name', 'feature')
+        ->assertJsonPath('data.name_converted_from', null);
+});
+
 it('refuses registration when no Project owns the repository and points to project:create', function (): void {
     $this
         ->postJson('/api/v1/instances/register', ['source_path' => '/work/acme'])

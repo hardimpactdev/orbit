@@ -45,6 +45,7 @@ use SensitiveParameter;
  *     transfer: array<string, mixed>|null,
  *     deploy_steps: list<array{name: string, phase: string, command: string, timeout_seconds: int}>,
  *     warnings?: list<string>,
+ *     name_converted_from?: string,
  *     auto_deploy: AutoDeployRecord|null
  * }
  * @phpstan-type InstanceRecord array{
@@ -80,6 +81,7 @@ use SensitiveParameter;
  *     deploy_steps: list<array{name: string, phase: string, command: string, timeout_seconds: int}>,
  *     auto_deploy: AutoDeployRecord|null,
  *     warnings?: list<string>,
+ *     name_converted_from?: string,
  *     request_id: string
  * }
  */
@@ -123,6 +125,7 @@ final readonly class InstanceResponse
         /** @var list<string> */
         public array $warnings = [],
         public ?string $deploymentBranch = null,
+        public ?string $nameConvertedFrom = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -152,6 +155,7 @@ final readonly class InstanceResponse
             effectiveRoot: is_string($data['effective_root'] ?? null) ? $data['effective_root'] : null,
             selectedBranch: is_string($data['selected_branch'] ?? null) ? $data['selected_branch'] : null,
             deploymentBranch: is_string($data['deployment_branch'] ?? null) ? $data['deployment_branch'] : null,
+            nameConvertedFrom: is_string($data['name_converted_from'] ?? null) ? $data['name_converted_from'] : null,
             branchOverride: is_string($data['branch_override'] ?? null) ? $data['branch_override'] : null,
             startingCommit: is_string($data['starting_commit'] ?? null) ? $data['starting_commit'] : null,
             detached: ($data['detached'] ?? null) === true,
@@ -206,6 +210,7 @@ final readonly class InstanceResponse
                 $this->deploySteps,
             ),
             ...($this->warnings === [] ? [] : ['warnings' => $this->warnings]),
+            ...($this->nameConvertedFrom === null ? [] : ['name_converted_from' => $this->nameConvertedFrom]),
             ...($this->sharedPaths === null ? [] : ['shared_paths' => $this->sharedPaths]),
             'auto_deploy' => $this->autoDeploy?->toArray(),
             'request_id' => $this->requestId,

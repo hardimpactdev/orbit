@@ -53,7 +53,10 @@ final class InstancesController extends Controller
 
         return response()->json(
             [
-                'data' => InstanceData::fromModel($result['instance'])->toArray(),
+                'data' => [
+                    ...InstanceData::fromModel($result['instance'])->toArray(),
+                    'name_converted_from' => $result['name_converted_from'],
+                ],
                 'meta' => $this->meta($request),
             ],
             $result['created'] ? 201 : 200,
@@ -75,6 +78,7 @@ final class InstancesController extends Controller
                     $result['project'],
                     $result['primary'],
                     $result['instances'],
+                    $result['name_converted_from'],
                 )->toArray(),
                 'meta' => $this->meta($request),
             ],

@@ -128,6 +128,25 @@ describe('instance:register', function (): void {
             ->and($mockClient->getLastRequest()?->body()->all())->toBe(['source_path' => '/work/acme']);
     });
 
+    it('tells a human that the Gateway registered the requested name as default', function (): void {
+        MockClient::global([RegisterInstanceRequest::class => registration_mock_response('main')]);
+
+        expect(Artisan::call('instance:register', ['--yes' => true, '--name' => 'main']))->toBe(0);
+        expect(instance_source_text(Artisan::output()))->toContain(
+            'Name `main` is the Project default branch; registered the `default` Instance.',
+            'Instance: default',
+        );
+    });
+
+    it('carries the registration name conversion in JSON', function (): void {
+        MockClient::global([RegisterInstanceRequest::class => registration_mock_response('main')]);
+
+        expect(Artisan::call('instance:register', ['--json' => true, '--yes' => true, '--name' => 'main']))->toBe(0);
+        expect(json_decode(trim(Artisan::output()), associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toHaveKey('name_converted_from', 'main')
+            ->toHaveKey('instance.name', 'default');
+    });
+
     it('registers with --json on an interactive terminal without a prompt or prose', function (): void {
         $mockClient = MockClient::global([
             RegisterInstanceRequest::class => registration_mock_response(),
@@ -325,7 +344,7 @@ describe('instance:create', function (): void {
         $this
             ->artisan('help', ['command_name' => 'instance:create'])
             ->expectsOutputToContain('Create a development Instance on an app-dev Node.')
-            ->expectsOutputToContain('default is reserved for the default development source')
+            ->expectsOutputToContain('default, or the Project default branch name, means the default development source')
             ->expectsOutputToContain('New production Instances require a candidate. Use instance:clone.')
             ->assertExitCode(0);
     });

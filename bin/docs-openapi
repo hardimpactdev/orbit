@@ -2011,6 +2011,11 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
                 'warnings': {'type': 'array', 'items': {'type': 'string'},
                     'description': 'Key-only review hints for copied development hosts, filesystem paths, and service drivers. Values are never included; settings are not rewritten. Empty when no hints apply.'},
             }, 'required': ['warnings']}]}
+        if route['name'] == 'instance:create':
+            data = {'allOf': [data, {'type': 'object', 'properties': {
+                'name_converted_from': {'type': ['string', 'null'],
+                    'description': 'The requested name when a development create used `default` because the name equals the Project default branch. Null otherwise, and always null on an `app-prod` Node.'},
+            }, 'required': ['name_converted_from']}]}
         if is_list:
             data = {'type': 'array', 'items': data}
         if route['name'] in ('websocket:app:create', 'websocket:app:destroy', 'websocket:app:rotate', 'websocket:sync', 'websocket:operation:show'):

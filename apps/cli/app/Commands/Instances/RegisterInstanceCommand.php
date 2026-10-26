@@ -22,6 +22,8 @@ use Orbit\Sdk\Responses\Instances\InstanceRegistrationResponse;
 
 final class RegisterInstanceCommand extends GatewayCommand
 {
+    use InstanceOutput;
+
     #[\Override]
     protected $signature = 'instance:register
         {--path= : Existing Git checkout or worktree; defaults to the current directory}
@@ -107,6 +109,7 @@ final class RegisterInstanceCommand extends GatewayCommand
         }
 
         $instance = $response->instance;
+        $this->writeNameConversion($response->nameConvertedFrom, 'registered');
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Instance: {$instance->name}", [
             'ID' => $instance->id,
             'Status' => $instance->status,

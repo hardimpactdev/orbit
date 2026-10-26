@@ -15,4 +15,9 @@ final readonly class CreateInstanceData
         public ?string $branch,
         public ?string $databaseServer = null,
     ) {}
+
+    public function withName(string $name): self
+    {
+        return new self($this->projectId, $this->nodeId, $name, $this->root, $this->domain, $this->branch, $this->databaseServer);
+    }
 }

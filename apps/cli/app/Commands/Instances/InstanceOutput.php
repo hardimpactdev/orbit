@@ -11,6 +11,22 @@ use Orbit\Sdk\Responses\Routes\RouteResponse;
 
 trait InstanceOutput
 {
+    /**
+     * Tells the caller that the Gateway used `default` for a name that equals the Project default branch.
+     *
+     * @param  'created'|'registered'  $verb
+     */
+    private function writeNameConversion(?string $nameConvertedFrom, string $verb): void
+    {
+        if ($nameConvertedFrom === null) {
+            return;
+        }
+
+        ConsoleWriter::write($this->output, $this->humanRenderer()->warning(
+            "Name `{$nameConvertedFrom}` is the Project default branch; {$verb} the `default` Instance.",
+        ));
+    }
+
     private function writeInstanceDetails(InstanceResponse $instance): void
     {
         $fields = [

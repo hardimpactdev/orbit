@@ -1529,6 +1529,64 @@ it('retains explicit override intent when it equals the Project default branch',
         ->assertJsonPath('data.branch_override', 'main');
 });
 
+describe('a name that equals the Project default branch', function (): void {
+    it('creates the default Instance and reports the requested name', function (): void {
+        $this->source->resolution = new DevelopmentSourceResolution('main', str_repeat('b', 40));
+
+        $response = $this->postJson('/api/v1/instances', [
+            'project_id' => $this->orbitApp->id,
+            'node_id' => $this->node->id,
+            'name' => 'main',
+        ]);
+
+        $response
+            ->assertCreated()
+            ->assertJsonPath('data.name', 'default')
+            ->assertJsonPath('data.checkout_path', '/srv/orbit/apps/acme/default')
+            ->assertJsonPath('data.selected_branch', 'main')
+            ->assertJsonPath('data.branch_override', null)
+            ->assertJsonPath('data.domain', 'acme.test')
+            ->assertJsonPath('data.name_converted_from', 'main');
+        record_fixture($response, 'instances/instance-create/name-converted', CreateInstanceRequest::class, 'POST /api/v1/instances');
+
+        expect(Instance::query()->sole()->name)->toBe('default');
+    });
+
+    it('keeps the explicit branch as the override of the default Instance', function (string $branch): void {
+        $this->source->resolution = new DevelopmentSourceResolution($branch, str_repeat('b', 40));
+
+        $this
+            ->postJson('/api/v1/instances', [
+                'project_id' => $this->orbitApp->id,
+                'node_id' => $this->node->id,
+                'name' => 'main',
+                'branch' => $branch,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.name', 'default')
+            ->assertJsonPath('data.checkout_path', '/srv/orbit/apps/acme/default')
+            ->assertJsonPath('data.branch_override', $branch)
+            ->assertJsonPath('data.name_converted_from', 'main');
+    })->with(['the default branch' => 'main', 'another branch' => 'release']);
+
+    it('retries the default Instance it converted to', function (): void {
+        $this->source->resolution = new DevelopmentSourceResolution('main', str_repeat('b', 40));
+        $payload = ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'main'];
+
+        $this->postJson('/api/v1/instances', $payload)->assertCreated();
+
+        $this->postJson('/api/v1/instances', $payload)
+            ->assertOk()
+            ->assertJsonPath('data.name', 'default')
+            ->assertJsonPath('data.name_converted_from', 'main');
+        $this->postJson('/api/v1/instances', [...$payload, 'name' => 'default'])
+            ->assertOk()
+            ->assertJsonPath('data.name_converted_from', null);
+
+        expect(Instance::query()->count())->toBe(1);
+    });
+});
+
 it('rejects invalid branch input before persistence or source work', function (): void {
     $this
         ->postJson('/api/v1/instances', [

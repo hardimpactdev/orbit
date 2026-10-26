@@ -32,7 +32,7 @@ This page follows an Instance from creation to removal. Each step links to the p
 
 ## Create a development Instance
 
-Select an active Linux Node with an active `app-dev` role. The name `default` is reserved for the Project's default development source.
+Select an active Linux Node with an active `app-dev` role. The name `default` is reserved for the Project's default development source. A name that equals the Project `default_branch`, such as `main`, also means `default`: Orbit creates the `default` Instance, exactly as if you passed `default`. See [A default-branch name means default](#a-default-branch-name-means-default).
 
 ```bash
 orbit instance:create <project> <node> default
@@ -50,6 +50,20 @@ The Gateway clones the repository to `<apps-root>/<project-slug>/<name>`. It rea
 For example, `instance:create <project> <node> t3-1a2b3c4d --branch=t3code/1a2b3c4d` creates that branch when it is missing. An origin branch keeps its existing selection behavior. An existing local branch is not reset to the default commit. A missing fetched `default_branch` when it is needed returns `instance.branch_resolution_failed`; Orbit selects no fallback branch. The implicit `default` selection must resolve the Project default branch. Invalid branch names return `validation.failed` before source changes.
 
 The response returns `selected_branch` and `branch_override`. `branch_override` holds the `--branch` value, also when it equals the default branch. It is null when the Instance inherits its branch. The Instance also records the starting commit.
+
+When Orbit converts a name, it changes only the name. `--branch` keeps its meaning: without it, the `default` Instance inherits the default branch; with it, the value is the `branch_override`, as it is for `default --branch=<branch>`. So `instance:create <project> <node> main --branch=release` creates the `default` Instance pinned to `release`. The create response carries `name_converted_from`: the requested name when Orbit converted it, otherwise null. A retry with the same name converts again and reports it again. A create on an `app-prod` Node converts nothing, and `name_converted_from` is null.
+
+```json
+{
+  "data": {
+    "name": "default",
+    "checkout_path": "/srv/orbit/apps/acme/default",
+    "domain": "acme.test",
+    "branch_override": null,
+    "name_converted_from": "main"
+  }
+}
+```
 
 Creation moves through recorded states: `reserved`, `checkout_prepared`, `source_resolved`, and `active`. A failure before activation removes the new Instance and its owned checkout, Route and projections, runtime, staging paths, and database copies. Setup has not run, so cleanup runs no teardown and never cascades into another Instance. The response keeps the original failure code. Once cleanup completes, another create is a fresh request and can use a different branch.
 
@@ -179,7 +193,9 @@ The Gateway then inspects the source on the caller's Node. It trusts none of the
 | An independent checkout whose directory name is the Project slug and whose branch is the `default_branch` | `default` |
 | Any other checkout or linked worktree | `--name`, or the directory name |
 
-For a source that qualifies as `default`, a `--name` other than `default` returns `instance.identity_conflict`. A name must be a lowercase DNS label of at most 63 characters, or registration returns `instance.name_invalid`.
+A `--name` that equals the Project `default_branch` means `default`, as it does for create. Orbit converts it before it applies this table, so the table stays the only rule: a source that qualifies as `default` accepts it, and any other source gets the name `default`, as it would with `--name=default`. The response carries `name_converted_from` at the top level of `data`: the requested `--name` when Orbit converted it, otherwise null. Orbit converts only a name you pass. A directory name that equals the default branch stays as it is, because the table above decides when a source is the default one.
+
+For a source that qualifies as `default`, a `--name` other than `default` or the default branch returns `instance.identity_conflict`. A name must be a lowercase DNS label of at most 63 characters, or registration returns `instance.name_invalid`.
 
 Orbit records the source layout as `checkout` or `worktree`. It moves the complete source to `<apps-root>/<project-slug>/<name>`. `HEAD`, the branch or detached state, the index, dirty and untracked files, and all refs stay as they are. A source that is already at that path is adopted in place: Orbit verifies it without moving, copying, or repairing its Git links.
 
@@ -266,6 +282,10 @@ A registered source enters the same lifecycle as a created checkout: one managed
 ### The default Instance keeps its name
 
 The default development source keeps the name `default`, its path, and its Route when the Project's default branch changes. An Instance named after its branch would move and get a new domain on every branch rename. A second public name for the default branch, such as `main_branch`, was rejected because two names for one setting make the contract unclear.
+
+### A default-branch name means default
+
+Callers, often agents, pass the default branch as the name, such as `instance:create <project> <node> main`. Their intent is the Project's default development source. Orbit used to accept the name as given, so these Instances got a `/main` path and a `main.<slug>.<tld>` domain beside the real default. Orbit now converts such a name to `default` and says so in `name_converted_from`. Refusing the name was rejected: the caller's intent is clear, and a refusal only adds a round trip. The conversion changes the name and nothing else, so `--branch` and the registration identity rules keep one meaning each.
 
 ### An explicit branch stays explicit
 

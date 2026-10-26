@@ -20,6 +20,7 @@ final readonly class InstanceRegistrationResponse
         public int $sourceCount,
         public int $completedCount,
         public string $requestId,
+        public ?string $nameConvertedFrom = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -50,6 +51,7 @@ final readonly class InstanceRegistrationResponse
             sourceCount: is_int($data['source_count'] ?? null) ? $data['source_count'] : 0,
             completedCount: is_int($data['completed_count'] ?? null) ? $data['completed_count'] : 0,
             requestId: $requestId,
+            nameConvertedFrom: is_string($data['name_converted_from'] ?? null) ? $data['name_converted_from'] : null,
         );
     }
 
@@ -66,6 +68,7 @@ final readonly class InstanceRegistrationResponse
             'status' => $this->status,
             'source_count' => $this->sourceCount,
             'completed_count' => $this->completedCount,
+            'name_converted_from' => $this->nameConvertedFrom,
             'request_id' => $this->requestId,
         ];
     }
