@@ -60,14 +60,14 @@ describe('source removal commands', function (): void {
         [$removal, $agents, $instance] = sourceRemovalFixture(true);
         $sibling = '/srv/orbit/apps/site/sibling';
         $extra = $sibling;
-        $agents->answer('instances.inspect-source', static function (array $input) use (&$extra): array {
+        $agents->answer('instance.inspect-source', static function (array $input) use (&$extra): array {
             $row = sourceRemovalEvidence($input['checkout'], true);
             if ($extra !== null) {
                 $row['worktrees'] = base64_encode(base64_decode($row['worktrees'])."worktree {$extra}\0HEAD ".str_repeat('a', 40)."\0branch refs/heads/sibling\0\0");
             }
 
             return $row;
-        })->answer('instances.read-source-removal-state', ['state' => 'present']);
+        })->answer('instance.read-source-removal-state', ['state' => 'present']);
         $member = sourceRemovalRecord($removal, $instance, false);
         $originalDigest = $member->source_digest;
         $extra = null;
@@ -79,7 +79,7 @@ describe('source removal commands', function (): void {
         $extra = '/srv/orbit/apps/site/unknown';
         expect(fn () => $removal->revalidate($member, $expectation))->toThrow(RuntimeConvergenceException::class, 'inventory changed');
         $extra = null;
-        $agents->answer('instances.finalize-source-removal', static function (array $input) use ($instance, $originalDigest): array {
+        $agents->answer('instance.finalize-source-removal', static function (array $input) use ($instance, $originalDigest): array {
             expect($input['digest'])->toBe($originalDigest);
             expect($input['independent_worktree'])->toBeFalse();
             expect($input['worktrees'])->toBe(sourceRemovalEvidence($instance->checkout_path, true)['worktrees']);
@@ -106,12 +106,12 @@ describe('source removal commands', function (): void {
     it('sends an empty branch for direct removal of a detached checkout', function (): void {
         [$removal, $agents, $instance] = sourceRemovalFixture();
         $instance->update(['branch' => null]);
-        $agents->answer('instances.inspect-source', static function (array $input): array {
+        $agents->answer('instance.inspect-source', static function (array $input): array {
             $row = sourceRemovalEvidence($input['checkout'], false);
             $row['branch'] = '';
 
             return $row;
-        })->answer('instances.remove-source', []);
+        })->answer('instance.remove-source', []);
 
         $inventory = $removal->inspect($instance, true);
         $removal->remove($instance, $inventory, true);
@@ -122,17 +122,17 @@ describe('source removal commands', function (): void {
 
     it('uses the observed HEAD for publication and direct deletion', function (bool $force): void {
         [$removal, $agents, $instance] = sourceRemovalFixture();
-        $agents->answer('instances.inspect-source', static function (array $input): array {
+        $agents->answer('instance.inspect-source', static function (array $input): array {
             $row = sourceRemovalEvidence($input['checkout'], false);
             $row['commit'] = base64_encode(str_repeat('b', 40));
             $row['worktrees'] = base64_encode(str_replace(str_repeat('a', 40), str_repeat('b', 40), base64_decode($row['worktrees'])));
 
             return $row;
-        })->answer('instances.check-publication', static function (array $input): array {
+        })->answer('instance.check-publication', static function (array $input): array {
             expect($input['commit'])->toBe(str_repeat('b', 40));
 
             return ['published' => true];
-        })->answer('instances.remove-source', []);
+        })->answer('instance.remove-source', []);
 
         $inventory = $removal->inspect($instance, $force);
         $removal->remove($instance, $inventory, $force);
@@ -143,7 +143,7 @@ describe('source removal commands', function (): void {
 
     it('passes inspected identity and force policy to deletion', function (bool $force): void {
         [$removal, $agents, $instance, $lock] = sourceRemovalFixture();
-        $agents->answer('instances.remove-source', static function (array $input, Node $node) use ($lock, $force): array {
+        $agents->answer('instance.remove-source', static function (array $input, Node $node) use ($lock, $force): array {
             expect($lock->held)->toBe($node->id);
             expect($input['git_read']->isEmpty())->toBeTrue();
             expect($input['git_read']->githubToken())->toBeNull();
@@ -163,19 +163,19 @@ describe('source removal commands', function (): void {
 
         expect($agents->calls[0]['input']['inspect_content'])->toBe(! $force);
         expect($agents->commands())->toBe($force
-            ? ['instances.inspect-source', 'instances.remove-source']
-            : ['instances.inspect-source', 'instances.check-publication', 'instances.remove-source']);
+            ? ['instance.inspect-source', 'instance.remove-source']
+            : ['instance.inspect-source', 'instance.check-publication', 'instance.remove-source']);
         expect($lock->held)->toBeNull();
     })->with([false, true]);
 
     it('maps named identity refusals without exposing paths or repository details', function (string $kind, bool $force): void {
         [$removal, $agents, $instance] = sourceRemovalFixture();
         $inventory = $removal->inspect($instance, $force);
-        foreach (['instances.inspect-source', 'instances.remove-source'] as $command) {
-            $agents->refuse($command, 'instances.'.$kind.'_mismatch');
+        foreach (['instance.inspect-source', 'instance.remove-source'] as $command) {
+            $agents->refuse($command, 'instance.'.$kind.'_mismatch');
             $agents->calls = [];
 
-            expect(fn () => $command === 'instances.inspect-source'
+            expect(fn () => $command === 'instance.inspect-source'
                 ? $removal->inspect($instance, $force)
                 : $removal->remove($instance, $inventory, $force))
                 ->toThrow(function (RuntimeConvergenceException $exception) use ($kind): void {
@@ -189,7 +189,7 @@ describe('source removal commands', function (): void {
 
     it('compares canonical repository identities in inspection evidence', function (string $origin, bool $equivalent): void {
         [$removal, $agents, $instance] = sourceRemovalFixture();
-        $agents->answer('instances.inspect-source', static function (array $input) use ($origin): array {
+        $agents->answer('instance.inspect-source', static function (array $input) use ($origin): array {
             $row = sourceRemovalEvidence($input['checkout'], false);
             $row['origin'] = base64_encode($origin);
 
@@ -203,7 +203,7 @@ describe('source removal commands', function (): void {
                 expect($exception->errorCode)->toBe('instance.source_origin_mismatch');
             });
         }
-        expect($agents->commands())->toBe(['instances.inspect-source']);
+        expect($agents->commands())->toBe(['instance.inspect-source']);
     })->with([
         'equivalent protocol' => ['ssh://git@example.test/site.git', true],
         'different repository' => ['https://example.test/other.git', false],
@@ -249,9 +249,9 @@ describe('source removal commands', function (): void {
         ]);
         $expected = ["orbit-process-{$process->id}-web.service", "orbit-schedule-{$schedule->id}.service"];
         sort($expected);
-        $agents->answer('instances.remove-source', [])
-            ->answer('instances.read-source-removal-state', ['state' => 'present'])
-            ->answer('instances.finalize-source-removal', static fn (array $input): array => ['state' => 'finalized', 'receipt' => $input['receipt']]);
+        $agents->answer('instance.remove-source', [])
+            ->answer('instance.read-source-removal-state', ['state' => 'present'])
+            ->answer('instance.finalize-source-removal', static fn (array $input): array => ['state' => 'finalized', 'receipt' => $input['receipt']]);
 
         if ($recorded) {
             $removal->finalize(sourceRemovalRecord($removal, $instance));
@@ -260,29 +260,29 @@ describe('source removal commands', function (): void {
         }
 
         $last = $agents->calls[array_key_last($agents->calls)];
-        expect($last['command'])->toBe($recorded ? 'instances.finalize-source-removal' : 'instances.remove-source');
+        expect($last['command'])->toBe($recorded ? 'instance.finalize-source-removal' : 'instance.remove-source');
         expect($last['input']['own_units'])->toBe($expected);
     })->with(['ordinary', 'task-name', 'other-node', 'unowned', 'owned'])->with([false, true]);
 
     it('refuses dirty or unpublished inspection evidence unless force is explicit', function (bool $dirty): void {
         [$removal, $agents, $instance] = sourceRemovalFixture();
-        $agents->answer('instances.inspect-source', static function (array $input) use ($dirty): array {
+        $agents->answer('instance.inspect-source', static function (array $input) use ($dirty): array {
             $row = sourceRemovalEvidence($input['checkout'], false);
             $row['dirty'] = base64_encode($dirty ? '1' : '0');
 
             return $row;
-        })->answer('instances.check-publication', ['published' => false]);
+        })->answer('instance.check-publication', ['published' => false]);
 
         expect(fn () => $removal->inspect($instance, false))->toThrow(RuntimeConvergenceException::class);
-        expect($agents->commands())->not->toContain('instances.remove-source');
+        expect($agents->commands())->not->toContain('instance.remove-source');
         $agents->calls = [];
         expect($removal->inspect($instance, true)->checkoutPath)->toBe($instance->checkout_path);
-        expect($agents->commands())->toBe(['instances.inspect-source']);
+        expect($agents->commands())->toBe(['instance.inspect-source']);
     })->with([false, true]);
 
     it('returns linked checkout inventory and refuses direct removal before dispatch', function (): void {
         [$removal, $agents, $instance] = sourceRemovalFixture();
-        $agents->answer('instances.inspect-source', static function (array $input): array {
+        $agents->answer('instance.inspect-source', static function (array $input): array {
             $row = sourceRemovalEvidence($input['checkout'], false);
             $row['worktrees'] = base64_encode(base64_decode($row['worktrees'])."worktree /srv/orbit/apps/site/sibling\0HEAD ".str_repeat('b', 40)."\0branch refs/heads/sibling\0\0");
 
@@ -295,7 +295,7 @@ describe('source removal commands', function (): void {
         expect(fn () => $removal->remove($instance, $inventory, true))->toThrow(function (RuntimeConvergenceException $exception): void {
             expect($exception->errorCode)->toBe('instance.source_worktrees_mismatch');
         });
-        expect($agents->commands())->toBe(['instances.inspect-source']);
+        expect($agents->commands())->toBe(['instance.inspect-source']);
     });
 });
 
@@ -304,15 +304,15 @@ describe('failed creation source removal', function (): void {
         [$removal, $agents, $instance, $lock] = sourceRemovalFixture(true);
         $member = sourceRemovalRecord($removal, $instance, false);
         $state = 'present';
-        $agents->answer('instances.read-source-removal-state', static function () use (&$state): array {
+        $agents->answer('instance.read-source-removal-state', static function () use (&$state): array {
             return ['state' => $state];
         });
         $attempt = 0;
-        $agents->answer('instances.finalize-source-removal', static function (array $input) use (&$attempt, &$state): array {
+        $agents->answer('instance.finalize-source-removal', static function (array $input) use (&$attempt, &$state): array {
             if (++$attempt === 1) {
                 expect($input['force'])->toBeFalse();
                 $state = 'quarantined';
-                throw new AgentRunnerFailure('instances.finalize-source-removal', AgentRunnerFailure::Transport, 'Connection closed.');
+                throw new AgentRunnerFailure('instance.finalize-source-removal', AgentRunnerFailure::Transport, 'Connection closed.');
             }
             expect($input['force'])->toBeTrue();
             expect($input['independent_worktree'])->toBeTrue();
@@ -361,23 +361,23 @@ describe('failed creation source removal', function (): void {
         $provisioner->shouldNotReceive('complete');
         app()->instance(DevelopmentInstanceProvisioner::class, $provisioner);
         if ($failure === 'existing source') {
-            $agents->refuse('instances.prepare-development-source', 'instances.source_invalid');
+            $agents->refuse('instance.prepare-development-source', 'instance.source_invalid');
         } else {
-            $agents->answer('instances.prepare-development-source', static function (): never {
-                throw new AgentRunnerFailure('instances.prepare-development-source', AgentRunnerFailure::Transport, 'Connection closed.');
+            $agents->answer('instance.prepare-development-source', static function (): never {
+                throw new AgentRunnerFailure('instance.prepare-development-source', AgentRunnerFailure::Transport, 'Connection closed.');
             });
         }
         if ($failure === 'lost receipt-owned response') {
-            $agents->answer('instances.inspect-source', static function (array $input): array {
+            $agents->answer('instance.inspect-source', static function (array $input): array {
                 expect($input['prepare_id'])->not->toBe('');
                 $row = sourceRemovalEvidence($input['checkout'], false);
                 $row['branch'] = '';
 
                 return $row;
-            })->answer('instances.read-source-removal-state', ['state' => 'present'])
-                ->answer('instances.finalize-source-removal', static fn (array $input): array => ['state' => 'finalized', 'receipt' => $input['receipt']]);
+            })->answer('instance.read-source-removal-state', ['state' => 'present'])
+                ->answer('instance.finalize-source-removal', static fn (array $input): array => ['state' => 'finalized', 'receipt' => $input['receipt']]);
         } else {
-            $agents->refuse('instances.inspect-source', 'instances.ownership_mismatch');
+            $agents->refuse('instance.inspect-source', 'instance.ownership_mismatch');
         }
         $data = new CreateInstanceData($project->id, $node->id, 'interrupted', null, null, 't3code/new');
 
@@ -395,7 +395,7 @@ describe('failed creation source removal', function (): void {
             $retained = Instance::query()->where('name', 'interrupted')->sole();
             expect($retained->source_prepare_id)->not->toBeNull();
             expect($retained->status)->toBe(InstanceState::Reserved);
-            expect($agents->commands())->not->toContain('instances.finalize-source-removal');
+            expect($agents->commands())->not->toContain('instance.finalize-source-removal');
             expect(fn () => app(CreateInstanceAction::class)->execute($data))->toThrow(ResourceOperationException::class, 'cleanup is incomplete');
             $this->assertModelExists($retained);
         }
@@ -445,14 +445,14 @@ describe('failed creation source removal', function (): void {
             'registration_source_digest' => str_repeat('a', 64), 'registration_detached' => false,
         ]);
         $dirty = true;
-        $agents->answer('instances.inspect-source', static function (array $input) use (&$dirty, $force): array {
+        $agents->answer('instance.inspect-source', static function (array $input) use (&$dirty, $force): array {
             expect($input['inspect_content'])->toBe(! $force);
             $row = sourceRemovalEvidence($input['checkout'], true);
             $row['dirty'] = base64_encode($dirty ? '1' : '0');
 
             return $row;
-        })->answer('instances.read-source-removal-state', ['state' => 'present'])
-            ->answer('instances.finalize-source-removal', static function (array $input) use ($force): array {
+        })->answer('instance.read-source-removal-state', ['state' => 'present'])
+            ->answer('instance.finalize-source-removal', static function (array $input) use ($force): array {
                 expect($input['force'])->toBe($force);
                 expect($input['unresolved'])->toBeFalse();
                 expect($input['common_repository'])->toBe('/srv/orbit/apps/site/default');
@@ -481,7 +481,7 @@ describe('failed creation source removal', function (): void {
             'checkout_path' => '/srv/orbit/apps/site/sibling', 'source_layout' => 'worktree',
             'status' => InstanceState::SourceResolved, 'branch' => 'sibling', 'starting_commit' => str_repeat('a', 40),
         ]);
-        $agents->answer('instances.inspect-source', static function (array $input) use ($sibling): array {
+        $agents->answer('instance.inspect-source', static function (array $input) use ($sibling): array {
             $row = sourceRemovalEvidence($input['checkout'], false);
             $row['worktrees'] = base64_encode(base64_decode($row['worktrees'])."worktree {$sibling->checkout_path}\0HEAD ".str_repeat('a', 40)."\0branch refs/heads/sibling\0\0");
 
@@ -494,7 +494,7 @@ describe('failed creation source removal', function (): void {
         $this->assertModelExists($instance);
         $this->assertModelExists($sibling);
         $this->assertDatabaseCount('instance_removals', 0);
-        expect($agents->commands())->not->toContain('instances.prepare-source-removal');
+        expect($agents->commands())->not->toContain('instance.prepare-source-removal');
     });
 
     it('protects unconfirmed and post-activation worktrees before removal acceptance', function (string $state, bool $legacy): void {
@@ -508,31 +508,31 @@ describe('failed creation source removal', function (): void {
             'starting_commit' => in_array($state, ['active', 'resolved'], true) ? str_repeat('a', 40) : null,
             'source_prepare_id' => $legacy ? null : 'attempt-1', 'task_workspace_routed' => false,
         ]);
-        $agents->refuse('instances.inspect-source', match ($state) {
-            'unconfirmed' => 'instances.ownership_mismatch',
-            'foreign' => 'instances.layout_mismatch',
-            default => 'instances.path_mismatch',
+        $agents->refuse('instance.inspect-source', match ($state) {
+            'unconfirmed' => 'instance.ownership_mismatch',
+            'foreign' => 'instance.layout_mismatch',
+            default => 'instance.path_mismatch',
         });
 
         expect(fn () => sourceRemovalAction($removal, $lock)->execute($instance, true))->toThrow(ResourceOperationException::class);
 
         $this->assertModelExists($instance);
         $this->assertDatabaseCount('instance_removals', 0);
-        expect($agents->commands())->not->toContain('instances.prepare-source-removal');
+        expect($agents->commands())->not->toContain('instance.prepare-source-removal');
     })->with(['unconfirmed', 'foreign', 'symlink', 'resolved', 'active'])->with([false, true]);
 
     it('keeps an absent reservation when native finalization detects an appeared directory', function (): void {
         [$removal, $agents, $instance, $lock] = sourceRemovalFixture(true);
         $instance->update(['status' => InstanceState::Reserved, 'starting_commit' => null, 'branch' => null, 'source_prepare_id' => 'attempt-1', 'task_workspace_routed' => false]);
-        $agents->answer('instances.inspect-source', static function (array $input): array {
+        $agents->answer('instance.inspect-source', static function (array $input): array {
             $row = sourceRemovalEvidence($input['checkout'], false);
             $row['source_identity'] = base64_encode('absent');
             $row['commit'] = base64_encode(str_repeat('0', 40));
             $row['branch'] = '';
 
             return $row;
-        })->answer('instances.read-source-removal-state', ['state' => 'present'])
-            ->refuse('instances.finalize-source-removal', 'instances.path_mismatch');
+        })->answer('instance.read-source-removal-state', ['state' => 'present'])
+            ->refuse('instance.finalize-source-removal', 'instance.path_mismatch');
 
         expect(fn () => sourceRemovalAction($removal, $lock)->execute($instance, true))->toThrow(InstanceRemovalException::class);
 
@@ -547,8 +547,8 @@ describe('failed creation source removal', function (): void {
         ProjectLifecycleStep::query()->create(['project_id' => $instance->project_id, 'phase' => 'teardown', 'name' => 'normal-teardown', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
         $teardown = new LifecycleAgent;
         app()->instance(ProjectLifecycleRunner::class, $teardown->runner());
-        $agents->answer('instances.read-source-removal-state', ['state' => 'present'])
-            ->answer('instances.finalize-source-removal', static fn (array $input): array => ['state' => 'finalized', 'receipt' => $input['receipt']]);
+        $agents->answer('instance.read-source-removal-state', ['state' => 'present'])
+            ->answer('instance.finalize-source-removal', static fn (array $input): array => ['state' => 'finalized', 'receipt' => $input['receipt']]);
 
         $completed = sourceRemovalAction($removal, $lock)->execute($instance, true);
 
@@ -572,7 +572,7 @@ describe('failed creation source removal', function (): void {
     it('does not waive repository ownership for interrupted creation', function (bool $force): void {
         [$removal, $agents, $instance, $lock] = sourceRemovalFixture();
         $instance->update(['status' => InstanceState::SourceResolved, 'failed_step' => 'active', 'error_code' => 'instance.runtime_failed']);
-        $agents->answer('instances.inspect-source', static function (array $input): array {
+        $agents->answer('instance.inspect-source', static function (array $input): array {
             $row = sourceRemovalEvidence($input['checkout'], false);
             $row['origin'] = base64_encode('https://example.test/other.git');
 
@@ -583,7 +583,7 @@ describe('failed creation source removal', function (): void {
             ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.source_origin_mismatch'));
         $this->assertModelExists($instance);
         $this->assertDatabaseCount('instance_removals', 0);
-        expect($agents->commands())->not->toContain('instances.prepare-source-removal');
+        expect($agents->commands())->not->toContain('instance.prepare-source-removal');
     })->with([false, true]);
 
     it('preserves a pre-existing reserved checkout without preparation ownership', function (bool $force): void {
@@ -596,7 +596,7 @@ describe('failed creation source removal', function (): void {
 
         expect($instance->fresh()->getAttributes())->toBe($before);
         $this->assertDatabaseCount('instance_removals', 0);
-        expect($agents->commands())->not->toContain('instances.prepare-source-removal');
+        expect($agents->commands())->not->toContain('instance.prepare-source-removal');
     })->with([false, true]);
 
     it('requires complete matching in-place registration evidence', function (array $change): void {
@@ -614,7 +614,7 @@ describe('failed creation source removal', function (): void {
 
         $this->assertModelExists($instance);
         $this->assertDatabaseCount('instance_removals', 0);
-        expect($agents->commands())->not->toContain('instances.prepare-source-removal');
+        expect($agents->commands())->not->toContain('instance.prepare-source-removal');
     })->with([
         'request' => [['registration_request_id' => null]],
         'digest' => [['registration_source_digest' => null]],
@@ -634,7 +634,7 @@ describe('failed creation source removal', function (): void {
             'source_prepare_id' => $legacy ? null : 'attempt-absent', 'task_workspace_routed' => false,
             'failed_step' => $worktree ? null : 'checkout_prepared', 'error_code' => $worktree ? null : 'instance.clone_failed',
         ]);
-        $agents->answer('instances.inspect-source', static function (array $input): array {
+        $agents->answer('instance.inspect-source', static function (array $input): array {
             expect($input['allow_absent'])->toBeTrue();
             expect($input['inspect_content'])->toBeFalse();
             $row = sourceRemovalEvidence($input['checkout'], false);
@@ -643,14 +643,14 @@ describe('failed creation source removal', function (): void {
             $row['source_identity'] = base64_encode('absent');
 
             return $row;
-        })->answer('instances.read-source-removal-state', ['state' => 'present']);
+        })->answer('instance.read-source-removal-state', ['state' => 'present']);
         $attempts = 0;
-        $agents->answer('instances.finalize-source-removal', static function (array $input) use ($retry, &$attempts): array {
+        $agents->answer('instance.finalize-source-removal', static function (array $input) use ($retry, &$attempts): array {
             expect($input['source_identity'])->toBe('absent');
             expect($input['unresolved'])->toBeTrue();
             expect($input['force'])->toBeTrue();
             if (++$attempts === 1 && $retry) {
-                throw new AgentRunnerFailure('instances.finalize-source-removal', AgentRunnerFailure::Transport, 'Connection closed.');
+                throw new AgentRunnerFailure('instance.finalize-source-removal', AgentRunnerFailure::Transport, 'Connection closed.');
             }
 
             return ['state' => 'finalized', 'receipt' => $input['receipt']];
@@ -676,7 +676,7 @@ describe('failed creation source removal', function (): void {
             expect($completed->id)->toBe($failed->id);
         }
         $this->assertModelMissing($instance);
-        expect($agents->commands())->not->toContain('instances.check-publication');
+        expect($agents->commands())->not->toContain('instance.check-publication');
     })->with([
         'failed clone' => [false, false],
         'prepared worktree' => [true, false],
@@ -715,7 +715,7 @@ describe('failed creation source removal', function (): void {
         ProjectLifecycleStep::query()->create(['project_id' => $instance->project_id, 'phase' => 'teardown', 'name' => 'must-not-run', 'command' => 'exit 1', 'timeout_seconds' => 30, 'position' => 0]);
         $teardown = new LifecycleAgent;
         app()->instance(ProjectLifecycleRunner::class, $teardown->runner());
-        $agents->answer('instances.inspect-source', static function (array $input) use ($resolved, $failed): array {
+        $agents->answer('instance.inspect-source', static function (array $input) use ($resolved, $failed): array {
             expect($input['inspect_content'])->toBeFalse();
             expect($input['unresolved'])->toBe(! $resolved);
             expect($input['prepare_id'])->toBe($failed ? '' : 'attempt-1');
@@ -725,8 +725,8 @@ describe('failed creation source removal', function (): void {
             $row['dirty'] = base64_encode('1');
 
             return $row;
-        })->answer('instances.read-source-removal-state', ['state' => 'present'])
-            ->answer('instances.finalize-source-removal', static function (array $input) use ($resolved): array {
+        })->answer('instance.read-source-removal-state', ['state' => 'present'])
+            ->answer('instance.finalize-source-removal', static function (array $input) use ($resolved): array {
                 expect($input['force'])->toBeTrue();
                 expect($input['unresolved'])->toBe(! $resolved);
                 expect($input['git_read']->isEmpty())->toBeTrue();
@@ -741,8 +741,8 @@ describe('failed creation source removal', function (): void {
         expect($completed->members)->toHaveCount(1);
         expect($completed->members->sole()->runtime_published)->toBeFalse();
         expect($teardown->inputs)->toBe([]);
-        expect($agents->commands())->not->toContain('instances.check-publication');
-        $inspections = array_values(array_filter($agents->calls, static fn (array $call): bool => $call['command'] === 'instances.inspect-source'));
+        expect($agents->commands())->not->toContain('instance.check-publication');
+        $inspections = array_values(array_filter($agents->calls, static fn (array $call): bool => $call['command'] === 'instance.inspect-source'));
         expect($inspections[0]['input']['allow_absent'])->toBeTrue();
         expect($inspections[array_key_last($inspections)]['input']['allow_absent'])->toBeFalse();
         $this->assertModelMissing($instance);
@@ -756,8 +756,8 @@ describe('recorded source removal commands', function (): void {
     it('reports a cross-device refusal without recording completion and permits retry', function (): void {
         [$removal, $agents, $instance] = sourceRemovalFixture();
         $member = sourceRemovalRecord($removal, $instance);
-        $agents->answer('instances.read-source-removal-state', ['state' => 'present'])
-            ->answer('instances.finalize-source-removal', ['state' => 'cross_device', 'receipt' => null]);
+        $agents->answer('instance.read-source-removal-state', ['state' => 'present'])
+            ->answer('instance.finalize-source-removal', ['state' => 'cross_device', 'receipt' => null]);
 
         expect(fn () => $removal->finalize($member))->toThrow(function (RuntimeConvergenceException $exception) use ($instance): void {
             expect($exception->errorCode)->toBe('instance.removal_incomplete');
@@ -766,7 +766,7 @@ describe('recorded source removal commands', function (): void {
             expect($exception->result?->stderr)->toStartWith("cross-device: the checkout [{$instance->checkout_path}]");
         });
         expect($member->fresh()->source_finalized_at)->toBeNull();
-        $agents->answer('instances.finalize-source-removal', static fn (array $input): array => ['state' => 'finalized', 'receipt' => $input['receipt']]);
+        $agents->answer('instance.finalize-source-removal', static fn (array $input): array => ['state' => 'finalized', 'receipt' => $input['receipt']]);
         expect($removal->finalize($member))->toBeString();
     });
 
@@ -795,8 +795,8 @@ describe('recorded source removal commands', function (): void {
         [$removal, $agents, $instance] = sourceRemovalFixture();
         $instance->project->update(['slug' => 'renamed']);
         $member = sourceRemovalRecord($removal, $instance);
-        $agents->answer('instances.read-source-removal-state', ['state' => 'present'])
-            ->answer('instances.finalize-source-removal', static fn (array $input): array => ['state' => 'finalized', 'receipt' => $input['receipt']]);
+        $agents->answer('instance.read-source-removal-state', ['state' => 'present'])
+            ->answer('instance.finalize-source-removal', static fn (array $input): array => ['state' => 'finalized', 'receipt' => $input['receipt']]);
 
         $removal->finalize($member);
 
@@ -808,7 +808,7 @@ describe('recorded source removal commands', function (): void {
         if ($detached) {
             $instance->update(['branch' => null]);
         }
-        $agents->answer('instances.inspect-source', static function (array $input) use ($detached): array {
+        $agents->answer('instance.inspect-source', static function (array $input) use ($detached): array {
             $row = sourceRemovalEvidence($input['checkout'], false);
             $row['commit'] = base64_encode(str_repeat('b', 40));
             $row['branch'] = base64_encode($detached ? '' : 'dev');
@@ -817,8 +817,8 @@ describe('recorded source removal commands', function (): void {
             return $row;
         });
         $member = sourceRemovalRecord($removal, $instance, $force);
-        $agents->answer('instances.read-source-removal-state', ['state' => 'present'])
-            ->answer('instances.finalize-source-removal', static fn (array $input): array => ['state' => 'finalized', 'receipt' => $input['receipt']]);
+        $agents->answer('instance.read-source-removal-state', ['state' => 'present'])
+            ->answer('instance.finalize-source-removal', static fn (array $input): array => ['state' => 'finalized', 'receipt' => $input['receipt']]);
 
         $removal->finalize($member);
 
@@ -834,8 +834,8 @@ describe('recorded source removal commands', function (): void {
         [$removal, $agents, $instance] = sourceRemovalFixture();
         $member = sourceRemovalRecord($removal, $instance);
         $agents->calls = [];
-        $agents->answer('instances.read-source-removal-state', ['state' => 'present'])
-            ->answer('instances.inspect-source', static function (array $input) use ($field, $value): array {
+        $agents->answer('instance.read-source-removal-state', ['state' => 'present'])
+            ->answer('instance.inspect-source', static function (array $input) use ($field, $value): array {
                 $row = sourceRemovalEvidence($input['checkout'], false);
                 $row[$field] = base64_encode($value);
 
@@ -843,7 +843,7 @@ describe('recorded source removal commands', function (): void {
             });
 
         expect(fn () => $removal->revalidate($member))->toThrow(RuntimeConvergenceException::class);
-        expect($agents->commands())->toBe(['instances.read-source-removal-state', 'instances.inspect-source']);
+        expect($agents->commands())->toBe(['instance.read-source-removal-state', 'instance.inspect-source']);
         expect($member->fresh()->source_finalized_at)->toBeNull();
     })->with([
         'replaced directory' => ['source_identity', '12:999'],
@@ -858,13 +858,13 @@ describe('recorded source removal commands', function (): void {
     it('accepts canonical-equivalent origin evidence on a retry', function (): void {
         [$removal, $agents, $instance] = sourceRemovalFixture();
         $member = sourceRemovalRecord($removal, $instance);
-        $agents->answer('instances.read-source-removal-state', ['state' => 'present'])
-            ->answer('instances.inspect-source', static function (array $input): array {
+        $agents->answer('instance.read-source-removal-state', ['state' => 'present'])
+            ->answer('instance.inspect-source', static function (array $input): array {
                 $row = sourceRemovalEvidence($input['checkout'], false);
                 $row['origin'] = base64_encode('ssh://git@EXAMPLE.TEST:22/site.git/');
 
                 return $row;
-            })->answer('instances.finalize-source-removal', static fn (array $input): array => ['state' => 'finalized', 'receipt' => $input['receipt']]);
+            })->answer('instance.finalize-source-removal', static fn (array $input): array => ['state' => 'finalized', 'receipt' => $input['receipt']]);
 
         expect($removal->revalidate($member))->toBe(InstanceSourceRevalidationState::Present);
         expect($removal->finalize($member))->toBeString();
@@ -874,12 +874,12 @@ describe('recorded source removal commands', function (): void {
     it('prepares and finalizes the recorded identity under the per-Node lock', function (): void {
         [$removal, $agents, $instance, $lock] = sourceRemovalFixture();
         $member = sourceRemovalRecord($removal, $instance);
-        $agents->answer('instances.read-source-removal-state', static function (array $input, Node $node) use ($lock): array {
+        $agents->answer('instance.read-source-removal-state', static function (array $input, Node $node) use ($lock): array {
             expect($lock->held)->toBe($node->id);
 
             return ['state' => 'present'];
         });
-        $agents->answer('instances.finalize-source-removal', function (array $input) use ($lock, $member): array {
+        $agents->answer('instance.finalize-source-removal', function (array $input) use ($lock, $member): array {
             expect($lock->held)->toBe($member->node_id);
             expect($input)->toMatchArray([
                 'checkout' => '/srv/orbit/apps/site/dev', 'root' => '/srv/orbit/apps',
@@ -899,9 +899,9 @@ describe('recorded source removal commands', function (): void {
 
         expect($receipt)->toBe(hash('sha256', "{$member->instance_removal_id}\0{$member->id}\0{$member->source_digest}\0finalized"));
         expect($agents->commands())->toBe([
-            'instances.inspect-source', 'instances.inspect-source', 'instances.prepare-source-removal',
-            'instances.read-source-removal-state', 'instances.inspect-source', 'instances.inspect-source',
-            'instances.read-source-removal-state', 'instances.inspect-source', 'instances.finalize-source-removal',
+            'instance.inspect-source', 'instance.inspect-source', 'instance.prepare-source-removal',
+            'instance.read-source-removal-state', 'instance.inspect-source', 'instance.inspect-source',
+            'instance.read-source-removal-state', 'instance.inspect-source', 'instance.finalize-source-removal',
         ]);
         expect($lock->held)->toBeNull();
         expect($member->fresh()->source_finalized_at)->toBeNull();
@@ -911,45 +911,45 @@ describe('recorded source removal commands', function (): void {
         [$removal, $agents, $instance] = sourceRemovalFixture();
         $member = sourceRemovalRecord($removal, $instance);
         $agents->calls = [];
-        $agents->answer('instances.read-source-removal-state', ['state' => 'completed']);
+        $agents->answer('instance.read-source-removal-state', ['state' => 'completed']);
 
         expect($removal->revalidate($member))->toBe(InstanceSourceRevalidationState::Completed);
         $first = $removal->finalize($member);
         expect($removal->finalize($member))->toBe($first);
-        expect($agents->commands())->toBe(array_fill(0, 3, 'instances.read-source-removal-state'));
+        expect($agents->commands())->toBe(array_fill(0, 3, 'instance.read-source-removal-state'));
     });
 
     it('maps quarantine inspection to the recorded logical source before finalization', function (string $state): void {
         [$removal, $agents, $instance] = sourceRemovalFixture();
         $member = sourceRemovalRecord($removal, $instance);
         $agents->calls = [];
-        $agents->answer('instances.read-source-removal-state', ['state' => $state]);
-        $agents->answer('instances.read-removal-receipt', ['state' => 'intact']);
-        $agents->answer('instances.finalize-source-removal', static fn (array $input): array => ['state' => 'finalized', 'receipt' => $input['receipt']]);
+        $agents->answer('instance.read-source-removal-state', ['state' => $state]);
+        $agents->answer('instance.read-removal-receipt', ['state' => 'intact']);
+        $agents->answer('instance.finalize-source-removal', static fn (array $input): array => ['state' => 'finalized', 'receipt' => $input['receipt']]);
 
         expect($removal->revalidate($member))->toBe($state === 'quarantined'
             ? InstanceSourceRevalidationState::Quarantined : InstanceSourceRevalidationState::ReceiptPendingCleanup);
         $removal->finalize($member);
 
-        $inspections = array_values(array_filter($agents->calls, static fn (array $call): bool => $call['command'] === 'instances.inspect-source'));
+        $inspections = array_values(array_filter($agents->calls, static fn (array $call): bool => $call['command'] === 'instance.inspect-source'));
         expect($inspections[0]['input']['checkout'])->toBe('/srv/orbit/apps/.orbit-removals/'.$member->instance_removal_id.'.'.$member->id.'.quarantine');
         expect($agents->calls[array_key_last($agents->calls)]['input']['checkout'])->toBe($instance->checkout_path);
-        expect($agents->commands())->not->toContain('instances.clean-removal-receipt');
+        expect($agents->commands())->not->toContain('instance.clean-removal-receipt');
     })->with(['before receipt' => 'quarantined', 'intact receipt' => 'receipt_pending_cleanup']);
 
     it('finishes an incomplete receipt without trying to inspect partially deleted Git data', function (bool $worktree, string $reported): void {
         [$removal, $agents, $instance] = sourceRemovalFixture($worktree);
         $member = sourceRemovalRecord($removal, $instance);
         $agents->calls = [];
-        $agents->answer('instances.read-source-removal-state', ['state' => $reported])
-            ->answer('instances.read-removal-receipt', ['state' => 'incomplete'])
-            ->answer('instances.clean-removal-receipt', static fn (array $input): array => ['receipt' => $input['receipt']]);
+        $agents->answer('instance.read-source-removal-state', ['state' => $reported])
+            ->answer('instance.read-removal-receipt', ['state' => 'incomplete'])
+            ->answer('instance.clean-removal-receipt', static fn (array $input): array => ['receipt' => $input['receipt']]);
 
         expect($removal->revalidate($member))->toBe(InstanceSourceRevalidationState::ReceiptPendingCleanup);
         $receipt = $removal->finalize($member);
 
         expect($receipt)->toBeString();
-        expect($agents->commands())->not->toContain('instances.inspect-source', 'instances.finalize-source-removal');
+        expect($agents->commands())->not->toContain('instance.inspect-source', 'instance.finalize-source-removal');
         expect($agents->calls[array_key_last($agents->calls)]['input'])->toMatchArray([
             'checkout' => $instance->checkout_path, 'source_identity' => '12:34',
             'grouping_directory' => '/srv/orbit/apps/site', 'receipt' => $receipt,
@@ -964,25 +964,25 @@ describe('recorded source removal commands', function (): void {
         [$removal, $agents, $instance] = sourceRemovalFixture();
         $member = sourceRemovalRecord($removal, $instance);
         $before = $member->getAttributes();
-        $agents->answer('instances.read-source-removal-state', ['state' => 'receipt_pending_cleanup']);
-        $agents->refuse($command, 'instances.removal_refused');
+        $agents->answer('instance.read-source-removal-state', ['state' => 'receipt_pending_cleanup']);
+        $agents->refuse($command, 'instance.removal_refused');
         $agents->calls = [];
 
         expect(fn () => $removal->revalidate($member))->toThrow(function (RuntimeConvergenceException $exception): void {
             expect($exception->errorCode)->toBe('instance.removal_conflict');
         });
         expect($member->fresh()->getAttributes())->toBe($before);
-        expect($agents->commands())->not->toContain('instances.clean-removal-receipt', 'instances.finalize-source-removal');
-    })->with(['instances.read-source-removal-state', 'instances.read-removal-receipt']);
+        expect($agents->commands())->not->toContain('instance.clean-removal-receipt', 'instance.finalize-source-removal');
+    })->with(['instance.read-source-removal-state', 'instance.read-removal-receipt']);
 
     it('maps a finalization refusal and rejects an incorrect receipt', function (bool $refused): void {
         [$removal, $agents, $instance] = sourceRemovalFixture();
         $member = sourceRemovalRecord($removal, $instance);
-        $agents->answer('instances.read-source-removal-state', ['state' => 'present']);
+        $agents->answer('instance.read-source-removal-state', ['state' => 'present']);
         if ($refused) {
-            $agents->refuse('instances.finalize-source-removal', 'instances.removal_refused');
+            $agents->refuse('instance.finalize-source-removal', 'instance.removal_refused');
         } else {
-            $agents->answer('instances.finalize-source-removal', ['state' => 'finalized', 'receipt' => 'wrong']);
+            $agents->answer('instance.finalize-source-removal', ['state' => 'finalized', 'receipt' => 'wrong']);
         }
 
         expect(fn () => $removal->finalize($member))->toThrow(function (RuntimeConvergenceException $exception) use ($refused): void {
@@ -1011,14 +1011,14 @@ describe('recorded source removal commands', function (): void {
     it('allows independent sibling changes only for a forced worktree removal', function (bool $force): void {
         [$removal, $agents, $instance] = sourceRemovalFixture(true);
         $member = sourceRemovalRecord($removal, $instance, $force);
-        $agents->answer('instances.read-source-removal-state', ['state' => 'present']);
-        $agents->answer('instances.inspect-source', static function (array $input): array {
+        $agents->answer('instance.read-source-removal-state', ['state' => 'present']);
+        $agents->answer('instance.inspect-source', static function (array $input): array {
             $row = sourceRemovalEvidence($input['checkout'], true);
             $row['worktrees'] = base64_encode(base64_decode($row['worktrees'])."worktree /srv/orbit/apps/site/new-sibling\0HEAD ".str_repeat('a', 40)."\0branch refs/heads/new-sibling\0\0");
 
             return $row;
         });
-        $agents->answer('instances.finalize-source-removal', static fn (array $input): array => ['state' => 'finalized', 'receipt' => $input['receipt']]);
+        $agents->answer('instance.finalize-source-removal', static fn (array $input): array => ['state' => 'finalized', 'receipt' => $input['receipt']]);
 
         if ($force) {
             $removal->finalize($member);
@@ -1027,7 +1027,7 @@ describe('recorded source removal commands', function (): void {
             expect(fn () => $removal->finalize($member))->toThrow(function (RuntimeConvergenceException $exception): void {
                 expect($exception->errorCode)->toBe('instance.removal_conflict');
             });
-            expect($agents->commands())->not->toContain('instances.finalize-source-removal');
+            expect($agents->commands())->not->toContain('instance.finalize-source-removal');
         }
     })->with([true, false]);
 });
@@ -1057,15 +1057,15 @@ function sourceRemovalFixture(bool $worktree = false): array
     };
     $lock = new RemovalCommandLock;
     $agents = new FakeAgentCommandRunner;
-    $agents->answer('instances.inspect-source', static function (array $input, Node $node) use ($lock, $worktree): array {
+    $agents->answer('instance.inspect-source', static function (array $input, Node $node) use ($lock, $worktree): array {
         expect($lock->held)->toBe($node->id);
 
         return sourceRemovalEvidence($input['checkout'], $worktree);
-    })->answer('instances.prepare-source-removal', static function (array $input, Node $node) use ($lock): array {
+    })->answer('instance.prepare-source-removal', static function (array $input, Node $node) use ($lock): array {
         expect($lock->held)->toBe($node->id);
 
         return [];
-    })->answer('instances.check-publication', ['published' => true]);
+    })->answer('instance.check-publication', ['published' => true]);
     $removal = new RemoteDevelopmentInstanceSourceRemoval(
         $agents, $accounts, new CheckoutRemovalBoundary(new ProtectedPathCatalog), $lock, app(RepositoryReadAccess::class),
     );

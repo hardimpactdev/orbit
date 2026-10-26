@@ -1,4 +1,4 @@
-//! `instances.read-queue`: a read-only report of an Instance's Laravel Horizon queue. The agent runs its fixed report
+//! `instance.read-queue`: a read-only report of an Instance's Laravel Horizon queue. The agent runs its fixed report
 //! script, `horizon_queue.php`, with the Instance's PHP in the Process's working directory, as the Process's user. The
 //! PHP reads the script from standard input, the script takes only the validated state and limit as arguments, and prints one
 //! JSON document after a marker line, never a job payload.
@@ -19,8 +19,8 @@ const MARKER: &str = "\n--orbit-queue--\n";
 
 command_errors! {
     pub enum QueueError {
-        Invalid { check: String } => "instances.queue_invalid", "The queue request does not pass its checks.";
-        Failed {} => "instances.queue_failed", "The queue report did not run or printed no report.";
+        Invalid { check: String } => "instance.queue_invalid", "The queue request does not pass its checks.";
+        Failed {} => "instance.queue_failed", "The queue report did not run or printed no report.";
     }
 }
 
@@ -94,7 +94,7 @@ pub fn read(input: &QueueInput) -> Result<QueueReport, QueueError> {
 pub struct ReadQueue;
 
 impl Command for ReadQueue {
-    const NAME: &'static str = "instances.read-queue";
+    const NAME: &'static str = "instance.read-queue";
     const SUMMARY: &'static str = "Report an Instance's Horizon queue, without job payloads.";
     const MUTATES: bool = false;
     const TIMEOUT: Duration = Duration::from_secs(30);

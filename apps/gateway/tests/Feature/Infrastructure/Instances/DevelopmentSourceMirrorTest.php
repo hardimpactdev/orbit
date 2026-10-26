@@ -99,8 +99,8 @@ it('sends the selected source and cache refs through the Gateway mirror', functi
         $workspace->state = ['haves' => [$main], 'head' => $main, 'branch' => 'main', 'baseline' => null];
     }
     $agents = new FakeAgentCommandRunner;
-    $agents->answer('instances.prepare-development-source', ['created' => true])
-        ->answer('instances.resolve-development-source', ['branch' => $taskVm ? $name : 'main', 'commit' => $mode === 'existing' ? $previous : $main]);
+    $agents->answer('instance.prepare-development-source', ['created' => true])
+        ->answer('instance.resolve-development-source', ['branch' => $taskVm ? $name : 'main', 'commit' => $mode === 'existing' ? $previous : $main]);
     $source = new RemoteDevelopmentInstanceSourceLifecycle(
         app(DevelopmentSshExecutor::class), $agents, $accounts, new CheckoutRemovalBoundary(new ProtectedPathCatalog),
         app(RepositoryReadAccess::class), new TaskVmGit($runner, $workspace, $root.'/mirrors', ['https', 'file']),
@@ -109,7 +109,7 @@ it('sends the selected source and cache refs through the Gateway mirror', functi
     $source->prepare($instance, false);
     $source->resolve($instance);
 
-    expect($agents->commands())->toBe(['instances.prepare-development-source', 'instances.resolve-development-source']);
+    expect($agents->commands())->toBe(['instance.prepare-development-source', 'instance.resolve-development-source']);
     foreach ($agents->calls as $call) {
         expect($call['input']['network'])->toBe(! $taskVm);
         expect($call['input']['git_read']->isEmpty())->toBeTrue();
@@ -179,10 +179,10 @@ final class SourceMirrorAgent implements WorkspaceAgentCommandRunner
      */
     private function respond(string $command, array $input, ?AgentBinaryInput $binaryInput): array
     {
-        if ($command === 'task-vms.read-git-refs') {
+        if ($command === 'task-vm.read-git-refs') {
             return $this->state;
         }
-        expect($command)->toBe('task-vms.import-git-pack');
+        expect($command)->toBe('task-vm.import-git-pack');
         expect($binaryInput)->toBeInstanceOf(AgentBinaryInput::class);
         expect($binaryInput?->bytes)->toBeGreaterThan(0);
         $this->imports[] = $input;

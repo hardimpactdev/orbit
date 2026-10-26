@@ -11,7 +11,7 @@ use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentStep;
 use App\Models\Node;
 
-/** Checks and creates a Node storage root through the agent's `nodes.prepare-storage-root`. */
+/** Checks and creates a Node storage root through the agent's `node.prepare-storage-root`. */
 final readonly class AgentNodeStorageRootPreparer implements NodeStorageRootPreparer
 {
     public function __construct(
@@ -30,7 +30,7 @@ final readonly class AgentNodeStorageRootPreparer implements NodeStorageRootPrep
 
     private function run(Node $node, ManagedUserAccount $account, StoragePath $path, bool $createMissing): void
     {
-        AgentStep::run($this->agents, $node, 'nodes.prepare-storage-root', [
+        AgentStep::run($this->agents, $node, 'node.prepare-storage-root', [
             'root' => $path->value,
             'user' => $account->user,
             'group' => $account->group,

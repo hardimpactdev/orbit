@@ -25,20 +25,20 @@ function route_inspection_instance(array $attributes = []): Instance
 }
 
 it('asks the agent to read the current release routes as the production user', function (bool $collision): void {
-    $agents = new FakeAgentCommandRunner()->answer('instances.inspect-laravel-routes', ['collision' => $collision]);
+    $agents = new FakeAgentCommandRunner()->answer('instance.inspect-laravel-routes', ['collision' => $collision]);
 
     expect(new NativeWebSocketRouteInspector($agents)->hasCollisions(route_inspection_instance()))->toBe($collision)
         ->and($agents->calls)->toBe([[
             'node' => 'prod',
-            'command' => 'instances.inspect-laravel-routes',
+            'command' => 'instance.inspect-laravel-routes',
             'input' => ['user' => 'orbit-mealou', 'home' => '/home/orbit-mealou', 'application' => '/home/orbit-mealou/current', 'php_version' => '8.5'],
         ]]);
 })->with([true, false]);
 
 it('fails without the agent message when the routes cannot be read', function (?string $refusal): void {
     $agents = $refusal === null
-        ? new FakeAgentCommandRunner()->answerMalformed('instances.inspect-laravel-routes', [])
-        : new FakeAgentCommandRunner()->refuse('instances.inspect-laravel-routes', $refusal);
+        ? new FakeAgentCommandRunner()->answerMalformed('instance.inspect-laravel-routes', [])
+        : new FakeAgentCommandRunner()->refuse('instance.inspect-laravel-routes', $refusal);
 
     expect(fn () => new NativeWebSocketRouteInspector($agents)->hasCollisions(route_inspection_instance()))
         ->toThrow(function (ResourceOperationException $exception): void {
@@ -46,8 +46,8 @@ it('fails without the agent message when the routes cannot be read', function (?
                 ->and($exception->getMessage())->not->toContain('Refused');
         });
 })->with([
-    'unreadable routes' => ['instances.laravel_routes_unreadable'],
-    'release outside the home' => ['instances.path_mismatch'],
+    'unreadable routes' => ['instance.laravel_routes_unreadable'],
+    'release outside the home' => ['instance.path_mismatch'],
     'answer without a collision' => [null],
 ]);
 

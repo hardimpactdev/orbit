@@ -139,7 +139,7 @@ final readonly class ProjectLifecycleRunner
     }
 
     /**
-     * Runs one step through the agent's `instances.run-lifecycle-step` and fails it with a result in the shape the
+     * Runs one step through the agent's `instance.run-lifecycle-step` and fails it with a result in the shape the
      * caller maps: exit 75 for a busy checkout, 124 when the step's own bound stopped it, 126 or 127 for a missing
      * command, and 1 for any other failure. The result keeps the last KiB of the step's standard error.
      *
@@ -149,7 +149,7 @@ final readonly class ProjectLifecycleRunner
     private function runStep(Instance $instance, LifecycleStep $step, LifecyclePhase $phase, array|string $program, float $timeout, array $environment): void
     {
         try {
-            $answer = $this->agents->run($instance->node, 'instances.run-lifecycle-step', [
+            $answer = $this->agents->run($instance->node, 'instance.run-lifecycle-step', [
                 'checkout' => $instance->checkout_path,
                 'program' => $program,
                 'step' => $step->name,
@@ -169,7 +169,7 @@ final readonly class ProjectLifecycleRunner
                 false,
             );
         } catch (AgentCommandRefused $refusal) {
-            $result = new CommandResult($refusal->errorCode === 'instances.lifecycle_busy' ? 75 : 125, '', $refusal->getMessage(), 0, false);
+            $result = new CommandResult($refusal->errorCode === 'instance.lifecycle_busy' ? 75 : 125, '', $refusal->getMessage(), 0, false);
         }
 
         if (! $result->succeeded()) {

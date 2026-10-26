@@ -38,18 +38,18 @@ use InvalidArgumentException;
 final readonly class RemoteDevelopmentInstanceSourceRemoval implements DevelopmentInstanceSourceFinalizer, DevelopmentInstanceSourceRemoval
 {
     /**
-     * The refusals with which `instances.inspect-source` and `instances.remove-source` name the identity check that
+     * The refusals with which `instance.inspect-source` and `instance.remove-source` name the identity check that
      * failed ([Node agent](/reference/node-agent#commands)).
      *
      * @var array<string, InstanceSourceMismatch>
      */
     private const array CommandMismatches = [
-        'instances.path_mismatch' => InstanceSourceMismatch::Path,
-        'instances.ownership_mismatch' => InstanceSourceMismatch::Ownership,
-        'instances.layout_mismatch' => InstanceSourceMismatch::Layout,
-        'instances.origin_mismatch' => InstanceSourceMismatch::Origin,
-        'instances.branch_mismatch' => InstanceSourceMismatch::Branch,
-        'instances.worktrees_mismatch' => InstanceSourceMismatch::Worktrees,
+        'instance.path_mismatch' => InstanceSourceMismatch::Path,
+        'instance.ownership_mismatch' => InstanceSourceMismatch::Ownership,
+        'instance.layout_mismatch' => InstanceSourceMismatch::Layout,
+        'instance.origin_mismatch' => InstanceSourceMismatch::Origin,
+        'instance.branch_mismatch' => InstanceSourceMismatch::Branch,
+        'instance.worktrees_mismatch' => InstanceSourceMismatch::Worktrees,
     ];
 
     /** The fields of the inspection evidence, each base64 of the bytes the Node read. */
@@ -135,7 +135,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
     ): InstanceSourceInventory {
         $result = $this->runRefusable(
             $instance,
-            'instances.inspect-source',
+            'instance.inspect-source',
             [
                 'checkout' => $physicalCheckout,
                 'root' => $root->value,
@@ -285,7 +285,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             ->value;
         $this->runRefusable(
             $instance,
-            'instances.remove-source',
+            'instance.remove-source',
             [
                 'checkout' => $inventory->checkoutPath,
                 'root' => $inventory->root,
@@ -314,7 +314,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             [$node, $user, $group, $root] = $this->memberContext($member);
             $this->runStep(
                 $node,
-                'instances.prepare-source-removal',
+                'instance.prepare-source-removal',
                 [
                     'root' => $root->value,
                     'operation' => $member->instance_removal_id,
@@ -419,7 +419,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                     && InstanceCreationRecovery::isPreActivation($instance, removing: true));
             $result = $this->runStep(
                 $node,
-                'instances.finalize-source-removal',
+                'instance.finalize-source-removal',
                 [
                     'checkout' => (string) $member->checkout_path,
                     'root' => $root->value,
@@ -615,7 +615,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
         [$node, $user, $group, $root, $groupingDirectory] = $this->memberContext($member);
         $result = $this->runStep(
             $node,
-            'instances.clean-removal-receipt',
+            'instance.clean-removal-receipt',
             [
                 'checkout' => (string) $member->checkout_path,
                 'root' => $root->value,
@@ -650,7 +650,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
         [$node, $user, $group, $root] = $this->memberContext($member);
         $result = $this->runStep(
             $node,
-            'instances.read-removal-receipt',
+            'instance.read-removal-receipt',
             [
                 'checkout' => (string) $member->checkout_path,
                 'root' => $root->value,
@@ -686,7 +686,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
         [$node, $user, $group, $root, $groupingDirectory] = $this->memberContext($member);
         $result = $this->runStep(
             $node,
-            'instances.read-source-removal-state',
+            'instance.read-source-removal-state',
             [
                 'checkout' => (string) $member->checkout_path,
                 'root' => $root->value,
@@ -1040,7 +1040,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
     {
         $result = $this->runStep(
             $instance->node,
-            'instances.check-publication',
+            'instance.check-publication',
             ['origin' => $origin, 'commit' => $commit, 'git_read' => $this->access->for($origin, $this->sourceAccess($instance->project_id))],
             step: 'app-instance-source-removal-publication',
             errorCode: 'instance.remove_refused',
@@ -1087,8 +1087,8 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             }
 
             match ($refused?->errorCode) {
-                'instances.unsafe_content' => $this->unsafeContent($instance, $step, $exception->result),
-                'instances.source_changed' => throw new RuntimeConvergenceException(
+                'instance.unsafe_content' => $this->unsafeContent($instance, $step, $exception->result),
+                'instance.source_changed' => throw new RuntimeConvergenceException(
                     step: $step,
                     errorCode: 'instance.removal_conflict',
                     message: "Instance [{$instance->name}] source changed after inspection.",

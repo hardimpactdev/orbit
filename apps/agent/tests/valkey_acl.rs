@@ -33,7 +33,7 @@ impl Fixture {
         let output = self
             .agent
             .start(
-                "databases.write-valkey-acl",
+                "database.write-valkey-acl",
                 input,
                 "/usr/local/bin:/usr/bin:/bin",
             )
@@ -111,7 +111,7 @@ fn invalid_requests_leave_an_existing_acl_unchanged_and_create_no_volume() {
         input[field] = value.into();
         let result = f.call(input);
         assert_eq!(
-            result["error"]["code"], "databases.valkey_acl_invalid",
+            result["error"]["code"], "database.valkey_acl_invalid",
             "{result}"
         );
         assert_eq!(f.inspect("cat", &["/data/users.acl"]), acl);
@@ -119,7 +119,7 @@ fn invalid_requests_leave_an_existing_acl_unchanged_and_create_no_volume() {
     let absent = Fixture::new();
     assert_eq!(
         absent.call(absent.input("malformed\n"))["error"]["code"],
-        "databases.valkey_acl_invalid"
+        "database.valkey_acl_invalid"
     );
     assert!(!docker(&["volume", "inspect", &absent.volume])
         .status
@@ -150,7 +150,7 @@ fn a_failed_publication_preserves_the_existing_destination() {
         "b".repeat(64)
     )));
     assert_eq!(
-        value["error"]["code"], "databases.valkey_acl_failed",
+        value["error"]["code"], "database.valkey_acl_failed",
         "{value}"
     );
     assert!(value["error"]["details"]["exit_code"].as_i64().unwrap() > 0);

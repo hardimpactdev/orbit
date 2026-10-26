@@ -18,7 +18,7 @@ use App\Models\Node;
 use Throwable;
 
 /**
- * Checks a clone candidate's source on its Node through the agent's `instances.inspect-clone-candidate`
+ * Checks a clone candidate's source on its Node through the agent's `instance.inspect-clone-candidate`
  * (docs/reference/instance-cloning.md).
  */
 final readonly class RemoteInstanceCloneCandidateInspector implements InstanceCloneCandidateInspector
@@ -42,7 +42,7 @@ final readonly class RemoteInstanceCloneCandidateInspector implements InstanceCl
         [$basePath, $executionUser, $configuredBranch, $expectedSource] = $this->identity($candidate, $node);
 
         try {
-            $result = $this->agents->run($node, 'instances.inspect-clone-candidate', [
+            $result = $this->agents->run($node, 'instance.inspect-clone-candidate', [
                 'environment' => $candidate->defaultAppEnv(),
                 'base' => $basePath,
                 'user' => $executionUser,
@@ -55,9 +55,9 @@ final readonly class RemoteInstanceCloneCandidateInspector implements InstanceCl
         } catch (AgentCommandRefused $refusal) {
             $stderr = is_string($refusal->details['stderr'] ?? null) ? self::redacted($refusal->details['stderr']) : '';
 
-            if (str_starts_with($refusal->errorCode, 'instances.clone_')) {
+            if (str_starts_with($refusal->errorCode, 'instance.clone_')) {
                 throw $this->conflict(
-                    'instance.'.substr($refusal->errorCode, strlen('instances.')),
+                    $refusal->errorCode,
                     'The candidate is not eligible for cloning.'.$this->stderrSuffix($stderr),
                     $stderr,
                 );

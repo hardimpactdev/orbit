@@ -108,7 +108,7 @@ fn absent_source_refuses_a_new_directory_and_repeats_empty_parent_cleanup() {
     fs::write(checkout.join("foreign"), "appeared after acceptance").unwrap();
     assert_eq!(
         code(finalize_removal(input(), &context())),
-        "instances.removal_refused"
+        "instance.removal_refused"
     );
     assert_eq!(
         fs::read(checkout.join("foreign")).unwrap(),
@@ -164,9 +164,9 @@ fn deletion_refuses_changed_checkout_or_grouping_ownership() {
             assert_eq!(
                 result,
                 if durable {
-                    "instances.removal_refused"
+                    "instance.removal_refused"
                 } else {
-                    "instances.ownership_mismatch"
+                    "instance.ownership_mismatch"
                 }
             );
             assert_eq!(tree_bytes(&checkout), before);
@@ -222,7 +222,7 @@ fn finalization_rechecks_publication_of_the_accepted_commit_before_moving_source
     let before = tree_bytes(&checkout);
     assert_eq!(
         code(finalize_removal(input, &context())),
-        "instances.removal_refused"
+        "instance.removal_refused"
     );
     assert_eq!(tree_bytes(&checkout), before);
     assert!(!recorded.quarantine().exists());
@@ -251,7 +251,7 @@ fn finalization_requires_the_origin_from_the_latest_inspection() {
     let before = tree_bytes(&checkout);
     assert_eq!(
         code(finalize_removal(input, &context())),
-        "instances.removal_refused"
+        "instance.removal_refused"
     );
     assert_eq!(tree_bytes(&checkout), before);
     let mut input = recorded.finalization();
@@ -271,11 +271,11 @@ fn finalization_requires_the_origin_from_the_latest_inspection() {
 fn deletion_rechecks_replaced_paths_branches_origins_and_shared_administration() {
     for force in [false, true] {
         for (fault, expected) in [
-            ("replacement", "instances.source_changed"),
-            ("symlink", "instances.path_mismatch"),
-            ("branch", "instances.branch_mismatch"),
-            ("origin", "instances.origin_mismatch"),
-            ("shared-git", "instances.layout_mismatch"),
+            ("replacement", "instance.source_changed"),
+            ("symlink", "instance.path_mismatch"),
+            ("branch", "instance.branch_mismatch"),
+            ("origin", "instance.origin_mismatch"),
+            ("shared-git", "instance.layout_mismatch"),
         ] {
             let sandbox = Sandbox::new();
             let checkout = sandbox.checkout("dev");
@@ -425,7 +425,7 @@ fn inspection_and_current_publication_leave_the_index_refs_and_objects_unchanged
             remove_input(&sandbox, &checkout, "dev"),
             &context()
         )),
-        "instances.unsafe_content"
+        "instance.unsafe_content"
     );
 
     assert_eq!(tree_bytes(&checkout.join(".git")), before);
@@ -480,7 +480,7 @@ fn removal_enforces_the_shared_repository_identity_cases_in_both_modes() {
                 if expected.is_some() {
                     "ok"
                 } else {
-                    "instances.origin_mismatch"
+                    "instance.origin_mismatch"
                 },
                 "origin {origin:?}, force {force}"
             );
@@ -516,7 +516,7 @@ fn inspection_preserves_origin_linefeeds_and_deletion_refuses_them() {
                 code(RemoveSource::run_with(removal, &|_, _, _| panic!(
                     "invalid origin reached publication"
                 ))),
-                "instances.origin_mismatch"
+                "instance.origin_mismatch"
             );
             assert_eq!(fs::read(checkout.join(".git/config")).unwrap(), config);
         }
@@ -558,7 +558,7 @@ fn removal_uses_the_configured_origin_despite_rewrites_and_accepts_equivalent_ur
                 Ok(true)
             });
             if origin.contains("/other/") {
-                assert_eq!(code(result), "instances.origin_mismatch");
+                assert_eq!(code(result), "instance.origin_mismatch");
                 assert!(checkout.join(".git").is_dir());
             } else {
                 result.unwrap();

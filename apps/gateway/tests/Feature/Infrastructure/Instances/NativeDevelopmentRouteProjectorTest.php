@@ -104,9 +104,9 @@ it('uses one local workload site when Router and workload roles share a Node', f
             ->not->toContain('tls_trust_pool')
             ->not->toContain("orbit-certificates/app-instance-{$instance->id}/current/root.pem")
             ->not->toContain('reverse_proxy https://')
-            ->and(RouteProjectionAgentAnswers::scopes($agents, 'certificates.request-leaf'))
+            ->and(RouteProjectionAgentAnswers::scopes($agents, 'certificate.request-leaf'))
             ->toBe([['node' => $node->name, 'scope' => "app-instance-{$instance->id}"]])
-            ->and($agents->commands())->not->toContain('firewall.route-lan', 'routes.verify-certificate')
+            ->and($agents->commands())->not->toContain('firewall.route-lan', 'route.verify-certificate')
             ->and($processes->invocations)->toHaveCount(1);
     } finally {
         new Filesystem()->deleteDirectory($home);
@@ -183,10 +183,10 @@ it('retires a transferred generated Route without inventing an old Router certif
         $agents->calls = [];
         $projector->retireSource($transfer);
 
-        $deletions = RouteProjectionAgentAnswers::scopes($agents, 'certificates.remove-leaf');
+        $deletions = RouteProjectionAgentAnswers::scopes($agents, 'certificate.remove-leaf');
         expect(array_column($deletions, 'scope'))
             ->toBe(["app-instance-{$instance->id}", "route-{$sourceRoute->id}-router"]);
-        $firstDeletion = array_search('certificates.remove-leaf', $agents->commands(), true);
+        $firstDeletion = array_search('certificate.remove-leaf', $agents->commands(), true);
         $caddyNodes = collect(RouteProjectionAgentAnswers::publications($agents))->pluck('node')->unique()->sort()->values()->all();
         expect($caddyNodes)->toBe(collect([$source->name, $destination->name])->sort()->values()->all());
         expect(array_count_values(array_slice($agents->commands(), 0, (int) $firstDeletion))['caddy.publish'] ?? 0)->toBe(2);
@@ -211,7 +211,7 @@ it('preserves a Router certificate still serving the transferred explicit Route'
 
     try {
         $projector->retireSource($transfer);
-        $deletions = RouteProjectionAgentAnswers::scopes($agents, 'certificates.remove-leaf');
+        $deletions = RouteProjectionAgentAnswers::scopes($agents, 'certificate.remove-leaf');
         expect(array_column($deletions, 'scope'))
             ->toBe(["app-instance-{$instance->id}"]);
         expect(new DevelopmentSiteRepository()->forNode($router)->map->certificateDirectory()->all())
@@ -241,7 +241,7 @@ it('cleans the recorded Router after the source Node changes Cluster membership'
     try {
         $projector->retireSource($transfer);
 
-        $deletions = RouteProjectionAgentAnswers::scopes($agents, 'certificates.remove-leaf');
+        $deletions = RouteProjectionAgentAnswers::scopes($agents, 'certificate.remove-leaf');
         expect(array_map(orb_node_deletion(...), $deletions))->toBe([
             ['10.44.0.10', "app-instance-{$instance->id}"],
             ['10.44.0.20', "route-{$route->id}-router"],
@@ -267,7 +267,7 @@ it('retires the source leaves and firewall rules of every recorded Route with a 
     try {
         $projector->retireSource($transfer->refresh());
 
-        $deletions = RouteProjectionAgentAnswers::scopes($agents, 'certificates.remove-leaf');
+        $deletions = RouteProjectionAgentAnswers::scopes($agents, 'certificate.remove-leaf');
         expect(array_map(orb_node_deletion(...), $deletions))->toBe([
             ['10.44.0.10', "app-instance-{$instance->id}"],
             ['10.44.0.20', "route-{$route->id}-router"],
@@ -303,7 +303,7 @@ it('keeps the Router leaf of a Route with a web root that stays in its Cluster',
     try {
         $projector->retireSource($transfer->refresh());
 
-        $deletions = RouteProjectionAgentAnswers::scopes($agents, 'certificates.remove-leaf');
+        $deletions = RouteProjectionAgentAnswers::scopes($agents, 'certificate.remove-leaf');
         expect(array_map(orb_node_deletion(...), $deletions))->toBe([
             ['10.44.0.10', "app-instance-{$instance->id}"],
             ['10.44.0.10', "route-{$docs->id}"],
@@ -362,7 +362,7 @@ it('keeps source certificates when retirement cannot reconcile Caddy', function 
 
     try {
         expect(fn () => $projector->retireSource($transfer))->toThrow(RuntimeConvergenceException::class);
-        expect($agents->commands())->not->toContain('certificates.remove-leaf');
+        expect($agents->commands())->not->toContain('certificate.remove-leaf');
         expect($transfer->refresh()->completed_at)->toBeNull();
         $this->assertModelExists($route);
     } finally {
@@ -1006,10 +1006,10 @@ it('projects a dedicated Router over reachable LAN with separate keys and preser
         $projector->converge($instance, $route);
 
         $firewall = collect($agents->calls)->firstWhere('command', 'firewall.route-lan');
-        $leaf = collect($agents->calls)->firstWhere('command', 'routes.verify-certificate');
+        $leaf = collect($agents->calls)->firstWhere('command', 'route.verify-certificate');
         $routerConfiguration = app(NodeCaddyfileRenderer::class)->render($router)->content;
 
-        expect(RouteProjectionAgentAnswers::scopes($agents, 'certificates.request-leaf'))
+        expect(RouteProjectionAgentAnswers::scopes($agents, 'certificate.request-leaf'))
             ->toBe([
                 ['node' => $workload->name, 'scope' => "app-instance-{$instance->id}"],
                 ['node' => $router->name, 'scope' => "route-{$route->id}-router"],
@@ -1019,7 +1019,7 @@ it('projects a dedicated Router over reachable LAN with separate keys and preser
                 'input' => ['operation' => 'converge', 'route_id' => $route->id, 'router' => '10.10.0.20', 'workload' => '10.10.0.10'],
             ])
             ->and($leaf)->toBe([
-                'node' => $router->name, 'command' => 'routes.verify-certificate',
+                'node' => $router->name, 'command' => 'route.verify-certificate',
                 'input' => ['address' => '10.10.0.10', 'port' => 443, 'domain' => $route->domain],
             ])
             ->and($routerConfiguration)
@@ -1274,7 +1274,7 @@ it('uses WireGuard only when the workload has no configured LAN address', functi
     try {
         $projector->converge($instance, $route);
 
-        expect(collect($agents->calls)->firstWhere('command', 'routes.verify-certificate')['input'])
+        expect(collect($agents->calls)->firstWhere('command', 'route.verify-certificate')['input'])
             ->toBe(['address' => '10.44.0.10', 'port' => 443, 'domain' => $route->domain])
             ->and($agents->commands())->not->toContain('firewall.route-lan')
             ->and($processes->invocations)
@@ -1296,7 +1296,7 @@ it('refuses configured LAN without a Router LAN address before leaf validation o
                     ->and($exception->errorCode)
                     ->toBe('route.lan_unreachable');
             })
-            ->and($agents->commands())->not->toContain('routes.verify-certificate')
+            ->and($agents->commands())->not->toContain('route.verify-certificate')
             ->and($processes->invocations)
             ->toBeEmpty();
     } finally {
@@ -1307,7 +1307,7 @@ it('refuses configured LAN without a Router LAN address before leaf validation o
 it('refuses an invalid workload leaf before Router Caddy or DNS publication', function (): void {
     [$instance, $route] = orb127_route_projection_models();
     [$projector, $agents, $processes, $home] = orb127_route_projector(
-        static fn (string $command): bool => $command === 'routes.verify-certificate',
+        static fn (string $command): bool => $command === 'route.verify-certificate',
     );
 
     try {
@@ -1341,7 +1341,7 @@ it('reports runtime certificate firewall and DNS publication boundaries before a
         'source-access', 'firewall' => null,
         'runtime' => null,
         'certificate' => static fn (string $command, array $input): bool => (
-            $command === 'certificates.request-leaf' && $input['scope'] === "app-instance-{$instance->id}"
+            $command === 'certificate.request-leaf' && $input['scope'] === "app-instance-{$instance->id}"
         ),
         'dns' => null,
     };
@@ -1370,8 +1370,8 @@ it('reports runtime certificate firewall and DNS publication boundaries before a
         expect($processes->invocations)->toHaveCount($boundary === 'dns' ? 1 : 0);
         if ($boundary === 'source-access') {
             // The certificate request and its publication come first.
-            expect(array_values(array_filter($agents->commands(), static fn (string $command): bool => str_starts_with($command, 'certificates.'))))
-                ->toBe(['certificates.request-leaf', 'certificates.publish-leaf']);
+            expect(array_values(array_filter($agents->commands(), static fn (string $command): bool => str_starts_with($command, 'certificate.'))))
+                ->toBe(['certificate.request-leaf', 'certificate.publish-leaf']);
         }
         // The Route is published only once its certificate exists, so a failed certificate step
         // leaves every other build on the Node without its site.
@@ -1484,13 +1484,13 @@ function orb_hostname_change_certificate_replay(FakeAgentCommandRunner $agents, 
     foreach ($agents->calls as ['node' => $node, 'command' => $command, 'input' => $input]) {
         $host = orb_node_address($node);
 
-        if ($command === 'certificates.publish-leaf') {
+        if ($command === 'certificate.publish-leaf') {
             $disk[$host][$input['scope']] = $input['domain'];
 
             continue;
         }
 
-        if ($command === 'certificates.remove-leaf') {
+        if ($command === 'certificate.remove-leaf') {
             unset($disk[$host][$input['scope']]);
 
             continue;
@@ -1655,9 +1655,9 @@ function orb_pending_domain_change(Route $route, Instance $instance, RouteReplac
  */
 function orb127_route_projector(?Closure $refuse = null, bool $failDns = false, ?Closure $failAccess = null): array
 {
-    $agents = new FakeAgentCommandRunner()->answer('instances.grant-development-caddy-access', static function (array $input) use ($failAccess): array {
+    $agents = new FakeAgentCommandRunner()->answer('instance.grant-development-caddy-access', static function (array $input) use ($failAccess): array {
         if ($failAccess instanceof Closure && $failAccess($input)) {
-            throw new AgentCommandRefused('instances.grant-development-caddy-access', 'instances.caddy_access_failed', 'Caddy cannot read the Web root.');
+            throw new AgentCommandRefused('instance.grant-development-caddy-access', 'instance.caddy_access_failed', 'Caddy cannot read the Web root.');
         }
 
         return ['unreadable' => []];
@@ -1763,7 +1763,7 @@ function route_access_served_instance(
 /** @return list<mixed> The checkouts of the one source-access walk the agent ran. */
 function route_access_walked_checkouts(FakeAgentCommandRunner $agents): array
 {
-    $access = collect($agents->calls)->sole(static fn (array $call): bool => $call['command'] === 'instances.grant-development-caddy-access');
+    $access = collect($agents->calls)->sole(static fn (array $call): bool => $call['command'] === 'instance.grant-development-caddy-access');
 
     return array_column($access['input']['sites'], 'checkout');
 }

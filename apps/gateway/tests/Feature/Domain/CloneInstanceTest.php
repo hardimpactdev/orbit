@@ -389,11 +389,11 @@ it('captures production runtime definitions during clone and installs them only 
 
     $releases = [false];
     $processAgents = new FakeAgentCommandRunner()
-        ->answer('processes.check-release', static function () use (&$releases): array {
+        ->answer('process.check-release', static function () use (&$releases): array {
             return ['available' => array_shift($releases) ?? true];
         })
-        ->answer('processes.stage-unit', ['staged' => true, 'previous' => false, 'state' => null])
-        ->answer('processes.activate-unit', ['backup_left' => false]);
+        ->answer('process.stage-unit', ['staged' => true, 'previous' => false, 'state' => null])
+        ->answer('process.activate-unit', ['backup_left' => false]);
     $accounts = new class implements ManagedUserAccountResolver
     {
         public function resolve(Node $node): ManagedUserAccount
@@ -409,7 +409,7 @@ it('captures production runtime definitions during clone and installs them only 
         new DockerProcessRenderer,
     );
     $scheduleAgents = new FakeAgentCommandRunner;
-    foreach (['schedules.install', 'schedules.activate', 'schedules.remove'] as $command) {
+    foreach (['schedule.install', 'schedule.activate', 'schedule.remove'] as $command) {
         $scheduleAgents->answer($command, []);
     }
     $scheduleRuntime = new RemoteScheduleRuntimeManager(
@@ -479,7 +479,7 @@ it('captures production runtime definitions during clone and installs them only 
         ->and($schedule->desired_timer_state)
         ->toBe(DesiredTimerState::Disabled)
         ->and($processAgents->commands())
-        ->toBe(['processes.check-release', 'processes.check-release', 'processes.stage-unit', 'processes.activate-unit'])
+        ->toBe(['process.check-release', 'process.check-release', 'process.stage-unit', 'process.activate-unit'])
         ->and($scheduleAgents->calls[0]['input'])
         ->toMatchArray(['user' => $target->production_user, 'working_directory' => $target->production_home.'/current']);
 });

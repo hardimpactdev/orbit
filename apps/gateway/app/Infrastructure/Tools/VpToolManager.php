@@ -56,11 +56,11 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
         $this->guardNode($node);
 
         try {
-            $data = $this->agents->run($node, 'tools.inspect-vp-scope', deadlineSeconds: $this->budget?->seconds());
+            $data = $this->agents->run($node, 'tool.inspect-vp-scope', deadlineSeconds: $this->budget?->seconds());
         } catch (AgentCommandRefused $exception) {
             $step = match ($exception->errorCode) {
-                'tools.vp_scope_absent' => 'manager-absent',
-                'tools.vp_scope_conflict' => 'manager-conflict',
+                'tool.vp_scope_absent' => 'manager-absent',
+                'tool.vp_scope_conflict' => 'manager-conflict',
                 default => 'manager-probe',
             };
             throw new ToolManagerException($step, 'The Vite+ global scope is unavailable for the enrolled account.');
@@ -91,7 +91,7 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
         }
 
         try {
-            $this->agents->run($node, 'tools.materialize-vp', $this->materializeInput($node), $this->budget?->seconds());
+            $this->agents->run($node, 'tool.materialize-vp', $this->materializeInput($node), $this->budget?->seconds());
         } catch (AgentCommandRefused $exception) {
             throw new ToolManagerException('materialize', 'The VP manager could not be materialized.', previous: $exception);
         }
@@ -122,7 +122,7 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
     {
         $this->guardNode($node);
 
-        return $this->version($node, 'tools.vp-version', [], 'manager-version');
+        return $this->version($node, 'tool.vp-version', [], 'manager-version');
     }
 
     /** vp itself is recipe-owned; deploy prerequisites only inspect it. */
@@ -152,7 +152,7 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
     public function environmentsInstalled(Node $node, array $environments): array
     {
         $store = dirname($this->existingBinary($node), 2);
-        $data = $this->storeCommand($node, 'tools.inspect-vp-store', ['environments' => array_map(fn (VpEnvironment $environment): array => $environment->input(), $environments)]);
+        $data = $this->storeCommand($node, 'tool.inspect-vp-store', ['environments' => array_map(fn (VpEnvironment $environment): array => $environment->input(), $environments)]);
         $installed = $data['installed'] ?? null;
         if (! is_array($installed) || ! array_is_list($installed) || count($installed) !== count($environments) || array_filter($installed, is_bool(...)) !== $installed) {
             throw new ToolManagerException('environment-inspect', 'Malformed vp store inventory.');
@@ -163,13 +163,13 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
 
     public function installEnvironment(Node $node, VpEnvironment $environment, string $npmrc = ''): void
     {
-        $this->storeCommand($node, 'tools.install-vp-environment', ['environment' => $environment->input(), 'npmrc' => $npmrc]);
+        $this->storeCommand($node, 'tool.install-vp-environment', ['environment' => $environment->input(), 'npmrc' => $npmrc]);
     }
 
     /** @param list<array<string, mixed>> $references */
     public function pruneEnvironments(Node $node, string $store, array $references): void
     {
-        $this->storeCommand($node, 'tools.prune-vp-store', ['store' => $store, 'references' => array_map(fn (array $reference): array => VpEnvironment::fromArray($reference)->input(), $references)]);
+        $this->storeCommand($node, 'tool.prune-vp-store', ['store' => $store, 'references' => array_map(fn (array $reference): array => VpEnvironment::fromArray($reference)->input(), $references)]);
     }
 
     /** @param array<string, mixed> $input
@@ -180,7 +180,7 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
         try {
             return $this->agents->run($node, $name, $input, $this->budget?->seconds());
         } catch (AgentCommandRefused $error) {
-            if (! in_array($error->errorCode, ['tools.store_invalid', 'tools.store_failed', 'tools.store_lock_timeout'], true)) {
+            if (! in_array($error->errorCode, ['tool.store_invalid', 'tool.store_failed', 'tool.store_lock_timeout'], true)) {
                 throw $error;
             }
             throw new ToolManagerException('environment', 'The vp store prerequisite failed before build; check store ownership, checksums, registry access, and lock contention.');
@@ -192,7 +192,7 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
         $this->guardNode($node);
         $this->guardPackage($package);
 
-        return $this->version($node, 'tools.vp-candidate', ['package' => $package], 'candidate-version');
+        return $this->version($node, 'tool.vp-candidate', ['package' => $package], 'candidate-version');
     }
 
     /** @return array{packages: list<array{name: string, version: ?string}>, scan_complete: bool} */
@@ -200,7 +200,7 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
     {
         $this->guardNode($node);
 
-        $data = $this->globalCommand($node, 'tools.vp-inventory', [], 'installed-version');
+        $data = $this->globalCommand($node, 'tool.vp-inventory', [], 'installed-version');
         if (! is_array($data['packages'] ?? null) || ! array_is_list($data['packages']) || ! is_bool($data['scan_complete'] ?? null)) {
             throw new ToolManagerException('installed-version', 'The agent returned an invalid Vite+ inventory.');
         }
@@ -277,7 +277,7 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
     {
         $this->guardNode($node);
         $this->guardPackage($package);
-        $data = $this->globalCommand($node, 'tools.vp-removal-plan', ['package' => $package], 'removal-plan');
+        $data = $this->globalCommand($node, 'tool.vp-removal-plan', ['package' => $package], 'removal-plan');
 
         if (! is_array($data['packages'] ?? null) || ! array_is_list($data['packages']) || array_filter($data['packages'], is_string(...)) !== $data['packages']) {
             throw new ToolManagerException('removal-plan', 'The agent returned an invalid Vite+ removal plan.');
@@ -319,7 +319,7 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
     {
         $this->guardNode($node);
         $this->guardPackage($package);
-        $this->globalCommand($node, 'tools.vp-'.$step, ['package' => $package], $step);
+        $this->globalCommand($node, 'tool.vp-'.$step, ['package' => $package], $step);
     }
 
     /** @param array<string, mixed> $input */
@@ -342,9 +342,9 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
             return $this->agents->run($node, $command, $input, $this->budget?->seconds());
         } catch (AgentCommandRefused|AgentRunnerFailure $exception) {
             $step = match ($exception instanceof AgentCommandRefused ? $exception->errorCode : null) {
-                'tools.vp_scope_absent' => 'manager-absent',
-                'tools.vp_scope_conflict' => 'manager-conflict',
-                'tools.vp_scope_unreadable' => 'manager-probe',
+                'tool.vp_scope_absent' => 'manager-absent',
+                'tool.vp_scope_conflict' => 'manager-conflict',
+                'tool.vp_scope_unreadable' => 'manager-probe',
                 default => $step,
             };
             throw new ToolManagerException($step, 'The Vite+ operation failed.', previous: $exception);

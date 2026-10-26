@@ -94,7 +94,7 @@ fn read(input: &Input, host: &mut impl Host) -> Result<Refs, Error> {
 
 pub struct ReadRefs;
 impl Command for ReadRefs {
-    const NAME: &'static str = "task-vms.read-git-refs";
+    const NAME: &'static str = "task-vm.read-git-refs";
     const SUMMARY: &'static str =
         "Read checkout refs and its worktree-private CI baseline for pack transfer.";
     const MUTATES: bool = false;

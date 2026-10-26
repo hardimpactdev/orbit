@@ -188,7 +188,7 @@ describe('database:server:create --driver=redis', function (): void {
             ->and(DatabaseServer::query()->sole()->failed_step)->toBeNull();
     })->with([
         'a failed outcome' => ['failed'],
-        'a run without a result' => [new AgentRunnerFailure('databases.write-valkey-acl', AgentRunnerFailure::MissingResult, 'docker: Error response from daemon: pull access denied')],
+        'a run without a result' => [new AgentRunnerFailure('database.write-valkey-acl', AgentRunnerFailure::MissingResult, 'docker: Error response from daemon: pull access denied')],
     ]);
 
     it('continues with the Process after a failed start, without writing the ACL file again', function (): void {

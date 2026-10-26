@@ -53,7 +53,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         $this->assertReleaseName($name);
 
         try {
-            $result = $this->run($instance, 'instances.prepare-release', [
+            $result = $this->run($instance, 'instance.prepare-release', [
                 ...$input,
                 'name' => $name,
                 'branch' => $branch,
@@ -62,7 +62,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                 'git_read' => $this->access->for($input['repository'], $instance->project->source_access),
             ], 'deployment-prepare', 'deployment.prepare_failed');
         } catch (RuntimeConvergenceException $exception) {
-            if (AgentStep::refusal($exception)?->errorCode === 'instances.commit_not_on_branch') {
+            if (AgentStep::refusal($exception)?->errorCode === 'instance.commit_not_on_branch') {
                 throw new ResourceOperationException(
                     'deployment.commit_not_on_branch',
                     "The branch [{$branch}] does not contain the commit [{$commit}].",
@@ -94,7 +94,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         $instance->loadMissing('environmentValues');
         $stepName = "deployment-step-{$step->name}";
         // The Node publishes each line live on the operation's channel; the result keeps the output for the record.
-        $result = AgentStep::run($this->agents, $instance->node, 'instances.run-deploy-step', [
+        $result = AgentStep::run($this->agents, $instance->node, 'instance.run-deploy-step', [
             'user' => $user,
             'home' => $home,
             'release' => $release->name,
@@ -136,7 +136,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
     {
         [$input, $home] = $this->releaseHome($instance);
         $this->assertRelease($release, $home);
-        $result = $this->runBound($instance, 'instances.activate-release', [...$input, 'name' => $release->name, 'commit' => $release->commit], 'deployment-activate', 'deployment.activation_failed');
+        $result = $this->runBound($instance, 'instance.activate-release', [...$input, 'name' => $release->name, 'commit' => $release->commit], 'deployment-activate', 'deployment.activation_failed');
         [$name, $commit] = $this->releaseIdentity($result);
 
         if ($name !== $release->name || $commit !== $release->commit) {
@@ -149,7 +149,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
     public function selected(Instance $instance): ?DeploymentRelease
     {
         [$input, $home] = $this->releaseHome($instance);
-        $release = $this->runBound($instance, 'instances.inspect-release', $input, 'deployment-selected-release', 'deployment.selection_invalid')['release'] ?? null;
+        $release = $this->runBound($instance, 'instance.inspect-release', $input, 'deployment-selected-release', 'deployment.selection_invalid')['release'] ?? null;
 
         return $release === null ? null : $this->releaseFrom($release, $home);
     }
@@ -158,7 +158,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
     {
         $this->assertReleaseName($name);
         [$input, $home] = $this->releaseHome($instance);
-        $release = $this->runBound($instance, 'instances.inspect-release', [...$input, 'name' => $name], 'rollback-retained-release', 'rollback.release_invalid')['release'] ?? null;
+        $release = $this->runBound($instance, 'instance.inspect-release', [...$input, 'name' => $name], 'rollback-retained-release', 'rollback.release_invalid')['release'] ?? null;
 
         return $this->releaseFrom($release, $home);
     }
@@ -166,7 +166,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
     public function releases(Instance $instance): DeploymentReleaseState
     {
         [$input] = $this->releaseHome($instance);
-        $result = $this->runBound($instance, 'instances.list-releases', $input, 'deployment-release-list', 'deployment.release_inspection_failed');
+        $result = $this->runBound($instance, 'instance.list-releases', $input, 'deployment-release-list', 'deployment.release_inspection_failed');
         $selected = $result['selected'] ?? null;
         $listed = $result['releases'] ?? null;
         if (! is_array($listed)) {
@@ -197,7 +197,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
             $this->assertRelease($previous, $home);
         }
 
-        $result = $this->run($instance, 'instances.prune-releases', [
+        $result = $this->run($instance, 'instance.prune-releases', [
             ...$input,
             'limit' => DeploymentRelease::RETAINED_PER_HOME,
             'selected' => $selected->name,

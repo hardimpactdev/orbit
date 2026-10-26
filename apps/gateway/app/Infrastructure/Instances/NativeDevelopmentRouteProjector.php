@@ -446,7 +446,7 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
             );
         }
 
-        AgentStep::run($this->agents, $router, 'routes.verify-certificate', [
+        AgentStep::run($this->agents, $router, 'route.verify-certificate', [
             'address' => $address,
             'port' => 443,
             'domain' => $route->domain,

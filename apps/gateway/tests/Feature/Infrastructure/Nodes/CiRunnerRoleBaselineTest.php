@@ -17,7 +17,7 @@ use Tests\Support\Fleet\FleetFixtures;
 use function Pest\Laravel\mock;
 
 /**
- * A CI runner baseline whose agent answers the prerequisites and gives `ci-runners.host` the outcome `$outcome`, or
+ * A CI runner baseline whose agent answers the prerequisites and gives `ci-runner.host` the outcome `$outcome`, or
  * refuses it when `$outcome` is null.
  *
  * @return array{CiRunnerRoleBaseline, FakeAgentCommandRunner, FakeNodeRoleFirewallManager}
@@ -27,10 +27,10 @@ function ci_runner_baseline(?string $outcome, ?Closure $during = null): array
     $accounts = mock(ManagedUserAccountResolver::class);
     $accounts->shouldReceive('resolve')->andReturn(new ManagedUserAccount('orbit', 'orbit', '/home/orbit'));
     $firewall = new FakeNodeRoleFirewallManager;
-    $agents = (new FakeAgentCommandRunner)->answer('roles.install-prerequisites', []);
+    $agents = (new FakeAgentCommandRunner)->answer('role.install-prerequisites', []);
     $outcome === null
-        ? $agents->refuse('ci-runners.host', 'ci_runners.host_failed', ['reason' => 'Incus unavailable'])
-        : $agents->answer('ci-runners.host', static function () use ($outcome, $during): array {
+        ? $agents->refuse('ci-runner.host', 'ci_runner.host_failed', ['reason' => 'Incus unavailable'])
+        : $agents->answer('ci-runner.host', static function () use ($outcome, $during): array {
             if ($during !== null) {
                 $during();
             }
@@ -51,7 +51,7 @@ it('installs Incus and runs the host baseline before opening its managed firewal
 
     $baseline->converge($node, $node->roles()->sole());
 
-    expect($agents->commands())->toBe(['roles.install-prerequisites', 'ci-runners.host'])
+    expect($agents->commands())->toBe(['role.install-prerequisites', 'ci-runner.host'])
         ->and($agents->calls[0]['input']['packages'])->toContain('incus', 'incus-base', 'incus-client')->not->toContain('docker.io', 'caddy')
         ->and($agents->calls[1]['input'])->toBe(['action' => 'converge'])
         ->and($firewallAtHost)->toBe([])

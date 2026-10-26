@@ -159,7 +159,7 @@ describe('CI cache Git transport replacing Actions downloads', function (): void
         $tips = $this->git->fetch($this->project, ['main'], $this->access, 'tasks.fetch_failed');
         app(WorkspaceAgentCommandRunner::class)->beforeImport = function (array $input): void {
             if (in_array($this->cacheRef, array_column($input['updates'], 'reference'), true)) {
-                throw new AgentCommandRefused('task-vms.import-git-pack', 'task_vm.git_import_failed', 'Disposable cache transfer failed.');
+                throw new AgentCommandRefused('task-vm.import-git-pack', 'task_vm.git_import_failed', 'Disposable cache transfer failed.');
             }
         };
         $this->git->send($this->project, new Node(['name' => 'task-vm']), $this->root.'/vm', $tips, $this->run, 'tasks.fetch_failed');

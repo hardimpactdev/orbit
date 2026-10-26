@@ -28,7 +28,7 @@ Implement the host role through the existing role lifecycle. Keep the runner-rec
 
 [Node provisioning](/reference/node-provisioning#ci-runner-role) owns the implemented contract. The role follows normal role add, baseline, managed firewall, Doctor, metrics, and fleet participation. It shares all roles except `gateway` and `vpn`. It is Linux-only, not a singleton or relocatable, and cannot be assigned during enrollment.
 
-The baseline uses the native `ci-runners.host` command through the [agent runner](/reference/node-agent#commands), with typed input and declared outcomes. It adopts the reserved project, bridge, ACL, and default profile in place. It preserves an existing pool, bridge subnet, every container, and each container's running state. Runner counts and names are not role input. Both default ACL directions reject, private IPv4 and all IPv6 are rejected, and only public IPv4 egress is allowed.
+The baseline uses the native `ci-runner.host` command through the [agent runner](/reference/node-agent#commands), with typed input and declared outcomes. It adopts the reserved project, bridge, ACL, and default profile in place. It preserves an existing pool, bridge subnet, every container, and each container's running state. Runner counts and names are not role input. Both default ACL directions reject, private IPv4 and all IPv6 are rejected, and only public IPv4 egress is allowed.
 
 Removal refuses while any container remains, including stopped containers. It never deregisters or deletes runners. Normal removal retains Incus resources; explicit purge removes only the empty project, bridge, and ACL. The shared pool stays.
 

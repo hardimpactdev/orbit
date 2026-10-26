@@ -137,9 +137,9 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
             if ($sink === false) {
                 throw $this->failed();
             }
-            $this->agents->run($source, 'instances.read-transfer-archive', [
+            $this->agents->run($source, 'instance.read-transfer-archive', [
                 'archive' => $capture->archiveIdentity,
-            ], output: new AgentBinaryOutput($sink, $this->contract->command('instances.read-transfer-archive')->outputMaxBytes));
+            ], output: new AgentBinaryOutput($sink, $this->contract->command('instance.read-transfer-archive')->outputMaxBytes));
         } catch (Throwable) {
             if (is_file($temporary)) {
                 unlink($temporary);
@@ -166,11 +166,11 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
             ? ApplicationDirectory::resolve($path->value, $instance->root ?? $instance->project->root)
             : $path->value;
         try {
-            $binary = AgentBinaryInput::fromFile($archive, $this->contract->command('instances.materialize-transfer')->inputMaxBytes);
+            $binary = AgentBinaryInput::fromFile($archive, $this->contract->command('instance.materialize-transfer')->inputMaxBytes);
         } catch (Throwable) {
             throw $this->stagingFailed('app-instance-transfer-upload');
         }
-        AgentStep::run($this->agents, $destination, 'instances.materialize-transfer', [
+        AgentStep::run($this->agents, $destination, 'instance.materialize-transfer', [
             'destination' => $path->value,
             'head' => $capture->head,
             'branch' => $capture->branch,
@@ -195,7 +195,7 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
      */
     private function run(Node $node, array $input, string $step, string $errorCode): array
     {
-        return AgentStep::run($this->agents, $node, 'instances.transfer-source', $input, $step, $errorCode, 'Instance transfer');
+        return AgentStep::run($this->agents, $node, 'instance.transfer-source', $input, $step, $errorCode, 'Instance transfer');
     }
 
     /**

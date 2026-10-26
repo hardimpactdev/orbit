@@ -15,8 +15,8 @@ use SensitiveParameter;
 use Throwable;
 
 /**
- * Seeds a SQLite database through the Node agents' `instances.prepare-sqlite-seed` and
- * `instances.install-sqlite-seed` (docs/reference/instance-cloning.md). The source agent takes an integrity-checked
+ * Seeds a SQLite database through the Node agents' `instance.prepare-sqlite-seed` and
+ * `instance.install-sqlite-seed` (docs/reference/instance-cloning.md). The source agent takes an integrity-checked
  * snapshot, the Gateway moves it with the protected transfer, and the target agent installs it as a new file. Each
  * agent records its progress, so a retry resumes or cleans up what an earlier run left.
  */
@@ -41,7 +41,7 @@ final readonly class RemoteInstanceSqliteSeeder implements InstanceSqliteSeeder
         $targetInput = $this->targetInput($target, $operation, $targetState, $relativePath);
 
         try {
-            $snapshot = $this->agents->run($source->node, 'instances.prepare-sqlite-seed', [...$sourceInput, 'mode' => 'prepare']);
+            $snapshot = $this->agents->run($source->node, 'instance.prepare-sqlite-seed', [...$sourceInput, 'mode' => 'prepare']);
         } catch (Throwable) {
             $this->failPreflight();
         }
@@ -57,9 +57,9 @@ final readonly class RemoteInstanceSqliteSeeder implements InstanceSqliteSeeder
         $targetInput = [...$targetInput, 'expected_size' => $snapshot['bytes'], 'expected_digest' => $snapshot['sha256']];
 
         try {
-            $prepared = $this->agents->run($target->node, 'instances.install-sqlite-seed', [...$targetInput, 'mode' => 'prepare']);
+            $prepared = $this->agents->run($target->node, 'instance.install-sqlite-seed', [...$targetInput, 'mode' => 'prepare']);
         } catch (AgentCommandRefused $refusal) {
-            if ($refusal->errorCode === 'instances.sqlite_seed_refused') {
+            if ($refusal->errorCode === 'instance.sqlite_seed_refused') {
                 $this->cleanupSource($source, $sourceInput);
             }
             $this->failPreflight();
@@ -90,13 +90,13 @@ final readonly class RemoteInstanceSqliteSeeder implements InstanceSqliteSeeder
         }
 
         try {
-            $installed = $this->agents->run($target->node, 'instances.install-sqlite-seed', [...$targetInput, 'mode' => 'install']);
+            $installed = $this->agents->run($target->node, 'instance.install-sqlite-seed', [...$targetInput, 'mode' => 'install']);
         } catch (AgentCommandRefused $refusal) {
-            if ($refusal->errorCode === 'instances.sqlite_seed_refused') {
+            if ($refusal->errorCode === 'instance.sqlite_seed_refused') {
                 $this->cleanupSource($source, $sourceInput);
                 $this->failInstall();
             }
-            if ($refusal->errorCode === 'instances.sqlite_seed_failed') {
+            if ($refusal->errorCode === 'instance.sqlite_seed_failed') {
                 $this->failInstall();
             }
 
@@ -128,7 +128,7 @@ final readonly class RemoteInstanceSqliteSeeder implements InstanceSqliteSeeder
         $sourceCleaned = $this->cleanupSource($source, $this->sourceInput($source, $sourcePath, $operation, $sourceState, $snapshotPath));
 
         try {
-            $result = $this->agents->run($target->node, 'instances.install-sqlite-seed', [
+            $result = $this->agents->run($target->node, 'instance.install-sqlite-seed', [
                 ...$this->targetInput($target, $operation, $targetState, $relativePath),
                 'mode' => 'cleanup',
                 'expected_size' => 0,
@@ -183,7 +183,7 @@ final readonly class RemoteInstanceSqliteSeeder implements InstanceSqliteSeeder
     private function cleanupSource(SqliteSeedPlacement $source, array $sourceInput): bool
     {
         try {
-            $this->agents->run($source->node, 'instances.prepare-sqlite-seed', [...$sourceInput, 'mode' => 'cleanup']);
+            $this->agents->run($source->node, 'instance.prepare-sqlite-seed', [...$sourceInput, 'mode' => 'cleanup']);
         } catch (Throwable) {
             return false;
         }

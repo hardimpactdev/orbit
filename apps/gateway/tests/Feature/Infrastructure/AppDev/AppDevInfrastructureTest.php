@@ -346,15 +346,15 @@ it('signs the request of the Node and publishes the leaf without the key leaving
     $instance = app_dev_supported_app_instance($node, $project->id);
     $route = app_dev_supported_route($instance, 'acme.app-dev.orbit');
     $agents = new FakeAgentCommandRunner()
-        ->answer('certificates.request-leaf', ['state' => 'request', 'request' => 'CSR FROM TARGET'])
-        ->answer('certificates.publish-leaf', []);
+        ->answer('certificate.request-leaf', ['state' => 'request', 'request' => 'CSR FROM TARGET'])
+        ->answer('certificate.publish-leaf', []);
     $signer = app_dev_test_signer();
     $manager = new RemoteAppDevCertificateManager($agents, $signer, app_dev_account_resolver());
 
     $manager->convergeInstance($instance, $route);
 
     $leaf = $agents->calls[0]['input'];
-    expect($agents->commands())->toBe(['certificates.request-leaf', 'certificates.publish-leaf'])
+    expect($agents->commands())->toBe(['certificate.request-leaf', 'certificate.publish-leaf'])
         ->and($leaf)->toMatchArray([
             'scope' => "app-instance-{$instance->id}",
             'domain' => 'acme.app-dev.orbit',
@@ -370,12 +370,12 @@ it('reuses a current leaf without signing', function (): void {
     [$node, $project] = app_dev_runtime_models();
     $instance = app_dev_supported_app_instance($node, $project->id);
     $route = app_dev_supported_route($instance, 'acme.app-dev.orbit');
-    $agents = new FakeAgentCommandRunner()->answer('certificates.request-leaf', ['state' => 'current']);
+    $agents = new FakeAgentCommandRunner()->answer('certificate.request-leaf', ['state' => 'current']);
     $signer = app_dev_test_signer();
 
     new RemoteAppDevCertificateManager($agents, $signer, app_dev_account_resolver())->convergeInstance($instance, $route);
 
-    expect($agents->commands())->toBe(['certificates.request-leaf'])
+    expect($agents->commands())->toBe(['certificate.request-leaf'])
         ->and($signer->calls)->toBe([]);
 });
 
@@ -385,9 +385,9 @@ it('uses a nondefault managed home for app-dev certificate converge and removal'
     $instance = app_dev_supported_app_instance($node, $project->id);
     $route = app_dev_supported_route($instance, 'acme.app-dev.orbit');
     $agents = new FakeAgentCommandRunner()
-        ->answer('certificates.request-leaf', ['state' => 'request', 'request' => 'CSR'])
-        ->answer('certificates.publish-leaf', [])
-        ->answer('certificates.remove-leaf', []);
+        ->answer('certificate.request-leaf', ['state' => 'request', 'request' => 'CSR'])
+        ->answer('certificate.publish-leaf', [])
+        ->answer('certificate.remove-leaf', []);
     $manager = new RemoteAppDevCertificateManager($agents, app_dev_test_signer(), app_dev_account_resolver($account));
 
     $manager->convergeInstance($instance, $route);
@@ -397,7 +397,7 @@ it('uses a nondefault managed home for app-dev certificate converge and removal'
 
     expect($agents->calls[0]['input'])->toMatchArray(['user' => 'nckrtl', 'home' => '/srv/users/nckrtl'])
         ->and($agents->calls[2])->toMatchArray([
-            'command' => 'certificates.remove-leaf',
+            'command' => 'certificate.remove-leaf',
             'input' => ['scope' => "app-instance-{$instance->id}", 'home' => '/srv/users/nckrtl'],
         ]);
 });
@@ -1049,7 +1049,7 @@ it('orders production Caddy before building and stops on an ordering refusal', f
     $manager->converge($node);
 
     expect($builds->built)->toBe([$node->name]);
-    $agents->refuse('caddy.order-after-vpn', 'services.ordering_failed', ['stage' => 'restart']);
+    $agents->refuse('caddy.order-after-vpn', 'service.ordering_failed', ['stage' => 'restart']);
     expect(fn () => $manager->converge($node))->toThrow(function (RuntimeConvergenceException $exception): void {
         expect($exception->errorCode)->toBe('app-prod.caddy_config_failed')
             ->and($exception->step)->toBe('app-prod-caddy-service-ordering');

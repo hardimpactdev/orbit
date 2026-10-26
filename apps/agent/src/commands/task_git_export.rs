@@ -200,7 +200,7 @@ fn emit(input: &Input, context: &Context, output: impl Write, max: u64) -> Resul
 
 pub struct ExportPack;
 impl Command for ExportPack {
-    const NAME: &'static str = "task-vms.export-git-pack";
+    const NAME: &'static str = "task-vm.export-git-pack";
     const SUMMARY: &'static str =
         "Stream a thin pack of the approved checkout commit to the Gateway.";
     const MUTATES: bool = false;

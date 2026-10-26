@@ -1,4 +1,4 @@
-//! `instances.access-environment`: reads and replaces an Instance's `.env`, and merges Orbit's keys into
+//! `instance.read-environment` and `instance.write-environment`: reads and replaces an Instance's `.env`, and merges Orbit's keys into
 //! `.env.testing`, inside its checkout or production home. The walk to the directory follows no link, the file must be
 //! the Instance user's regular file, and a write publishes a private candidate with one rename after it checked that
 //! neither the directory nor the file changed. This replaces the Python of `RemoteInstanceEnvironmentAccess`, check for
@@ -26,7 +26,7 @@ use std::{
 
 command_errors! {
     pub enum EnvironmentError {
-        Invalid { check: String } => "instances.environment_input_invalid", "The environment request does not pass its checks.";
+        Invalid { check: String } => "instance.environment_input_invalid", "The environment request does not pass its checks.";
     }
 }
 
@@ -605,7 +605,7 @@ fn inspect_sync(input: SyncInput) -> SyncInspection {
 pub struct InspectEnvironmentSync;
 
 impl Command for InspectEnvironmentSync {
-    const NAME: &'static str = "instances.inspect-environment-sync";
+    const NAME: &'static str = "instance.inspect-environment-sync";
     const SUMMARY: &'static str =
         "Check that an Instance's .env can be replaced, then read its existing workload keys.";
     const MUTATES: bool = false;
@@ -626,7 +626,7 @@ impl Command for InspectEnvironmentSync {
 pub struct ReadEnvironment;
 
 impl Command for ReadEnvironment {
-    const NAME: &'static str = "instances.read-environment";
+    const NAME: &'static str = "instance.read-environment";
     const SUMMARY: &'static str =
         "Read an Instance's .env, or check that it can be read or replaced.";
     const MUTATES: bool = false;
@@ -656,7 +656,7 @@ impl Command for ReadEnvironment {
 pub struct WriteEnvironment;
 
 impl Command for WriteEnvironment {
-    const NAME: &'static str = "instances.write-environment";
+    const NAME: &'static str = "instance.write-environment";
     const SUMMARY: &'static str =
         "Replace an Instance's .env, or merge Orbit's keys into .env.testing.";
     const MUTATES: bool = true;

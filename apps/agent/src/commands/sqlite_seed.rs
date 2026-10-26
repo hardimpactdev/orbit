@@ -1,4 +1,4 @@
-//! `instances.prepare-sqlite-seed` and `instances.install-sqlite-seed`: the two Node halves of a SQLite seed. The
+//! `instance.prepare-sqlite-seed` and `instance.install-sqlite-seed`: the two Node halves of a SQLite seed. The
 //! source half takes an integrity-checked backup snapshot as the source user and hands it to the transport account;
 //! the target half installs the copy that the Gateway moved, as a new file the target user owns, and never replaces
 //! one. Each half records its progress in a root-owned state directory, so a retry resumes or cleans up exactly what
@@ -20,9 +20,9 @@ use std::{
 
 command_errors! {
     pub enum SeedError {
-        Refused {} => "instances.sqlite_seed_refused", "A seed path, owner, state, or payload does not pass its checks.";
-        Failed {} => "instances.sqlite_seed_failed", "The SQLite seed step failed before it changed the target.";
-        Unconfirmed {} => "instances.sqlite_seed_unconfirmed", "The SQLite seed was installed, but recording it failed.";
+        Refused {} => "instance.sqlite_seed_refused", "A seed path, owner, state, or payload does not pass its checks.";
+        Failed {} => "instance.sqlite_seed_failed", "The SQLite seed step failed before it changed the target.";
+        Unconfirmed {} => "instance.sqlite_seed_unconfirmed", "The SQLite seed was installed, but recording it failed.";
     }
 }
 
@@ -976,7 +976,7 @@ pub fn install(input: &TargetInput) -> std::result::Result<TargetOutput, SeedErr
 pub struct PrepareSqliteSeed;
 
 impl Command for PrepareSqliteSeed {
-    const NAME: &'static str = "instances.prepare-sqlite-seed";
+    const NAME: &'static str = "instance.prepare-sqlite-seed";
     const SUMMARY: &'static str = "Take or clean up the source snapshot of a SQLite seed.";
     const MUTATES: bool = true;
     const TIMEOUT: Duration = Duration::from_secs(120);
@@ -997,7 +997,7 @@ impl Command for PrepareSqliteSeed {
 pub struct InstallSqliteSeed;
 
 impl Command for InstallSqliteSeed {
-    const NAME: &'static str = "instances.install-sqlite-seed";
+    const NAME: &'static str = "instance.install-sqlite-seed";
     const SUMMARY: &'static str = "Prepare, install, or clean up the target of a SQLite seed.";
     const MUTATES: bool = true;
     const TIMEOUT: Duration = Duration::from_secs(120);

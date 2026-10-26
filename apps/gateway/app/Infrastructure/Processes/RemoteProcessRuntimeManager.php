@@ -23,28 +23,32 @@ use App\Models\Process;
 use SensitiveParameter;
 
 /**
- * A Process's systemd unit or Docker container on its Node, through the agent's `processes.*` commands
+ * A Process's systemd unit or Docker container on its Node, through the agent's `process.*` commands
  * (docs/reference/processes-and-schedules.md). The Gateway renders the unit and the container definition and records
  * a pending systemd activation; the agent checks each artifact's owner marker and makes the change with its rollback.
  */
 final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManager
 {
-    /** Each `processes.*` refusal and its error code; `{runtime}` is `systemd` or `docker`. */
+    /** The `process.*` refusals that fail a step with their own code. */
+    private const array OWN_CODES = [
+        'process.start_failed',
+        'process.stop_failed',
+        'process.restart_failed',
+        'process.remove_failed',
+        'process.status_failed',
+        'process.logs_failed',
+    ];
+
+    /** The other `process.*` refusals and their error code; `{runtime}` is `systemd` or `docker`. */
     private const array ERRORS = [
-        'processes.name_collision' => 'process.runtime_name_collision',
-        'processes.not_found' => 'process.runtime_not_found',
-        'processes.start_failed' => 'process.start_failed',
-        'processes.stop_failed' => 'process.stop_failed',
-        'processes.restart_failed' => 'process.restart_failed',
-        'processes.remove_failed' => 'process.remove_failed',
-        'processes.status_failed' => 'process.status_failed',
-        'processes.logs_failed' => 'process.logs_failed',
-        'processes.converge_failed' => 'process.{runtime}_converge_failed',
-        'processes.candidate_invalid' => 'process.{runtime}_candidate_invalid',
-        'processes.activation_failed' => 'process.{runtime}_activation_failed',
-        'processes.rollback_failed' => 'process.{runtime}_rollback_failed',
-        'processes.recovery_required' => 'process.{runtime}_recovery_required',
-        'processes.vite_cleanup_failed' => 'vite.environment_cleanup_failed',
+        'process.name_collision' => 'process.runtime_name_collision',
+        'process.not_found' => 'process.runtime_not_found',
+        'process.converge_failed' => 'process.{runtime}_converge_failed',
+        'process.candidate_invalid' => 'process.{runtime}_candidate_invalid',
+        'process.activation_failed' => 'process.{runtime}_activation_failed',
+        'process.rollback_failed' => 'process.{runtime}_rollback_failed',
+        'process.recovery_required' => 'process.{runtime}_recovery_required',
+        'process.vite_cleanup_failed' => 'vite.environment_cleanup_failed',
     ];
 
     /** What a failed systemd activation left, by the change it made. */
@@ -143,7 +147,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
 
     public function status(#[SensitiveParameter] Process $process): string
     {
-        $status = $this->call($process, 'processes.status', $this->artifact($process), 'status', 'process.status_failed');
+        $status = $this->call($process, 'process.status', $this->artifact($process), 'status', 'process.status_failed');
 
         return self::text($status, 'state');
     }
@@ -152,7 +156,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
     {
         // Newest journal entry first, stopped after the byte limit, so the Node does bounded work; a container's
         // standard output and standard error in one stream, in the order it wrote them (ADR 0153).
-        $logs = $this->call($process, 'processes.logs', [
+        $logs = $this->call($process, 'process.logs', [
             ...$this->artifact($process),
             'lines' => $lines,
             'max_bytes' => LogReadLimit::Bytes,
@@ -182,7 +186,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
     /** Starts, stops, or restarts the Process's own unit or container; an absent one is `process.runtime_not_found`. */
     private function control(#[SensitiveParameter] Process $process, ProcessTarget $target, string $operation, string $errorCode): void
     {
-        $this->call($process, 'processes.control', [
+        $this->call($process, 'process.control', [
             'operation' => $operation,
             ...$this->artifact($process),
             'on_demand' => $target->onDemandHostStart,
@@ -195,7 +199,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
             ? ['path' => SystemdProcessRenderer::viteEnvironmentPath($process->owner_id), 'instance_id' => $process->owner_id]
             : null;
 
-        $this->call($process, 'processes.remove', [...$this->artifact($process), 'vite' => $vite], 'remove', 'process.remove_failed', $target);
+        $this->call($process, 'process.remove', [...$this->artifact($process), 'vite' => $vite], 'remove', 'process.remove_failed', $target);
     }
 
     /**
@@ -213,7 +217,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
             $target->certificateScope === null ? null : $this->accounts->resolve($target->node),
         );
         $unit = $this->systemd->unitName($process);
-        $staged = $this->call($process, 'processes.stage-unit', [
+        $staged = $this->call($process, 'process.stage-unit', [
             'process_id' => $process->id,
             'unit' => $unit,
             'content' => $rendered,
@@ -236,7 +240,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
             $change = $staged['previous'] === true ? 'replace' : 'create';
         }
 
-        $activated = $this->call($process, 'processes.activate-unit', [
+        $activated = $this->call($process, 'process.activate-unit', [
             'process_id' => $process->id,
             'unit' => $unit,
             'change' => $change,
@@ -259,7 +263,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
 
     private function convergeDocker(#[SensitiveParameter] Process $process, ProcessTarget $target): void
     {
-        $this->call($process, 'processes.converge-container', [
+        $this->call($process, 'process.converge-container', [
             'process_id' => $process->id,
             'container' => $this->docker->containerName($process),
             'desired' => $process->desired_state->value,
@@ -279,7 +283,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
             return;
         }
 
-        $release = $this->call($process, 'processes.check-release', ['directory' => $target->defaultWorkingDirectory], $step, $errorCode, $target);
+        $release = $this->call($process, 'process.check-release', ['directory' => $target->defaultWorkingDirectory], $step, $errorCode, $target);
 
         if ($release['available'] !== true) {
             throw new ResourceOperationException(
@@ -304,7 +308,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
     }
 
     /**
-     * Runs one `processes.*` command on the Process's Node. A refusal becomes its error code with the agent's step;
+     * Runs one `process.*` command on the Process's Node. A refusal becomes its error code with the agent's step;
      * a command error the Process does not name, or a run without a result, fails `$step` with `$errorCode`.
      *
      * @param  array<string, mixed>  $input
@@ -359,7 +363,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         string $errorCode,
         ?string $change,
     ): ProcessOperationException {
-        $code = self::ERRORS[$refused->errorCode] ?? null;
+        $code = in_array($refused->errorCode, self::OWN_CODES, true) ? $refused->errorCode : self::ERRORS[$refused->errorCode] ?? null;
 
         if ($code === null) {
             return new ProcessOperationException(
@@ -399,16 +403,16 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         $restoration = $docker ? 'the previous container was restored' : self::RESTORATIONS[$change ?? 'reload'];
 
         return match (true) {
-            $code === 'processes.name_collision' => ($docker ? "Docker container [{$artifact}]" : "Systemd unit [{$artifact}]").' is not owned by this process.',
-            $code === 'processes.not_found' => "Process [{$process->name}] has no native runtime artifact.",
-            $code === 'processes.candidate_invalid' && ! $docker => "Process [{$process->name}] systemd candidate validation failed.",
-            $code === 'processes.candidate_invalid' => ($step === 'verify-container' ? 'Docker container' : 'Docker candidate')." [{$artifact}] does not match the desired process specification.",
-            $code === 'processes.activation_failed' && $docker => "Docker process [{$process->name}] activation failed; the previous container was restored.",
-            $code === 'processes.activation_failed' && $change !== 'reload' => "Process [{$process->name}] systemd activation failed; the previous unit was restored.",
-            in_array($code, ['processes.start_failed', 'processes.stop_failed'], true) && ($details['restored'] ?? false) === true => sprintf('Process [%s] failed to %s; %s.', $process->name, $code === 'processes.start_failed' ? 'start' : 'stop', $restoration),
-            $code === 'processes.recovery_required' && ($details['reason'] ?? null) === 'ambiguous_rollback' => "Docker process [{$process->name}] has ambiguous rollback state.",
-            $code === 'processes.recovery_required' && ($details['reason'] ?? null) === 'ambiguous_candidate' => "Docker process [{$process->name}] has ambiguous candidate and rollback state.",
-            $code === 'processes.recovery_required' && ($details['reason'] ?? null) === 'no_canonical' => "Docker process [{$process->name}] has no canonical runtime after recovery.",
+            $code === 'process.name_collision' => ($docker ? "Docker container [{$artifact}]" : "Systemd unit [{$artifact}]").' is not owned by this process.',
+            $code === 'process.not_found' => "Process [{$process->name}] has no native runtime artifact.",
+            $code === 'process.candidate_invalid' && ! $docker => "Process [{$process->name}] systemd candidate validation failed.",
+            $code === 'process.candidate_invalid' => ($step === 'verify-container' ? 'Docker container' : 'Docker candidate')." [{$artifact}] does not match the desired process specification.",
+            $code === 'process.activation_failed' && $docker => "Docker process [{$process->name}] activation failed; the previous container was restored.",
+            $code === 'process.activation_failed' && $change !== 'reload' => "Process [{$process->name}] systemd activation failed; the previous unit was restored.",
+            in_array($code, ['process.start_failed', 'process.stop_failed'], true) && ($details['restored'] ?? false) === true => sprintf('Process [%s] failed to %s; %s.', $process->name, $code === 'process.start_failed' ? 'start' : 'stop', $restoration),
+            $code === 'process.recovery_required' && ($details['reason'] ?? null) === 'ambiguous_rollback' => "Docker process [{$process->name}] has ambiguous rollback state.",
+            $code === 'process.recovery_required' && ($details['reason'] ?? null) === 'ambiguous_candidate' => "Docker process [{$process->name}] has ambiguous candidate and rollback state.",
+            $code === 'process.recovery_required' && ($details['reason'] ?? null) === 'no_canonical' => "Docker process [{$process->name}] has no canonical runtime after recovery.",
             default => "Process [{$process->name}] runtime step [{$step}] failed.",
         };
     }

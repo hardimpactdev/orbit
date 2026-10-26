@@ -1,4 +1,4 @@
-//! `instances.*-development-source`: create, inspect, and resolve the checkout of a development Instance.
+//! `instance.*-development-source`: create, inspect, and resolve the checkout of a development Instance.
 //! These replace the Bash that `RemoteDevelopmentInstanceSourceLifecycle` sent: each check is the same, and every
 //! Git command runs without hooks or fsmonitor. A fetch also pins each transport on the command line, so Git
 //! configuration planted in the checkout cannot reach a command or another protocol.
@@ -20,9 +20,9 @@ use std::{
 const PREPARE_RECEIPT: &str = "orbit-source-prepare";
 command_errors! {
     pub enum DevSourceError {
-        Invalid { check: String } => "instances.source_invalid", "The checkout is not the prepared source.";
-        Busy {} => "instances.source_busy", "Another lifecycle operation holds the checkout.";
-        GitFailed { step: String } => "instances.git_failed", "A Git step failed.";
+        Invalid { check: String } => "instance.source_invalid", "The checkout is not the prepared source.";
+        Busy {} => "instance.source_busy", "Another lifecycle operation holds the checkout.";
+        GitFailed { step: String } => "instance.git_failed", "A Git step failed.";
     }
 }
 
@@ -213,7 +213,7 @@ pub struct PrepareOutput {
 }
 
 impl Command for PrepareDevelopmentSource {
-    const NAME: &'static str = "instances.prepare-development-source";
+    const NAME: &'static str = "instance.prepare-development-source";
     const SUMMARY: &'static str =
         "Create a development Instance's checkout, or check the one an earlier attempt made.";
     const MUTATES: bool = true;
@@ -336,7 +336,7 @@ pub struct InspectInput {
     pub source: Source,
     /// Whether the origin must be the Project repository. A rename reads the origin to check its identity instead.
     pub verify_origin: bool,
-    /// Refuse with `instances.source_busy` while another lifecycle operation holds the checkout.
+    /// Refuse with `instance.source_busy` while another lifecycle operation holds the checkout.
     #[serde(default)]
     pub require_idle: bool,
 }
@@ -351,7 +351,7 @@ pub struct InspectOutput {
 }
 
 impl Command for InspectDevelopmentSource {
-    const NAME: &'static str = "instances.inspect-development-source";
+    const NAME: &'static str = "instance.inspect-development-source";
     const SUMMARY: &'static str =
         "Check a development Instance's prepared checkout and read its origin, branch, and commit.";
     const MUTATES: bool = false;
@@ -430,7 +430,7 @@ pub struct ResolveOutput {
 }
 
 impl Command for ResolveDevelopmentSource {
-    const NAME: &'static str = "instances.resolve-development-source";
+    const NAME: &'static str = "instance.resolve-development-source";
     const SUMMARY: &'static str = "Fetch a development Instance's origin and check out its branch.";
     const MUTATES: bool = true;
     const TIMEOUT: Duration = Duration::from_secs(900);

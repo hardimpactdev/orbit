@@ -1,4 +1,4 @@
-//! `nodes.prepare-storage-root`: checks, and optionally creates, a Node storage root that the managed user owns. Every
+//! `node.prepare-storage-root`: checks, and optionally creates, a Node storage root that the managed user owns. Every
 //! existing component must be a real directory, with no symlink on the way. Missing components are created as the
 //! managed user with mode `0755`. The root itself must belong to the managed user and its group, with no write bit for
 //! the group or other users.
@@ -16,7 +16,7 @@ use std::{
 
 command_errors! {
     pub enum StorageRootError {
-        Unusable { reason: String } => "nodes.storage_root_unusable", "The storage root is not a directory the managed user owns.";
+        Unusable { reason: String } => "node.storage_root_unusable", "The storage root is not a directory the managed user owns.";
     }
 }
 
@@ -97,7 +97,7 @@ pub fn prepare(input: &StorageRootInput) -> Result<StorageRoot, StorageRootError
 pub struct PrepareStorageRoot;
 
 impl Command for PrepareStorageRoot {
-    const NAME: &'static str = "nodes.prepare-storage-root";
+    const NAME: &'static str = "node.prepare-storage-root";
     const SUMMARY: &'static str =
         "Check a storage root the managed user owns, and create its missing directories.";
     const MUTATES: bool = true;

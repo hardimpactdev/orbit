@@ -14,12 +14,12 @@ use std::{
 
 command_errors! {
     pub enum Error {
-        Invalid {} => "nodes.bootstrap_invalid", "The bootstrap request is invalid.";
-        Unsupported { id: String, codename: String } => "nodes.bootstrap_os_unsupported", "The Node operating system is not supported.";
-        Unsafe { path: String } => "nodes.bootstrap_unsafe", "A bootstrap path is not a real directory or regular file.";
-        Dns { reason: String } => "nodes.bootstrap_dns_refused", "Package-source DNS is unavailable; retained DNS was preserved.";
-        Failed { stage: String } => "nodes.bootstrap_failed", "Node bootstrap failed.";
-        Recovery {} => "nodes.bootstrap_dns_recovery_failed", "Could not restore Orbit bootstrap DNS.";
+        Invalid {} => "node.bootstrap_invalid", "The bootstrap request is invalid.";
+        Unsupported { id: String, codename: String } => "node.bootstrap_os_unsupported", "The Node operating system is not supported.";
+        Unsafe { path: String } => "node.bootstrap_unsafe", "A bootstrap path is not a real directory or regular file.";
+        Dns { reason: String } => "node.bootstrap_dns_refused", "Package-source DNS is unavailable; retained DNS was preserved.";
+        Failed { stage: String } => "node.bootstrap_failed", "Node bootstrap failed.";
+        Recovery {} => "node.bootstrap_dns_recovery_failed", "Could not restore Orbit bootstrap DNS.";
     }
 }
 #[derive(schemars::JsonSchema, Deserialize)]
@@ -470,7 +470,7 @@ fn bootstrap(
 }
 pub struct Bootstrap;
 impl Command for Bootstrap {
-    const NAME: &'static str = "nodes.bootstrap";
+    const NAME: &'static str = "node.bootstrap";
     const SUMMARY: &'static str =
         "Install base packages and prepare managed SSH access, restoring retained Orbit DNS.";
     const MUTATES: bool = true;

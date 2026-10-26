@@ -201,12 +201,12 @@ function caddy_failure_builds(): FakeNodeCaddyBuilds
 /** Binds an agent that answers the role prerequisites, refusing the Caddy package for `source`. */
 function caddy_failure_bind(?string $fail = null): void
 {
-    $agents = (new FakeAgentCommandRunner)->answer('roles.install-prerequisites', [])->answer('nodes.os-release', ['id' => 'ubuntu', 'codename' => 'resolute']);
+    $agents = (new FakeAgentCommandRunner)->answer('role.install-prerequisites', [])->answer('node.os-release', ['id' => 'ubuntu', 'codename' => 'resolute']);
     $fail === 'source'
         ? $agents->refuse('caddy.install-package', 'caddy.package_failed', ['reason' => 'forced failure'])
         : $agents->answer('caddy.install-package', ['changed' => false, 'version' => '2.10.2']);
     $fail === 'ordering'
-        ? $agents->refuse('caddy.order-after-vpn', 'services.ordering_failed', ['stage' => 'restart'])
+        ? $agents->refuse('caddy.order-after-vpn', 'service.ordering_failed', ['stage' => 'restart'])
         : $agents->answer('caddy.order-after-vpn', ['changed' => false]);
     app()->instance(AgentCommandRunner::class, $agents);
 }

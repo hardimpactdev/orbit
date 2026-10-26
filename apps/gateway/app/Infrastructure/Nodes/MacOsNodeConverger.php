@@ -102,18 +102,18 @@ final readonly class MacOsNodeConverger
                 $step = 'agent';
                 $this->agents->installOver($node, $connection);
                 $step = 'identity';
-                $observed = $this->agents->runOver($node, $connection, 'nodes.inspect-macos-enrollment', ['address' => $address]);
+                $observed = $this->agents->runOver($node, $connection, 'node.inspect-macos-enrollment', ['address' => $address]);
 
                 if (! is_string($observed['architecture'] ?? null) || ! MachineArchitecture::isValid($observed['architecture'])) {
-                    throw new AgentRunnerFailure('nodes.inspect-macos-enrollment', AgentRunnerFailure::MalformedResult, 'The agent returned no valid Mac architecture.');
+                    throw new AgentRunnerFailure('node.inspect-macos-enrollment', AgentRunnerFailure::MalformedResult, 'The agent returned no valid Mac architecture.');
                 }
 
                 return new MacOsEnrollmentObservation($observed['architecture'], $hostKey);
             } catch (AgentCommandRefused $error) {
                 [$step, $code] = match ($error->errorCode) {
-                    'agent.platform_unsupported', 'nodes.macos_platform_mismatch' => ['machine-architecture', 'node.platform_mismatch'],
-                    'nodes.macos_architecture_unavailable' => ['machine-architecture', 'node.architecture_unavailable'],
-                    'nodes.macos_wireguard_required' => ['identity', 'node.wireguard_required'],
+                    'agent.platform_unsupported', 'node.macos_platform_mismatch' => ['machine-architecture', 'node.platform_mismatch'],
+                    'node.macos_architecture_unavailable' => ['machine-architecture', 'node.architecture_unavailable'],
+                    'node.macos_wireguard_required' => ['identity', 'node.wireguard_required'],
                     default => [$step, $error->errorCode],
                 };
                 throw new NodeProvisioningException(step: $step, errorCode: $code, message: $error->getMessage(), previous: $error);

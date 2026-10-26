@@ -11,11 +11,11 @@ use std::{
 };
 crate::command_errors! {
     pub enum Error {
-        Invalid {} => "tools.homebrew_account_invalid", "The Homebrew scope account is invalid.";
-        Absent {} => "tools.homebrew_scope_absent", "The Homebrew prefix is absent for the enrolled account.";
-        Conflict {} => "tools.homebrew_scope_conflict", "The Homebrew prefix ownership or origin conflicts with the enrolled account.";
-        Unreadable {} => "tools.homebrew_scope_unreadable", "The Homebrew prefix cannot be inspected.";
-        Failed {} => "tools.homebrew_materialize_failed", "The Homebrew manager could not be materialized.";
+        Invalid {} => "tool.homebrew_account_invalid", "The Homebrew scope account is invalid.";
+        Absent {} => "tool.homebrew_scope_absent", "The Homebrew prefix is absent for the enrolled account.";
+        Conflict {} => "tool.homebrew_scope_conflict", "The Homebrew prefix ownership or origin conflicts with the enrolled account.";
+        Unreadable {} => "tool.homebrew_scope_unreadable", "The Homebrew prefix cannot be inspected.";
+        Failed {} => "tool.homebrew_materialize_failed", "The Homebrew manager could not be materialized.";
     }
 }
 type Result<T> = std::result::Result<T, Error>;
@@ -353,7 +353,7 @@ fn materialize(host: &mut impl Host, files: &Files, account: &Account) -> Result
 }
 pub struct Inspect;
 impl Command for Inspect {
-    const NAME: &'static str = "tools.inspect-homebrew-scope";
+    const NAME: &'static str = "tool.inspect-homebrew-scope";
     const SUMMARY: &'static str =
         "Inspect the enrolled account's Homebrew prefix without changing it.";
     const MUTATES: bool = false;
@@ -379,7 +379,7 @@ impl Command for Inspect {
 }
 pub struct Materialize;
 impl Command for Materialize {
-    const NAME: &'static str = "tools.materialize-homebrew";
+    const NAME: &'static str = "tool.materialize-homebrew";
     const SUMMARY: &'static str =
         "Prepare the owned Linux Homebrew prefix and verify its pinned release.";
     const MUTATES: bool = true;

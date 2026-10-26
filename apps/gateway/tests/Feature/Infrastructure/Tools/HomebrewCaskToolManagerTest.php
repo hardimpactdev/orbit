@@ -82,14 +82,14 @@ describe(HomebrewCaskToolManager::class, function (): void {
     it('sends typed cask operations with the stored architecture', function (): void {
         [$manager, $agent] = cask_manager();
         $node = cask_node();
-        $agent->answer('tools.homebrew-cask-candidate', ['version' => '3.003'])
-            ->answer('tools.homebrew-cask-install', [])->answer('tools.homebrew-cask-update', [])->answer('tools.homebrew-cask-remove', []);
+        $agent->answer('tool.homebrew-cask-candidate', ['version' => '3.003'])
+            ->answer('tool.homebrew-cask-install', [])->answer('tool.homebrew-cask-update', [])->answer('tool.homebrew-cask-remove', []);
         expect($manager->candidateVersion($node, 'font-hack', ToolOperation::Install))->toBe('3.003');
         $manager->install($node, 'font-hack');
         $manager->update($node, 'font-hack');
         expect($manager->planRemoval($node, 'font-hack')->packages)->toBe(['font-hack']);
         $manager->remove($node, 'font-hack');
-        expect($agent->commands())->toBe(['tools.homebrew-cask-candidate', 'tools.homebrew-cask-install', 'tools.homebrew-cask-update', 'tools.homebrew-cask-remove']);
+        expect($agent->commands())->toBe(['tool.homebrew-cask-candidate', 'tool.homebrew-cask-install', 'tool.homebrew-cask-update', 'tool.homebrew-cask-remove']);
         foreach ($agent->calls as $call) {
             expect($call['input'])->toBe(['package' => 'font-hack', 'architecture' => 'arm64']);
         }
@@ -98,32 +98,32 @@ describe(HomebrewCaskToolManager::class, function (): void {
     it('keeps formula and cask command identities separate', function (): void {
         [$cask, $agent] = cask_manager();
         $formula = new HomebrewToolManager(new SemverVersionNormalizer, $agent);
-        $agent->answer('tools.homebrew-cask-install', [])->answer('tools.homebrew-formula-install', []);
+        $agent->answer('tool.homebrew-cask-install', [])->answer('tool.homebrew-formula-install', []);
         $formula->install(cask_node(), 'docker');
         $cask->install(cask_node(), 'docker');
-        expect($agent->commands())->toBe(['tools.homebrew-formula-install', 'tools.homebrew-cask-install']);
+        expect($agent->commands())->toBe(['tool.homebrew-formula-install', 'tool.homebrew-cask-install']);
     });
 
     it('maps native cask refusals without raw manager output', function (string $code, string $step): void {
         [$manager, $agent] = cask_manager();
-        $agent->refuse('tools.homebrew-cask-install', $code);
+        $agent->refuse('tool.homebrew-cask-install', $code);
         expect(fn () => $manager->install(cask_node(), 'font-hack'))->toThrow(function (ToolManagerException $error) use ($step): void {
             expect($error->step)->toBe($step)->and($error->result)->toBeNull();
         });
     })->with([
-        ['tools.homebrew_cask_source', 'cask-source'], ['tools.homebrew_cask_artifact', 'cask-artifact'],
-        ['tools.homebrew_cask_authorization', 'cask-authorization'], ['tools.homebrew_cask_checksum', 'cask-checksum'],
-        ['tools.homebrew_cask_version', 'cask-version'], ['tools.homebrew_output_invalid', 'install'],
-        ['tools.homebrew_operation_failed', 'install'], ['tools.homebrew_scope_absent', 'manager-absent'],
-        ['tools.homebrew_scope_conflict', 'manager-conflict'], ['tools.homebrew_scope_unreadable', 'manager-probe'],
+        ['tool.homebrew_cask_source', 'cask-source'], ['tool.homebrew_cask_artifact', 'cask-artifact'],
+        ['tool.homebrew_cask_authorization', 'cask-authorization'], ['tool.homebrew_cask_checksum', 'cask-checksum'],
+        ['tool.homebrew_cask_version', 'cask-version'], ['tool.homebrew_output_invalid', 'install'],
+        ['tool.homebrew_operation_failed', 'install'], ['tool.homebrew_scope_absent', 'manager-absent'],
+        ['tool.homebrew_scope_conflict', 'manager-conflict'], ['tool.homebrew_scope_unreadable', 'manager-probe'],
     ]);
 
     it('reads the native manager version and preserves absence and ambiguous inventories', function (): void {
         [$manager, $agent] = cask_manager();
-        $agent->answer('tools.homebrew-cask-candidate', ['version' => null]);
+        $agent->answer('tool.homebrew-cask-candidate', ['version' => null]);
         expect($manager->managerVersion(cask_node()))->toBe('Homebrew 4.6.15')
             ->and($manager->candidateVersion(cask_node(), 'missing', ToolOperation::Install))->toBeNull();
-        $agent->answer('tools.homebrew-cask-inventory', ['packages' => [
+        $agent->answer('tool.homebrew-cask-inventory', ['packages' => [
             ['name' => 'font-hack', 'versions' => ['3.003'], 'unverifiable' => false],
             ['name' => 'ambiguous', 'versions' => ['1.0', '2.0'], 'unverifiable' => false],
             ['name' => 'unreadable', 'versions' => [], 'unverifiable' => true],
@@ -132,13 +132,13 @@ describe(HomebrewCaskToolManager::class, function (): void {
         expect($inventory->versionFor('font-hack'))->toBe('3.003')->and($inventory->versionFor('missing'))->toBeNull();
         expect(fn () => $inventory->versionFor('ambiguous'))->toThrow(ToolManagerException::class);
         expect(fn () => $inventory->versionFor('unreadable'))->toThrow(ToolManagerException::class);
-        $agent->refuse('tools.homebrew-cask-inventory', 'tools.homebrew_output_invalid');
+        $agent->refuse('tool.homebrew-cask-inventory', 'tool.homebrew_output_invalid');
         expect(fn () => $manager->installedVersion(cask_node(), 'font-hack'))->toThrow(ToolManagerException::class);
     });
 
     it('returns native adoption facts without creating Tool rows', function (?string $version, ?string $block): void {
         [$manager, $agent] = cask_manager();
-        $agent->answer('tools.homebrew-cask-adoption', ['installed_version' => $version, 'block' => $block]);
+        $agent->answer('tool.homebrew-cask-adoption', ['installed_version' => $version, 'block' => $block]);
         expect($manager->inspectForAdoption(cask_node(), 'font-hack'))->toEqual(new ToolAdoptionFact($version, $block));
         expect(Tool::query()->count())->toBe(0);
     })->with([['3.003', null], [null, null], ['3.003', 'authorization_required'], ['3.003', 'unsupported_source'], ['3.003', 'unsupported_artifact'], ['3.003', 'version_unreadable']]);
@@ -154,13 +154,13 @@ describe(HomebrewCaskToolManager::class, function (): void {
     it('retries a failed cask install through native results', function (): void {
         $node = cask_saved_node();
         [$manager, $agent] = cask_manager();
-        $agent->refuse('tools.homebrew-cask-candidate', 'tools.homebrew_cask_checksum');
+        $agent->refuse('tool.homebrew-cask-candidate', 'tool.homebrew_cask_checksum');
         $install = cask_install_action($manager);
         $failure = cask_operation_exception(fn () => $install->execute(new InstallToolData($node->id, 'brew-cask', 'font-hack', null)));
         expect($failure->errorCode)->toBe('tool.install_failed')->and(Tool::query()->sole()->status)->toBe(ToolStatus::Failed);
-        $agent->answer('tools.homebrew-cask-candidate', ['version' => '3.003']);
-        $agent->answer('tools.homebrew-cask-install', function () use ($agent): array {
-            $agent->answer('tools.homebrew-cask-inventory', ['packages' => [['name' => 'font-hack', 'versions' => ['3.003'], 'unverifiable' => false]]]);
+        $agent->answer('tool.homebrew-cask-candidate', ['version' => '3.003']);
+        $agent->answer('tool.homebrew-cask-install', function () use ($agent): array {
+            $agent->answer('tool.homebrew-cask-inventory', ['packages' => [['name' => 'font-hack', 'versions' => ['3.003'], 'unverifiable' => false]]]);
 
             return [];
         });
@@ -173,8 +173,8 @@ describe(HomebrewCaskToolManager::class, function (): void {
         $record = $node->toolManagers()->create(['name' => ToolManagerName::BrewCask, 'status' => LifecycleStatus::Active]);
         $tool = $node->tools()->create(['tool_manager_id' => $record->id, 'package' => 'font-hack', 'status' => ToolStatus::Installed, 'installed_version' => '3.003']);
         [$manager, $agent] = cask_manager();
-        $agent->answer('tools.homebrew-cask-inventory', ['packages' => [['name' => 'font-hack', 'versions' => ['3.003'], 'unverifiable' => false]]]);
-        $agent->refuse($operation === 'update' ? 'tools.homebrew-cask-candidate' : 'tools.homebrew-cask-remove', 'tools.homebrew_cask_authorization');
+        $agent->answer('tool.homebrew-cask-inventory', ['packages' => [['name' => 'font-hack', 'versions' => ['3.003'], 'unverifiable' => false]]]);
+        $agent->refuse($operation === 'update' ? 'tool.homebrew-cask-candidate' : 'tool.homebrew-cask-remove', 'tool.homebrew_cask_authorization');
         $action = $operation === 'update' ? cask_update_action($manager) : cask_remove_action($manager);
         $failure = cask_operation_exception(fn () => $action->execute($tool));
         expect($failure->errorCode)->toBe('tool.'.$operation.'_failed')->and($tool->refresh()->status)->toBe(ToolStatus::Failed);
@@ -185,9 +185,9 @@ describe(HomebrewCaskToolManager::class, function (): void {
         $record = $node->toolManagers()->create(['name' => ToolManagerName::BrewCask, 'status' => LifecycleStatus::Active]);
         $tool = $node->tools()->create(['tool_manager_id' => $record->id, 'package' => 'font-hack', 'status' => ToolStatus::Installed, 'installed_version' => '3.003']);
         [$manager, $agent] = cask_manager();
-        $agent->answer('tools.homebrew-cask-inventory', ['packages' => [['name' => 'font-hack', 'versions' => ['3.003'], 'unverifiable' => false]]]);
-        $agent->answer('tools.homebrew-cask-remove', function () use ($agent): array {
-            $agent->answer('tools.homebrew-cask-inventory', ['packages' => []]);
+        $agent->answer('tool.homebrew-cask-inventory', ['packages' => [['name' => 'font-hack', 'versions' => ['3.003'], 'unverifiable' => false]]]);
+        $agent->answer('tool.homebrew-cask-remove', function () use ($agent): array {
+            $agent->answer('tool.homebrew-cask-inventory', ['packages' => []]);
 
             return [];
         });
@@ -199,8 +199,8 @@ describe(HomebrewCaskToolManager::class, function (): void {
 /** @return array{HomebrewCaskToolManager, FakeAgentCommandRunner} */
 function cask_manager(): array
 {
-    $agent = new FakeAgentCommandRunner()->answer('tools.inspect-homebrew-scope', ['prefix' => '/opt/homebrew', 'home' => '/Users/mini'])
-        ->answer('tools.homebrew-version', ['version' => 'Homebrew 4.6.15'])->answer('tools.homebrew-cask-inventory', ['packages' => []]);
+    $agent = new FakeAgentCommandRunner()->answer('tool.inspect-homebrew-scope', ['prefix' => '/opt/homebrew', 'home' => '/Users/mini'])
+        ->answer('tool.homebrew-version', ['version' => 'Homebrew 4.6.15'])->answer('tool.homebrew-cask-inventory', ['packages' => []]);
 
     return [new HomebrewCaskToolManager(new SemverVersionNormalizer, $agent), $agent];
 }

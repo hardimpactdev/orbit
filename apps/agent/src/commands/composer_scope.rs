@@ -13,11 +13,11 @@ use std::{
 };
 crate::command_errors! {
     pub enum Error {
-        Invalid {} => "tools.composer_account_invalid", "The Composer scope account is invalid.";
-        Absent {} => "tools.composer_scope_absent", "The Composer global scope is absent.";
-        Conflict {} => "tools.composer_scope_conflict", "The Composer scope conflicts with Orbit ownership.";
-        Unreadable {} => "tools.composer_scope_unreadable", "The Composer global manifest cannot be read.";
-        Failed {} => "tools.composer_materialize_failed", "The Composer manager could not be materialized.";
+        Invalid {} => "tool.composer_account_invalid", "The Composer scope account is invalid.";
+        Absent {} => "tool.composer_scope_absent", "The Composer global scope is absent.";
+        Conflict {} => "tool.composer_scope_conflict", "The Composer scope conflicts with Orbit ownership.";
+        Unreadable {} => "tool.composer_scope_unreadable", "The Composer global manifest cannot be read.";
+        Failed {} => "tool.composer_materialize_failed", "The Composer manager could not be materialized.";
     }
 }
 type Result<T> = std::result::Result<T, Error>;
@@ -226,7 +226,7 @@ fn materialize(host: &mut impl Host, files: &Files, account: &Account) -> Result
 }
 pub struct Inspect;
 impl Command for Inspect {
-    const NAME: &'static str = "tools.inspect-composer-scope";
+    const NAME: &'static str = "tool.inspect-composer-scope";
     const SUMMARY: &'static str = "Read Composer root requirements from the owned shared scope.";
     const MUTATES: bool = false;
     const TIMEOUT: Duration = Duration::from_secs(30);
@@ -244,7 +244,7 @@ impl Command for Inspect {
 }
 pub struct Materialize;
 impl Command for Materialize {
-    const NAME: &'static str = "tools.materialize-composer";
+    const NAME: &'static str = "tool.materialize-composer";
     const SUMMARY: &'static str =
         "Install Composer prerequisites and prepare the account-owned shared scope.";
     const MUTATES: bool = true;

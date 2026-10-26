@@ -1,6 +1,6 @@
-//! A Schedule's systemd units on its Node: `schedules.install` writes its script, service, and timer and sets the
-//! timer to the desired state, restoring what it replaced on failure; `schedules.activate` enables the timer;
-//! `schedules.run` starts one run; `schedules.logs` reads its journal; `schedules.remove` deletes its units. Each
+//! A Schedule's systemd units on its Node: `schedule.install` writes its script, service, and timer and sets the
+//! timer to the desired state, restoring what it replaced on failure; `schedule.activate` enables the timer;
+//! `schedule.run` starts one run; `schedule.logs` reads its journal; `schedule.remove` deletes its units. Each
 //! acts only on files that carry the Schedule's own marker.
 
 mod runtime;
@@ -27,12 +27,12 @@ use std::{
 
 command_errors! {
     pub enum ScheduleError {
-        TargetUnavailable {} => "schedules.target_unavailable", "The Schedule's user cannot enter its working directory.";
-        ArtifactConflict {} => "schedules.artifact_conflict", "A Schedule file exists that Orbit did not write.";
-        CalendarInvalid {} => "schedules.calendar_invalid", "systemd does not accept the Schedule calendar.";
-        RollbackFailed {} => "schedules.rollback_failed", "The step failed and restoring the previous state failed too.";
-        Failed { step: String } => "schedules.failed", "A Schedule step failed on the Node.";
-        Busy {} => "schedules.run_active", "A run of the Schedule is still active.";
+        TargetUnavailable {} => "schedule.target_unavailable", "The Schedule's user cannot enter its working directory.";
+        ArtifactConflict {} => "schedule.artifact_conflict", "A Schedule file exists that Orbit did not write.";
+        CalendarInvalid {} => "schedule.calendar_invalid", "systemd does not accept the Schedule calendar.";
+        RollbackFailed {} => "schedule.rollback_failed", "The step failed and restoring the previous state failed too.";
+        Failed { step: String } => "schedule.failed", "A Schedule step failed on the Node.";
+        Busy {} => "schedule.run_active", "A run of the Schedule is still active.";
     }
 }
 
@@ -580,7 +580,7 @@ macro_rules! schedule_command {
 
 schedule_command!(
     InstallSchedule,
-    "schedules.install",
+    "schedule.install",
     "Write a Schedule's units and set its timer.",
     true,
     90,
@@ -591,7 +591,7 @@ schedule_command!(
 );
 schedule_command!(
     ActivateSchedule,
-    "schedules.activate",
+    "schedule.activate",
     "Enable and start a Schedule's timer.",
     true,
     45,
@@ -602,7 +602,7 @@ schedule_command!(
 );
 schedule_command!(
     RunSchedule,
-    "schedules.run",
+    "schedule.run",
     "Start one run of a Schedule.",
     true,
     15,
@@ -613,7 +613,7 @@ schedule_command!(
 );
 schedule_command!(
     ReadScheduleLogs,
-    "schedules.logs",
+    "schedule.logs",
     "Read a Schedule's newest journal entries.",
     false,
     10,
@@ -624,7 +624,7 @@ schedule_command!(
 );
 schedule_command!(
     RemoveSchedule,
-    "schedules.remove",
+    "schedule.remove",
     "Delete a Schedule's units.",
     true,
     60,

@@ -18,10 +18,10 @@ use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 
 beforeEach(function (): void {
     $this->agents = new FakeAgentCommandRunner;
-    foreach (['schedules.install', 'schedules.activate', 'schedules.run', 'schedules.remove'] as $command) {
+    foreach (['schedule.install', 'schedule.activate', 'schedule.run', 'schedule.remove'] as $command) {
         $this->agents->answer($command, []);
     }
-    $this->agents->answer('schedules.logs', ['output' => "older\nnewest\n", 'truncated' => false]);
+    $this->agents->answer('schedule.logs', ['output' => "older\nnewest\n", 'truncated' => false]);
     $this->manager = new RemoteScheduleRuntimeManager(
         new ScheduleTargetResolver(new FakeScheduleRuntimeAccountResolver),
         new ScheduleSpecification,
@@ -85,7 +85,7 @@ it('requires the selected production release even when installing a disabled Sch
         'desired_timer_state' => DesiredTimerState::Disabled,
         'status' => LifecycleStatus::Provisioning,
     ]);
-    $this->agents->refuse('schedules.install', 'schedules.target_unavailable');
+    $this->agents->refuse('schedule.install', 'schedule.target_unavailable');
 
     expect(fn () => $this->manager->install($schedule))
         ->toThrow(function (ScheduleOperationException $exception): void {
@@ -101,7 +101,7 @@ it('sends only typed Schedule intent in one agent call', function (): void {
     $this->manager->install($this->schedule);
 
     $input = $this->agents->calls[0]['input'];
-    expect($this->agents->commands())->toBe(['schedules.install'])
+    expect($this->agents->commands())->toBe(['schedule.install'])
         ->and($input)->toMatchArray([
             'id' => $this->schedule->id,
             'user' => 'orbit',
@@ -116,21 +116,21 @@ it('sends only typed Schedule intent in one agent call', function (): void {
 });
 
 it('maps each install refusal to its Schedule error', function (string $refusal, string $step, ScheduleErrorCode $error): void {
-    $this->agents->refuse('schedules.install', $refusal);
+    $this->agents->refuse('schedule.install', $refusal);
 
     expect(fn () => $this->manager->install($this->schedule))
         ->toThrow(function (ScheduleOperationException $exception) use ($step, $error): void {
             expect($exception->step)->toBe($step)->and($exception->error)->toBe($error);
         });
 })->with([
-    ['schedules.artifact_conflict', 'inspect-artifacts', ScheduleErrorCode::ArtifactConflict],
-    ['schedules.calendar_invalid', 'validate-calendar', ScheduleErrorCode::CalendarInvalid],
-    ['schedules.rollback_failed', 'rollback', ScheduleErrorCode::RollbackFailed],
-    ['schedules.failed', 'install', ScheduleErrorCode::InstallFailed],
+    ['schedule.artifact_conflict', 'inspect-artifacts', ScheduleErrorCode::ArtifactConflict],
+    ['schedule.calendar_invalid', 'validate-calendar', ScheduleErrorCode::CalendarInvalid],
+    ['schedule.rollback_failed', 'rollback', ScheduleErrorCode::RollbackFailed],
+    ['schedule.failed', 'install', ScheduleErrorCode::InstallFailed],
 ]);
 
 it('reports a Node that does not answer as unreachable', function (): void {
-    $this->agents->answer('schedules.run', fn () => throw new RuntimeException('ssh failed'));
+    $this->agents->answer('schedule.run', fn () => throw new RuntimeException('ssh failed'));
 
     expect(fn () => $this->manager->run($this->schedule))
         ->toThrow(fn (ScheduleOperationException $exception) => expect($exception->error)->toBe(ScheduleErrorCode::NodeUnreachable));
@@ -146,7 +146,7 @@ it('runs the Schedule and reads its bounded newest logs', function (): void {
 });
 
 it('retains standalone intent while a run is active, and removes on cascade', function (): void {
-    $this->agents->refuse('schedules.remove', 'schedules.run_active');
+    $this->agents->refuse('schedule.remove', 'schedule.run_active');
 
     expect($this->manager->remove($this->schedule, false))->toBeFalse()
         ->and($this->agents->calls[0]['input'])->toBe(['id' => $this->schedule->id, 'group' => 'orbit', 'cascade' => false])

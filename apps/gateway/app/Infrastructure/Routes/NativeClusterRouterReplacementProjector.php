@@ -212,7 +212,7 @@ final readonly class NativeClusterRouterReplacementProjector implements ClusterR
             );
         }
 
-        AgentStep::run($this->agents, $router, 'routes.verify-certificate', [
+        AgentStep::run($this->agents, $router, 'route.verify-certificate', [
             'address' => $address,
             'port' => 443,
             'domain' => $route->domain,

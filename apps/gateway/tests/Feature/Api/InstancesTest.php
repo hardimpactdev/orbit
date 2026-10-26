@@ -571,7 +571,7 @@ describe('development Instance rename', function (): void {
     beforeEach(function (): void {
         // The agent's Rust tests prove how the checkout is read; here it reports the HEAD a test chooses.
         $this->renameHead = 't3code/login';
-        $this->renameAgents = new FakeAgentCommandRunner()->answer('instances.inspect-development-source', fn (): array => [
+        $this->renameAgents = new FakeAgentCommandRunner()->answer('instance.inspect-development-source', fn (): array => [
             'origin' => 'https://github.com/acme/site.git',
             'branch' => $this->renameHead,
             'commit' => null,
@@ -612,7 +612,7 @@ describe('development Instance rename', function (): void {
     it('refuses wrong or detached HEAD and remote lifecycle contention before changing either field', function (?string $head, string $code): void {
         $this->renameHead = $head;
         if ($code === 'instance.lifecycle_busy') {
-            $this->renameAgents->refuse('instances.inspect-development-source', 'instances.source_busy');
+            $this->renameAgents->refuse('instance.inspect-development-source', 'instance.source_busy');
         }
         $before = $this->renameInstance->getAttributes();
         $this->postJson('/api/v1/instances/'.$this->renameInstance->id.'/rename', ['branch' => 't3code/login', 'domain' => 'login.acme.test'])
@@ -2604,7 +2604,7 @@ it('rejects repository execution and unsupported transport keys', function (): v
 
 it('completes Instance removal while another Node service metrics snapshot fails', function (): void {
     // The creation request resolves singletons used by the native removal projector.
-    $poolAgents = SharedPhpPoolAnswers::register(new FakeAgentCommandRunner()->answer('firewall.route-lan', ['matches' => false])->answer('certificates.remove-leaf', []));
+    $poolAgents = SharedPhpPoolAnswers::register(new FakeAgentCommandRunner()->answer('firewall.route-lan', ['matches' => false])->answer('certificate.remove-leaf', []));
     app()->instance(AgentCommandRunner::class, $poolAgents);
     $processes = Mockery::mock(ProcessRunner::class);
     $processes->shouldReceive('run')->twice()->andReturn(new CommandResult(0, '', '', 1, false));
@@ -2661,7 +2661,7 @@ it('completes Instance removal while another Node service metrics snapshot fails
     expect(app(ExporterDegradationRepository::class)->step($failed->id))->toBe('snapshot');
     expect(app(MetricsReconcileDegradationRepository::class)->errorCode($failed->id))->toBe('metrics.service_convergence_failed');
     expect($poolAgents->commands())->toContain('php.converge-shared-pools')->not->toContain('php.inspect-shared-pools');
-    expect(collect($poolAgents->calls)->where('command', 'certificates.remove-leaf')->pluck('input.scope')->unique()->values()->all())->toBe(["app-instance-{$id}"]);
+    expect(collect($poolAgents->calls)->where('command', 'certificate.remove-leaf')->pluck('input.scope')->unique()->values()->all())->toBe(["app-instance-{$id}"]);
 });
 
 it('removes an active Instance through every durable checkpoint', function (bool $force): void {

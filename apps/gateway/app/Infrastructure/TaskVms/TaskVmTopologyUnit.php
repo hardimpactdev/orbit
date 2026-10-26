@@ -25,7 +25,7 @@ final readonly class TaskVmTopologyUnit
     /** @throws RuntimeConvergenceException when the call failed, possibly after the unit started */
     public function start(Node $node, string $run, string $checkout, string $issue, TaskTopology $topology): void
     {
-        $this->run($node, 'task-vms.start-topology', [
+        $this->run($node, 'task-vm.start-topology', [
             'run' => $run,
             'checkout' => $checkout,
             'issue' => $issue,
@@ -38,7 +38,7 @@ final readonly class TaskVmTopologyUnit
     public function status(Node $node, string $run): TaskVmTopologyRun
     {
         try {
-            $status = $this->run($node, 'task-vms.topology-status', ['run' => $run]);
+            $status = $this->run($node, 'task-vm.topology-status', ['run' => $run]);
         } catch (RuntimeConvergenceException $exception) {
             throw new TaskCapacityException(TaskWait::Topology, 'Task VM: the topology preparation could not be read: '.$exception->getMessage());
         }

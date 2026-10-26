@@ -602,9 +602,9 @@ A lock lets one operation at a time change the mirror of a Project. The lock cov
 #### Send branches to the VM
 
 1. The Gateway fetches the operation's branches into the mirror. Only `task-<id>` may be missing on GitHub.
-2. It calls `task-vms.read-git-refs` through the agent runner as the checkout account. The Gateway keeps IDs that the mirror holds as commits.
+2. It calls `task-vm.read-git-refs` through the agent runner as the checkout account. The Gateway keeps IDs that the mirror holds as commits.
 3. It packs the objects of the branches that are not in the history of those commits.
-4. It calls `task-vms.import-git-pack` through the agent runner and workspace executor. The command sets `refs/remotes/origin/<branch>` to the mirror's commit. A missing `task-<id>` loses its ref.
+4. It calls `task-vm.import-git-pack` through the agent runner and workspace executor. The command sets `refs/remotes/origin/<branch>` to the mirror's commit. A missing `task-<id>` loses its ref.
 5. When the default branch was sent, the VM points `refs/remotes/origin/HEAD` at it, as a clone does. The [`@orbit/ci-caches`](/reference/instance-setup#import-ci-main-caches) setup step reads the default branch there.
 6. In a separate optional transfer, it sends only the cache ref for the selected code SHA. Failure of this transfer does not undo source delivery.
 
@@ -636,7 +636,7 @@ The job records its start on the row. A job that has not finished 40 minutes aft
 
 1. The Gateway fetches the default branch and `task-<id>` into the mirror.
 2. It asks the VM for a pack of the approved commit. The pack leaves out the history of the mirror's commits of those branches.
-3. The Gateway calls `task-vms.export-git-pack` through the agent runner and the workspace executor. The command streams the pack to a private Gateway file through [bounded binary output](/reference/node-agent#commands).
+3. The Gateway calls `task-vm.export-git-pack` through the agent runner and the workspace executor. The command streams the pack to a private Gateway file through [bounded binary output](/reference/node-agent#commands).
 
 4. The Gateway indexes the pack into a quarantine object directory with `git index-pack --strict`. That command checks every object. The quarantine reads the mirror's objects but changes nothing in the mirror.
 5. It checks that the approved commit is a commit there, and that its history is complete.
@@ -1482,7 +1482,7 @@ Orbit prepares the group's topology in the VM after the group's baseline check, 
 
 Every other turn in the subtask follows one of these turns: a consult, a direction relay or review, a resolution, a deliverable correction, a nudge to continue, and the resume of an interrupted turn. These turns do not admit the topology again.
 
-To prepare the topology, the Gateway calls `task-vms.start-topology` and polls `task-vms.topology-status` on each tick. The subtask waits meanwhile with `Task VM: preparing the topology <nodes>.` The Rust agent starts the systemd unit `orbit-task-topology-<run>` as the managed account, with its home and workspace checkout. The unit runs the compiled `task-topology` service:
+To prepare the topology, the Gateway calls `task-vm.start-topology` and polls `task-vm.topology-status` on each tick. The subtask waits meanwhile with `Task VM: preparing the topology <nodes>.` The Rust agent starts the systemd unit `orbit-task-topology-<run>` as the managed account, with its home and workspace checkout. The unit runs the compiled `task-topology` service:
 
 | Step | What happens |
 | --- | --- |
@@ -1507,7 +1507,7 @@ The implementer and the reviewer use the topology with `bin/e2e-topology`, as th
 
 The reviewer proves each deliverable on the declared nodes with `bin/e2e-topology exec TASK-<group> NODE --argv=JSON --record=LABEL`. The harness writes the node, the command, the exit code, and the output to the [evidence log](/reference/incus-topologies#evidence-log). When the reviewer approves a subtask that declares a topology, Orbit reads the newest MiB of the evidence. The approval passes only when the evidence holds, for each node the subtask declares, a record that counts. Otherwise Orbit reminds the reviewer with the nodes that lack evidence, and the subtask is not approved.
 
-The [evidence log](/reference/incus-topologies#evidence-log) defines the JSON record. The Gateway sends the checkout path to `task-vms.read-topology-evidence`. The agent reads at most the newest MiB of the fixed `.e2e/evidence.jsonl` file as the managed account. A missing file supplies no evidence. The Gateway skips partial or malformed lines and applies the review rules. A record counts when:
+The [evidence log](/reference/incus-topologies#evidence-log) defines the JSON record. The Gateway sends the checkout path to `task-vm.read-topology-evidence`. The agent reads at most the newest MiB of the fixed `.e2e/evidence.jsonl` file as the managed account. A missing file supplies no evidence. The Gateway skips partial or malformed lines and applies the review rules. A record counts when:
 
 - its command exited 0;
 - it started after the implementer's last handoff and before Orbit reads the evidence;

@@ -67,15 +67,15 @@ it('trusts only a linked task VM image and still applies VM-specific infrastruct
         }
     };
     app()->instance(SshExecutor::class, $ssh);
-    $agents = (new FakeAgentCommandRunner)->answer('caddy.install-package', ['changed' => false, 'version' => '2.10.2'])->answer('roles.install-prerequisites', [])->answer('recipe.install-javascript', ['changed' => false, 'retired' => []])
-        ->answer('nodes.bootstrap', [])->answer('agent.status', ['version' => '0.5.0', 'sha256' => str_repeat('a', 64), 'platform' => 'linux', 'architecture' => 'x86_64', 'observer' => 'active'])
+    $agents = (new FakeAgentCommandRunner)->answer('caddy.install-package', ['changed' => false, 'version' => '2.10.2'])->answer('role.install-prerequisites', [])->answer('recipe.install-javascript', ['changed' => false, 'retired' => []])
+        ->answer('node.bootstrap', [])->answer('agent.status', ['version' => '0.5.0', 'sha256' => str_repeat('a', 64), 'platform' => 'linux', 'architecture' => 'x86_64', 'observer' => 'active'])
         ->answer('hibernation.prepare-directories', [])
-        ->answer('tools.materialize-composer', [])
-        ->answer('tools.materialize-vp', ['binary' => '/opt/orbit/vite-plus/bin/vp', 'changed' => false])
-        ->answer('tools.composer-version', ['version' => 'Composer version 2.9.0'])
-        ->answer('tools.vp-version', ['version' => 'vp v0.3.3'])
-        ->answer('tools.vp-install', [])->answer('tools.vp-update', [])
-        ->answer('tools.inspect-vp-scope', ['binary' => '/opt/orbit/vite-plus/bin/vp']);
+        ->answer('tool.materialize-composer', [])
+        ->answer('tool.materialize-vp', ['binary' => '/opt/orbit/vite-plus/bin/vp', 'changed' => false])
+        ->answer('tool.composer-version', ['version' => 'Composer version 2.9.0'])
+        ->answer('tool.vp-version', ['version' => 'vp v0.3.3'])
+        ->answer('tool.vp-install', [])->answer('tool.vp-update', [])
+        ->answer('tool.inspect-vp-scope', ['binary' => '/opt/orbit/vite-plus/bin/vp']);
     app()->instance(AgentCommandRunner::class, $agents);
     $admission = Mockery::mock(AdmissionAgentRunner::class);
     $admission->shouldReceive('architectureOver')->once()->andReturn('x86_64');
@@ -113,7 +113,7 @@ it('trusts only a linked task VM image and still applies VM-specific infrastruct
     $storage->shouldReceive('prepare')->once();
     app()->instance(NodeStorageRootPreparer::class, $storage);
 
-    $agentPrograms = ['bootstrap' => 'nodes.bootstrap', 'caddy-package' => 'caddy.install-package', 'app-dev-prerequisites' => 'roles.install-prerequisites', 'vp-manager' => 'tools.materialize-vp', 'composer-manager' => 'tools.materialize-composer'];
+    $agentPrograms = ['bootstrap' => 'node.bootstrap', 'caddy-package' => 'caddy.install-package', 'app-dev-prerequisites' => 'role.install-prerequisites', 'vp-manager' => 'tool.materialize-vp', 'composer-manager' => 'tool.materialize-composer'];
 
     app(NativeNodeConverger::class)->converge($node, new NodeProvisioningIdentity('orbit', 'orbit'), 'SHA256:pinned');
     app(DevelopmentRoleBaseline::class)->converge($node, $assignment);
@@ -131,21 +131,21 @@ it('trusts only a linked task VM image and still applies VM-specific infrastruct
     // Explicit manager install/update operations must not inherit enrollment's image trust.
     app(ComposerToolManager::class)->materialize($node);
     app(VpToolManager::class)->materialize($node);
-    expect(array_keys($agents->commands(), 'tools.materialize-composer', true))->toHaveCount($taskVm ? 1 : 2);
-    expect(array_keys($agents->commands(), 'tools.materialize-vp', true))->toHaveCount($taskVm ? 1 : 2);
-    $agents->answer('tools.composer-install', []);
-    $agents->answer('tools.composer-update', []);
+    expect(array_keys($agents->commands(), 'tool.materialize-composer', true))->toHaveCount($taskVm ? 1 : 2);
+    expect(array_keys($agents->commands(), 'tool.materialize-vp', true))->toHaveCount($taskVm ? 1 : 2);
+    $agents->answer('tool.composer-install', []);
+    $agents->answer('tool.composer-update', []);
     app(ComposerToolManager::class)->install($node, 'vendor/package');
     app(ComposerToolManager::class)->update($node, 'vendor/package');
     expect(array_slice($agents->calls, -2))->toBe([
-        ['node' => $node->name, 'command' => 'tools.composer-install', 'input' => ['package' => 'vendor/package']],
-        ['node' => $node->name, 'command' => 'tools.composer-update', 'input' => ['package' => 'vendor/package']],
+        ['node' => $node->name, 'command' => 'tool.composer-install', 'input' => ['package' => 'vendor/package']],
+        ['node' => $node->name, 'command' => 'tool.composer-update', 'input' => ['package' => 'vendor/package']],
     ]);
     app(VpToolManager::class)->install($node, '@vendor/package');
     app(VpToolManager::class)->update($node, '@vendor/package');
     expect(array_slice($agents->calls, -2))->toBe([
-        ['node' => $node->name, 'command' => 'tools.vp-install', 'input' => ['package' => '@vendor/package']],
-        ['node' => $node->name, 'command' => 'tools.vp-update', 'input' => ['package' => '@vendor/package']],
+        ['node' => $node->name, 'command' => 'tool.vp-install', 'input' => ['package' => '@vendor/package']],
+        ['node' => $node->name, 'command' => 'tool.vp-update', 'input' => ['package' => '@vendor/package']],
     ]);
     expect($node->fresh()->ssh_host_fingerprint)->toBe('SHA256:pinned');
     // Hibernation directories are per-VM state, not part of the software skip.

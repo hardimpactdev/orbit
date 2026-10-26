@@ -597,7 +597,7 @@ macro_rules! read {
 }
 read!(
     Inventory,
-    "tools.homebrew-cask-inventory",
+    "tool.homebrew-cask-inventory",
     "Read installed official cask versions.",
     Empty,
     InventoryOutput,
@@ -608,7 +608,7 @@ read!(
 );
 read!(
     Candidate,
-    "tools.homebrew-cask-candidate",
+    "tool.homebrew-cask-candidate",
     "Read the safe official cask candidate.",
     Input,
     CandidateOutput,
@@ -620,7 +620,7 @@ read!(
 );
 read!(
     Adoption,
-    "tools.homebrew-cask-adoption",
+    "tool.homebrew-cask-adoption",
     "Inspect an installed cask for explicit adoption.",
     Input,
     AdoptionOutput,
@@ -662,19 +662,19 @@ macro_rules! mutation {
 }
 mutation!(
     Install,
-    "tools.homebrew-cask-install",
+    "tool.homebrew-cask-install",
     "Install one safe official cask.",
     Install
 );
 mutation!(
     Update,
-    "tools.homebrew-cask-update",
+    "tool.homebrew-cask-update",
     "Upgrade one safe official cask.",
     Update
 );
 mutation!(
     Remove,
-    "tools.homebrew-cask-remove",
+    "tool.homebrew-cask-remove",
     "Remove one cask after checking uninstall safety.",
     Remove
 );

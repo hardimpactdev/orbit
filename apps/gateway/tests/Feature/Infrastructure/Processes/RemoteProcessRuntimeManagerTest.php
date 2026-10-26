@@ -71,11 +71,11 @@ it('leaves an unchanged owned systemd unit untouched during convergence includin
         $process->systemd_activation_hash = hash('sha256', $rendered);
         $process->save();
     }
-    $this->agents->answer('processes.stage-unit', ['staged' => false, 'previous' => true, 'state' => $runtimeStatus]);
+    $this->agents->answer('process.stage-unit', ['staged' => false, 'previous' => true, 'state' => $runtimeStatus]);
 
     $this->manager->converge($process);
 
-    expect($this->agents->commands())->toBe(['processes.stage-unit'])
+    expect($this->agents->commands())->toBe(['process.stage-unit'])
         ->and($this->agents->calls[0]['input'])->toBe([
             'process_id' => $process->id,
             'unit' => "orbit-process-{$process->id}-queue.service",
@@ -91,12 +91,12 @@ it('reactivates a published unit whose activation is pending or whose state diff
     $process->systemd_activation_hash = $case === 'other hash' ? hash('sha256', 'other') : hash('sha256', $rendered);
     $process->systemd_activation_pending = $case === 'pending';
     $process->save();
-    $this->agents->answer('processes.stage-unit', ['staged' => false, 'previous' => true, 'state' => $case === 'failed' ? 'failed' : 'active']);
-    $this->agents->answer('processes.activate-unit', ['backup_left' => false]);
+    $this->agents->answer('process.stage-unit', ['staged' => false, 'previous' => true, 'state' => $case === 'failed' ? 'failed' : 'active']);
+    $this->agents->answer('process.activate-unit', ['backup_left' => false]);
 
     $this->manager->converge($process);
 
-    expect($this->agents->commands())->toBe(['processes.stage-unit', 'processes.activate-unit'])
+    expect($this->agents->commands())->toBe(['process.stage-unit', 'process.activate-unit'])
         ->and($this->agents->calls[1]['input']['change'])->toBe('reload')
         ->and($process->refresh()->systemd_activation_hash)->toBe(hash('sha256', $rendered))
         ->and($process->systemd_activation_pending)->toBeFalse();
@@ -108,8 +108,8 @@ it('records a pending activation before publication and completes it on the next
     $process->systemd_activation_hash = hash('sha256', 'previous');
     $process->save();
     $rendered = runtime_manager_rendered_unit($process);
-    $this->agents->answer('processes.stage-unit', ['staged' => true, 'previous' => true, 'state' => null]);
-    $this->agents->answer('processes.activate-unit', static function () use ($process): array {
+    $this->agents->answer('process.stage-unit', ['staged' => true, 'previous' => true, 'state' => null]);
+    $this->agents->answer('process.activate-unit', static function () use ($process): array {
         expect($process->refresh()->systemd_activation_pending)->toBeTrue()
             ->and($process->systemd_activation_hash)->toBeNull();
 
@@ -126,8 +126,8 @@ it('records a pending activation before publication and completes it on the next
     ])->and($process->refresh()->systemd_activation_pending)->toBeTrue();
 
     $this->agents->calls = [];
-    $this->agents->answer('processes.stage-unit', ['staged' => false, 'previous' => true, 'state' => 'active']);
-    $this->agents->answer('processes.activate-unit', ['backup_left' => false]);
+    $this->agents->answer('process.stage-unit', ['staged' => false, 'previous' => true, 'state' => 'active']);
+    $this->agents->answer('process.activate-unit', ['backup_left' => false]);
     $this->manager->converge($process);
 
     expect($this->agents->calls[1]['input']['change'])->toBe('reload')
@@ -136,18 +136,18 @@ it('records a pending activation before publication and completes it on the next
 
     $this->agents->calls = [];
     $this->manager->converge($process);
-    expect($this->agents->commands())->toBe(['processes.stage-unit']);
+    expect($this->agents->commands())->toBe(['process.stage-unit']);
 });
 
 it('installs and manages a systemd process through processes commands', function (): void {
     $process = runtime_manager_systemd_process($this->instance);
     $unit = "orbit-process-{$process->id}-queue.service";
     $this->agents
-        ->answer('processes.stage-unit', ['staged' => true, 'previous' => false, 'state' => null])
-        ->answer('processes.activate-unit', ['backup_left' => false])
-        ->answer('processes.control', [])
-        ->answer('processes.logs', ['output' => "2026-09-25T10:00:02+00:00 host queue[7]: two\n2026-09-25T10:00:01+00:00 host queue[7]: one\n"])
-        ->answer('processes.remove', []);
+        ->answer('process.stage-unit', ['staged' => true, 'previous' => false, 'state' => null])
+        ->answer('process.activate-unit', ['backup_left' => false])
+        ->answer('process.control', [])
+        ->answer('process.logs', ['output' => "2026-09-25T10:00:02+00:00 host queue[7]: two\n2026-09-25T10:00:01+00:00 host queue[7]: one\n"])
+        ->answer('process.remove', []);
 
     $this->manager->converge($process);
     $this->manager->start($process);
@@ -157,12 +157,12 @@ it('installs and manages a systemd process through processes commands', function
 
     $artifact = ['process_id' => $process->id, 'runtime' => 'systemd', 'name' => $unit];
     expect($this->agents->commands())->toBe([
-        'processes.stage-unit',
-        'processes.activate-unit',
-        'processes.control',
-        'processes.control',
-        'processes.logs',
-        'processes.remove',
+        'process.stage-unit',
+        'process.activate-unit',
+        'process.control',
+        'process.control',
+        'process.logs',
+        'process.remove',
     ])
         ->and($this->agents->calls[0]['input']['content'])
         ->toContain("X-Orbit-Process-ID={$process->id}")
@@ -188,7 +188,7 @@ it('rejects leftover Workspace ownership before systemd convergence', function (
 it('maps a unit that another owner holds to a name collision', function (): void {
     $process = runtime_manager_systemd_process($this->instance);
     $path = "/etc/systemd/system/orbit-process-{$process->id}-queue.service";
-    $this->agents->refuse('processes.stage-unit', 'processes.name_collision', ['step' => 'inspect-unit', 'artifact' => $path, 'output' => ['exit_code' => 0, 'stdout' => "[Unit]\n", 'stderr' => '']]);
+    $this->agents->refuse('process.stage-unit', 'process.name_collision', ['step' => 'inspect-unit', 'artifact' => $path, 'output' => ['exit_code' => 0, 'stdout' => "[Unit]\n", 'stderr' => '']]);
 
     expect(fn () => $this->manager->converge($process))->toThrow(function (ProcessOperationException $exception) use ($path): void {
         expect($exception->errorCode)->toBe('process.runtime_name_collision')
@@ -202,7 +202,7 @@ it('keeps the activation record when the systemd candidate fails validation', fu
     $process = runtime_manager_systemd_process($this->instance);
     $process->systemd_activation_hash = hash('sha256', 'previous');
     $process->save();
-    $this->agents->refuse('processes.stage-unit', 'processes.candidate_invalid', ['step' => 'verify-unit', 'artifact' => 'unit', 'output' => ['exit_code' => 1, 'stdout' => '', 'stderr' => 'bad directive']]);
+    $this->agents->refuse('process.stage-unit', 'process.candidate_invalid', ['step' => 'verify-unit', 'artifact' => 'unit', 'output' => ['exit_code' => 1, 'stdout' => '', 'stderr' => 'bad directive']]);
 
     expect(fn () => $this->manager->converge($process))->toThrow(function (ProcessOperationException $exception): void {
         expect($exception->errorCode)->toBe('process.systemd_candidate_invalid')
@@ -212,15 +212,15 @@ it('keeps the activation record when the systemd candidate fails validation', fu
     });
     expect($process->refresh()->systemd_activation_hash)->toBe(hash('sha256', 'previous'))
         ->and($process->systemd_activation_pending)->toBeFalse()
-        ->and($this->agents->commands())->toBe(['processes.stage-unit']);
+        ->and($this->agents->commands())->toBe(['process.stage-unit']);
 });
 
 it('names what a failed systemd activation restored', function (bool $previous, string $desired, string $message): void {
     $process = runtime_manager_systemd_process($this->instance);
     $process->update(['desired_state' => $desired]);
-    $this->agents->answer('processes.stage-unit', ['staged' => true, 'previous' => $previous, 'state' => null]);
-    $code = $desired === 'running' ? 'processes.start_failed' : 'processes.stop_failed';
-    $this->agents->refuse('processes.activate-unit', $code, ['step' => $desired === 'running' ? 'start' : 'stop', 'restored' => true, 'output' => ['exit_code' => 1, 'stdout' => '', 'stderr' => 'Job failed']]);
+    $this->agents->answer('process.stage-unit', ['staged' => true, 'previous' => $previous, 'state' => null]);
+    $code = $desired === 'running' ? 'process.start_failed' : 'process.stop_failed';
+    $this->agents->refuse('process.activate-unit', $code, ['step' => $desired === 'running' ? 'start' : 'stop', 'restored' => true, 'output' => ['exit_code' => 1, 'stdout' => '', 'stderr' => 'Job failed']]);
 
     expect(fn () => $this->manager->converge($process))->toThrow(function (ProcessOperationException $exception) use ($process, $desired, $message): void {
         $state = $desired === 'running' ? 'start' : 'stop';
@@ -237,8 +237,8 @@ it('names what a failed systemd activation restored', function (bool $previous, 
 
 it('maps a failed reload after publication to an activation failure', function (): void {
     $process = runtime_manager_systemd_process($this->instance);
-    $this->agents->answer('processes.stage-unit', ['staged' => true, 'previous' => true, 'state' => null]);
-    $this->agents->refuse('processes.activate-unit', 'processes.activation_failed', ['step' => 'daemon-reload', 'output' => ['exit_code' => 1, 'stdout' => '', 'stderr' => '']]);
+    $this->agents->answer('process.stage-unit', ['staged' => true, 'previous' => true, 'state' => null]);
+    $this->agents->refuse('process.activate-unit', 'process.activation_failed', ['step' => 'daemon-reload', 'output' => ['exit_code' => 1, 'stdout' => '', 'stderr' => '']]);
 
     expect(fn () => $this->manager->converge($process))->toThrow(function (ProcessOperationException $exception) use ($process): void {
         expect($exception->errorCode)->toBe('process.systemd_activation_failed')
@@ -249,22 +249,22 @@ it('maps a failed reload after publication to an activation failure', function (
 
 it('maps systemd rollback and recovery failures', function (string $code, string $step, string $expected): void {
     $process = runtime_manager_systemd_process($this->instance);
-    $this->agents->answer('processes.stage-unit', ['staged' => true, 'previous' => true, 'state' => null]);
-    $this->agents->refuse('processes.activate-unit', $code, ['step' => $step, 'reason' => 'step_failed', 'output' => ['exit_code' => 1, 'stdout' => '', 'stderr' => '']]);
+    $this->agents->answer('process.stage-unit', ['staged' => true, 'previous' => true, 'state' => null]);
+    $this->agents->refuse('process.activate-unit', $code, ['step' => $step, 'reason' => 'step_failed', 'output' => ['exit_code' => 1, 'stdout' => '', 'stderr' => '']]);
 
     expect(fn () => $this->manager->converge($process))->toThrow(function (ProcessOperationException $exception) use ($step, $expected): void {
         expect($exception->errorCode)->toBe($expected)->and($exception->step)->toBe($step);
     });
 })->with([
-    ['processes.rollback_failed', 'restore-unit', 'process.systemd_rollback_failed'],
-    ['processes.rollback_failed', 'restore-service-state', 'process.systemd_rollback_failed'],
-    ['processes.recovery_required', 'stop-replacement-unit', 'process.systemd_recovery_required'],
+    ['process.rollback_failed', 'restore-unit', 'process.systemd_rollback_failed'],
+    ['process.rollback_failed', 'restore-service-state', 'process.systemd_rollback_failed'],
+    ['process.recovery_required', 'stop-replacement-unit', 'process.systemd_recovery_required'],
 ]);
 
 it('records the activation before it reports a backup that could not be deleted', function (): void {
     $process = runtime_manager_systemd_process($this->instance);
-    $this->agents->answer('processes.stage-unit', ['staged' => true, 'previous' => true, 'state' => null]);
-    $this->agents->answer('processes.activate-unit', ['backup_left' => true]);
+    $this->agents->answer('process.stage-unit', ['staged' => true, 'previous' => true, 'state' => null]);
+    $this->agents->answer('process.activate-unit', ['backup_left' => true]);
 
     expect(fn () => $this->manager->converge($process))->toThrow(function (ProcessOperationException $exception): void {
         expect($exception->errorCode)->toBe('process.systemd_converge_failed')
@@ -277,11 +277,11 @@ it('records the activation before it reports a backup that could not be deleted'
 it('converges a Docker process with its typed definition in one command', function (): void {
     $process = runtime_manager_docker_process($this->instance, ['DB_PASSWORD' => 'secret-value', 'APP_NAME' => 'docs']);
     $process->update(['desired_state' => 'running']);
-    $this->agents->answer('processes.converge-container', []);
+    $this->agents->answer('process.converge-container', []);
 
     $this->manager->converge($process);
 
-    expect($this->agents->commands())->toBe(['processes.converge-container'])
+    expect($this->agents->commands())->toBe(['process.converge-container'])
         ->and($this->agents->calls[0]['input'])->toBe([
             'process_id' => $process->id,
             'container' => "orbit-process-{$process->id}-redis",
@@ -299,7 +299,7 @@ it('converges a Docker process with its typed definition in one command', functi
 
 it('sends an empty Docker environment as an object', function (): void {
     $process = runtime_manager_docker_process($this->instance);
-    $this->agents->answer('processes.converge-container', []);
+    $this->agents->answer('process.converge-container', []);
 
     $this->manager->converge($process);
 
@@ -318,7 +318,7 @@ it('maps Docker refusals to their codes and messages and redacts environment val
     $process = runtime_manager_docker_process($this->instance, ['DB_PASSWORD' => 'secret-value']);
     $name = "orbit-process-{$process->id}-redis";
     $details = array_map(static fn (mixed $value): mixed => is_string($value) ? str_replace('{name}', $name, $value) : $value, $details);
-    $this->agents->refuse('processes.converge-container', $code, [...$details, 'output' => ['exit_code' => 1, 'stdout' => 'secret-value', 'stderr' => 'failed with secret-value']]);
+    $this->agents->refuse('process.converge-container', $code, [...$details, 'output' => ['exit_code' => 1, 'stdout' => 'secret-value', 'stderr' => 'failed with secret-value']]);
 
     expect(fn () => $this->manager->converge($process))->toThrow(function (ProcessOperationException $exception) use ($details, $expectedCode, $expectedMessage, $name): void {
         expect($exception->errorCode)->toBe($expectedCode)
@@ -328,16 +328,16 @@ it('maps Docker refusals to their codes and messages and redacts environment val
             ->and($exception->result?->stderr)->toBe('failed with [REDACTED]');
     });
 })->with([
-    'replacement start' => ['processes.start_failed', ['step' => 'start', 'restored' => true], 'process.start_failed', 'Process [redis] failed to start; the previous container was restored.'],
-    'desired start' => ['processes.start_failed', ['step' => 'start', 'restored' => false], 'process.start_failed', 'Process [redis] runtime step [start] failed.'],
-    'activation' => ['processes.activation_failed', ['step' => 'activate-container'], 'process.docker_activation_failed', 'Docker process [redis] activation failed; the previous container was restored.'],
-    'ambiguous rollback' => ['processes.recovery_required', ['step' => 'inspect-rollback-container', 'reason' => 'ambiguous_rollback'], 'process.docker_recovery_required', 'Docker process [redis] has ambiguous rollback state.'],
-    'ambiguous candidate' => ['processes.recovery_required', ['step' => 'inspect-rollback-container', 'reason' => 'ambiguous_candidate'], 'process.docker_recovery_required', 'Docker process [redis] has ambiguous candidate and rollback state.'],
-    'no canonical' => ['processes.recovery_required', ['step' => 'inspect-container', 'reason' => 'no_canonical'], 'process.docker_recovery_required', 'Docker process [redis] has no canonical runtime after recovery.'],
-    'restore' => ['processes.recovery_required', ['step' => 'restore-container', 'reason' => 'step_failed'], 'process.docker_recovery_required', 'Process [redis] runtime step [restore-container] failed.'],
-    'candidate' => ['processes.candidate_invalid', ['step' => 'verify-candidate-container', 'artifact' => 'orbit-process-1-redis-candidate'], 'process.docker_candidate_invalid', 'Docker candidate [orbit-process-1-redis-candidate] does not match the desired process specification.'],
-    'collision' => ['processes.name_collision', ['step' => 'inspect-container', 'artifact' => '{name}'], 'process.runtime_name_collision', 'Docker container [{name}] is not owned by this process.'],
-    'create' => ['processes.converge_failed', ['step' => 'create-container'], 'process.docker_converge_failed', 'Process [redis] runtime step [create-container] failed.'],
+    'replacement start' => ['process.start_failed', ['step' => 'start', 'restored' => true], 'process.start_failed', 'Process [redis] failed to start; the previous container was restored.'],
+    'desired start' => ['process.start_failed', ['step' => 'start', 'restored' => false], 'process.start_failed', 'Process [redis] runtime step [start] failed.'],
+    'activation' => ['process.activation_failed', ['step' => 'activate-container'], 'process.docker_activation_failed', 'Docker process [redis] activation failed; the previous container was restored.'],
+    'ambiguous rollback' => ['process.recovery_required', ['step' => 'inspect-rollback-container', 'reason' => 'ambiguous_rollback'], 'process.docker_recovery_required', 'Docker process [redis] has ambiguous rollback state.'],
+    'ambiguous candidate' => ['process.recovery_required', ['step' => 'inspect-rollback-container', 'reason' => 'ambiguous_candidate'], 'process.docker_recovery_required', 'Docker process [redis] has ambiguous candidate and rollback state.'],
+    'no canonical' => ['process.recovery_required', ['step' => 'inspect-container', 'reason' => 'no_canonical'], 'process.docker_recovery_required', 'Docker process [redis] has no canonical runtime after recovery.'],
+    'restore' => ['process.recovery_required', ['step' => 'restore-container', 'reason' => 'step_failed'], 'process.docker_recovery_required', 'Process [redis] runtime step [restore-container] failed.'],
+    'candidate' => ['process.candidate_invalid', ['step' => 'verify-candidate-container', 'artifact' => 'orbit-process-1-redis-candidate'], 'process.docker_candidate_invalid', 'Docker candidate [orbit-process-1-redis-candidate] does not match the desired process specification.'],
+    'collision' => ['process.name_collision', ['step' => 'inspect-container', 'artifact' => '{name}'], 'process.runtime_name_collision', 'Docker container [{name}] is not owned by this process.'],
+    'create' => ['process.converge_failed', ['step' => 'create-container'], 'process.docker_converge_failed', 'Process [redis] runtime step [create-container] failed.'],
 ]);
 
 it('serializes runtime convergence for the same node and process', function (): void {
@@ -405,7 +405,7 @@ it('shares the process runtime owner with role-dependent cleanup', function (): 
 
 it('maps lifecycle refusals to the operation code', function (string $operation, string $code, string $expectedCode, string $step): void {
     $process = runtime_manager_systemd_process($this->instance);
-    $this->agents->refuse('processes.control', $code, ['step' => $step, 'restored' => false, 'artifact' => 'unit', 'output' => ['exit_code' => 1, 'stdout' => '', 'stderr' => '']]);
+    $this->agents->refuse('process.control', $code, ['step' => $step, 'restored' => false, 'artifact' => 'unit', 'output' => ['exit_code' => 1, 'stdout' => '', 'stderr' => '']]);
 
     expect(fn () => match ($operation) {
         'start' => $this->manager->start($process),
@@ -416,15 +416,15 @@ it('maps lifecycle refusals to the operation code', function (string $operation,
     });
     expect($this->agents->calls[0]['input']['operation'])->toBe($operation);
 })->with([
-    ['start', 'processes.start_failed', 'process.start_failed', 'start'],
-    ['stop', 'processes.not_found', 'process.runtime_not_found', 'stop'],
-    ['restart', 'processes.restart_failed', 'process.restart_failed', 'restart-enable'],
-    ['restart', 'processes.name_collision', 'process.runtime_name_collision', 'restart'],
+    ['start', 'process.start_failed', 'process.start_failed', 'start'],
+    ['stop', 'process.not_found', 'process.runtime_not_found', 'stop'],
+    ['restart', 'process.restart_failed', 'process.restart_failed', 'restart-enable'],
+    ['restart', 'process.name_collision', 'process.runtime_name_collision', 'restart'],
 ]);
 
 it('fails the step with its own code when no agent result arrives', function (): void {
     $process = runtime_manager_systemd_process($this->instance);
-    $this->agents->answer('processes.control', static fn (): array => throw new AgentRunnerFailure('processes.control', AgentRunnerFailure::Transport, 'Lost.', result: new CommandResult(255, '', 'Connection reset', 0, false)));
+    $this->agents->answer('process.control', static fn (): array => throw new AgentRunnerFailure('process.control', AgentRunnerFailure::Transport, 'Lost.', result: new CommandResult(255, '', 'Connection reset', 0, false)));
 
     expect(fn () => $this->manager->stop($process))->toThrow(function (ProcessOperationException $exception): void {
         expect($exception->errorCode)->toBe('process.stop_failed')
@@ -435,7 +435,7 @@ it('fails the step with its own code when no agent result arrives', function ():
 
 it('maps an undeclared Process refusal to the step code', function (): void {
     $process = runtime_manager_systemd_process($this->instance);
-    $this->agents->refuse('processes.status', 'agent.target_busy', ['lock' => '/run/lock']);
+    $this->agents->refuse('process.status', 'agent.target_busy', ['lock' => '/run/lock']);
 
     expect(fn () => $this->manager->status($process))->toThrow(function (ProcessOperationException $exception): void {
         expect($exception->errorCode)->toBe('process.status_failed')->and($exception->step)->toBe('status');
@@ -444,7 +444,7 @@ it('maps an undeclared Process refusal to the step code', function (): void {
 
 it('starts an on-demand host Process without enabling it', function (): void {
     $process = runtime_manager_systemd_process($this->instance);
-    $this->agents->answer('processes.control', []);
+    $this->agents->answer('process.control', []);
     $target = new ProcessTargetResolver()->forStart($process);
 
     $this->manager->start($process);
@@ -454,7 +454,7 @@ it('starts an on-demand host Process without enabling it', function (): void {
 
 it('reads Docker logs as whole lines', function (): void {
     $process = runtime_manager_docker_process($this->instance);
-    $this->agents->answer('processes.logs', ['output' => "out one\nerr one\n"]);
+    $this->agents->answer('process.logs', ['output' => "out one\nerr one\n"]);
 
     expect($this->manager->logs($process, 20))->toBe("out one\nerr one\n")
         ->and($this->agents->calls[0]['input'])->toBe([
@@ -468,7 +468,7 @@ it('reads Docker logs as whole lines', function (): void {
 
 it('reports the agent status of a Process', function (string $state): void {
     $process = runtime_manager_docker_process($this->instance);
-    $this->agents->answer('processes.status', ['state' => $state]);
+    $this->agents->answer('process.status', ['state' => $state]);
 
     expect($this->manager->status($process))->toBe($state);
 })->with(['absent', 'running', 'exited']);
@@ -476,7 +476,7 @@ it('reports the agent status of a Process', function (string $state): void {
 it('removes a Vite+ dev Process with its Instance environment file', function (): void {
     $process = runtime_manager_systemd_process($this->instance);
     $process->update(['runtime_config' => [...$process->runtime_config, 'preset' => VpDevPreset::NAME]]);
-    $this->agents->answer('processes.remove', []);
+    $this->agents->answer('process.remove', []);
 
     $this->manager->remove($process->refresh());
 
@@ -488,7 +488,7 @@ it('removes a Vite+ dev Process with its Instance environment file', function ()
 
 it('maps a refused Vite environment cleanup', function (): void {
     $process = runtime_manager_systemd_process($this->instance);
-    $this->agents->refuse('processes.remove', 'processes.vite_cleanup_failed', ['step' => 'remove-vite-environment', 'output' => ['exit_code' => 1, 'stdout' => '', 'stderr' => '']]);
+    $this->agents->refuse('process.remove', 'process.vite_cleanup_failed', ['step' => 'remove-vite-environment', 'output' => ['exit_code' => 1, 'stdout' => '', 'stderr' => '']]);
 
     expect(fn () => $this->manager->remove($process))->toThrow(function (ProcessOperationException $exception): void {
         expect($exception->errorCode)->toBe('vite.environment_cleanup_failed')
@@ -501,11 +501,11 @@ it('removes an instance process after its role and resources enter removing stat
     $process->update(['status' => LifecycleStatus::Removing]);
     $this->instance->update(['status' => InstanceState::SourceResolved]);
     $this->instance->node->roles()->where('role', 'app-dev')->update(['status' => LifecycleStatus::Removing]);
-    $this->agents->answer('processes.remove', []);
+    $this->agents->answer('process.remove', []);
 
     $this->manager->remove($process);
 
-    expect($this->agents->commands())->toBe(['processes.remove'])
+    expect($this->agents->commands())->toBe(['process.remove'])
         ->and($this->agents->calls[0]['node'])->toBe('app-dev');
 });
 
@@ -514,7 +514,7 @@ it('removes the retired runtime footprint without losing its override when the l
     $process->update(['runtime' => ProcessRuntime::Docker, 'runtime_config' => ['image' => 'redis:8-alpine', 'command' => ['redis-server']]]);
     $retired = clone $process;
     $retired->runtime = ProcessRuntime::Systemd;
-    $this->agents->answer('processes.remove', []);
+    $this->agents->answer('process.remove', []);
 
     $this->manager->remove($retired);
 
@@ -545,11 +545,11 @@ it('checks the selected production release before start', function (): void {
     $process = runtime_manager_systemd_process($this->instance);
     $process->update(['working_directory' => '/home/orbit-docs/current']);
     runtime_manager_make_production($this->instance);
-    $this->agents->answer('processes.check-release', ['available' => true])->answer('processes.control', []);
+    $this->agents->answer('process.check-release', ['available' => true])->answer('process.control', []);
 
     $this->manager->start($process);
 
-    expect($this->agents->commands())->toBe(['processes.check-release', 'processes.control'])
+    expect($this->agents->commands())->toBe(['process.check-release', 'process.control'])
         ->and($this->agents->calls[0]['input'])->toBe(['directory' => '/home/orbit-docs/current']);
 });
 
@@ -559,14 +559,14 @@ it('refuses production start and convergence before runtime mutation when no rel
         $process->update(['desired_state' => 'running']);
     }
     runtime_manager_make_production($this->instance);
-    $this->agents->answer('processes.check-release', ['available' => false]);
+    $this->agents->answer('process.check-release', ['available' => false]);
 
     expect(fn () => $operation === 'start' ? $this->manager->start($process) : $this->manager->converge($process))
         ->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('process.release_unavailable');
         });
 
-    expect($this->agents->commands())->toBe(['processes.check-release']);
+    expect($this->agents->commands())->toBe(['process.check-release']);
 })->with(['start', 'converge stopped', 'converge running']);
 
 it('keeps the active-node prerequisite on the removal-only target path', function (): void {

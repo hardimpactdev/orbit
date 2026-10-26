@@ -63,9 +63,9 @@ describe('orbit:node-programs', function (): void {
             ->and(array_column($programs, 'fingerprint'))->each->toMatch('/\A[a-f0-9]{64}\z/');
         expect($programs[3]['arguments'])->toBe(['sudo', '-n', '/usr/local/bin/orbit-agent', 'command', 'recipe.install-javascript']);
         expect(array_keys(json_decode($programs[3]['input'], true, flags: JSON_THROW_ON_ERROR)['input']['tools']))->toEqualCanonicalizing(['bun', 'node', 'pnpm', 'vp', 'vp-cli']);
-        expect($programs[5]['arguments'])->toBe(['sudo', '-n', '/usr/local/bin/orbit-agent', 'command', 'tools.materialize-composer']);
+        expect($programs[5]['arguments'])->toBe(['sudo', '-n', '/usr/local/bin/orbit-agent', 'command', 'tool.materialize-composer']);
         expect(json_decode($programs[5]['input'], true, flags: JSON_THROW_ON_ERROR)['input'])->toBe(['user' => 'orbit']);
-        expect($programs[4]['arguments'])->toBe(['sudo', '-n', '/usr/local/bin/orbit-agent', 'command', 'tools.materialize-vp']);
+        expect($programs[4]['arguments'])->toBe(['sudo', '-n', '/usr/local/bin/orbit-agent', 'command', 'tool.materialize-vp']);
         $input = json_decode($programs[4]['input'], true, flags: JSON_THROW_ON_ERROR)['input'];
         expect($input)->toMatchArray(['user' => 'orbit', 'architecture' => 'amd64']);
         expect(hash('sha256', $input['vp_lock']))->toBe($input['tools']['vp']['lock_sha256']);
@@ -83,7 +83,7 @@ describe('orbit:node-programs', function (): void {
         $programs = array_column(render_node_programs(['vpn']), null, 'name');
         $node = new Node(['platform' => 'linux', 'architecture' => 'x86_64']);
 
-        expect($programs['vpn-prerequisites']['arguments'])->toBe(['sudo', '-n', '/usr/local/bin/orbit-agent', 'command', 'roles.install-prerequisites'])
+        expect($programs['vpn-prerequisites']['arguments'])->toBe(['sudo', '-n', '/usr/local/bin/orbit-agent', 'command', 'role.install-prerequisites'])
             ->and(json_decode((string) $programs['vpn-prerequisites']['input'], true)['agent_sha256'])->toBe(app(AgentDelivery::class)->pin($node));
     });
 
@@ -106,7 +106,7 @@ describe('orbit:node-programs', function (): void {
         $programs = render_node_programs([]);
         expect($programs)->toHaveCount(1)
             ->and($programs[0]['name'])->toBe('bootstrap')
-            ->and($programs[0]['arguments'])->toBe(['sudo', '-n', '/usr/local/bin/orbit-agent', 'command', 'nodes.bootstrap'])
+            ->and($programs[0]['arguments'])->toBe(['sudo', '-n', '/usr/local/bin/orbit-agent', 'command', 'node.bootstrap'])
             ->and(json_decode($programs[0]['input'], true, flags: JSON_THROW_ON_ERROR)['input']['dns_policy'])->toBe('preserve');
     });
 

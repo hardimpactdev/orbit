@@ -512,7 +512,7 @@ impl Service for Worker {
 }
 pub struct Start;
 impl Command for Start {
-    const NAME: &'static str = "task-vms.start-topology";
+    const NAME: &'static str = "task-vm.start-topology";
     const SUMMARY: &'static str = "Start one bounded topology preparation as the managed account.";
     const MUTATES: bool = true;
     const TIMEOUT: Duration = Duration::from_secs(60);
@@ -532,7 +532,7 @@ impl Command for Start {
 }
 pub struct Inspect;
 impl Command for Inspect {
-    const NAME: &'static str = "task-vms.topology-status";
+    const NAME: &'static str = "task-vm.topology-status";
     const SUMMARY: &'static str =
         "Read a topology result, boot identity, or conservative systemd state.";
     const MUTATES: bool = false;

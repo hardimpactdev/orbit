@@ -13,7 +13,7 @@ use Tests\Support\FakeAgentCommandRunner;
 
 it('reads bounded whole lines from the application directory for one-shot and live logs', function (string $root, string $suffix, bool $production): void {
     $full = implode("\n", array_map(static fn (int $i): string => sprintf('%04d %s', $i, str_repeat('y', 9_995)), range(1, 500)))."\n";
-    $agents = new FakeAgentCommandRunner()->answer('instances.read-application-log', ['text' => substr($full, -LogReadLimit::Bytes)]);
+    $agents = new FakeAgentCommandRunner()->answer('instance.read-application-log', ['text' => substr($full, -LogReadLimit::Bytes)]);
     $reader = new RemoteInstanceLogReader($agents);
     $node = Node::query()->create(['name' => 'app-dev', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '192.0.2.40', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.40']);
     $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@example.test:shop.git', 'default_branch' => 'main']);

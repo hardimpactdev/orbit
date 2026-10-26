@@ -181,7 +181,7 @@ fn import(input: &Input, context: &Context) -> Result<Output, Error> {
 }
 pub struct ImportPack;
 impl Command for ImportPack {
-    const NAME: &'static str = "task-vms.import-git-pack";
+    const NAME: &'static str = "task-vm.import-git-pack";
     const SUMMARY: &'static str =
         "Import a mirror pack and set approved checkout refs without network access.";
     const MUTATES: bool = true;

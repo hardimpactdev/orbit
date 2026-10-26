@@ -17,9 +17,9 @@ use std::{
 
 crate::command_errors! {
     pub enum Error {
-        Invalid {} => "tools.store_invalid", "The runtime requirements or store ownership are invalid.";
-        Failed {} => "tools.store_failed", "The runtime store operation failed; check ownership, registry access, and checksums.";
-        Busy {} => "tools.store_lock_timeout", "The runtime store lock timed out.";
+        Invalid {} => "tool.store_invalid", "The runtime requirements or store ownership are invalid.";
+        Failed {} => "tool.store_failed", "The runtime store operation failed; check ownership, registry access, and checksums.";
+        Busy {} => "tool.store_lock_timeout", "The runtime store lock timed out.";
     }
 }
 type Result<T> = std::result::Result<T, Error>;
@@ -549,7 +549,7 @@ fn prune(input: &PruneInput, account: &Account, deadline: Instant) -> Result<Pru
 
 pub struct Inspect;
 impl Command for Inspect {
-    const NAME: &'static str = "tools.inspect-vp-store";
+    const NAME: &'static str = "tool.inspect-vp-store";
     const SUMMARY: &'static str =
         "Inspect exact immutable deployment runtimes without locks or network access.";
     const MUTATES: bool = false;
@@ -566,7 +566,7 @@ impl Command for Inspect {
 }
 pub struct Install;
 impl Command for Install {
-    const NAME: &'static str = "tools.install-vp-environment";
+    const NAME: &'static str = "tool.install-vp-environment";
     const SUMMARY: &'static str =
         "Verify and publish missing Node and package-manager runtimes as the store owner.";
     const MUTATES: bool = true;
@@ -591,7 +591,7 @@ impl Command for Install {
 }
 pub struct Prune;
 impl Command for Prune {
-    const NAME: &'static str = "tools.prune-vp-store";
+    const NAME: &'static str = "tool.prune-vp-store";
     const SUMMARY: &'static str =
         "Collect only unreferenced runtimes with an Orbit deployment receipt.";
     const MUTATES: bool = true;

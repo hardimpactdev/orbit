@@ -10,8 +10,8 @@ use std::{
 
 command_errors! {
     pub enum Error {
-        Invalid {} => "routes.http_input_invalid", "The Route HTTP check needs an IP address, port, and domain.";
-        Unreachable {} => "routes.http_unreachable", "The selected Process listener did not answer HTTP.";
+        Invalid {} => "route.http_input_invalid", "The Route HTTP check needs an IP address, port, and domain.";
+        Unreachable {} => "route.http_unreachable", "The selected Process listener did not answer HTTP.";
     }
 }
 
@@ -68,7 +68,7 @@ fn verify(input: &Input) -> Result<Verified, Error> {
 
 pub struct VerifyHttp;
 impl Command for VerifyHttp {
-    const NAME: &'static str = "routes.verify-http";
+    const NAME: &'static str = "route.verify-http";
     const SUMMARY: &'static str =
         "Check HTTP reachability of a public Process Route from its Ingress.";
     const MUTATES: bool = false;

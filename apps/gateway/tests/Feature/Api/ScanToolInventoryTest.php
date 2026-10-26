@@ -187,7 +187,7 @@ describe('tool inventory scans', function (): void {
             ['name' => 'pnpm', 'version' => '10.15.1'],
             ['name' => 'typescript', 'version' => null],
         ];
-        $ssh = scan_bind(scan_observations($formulae, $casks), new FakeAgentCommandRunner()->answer('tools.vp-inventory', ['packages' => $vp, 'scan_complete' => true]));
+        $ssh = scan_bind(scan_observations($formulae, $casks), new FakeAgentCommandRunner()->answer('tool.vp-inventory', ['packages' => $vp, 'scan_complete' => true]));
         $before = Tool::query()->count();
 
         DB::flushQueryLog();
@@ -223,8 +223,8 @@ describe('tool inventory scans', function (): void {
             ->and($codex->refresh()->installed_version)->toBe('0.150.0');
         scan_assert_read_only($ssh);
         expect(app(AgentCommandRunner::class)->calls)->toBe([
-            ['node' => $node->name, 'command' => 'tools.homebrew-scan', 'input' => ['architecture' => 'arm64']],
-            ['node' => $node->name, 'command' => 'tools.vp-inventory', 'input' => []],
+            ['node' => $node->name, 'command' => 'tool.homebrew-scan', 'input' => ['architecture' => 'arm64']],
+            ['node' => $node->name, 'command' => 'tool.vp-inventory', 'input' => []],
         ]);
         $writes = collect(DB::getQueryLog())
             ->filter(static fn (array $query): bool => preg_match('/\b(insert|update|delete|replace)\b/i', $query['query']) === 1)
@@ -238,7 +238,7 @@ describe('tool inventory scans', function (): void {
         $node = scan_node('scan-mini', '10.44.0.3', 'macos', 'mini');
         $tool = scan_tool($node, ToolManagerName::Vp, '@openai/codex');
         $formulae = [scan_package('ripgrep', '14.1.1')];
-        $ssh = scan_bind(['formulae' => ['state' => 'complete', 'packages' => $formulae], 'casks' => ['state' => 'incomplete', 'packages' => []]], new FakeAgentCommandRunner()->refuse('tools.vp-inventory', 'tools.vp_scope_conflict'));
+        $ssh = scan_bind(['formulae' => ['state' => 'complete', 'packages' => $formulae], 'casks' => ['state' => 'incomplete', 'packages' => []]], new FakeAgentCommandRunner()->refuse('tool.vp-inventory', 'tool.vp_scope_conflict'));
 
         $response = $this->get('/api/v1/tool-inventory?node_id='.$node->id, ['Accept' => 'application/json'])->assertOk();
 
@@ -260,7 +260,7 @@ describe('tool inventory scans', function (): void {
         $formulae = [scan_package('ripgrep', '14.1.1')];
         $ssh = scan_bind(scan_observations($formulae), new FakeAgentCommandRunner()
 
-            ->refuse('tools.vp-inventory', 'tools.vp_scope_absent'));
+            ->refuse('tool.vp-inventory', 'tool.vp_scope_absent'));
 
         $response = $this->get('/api/v1/tool-inventory?node_id='.$node->id, ['Accept' => 'application/json'])->assertOk();
 
@@ -273,7 +273,7 @@ describe('tool inventory scans', function (): void {
             ->and(Tool::query()->count())->toBe(0);
         scan_assert_read_only($ssh);
         expect($ssh->commands)->toBe([]);
-        expect(app(AgentCommandRunner::class)->commands())->toBe(['tools.homebrew-scan', 'tools.vp-inventory']);
+        expect(app(AgentCommandRunner::class)->commands())->toBe(['tool.homebrew-scan', 'tool.vp-inventory']);
         record_fixture($response, 'tools/tool-scan/linux', 'Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest', 'GET /api/v1/tool-inventory');
     });
 
@@ -282,7 +282,7 @@ describe('tool inventory scans', function (): void {
         $tool = scan_tool($node, ToolManagerName::Vp, '@openai/codex');
         $formulae = [scan_package('ripgrep', '14.1.1')];
         $casks = [scan_package('font-hack', '2.0.0')];
-        scan_bind(scan_observations($formulae, $casks), new FakeAgentCommandRunner()->refuse('tools.vp-inventory', 'tools.vp_output_invalid'));
+        scan_bind(scan_observations($formulae, $casks), new FakeAgentCommandRunner()->refuse('tool.vp-inventory', 'tool.vp_output_invalid'));
 
         $response = $this->get('/api/v1/tool-inventory?node_id='.$node->id, ['Accept' => 'application/json'])->assertOk();
 
@@ -332,8 +332,8 @@ function scan_tool(Node $node, ToolManagerName $manager, string $package): Tool
 /** @param array<string, mixed> $observations */
 function scan_bind(array $observations, ?FakeAgentCommandRunner $agents = null): ToolManagerFakeSshExecutor
 {
-    $agents ??= new FakeAgentCommandRunner()->answer('tools.vp-inventory', ['packages' => [], 'scan_complete' => true]);
-    $agents->answer('tools.homebrew-scan', $observations);
+    $agents ??= new FakeAgentCommandRunner()->answer('tool.vp-inventory', ['packages' => [], 'scan_complete' => true]);
+    $agents->answer('tool.homebrew-scan', $observations);
     app()->instance(AgentCommandRunner::class, $agents);
     $ssh = new ToolManagerFakeSshExecutor([]);
     app()->instance(SshExecutor::class, $ssh);

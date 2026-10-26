@@ -66,7 +66,7 @@ final readonly class NodeEnrollmentPrograms
         $node = new Node(['name' => 'node-programs', 'platform' => 'linux', 'user' => self::ManagedUser, 'architecture' => $architecture]);
         $account = new ManagedUserAccount(self::ManagedUser, self::ManagedUser, '/home/'.self::ManagedUser);
 
-        $programs = [EnrollmentProgram::Bootstrap => $this->agent->command($node, 'nodes.bootstrap', $this->bootstrap->input($node, self::ManagedUser, rolelessOperator: $roles === []))];
+        $programs = [EnrollmentProgram::Bootstrap => $this->agent->command($node, 'node.bootstrap', $this->bootstrap->input($node, self::ManagedUser, rolelessOperator: $roles === []))];
         $rendered = [];
         foreach ($roles as $role) {
             if (in_array($role, $rendered, strict: true)) {
@@ -82,15 +82,15 @@ final readonly class NodeEnrollmentPrograms
             }
             // The gateway role has no prerequisites program; its Caddy follows the VPN through a role step.
             if ($role !== RoleName::Gateway) {
-                $programs[EnrollmentProgram::prerequisites($role)] = $this->agent->command($node, 'roles.install-prerequisites', $this->roles->input($node, $role, $account));
+                $programs[EnrollmentProgram::prerequisites($role)] = $this->agent->command($node, 'role.install-prerequisites', $this->roles->input($node, $role, $account));
             }
             $javascript = $role === RoleName::AppDev || $role === RoleName::AppProd ? NodeRecipeProgram::javascript($node, $role) : null;
             if ($javascript !== null) {
                 $programs[EnrollmentProgram::JavascriptRuntime] ??= $this->agent->command($node, 'recipe.install-javascript', $javascript);
             }
             if ($role === RoleName::AppDev || $role === RoleName::AppProd) {
-                $programs[EnrollmentProgram::VpManager] ??= $this->agent->command($node, 'tools.materialize-vp', $this->vp->materializeInput($node));
-                $programs[EnrollmentProgram::ComposerManager] ??= $this->agent->command($node, 'tools.materialize-composer', ['user' => $node->user]);
+                $programs[EnrollmentProgram::VpManager] ??= $this->agent->command($node, 'tool.materialize-vp', $this->vp->materializeInput($node));
+                $programs[EnrollmentProgram::ComposerManager] ??= $this->agent->command($node, 'tool.materialize-composer', ['user' => $node->user]);
             }
             if ($role === RoleName::AppDev) {
                 foreach ($this->php->appDevPrograms($node, $this->phpVersions->versions()) as $name => $program) {

@@ -530,7 +530,7 @@ it('keeps Gateway firewall execution behind its typed agent command', function (
 
 it('stops before DNS publication when native ordering removal refuses', function (): void {
     [$converger, $processes, $orbitHome, $agents] = gateway_vpn_converger();
-    $agents->refuse('wireguard.remove-dns-ordering', 'services.ordering_unsafe', ['path' => '/etc/systemd/system/dnsmasq.service.d/orbit-vpn.conf']);
+    $agents->refuse('wireguard.remove-dns-ordering', 'service.ordering_unsafe', ['path' => '/etc/systemd/system/dnsmasq.service.d/orbit-vpn.conf']);
     $node = new Node(['name' => 'gateway', 'wireguard_ip' => '10.44.0.1']);
 
     try {

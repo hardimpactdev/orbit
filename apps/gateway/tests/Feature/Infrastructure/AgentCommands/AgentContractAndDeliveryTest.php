@@ -39,8 +39,8 @@ describe(AgentContract::class, function (): void {
             ->and($contract->commonErrors())->toContain('agent.version_mismatch', 'agent.identity_mismatch')
             ->and($contract->command('agent.status')->needsSudo('linux'))->toBeFalse()
             ->and($contract->command('agent.status')->outputMaxBytes)->toBe(0)
-            ->and($contract->command('task-vms.export-git-pack')->outputMaxBytes)->toBe(2 * 1024 ** 3)
-            ->and($contract->command('task-vms.export-git-pack')->needsSudo('linux'))->toBeFalse();
+            ->and($contract->command('task-vm.export-git-pack')->outputMaxBytes)->toBe(2 * 1024 ** 3)
+            ->and($contract->command('task-vm.export-git-pack')->needsSudo('linux'))->toBeFalse();
     });
 
     it('refuses an unknown command as a programming error', function (): void {

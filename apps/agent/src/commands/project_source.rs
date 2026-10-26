@@ -1,4 +1,4 @@
-//! `projects.update-source`: the checkout steps of a Project update, as the managed account. Before a repository
+//! `project.update-source`: the checkout steps of a Project update, as the managed account. Before a repository
 //! change it checks each checkout's origin and, outside a task VM, that the proposed repository answers; it then
 //! changes each origin, or restores it. A default branch change fetches and checks the branch, switches to it, or
 //! restores the previous one. Git never runs hooks or fsmonitor.
@@ -12,7 +12,7 @@ use std::{ffi::OsStr, path::Path, path::PathBuf, time::Duration};
 
 command_errors! {
     pub enum ProjectSourceError {
-        Failed { step: String } => "projects.source_failed", "A checkout step of the Project update failed.";
+        Failed { step: String } => "project.source_failed", "A checkout step of the Project update failed.";
     }
 }
 
@@ -214,7 +214,7 @@ pub fn update(input: &ProjectSourceInput) -> Result<Done, ProjectSourceError> {
 pub struct UpdateProjectSource;
 
 impl Command for UpdateProjectSource {
-    const NAME: &'static str = "projects.update-source";
+    const NAME: &'static str = "project.update-source";
     const SUMMARY: &'static str =
         "Check, change, or restore a development checkout's origin or default branch.";
     const MUTATES: bool = true;

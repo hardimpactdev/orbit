@@ -1,7 +1,7 @@
 //! Follows one systemd unit through `journalctl` (ADR 0153). The agent runs no program that changes the
 //! Node; this read-only `journalctl`, with fixed arguments, is the only program it runs. It runs
 //! `journalctl --unit <unit> --output short-iso --utc` and cuts each entry by one rule, which the one-shot read of
-//! `processes.logs` shares, so a live line and a line of the one-shot read are the same text.
+//! `process.logs` shares, so a live line and a line of the one-shot read are the same text.
 use super::{
     laravel::Unavailable,
     limits::{LineSink, FIRST_LINES_BYTES},
@@ -264,7 +264,7 @@ impl<R: AsyncBufRead + Unpin> LineReader<R> {
     }
 }
 
-/// The one-shot read of `processes.logs`: the unit's newest `lines` entries, newest first, each cut as a live entry
+/// The one-shot read of `process.logs`: the unit's newest `lines` entries, newest first, each cut as a live entry
 /// is, and stopped after `max_bytes` bytes. `journalctl` is stopped there, so the Node does bounded work however long
 /// an entry is. Its exit status does not count: a read that stopped early killed it.
 pub fn read_newest(

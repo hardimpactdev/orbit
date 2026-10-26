@@ -19,7 +19,7 @@ use SensitiveParameter;
 
 /**
  * Runs the fixed MySQL or PostgreSQL admin client inside the server's container through the agent's
- * `databases.server-admin` (docs/reference/database-servers.md). The root password travels in the protected
+ * `database.server-admin` (docs/reference/database-servers.md). The root password travels in the protected
  * envelope and reaches the client through its environment.
  */
 final readonly class RemoteDatabaseServerAdmin implements DatabaseServerAdmin
@@ -105,7 +105,7 @@ final readonly class RemoteDatabaseServerAdmin implements DatabaseServerAdmin
             throw $this->failed($server);
         }
 
-        return $this->agents->run($this->node($server), 'databases.server-admin', [
+        return $this->agents->run($this->node($server), 'database.server-admin', [
             ...$input,
             'container' => $this->docker->containerName($process),
             'password' => (string) $server->root_password,

@@ -43,7 +43,7 @@ describe('ProductionRepositoryRecord', function (): void {
 describe('RemoteProductionRepositoryBinding', function (): void {
     it('reads the markers and every release origin, and leaves out a release without one', function (): void {
         [$instance, , $binding, $agents] = rebind_instance(REBIND_SSH_URL);
-        $agents->answer('instances.inspect-repository-binding', [
+        $agents->answer('instance.inspect-repository-binding', [
             'markers' => ['release-layout' => rebind_marker(REBIND_SSH_URL, true), 'initial-clone' => rebind_marker(REBIND_SSH_URL, false)],
             'releases' => ['initial' => REBIND_SSH_URL, '20261001000000-a' => REBIND_SSH_URL, 'partial' => null],
         ]);
@@ -57,7 +57,7 @@ describe('RemoteProductionRepositoryBinding', function (): void {
 
     it('refuses a marker for another home', function (): void {
         [$instance, , $binding, $agents] = rebind_instance(REBIND_SSH_URL);
-        $agents->answer('instances.inspect-repository-binding', [
+        $agents->answer('instance.inspect-repository-binding', [
             'markers' => ['release-layout' => base64_encode(REBIND_SSH_URL."\0someone\0/home/someone\0initial\0")],
             'releases' => [],
         ]);
@@ -68,7 +68,7 @@ describe('RemoteProductionRepositoryBinding', function (): void {
 
     it('moves each release, then the initial clone, and the release layout marker last', function (): void {
         [$instance, , $binding, $agents] = rebind_instance(REBIND_HTTPS_URL);
-        $agents->answer('instances.rebind-repository', []);
+        $agents->answer('instance.rebind-repository', []);
         $record = new ProductionRepositoryRecord(REBIND_SSH_URL, REBIND_SSH_URL, ['20261001000000-a' => REBIND_SSH_URL, 'initial' => REBIND_SSH_URL]);
 
         $binding->rebind($instance, $record, $record->withRepository(REBIND_HTTPS_URL));
@@ -85,7 +85,7 @@ describe('RemoteProductionRepositoryBinding', function (): void {
 
     it('names a refused re-bind as a failed re-bind', function (): void {
         [$instance, , $binding, $agents] = rebind_instance(REBIND_HTTPS_URL);
-        $agents->refuse('instances.rebind-repository', 'instances.release_invalid', ['check' => 'the marker records the expected URL']);
+        $agents->refuse('instance.rebind-repository', 'instance.release_invalid', ['check' => 'the marker records the expected URL']);
         $record = new ProductionRepositoryRecord('git@github.com:acme/other.git', null, []);
 
         expect(fn () => $binding->rebind($instance, $record, $record->withRepository(REBIND_HTTPS_URL)))
@@ -96,8 +96,8 @@ describe('RemoteProductionRepositoryBinding', function (): void {
 describe('a deployment on a home bound to another URL', function (): void {
     it('names the repair, or another repository, or keeps the original error', function (string $recorded, string $class, string $code): void {
         [$instance, $deployment, , $agents] = rebind_instance(REBIND_HTTPS_URL);
-        $agents->refuse('instances.inspect-release', 'instances.release_invalid', ['check' => 'the layout marker names this home'])
-            ->answer('instances.inspect-repository-binding', ['markers' => ['release-layout' => rebind_marker($recorded, true)], 'releases' => []]);
+        $agents->refuse('instance.inspect-release', 'instance.release_invalid', ['check' => 'the layout marker names this home'])
+            ->answer('instance.inspect-repository-binding', ['markers' => ['release-layout' => rebind_marker($recorded, true)], 'releases' => []]);
 
         try {
             $deployment->selected($instance);

@@ -388,8 +388,8 @@ describe('RunDoctorAction', function (): void {
         $node = run_doctor_node('inventory-timeout');
         $consumer->accessibleNodes()->attach($node->id);
         bind_run_doctor_inspector();
-        $agent = new FakeAgentCommandRunner()->answer('tools.homebrew-scan', static fn (): array => throw new AgentRunnerFailure('tools.homebrew-scan', AgentRunnerFailure::Timeout, 'Timed out.'))
-            ->answer('tools.vp-inventory', ['packages' => [], 'scan_complete' => true]);
+        $agent = new FakeAgentCommandRunner()->answer('tool.homebrew-scan', static fn (): array => throw new AgentRunnerFailure('tool.homebrew-scan', AgentRunnerFailure::Timeout, 'Timed out.'))
+            ->answer('tool.vp-inventory', ['packages' => [], 'scan_complete' => true]);
         app()->instance(AgentCommandRunner::class, $agent);
         app()->instance(InstalledPackageInventory::class, app(SharedInstalledPackageInventory::class));
         $toolsBefore = Tool::query()->count();
@@ -416,7 +416,7 @@ describe('RunDoctorAction', function (): void {
             ->and($families[1]->issues)->toHaveCount(1)
             ->and($families[1]->issues[0]->code)->toBe('tool.inventory_scan')
             ->and($families[1]->issues[0]->resourceId)->toBe("node:{$node->id}:inventory")
-            ->and($agent->commands())->toBe(['tools.homebrew-scan', 'tools.vp-inventory'])
+            ->and($agent->commands())->toBe(['tool.homebrew-scan', 'tool.vp-inventory'])
             ->and(Tool::query()->count())->toBe($toolsBefore)
             ->and(ToolManagerRecord::query()->count())->toBe($managersBefore);
         foreach (DB::getQueryLog() as $query) {

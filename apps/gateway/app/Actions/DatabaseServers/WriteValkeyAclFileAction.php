@@ -14,7 +14,7 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Models\DatabaseServer;
 
 /**
- * Writes `/data/users.acl` into the volume of a Valkey Database server with the agent's `databases.write-valkey-acl`, from the recorded
+ * Writes `/data/users.acl` into the volume of a Valkey Database server with the agent's `database.write-valkey-acl`, from the recorded
  * users ({@see ValkeyAcl::file()}). The file holds only password hashes. A failure keeps no remote output.
  */
 final readonly class WriteValkeyAclFileAction
@@ -26,7 +26,7 @@ final readonly class WriteValkeyAclFileAction
     public function execute(DatabaseServer $server, string $volume): void
     {
         try {
-            $this->agents->run($server->node, 'databases.write-valkey-acl', [
+            $this->agents->run($server->node, 'database.write-valkey-acl', [
                 'volume' => $volume,
                 'image' => DatabaseServerProcess::valkeyImage($server->tag),
                 'acl' => ValkeyAcl::file($server),

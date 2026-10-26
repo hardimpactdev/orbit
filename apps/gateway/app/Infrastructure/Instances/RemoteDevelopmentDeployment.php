@@ -27,7 +27,7 @@ use App\Models\Instance;
 use Illuminate\Support\Facades\Config;
 
 /**
- * Deploys a development default in its own checkout through the Node agent's `instances.*-development-*` commands
+ * Deploys a development default in its own checkout through the Node agent's `instance.*-development-*` commands
  * (docs/reference/deployments.md#development-deploy-steps). Each step runs as the managed account and publishes its
  * output live on the operation's channel.
  */
@@ -35,9 +35,9 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
 {
     /** The checkout refusals that each have their own error. */
     private const array REFUSALS = [
-        'instances.checkout_dirty' => ['deployment.checkout_dirty', 'The checkout has uncommitted changes to tracked files.'],
-        'instances.branch_diverged' => ['deployment.branch_diverged', 'The local default branch has commits that the target commit does not contain.'],
-        'instances.lifecycle_busy' => ['instance.lifecycle_busy', 'A setup or teardown step is running in the checkout.'],
+        'instance.checkout_dirty' => ['deployment.checkout_dirty', 'The checkout has uncommitted changes to tracked files.'],
+        'instance.branch_diverged' => ['deployment.branch_diverged', 'The local default branch has commits that the target commit does not contain.'],
+        'instance.lifecycle_busy' => ['instance.lifecycle_busy', 'A setup or teardown step is running in the checkout.'],
     ];
 
     public function __construct(
@@ -55,7 +55,7 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
         }
         $checkout = $this->checkoutInput($instance);
         try {
-            $result = $this->run($instance, 'instances.resolve-development-target', [
+            $result = $this->run($instance, 'instance.resolve-development-target', [
                 ...$checkout,
                 'branch' => $this->branch($instance),
                 'commit' => $commit,
@@ -63,7 +63,7 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
                 'git_read' => $this->access->for($checkout['repository'], $instance->project->source_access),
             ], 'development-deployment-target', 'deployment.prepare_failed');
         } catch (RuntimeConvergenceException $exception) {
-            if ($commit !== null && AgentStep::refusal($exception)?->errorCode === 'instances.commit_not_on_branch') {
+            if ($commit !== null && AgentStep::refusal($exception)?->errorCode === 'instance.commit_not_on_branch') {
                 throw new ResourceOperationException('deployment.commit_not_on_branch', "The default branch does not contain the commit [{$commit}].", 409, $exception);
             }
 
@@ -81,7 +81,7 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
     {
         $this->commit($commit);
         try {
-            $result = $this->run($instance, 'instances.checkout-development-default', [
+            $result = $this->run($instance, 'instance.checkout-development-default', [
                 ...$this->checkoutInput($instance),
                 'branch' => $this->branch($instance),
                 'commit' => $commit,
@@ -104,7 +104,7 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
     {
         $stepName = 'deployment-step-'.$step->name;
         // The Node publishes each line live on the operation's channel; the result keeps the output for the record.
-        $result = $this->run($instance, 'instances.run-development-step', [
+        $result = $this->run($instance, 'instance.run-development-step', [
             ...$this->checkoutInput($instance),
             'script' => $step->command,
             'vp_environment' => $this->environments->prepare($instance, $instance->checkout_path, $step->name, $step->command)?->input(),

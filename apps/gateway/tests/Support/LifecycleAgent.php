@@ -18,7 +18,7 @@ use LogicException;
 use UnexpectedValueException;
 
 /**
- * Answers `instances.run-lifecycle-step` and records each step's checkout, command, environment, and timeout. The
+ * Answers `instance.run-lifecycle-step` and records each step's checkout, command, environment, and timeout. The
  * `$result` closure gives an exit status: 75 is a busy checkout, 124 the step's own timeout, and 255 a lost
  * transport. Rust tests exercise the command itself.
  */
@@ -45,7 +45,7 @@ final class LifecycleAgent implements AgentCommandRunner
      */
     private function respond(Node $node, string $command, array $input, ?float $deadlineSeconds): array
     {
-        if ($command !== 'instances.run-lifecycle-step') {
+        if ($command !== 'instance.run-lifecycle-step') {
             throw new LogicException("Unexpected agent command [{$command}].");
         }
 
@@ -55,7 +55,7 @@ final class LifecycleAgent implements AgentCommandRunner
         $exit = $this->result === null ? 0 : ($this->result)($recorded);
 
         return match ($exit) {
-            75 => throw new AgentCommandRefused($command, 'instances.lifecycle_busy', 'A setup or teardown step is running in the checkout.'),
+            75 => throw new AgentCommandRefused($command, 'instance.lifecycle_busy', 'A setup or teardown step is running in the checkout.'),
             255 => throw new AgentRunnerFailure($command, AgentRunnerFailure::Transport, 'The connection closed.'),
             default => ['exit_code' => $exit === 124 ? 143 : $exit, 'timed_out' => $exit === 124, 'output' => $this->stderr === '' ? [] : [['stream' => 'stderr', 'value' => $this->stderr]], 'truncated' => false],
         };

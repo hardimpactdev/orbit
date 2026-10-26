@@ -10,7 +10,7 @@ use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Node;
 use Throwable;
 
-/** The home of a Process's non-root account on its Node, through the agent's `accounts.lookup`. */
+/** The home of a Process's non-root account on its Node, through the agent's `account.lookup`. */
 final readonly class SshProcessUserResolver
 {
     public function __construct(
@@ -29,7 +29,7 @@ final readonly class SshProcessUserResolver
         }
 
         try {
-            $account = $this->agents->run($node, 'accounts.lookup', ['user' => $user]);
+            $account = $this->agents->run($node, 'account.lookup', ['user' => $user]);
         } catch (Throwable) {
             $this->unavailable();
         }

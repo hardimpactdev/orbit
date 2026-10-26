@@ -383,7 +383,7 @@ mod tests {
             }
             assert_eq!(
                 code(&execute(
-                    "task-vms.import-git-pack",
+                    "task-vm.import-git-pack",
                     envelope.to_string().as_bytes(),
                     &host(1000)
                 )),
@@ -396,7 +396,7 @@ mod tests {
             json!({"agent_sha256": PIN, "deadline_ms": 1000, "input": {}, "stream_bytes": 2});
         assert_eq!(
             code(&execute_stream(
-                "task-vms.import-git-pack",
+                "task-vm.import-git-pack",
                 envelope.to_string().as_bytes(),
                 &host,
                 Box::new(std::io::Cursor::new(vec![0]))

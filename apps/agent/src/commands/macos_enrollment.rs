@@ -8,9 +8,9 @@ use std::{net::Ipv4Addr, time::Duration};
 
 command_errors! {
     pub enum Error {
-        Platform {} => "nodes.macos_platform_mismatch", "The enrolled host does not run macOS.";
-        Architecture {} => "nodes.macos_architecture_unavailable", "The machine architecture could not be observed.";
-        Address {} => "nodes.macos_wireguard_required", "The enrolled WireGuard address is not present on the host.";
+        Platform {} => "node.macos_platform_mismatch", "The enrolled host does not run macOS.";
+        Architecture {} => "node.macos_architecture_unavailable", "The machine architecture could not be observed.";
+        Address {} => "node.macos_wireguard_required", "The enrolled WireGuard address is not present on the host.";
     }
 }
 
@@ -53,7 +53,7 @@ fn inspect(
 
 pub struct Inspect;
 impl Command for Inspect {
-    const NAME: &'static str = "nodes.inspect-macos-enrollment";
+    const NAME: &'static str = "node.inspect-macos-enrollment";
     const SUMMARY: &'static str =
         "Verify the existing Mac architecture and enrolled WireGuard address.";
     const MUTATES: bool = false;

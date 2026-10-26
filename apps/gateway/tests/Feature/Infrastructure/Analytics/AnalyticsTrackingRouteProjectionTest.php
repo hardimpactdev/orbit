@@ -239,7 +239,7 @@ describe('analytics tracking Route public edge', function (): void {
 
 describe('analytics tracking Route removal', function (): void {
     it('removes the Router certificates of the tracking Route', function (): void {
-        $agents = new FakeAgentCommandRunner()->answer('certificates.remove-leaf', []);
+        $agents = new FakeAgentCommandRunner()->answer('certificate.remove-leaf', []);
         $accounts = new class implements ManagedUserAccountResolver
         {
             public function resolve(Node $node): ManagedUserAccount
@@ -277,8 +277,8 @@ describe('analytics tracking Route removal', function (): void {
         $projector->cleanupCertificates($this->route);
 
         expect($agents->calls)->toBe([
-            ['node' => 'edge-router', 'command' => 'certificates.remove-leaf', 'input' => ['scope' => "route-{$this->route->id}-router", 'home' => '/home/orbit']],
-            ['node' => 'edge-router', 'command' => 'certificates.remove-leaf', 'input' => ['scope' => "route-{$this->route->id}-router-hostname-change", 'home' => '/home/orbit']],
+            ['node' => 'edge-router', 'command' => 'certificate.remove-leaf', 'input' => ['scope' => "route-{$this->route->id}-router", 'home' => '/home/orbit']],
+            ['node' => 'edge-router', 'command' => 'certificate.remove-leaf', 'input' => ['scope' => "route-{$this->route->id}-router-hostname-change", 'home' => '/home/orbit']],
         ]);
     });
 });

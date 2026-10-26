@@ -80,7 +80,7 @@ describe(VpInventoryInspector::class, function (): void {
             ->and(Tool::query()->orderBy('id')->get(['id', 'package', 'installed_version', 'status'])->toArray())
             ->toBe($toolsBefore);
 
-        expect($agent->commands())->toBe(['tools.vp-inventory']);
+        expect($agent->commands())->toBe(['tool.vp-inventory']);
         expect($agent->calls[0]['input'])->toBe([]);
         foreach ($queries as $query) {
             expect(strtolower((string) $query['query']))->not->toMatch('/\b(insert|update|delete|replace)\b/');
@@ -89,22 +89,22 @@ describe(VpInventoryInspector::class, function (): void {
 
     it('maps absent conflicting and failed inventory without changing records', function (string $code, ToolInventoryScanState $state): void {
         [$inspector, $agent] = vp_inventory_inspector([]);
-        $agent->refuse('tools.vp-inventory', $code);
+        $agent->refuse('tool.vp-inventory', $code);
         $scan = $inspector->inspect(vp_inventory_node());
         expect($scan->scanState)->toBe($state);
         expect($scan->packages)->toBe([]);
-        expect($agent->commands())->toBe(['tools.vp-inventory']);
+        expect($agent->commands())->toBe(['tool.vp-inventory']);
     })->with([
-        ['tools.vp_scope_absent', ToolInventoryScanState::Absent],
-        ['tools.vp_scope_conflict', ToolInventoryScanState::Conflicting],
-        ['tools.vp_scope_unreadable', ToolInventoryScanState::Incomplete],
-        ['tools.vp_output_invalid', ToolInventoryScanState::Incomplete],
-        ['tools.vp_operation_failed', ToolInventoryScanState::Incomplete],
+        ['tool.vp_scope_absent', ToolInventoryScanState::Absent],
+        ['tool.vp_scope_conflict', ToolInventoryScanState::Conflicting],
+        ['tool.vp_scope_unreadable', ToolInventoryScanState::Incomplete],
+        ['tool.vp_output_invalid', ToolInventoryScanState::Incomplete],
+        ['tool.vp_operation_failed', ToolInventoryScanState::Incomplete],
     ]);
 
     it('reports a lost agent result as an incomplete scan', function (): void {
         [$inspector, $agent] = vp_inventory_inspector([]);
-        $agent->answer('tools.vp-inventory', static fn (): array => throw new AgentRunnerFailure('tools.vp-inventory', 'transport', 'Private diagnostic'));
+        $agent->answer('tool.vp-inventory', static fn (): array => throw new AgentRunnerFailure('tool.vp-inventory', 'transport', 'Private diagnostic'));
         $scan = $inspector->inspect(vp_inventory_node());
         expect($scan->scanState)->toBe(ToolInventoryScanState::Incomplete);
         expect($scan->packages)->toBe([]);
@@ -177,7 +177,7 @@ describe(VpInventoryInspector::class, function (): void {
         expect($scan->packages)->toBe([]);
         expect($tool->refresh()->installed_version)->toBe('0.150.0');
         expect($tool->status)->toBe(ToolStatus::Installed);
-        expect($agent->commands())->toBe(['tools.vp-inventory']);
+        expect($agent->commands())->toBe(['tool.vp-inventory']);
     });
 });
 
@@ -186,7 +186,7 @@ describe(VpInventoryInspector::class, function (): void {
  */
 function vp_inventory_inspector(array $packages, bool $complete = true): array
 {
-    $agent = new FakeAgentCommandRunner()->answer('tools.vp-inventory', ['packages' => $packages, 'scan_complete' => $complete]);
+    $agent = new FakeAgentCommandRunner()->answer('tool.vp-inventory', ['packages' => $packages, 'scan_complete' => $complete]);
     $versions = new SemverVersionNormalizer;
 
     return [new VpInventoryInspector(new VpToolManager($versions, $agent), $versions), $agent];

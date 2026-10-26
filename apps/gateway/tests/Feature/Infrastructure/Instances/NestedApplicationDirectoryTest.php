@@ -19,16 +19,16 @@ it('selects the application directory for PHP inspection URL writing and FPM', f
     $checkout = '/home/orbit/acme';
     $application = $checkout.$relative;
     [$configurator, $instance, $account, $agents] = nested_application_configurator($checkout, $root);
-    $agents->answer('instances.inspect-development-profile', [
+    $agents->answer('instance.inspect-development-profile', [
         'kind' => 'composer', 'entry_point' => 'regular',
         'composer' => base64_encode('{"require":{"php":"~8.4.0","laravel/framework":"^13.0"}}'),
-    ])->answer('instances.write-development-url', ['written' => true]);
+    ])->answer('instance.write-development-url', ['written' => true]);
 
     $profile = $configurator->inspect($instance);
     $configurator->configureLaravelUrl($instance, 'https://nested.test');
 
     expect($profile->phpVersion)->toBe('8.4')->and($profile->laravel)->toBeTrue();
-    expect($agents->commands())->toBe(['instances.inspect-development-profile', 'instances.write-development-url']);
+    expect($agents->commands())->toBe(['instance.inspect-development-profile', 'instance.write-development-url']);
     expect($agents->calls[0]['input'])->toBe(['application' => $application, 'owner' => 'orbit', 'entry_point' => 'artisan']);
     expect($agents->calls[1]['input']['directory'])->toBe($application)
         ->and($agents->calls[1]['input']['url'])->toBe('https://nested.test')
@@ -39,23 +39,23 @@ it('selects the application directory for PHP inspection URL writing and FPM', f
 
 it('maps unsafe nested application metadata to a source refusal', function (): void {
     [$configurator, $instance, , $agents] = nested_application_configurator('/home/orbit/acme', 'server/web/public');
-    $agents->answer('instances.inspect-development-profile', ['kind' => 'unsafe']);
+    $agents->answer('instance.inspect-development-profile', ['kind' => 'unsafe']);
 
     expect(fn () => $configurator->inspect($instance))->toThrow(
         fn (RuntimeConvergenceException $exception) => expect($exception->errorCode)->toBe('app-dev.source_metadata_unsafe'),
     );
-    expect($agents->commands())->toBe(['instances.inspect-development-profile']);
+    expect($agents->commands())->toBe(['instance.inspect-development-profile']);
 });
 
 it('requires Artisan for another route directory and does not project the Instance key into it', function (): void {
     [$configurator, $instance, , $agents] = nested_application_configurator('/home/orbit/acme', 'public');
     $instance->environmentValues()->create(['env_key' => 'APP_KEY', 'env_value' => 'base64:instance-key']);
-    $agents->answer('instances.write-development-url', ['written' => false]);
+    $agents->answer('instance.write-development-url', ['written' => false]);
 
     $configurator->configureDirectoryUrl($instance, 'apps/docs', 'https://docs.acme.test');
     $configurator->configureDirectoryUrl($instance, 'apps/static', 'https://static.acme.test');
 
-    expect($agents->commands())->toBe(['instances.write-development-url', 'instances.write-development-url']);
+    expect($agents->commands())->toBe(['instance.write-development-url', 'instance.write-development-url']);
     foreach (['docs', 'static'] as $index => $name) {
         expect($agents->calls[$index]['input']['directory'])->toBe('/home/orbit/acme/apps/'.$name)
             ->and($agents->calls[$index]['input']['url'])->toBe('https://'.$name.'.acme.test')

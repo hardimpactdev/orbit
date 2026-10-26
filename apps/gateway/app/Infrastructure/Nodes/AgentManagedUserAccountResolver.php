@@ -14,7 +14,7 @@ use App\Models\Node;
 use RuntimeException;
 use Throwable;
 
-/** The Node's managed account, through the agent's `accounts.lookup`. */
+/** The Node's managed account, through the agent's `account.lookup`. */
 final readonly class AgentManagedUserAccountResolver implements ManagedUserAccountResolver
 {
     public function __construct(
@@ -24,7 +24,7 @@ final readonly class AgentManagedUserAccountResolver implements ManagedUserAccou
     public function resolve(Node $node): ManagedUserAccount
     {
         try {
-            $account = $this->agents->run($node, 'accounts.lookup', ['user' => $node->user]);
+            $account = $this->agents->run($node, 'account.lookup', ['user' => $node->user]);
             $user = $account['user'] ?? null;
             $group = $account['group'] ?? null;
             $home = $account['home'] ?? null;

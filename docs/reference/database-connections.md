@@ -111,7 +111,7 @@ A [production clone with a SQLite snapshot](/reference/instance-cloning#sqlite-s
 
 [`instance:destroy`](/reference/instance-removal#owned-databases) drops each database the Instance owns, with its test databases and user, and deletes the record. Deleting the record of a database on a server drops the database the same way. Before any drop, Orbit checks the complete [removal set](/reference/database-servers#remove-a-database). A blocker returns `database.in_use` (409) without changing databases or records. A server failure keeps the record for retry. Orbit never drops a database that it only registered.
 
-Development SQLite copies run through the [Node agent’s](/reference/node-agent#commands) `instances.copy-sqlite` command. A same-Node copy stays on that Node. A cross-Node copy exports a snapshot, streams it through the Gateway with `instances.read-sqlite-snapshot` and `instances.receive-sqlite-snapshot`, and verifies its size and digest before installation. Rust tests own WAL consistency, writer locks, file modes, and temporary-file cleanup; Gateway tests cover the requested operations and public errors.
+Development SQLite copies run through the [Node agent’s](/reference/node-agent#commands) `instance.copy-sqlite` command. A same-Node copy stays on that Node. A cross-Node copy exports a snapshot, streams it through the Gateway with `instance.read-sqlite-snapshot` and `instance.receive-sqlite-snapshot`, and verifies its size and digest before installation. Rust tests own WAL consistency, writer locks, file modes, and temporary-file cleanup; Gateway tests cover the requested operations and public errors.
 
 ## Test databases
 

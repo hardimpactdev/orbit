@@ -45,7 +45,7 @@ The destination gets an independent checkout, even when the source is a worktree
 
 Gateway Git commands that capture the source and prepare the destination pass `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false`. Checkout hooks and custom filesystem monitors are not transfer steps. The overrides apply to those commands without changing the stored Git configuration. Checkout commands that can start clean, smudge, or process filters run as the managed account without a credential environment.
 
-The checkout and its `.git` travel as they are. The agent captures a private archive, `instances.read-transfer-archive` streams it to Gateway disk, and `instances.materialize-transfer` receives the binary archive directly. Both transfers are bounded to 1 TiB. The receiver validates archive paths before creating the new checkout. No separate upload or `scp` call stages an archive on the destination Node. File placement stays under the managed account.
+The checkout and its `.git` travel as they are. The agent captures a private archive, `instance.read-transfer-archive` streams it to Gateway disk, and `instance.materialize-transfer` receives the binary archive directly. Both transfers are bounded to 1 TiB. The receiver validates archive paths before creating the new checkout. No separate upload or `scp` call stages an archive on the destination Node. File placement stays under the managed account.
 
 Every transfer runs in this order:
 
@@ -53,7 +53,7 @@ Every transfer runs in this order:
 2. It copies the source checkout to the destination.
 3. When you select a SQLite file, it takes one consistent snapshot and installs it at the selected path on the destination.
 
-The [Node agent](/reference/node-agent#commands)'s `instances.transfer-source` captures the archive on the source Node and removes the old checkout after cutover. `instances.materialize-transfer` unpacks it on the destination as the managed user. The Gateway stages the archive in `storage/app/transfer-staging` and streams that file directly during upload, without copying it into `/tmp`. The archive must fit both the Gateway's disk and the 1 TiB command bound. If staging fails, the Gateway records and logs the failing step.
+The [Node agent](/reference/node-agent#commands)'s `instance.transfer-source` captures the archive on the source Node and removes the old checkout after cutover. `instance.materialize-transfer` unpacks it on the destination as the managed user. The Gateway stages the archive in `storage/app/transfer-staging` and streams that file directly during upload, without copying it into `/tmp`. The archive must fit both the Gateway's disk and the 1 TiB command bound. If staging fails, the Gateway records and logs the failing step.
 
 When the request selects a SQLite file, the checkout archive excludes that file and its `-wal` and `-shm` files. The SQLite step installs the consistent snapshot at the selected path, so the database contents come from the snapshot rather than an inconsistent archive copy.
 

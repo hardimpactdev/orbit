@@ -49,7 +49,7 @@ describe(HomebrewInventoryInspector::class, function (): void {
         foreach (DB::getQueryLog() as $query) {
             expect(strtolower($query['query']))->not->toMatch('/\b(insert|update|delete|replace)\b/');
         }
-        expect($agent->calls)->toBe([['node' => $node->name, 'command' => 'tools.homebrew-scan', 'input' => ['architecture' => 'arm64']]]);
+        expect($agent->calls)->toBe([['node' => $node->name, 'command' => 'tool.homebrew-scan', 'input' => ['architecture' => 'arm64']]]);
     });
 
     it('preserves independent scan results and keeps Linux casks unsupported', function (string $platform): void {
@@ -65,16 +65,16 @@ describe(HomebrewInventoryInspector::class, function (): void {
 
     it('maps native scope refusal to scan state without creating tools', function (string $code, ToolInventoryScanState $state): void {
         [$inspector, $agent] = homebrew_inventory_inspector([]);
-        $agent->refuse('tools.homebrew-scan', $code);
+        $agent->refuse('tool.homebrew-scan', $code);
         $scans = $inspector->inspect(homebrew_inventory_node());
         expect($scans[0]->scanState)->toBe($state)->and($scans[1]->scanState)->toBe($state)
             ->and($scans[0]->packages)->toBe([])->and($scans[1]->packages)->toBe([])->and(Tool::query()->count())->toBe(0);
     })->with([
-        ['tools.homebrew_scope_absent', ToolInventoryScanState::Absent],
-        ['tools.homebrew_scope_conflict', ToolInventoryScanState::Conflicting],
-        ['tools.homebrew_scope_unreadable', ToolInventoryScanState::Incomplete],
-        ['tools.homebrew_bottle_unavailable', ToolInventoryScanState::Incomplete],
-        ['tools.homebrew_operation_failed', ToolInventoryScanState::Incomplete],
+        ['tool.homebrew_scope_absent', ToolInventoryScanState::Absent],
+        ['tool.homebrew_scope_conflict', ToolInventoryScanState::Conflicting],
+        ['tool.homebrew_scope_unreadable', ToolInventoryScanState::Incomplete],
+        ['tool.homebrew_bottle_unavailable', ToolInventoryScanState::Incomplete],
+        ['tool.homebrew_operation_failed', ToolInventoryScanState::Incomplete],
     ]);
 
     it('refuses malformed typed observations without discarding another successful manager', function (mixed $data): void {
@@ -104,7 +104,7 @@ describe(HomebrewInventoryInspector::class, function (): void {
 function homebrew_inventory_inspector(array $data): array
 {
     // Many cases send scan shapes the agent never returns, to test the inspector's own guards.
-    $agent = new FakeAgentCommandRunner()->answerMalformed('tools.homebrew-scan', $data);
+    $agent = new FakeAgentCommandRunner()->answerMalformed('tool.homebrew-scan', $data);
 
     return [new HomebrewInventoryInspector(new SemverVersionNormalizer, new HomebrewCommand($agent)), $agent];
 }

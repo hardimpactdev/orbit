@@ -14,7 +14,7 @@ use std::{
 
 crate::command_errors! {
     pub enum Error {
-        Invalid {} => "tools.project_invalid", "The Project requirements cannot be read.";
+        Invalid {} => "tool.project_invalid", "The Project requirements cannot be read.";
     }
 }
 type Result<T> = std::result::Result<T, Error>;
@@ -211,7 +211,7 @@ fn execute(input: Input, context: &Context, executable: &Path) -> Result<Output>
 }
 pub struct ReadProject;
 impl Command for ReadProject {
-    const NAME: &'static str = "tools.read-vp-project";
+    const NAME: &'static str = "tool.read-vp-project";
     const SUMMARY: &'static str =
         "Read Project runtime requirements as its account without executing hooks.";
     const MUTATES: bool = false;

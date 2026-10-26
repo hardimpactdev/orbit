@@ -56,7 +56,7 @@ function websocket_runtime_agents(): FakeAgentCommandRunner
 {
     return (new FakeAgentCommandRunner)
         ->answer('caddy.install-package', ['changed' => false, 'version' => '2.10.2'])
-        ->answer('roles.install-prerequisites', [])
+        ->answer('role.install-prerequisites', [])
         ->answer('websocket.converge-runtime', ['release' => '/opt/orbit/websocket.releases/release.1'])
         ->answer('websocket.remove-runtime', [])
         ->answer('websocket.runtime-active', ['active' => true]);
@@ -68,7 +68,7 @@ it('installs prerequisites, then converges the pinned Reverb release with its re
     websocket_runtime_lifecycle($agents)->converge(websocket_runtime_node(), new NodeRole(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Provisioning]), websocket_runtime_credentials());
 
     $input = $agents->calls[2]['input'];
-    expect($agents->commands())->toBe(['caddy.install-package', 'roles.install-prerequisites', 'websocket.converge-runtime'])
+    expect($agents->commands())->toBe(['caddy.install-package', 'role.install-prerequisites', 'websocket.converge-runtime'])
         ->and($agents->calls[1]['input']['packages'])->toContain('caddy', 'composer', 'git', 'php-curl', 'php-xml')
         ->and(array_diff_key($input, ['environment' => true, 'unit' => true]))->toBe([
             'user' => 'orbit-websocket', 'group' => 'orbit-websocket', 'install_path' => '/opt/orbit/websocket',

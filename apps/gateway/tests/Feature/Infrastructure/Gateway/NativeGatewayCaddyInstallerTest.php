@@ -41,7 +41,7 @@ describe('Gateway Caddy installer', function (): void {
         expect($agents->calls)->toHaveCount($calls);
     })->with([
         'package' => ['caddy.install-package', 'caddy.package_failed', 'gateway-caddy-install', 'gateway.caddy_install_failed', 1],
-        'ordering' => ['caddy.order-after-vpn', 'services.ordering_failed', 'gateway-caddy-ordering', 'gateway.caddy_start_failed', 2],
+        'ordering' => ['caddy.order-after-vpn', 'service.ordering_failed', 'gateway-caddy-ordering', 'gateway.caddy_start_failed', 2],
     ]);
 });
 

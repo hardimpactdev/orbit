@@ -123,7 +123,7 @@ it('withdraws the final Route in a build before it removes the Instance certific
 
     $scope = "app-instance-{$member->instance_id}";
     $removal = collect($agents->calls)->search(
-        static fn (array $call): bool => $call['command'] === 'certificates.remove-leaf' && $call['input']['scope'] === $scope,
+        static fn (array $call): bool => $call['command'] === 'certificate.remove-leaf' && $call['input']['scope'] === $scope,
     );
     $published = orb181_caddy_configurations(array_slice($agents->calls, 0, is_int($removal) ? $removal : 0));
 
@@ -162,7 +162,7 @@ it('withdraws the second placement of a Route that waits for its placement withd
     ));
     $removed = static fn (array $calls): array => array_values(array_map(
         static fn (array $call): string => $call['input']['scope'],
-        array_filter($calls, static fn (array $call): bool => $call['command'] === 'certificates.remove-leaf'),
+        array_filter($calls, static fn (array $call): bool => $call['command'] === 'certificate.remove-leaf'),
     ));
     $routerConfigurations = orb181_caddy_configurations($on($router->name));
 
@@ -212,7 +212,7 @@ it('resumes final Route cleanup after certificate deletion and a late DNS failur
         ->toBeNull()
         ->and($route->refresh()->targets()->count())
         ->toBe(0)
-        ->and(array_column(RouteProjectionAgentAnswers::scopes($agents, 'certificates.remove-leaf'), 'scope'))
+        ->and(array_column(RouteProjectionAgentAnswers::scopes($agents, 'certificate.remove-leaf'), 'scope'))
         ->toContain("app-instance-{$member->instance_id}")
         ->and(count($processes->invocations))
         ->toBe(2);
@@ -266,7 +266,7 @@ it('finishes development runtime cleanup when PHP-FPM skips another site whose d
     $projector->cleanupRuntime($member);
 
     expect(orb181_caddy_configurations($agents->calls))->not->toBeEmpty()
-        ->and(array_column(RouteProjectionAgentAnswers::scopes($agents, 'certificates.remove-leaf'), 'scope'))
+        ->and(array_column(RouteProjectionAgentAnswers::scopes($agents, 'certificate.remove-leaf'), 'scope'))
         ->toContain("app-instance-{$member->instance_id}");
 });
 
@@ -344,7 +344,7 @@ it('skips PHP cleanup but removes Caddy and certificate state for non-PHP produc
 
     expect($phpRuntime->removed)->toBeEmpty()
         ->and(orb181_caddy_configurations($agents->calls))->not->toBeEmpty()
-        ->and(array_column(RouteProjectionAgentAnswers::scopes($agents, 'certificates.remove-leaf'), 'scope'))
+        ->and(array_column(RouteProjectionAgentAnswers::scopes($agents, 'certificate.remove-leaf'), 'scope'))
         ->toContain("app-instance-{$instance->id}");
 });
 
@@ -559,8 +559,8 @@ function orb181_removal_projector(
     config()->set('orbit.home', $home);
 
     $agents = RouteProjectionAgentAnswers::register(new FakeAgentCommandRunner()->answer('firewall.route-lan', ['matches' => true]), $refuse);
-    $agents->answer('certificates.inspect-leaf', static fn (array $input, Node $node): array => [
-        'present' => ! in_array(['node' => $node->name, 'scope' => $input['scope']], RouteProjectionAgentAnswers::scopes($agents, 'certificates.remove-leaf'), true),
+    $agents->answer('certificate.inspect-leaf', static fn (array $input, Node $node): array => [
+        'present' => ! in_array(['node' => $node->name, 'scope' => $input['scope']], RouteProjectionAgentAnswers::scopes($agents, 'certificate.remove-leaf'), true),
     ]);
 
     return [

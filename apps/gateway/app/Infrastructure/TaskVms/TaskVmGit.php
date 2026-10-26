@@ -221,7 +221,7 @@ final readonly class TaskVmGit
     private function transfer(Project $project, Node $node, string $checkout, array $tips, Closure $run, string $errorCode, bool $cachesOnly, bool $selectBaseline): void
     {
         try {
-            $state = $this->agents->runInWorkspace($node, $run, 'task-vms.read-git-refs', ['checkout' => $checkout]);
+            $state = $this->agents->runInWorkspace($node, $run, 'task-vm.read-git-refs', ['checkout' => $checkout]);
         } catch (AgentCommandRefused|AgentRunnerFailure $exception) {
             throw new RuntimeConvergenceException('task-vm-git-refs', $errorCode, 'The checkout refs could not be read.', previous: $exception);
         }
@@ -267,7 +267,7 @@ final readonly class TaskVmGit
             }
             $head = is_string($project->default_branch) && GitBranchName::isValid($project->default_branch) && array_key_exists($project->default_branch, $tips) ? $project->default_branch : '';
             try {
-                $this->agents->runInWorkspace($node, $run, 'task-vms.import-git-pack', [
+                $this->agents->runInWorkspace($node, $run, 'task-vm.import-git-pack', [
                     'checkout' => $checkout, 'default_branch' => $head === '' ? null : $head, 'updates' => $updates,
                 ], binaryInput: AgentBinaryInput::fromFile($pack, self::MaxPackBytes));
             } catch (AgentCommandRefused|AgentRunnerFailure $exception) {
@@ -364,7 +364,7 @@ final readonly class TaskVmGit
         }
         try {
             $sink = new AgentBinaryOutput($file, $this->maxPackBytes);
-            $result = $this->agents->runInWorkspace($node, $run, 'task-vms.export-git-pack', [
+            $result = $this->agents->runInWorkspace($node, $run, 'task-vm.export-git-pack', [
                 'checkout' => $checkout, 'commit' => $commit, 'haves' => $this->commitIds($haves),
             ], $this->timeout($deadline, 1800.0, $errorCode), $sink);
             if (($result['bytes'] ?? null) !== $sink->bytes()) {

@@ -11,11 +11,11 @@ use App\Domain\Instances\Deployment\DeploymentRequest;
 use App\Domain\Instances\Deployment\DeploymentStep;
 use Tests\Support\FakeAgentCommandRunner;
 
-// A deploy step runs as `instances.run-deploy-step`. The agent's Rust tests prove how it runs the program, redacts
+// A deploy step runs as `instance.run-deploy-step`. The agent's Rust tests prove how it runs the program, redacts
 // each line, and publishes it on the operation's channel; this file checks what the Gateway sends and records.
 
 it('runs a deploy step in the release and records its output in order', function (): void {
-    [$deployment, $agents, $instance] = release_commands(fn (FakeAgentCommandRunner $agents) => $agents->answer('instances.run-deploy-step', [
+    [$deployment, $agents, $instance] = release_commands(fn (FakeAgentCommandRunner $agents) => $agents->answer('instance.run-deploy-step', [
         'exit_code' => 0,
         'timed_out' => false,
         'output' => [['stream' => 'stdout', 'value' => "building\n"], ['stream' => 'stderr', 'value' => "warning\n"]],
@@ -42,7 +42,7 @@ it('runs a deploy step in the release and records its output in order', function
 });
 
 it('fails the step with its exit code and output when the program fails', function (): void {
-    [$deployment, , $instance] = release_commands(fn (FakeAgentCommandRunner $agents) => $agents->answer('instances.run-deploy-step', [
+    [$deployment, , $instance] = release_commands(fn (FakeAgentCommandRunner $agents) => $agents->answer('instance.run-deploy-step', [
         'exit_code' => 3,
         'timed_out' => false,
         'output' => [['stream' => 'stderr', 'value' => "boom\n"]],

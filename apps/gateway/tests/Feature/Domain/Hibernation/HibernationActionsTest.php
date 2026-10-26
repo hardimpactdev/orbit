@@ -144,7 +144,7 @@ it('does not expose a ready Vite site when another Process fails during automati
     ]]);
     $viteRuntime = new FakeVitePortRuntime;
     app()->instance(VitePortRuntime::class, $viteRuntime);
-    $agents = new FakeAgentCommandRunner()->answer('processes.control', static function (array $input) use ($vite, $viteRuntime): array {
+    $agents = new FakeAgentCommandRunner()->answer('process.control', static function (array $input) use ($vite, $viteRuntime): array {
         if ($input['name'] === "orbit-process-{$vite->id}-vite.service" && $input['operation'] === 'start') {
             $viteRuntime->events[] = 'vite-launch';
 
@@ -152,7 +152,7 @@ it('does not expose a ready Vite site when another Process fails during automati
         }
         $viteRuntime->events[] = 'queue-start-failed';
 
-        throw new AgentCommandRefused('processes.control', 'processes.not_found', 'Refused.', ['step' => 'start']);
+        throw new AgentCommandRefused('process.control', 'process.not_found', 'Refused.', ['step' => 'start']);
     });
     $runtime = new RemoteProcessRuntimeManager(
         targets: new ProcessTargetResolver,

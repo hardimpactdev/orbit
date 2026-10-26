@@ -1,4 +1,4 @@
-//! `instances.run-deploy-step`: runs one production deploy step as the Instance user in its release, and publishes
+//! `instance.run-deploy-step`: runs one production deploy step as the Instance user in its release, and publishes
 //! each line of its output on the deploy operation's Reverb channel while it runs. The result carries the output for
 //! the deployment record. Without Reverb the step still runs; only the live lines are missing.
 
@@ -26,8 +26,8 @@ const LINE_LIMIT: usize = 8_000;
 
 command_errors! {
     pub enum DeployStepError {
-        Invalid { check: String } => "instances.deploy_step_invalid", "The release or the step does not pass its checks.";
-        StartFailed { reason: String } => "instances.deploy_step_start_failed", "The step could not be started.";
+        Invalid { check: String } => "instance.deploy_step_invalid", "The release or the step does not pass its checks.";
+        StartFailed { reason: String } => "instance.deploy_step_start_failed", "The step could not be started.";
     }
 }
 
@@ -448,7 +448,7 @@ pub(super) fn run_program(
 }
 
 impl Command for RunDeployStep {
-    const NAME: &'static str = "instances.run-deploy-step";
+    const NAME: &'static str = "instance.run-deploy-step";
     const SUMMARY: &'static str =
         "Run a production deploy step as the Instance user and publish its output live.";
     const MUTATES: bool = true;

@@ -22,7 +22,7 @@ function queue_reader_horizon(): Process
 }
 
 it('reads the queue report through the agent with the Process PHP and directory', function (): void {
-    $agents = (new FakeAgentCommandRunner)->answer('instances.read-queue', ['report' => ['installed' => false]]);
+    $agents = (new FakeAgentCommandRunner)->answer('instance.read-queue', ['report' => ['installed' => false]]);
     app()->instance(AgentCommandRunner::class, $agents);
 
     $report = app(RemoteInstanceQueueReader::class)->read(queue_reader_horizon(), 'failed', 10);
@@ -32,7 +32,7 @@ it('reads the queue report through the agent with the Process PHP and directory'
 });
 
 it('fails the read when the agent cannot report the queue', function (): void {
-    app()->instance(AgentCommandRunner::class, (new FakeAgentCommandRunner)->refuse('instances.read-queue', 'instances.queue_failed'));
+    app()->instance(AgentCommandRunner::class, (new FakeAgentCommandRunner)->refuse('instance.read-queue', 'instance.queue_failed'));
 
     expect(fn () => app(RemoteInstanceQueueReader::class)->read(queue_reader_horizon(), 'pending', 5))
         ->toThrow(fn (ResourceOperationException $exception) => expect([$exception->errorCode, $exception->status])->toBe(['instance.queue_failed', 502]));

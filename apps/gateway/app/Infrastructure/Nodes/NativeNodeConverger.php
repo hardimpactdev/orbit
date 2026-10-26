@@ -178,9 +178,9 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         // Task VM enrollment trusts the software in its image.
         if (! EnrollmentProgram::skipForTaskVm($node, EnrollmentProgram::Bootstrap)) {
             try {
-                $this->agents->runOver($node, $bootstrapConnection, 'nodes.bootstrap', $this->bootstrapCommand->input($node, $identity->managedUser, $rolelessOperator));
+                $this->agents->runOver($node, $bootstrapConnection, 'node.bootstrap', $this->bootstrapCommand->input($node, $identity->managedUser, $rolelessOperator));
             } catch (AgentCommandRefused|AgentRunnerFailure $exception) {
-                $message = $exception instanceof AgentCommandRefused && $exception->errorCode === 'nodes.bootstrap_os_unsupported'
+                $message = $exception instanceof AgentCommandRefused && $exception->errorCode === 'node.bootstrap_os_unsupported'
                     ? UbuntuRelease::unsupportedText(
                         is_string($exception->details['id'] ?? null) ? $exception->details['id'] : null,
                         is_string($exception->details['codename'] ?? null) ? $exception->details['codename'] : null,

@@ -1,4 +1,4 @@
-//! `instances.copy-sqlite`: copies one development SQLite database as the managed account, who owns development
+//! `instance.copy-sqlite`: copies one development SQLite database as the managed account, who owns development
 //! checkouts. It refuses a path outside a checkout or through a symbolic link. On one Node it takes a reflink of the
 //! database and its WAL while it holds SQLite's write lock, and takes a backup snapshot when the filesystem cannot
 //! clone or a writer keeps the lock for two seconds. Between Nodes it exports a snapshot, and installs the copy that
@@ -19,8 +19,8 @@ use std::{
 
 command_errors! {
     pub enum CopyError {
-        Refused {} => "instances.sqlite_copy_refused", "A path is outside its checkout, passes a symbolic link, or is not the expected file.";
-        Failed {} => "instances.sqlite_copy_failed", "The SQLite copy failed.";
+        Refused {} => "instance.sqlite_copy_refused", "A path is outside its checkout, passes a symbolic link, or is not the expected file.";
+        Failed {} => "instance.sqlite_copy_failed", "The SQLite copy failed.";
     }
 }
 
@@ -444,7 +444,7 @@ pub fn copy(input: &CopyInput) -> std::result::Result<CopyOutput, CopyError> {
 pub struct CopySqlite;
 
 impl Command for CopySqlite {
-    const NAME: &'static str = "instances.copy-sqlite";
+    const NAME: &'static str = "instance.copy-sqlite";
     const SUMMARY: &'static str = "Copy, export, install, or remove a development SQLite database.";
     const MUTATES: bool = true;
     const TIMEOUT: Duration = Duration::from_secs(600);

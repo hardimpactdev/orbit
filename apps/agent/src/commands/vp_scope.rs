@@ -9,9 +9,9 @@ use std::{
 };
 crate::command_errors! {
     pub enum Error {
-        Absent {} => "tools.vp_scope_absent", "The Vite+ global scope is absent for the enrolled account.";
-        Conflict {} => "tools.vp_scope_conflict", "The Vite+ global scope conflicts with the enrolled account.";
-        Unreadable {} => "tools.vp_scope_unreadable", "The Vite+ global scope cannot be inspected.";
+        Absent {} => "tool.vp_scope_absent", "The Vite+ global scope is absent for the enrolled account.";
+        Conflict {} => "tool.vp_scope_conflict", "The Vite+ global scope conflicts with the enrolled account.";
+        Unreadable {} => "tool.vp_scope_unreadable", "The Vite+ global scope cannot be inspected.";
     }
 }
 type Result<T> = std::result::Result<T, Error>;
@@ -90,7 +90,7 @@ pub(crate) fn inspect(
 }
 pub struct Inspect;
 impl Command for Inspect {
-    const NAME: &'static str = "tools.inspect-vp-scope";
+    const NAME: &'static str = "tool.inspect-vp-scope";
     const SUMMARY: &'static str =
         "Find the enrolled account's existing Vite+ scope without changing it.";
     const MUTATES: bool = false;

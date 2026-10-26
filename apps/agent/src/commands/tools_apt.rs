@@ -5,9 +5,9 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 crate::command_errors! {
     pub enum Error {
-        Invalid {} => "tools.apt_input_invalid", "The APT package name is invalid.";
-        Failed {} => "tools.apt_operation_failed", "The APT operation failed.";
-        Output {} => "tools.apt_output_invalid", "APT returned invalid or incomplete output.";
+        Invalid {} => "tool.apt_input_invalid", "The APT package name is invalid.";
+        Failed {} => "tool.apt_operation_failed", "The APT operation failed.";
+        Output {} => "tool.apt_output_invalid", "APT returned invalid or incomplete output.";
     }
 }
 type Result<T> = std::result::Result<T, Error>;
@@ -209,7 +209,7 @@ macro_rules! read_command {
 }
 read_command!(
     Version,
-    "tools.apt-version",
+    "tool.apt-version",
     "Read the APT manager version.",
     Empty,
     VersionOutput,
@@ -217,7 +217,7 @@ read_command!(
 );
 read_command!(
     Candidate,
-    "tools.apt-candidate",
+    "tool.apt-candidate",
     "Read APT's normal candidate for one package.",
     Input,
     CandidateOutput,
@@ -225,7 +225,7 @@ read_command!(
 );
 read_command!(
     Inventory,
-    "tools.apt-inventory",
+    "tool.apt-inventory",
     "Read installed APT package versions and unverifiable states.",
     Empty,
     InventoryOutput,
@@ -233,7 +233,7 @@ read_command!(
 );
 read_command!(
     Plan,
-    "tools.apt-removal-plan",
+    "tool.apt-removal-plan",
     "Read every package APT would remove.",
     Input,
     PlanOutput,
@@ -265,19 +265,19 @@ macro_rules! mutation {
 }
 mutation!(
     Install,
-    "tools.apt-install",
+    "tool.apt-install",
     "Install exactly the requested APT package with no recommendations.",
     false
 );
 mutation!(
     Update,
-    "tools.apt-update",
+    "tool.apt-update",
     "Update exactly the requested APT package to its normal candidate.",
     false
 );
 mutation!(
     Remove,
-    "tools.apt-remove",
+    "tool.apt-remove",
     "Remove the requested APT package without purging or autoremoving.",
     true
 );

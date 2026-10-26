@@ -18,8 +18,8 @@ use App\Infrastructure\AgentCommands\AgentStep;
 use App\Models\Instance;
 
 /**
- * A development Instance's Laravel metadata and URL through the Node agent's `instances.inspect-development-profile`
- * and `instances.write-development-url`, which read and write as the managed account.
+ * A development Instance's Laravel metadata and URL through the Node agent's `instance.inspect-development-profile`
+ * and `instance.write-development-url`, which read and write as the managed account.
  */
 final readonly class RemoteDevelopmentInstanceConfigurator implements DevelopmentInstanceConfigurator, RouteApplicationUrlWriter
 {
@@ -37,7 +37,7 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
             return new DevelopmentSourceProfile(null, false);
         }
 
-        $profile = AgentStep::run($this->agents, $instance->node, 'instances.inspect-development-profile', [
+        $profile = AgentStep::run($this->agents, $instance->node, 'instance.inspect-development-profile', [
             'application' => $instance->applicationDirectory(),
             'owner' => $instance->node->user,
             'entry_point' => $instance->project->type->frameworkEntryPoint(),
@@ -69,7 +69,7 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
         $storedKey = $otherApplication ? null : LaravelApplicationKey::stored($instance);
         $storedName = $instance->environmentValues()->where('env_key', 'APP_NAME')->first()?->env_value;
         $storedName = is_string($storedName) && $storedName !== '' && ! str_contains($storedName, '{{') ? $storedName : null;
-        AgentStep::run($this->agents, $instance->node, 'instances.write-development-url', [
+        AgentStep::run($this->agents, $instance->node, 'instance.write-development-url', [
             'directory' => $directory,
             'owner' => $instance->node->user,
             'url' => $url,

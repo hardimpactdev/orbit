@@ -1,4 +1,4 @@
-//! `accounts.lookup`: a local account's name, primary group, home, and shell, as `getent passwd` and `id -gn` print
+//! `account.lookup`: a local account's name, primary group, home, and shell, as `getent passwd` and `id -gn` print
 //! them.
 
 use crate::command::{identity, Command, Context, Platform, Privilege};
@@ -8,7 +8,7 @@ use std::time::Duration;
 
 command_errors! {
     pub enum AccountError {
-        Missing {} => "accounts.missing", "The Node has no such account.";
+        Missing {} => "account.missing", "The Node has no such account.";
     }
 }
 
@@ -42,7 +42,7 @@ pub fn lookup(input: &LookupInput) -> Result<Account, AccountError> {
 pub struct LookupAccount;
 
 impl Command for LookupAccount {
-    const NAME: &'static str = "accounts.lookup";
+    const NAME: &'static str = "account.lookup";
     const SUMMARY: &'static str = "Read a local account's primary group, home, and shell.";
     const MUTATES: bool = false;
     const TIMEOUT: Duration = Duration::from_secs(10);

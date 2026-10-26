@@ -38,9 +38,9 @@ final readonly class PrepareVpEnvironmentAction
                 throw new InvalidArgumentException('Invalid Instance account.');
             }
             try {
-                $result = $this->agents->run($instance->node, 'tools.read-vp-project', ['path' => $path, 'user' => $user ?? $instance->node->user]);
+                $result = $this->agents->run($instance->node, 'tool.read-vp-project', ['path' => $path, 'user' => $user ?? $instance->node->user]);
             } catch (AgentCommandRefused $exception) {
-                if ($exception->errorCode !== 'tools.project_invalid') {
+                if ($exception->errorCode !== 'tool.project_invalid') {
                     throw $exception;
                 }
                 throw new InvalidArgumentException('Cannot read Project requirements.', previous: $exception);

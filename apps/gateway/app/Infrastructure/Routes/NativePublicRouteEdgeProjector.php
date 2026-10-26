@@ -59,7 +59,7 @@ final readonly class NativePublicRouteEdgeProjector implements PublicRouteEdgePr
                 throw new RuntimeConvergenceException('public-edge-verified', 'route.upstream_firewall_mismatch', 'The Process Node firewall must allow the selected Ingress source to the published listener. Add a managed firewall rule and retry.');
             }
             try {
-                AgentStep::run($this->agents, $ingress, 'routes.verify-http', [
+                AgentStep::run($this->agents, $ingress, 'route.verify-http', [
                     'address' => $upstream->host,
                     'port' => $upstream->port,
                     'domain' => $route->domain,
@@ -159,7 +159,7 @@ final readonly class NativePublicRouteEdgeProjector implements PublicRouteEdgePr
 
     private function verifyHop(Node $from, string $address, string $domain, string $step): void
     {
-        AgentStep::run($this->agents, $from, 'routes.verify-certificate', [
+        AgentStep::run($this->agents, $from, 'route.verify-certificate', [
             'address' => $address,
             'port' => 443,
             'domain' => $domain,

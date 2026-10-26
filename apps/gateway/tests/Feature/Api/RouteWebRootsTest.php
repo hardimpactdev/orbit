@@ -696,7 +696,7 @@ function web_root_production(Project $project): array
 /** @return list<array{web_root: string, directory: string}> The served web roots that a later release preparation sends. */
 function web_root_production_deploy_served(Instance $instance): array
 {
-    $agents = new FakeAgentCommandRunner()->answer('instances.prepare-release', ['name' => '20261009-a1', 'commit' => str_repeat('b', 40)]);
+    $agents = new FakeAgentCommandRunner()->answer('instance.prepare-release', ['name' => '20261009-a1', 'commit' => str_repeat('b', 40)]);
     $instance->update(['source_layout' => 'checkout']);
     new RemoteProductionDeployment($agents, app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class), static fn (): string => '20261009-a1')->prepare($instance->refresh(), 'main');
 
