@@ -1,9 +1,11 @@
 //! `cli.inspect` and `cli.install`: the Orbit CLI in the layout `orbit self-update` keeps, the release as
 //! `/usr/local/bin/orbit-<version>` and `/usr/local/bin/orbit` as a link to it, plus root's CLI profile.
 //!
-//! The link path decides what happens. Nothing there: install. An Orbit CLI with `self-update`: leave it, because
-//! `orbit self-update` replaces it. An Orbit CLI without `self-update`: install, keep the old file as
-//! `orbit.orbit-previous`, and switch the link. Anything else (another link, a script, another program, another
+//! The link path decides what happens. Nothing there: install. An Orbit CLI with `self-update` at the release or
+//! newer, or a source build: leave it, because `orbit self-update` replaces it. An Orbit CLI without
+//! `self-update`, or an older release: install, keep a plain old file as `orbit.orbit-previous`, and switch the
+//! link. An older CLI's own self-update may refuse the Gateway's current release, so the install never relies on
+//! it. Anything else (another link, a script, another program, another
 //! owner's file) is foreign and refused; it is never run. Every binary the check runs runs as the managed user.
 //! The install holds the update lock that `orbit self-update` and `agent.install` hold.
 
@@ -304,33 +306,57 @@ fn configure(directory: &Path, path: &Path, profile: &str) -> Result<bool, CliEr
     Ok(true)
 }
 
+/// The minor of a `0.N.0` release.
+fn minor(version: &str) -> Option<u64> {
+    version.strip_prefix("0.")?.strip_suffix(".0")?.parse().ok()
+}
+
+/// Whether the installed CLI is a release older than the one offered. A source build is never replaced.
+fn older(installed: Option<&str>, release: Option<&Release>) -> bool {
+    match (
+        installed.and_then(minor),
+        release.and_then(|release| minor(&release.version)),
+    ) {
+        (Some(installed), Some(offered)) => installed < offered,
+        _ => false,
+    }
+}
+
+/// Whether the CLI must be installed. A foreign path is refused.
+fn needed(link: &Path, input: &InstallInput) -> Result<bool, CliError> {
+    match inspect(link, &input.user) {
+        State::Foreign => Err(CliError::Foreign {}),
+        State::Present => Ok(older(
+            installed_version(link, &input.user).as_deref(),
+            input.release.as_ref(),
+        )),
+        State::Missing | State::Stale => Ok(true),
+    }
+}
+
 pub fn install(input: &InstallInput, deadline: Instant) -> Result<Installed, CliError> {
     let link = Path::new(LINK);
-    let installed = match inspect(link, &input.user) {
-        State::Present => None,
-        State::Foreign => return Err(CliError::Foreign {}),
-        State::Missing | State::Stale => {
-            let release = input.release.as_ref().ok_or(CliError::ReleaseNeeded {})?;
-            let _held = lock::acquire(
-                Path::new(lock::UPDATE_LOCK_LINUX),
-                lock::answer_by(deadline).min(Instant::now() + UPDATE_WAIT),
-            )
-            .map_err(|error| match error {
-                lock::LockError::Busy(_) => CliError::UpdateBusy {},
-                lock::LockError::Io(..) => CliError::Failed {
-                    step: "update lock".into(),
-                },
-            })?;
-            // A self-update may have changed the path while this install waited.
-            match inspect(link, &input.user) {
-                State::Present => None,
-                State::Foreign => return Err(CliError::Foreign {}),
-                State::Missing | State::Stale => {
-                    install_release(link, &input.user, release)?;
-                    Some(release.version.clone())
-                }
-            }
+    let installed = if needed(link, input)? {
+        let release = input.release.as_ref().ok_or(CliError::ReleaseNeeded {})?;
+        let _held = lock::acquire(
+            Path::new(lock::UPDATE_LOCK_LINUX),
+            lock::answer_by(deadline).min(Instant::now() + UPDATE_WAIT),
+        )
+        .map_err(|error| match error {
+            lock::LockError::Busy(_) => CliError::UpdateBusy {},
+            lock::LockError::Io(..) => CliError::Failed {
+                step: "update lock".into(),
+            },
+        })?;
+        // A self-update may have changed the path while this install waited.
+        if needed(link, input)? {
+            install_release(link, &input.user, release)?;
+            Some(release.version.clone())
+        } else {
+            None
         }
+    } else {
+        None
     };
     let configured = configure(
         Path::new(PROFILE_DIRECTORY),
@@ -424,6 +450,25 @@ mod tests {
                 && !orbit_version("orbit 0.12.0")
                 && !orbit_version("Other 0.12.0")
         );
+    }
+
+    #[test]
+    fn only_an_older_release_is_replaced() {
+        let offered = |version: &str| Release {
+            version: version.into(),
+            url: String::new(),
+            sha256: String::new(),
+        };
+        assert!(older(Some("0.6687.0"), Some(&offered("0.6880.0"))));
+        assert!(older(Some("0.99.0"), Some(&offered("0.100.0"))));
+        assert!(!older(Some("0.6880.0"), Some(&offered("0.6880.0"))));
+        assert!(!older(Some("0.6881.0"), Some(&offered("0.6880.0"))));
+        assert!(
+            !older(Some(&"a".repeat(40)), Some(&offered("0.6880.0"))),
+            "a source build stays"
+        );
+        assert!(!older(Some("0.6687.0"), None), "no release offered");
+        assert!(!older(None, Some(&offered("0.6880.0"))));
     }
 
     #[test]

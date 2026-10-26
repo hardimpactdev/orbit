@@ -24,7 +24,7 @@ use Throwable;
  *
  * 1. Probe SSH. A Node that does not answer is `unreachable`, and nothing runs.
  * 2. Take the Node's role lock, the lock every role converge takes. A busy Node is `deferred`.
- * 3. Install the CLI if it is missing. A CLI Orbit did not install leaves the rollout set (`skipped`).
+ * 3. Install the CLI if it is missing or an older release. A CLI Orbit did not install leaves the rollout set (`skipped`).
  * 4. Call `cli.self-update`. A Gateway rollback retries once with `--allow-downgrade-to`.
  * 5. Re-apply the Gateway-rendered footprint where its digest changed, and the artifacts that repair an
  *    owned issue the baseline shows.

@@ -1027,7 +1027,7 @@ For each Node, the run takes the Node's role lock, the lock every role converge 
 | `ssh` | Open a new SSH connection. A Node that does not answer is `unreachable`, and nothing runs |
 | `node-lock` | Wait up to 2 minutes for the role lock. A busy Node is `deferred` |
 | `baseline` | Run Doctor's `node` and `role` families for the Node |
-| `cli` | [Install the CLI](/reference/node-provisioning#orbit-cli) when it is missing, and write the Node profile. A foreign CLI makes the Node `skipped` |
+| `cli` | [Install the CLI](/reference/node-provisioning#orbit-cli) when it is missing or an older release, and write the Node profile. A foreign CLI makes the Node `skipped` |
 | `self-update` | Run `sudo /usr/local/bin/orbit self-update --json` over SSH. `pending` or `incomplete` leaves the Node `waiting`; `self_update.busy` leaves it `deferred`; `failed` fails it |
 | `footprint` | [Re-apply the Gateway-rendered footprint](/reference/node-provisioning#converge-the-orbit-footprint) where its digest changed, and the artifact that repairs an owned issue the baseline shows |
 | `verify` | Wait up to 90 seconds for the agent to report the pinned version in presence, then run Doctor again |

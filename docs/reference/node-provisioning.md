@@ -332,7 +332,8 @@ The agent's `cli.install` runs the step, and `cli.inspect` reads the link alone.
 | Found | Result |
 | --- | --- |
 | Nothing | Download the binary to `/usr/local/bin/orbit-<version>.orbit-candidate`, check its SHA-256 from the desired state and that it reports the release version, move it to `orbit-<version>`, and switch the link: `cli_installed` |
-| An Orbit CLI that has `self-update` | Leave it: `cli_present`. `orbit self-update` replaces it |
+| An Orbit CLI that has `self-update` and is the desired release, a newer one, or a pre-release build | Leave it: `cli_present`. `orbit self-update` replaces it |
+| An older Orbit CLI release | Install the release as for a missing one. An older CLI's own self-update may refuse the current release, so the step does not rely on it |
 | An Orbit CLI without `self-update`, such as a pre-release build | An older CLI. Install the release as for a missing one, and keep the old file as `orbit.orbit-previous` |
 | Another link, a script, another program, or a file another user owns | Refuse with `cli.foreign_binary` without running a script. The fleet rollout leaves the Node out as `foreign_cli` until an operator moves the file aside |
 
