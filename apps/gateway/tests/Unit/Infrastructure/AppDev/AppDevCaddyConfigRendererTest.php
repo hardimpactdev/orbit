@@ -9,7 +9,6 @@ use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\Caddy\CaddyGlobalOptions;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
-use Symfony\Component\Process\Process;
 use Tests\Support\TestToolchain;
 
 it('proxies the reserved development-server path to loopback on a development site', function (): void {
@@ -504,21 +503,27 @@ it('routes only the selected Pusher paths before the existing application handle
         return $value;
     };
     $json = $replace($json);
+    // Caddy serves the socket this test already holds (socket activation). A freed port could be taken by
+    // another test's Caddy, which listens with SO_REUSEPORT, and connections queue until Caddy is ready.
     $listener = stream_socket_server('tcp://127.0.0.1:0', $error, $message);
     expect($listener)->toBeResource();
     $address = stream_socket_get_name($listener, false);
-    fclose($listener);
     $server = array_key_first($json['apps']['http']['servers']);
     $json['admin'] = ['disabled' => true];
-    $json['apps']['http']['servers'][$server]['listen'] = [$address];
+    $json['apps']['http']['servers'][$server]['listen'] = ['fd/3'];
     $json['apps']['http']['servers'][$server]['automatic_https'] = ['disable' => true];
     unset($json['logging'], $json['apps']['tls'], $json['apps']['http']['servers'][$server]['tls_connection_policies'], $json['apps']['http']['servers'][$server]['logs']);
     $path = tempnam(sys_get_temp_dir(), 'orbit-public-reverb-');
+    $log = tempnam(sys_get_temp_dir(), 'orbit-public-reverb-log-');
     file_put_contents($path, json_encode($json, JSON_THROW_ON_ERROR));
-    $process = new Process([TestToolchain::require('caddy', 'install caddy'), 'run', '--config', $path]);
+    $caddy = proc_open(
+        [TestToolchain::require('caddy', 'install caddy'), 'run', '--config', $path],
+        [0 => ['file', '/dev/null', 'r'], 1 => ['file', $log, 'a'], 2 => ['file', $log, 'a'], 3 => $listener],
+        $pipes,
+    );
+    fclose($listener);
     try {
-        $process->start();
-        $process->waitUntil(static fn (string $type, string $output): bool => str_contains($output, 'serving initial configuration'));
+        expect($caddy)->toBeResource();
         $signed = '?auth_key=mealou-key&auth_signature=signature&auth_timestamp=123&auth_version=1.0';
         foreach ([
             ['GET', '/app/mealou-key?protocol=7', true, 'reverb'],
@@ -561,7 +566,7 @@ it('routes only the selected Pusher paths before the existing application handle
             ['POST', '/broadcasting/auth', false, 'application'],
         ] as [$method, $uri, $upgrade, $expected]) {
             $socket = stream_socket_client('tcp://'.$address, $error, $message, 3);
-            expect($socket)->toBeResource($process->getErrorOutput());
+            expect($socket)->toBeResource((string) file_get_contents($log));
             stream_set_timeout($socket, 3);
             fwrite($socket, $method.' '.$uri." HTTP/1.1\r\nHost: mealou.app\r\nConnection: ".($upgrade ? 'keep-alive, Upgrade' : 'close')."\r\n".($upgrade ? "Upgrade: websocket\r\n" : '')."Content-Length: 0\r\n\r\n");
             $response = '';
@@ -579,7 +584,11 @@ it('routes only the selected Pusher paths before the existing application handle
             expect($response)->toContain($expected);
         }
     } finally {
-        $process->stop();
+        if (is_resource($caddy)) {
+            proc_terminate($caddy, SIGKILL);
+            proc_close($caddy);
+        }
         unlink($path);
+        unlink($log);
     }
 })->with(['proxy pool' => false, 'production PHP' => true]);

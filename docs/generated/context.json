@@ -3120,6 +3120,19 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/solutions/real-caddy-in-gateway-tests.md",
+            "title": "Real Caddy in Gateway tests",
+            "kind": "solution",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/solutions/realtime-reverb.mdx",
             "title": "Realtime events with Reverb",
             "kind": "solution",
