@@ -129,6 +129,7 @@ it('keeps Node execution inside the agent transports across core and extensions'
         'app/Infrastructure/SourceControl/GitRemoteBranchHeads.php',
         'app/Infrastructure/SourceControl/NativeRepositoryDefaultBranchResolver.php',
         'app/Infrastructure/Fleet/GitReleaseHistory.php',
+        'app/Infrastructure/GatewayReleases/GatewayReleaseAgentDelivery.php',
         'app/Infrastructure/TaskVms/TaskVmGit.php',
         'app/Infrastructure/TaskVms/UpCloudGuest.php',
         'app/Actions/TaskVms/ObservePackageCacheAction.php',
