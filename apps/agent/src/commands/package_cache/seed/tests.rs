@@ -170,3 +170,90 @@ fn marker_wait_is_bounded_and_access_errors_are_immediate() {
     assert!(matches!(result,Err(Error::Failed{path,..}) if path.ends_with(".orbit-owned")));
     assert_eq!(SeedCache::privilege(Platform::Macos), None);
 }
+
+#[test]
+fn bun_directories_remain_usable_when_archive_modes_lack_search_or_write() {
+    for mode in [0o666, 0o555, 0o000] {
+        let f = Fixture::new();
+        let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        let mut tar = tar::Builder::new(encoder);
+        for path in ["package", "package/lib"] {
+            let mut header = tar::Header::new_gnu();
+            header.set_entry_type(tar::EntryType::Directory);
+            header.set_mode(mode);
+            header.set_size(0);
+            header.set_cksum();
+            tar.append_data(&mut header, path, io::empty()).unwrap();
+        }
+        for (path, mode) in [("package/CHANGELOG.md", 0o644), ("package/lib/run", 0o755)] {
+            let mut header = tar::Header::new_gnu();
+            header.set_mode(mode);
+            header.set_size(2);
+            header.set_cksum();
+            tar.append_data(&mut header, path, &b"{}"[..]).unwrap();
+        }
+        let bytes = tar.into_inner().unwrap().finish().unwrap();
+        let a = cached(&f, &bytes, true);
+        let result = seed(&f.shared(), &f.home(), &[a]);
+        // Restore modes on the old implementation so fixture cleanup cannot hide the failure.
+        let cache = f.home().join(".bun/install/cache");
+        for entry in fs::read_dir(&cache).unwrap() {
+            let root = entry.unwrap().path().join("package");
+            if root.exists() {
+                fs::set_permissions(&root, fs::Permissions::from_mode(0o755)).unwrap();
+                let _ = fs::set_permissions(root.join("lib"), fs::Permissions::from_mode(0o755));
+            }
+        }
+        result.unwrap();
+        let target = cache.join("demo@1.0.0@@@1");
+        assert_eq!(fs::metadata(&target).unwrap().mode() & 0o777, 0o755);
+        assert_eq!(
+            fs::metadata(target.join("lib")).unwrap().mode() & 0o777,
+            0o755
+        );
+        assert_eq!(fs::read(target.join("CHANGELOG.md")).unwrap(), b"{}");
+        assert_eq!(
+            fs::metadata(target.join("lib/run")).unwrap().mode() & 0o777,
+            0o755
+        );
+        fs::write(target.join("lib/private"), b"private").unwrap();
+        assert_eq!(fs::read_dir(cache).unwrap().count(), 1);
+    }
+}
+
+#[test]
+fn extraction_failure_names_artifact_and_underlying_io_cause() {
+    use std::io::Write;
+    let f = Fixture::new();
+    let home = f.home().join("archive-context/".repeat(80));
+    let mut header = tar::Header::new_gnu();
+    header.set_path("package/CHANGELOG.md").unwrap();
+    header.set_mode(0o644);
+    header.set_size(100);
+    header.set_cksum();
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+    encoder.write_all(header.as_bytes()).unwrap();
+    encoder.write_all(b"short").unwrap();
+    let a = cached(&f, &encoder.finish().unwrap(), true);
+    let Error::Failed {
+        operation,
+        path,
+        reason,
+    } = seed(&f.shared(), &home, std::slice::from_ref(&a)).unwrap_err()
+    else {
+        panic!("expected artifact failure");
+    };
+    assert_eq!(operation, "seed");
+    assert_eq!(path, f.shared().join(&a.key).display().to_string());
+    assert!(reason.contains(&a.key), "{reason}");
+    assert!(reason.contains("demo@1.0.0"), "{reason}");
+    assert!(reason.contains("failed to unpack"), "{reason}");
+    assert!(reason.contains("failed to write entire file"), "{reason}");
+    assert!(reason.chars().count() <= 1200);
+    assert_eq!(
+        fs::read_dir(home.join(".bun/install/cache"))
+            .unwrap()
+            .count(),
+        0
+    );
+}
