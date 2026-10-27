@@ -2010,12 +2010,14 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Doctor",
                 "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Node agent",
                 "Role",
+                "Route",
                 "Task"
             ],
             "governing_adrs": []

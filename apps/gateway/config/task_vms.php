@@ -16,6 +16,8 @@ return [
     'enabled' => (bool) env('ORBIT_TASK_VMS_ENABLED', false),
     'dev_cluster_id' => env('ORBIT_TASK_VMS_DEV_CLUSTER_ID'),
     'wireguard_range' => env('ORBIT_TASK_VMS_WIREGUARD_RANGE') ?: '10.44.0.128/25',
+    // One private HTTPS site for Swamp workers; not a list of admitted sites.
+    'swamp_host' => env('ORBIT_TASK_VMS_SWAMP_HOST'),
     'model_proxy_origin' => env('ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN'),
     // Minutes a group waits for review before its task VM stops. Its next work starts the VM again.
     'park_after_minutes' => $env('ORBIT_TASK_VMS_PARK_AFTER_MINUTES', 30),

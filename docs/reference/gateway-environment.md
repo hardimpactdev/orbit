@@ -53,6 +53,8 @@ Other `ORBIT_` keys belong to one feature, and the page for that feature documen
 
 [Gateway disk retention](/reference/gateway-recovery#disk-retention) documents `ORBIT_JOURNAL_MAX_MB`, `ORBIT_JOURNAL_KEEP_FREE_MB`, `ORBIT_JOURNAL_RUNTIME_MAX_MB`, `ORBIT_JOURNAL_DAYS`, `ORBIT_LOG_ROTATE_MB`, and `ORBIT_LOG_ROTATE_KEEP`. Queue record retention uses `ORBIT_FAILED_JOBS_HOURS` and `ORBIT_JOB_BATCH_HOURS`. Their defaults are in `config/retention.php`.
 
+`ORBIT_TASK_VMS_SWAMP_HOST` names the one private HTTPS site task VM workers may reach, such as `swamp.orbit`. Set it for the managed Swamp Route on the `websocket` Node. After applying the environment change, rebuild Caddy on that Node; Doctor reports `role.caddy_build_drift` until then. See [Refuse task VMs in Caddy](/reference/compute-drivers#refuse-task-vms-in-caddy).
+
 Task VM hosts use [Node `settings.task_vms`](/reference/node-settings#configure-a-task-vm-host), not an environment list. Configure and verify each host's stored settings before removing the former `ORBIT_TASK_VMS_INCUS_HOSTS` variable with [Apply an env change](/reference/gateway-recovery#apply-an-env-change). The Gateway does not read the environment list, including when configuration is cached.
 
 ## Drift check

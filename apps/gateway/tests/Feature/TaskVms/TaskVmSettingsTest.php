@@ -72,7 +72,7 @@ describe('defaults', function (): void {
         $config = config_without_env('task_vms.php', [
             'ORBIT_TASK_VMS_ENABLED', 'ORBIT_TASK_VMS_DEV_CLUSTER_ID', 'ORBIT_TASK_VMS_WIREGUARD_RANGE', 'ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN',
             'ORBIT_TASK_VMS_PI_ARTIFACT_PATH', 'ORBIT_TASK_VMS_PI_ARTIFACT_SHA256', 'ORBIT_TASK_VMS_PI_MODELS', 'ORBIT_TASK_VMS_INCUS_HOSTS',
-            'ORBIT_TASK_VMS_PARK_AFTER_MINUTES',
+            'ORBIT_TASK_VMS_PARK_AFTER_MINUTES', 'ORBIT_TASK_VMS_SWAMP_HOST',
         ]);
         config(['task_vms' => $config]);
 
@@ -147,6 +147,7 @@ describe('off but configured', function (): void {
         'invalid Pi artifact alone' => [['pi' => ['artifact_path' => '/home/orbit/pi']], null],
         'enabled' => [['enabled' => true], '10.44.0.128/25'],
         'Cluster' => [['dev_cluster_id' => 4], '10.44.0.128/25'],
+        'Swamp hostname' => [['swamp_host' => 'swamp.orbit'], '10.44.0.128/25'],
         'origin' => [['model_proxy_origin' => 'http://10.44.0.3:8317'], '10.44.0.128/25'],
         'host' => [task_vm_hosts([]), '10.44.0.128/25'],
         'invalid host setting' => [task_vm_hosts(['cidr' => 'invalid']), '10.44.0.128/25'],
@@ -339,4 +340,41 @@ describe('scheduler reader', function (): void {
         expect(TaskVmSettings::scheduled())->toEqual(new TaskVmSchedule(enabled: true, upcloudConfigured: true));
     });
 
+});
+
+describe('the Swamp hostname', function (): void {
+    it('reads one hostname and uses the same normalization for Caddy', function (?string $value, ?string $expected): void {
+        task_vms_off(['swamp_host' => $value]);
+
+        expect(TaskVmSettings::fromConfig()->swampHost)->toBe($expected)
+            ->and(TaskVmSettings::caddySwampHost())->toBe($expected);
+    })->with([
+        'unset' => [null, null], 'empty' => ['', null],
+        'configured' => ['swamp.orbit', 'swamp.orbit'],
+        'case insensitive DNS' => ['Swamp.Orbit', 'swamp.orbit'],
+    ]);
+
+    it('refuses an invalid hostname in full settings and Caddy even while task VMs are off', function (mixed $value): void {
+        task_vms_off(['swamp_host' => $value]);
+
+        expect_invalid_task_vm_config('swamp_host must be one DNS hostname');
+        expect(fn () => TaskVmSettings::caddySwampHost())->toThrow(TaskVmException::class, 'swamp_host must be one DNS hostname');
+    })->with([
+        'URL' => ['https://swamp.orbit'], 'port' => ['swamp.orbit:443'],
+        'path' => ['swamp.orbit/workers'], 'wildcard' => ['*.orbit'],
+        'space separated list' => ['swamp.orbit executor.orbit'],
+        'comma separated list' => ['swamp.orbit,executor.orbit'],
+        'array' => [['swamp.orbit']], 'empty array' => [[]], 'boolean' => [true], 'integer' => [443],
+        'IPv4' => ['10.44.0.3'], 'IPv6' => ['::1'], 'whitespace' => [' '], 'padding' => [' swamp.orbit'],
+        'single label' => ['swamp'], 'trailing dot' => ['swamp.orbit.'], 'empty label' => ['swamp..orbit'],
+        'underscore' => ['swamp_host.orbit'], 'long label' => [str_repeat('a', 64).'.orbit'],
+        'long hostname' => [str_repeat(str_repeat('a', 63).'.', 4).'orbit'],
+        'Caddy directive' => ["swamp.orbit\nabort"],
+    ]);
+
+    it('checks the VPN subnet when only the Swamp hostname is set', function (): void {
+        task_vms_off(['swamp_host' => 'swamp.orbit', 'wireguard_range' => '10.45.0.128/25']);
+
+        expect_invalid_task_vm_config('inside the VPN subnet');
+    });
 });

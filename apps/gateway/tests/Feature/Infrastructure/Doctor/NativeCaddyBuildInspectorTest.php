@@ -4,8 +4,13 @@ declare(strict_types=1);
 
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteKind;
+use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuilder;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildLock;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Caddy\Build\NodeCaddyLiveReader;
@@ -13,6 +18,7 @@ use App\Infrastructure\Caddy\Build\NodeCaddyTransport;
 use App\Infrastructure\Doctor\NativeCaddyBuildInspector;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
+use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Tests\Support\CaddySiteCertificateFixtures;
 use Tests\Support\FakeAgentCommandRunner;
@@ -39,6 +45,38 @@ it('matches a live Caddyfile that is byte for byte the fresh build', function ()
         ->and($observation?->liveVersion)->toBe($render->version)
         ->and($observation?->sources)->toBe(['websocket'])
         ->and($this->agents->commands())->toBe(['caddy.read-live']);
+});
+
+it('detects setting, changing and clearing the Swamp exception until the Node build applies it', function (): void {
+    $node = caddy_build_inspector_websocket_node();
+    $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    foreach (['swamp.orbit', 'worker.orbit'] as $host) {
+        $route = Route::query()->create([
+            'kind' => RouteKind::CustomProxy, 'node_id' => $node->id, 'domain' => $host,
+            'provenance' => RouteProvenance::Explicit, 'publication' => RoutePublication::Private,
+            'status' => RouteStatus::Pending,
+        ]);
+        $route->customProxy()->create(['node_id' => $node->id, 'upstream' => 'http://127.0.0.1:9417']);
+        $route->update(['status' => RouteStatus::Active]);
+    }
+    config(['task_vms' => task_vm_config(['dev_cluster_id' => 4])]);
+    $renderer = app(NodeCaddyfileRenderer::class);
+    $this->live = $renderer->render($node)->content;
+    $this->agents->answer('caddy.read-live', fn (): array => ['content' => $this->live]);
+    $this->agents->answer('caddy.publish', function (array $input): array {
+        $this->live = $input['content'];
+
+        return ['result' => 'published'];
+    });
+    $builder = new NodeCaddyBuilder($renderer, new NodeCaddyBuildLock($this->lockDirectory), new NodeCaddyTransport($this->agents));
+
+    expect(caddy_build_inspector($this)->inspect($node)?->matches)->toBeTrue();
+    foreach (['swamp.orbit', 'worker.orbit', null] as $host) {
+        config(['task_vms.swamp_host' => $host]);
+        expect(caddy_build_inspector($this)->inspect($node)?->matches)->toBeFalse();
+        $builder->build($node);
+        expect(caddy_build_inspector($this)->inspect($node)?->matches)->toBeTrue();
+    }
 });
 
 it('reports a hand edit of a built Caddyfile with the digest of the live file', function (): void {

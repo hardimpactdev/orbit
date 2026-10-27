@@ -31,13 +31,14 @@ final readonly class NodeCaddyListeners
         public array $explicit,
         private string $vpnSubnet,
         private ?string $taskVmRange,
+        private ?string $swampHost,
     ) {}
 
     /**
      * @param  list<CaddySite>  $sites  Every site on the Node. The listeners do not depend on them.
      * @param  ?string  $taskVmRange  The reserved task VM range once task VMs are configured, otherwise null.
      */
-    public static function forSites(Node $node, array $sites = [], string $vpnSubnet = '10.44.0.0/24', ?string $taskVmRange = null): self
+    public static function forSites(Node $node, array $sites = [], string $vpnSubnet = '10.44.0.0/24', ?string $taskVmRange = null, ?string $swampHost = null): self
     {
         $wireGuard = self::address($node->wireguard_ip);
 
@@ -47,6 +48,7 @@ final readonly class NodeCaddyListeners
             explicit: array_values(array_unique(array_filter([$wireGuard, self::address($node->lan_ip)]))),
             vpnSubnet: $vpnSubnet,
             taskVmRange: $taskVmRange,
+            swampHost: $swampHost,
         );
     }
 
@@ -86,11 +88,18 @@ final readonly class NodeCaddyListeners
     /**
      * The task VM range a site refuses, or null. A task VM runs agent code as root, and the hub lets it reach
      * the shared WireGuard listener of the Gateway and `websocket` Nodes. So once task VMs are configured, every
-     * site except the Gateway API and Reverb refuses the range, inside the VPN subnet it otherwise admits.
+     * site except the Gateway API, Reverb and the configured Swamp site refuses the range, inside the VPN subnet
+     * it otherwise admits.
      */
     public function refused(CaddySite $site): ?string
     {
-        return in_array($site->source, self::TaskVmSources, true) ? null : $this->taskVmRange;
+        if (in_array($site->source, self::TaskVmSources, true)
+            || ($this->swampHost !== null && $site->port === 443 && $site->listener !== CaddyListenerRule::Public
+                && array_map(strtolower(...), $site->hosts) === [$this->swampHost])) {
+            return null;
+        }
+
+        return $this->taskVmRange;
     }
 
     private static function address(?string $address): ?string

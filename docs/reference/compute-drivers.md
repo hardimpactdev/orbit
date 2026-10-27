@@ -1202,7 +1202,7 @@ To remove a host, lower its capacity to stop new placements, wait until all its 
 
 ### Limit fleet traffic on the hub
 
-This filter relies on the [Caddy guard](#refuse-task-vms-in-caddy). Reverb shares TCP 443 on the `websocket` Node with every other private Caddy site on that Node, such as `executor.orbit`, so an L4 rule cannot tell the sites apart. Run `task-vms:prepare-hub` only after you configure task VMs and rebuild Caddy on every Node that serves sites.
+This filter relies on the [Caddy guard](#refuse-task-vms-in-caddy). Reverb and the private Swamp Route share TCP 443 on the `websocket` Node with every other private Caddy site on that Node, such as `executor.orbit`, so an L4 rule cannot tell the sites apart. Run `task-vms:prepare-hub` only after you configure task VMs and rebuild Caddy on every Node that serves sites.
 
 Run `task-vms:prepare-hub` once, and again when one of the values below changes. The Gateway sends typed endpoints and the reserved range to `firewall.task-vm-hub` on the `vpn` Node. The agent renders and validates the nft table `inet orbit_task_vms`, atomically publishes `/etc/orbit/task-vms/hub.nft` and the oneshot unit `orbit-task-vms-hub.service`, and verifies activation. It refuses foreign files or an unowned table before changes. A failed activation restores the previous files, service state, and live table; a failed restoration reports `task_vm.setup_failed` with the `recovery` stage.
 
@@ -1213,7 +1213,7 @@ The command takes every value from Gateway records and settings:
 - the reserved range from `task_vms.wireguard_range`;
 - the VPN DNS address: the `vpn.dns_server` setting, or else the WireGuard address of the `vpn` Node;
 - the Node with the `gateway` role, and the Pi port `orbit.pi.port` (`ORBIT_PI_PORT`, default `3774`);
-- Reverb at `reverb.orbit`, which is TCP 443 on the Node with the `websocket` role;
+- Reverb at `reverb.orbit`, which is TCP 443 on the Node with the `websocket` role; the Swamp Route uses that same Node and port;
 - the host and port of `task_vms.model_proxy_origin`;
 - the router of the dev Cluster.
 
@@ -1221,20 +1221,22 @@ The table filters only the reserved range. Its first rule passes every packet th
 
 | Direction | Allowed |
 | --- | --- |
-| From task VMs | The Gateway API on TCP 443, CLIProxyAPI on TCP 8317, Reverb on TCP 443, and DNS on port 53 of the VPN DNS address |
+| From task VMs | The Gateway API on TCP 443, CLIProxyAPI on TCP 8317, Reverb and the configured Swamp site on TCP 443, and DNS on port 53 of the VPN DNS address |
 | To task VMs | The Gateway on TCP 22 and the Pi port, and the dev Cluster router on TCP 80, 443, and 5173 |
 
 The table accepts established traffic and drops all other traffic to or from the range. The WireGuard address allocator skips the range for other Nodes. Only `AllocateTaskVmAction` assigns addresses in it. A task VM Node has no access grants to other Nodes.
 
 ### Refuse task VMs in Caddy
 
-TCP 443 on the Gateway Node and on the `websocket` Node is one Caddy listener for every private site on that Node, so the hub table cannot tell `reverb.orbit` from `executor.orbit` or `analytics.orbit`. Caddy closes that gap. On every Node, every site except `gateway.orbit` and `reverb.orbit` aborts a client in `task_vms.wireguard_range`. [Caddy configuration](/reference/caddy-configuration#listener-addresses) shows the guard.
+TCP 443 on the Gateway Node and on the `websocket` Node is one Caddy listener for every private site on that Node, so the hub table cannot tell `reverb.orbit` from `executor.orbit` or `analytics.orbit`. Caddy closes that gap. On every Node, every site except `gateway.orbit`, `reverb.orbit`, and the optional Swamp site named by `task_vms.swamp_host` aborts a client in `task_vms.wireguard_range`. [Caddy configuration](/reference/caddy-configuration#listener-addresses) shows the guard.
 
-Caddy renders the guard only after you configure task VMs: you enable them, or you set `dev_cluster_id`, `model_proxy_origin`, or a host. Until then, every Caddyfile stays as it was. The guard reads only that condition and `task_vms.wireguard_range`. Another invalid task VM value never changes a Caddyfile or blocks a build.
+Set `ORBIT_TASK_VMS_SWAMP_HOST=swamp.orbit` for the managed private Swamp Route on the `websocket` Node. The hub already admits TCP 443 on that Node; the setting adds no hub rule. The exception matches exactly one hostname on port 443 and never a public Ingress site or a block with extra hostnames. The other client-range guard still applies. It admits no sibling site, subdomain, or alternate port. An unset or empty value admits no Swamp site.
 
-The next Gateway release rebuilds only the Gateway Node's Caddyfile. After you set these values, run `php artisan orbit:caddy-build NODE` for every other Node that serves sites, before the first task VM enrolls. Until then, Doctor reports `role.caddy_build_drift` on each of those Nodes. Unset these values only after every task VM is destroyed, because the next build of each Node then drops the guard.
+Caddy renders the guard only after you configure task VMs: you enable them, or you set `dev_cluster_id`, `model_proxy_origin`, `swamp_host`, or a host. Until then, every Caddyfile stays as it was. The guard reads only that condition, `task_vms.wireguard_range`, and `task_vms.swamp_host`. Another invalid task VM value never changes a Caddyfile or blocks a build.
 
-While task VMs are configured and the range is invalid, every Node Caddy build refuses at stage `render` and names the problem, so live Caddyfiles do not change. This includes the Gateway release handoff, which fails with `gateway.release_caddy_failed`. So after [`gateway:release:configure`](/reference/gateway-recovery#apply-an-env-change), run `php artisan orbit:caddy-build NODE --dry-run` for the Gateway Node. It prints `Build refused:` and the problem when the range is invalid.
+The next Gateway release rebuilds only the Gateway Node's Caddyfile. After you set these values, run `php artisan orbit:caddy-build NODE` for every other Node that serves sites, before the first task VM enrolls. Until then, Doctor reports `role.caddy_build_drift` on each of those Nodes. Changing or clearing `swamp_host` also reports this drift on the Node that serves the hostname until its next build. Unset these values only after every task VM is destroyed, because the next build of each Node then drops the guard.
+
+While task VMs are configured and the range or Swamp hostname is invalid, every Node Caddy build refuses at stage `render` and names the problem, so live Caddyfiles do not change. This includes the Gateway release handoff, which fails with `gateway.release_caddy_failed`. So after [`gateway:release:configure`](/reference/gateway-recovery#apply-an-env-change), run `php artisan orbit:caddy-build NODE --dry-run` for the Gateway Node. It prints `Build refused:` and the problem when the range is invalid.
 
 ### Placement invariant
 
@@ -1249,6 +1251,7 @@ Global keys live in the Gateway's `config/task_vms.php`. Set them in the Gateway
 | `task_vms.enabled` | `ORBIT_TASK_VMS_ENABLED` | Allows new task VMs. Default `false` |
 | `task_vms.dev_cluster_id` | `ORBIT_TASK_VMS_DEV_CLUSTER_ID` | The ID of the Cluster that task VM Nodes join |
 | `task_vms.wireguard_range` | `ORBIT_TASK_VMS_WIREGUARD_RANGE` | The reserved WireGuard range. Default `10.44.0.128/25`, the upper half of the default VPN subnet `10.44.0.0/24` |
+| `task_vms.swamp_host` | `ORBIT_TASK_VMS_SWAMP_HOST` | One DNS hostname for the private Swamp Route, such as `swamp.orbit`, served on TCP 443 by the `websocket` Node. No scheme, port, path, wildcard, or list. Unset or empty admits no Swamp site |
 | `task_vms.model_proxy_origin` | `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN` | The CLIProxyAPI origin that Pi on the VM uses, such as `http://10.44.0.3:8317`. An `http` or `https` origin with no path, query, or credentials. It must be the CLIProxyAPI URL of the [ai-router extension](/reference/ai-router) |
 | `task_vms.pi.artifact_path` | `ORBIT_TASK_VMS_PI_ARTIFACT_PATH` | The absolute path of the pinned Pi executable on the Gateway |
 | `task_vms.pi.artifact_sha256` | `ORBIT_TASK_VMS_PI_ARTIFACT_SHA256` | Its lowercase SHA-256 digest. Set both Pi artifact values or neither |
@@ -1271,7 +1274,7 @@ To replace `ORBIT_TASK_VMS_INCUS_HOSTS`, [configure and verify Node settings](/r
 
 `TaskVmSettings` validates the configuration once, when it is first used. It checks every value that is set, also while task VMs are off, so you can prepare hosts and the hub before you enable task VMs. An unset or empty value stays absent, and malformed JSON is an error. Enabling task VMs also requires `dev_cluster_id`, `model_proxy_origin`, and at least one host.
 
-The reserved range must always be a private network. As soon as task VMs are enabled, or the Cluster, the origin, or a host is set, the range must also be a smaller network inside the Gateway's VPN subnet, and no host's `cidr` may overlap that subnet. While none of them is set, Orbit does not compare the range with the subnet, so a fleet on another subnet keeps working. Invalid configuration fails with `task_vm.invalid_config` (HTTP 500).
+The reserved range must always be a private network. As soon as task VMs are enabled, or the Cluster, the origin, the Swamp hostname, or a host is set, the range must also be a smaller network inside the Gateway's VPN subnet, and no host's `cidr` may overlap that subnet. While none of them is set, Orbit does not compare the range with the subnet, so a fleet on another subnet keeps working. Invalid configuration fails with `task_vm.invalid_config` (HTTP 500).
 
 ### Errors
 
@@ -1322,6 +1325,8 @@ The hub filter fails open to keep the fleet VPN up. If a later `nftables.service
 ### Why task VMs work this way
 
 The VM edge is the security boundary. Agents have root inside it, so an in-VM check is fast feedback, not proof against tampering. [CI on the pull request](/reference/tasks#review-and-merge) is the merge gate. Public egress is open on every port; the bridge ACL and hub filter limit private traffic.
+
+Task VMs are untrusted WireGuard peers. On the shared HTTPS listeners, Caddy admits only the Gateway API, Reverb, and the single configured Swamp site. Admitting Swamp grants network reachability to that whole site; Swamp still authenticates each worker with its short-lived per-group credentials. The exception grants no access to the other sites on Services.
 
 Limiting egress to HTTP(S) and DNS breaks clock sync, package sources, and key installs. It adds no protection beyond the VM edge.
 

@@ -45,7 +45,7 @@ function config_without_env(string $file, array $keys): array
 function task_vm_config(array $overrides = []): array
 {
     $keys = array_map(static fn (string $key): string => "ORBIT_TASK_VMS_{$key}", [
-        'ENABLED', 'DEV_CLUSTER_ID', 'WIREGUARD_RANGE', 'MODEL_PROXY_ORIGIN', 'PARK_AFTER_MINUTES', 'MEDIUM_PROJECTS', 'TOPOLOGY_PATHS',
+        'ENABLED', 'DEV_CLUSTER_ID', 'WIREGUARD_RANGE', 'SWAMP_HOST', 'MODEL_PROXY_ORIGIN', 'PARK_AFTER_MINUTES', 'MEDIUM_PROJECTS', 'TOPOLOGY_PATHS',
         'PI_ARTIFACT_PATH', 'PI_ARTIFACT_SHA256', 'PI_MODELS', 'INCUS_HOSTS', 'UPCLOUD_ENABLED', 'UPCLOUD_PROJECTS', 'UPCLOUD_TOKEN_FILE',
         'UPCLOUD_MAX_VMS', 'UPCLOUD_ZONE', 'UPCLOUD_PLAN', 'UPCLOUD_DISK_GB', 'UPCLOUD_SOURCE_TEMPLATE',
     ]);
