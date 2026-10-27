@@ -1817,7 +1817,9 @@ The task row records three times for [task insights](#task-insights). Each is wr
 | --- | --- |
 | `ready_at` | The task first enters `todo`, at create or when it leaves Backlog |
 | `ended_at` | The task first enters `completed`, `failed`, or `cancelled` |
-| `merged_at` | Orbit merges the pull request, or confirms that it merged. When Orbit merges, the value is the time GitHub confirmed the merge; otherwise it is GitHub's merge time. A pull request that a person merged counts the same as one Orbit merged |
+| `merged_at` | Orbit merges the pull request, or confirms that it merged |
+
+When Orbit merges, `merged_at` is the time GitHub confirmed the merge. Otherwise it is GitHub's merge time, so a pull request that a person merged counts the same as one Orbit merged.
 
 `started_at` and `settled_at` complete the timeline: the task starts work at `started_at` and enters settling at `settled_at`. Settling holds the pull request, its review, its fixups, and its merge.
 

@@ -76,7 +76,7 @@ Use this checklist when core adds a place for extensions to contribute:
 
 The `ci-runner` role is a core Node role. Its host boundary uses the existing role baseline and firewall catalog. It introduces no extension contribution or plug-in point.
 
-[Fixed task analysis](/reference/tasks#analyze-an-external-groups-repository) is also core behavior. `TasksServiceProvider` binds `TaskAnalysisRunner` to the existing `RemoteTaskCheckRunner`; this interface is not a tagged extension contribution. Analysis adds no plug-in point or extension-owned Node program. The provider also registers the core Tasks console commands, such as the one-off [merge time backfill](/reference/tasks#lifecycle-times); they add no plug-in point.
+[Fixed task analysis](/reference/tasks#analyze-an-external-groups-repository) is also core behavior. `TasksServiceProvider` binds `TaskAnalysisRunner` to the existing `RemoteTaskCheckRunner`; this interface is not a tagged extension contribution. Analysis adds no plug-in point or extension-owned Node program. The provider also registers the core Tasks console commands, such as the command that [fills older merge times](/reference/tasks#lifecycle-times); they add no plug-in point.
 
 ## Plug-in points
 
