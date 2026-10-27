@@ -20,6 +20,48 @@ The Gateway reads [Swamp run output](/reference/tasks#swamp-run-output) with the
 | `ORBIT_SWAMP_ADDRESS` | Swamp server address, default `swamp.orbit`, on port 443. Set its WireGuard address when Gateway DNS cannot resolve that name. TLS always verifies `swamp.orbit`. |
 | `ORBIT_SWAMP_CA_PATH` | Orbit root CA file. Default `<ORBIT_HOME>/ca/root.pem`, with `ORBIT_HOME` defaulting to `$HOME/.orbit`. |
 
+### Rotate the Swamp reader credential
+
+The Gateway operator owns rotation: Nick, or an agent he assigns to the operation. No Gateway job or Swamp schedule renews this credential. A reader token lasts 30 days. The operator rotates it at least seven days before its recorded `expiresAt`, and records the replacement's expiry and next rotation deadline. A token that expires makes the panel stale or unavailable; it does not renew itself.
+
+1. On Gateway, as `orbit`, back up `/home/orbit/shared/gateway.env` before any edit.
+
+   Keep the backup private, mode `0600`. Disable shell tracing and do not print or attach the file. For example:
+
+   ```bash
+   set +x
+   umask 077
+   backup="/home/orbit/shared/gateway.env.before-swamp-$(date -u +%Y%m%dT%H%M%SZ)"
+   test ! -e "$backup"
+   install -m 0600 /home/orbit/shared/gateway.env "$backup"
+   ```
+
+2. On the Swamp server, mint a replacement with a new name and the existing reader principal.
+
+   Run as the service account in the Swamp repository. Keep only the existing `read` grants on `workflow:*` and `data:*`. Add no execution, write, admin, or worker permission.
+
+   ```bash
+   replacement="orbit-gateway-read-$(date -u +%Y%m%d)"
+   swamp access token mint "$replacement" \
+     --principal user:orbit-gateway-read --duration 30d --json
+   ```
+
+3. Pipe `swamp access token reveal "$replacement" --yes --json` directly to a protected env writer on Gateway over SSH.
+
+   The writer validates the token name and expiry, replaces only `ORBIT_SWAMP_READ_TOKEN`, and atomically installs the complete env file with mode `0600`. Keep the Swamp address and CA settings. Do not put the value in command arguments, shell history, tracing, a terminal, or a log. Do not append a second definition of the key.
+
+4. On Gateway, apply the env change with `php /home/orbit/orbit/apps/gateway/artisan gateway:release:configure`.
+
+   This atomically replaces the current release's configuration cache. Read a known group's `/api/v1/task-groups/{group}/swamp-runs` endpoint and require `availability: available` with a fresh `observed_at`. HTTP 200 alone does not prove a successful upstream read.
+
+5. After the live read succeeds, revoke the old token on Swamp with `swamp access token revoke <old-name>`.
+
+   Record the new name, principal, expiry, and next deadline without its value. Keep the env backup protected under the operator's backup retention policy.
+
+Minting under a new name keeps the old credential valid until the replacement works. `swamp access token rotate <name>` revokes and replaces that name immediately, so it is not used for this handoff. If installation or verification fails, keep the old token valid, restore the protected env backup, apply configuration again, and revoke the unused replacement.
+
+Swamp stores the authoritative secret encrypted in its control-plane vault. `reveal` emits plaintext on stdout inside the private pipe. The Gateway env writer's temporary file, the installed env file, and Laravel's configuration cache contain plaintext and require mode `0600`. A protected env backup also contains credentials. These are expected storage locations, not evidence that the secret appeared in a terminal or a log. The [Swamp access commands](https://swamp-club.com/manual/reference/swamp-serve/access-commands) define minting, reveal, and revocation.
+
 ## Where the file lives
 
 The file's path depends on how the Gateway runs.

@@ -701,7 +701,7 @@ Rollback switches the web app to the target's build. Pruning a Gateway release r
 
 ### Apply an env change
 
-Every release caches its configuration, so an edit to `/home/orbit/shared/gateway.env` changes nothing until you cache it again. As `orbit`, after the edit:
+Before editing `/home/orbit/shared/gateway.env`, make a private backup with mode `0600`. Keep both the backup and any temporary replacement out of terminal output, logs, and Git. Every release caches its configuration, so an edit changes nothing until you cache it again. As `orbit`, after the edit:
 
 ```bash
 php /home/orbit/orbit/apps/gateway/artisan gateway:release:configure
