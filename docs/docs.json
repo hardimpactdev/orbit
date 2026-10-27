@@ -561,6 +561,7 @@
               "POST /api/v1/task-groups/{group}/provision",
               "POST /api/v1/task-groups/{group}/publish",
               "POST /api/v1/task-groups/{group}/script",
+              "GET /api/v1/task-groups/{group}/swamp-runs",
               "POST /api/v1/task-groups/{group}/tasks",
               "DELETE /api/v1/task-groups/{group}/tasks/{task}",
               "PATCH /api/v1/task-groups/{group}/tasks/{task}",
@@ -1666,6 +1667,10 @@
     {
       "source": "/decisions/0236-measure-task-delivery-from-recorded-lifecycle-times",
       "destination": "/reference/tasks#insights-come-from-recorded-times"
+    },
+    {
+      "source": "/decisions/0237-read-swamp-task-output-through-the-gateway",
+      "destination": "/reference/tasks#swamp-output-stays-a-read"
     }
   ]
 }

@@ -10413,6 +10413,33 @@
       }
     },
     {
+      "name": "tasks-swamp-runs",
+      "extension": "tasks",
+      "title": "Show task Swamp runs",
+      "description": "Returns the latest five Swamp workflow runs for this task group, with bounded redacted step output and a run log tail. Poll every five seconds. Availability is available, stale with the last successful snapshot, or unavailable. Requires Gateway access and the Tasks extension. See /reference/tasks#swamp-run-output.",
+      "method": "GET",
+      "path": "/api/v1/task-groups/{group}/swamp-runs",
+      "path_inputs": [
+        "group"
+      ],
+      "query_inputs": [],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group"
+        ]
+      }
+    },
+    {
       "name": "tasks-turn",
       "extension": "tasks",
       "title": "Run one agent turn",

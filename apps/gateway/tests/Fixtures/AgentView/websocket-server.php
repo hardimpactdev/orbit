@@ -109,6 +109,7 @@ function handshake($client, string $mode): bool
     }
 
     say('request='.strtok($request, "\r\n"));
+    say('reader-authorization='.(str_contains($request, "Authorization: Bearer fixture-reader-token\r\n") ? 'yes' : 'no'));
     preg_match('/^Sec-WebSocket-Key:\s*(\S+)/mi', $request, $matches);
     $accept = base64_encode(sha1(($matches[1] ?? '').'258EAFA5-E914-47DA-95CA-C5AB0DC85B11', true));
 

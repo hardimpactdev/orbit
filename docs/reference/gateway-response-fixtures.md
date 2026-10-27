@@ -12,6 +12,8 @@ covers:
 
 # Gateway response fixtures
 
+The web fleet includes a Swamp run for task group 12, with succeeded, running, and pending steps. It proves task-panel rendering and output expansion without an agent transcript. It does not prove live Swamp connectivity or credential grants. [Swamp run output](/reference/tasks#swamp-run-output) defines the live read.
+
 The `websocket-apps` fixtures cover Reverb app create, list, show, and destroy, plus Instance add and remove. The CLI replays them in human and JSON modes. App fixtures carry the app ID and public key. Attachment fixtures carry key names only. Neither carries the secret. See [Reverb apps](/reference/websocket-apps) for the response contract.
 
 The [fixed repository analysis contract](/reference/tasks#analyze-an-external-groups-repository) records native `tasks-analyze` operation starts, terminal outcomes, and refusals, and analysis-bound `tasks-turn` requests. Retain complete artifact content with its exact-byte hash, length, and Gateway provenance in fixtures; do not replace it with a short `ready` verdict. Replay human and JSON modes, including valid blocked and changed outcomes, strict input/report failures, and stale evidence refusals without a Pi send. Semantic scanner, same-run recovery, cancellation, and lease tests remain separate from fixture rendering.

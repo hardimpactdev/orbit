@@ -17,6 +17,7 @@ use App\Domain\Tasks\BriefCoverageLabeler;
 use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
+use App\Domain\Tasks\SwampRunReader;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskAnalysisRunner;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
@@ -46,6 +47,7 @@ use App\Domain\Tasks\TaskWorkspaceRoute;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Domain\TaskVms\ModelKeyIssuer;
+use App\Infrastructure\AgentView\StreamWebSocketClient;
 use App\Infrastructure\Tasks\AgentViewTaskWorkspaceDiffReader;
 use App\Infrastructure\Tasks\GitHubTaskBaseBranchFetcher;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestCheckOutput;
@@ -66,6 +68,7 @@ use App\Infrastructure\Tasks\RemoteTaskWorkspaceSigner;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceStateReader;
 use App\Infrastructure\Tasks\RemoteWorkspaceOperationJournal;
 use App\Infrastructure\Tasks\TaskWorkspaceProvisioner;
+use App\Infrastructure\Tasks\WebSocketSwampRunReader;
 use App\Infrastructure\TaskVms\TaskVmTopologyAdmission;
 use App\Models\Task;
 use Illuminate\Contracts\Foundation\Application;
@@ -137,6 +140,13 @@ final class TasksServiceProvider extends ExtensionServiceProvider
 
     public function register(): void
     {
+        $this->app->bind(SwampRunReader::class, static fn (): SwampRunReader => new WebSocketSwampRunReader(
+            new StreamWebSocketClient(2_097_152, 2_097_152),
+            Config::string('swamp.address'),
+            Config::string('swamp.read_token'),
+            Config::string('swamp.ca_path'),
+        ));
+
         $this->app->bind(TaskWorkspaceOperationRecovery::class, RemoteWorkspaceOperationJournal::class);
         parent::register();
 

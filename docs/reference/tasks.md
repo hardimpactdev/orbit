@@ -2,9 +2,9 @@
 title: "Tasks"
 description: "How the optional Gateway Tasks extension runs tasks. It covers the model, the lifecycle, typed deliverables, the task check, agent threads, review, the pull request, fixups, metrics, cleanup, and the outer loop that files recurring problems."
 covers:
-  - "apps/gateway/app/{Data/Tasks/**,Domain/{Tasks,Problems}/**,Infrastructure/Tasks/**,Support/Percentile.php}"
+  - "apps/gateway/{app/{Data/Tasks/**,Domain/{Tasks,Problems}/**,Infrastructure/Tasks/**,Support/Percentile.php},config/swamp.php}"
   - "apps/gateway/app/{Actions/Tasks/**,Jobs/{PublishTaskVmCommit.php,Problems/**}}"
-  - "apps/gateway/app/Http/{Requests/Tasks/**,Controllers/Api/{TasksController,TaskGroupsController,TaskInsightsController,AgentThreadsController,TaskQuestionsController}.php}"
+  - "apps/gateway/app/Http/{Requests/Tasks/**,Controllers/Api/{TasksController,TaskGroupsController,TaskInsightsController,TaskSwampRunsController,AgentThreadsController,TaskQuestionsController}.php}"
   - "apps/gateway/app/Console/Commands/{ReleaseTaskWorkspaceLeaseCommand,TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand,TaskGitHubReviewsCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskWorkspaceLeaseRecord,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "{apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py},bin/{task-analyze,task-group-check}}"
@@ -1041,6 +1041,22 @@ Task operations include agent turns, checks, pushes, commit signing, and `.mcp.j
 Task cleanup never removes an Instance without that task as its recorded owner. To remove another Instance explicitly, run [`instance:destroy`](/cli/instance#orbit-instancedestroy).
 
 A task VM holds only its task's workspace, and destroying the VM waits only for that workspace. Any other Instance row on the VM's Node describes a checkout inside the VM, so it goes with the VM and never keeps the VM alive.
+
+## Swamp run output
+
+The task page reads `GET /api/v1/task-groups/{group}/swamp-runs` through the Gateway. It shows the five newest Swamp runs whose `inputs.group` exactly equals the group id, their steps and states, each step's output, and the run log. It works without an agent thread. Subtasks are not valid group ids. The route requires Gateway access and the Tasks extension. It changes no task or Swamp state.
+
+The browser polls every five seconds while the page is open. The Gateway caches each group snapshot for five seconds and keeps the last successful, redacted snapshot for 24 hours. `availability` is `available`, `stale` when a read fails but a snapshot remains, or `unavailable` without a snapshot. `observed_at` records the successful read time and remains unchanged on failure. An available empty list means no matching runs. An unavailable response has no runs. These states return HTTP 200 so an outage does not break the rest of the task page.
+
+The Gateway connects to `swamp.orbit:443` over verified TLS. Set `ORBIT_SWAMP_READ_TOKEN` in the Gateway environment to a dedicated Swamp token with only `read` grants on workflows and their output data. Never reuse the driver or worker credential. `ORBIT_SWAMP_ADDRESS` selects the server address when the Gateway cannot resolve `swamp.orbit`; the TLS name remains `swamp.orbit`. `ORBIT_SWAMP_CA_PATH` selects the Orbit root CA file. The Gateway omits raw run inputs, run filesystem metadata, and upstream exception messages. It redacts output before returning or caching it. The browser contacts neither Swamp nor the task VM.
+
+### Read limits
+
+Each read uses Swamp's WebSocket `workflow.run.search` with `inputs: {group: "<id>"}` and `limit: 5`, then `workflow.history.get` and `workflow.history.logs` for those exact run ids. Orbit verifies group membership again on the returned details. It never uses a free-text search or a browser-supplied run id. Missing configuration, denied reads, oversized messages, malformed replies, and timeouts all produce stale or unavailable state. The complete upstream read has a five-second budget and a 2 MiB message limit. The response keeps at most 100 steps per run, 8 KiB of text per step, 32 KiB of step output per run, and a 16 KiB run-log tail from at most 200 lines. Explicit truncation flags mark omitted runs, steps, or text.
+
+Orbit applies the Activity secret rule before truncation and before caching. It also removes the configured reader token by exact value and strips terminal control sequences. Structured step outputs are recursively redacted before conversion to text. Output is plain text in the browser.
+
+Worker output can arrive after a step finishes. In the pinned Swamp version, worker console lines travel with the method result; resolved step outputs also appear after the method writes them. The page shows running and pending steps while waiting, and refreshes output as Swamp makes it readable. The [Swamp protocol](https://git.swamp-club.com/swamp-club/swamp/src/commit/983e2929/src/serve/protocol.ts), [run attach authorization](https://git.swamp-club.com/swamp-club/swamp/src/commit/983e2929/src/serve/connection.ts), and [worker console handling](https://git.swamp-club.com/swamp-club/swamp/src/commit/983e2929/src/serve/dispatch_service.ts) define these limits. The [Swamp manual](https://swamp-club.com/manual/explanation/swamp-serve) describes the server and grant boundary.
 
 ## Agent threads
 
@@ -2489,3 +2505,7 @@ Finishing an open T3 task turn would preserve the second runtime, so a managed t
 ### Jev only checks coverage
 
 Code decides every fact that code can check. Jev answers only whether the change list covers each subtask, because the reviewer writes that list and code cannot compare prose. Every call is stored with its input and later labeled by rule from the merged pull request, so the checks can be measured without a second model.
+
+### Swamp output stays a read
+
+The Gateway reads Swamp's own run history rather than recording a second run ledger. This serves the Mission's lean and deterministic-first principles. Exact group inputs already identify maintenance-worker runs, so the driver needs no tagging change. Polling exposes the output that a read-only principal may see. Swamp's `run.attach` requires a `run` grant, so granting execution just to stream a read-only panel is rejected. A worker agent or a direct browser connection would add another credential and network boundary. The snapshot cache bounds repeated reads and preserves useful evidence during an outage without making Orbit a second orchestrator.

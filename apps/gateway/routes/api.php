@@ -64,6 +64,7 @@ use App\Http\Controllers\Api\TaskGroupsController;
 use App\Http\Controllers\Api\TaskInsightsController;
 use App\Http\Controllers\Api\TaskQuestionsController;
 use App\Http\Controllers\Api\TasksController;
+use App\Http\Controllers\Api\TaskSwampRunsController;
 use App\Http\Controllers\Api\ToolInventoryController;
 use App\Http\Controllers\Api\ToolManagersController;
 use App\Http\Controllers\Api\ToolsController;
@@ -637,6 +638,8 @@ Route::prefix('v1')->group(function (): void {
             ->name('metrics:exporter:disable');
         Route::get('tasks/status', [TasksController::class, 'status'])->name('tasks:status');
         Route::middleware(RequireEnabledExtension::class.':tasks')->group(function (): void {
+            Route::get('task-groups/{group}/swamp-runs', [TaskSwampRunsController::class, 'show'])
+                ->whereNumber('group')->withoutMiddleware(RecordCommandActivity::class)->name('tasks:swamp-runs');
             Route::get('task-groups/{group}/agents', [AgentThreadsController::class, 'index'])
                 ->whereNumber('group')->withoutMiddleware(RecordCommandActivity::class)->name('tasks:agents');
             Route::get('task-groups/{group}/agents/{session}', [AgentThreadsController::class, 'show'])

@@ -1,0 +1,56 @@
+{
+    "schema": 1,
+    "route": "GET /api/v1/task-groups/{group}/swamp-runs",
+    "status": 200,
+    "body": {
+        "data": {
+            "availability": "available",
+            "observed_at": "2026-10-27T12:00:00Z",
+            "truncated": false,
+            "runs": [
+                {
+                    "id": "ae10b614-22fe-4f85-9045-528f7b99a847",
+                    "workflow": "maintenance-worker",
+                    "status": "running",
+                    "started_at": "2026-10-27T11:59:30Z",
+                    "completed_at": null,
+                    "steps": [
+                        {
+                            "job": "maintenance",
+                            "name": "before",
+                            "status": "succeeded",
+                            "started_at": "2026-10-27T11:59:30Z",
+                            "completed_at": "2026-10-27T11:59:31Z",
+                            "output": "{\n  \"changed\": false\n}",
+                            "truncated": false
+                        },
+                        {
+                            "job": "maintenance",
+                            "name": "composer",
+                            "status": "running",
+                            "started_at": "2026-10-27T11:59:31Z",
+                            "completed_at": null,
+                            "output": "",
+                            "truncated": false
+                        },
+                        {
+                            "job": "maintenance",
+                            "name": "after",
+                            "status": "pending",
+                            "started_at": null,
+                            "completed_at": null,
+                            "output": "",
+                            "truncated": false
+                        }
+                    ],
+                    "log": "Starting maintenance on the task worker.",
+                    "log_truncated": false,
+                    "steps_truncated": false
+                }
+            ]
+        },
+        "meta": {
+            "request_id": "demo-swamp-runs"
+        }
+    }
+}

@@ -9,6 +9,8 @@ covers:
 
 # CLI command vocabulary
 
+The read-only task-page route `tasks:swamp-runs` has no CLI command. Its generated MCP tool is `tasks-swamp-runs`; [Swamp run output](/reference/tasks#swamp-run-output) owns the response contract.
+
 This page tells an operator or agent how to name a CLI command. It lists the verbs, how ownership selects a verb pair, the actions that only some families have, and the commands that end in a noun. The CLI lives in `apps/cli`. The [CLI design standard](/reference/cli-ux) covers input and output.
 
 Each command is one noun family and one last segment. The last segment is a verb from the pairs below, an action that its family lists, or a noun-ending command. Command-specific safety options do not create a new family action: for example, `gateway:add --accept-ca-change` explicitly accepts a replacement pinned root CA; see [Gateway trust](/reference/gateway-trust).
