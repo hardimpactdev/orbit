@@ -408,6 +408,8 @@ Route::prefix('v1')->group(function (): void {
             'instances/{instance}/deploy',
             [InstanceDeploymentsController::class, 'store'],
         )->name('instance:deploy');
+
+        Route::post('instances/{instance}/deploy/automatic', [InstanceDeploymentsController::class, 'automatic'])->name('instance:deploy:automatic');
         Route::post(
             'instances/{instance}/rollback',
             [InstanceRollbacksController::class, 'store'],

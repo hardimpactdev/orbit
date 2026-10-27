@@ -54,6 +54,7 @@ Release commands prepare and operate a production Instance.
 | [`instance:deploy-step:update`](#orbit-instancedeploy-stepupdate) | Change one named deploy step. |
 | [`instance:deploy-step:destroy`](#orbit-instancedeploy-stepdestroy) | Remove one named deploy step. |
 | [`instance:deploy`](#orbit-instancedeploy) | Deploy the configured branch as a fresh release. |
+| [`instance:deploy:automatic`](#orbit-instancedeployautomatic) | Start a trusted automatic production deploy at a pinned commit. |
 | [`instance:release:list`](#orbit-instancereleaselist) | List retained releases and the current selection. |
 | [`instance:rollback`](#orbit-instancerollback) | Select one retained release. |
 | [`instance:deployment:list`](#orbit-instancedeploymentlist) | List recorded deployment history, newest first. |
@@ -577,10 +578,12 @@ orbit instance:deploy-step:destroy <instance> <name> [--yes] [--json]
 
 ## orbit instance:deploy
 
+Use `--commit=SHA` to pin a full 40 or 64 character lowercase commit SHA. The selected commit must be on the deployment branch's first-parent chain. This is still a manual deploy and pauses automatic deployment. See [pinned commits](/reference/deployments#pinned-commits-and-automatic-callers).
+
 Deploy a production Instance or an app-dev `default` Instance. For production, the Gateway creates a fresh release, fetches the configured branch, synchronizes stored environment values, runs the `before_activation` steps, atomically replaces `current`, refreshes the PHP runtime cache, and runs the `after_activation` steps. For a development default, it fetches the Project's default branch, checks out its newest commit in the default's checkout, and runs the Project's development deploy steps there. It refuses a checkout with uncommitted changes to tracked files. A failed required step leaves the new commit checked out, and the next scheduled tick retries. A best-effort failure reports a warning and the deployment continues. See [Instance releases](/reference/deployments#development-defaults).
 
 ```bash
-orbit instance:deploy <instance> [--idempotency-key=KEY] [--json]
+orbit instance:deploy <instance> [--commit=SHA] [--idempotency-key=KEY] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -589,6 +592,7 @@ orbit instance:deploy <instance> [--idempotency-key=KEY] [--json]
 
 | Option | Meaning |
 | --- | --- |
+| `--commit=SHA` | Deploy exactly this full commit SHA as a manual action. |
 | `--idempotency-key=KEY` | Retry the same operation start with a permanent key. See [Start keys](/reference/operations#retry-a-start-with-a-key) for its form and conflict rules. |
 
 The command starts an `instance.deploy` [operation](/reference/operations) and follows it until it ends. It subscribes to the operation's channel over Reverb and reads the operation again at each event. Without an active `websocket` role, or when the socket fails, it reads the operation every `poll_after_seconds` instead.
@@ -618,6 +622,22 @@ A failure during release fetch, environment synchronization, or a `before_activa
 <Note>
 Only `default` can be deployed on an app-dev Node. Other development Instances still return `deployment_config.unavailable`. Releases, rollback, and per-Instance deploy-step operations remain production-only; `instance:release:list` shows none for a development default.
 </Note>
+
+## orbit instance:deploy:automatic
+
+Start a pinned automatic production deploy through the existing operation engine. The caller needs [Gateway Node access](/reference/deployments#pinned-commits-and-automatic-callers). A caller with access only to the Instance Node cannot use automatic origin.
+
+```bash
+orbit instance:deploy:automatic 17 --commit=0123456789abcdef0123456789abcdef01234567 --idempotency-key=production.17.commit-01234567
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--commit=SHA` | Required full lowercase commit SHA on the deployment branch's first-parent chain. |
+| `--idempotency-key=KEY` | Required stable key for this caller, Instance and commit. |
+| `--json` | Return the final operation as JSON. |
+
+Following, exit status, cancellation and output use the same contract as `instance:deploy`. Gateway derives the automatic trigger from this authorized command. Manual deploys keep their caller identity. Enable or resume automatic deployment with `instance:update --auto-deploy=true`.
 
 ## orbit instance:release:list
 

@@ -855,6 +855,23 @@ pub fn encoded(value: &[u8]) -> String {
     base64::engine::general_purpose::STANDARD.encode(value)
 }
 
+/// Checks the first-parent chain using bounded output, even for a repository with a long history.
+/// Excluding the commit's ancestry counts the distance to it only when it is on that chain.
+pub(super) fn first_parent_contains(
+    mut read: impl FnMut(&[&str]) -> Option<String>,
+    head: &str,
+    commit: &str,
+) -> bool {
+    let range = format!("{commit}..{head}");
+    let Some(distance) = read(&["rev-list", "--first-parent", "--count", &range])
+        .and_then(|value| value.parse::<u64>().ok())
+    else {
+        return false;
+    };
+    let ancestor = format!("{head}~{distance}");
+    read(&["rev-parse", "--verify", &ancestor]).as_deref() == Some(commit)
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

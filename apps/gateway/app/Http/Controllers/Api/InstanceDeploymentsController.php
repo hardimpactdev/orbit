@@ -13,10 +13,12 @@ use App\Http\Authorization\CallerName;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Instances\AutomaticDeployInstanceRequest;
 use App\Http\Requests\Instances\DeployInstanceRequest;
 use App\Http\Requests\Operations\StartsOperation;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
+use App\Models\Node;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -58,7 +60,26 @@ final class InstanceDeploymentsController extends Controller
         StartInstanceDeployAction $action,
     ): JsonResponse {
         $requestId = $request->attributes->getString('orbit.request_id');
-        $operation = $action->execute($instance, CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
+        $commit = $request->commit();
+        $operation = $commit === null
+            ? $action->execute($instance, CallerName::fromRequest($request), $requestId === '' ? null : $requestId)
+            : $action->pinned($instance, CallerName::fromRequest($request), $requestId === '' ? null : $requestId, $commit);
+
+        return response()->json([
+            'data' => OperationData::fromModel($operation)->toArray(),
+            'meta' => $this->meta($request),
+        ], 202);
+    }
+
+    /** Starts a pinned automatic deploy using the caller's existing fleet authority. */
+    #[StartsOperation(OperationKinds::InstanceDeploy, requiresKey: true, bindCaller: true)]
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function automatic(AutomaticDeployInstanceRequest $request, Instance $instance, StartInstanceDeployAction $action): JsonResponse
+    {
+        $caller = $request->user();
+        assert($caller instanceof Node);
+        $requestId = $request->attributes->getString('orbit.request_id');
+        $operation = $action->automatic($instance, $caller, $requestId === '' ? null : $requestId, $request->commit());
 
         return response()->json([
             'data' => OperationData::fromModel($operation)->toArray(),

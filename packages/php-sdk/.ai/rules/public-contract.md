@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 239 concrete public Gateway API operations:
+The SDK models exactly 240 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -53,8 +53,8 @@ operations. Keep the public API typed and small.
   eligibility, destination reservation, downtime, Route cutover, and cleanup.
 - Keep Instance deployment transport limited to named deploy-step create,
   list, update, and destroy, Instance branch update, explicit deploy and
-  rollback starts, and retained-release inspection. Preserve optional
-  step-timeout omission, require an explicit empty deployment body, and send
+  rollback starts, trusted automatic pinned deploy starts, and retained-release inspection. Preserve optional
+  step-timeout omission, send an empty deployment body or an explicit commit SHA, and send
   only the selected release for rollback. Deploy and rollback return the queued
   operation. The Gateway owns deployment validation, execution, cancellation,
   and recovery policy.

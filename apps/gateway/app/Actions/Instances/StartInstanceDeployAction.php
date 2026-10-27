@@ -5,9 +5,13 @@ declare(strict_types=1);
 namespace App\Actions\Instances;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitCommitSha;
+use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Models\Instance;
+use App\Models\Node;
 use App\Models\Operation;
 
 /**
@@ -22,7 +26,7 @@ final readonly class StartInstanceDeployAction
         private StartOperationAction $operations,
     ) {}
 
-    public function execute(Instance $instance, string $triggeredBy, ?string $requestId, ?string $commit = null): Operation
+    public function execute(Instance $instance, string $triggeredBy, ?string $requestId, ?string $commit = null, ?int $callerNodeId = null): Operation
     {
         if ($commit !== null) {
             GitCommitSha::validate($commit);
@@ -30,6 +34,33 @@ final readonly class StartInstanceDeployAction
         $this->operations->assertAvailable();
         $this->deploy->plan($instance);
 
-        return $this->operations->execute(OperationKinds::InstanceDeploy, OperationKinds::InstanceTarget, $instance->id, $instance->node_id, $commit === null ? [] : ['commit' => $commit], $triggeredBy, $requestId);
+        $input = $commit === null ? [] : ['commit' => $commit];
+        if ($callerNodeId !== null) {
+            $input['caller_node_id'] = $callerNodeId;
+        }
+
+        return $this->operations->execute(OperationKinds::InstanceDeploy, OperationKinds::InstanceTarget, $instance->id, $instance->node_id, $input, $triggeredBy, $requestId);
+    }
+
+    /** Public pins validate the recorded Project identity before admitting the existing operation. */
+    public function pinned(Instance $instance, string $triggeredBy, ?string $requestId, string $commit, ?int $callerNodeId = null): Operation
+    {
+        $project = $instance->project()->firstOrFail();
+        if ($project->repository_identity !== GitRepositoryIdentity::derive($project->repository_url)) {
+            throw new ResourceOperationException('deployment.repository_mismatch', 'The Project repository identity does not match its origin.', 409);
+        }
+
+        return $this->execute($instance, $triggeredBy, $requestId, $commit, $callerNodeId);
+    }
+
+    /** The HTTP boundary requires Gateway Node access before admitting automatic origin. */
+    public function automatic(Instance $instance, Node $caller, ?string $requestId, string $commit): Operation
+    {
+        $instance->refresh();
+        if (! $instance->placedOnAppProd() || ! $instance->auto_deploy) {
+            throw new ResourceOperationException(AutomaticDeployHistory::Paused, 'Automatic deployment is not enabled for this production Instance.', 409);
+        }
+
+        return $this->pinned($instance, AutomaticDeployHistory::Trigger, $requestId, $commit, $caller->id);
     }
 }

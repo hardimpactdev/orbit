@@ -19,6 +19,7 @@ final class DeployCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'instance:deploy
         {instance : Numeric instance ID}
+        {--commit= : Deploy exactly this full commit SHA as a manual action}
         {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return the final operation as machine-readable JSON}';
 
@@ -33,6 +34,11 @@ final class DeployCommand extends GatewayCommand
             return self::FAILURE;
         }
 
+        $commit = $this->option('commit');
+        if ($this->input->hasParameterOption('--commit') && (! is_string($commit) || $commit === '')) {
+            return $this->renderGatewayFailure('deployment.commit_required', 'A full commit SHA is required.');
+        }
+
         $profile = $this->activeGatewayProfile($repository);
 
         if ($profile === null) {
@@ -41,7 +47,7 @@ final class DeployCommand extends GatewayCommand
 
         $connector = $connectors->make($profile);
         $key = $this->option('idempotency-key');
-        $operation = $this->send($connector, new DeployInstanceRequest($instanceId, is_string($key) ? $key : null), OperationResponse::class);
+        $operation = $this->send($connector, new DeployInstanceRequest($instanceId, is_string($key) ? $key : null, is_string($commit) ? $commit : null), OperationResponse::class);
 
         return $operation instanceof OperationResponse
             ? $this->followOperation($connector, $profile, $operation, "Deploy Instance [{$instanceId}]", 'Deployment')

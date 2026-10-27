@@ -185,9 +185,9 @@ pub fn target(input: &TargetInput) -> Result<Target, DevDeployError> {
         return Ok(Target { commit });
     };
     check(full_commit(commit), "the commit is a full hash")?;
-    checkout
-        .git(&["merge-base", "--is-ancestor", commit, &tracking])
-        .ok_or(DevDeployError::NotOnBranch {})?;
+    if !super::source::first_parent_contains(|args| checkout.git(args), &tracking, commit) {
+        return Err(DevDeployError::NotOnBranch {});
+    }
     Ok(Target {
         commit: commit.clone(),
     })

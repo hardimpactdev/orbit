@@ -47,11 +47,16 @@ final readonly class InstanceDeployOperation implements OperationKind
         // operation holds the Instance, no other deployment starts, and a rollback cancels it before a worker starts it.
         try {
             return $this->locks->run([$instance->id], function () use ($operation, $run, $instance): OperationOutcome {
-                $pause = new AutomaticDeployHistory($instance->refresh())->pausedBy();
+                $history = new AutomaticDeployHistory($instance->refresh());
+                if ($history->pausedBy() instanceof InstanceDeployment || (isset($operation->input['caller_node_id']) && ! $instance->auto_deploy)) {
+                    return $this->paused($operation);
+                }
+                $commit = self::commit($operation);
+                if ($commit !== null && in_array($commit, [...$history->rolledAway(), ...AutomaticDeployState::of($instance)->blocked()], true)) {
+                    return $this->paused($operation, 'deployment.commit_blocked');
+                }
 
-                return $pause instanceof InstanceDeployment
-                    ? $this->paused($operation)
-                    : $this->deploy($operation, $run, $instance);
+                return $this->deploy($operation, $run, $instance);
             });
         } catch (ResourceOperationException $exception) {
             return OperationOutcome::failed($exception->errorCode);
@@ -62,19 +67,19 @@ final readonly class InstanceDeployOperation implements OperationKind
      * Ends an automatic deployment that a pause stopped before it deployed. A first attempt writes no history row; a
      * resumed attempt ends its row with `deployment.paused`, which counts as no failure of the commit.
      */
-    private function paused(Operation $operation): OperationOutcome
+    private function paused(Operation $operation, string $errorCode = AutomaticDeployHistory::Paused): OperationOutcome
     {
         $deployment = $this->history->stored($operation);
 
         if ($deployment instanceof InstanceDeployment && $deployment->status === 'running') {
             $this->recorder->finish(
                 $deployment,
-                DeploymentResult::failed(null, null, DeploymentFailureBoundary::Operation, AutomaticDeployHistory::Paused, commit: self::commit($operation)),
+                DeploymentResult::failed(null, null, DeploymentFailureBoundary::Operation, $errorCode, commit: self::commit($operation)),
                 $deployment->events ?? [],
             );
         }
 
-        return OperationOutcome::failed(AutomaticDeployHistory::Paused);
+        return OperationOutcome::failed($errorCode);
     }
 
     private function deploy(Operation $operation, OperationRun $run, Instance $instance): OperationOutcome

@@ -632,3 +632,40 @@ fn a_route_web_root_is_prepared_and_checked_in_the_selected_release_only() {
         ))
     );
 }
+
+#[test]
+fn a_pin_stays_on_the_first_parent_when_the_branch_head_moves() {
+    let fixture = Fixture::new();
+    let work = fixture.base.join("work");
+    sh_git(&work, &["commit", "--allow-empty", "-m", "new head"]);
+    sh_git(&work, &["push", fixture.home.repository.as_str(), "main"]);
+    let release = fixture
+        .prepare("20260101000000-a1", Some(&fixture.first))
+        .unwrap();
+    assert_eq!(release.commit, fixture.first);
+}
+
+#[test]
+fn a_merged_side_parent_is_refused_but_the_merge_commit_is_allowed() {
+    let fixture = Fixture::new();
+    let work = fixture.base.join("work");
+    sh_git(&work, &["checkout", "-b", "side"]);
+    sh_git(&work, &["commit", "--allow-empty", "-m", "side"]);
+    let side = sh_git(&work, &["rev-parse", "HEAD"]);
+    sh_git(&work, &["checkout", "main"]);
+    sh_git(&work, &["commit", "--allow-empty", "-m", "main"]);
+    sh_git(&work, &["merge", "--no-ff", "side", "-m", "merge"]);
+    let merged = sh_git(&work, &["rev-parse", "HEAD"]);
+    sh_git(&work, &["push", fixture.home.repository.as_str(), "main"]);
+    assert_eq!(
+        fixture.prepare("20260101000000-a1", Some(&side)),
+        Err(ReleaseError::CommitNotOnBranch {})
+    );
+    assert_eq!(
+        fixture
+            .prepare("20260101000000-a2", Some(&merged))
+            .unwrap()
+            .commit,
+        merged
+    );
+}

@@ -61,6 +61,15 @@ final readonly class InstanceDeploymentRecorder
             'events' => $events,
         ]);
 
+        $instance = $deployment->instance;
+        if ($instance->placedOnAppProd()) {
+            $state = AutomaticDeployState::of($instance->refresh());
+            foreach (new AutomaticDeployHistory($instance)->rolledAway() as $commit) {
+                $state->block($commit);
+            }
+            $state->save($instance);
+        }
+
         $this->prune($deployment->instance_id);
         $this->broadcast(RecordEventType::DeploymentUpdated, $deployment);
     }

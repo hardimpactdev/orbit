@@ -13,12 +13,12 @@ final class DeployInstanceRequest extends StartInstanceOperationRequest
     #[\Override]
     protected Method $method = Method::POST;
 
-    public function __construct(private readonly int $instanceId, ?string $idempotencyKey = null)
+    public function __construct(private readonly int $instanceId, ?string $idempotencyKey = null, private readonly ?string $commit = null)
     {
         parent::__construct($idempotencyKey);
     }
 
-    /** The Gateway requires an empty JSON object, so the empty body encodes as `{}`, not `[]`. */
+    /** An unpinned manual deploy keeps its empty JSON object body. */
     #[\Override]
     public function body(): JsonBodyRepository
     {
@@ -30,9 +30,9 @@ final class DeployInstanceRequest extends StartInstanceOperationRequest
         return "/api/v1/instances/{$this->instanceId}/deploy";
     }
 
-    /** @return array<never, never> */
+    /** @return array{commit?: string} */
     protected function defaultBody(): array
     {
-        return [];
+        return $this->commit === null ? [] : ['commit' => $this->commit];
     }
 }

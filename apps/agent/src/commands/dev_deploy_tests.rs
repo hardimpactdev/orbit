@@ -623,3 +623,22 @@ fn ci_cache_baselines_stay_local_to_each_linked_worktree() {
     assert_eq!(ci_cache_baseline(&linked), Some(second));
     fs::remove_dir_all(checkout).unwrap();
 }
+
+#[test]
+fn a_development_pin_refuses_a_merged_side_parent() {
+    let fixture = Fixture::new();
+    sh_git(&fixture.work, &["checkout", "-b", "side"]);
+    sh_git(&fixture.work, &["commit", "--allow-empty", "-m", "side"]);
+    let side = sh_git(&fixture.work, &["rev-parse", "HEAD"]);
+    sh_git(&fixture.work, &["checkout", "main"]);
+    sh_git(&fixture.work, &["commit", "--allow-empty", "-m", "main"]);
+    sh_git(&fixture.work, &["merge", "--no-ff", "side", "-m", "merge"]);
+    sh_git(
+        &fixture.work,
+        &["push", fixture.origin.to_str().unwrap(), "main"],
+    );
+    assert_eq!(
+        fixture.target(Some(&side)),
+        Err(DevDeployError::NotOnBranch {})
+    );
+}

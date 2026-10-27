@@ -7,6 +7,7 @@ use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
+use Orbit\Sdk\Requests\Deployments\AutomaticDeployInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\DeployInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\ListInstanceReleasesRequest;
 use Orbit\Sdk\Requests\Deployments\RollbackInstanceRequest;
@@ -84,6 +85,7 @@ describe('deploy and rollback requests', function (): void {
         expect($mock->getRecordedResponses())->toHaveCount(1);
     })->with([
         'deploy' => ['instance:deploy', DeployInstanceRequest::class, []],
+        'automatic' => ['instance:deploy:automatic', AutomaticDeployInstanceRequest::class, ['--commit' => str_repeat('b', 40)]],
         'rollback' => ['instance:rollback', RollbackInstanceRequest::class, ['--release' => 'initial']],
     ]);
 
@@ -448,3 +450,27 @@ function deployment_cli_signal_certificate(string $directory): array
 
     return [$certificatePath, $privateKeyPath];
 }
+
+it('passes an explicit commit through a manual deploy request', function (): void {
+    $mock = MockClient::global([
+        DeployInstanceRequest::class => MockResponse::make(['error' => ['code' => 'operation.target_busy', 'message' => 'Busy.', 'details' => []]], 409),
+    ]);
+    expect(Artisan::call('instance:deploy', ['instance' => '17', '--commit' => str_repeat('b', 40), '--json' => true]))->toBe(1);
+    expect($mock->getLastPendingRequest()->body()->all())->toBe(['commit' => str_repeat('b', 40)]);
+});
+
+it('refuses an automatic deploy without its commit or stable key before sending', function (array $options): void {
+    $mock = MockClient::global();
+    expect(Artisan::call('instance:deploy:automatic', ['instance' => '17', '--json' => true, ...$options]))->toBe(1);
+    expect($mock->getLastPendingRequest())->toBeNull();
+})->with([
+    'commit missing' => [['--idempotency-key' => 'automatic']],
+    'key missing' => [['--commit' => str_repeat('b', 40)]],
+]);
+
+it('never turns an explicitly empty commit option into an unpinned deploy', function (?string $commit): void {
+    $mock = MockClient::global();
+    expect(Artisan::call('instance:deploy', ['instance' => '17', '--commit' => $commit, '--json' => true]))->toBe(1);
+    expect(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('deployment.commit_required');
+    expect($mock->getLastPendingRequest())->toBeNull();
+})->with(['empty string' => '', 'bare option' => null]);

@@ -8,6 +8,7 @@ use App\Data\Operations\OperationData;
 use App\Domain\Operations\OperationIdempotency;
 use App\Http\Requests\Operations\StartsOperation;
 use App\Http\Requests\TopLevelJsonObjectInspector;
+use App\Models\Node;
 use App\Support\StrictJson;
 use Closure;
 use Illuminate\Database\Eloquent\Model;
@@ -59,7 +60,9 @@ final readonly class HandleOperationIdempotency
         $previous = [$this->idempotency->kind, $this->idempotency->key, $this->idempotency->fingerprint];
         $this->idempotency->kind = $start->kind;
         $this->idempotency->key = $key;
+        $caller = $request->user();
         $this->idempotency->fingerprint = hash('sha256', json_encode([
+            ...($start->bindCaller ? ['caller_node_id' => $caller instanceof Node ? $this->nodeId($caller) : null, 'command' => $route->getName()] : []),
             'target' => array_map(static fn (mixed $value): mixed => $value instanceof Model ? $value->getKey() : $value, $route->parameters()),
             'input' => $this->input($request->getContent(), $start->maxJsonBytes, $start->secretInputs),
         ], JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION));
@@ -74,6 +77,11 @@ final readonly class HandleOperationIdempotency
         } finally {
             [$this->idempotency->kind, $this->idempotency->key, $this->idempotency->fingerprint] = $previous;
         }
+    }
+
+    private function nodeId(Node $node): int
+    {
+        return $node->id;
     }
 
     /** @param list<string> $secrets */

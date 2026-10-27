@@ -631,7 +631,10 @@ pub fn prepare(input: &PrepareInput, layout: &Layout) -> Result<Release, Release
     )?;
     if let Some(commit) = &input.commit {
         check(
-            commit.len() >= 40 && commit.bytes().all(|byte| byte.is_ascii_hexdigit()),
+            matches!(commit.len(), 40 | 64)
+                && commit
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)),
             "the commit is a full hash",
         )?;
     }
@@ -660,13 +663,13 @@ pub fn prepare(input: &PrepareInput, layout: &Layout) -> Result<Release, Release
         None => git(user, &release, &["checkout", "--detach", &source], &none())
             .ok_or_else(|| failed("check out the branch"))?,
         Some(commit) => {
-            git(
-                user,
-                &release,
-                &["merge-base", "--is-ancestor", commit, &source],
-                &none(),
-            )
-            .ok_or(ReleaseError::CommitNotOnBranch {})?;
+            if !super::source::first_parent_contains(
+                |args| git(user, &release, args, &none()),
+                &source,
+                commit,
+            ) {
+                return Err(ReleaseError::CommitNotOnBranch {});
+            }
             git(user, &release, &["checkout", "--detach", commit], &none())
                 .ok_or_else(|| failed("check out the commit"))?
         }

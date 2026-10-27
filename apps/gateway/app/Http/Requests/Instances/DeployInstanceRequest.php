@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Instances;
 
+use App\Domain\SourceControl\GitCommitSha;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\ValidationException;
@@ -14,7 +15,7 @@ final class DeployInstanceRequest extends FormRequest
     /** @return array<string, list<mixed>> */
     public function rules(): array
     {
-        return [];
+        return ['commit' => ['sometimes', 'required', 'string', 'regex:/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D']];
     }
 
     /** @return array<string, mixed> */
@@ -23,13 +24,20 @@ final class DeployInstanceRequest extends FormRequest
         $content = $this->getContent();
 
         if (trim($content) === '') {
-            throw ValidationException::withMessages(['body' => ['The request body must be an empty JSON object.']]);
+            throw ValidationException::withMessages(['body' => ['The request body must be a JSON object.']]);
         }
 
         try {
-            return app(TopLevelJsonObjectInspector::class)->inspect($content, []);
+            return app(TopLevelJsonObjectInspector::class)->inspect($content, ['commit']);
         } catch (UnexpectedValueException) {
-            throw ValidationException::withMessages(['body' => ['The request body must be an empty JSON object.']]);
+            throw ValidationException::withMessages(['body' => ['The request body must be a JSON object.']]);
         }
+    }
+
+    public function commit(): ?string
+    {
+        $commit = $this->validated('commit');
+
+        return is_string($commit) ? GitCommitSha::validate($commit) : null;
     }
 }
