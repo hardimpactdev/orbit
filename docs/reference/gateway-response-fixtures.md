@@ -130,6 +130,8 @@ The demo fleet has one tool inventory for each active Node. Node 1 is an empty L
 
 Node 4 is the macOS read: registered packages with a newer observed version, the `openssl@3` dependency, unsupported casks, a formula and a cask both named `visual-studio-code`, and `ghost`, which the demo lists as supported and then refuses on adopt. The demo adopt, update, and remove handlers change only that in-memory fleet.
 
+`task-insights.json` holds 30 days of [task insights](/reference/tasks#task-insights) with a previous period, two releases, and a breakdown by model, Project, and release. The demo answers every period and Project filter with it. The recorded agent thread fixtures carry `cost_usd`.
+
 ## Families with fixtures
 
 The directories under `packages/php-sdk/fixtures` list the families that have recorded fixtures and contract tests. Add a family by recording from its Gateway tests with `record_fixture()` and writing its CLI contract test in the same change. Extension responses are replayed by the `extension:list`, `extension:enable`, and `extension:disable` command contracts, and the `extension:list` fixture names every extension the Gateway registers, from `tasks` to `conn`; do not leave a changed extension fixture without a CLI test that names it. `bin/cli-contract --coverage` shows the commands that still have no expected output.

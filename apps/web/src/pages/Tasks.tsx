@@ -1,5 +1,6 @@
 import { AgentSessions } from "../tasks/AgentSessions";
 import { TaskComments } from "../tasks/TaskComments";
+import { TaskInsightsStrip } from "../tasks/TaskInsights";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState, type CSSProperties } from "react";
 import { Link, useParams, useRouter } from "@tanstack/react-router";
@@ -307,6 +308,7 @@ export function TasksBoard({ instanceId }: { instanceId?: number } = {}) {
     return (
         <div className="flex min-w-0 flex-col gap-[var(--panel-gap)] md:h-full">
             {instanceId === undefined && <PageHeader trail={[{ label: "Tasks" }]} />}
+            {instanceId === undefined && <TaskInsightsStrip />}
             {groups.isPending && <p role="status">Loading tasks…</p>}
             {groups.error && <TaskError error={groups.error} retry={() => void groups.refetch()} />}
             {groups.data &&

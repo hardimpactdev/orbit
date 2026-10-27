@@ -47,6 +47,10 @@ final readonly class AgentThreadObserver
                 $values[$key] = $value;
             }
         }
+        // Cost belongs to the usage report: an unpriced call makes a known cost unknown again.
+        if ($observation->tokens !== null) {
+            $values['cost_usd'] = $observation->costUsd;
+        }
 
         return $this->persist($thread, $values);
     }

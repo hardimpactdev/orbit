@@ -9684,6 +9684,37 @@
       }
     },
     {
+      "name": "tasks-insights",
+      "extension": "tasks",
+      "title": "Show task insights",
+      "description": "Returns task delivery numbers for the tasks that ended in the last `period` (`7d` or `30d`, default `30d`) and the period before it, optionally for one `project_id`: tokens and cost per merged pull request, lead time and its parts, yield, first-pass shares, wasted tokens, review, handoff, question, and cache numbers. It also returns 12 weekly values with the verified Gateway releases, daily outcomes, and breakdowns by model, Project, and release. The web task board reads it; there is no CLI command. Returns `extension.disabled` while the extension is off. See /reference/tasks#task-insights.",
+      "method": "GET",
+      "path": "/api/v1/task-insights",
+      "path_inputs": [],
+      "query_inputs": [
+        "period",
+        "project_id"
+      ],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "string",
+            "enum": [
+              "7d",
+              "30d"
+            ]
+          },
+          "project_id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "tasks-list",
       "extension": "tasks",
       "title": "List Task groups",

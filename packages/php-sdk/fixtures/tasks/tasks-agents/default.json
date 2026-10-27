@@ -25,6 +25,7 @@
                 "output_tokens": 6000,
                 "model_calls": 4,
                 "peak_context_tokens": 9800,
+                "cost_usd": null,
                 "lines_added": 120,
                 "lines_deleted": 14
             },
@@ -48,6 +49,7 @@
                 "output_tokens": null,
                 "model_calls": null,
                 "peak_context_tokens": null,
+                "cost_usd": null,
                 "lines_added": null,
                 "lines_deleted": null
             }

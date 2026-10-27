@@ -3881,6 +3881,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/task-insights": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show task insights
+         * @description Returns task delivery numbers for the tasks that ended in the last `period` (`7d` or `30d`, default `30d`) and the period before it, optionally for one `project_id`: tokens and cost per merged pull request, lead time and its parts, yield, first-pass shares, wasted tokens, review, handoff, question, and cache numbers. It also returns 12 weekly values with the verified Gateway releases, daily outcomes, and breakdowns by model, Project, and release. The web task board reads it; there is no CLI command. Returns `extension.disabled` while the extension is off. See /reference/tasks#task-insights.
+         */
+        get: operations["tasks-insights"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/task-questions": {
         parameters: {
             query?: never;
@@ -5232,6 +5252,7 @@ export interface components {
             output_tokens?: number | null;
             model_calls?: number | null;
             peak_context_tokens?: number | null;
+            cost_usd?: number | null;
             lines_added?: number | null;
             lines_deleted?: number | null;
         };
@@ -5252,6 +5273,71 @@ export interface components {
             summary?: string;
             changes?: string[];
             breaking?: string[];
+        };
+        TaskInsights: {
+            period?: string;
+            from?: string;
+            to?: string;
+            current?: components["schemas"]["TaskInsightsSummary"];
+            previous?: components["schemas"]["TaskInsightsSummary"];
+            weekly?: components["schemas"]["TaskInsightsWeek"][];
+            daily?: components["schemas"]["TaskInsightsDay"][];
+            releases?: components["schemas"]["TaskInsightsRelease"][];
+            breakdowns?: components["schemas"]["TaskInsightsBreakdowns"];
+        };
+        TaskInsightsSummary: {
+            tasks?: number;
+            merged?: number;
+            excluded?: number;
+            tokens?: number;
+            cost_usd?: number | null;
+            tokens_per_merged_pr?: number | null;
+            cost_per_merged_pr?: number | null;
+            lead_time_ms?: number | null;
+            queue_ms?: number | null;
+            work_ms?: number | null;
+            merge_wait_ms?: number | null;
+            yield?: number | null;
+            pr_first_pass?: number | null;
+            wasted_share?: number | null;
+            subtask_first_pass?: number | null;
+            review_rounds?: number | null;
+            handoff_first_try?: number | null;
+            questions_per_task?: number | null;
+            questions_by_cause?: {
+                [key: string]: unknown;
+            };
+            cache_hit?: number | null;
+            tokens_per_hundred_lines?: number | null;
+        };
+        TaskInsightsWeek: {
+            week_start?: string;
+            tasks?: number;
+            merged?: number;
+            tokens_per_merged_pr?: number | null;
+        };
+        TaskInsightsDay: {
+            date?: string;
+            merged?: number;
+            not_merged?: number;
+        };
+        TaskInsightsRelease: {
+            sha?: string;
+            started_at?: string;
+        };
+        TaskInsightsBreakdowns: {
+            model?: components["schemas"]["TaskInsightsBreakdownRow"][];
+            project?: components["schemas"]["TaskInsightsBreakdownRow"][];
+            release?: components["schemas"]["TaskInsightsBreakdownRow"][];
+        };
+        TaskInsightsBreakdownRow: {
+            key?: string;
+            label?: string;
+            tasks?: number;
+            merged?: number;
+            tokens_per_merged_pr?: number | null;
+            lead_time_ms?: number | null;
+            yield?: number | null;
         };
         TaskQuestion: {
             id?: number;
@@ -21229,6 +21315,50 @@ export interface operations {
             };
             /** @description The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed. */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-insights": {
+        parameters: {
+            query?: {
+                period?: "7d" | "30d";
+                project_id?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskInsights"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

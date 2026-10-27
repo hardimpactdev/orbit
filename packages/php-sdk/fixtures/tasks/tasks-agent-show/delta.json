@@ -22,6 +22,7 @@
             "output_tokens": 6400,
             "model_calls": 5,
             "peak_context_tokens": 10100,
+            "cost_usd": null,
             "lines_added": null,
             "lines_deleted": null,
             "error": null,

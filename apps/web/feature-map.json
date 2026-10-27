@@ -21,7 +21,7 @@
     },
     {
         "path": "/tasks",
-        "purpose": "The task board, with one column for each status.",
+        "purpose": "The task board, with an insights strip above one column for each status.",
         "reach": "Open Tasks in the main nav.",
         "controls": [
             {
@@ -29,7 +29,15 @@
                 "purpose": "Tasks in the main nav, after the phone menu is opened when the nav is collapsed."
             },
             { "testid": "tasks-board", "purpose": "The status columns." },
-            { "testid": "task-group-card", "purpose": "Opens one task group." }
+            { "testid": "task-group-card", "purpose": "Opens one task group." },
+            {
+                "testid": "task-insights",
+                "purpose": "The insights strip with the KPIs against the previous period."
+            },
+            {
+                "testid": "task-insights-toggle",
+                "purpose": "Opens or closes the insights trend, outcomes, lead time, and breakdown."
+            }
         ]
     },
     {

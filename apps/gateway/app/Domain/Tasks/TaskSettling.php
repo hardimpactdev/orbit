@@ -130,7 +130,7 @@ final readonly class TaskSettling
             // Revalidate even when a prior tick committed settling but stopped before its hold write.
             $missedApproval = $scheduler->checkReturningPullRequest($group, $health);
             if (! $missedApproval && ! $scheduler->orphanedCommit($group)) {
-                $this->completeMergedGroup($group);
+                $this->completeMergedGroup($group, $health);
             }
         } elseif ($status === 'closed') {
             TaskAssistance::apply($group, AssistanceKind::Failure, null, 'The expected pull request closed without merging.', replaceFailure: true);
@@ -233,8 +233,11 @@ final readonly class TaskSettling
         return $removed;
     }
 
-    /** Retries merged pull request cleanup at once the first time, then on the same per-Instance backoff as the sweep. */
-    private function completeMergedGroup(Task $group): void
+    /**
+     * Retries merged pull request cleanup at once the first time, then on the same per-Instance backoff as the sweep.
+     * A retry after a recorded merge passes no health: the first attempt stored GitHub's `merged_at`.
+     */
+    private function completeMergedGroup(Task $group, ?TaskPullRequestHealth $health = null): void
     {
         $instance = $group->workspace()->first();
         $backoffKey = $instance instanceof Instance ? 'tasks.workspace-removal.'.$instance->id : null;
@@ -252,7 +255,7 @@ final readonly class TaskSettling
             if (TaskPullRequestHealth::isReason($group->assistance_reason)) {
                 TaskAssistance::apply($group);
             }
-            $group->update(['watched_pr_completion' => 'merged']);
+            $group->update(['watched_pr_completion' => 'merged', 'merged_at' => $group->merged_at ?? $health?->mergedAt]);
             $this->completeGroup->execute($group, finishWhenRemovalFails: false);
             if (is_string($backoffKey)) {
                 $this->rememberBackoff($backoffKey, null, 'workspace removal');

@@ -700,6 +700,11 @@ export function createDemoGateway() {
             ["GET", /^\/api\/v1\/task-groups$/, () => ok(taskGroups)],
             [
                 "GET",
+                /^\/api\/v1\/task-insights(?:\?.*)?$/,
+                () => ok(byRoute.get("GET /api/v1/task-insights#")),
+            ],
+            [
+                "GET",
                 /^\/api\/v1\/task-groups\/(\d+)$/,
                 ([group = ""]) => {
                     const found = taskGroups.find((candidate) => String(candidate.id) === group);

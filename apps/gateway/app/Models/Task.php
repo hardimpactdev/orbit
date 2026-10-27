@@ -21,6 +21,7 @@ use App\Domain\Tasks\TaskQuestions;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTopology;
 use App\Domain\Tasks\TaskType;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -124,6 +125,9 @@ use LogicException;
  * @property TaskTopology $topology
  * @property list<array<string, string|bool|list<string>>>|null $deliverables
  * @property Carbon|null $settled_at
+ * @property CarbonImmutable|null $ready_at
+ * @property CarbonImmutable|null $ended_at
+ * @property CarbonImmutable|null $merged_at
  * @property-read Task $parent
  * @property-read Collection<int, Task> $children
  * @property-read Collection<int, Task> $tasks
@@ -159,6 +163,9 @@ final class Task extends Model
         'merge_status',
         'merge_reason',
         'merged_sha',
+        'ready_at',
+        'ended_at',
+        'merged_at',
     ];
 
     /** @var list<string> */
@@ -270,6 +277,7 @@ final class Task extends Model
         'merge_status',
         'merge_reason',
         'merged_sha',
+        'merged_at',
         'preview',
         'implementer_model',
         'reviewer_model',
@@ -295,6 +303,7 @@ final class Task extends Model
             $task->guardHierarchy();
             $task->guardWorkspace();
             $task->guardStatus();
+            $task->stampLifecycle();
         });
 
         self::saved(static function (Task $task): void {
@@ -362,6 +371,12 @@ final class Task extends Model
     public function scopeWithoutFinalReviews(Builder $query): void
     {
         $query->where(static fn (Builder $type) => $type->whereNull('type')->orWhere('type', '!=', TaskType::FinalReview->value));
+    }
+
+    /** Whether the task's pull request merged, by Orbit or by a person ([Task insights](/reference/tasks#task-insights)). */
+    public function pullRequestMerged(): bool
+    {
+        return $this->watched_pr_completion === 'merged' || $this->merge_status === TaskMergeStatus::Merged;
     }
 
     /** @param  Builder<Task>  $query */
@@ -585,6 +600,9 @@ final class Task extends Model
             'consult_comment_id' => 'integer',
             'started_at' => 'immutable_datetime',
             'settled_at' => 'immutable_datetime',
+            'ready_at' => 'immutable_datetime',
+            'ended_at' => 'immutable_datetime',
+            'merged_at' => 'immutable_datetime',
             'deliverables' => 'array',
             'topology' => TaskTopology::class,
             'completion_attempt' => 'integer',
@@ -826,6 +844,22 @@ final class Task extends Model
         }
 
         TaskStatus::from($status);
+    }
+
+    /** Records once when a task first becomes ready and when it ends ([Lifecycle times](/reference/tasks#lifecycle-times)). */
+    private function stampLifecycle(): void
+    {
+        if ($this->resolvedParentId() !== null || ! $this->isDirty('status')) {
+            return;
+        }
+        $value = $this->attributes['status'] ?? null;
+        $status = is_string($value) ? TaskGroupStatus::tryFrom($value) : null;
+        if ($status === TaskGroupStatus::Todo) {
+            $this->ready_at ??= now()->toImmutable();
+        }
+        if (in_array($status, TaskGroupStatus::endedStatuses(), true)) {
+            $this->ended_at ??= now()->toImmutable();
+        }
     }
 
     private function parentKey(): ?int

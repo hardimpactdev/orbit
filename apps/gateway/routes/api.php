@@ -61,6 +61,7 @@ use App\Http\Controllers\Api\RuntimeActivationsController;
 use App\Http\Controllers\Api\ScheduleCompletionsController;
 use App\Http\Controllers\Api\SchedulesController;
 use App\Http\Controllers\Api\TaskGroupsController;
+use App\Http\Controllers\Api\TaskInsightsController;
 use App\Http\Controllers\Api\TaskQuestionsController;
 use App\Http\Controllers\Api\TasksController;
 use App\Http\Controllers\Api\ToolInventoryController;
@@ -643,6 +644,7 @@ Route::prefix('v1')->group(function (): void {
             Route::get('task-groups/{group}/agents/{session}/stream', [AgentThreadsController::class, 'stream'])
                 ->whereNumber('group')->whereNumber('session')->withoutMiddleware(RecordCommandActivity::class)->name('tasks:agent-stream');
             Route::get('task-groups', [TaskGroupsController::class, 'index'])->name('tasks:list');
+            Route::get('task-insights', [TaskInsightsController::class, 'show'])->name('tasks:insights');
             Route::get('task-questions', [TaskQuestionsController::class, 'index'])->name('tasks:question:list');
             Route::post('task-questions/{question}/close', [TaskQuestionsController::class, 'close'])
                 ->whereNumber('question')

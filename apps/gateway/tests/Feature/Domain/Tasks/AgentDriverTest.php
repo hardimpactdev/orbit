@@ -293,6 +293,21 @@ it('stores a token breakdown and keeps it when a later read omits the fields', f
         ->and($thread->fresh()->cached_input_tokens)->toBe(70);
 });
 
+it('stores the cost with each usage report, including a cost that became unknown', function (): void {
+    [, $task, , $registry] = driver_group();
+    $observer = new AgentThreadObserver($registry);
+    $thread = $task->implementerThread;
+
+    $observer->record($thread, new AgentObservation(state: AgentThreadState::Done, tokens: 130, costUsd: 0.42));
+    expect($thread->fresh()->cost_usd)->toBe(0.42);
+
+    $observer->record($thread->fresh(), new AgentObservation(state: AgentThreadState::Done));
+    expect($thread->fresh()->cost_usd)->toBe(0.42);
+
+    $observer->record($thread->fresh(), new AgentObservation(state: AgentThreadState::Done, tokens: 200));
+    expect($thread->fresh()->cost_usd)->toBeNull();
+});
+
 it('keeps a direction request when observation recovers during that request', function (): void {
     [$group] = driver_group();
     $group->update(['agent_unavailable_since' => now()->subMinutes(5), 'agent_unavailable_notified_at' => now()]);

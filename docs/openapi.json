@@ -30131,6 +30131,91 @@
         ]
       }
     },
+    "/api/v1/task-insights": {
+      "get": {
+        "operationId": "tasks-insights",
+        "summary": "Show task insights",
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "name": "period",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "7d",
+                "30d"
+              ]
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "x-orbit-extension": "tasks",
+        "description": "Returns task delivery numbers for the tasks that ended in the last `period` (`7d` or `30d`, default `30d`) and the period before it, optionally for one `project_id`: tokens and cost per merged pull request, lead time and its parts, yield, first-pass shares, wasted tokens, review, handoff, question, and cache numbers. It also returns 12 weekly values with the verified Gateway releases, daily outcomes, and breakdowns by model, Project, and release. The web task board reads it; there is no CLI command. Returns `extension.disabled` while the extension is off. See /reference/tasks#task-insights.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/TaskInsights"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A disabled extension returns HTTP 409 (`extension.disabled`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/task-insights?period=1&project_id=4\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      }
+    },
     "/api/v1/task-questions": {
       "get": {
         "operationId": "tasks-question-list",
@@ -37447,6 +37532,12 @@
               "null"
             ]
           },
+          "cost_usd": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
           "lines_added": {
             "type": [
               "integer",
@@ -37532,6 +37623,267 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "TaskInsights": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "current": {
+            "$ref": "#/components/schemas/TaskInsightsSummary"
+          },
+          "previous": {
+            "$ref": "#/components/schemas/TaskInsightsSummary"
+          },
+          "weekly": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskInsightsWeek"
+            }
+          },
+          "daily": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskInsightsDay"
+            }
+          },
+          "releases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskInsightsRelease"
+            }
+          },
+          "breakdowns": {
+            "$ref": "#/components/schemas/TaskInsightsBreakdowns"
+          }
+        }
+      },
+      "TaskInsightsSummary": {
+        "type": "object",
+        "properties": {
+          "tasks": {
+            "type": "integer"
+          },
+          "merged": {
+            "type": "integer"
+          },
+          "excluded": {
+            "type": "integer"
+          },
+          "tokens": {
+            "type": "integer"
+          },
+          "cost_usd": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "tokens_per_merged_pr": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "cost_per_merged_pr": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "lead_time_ms": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "queue_ms": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "work_ms": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "merge_wait_ms": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "yield": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "pr_first_pass": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "wasted_share": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "subtask_first_pass": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "review_rounds": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "handoff_first_try": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "questions_per_task": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "questions_by_cause": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "cache_hit": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "tokens_per_hundred_lines": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        }
+      },
+      "TaskInsightsWeek": {
+        "type": "object",
+        "properties": {
+          "week_start": {
+            "type": "string"
+          },
+          "tasks": {
+            "type": "integer"
+          },
+          "merged": {
+            "type": "integer"
+          },
+          "tokens_per_merged_pr": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        }
+      },
+      "TaskInsightsDay": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "merged": {
+            "type": "integer"
+          },
+          "not_merged": {
+            "type": "integer"
+          }
+        }
+      },
+      "TaskInsightsRelease": {
+        "type": "object",
+        "properties": {
+          "sha": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string"
+          }
+        }
+      },
+      "TaskInsightsBreakdowns": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskInsightsBreakdownRow"
+            }
+          },
+          "project": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskInsightsBreakdownRow"
+            }
+          },
+          "release": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskInsightsBreakdownRow"
+            }
+          }
+        }
+      },
+      "TaskInsightsBreakdownRow": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "tasks": {
+            "type": "integer"
+          },
+          "merged": {
+            "type": "integer"
+          },
+          "tokens_per_merged_pr": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "lead_time_ms": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "yield": {
+            "type": [
+              "number",
+              "null"
+            ]
           }
         }
       },

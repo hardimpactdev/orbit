@@ -99,7 +99,8 @@ final readonly class CompleteTaskGroupAction
             throw $this->notReady();
         }
         try {
-            $state = $this->github->pullRequest($this->access->cachedReadToken($repository), $repository, $number)->state->value;
+            $pullRequest = $this->github->pullRequest($this->access->cachedReadToken($repository), $repository, $number);
+            $state = $pullRequest->state->value;
         } catch (Throwable) {
             throw $this->notReady();
         }
@@ -107,15 +108,16 @@ final readonly class CompleteTaskGroupAction
             throw $this->notReady();
         }
 
-        $this->execution->synchronized($group->id, function () use ($group, $url, $state): void {
-            DB::transaction(function () use ($group, $url, $state): void {
+        $mergedAt = $state === 'merged' ? $pullRequest->mergedAt : null;
+        $this->execution->synchronized($group->id, function () use ($group, $url, $state, $mergedAt): void {
+            DB::transaction(function () use ($group, $url, $state, $mergedAt): void {
                 $locked = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
                 if (! in_array($locked->status, [TaskGroupStatus::Running, TaskGroupStatus::Reviewing], true)
                     || $locked->watched_pr_url !== $url) {
                     throw $this->notReady();
                 }
                 if ($locked->watched_pr_completion === null) {
-                    $locked->update(['watched_pr_completion' => $state]);
+                    $locked->update(['watched_pr_completion' => $state, 'merged_at' => $locked->merged_at ?? $mergedAt]);
                 }
             });
         }, wait: false);
