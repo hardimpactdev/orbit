@@ -144,9 +144,9 @@ describe('coordinated instance dependency scans', function (): void {
             ],
             'javascript', 'dependencies.stale_bun_lockfile', 'bun.lock workspace dependencies do not match package.json',
         ],
-        'local Composer repository remains unsupported' => [
-            ['composer.json' => '{"repositories":[{"type":"path","url":"../fleet-secret"}]}'],
-            'composer', 'dependencies.unsupported_layout', 'composer.json repositories contains a path repository',
+        'malformed Composer repository' => [
+            ['composer.json' => '{"repositories":[123]}'],
+            'composer', 'dependencies.invalid_composer_input', 'Composer repository entry must be an object or false',
         ],
     ]);
 
@@ -450,6 +450,36 @@ describe('coordinated instance dependency scans', function (): void {
             InstanceDependencyScanAttempt::flushEventListeners();
             new Filesystem()->deleteDirectory($directory);
         }
+    });
+
+    it('stores a monorepo path package as local and still fails real sibling errors', function (): void {
+        $instance = dependency_scan_instance();
+        $instance->project->update(['type' => 'monorepo']);
+        $receipt = dependency_scan_project_receipt(['apps/cli' => 'composer', 'apps/web' => 'npm']);
+        foreach (['composer.json' => 'manifest', 'composer.lock' => 'lock'] as $file => $fixture) {
+            $content = file_get_contents(base_path('tests/Fixtures/Dependencies/Composer/path-'.$fixture.'.json'));
+            $receipt['sub_projects']['apps/cli']['files'][$file] = ['content' => base64_encode($content), 'hash' => hash('sha256', $content), 'error' => null];
+        }
+        dependency_scan_remote(function () use (&$receipt): array {
+            return $receipt;
+        });
+        $scan = app(ScanInstanceDependenciesAction::class);
+        $first = $scan->execute($instance);
+        expect($first->succeeded())->toBeTrue();
+        $stored = app(ReadInstanceDependencyScanAction::class)->subProjects($instance->id);
+        expect($stored)->toEqual($first->subProjects);
+        $local = collect($stored['apps/cli']->composer->snapshot->graph->resolutions)->firstWhere('package.name', 'local/sdk');
+        expect($local->id)->toBe('path:local/sdk');
+        expect($local->sourceReference)->toBe('abc123');
+        expect([$local->regular, $local->development])->toBe([true, true]);
+        $data = DependencyInventoryData::fromResult($stored['apps/cli']->composer->ecosystem, $stored['apps/cli']->composer)->toArray();
+        expect(json_encode($data, JSON_THROW_ON_ERROR))->not->toContain('fixture-secret', '../../../outside');
+        $this->assertDatabaseHas('instance_dependency_resolutions', ['locator' => 'path:local/sdk', 'version' => '1.2.3']);
+        $receipt['sub_projects']['apps/web']['files']['package-lock.json'] = ['content' => base64_encode('{}'), 'hash' => hash('sha256', '{}'), 'error' => null];
+        $second = $scan->execute($instance);
+        expect($second->succeeded())->toBeFalse();
+        expect($second->subProjects['apps/cli']->succeeded())->toBeTrue();
+        expect($second->subProjects['apps/web']->javascript->errorCode)->toBe('dependencies.unsupported_format');
     });
 
     it('preserves separate sub-project inventories and the last valid snapshot after a partial failure', function (): void {

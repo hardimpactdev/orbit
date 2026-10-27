@@ -27,6 +27,8 @@ A non-monorepo scan reads only that directory; it does not combine manifests fro
 | pnpm | `package.json`, `pnpm-lock.yaml` | `lockfileVersion` 9.0 with one root importer. |
 | Bun | `package.json`, `bun.lock` | Text lock, `lockfileVersion` 1 or 2. |
 
+Composer path repositories are supported for inventory. Each locked package whose `dist.type` is `path` is recorded as a local package with resolution ID `path:<package-name>`. Its canonical name, locked version, requirements, and safe revision are retained. Orbit reads no files from the repository URL and does not inspect the installed symlink.
+
 npm, pnpm, and Bun all record packages in the `npm` ecosystem. Yarn, binary `bun.lockb`, workspace or multi-importer layouts, and local `file:` or `link:` packages are unsupported and fail the scan.
 
 For each package, the inventory records every resolved version and how the root reaches it: direct or transitive, regular or development, and peer requirements. It records what the lockfile says. It does not prove that packages are installed or safe.
@@ -46,7 +48,7 @@ Orbit skips other candidates and records no inventory or scan attempt for them. 
 
 Each qualifying sub-project has its own inventory, identified by its repository-relative path, such as `apps/gateway`. Two sub-projects can resolve different versions of the same package without replacing each other's observations. Errors and last successful observations also belong to that sub-project and ecosystem. A failure in one sub-project does not stop or fail scans of the others.
 
-If neither `apps/` nor `packages/` exists, the monorepo scan keeps the existing single-directory behavior. If either directory exists but no candidate qualifies, skipped directories do not become absent or empty inventories. Non-monorepo types do not use this discovery rule. Finding sub-projects does not enable workspace, multi-importer, or local-link support in the readers.
+If neither `apps/` nor `packages/` exists, the monorepo scan keeps the existing single-directory behavior. If either directory exists but no candidate qualifies, skipped directories do not become absent or empty inventories. Non-monorepo types do not use this discovery rule. Finding sub-projects does not enable JavaScript workspace, multi-importer, or local-link support in the readers. Composer path packages use only their locked metadata.
 
 `instance:dependencies:show`, scan output, the CLI, and the API expose these separate inventories and their errors. Existing root fields remain available for clients using the single-directory contract; they are not a merged graph of the sub-projects. See [the collection and response contracts](/reference/instance-dependency-contracts#collection) and [the source-scoping rationale](/reference/instance-dependency-contracts#separate-monorepo-dependency-sources).
 
@@ -71,6 +73,8 @@ No match or more than one match fails before any work, with `dependencies.target
 Human output shows each ecosystem's state, counts, and times, separately for each monorepo sub-project. An unknown count shows as an em dash, and verified absence shows zero. `--json` returns the typed inventory, or for `--all`, a document with `succeeded`, `summary`, `instances`, and `request_id`. The exit status is zero only when every scanned ecosystem succeeds, including those in each qualifying monorepo sub-project. A sub-project failure makes the overall scan unsuccessful without marking successful siblings as failed.
 
 ## Refresh rules
+
+A merge does not refresh stored inventory. [Development defaults](/reference/deployments#development-defaults) follow the Project default branch through automatic deployment; other development checkouts stay at their selected source. The next scan records the files then present in that checkout.
 
 Each ecosystem keeps its last successful observation and its latest attempt, separately. For monorepos, this rule applies separately within each qualifying sub-project.
 

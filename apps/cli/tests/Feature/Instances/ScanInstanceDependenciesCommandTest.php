@@ -360,6 +360,32 @@ describe('fleet dependency scan', function (): void {
         'malformed row after valid row' => [fleet_cli_listing_json('['.fleet_cli_listed_instance_json(17, 'first', 'production', 'first.example.test').',{}]')],
     ]);
 
+    it('counts local Composer packages as successful while retaining genuine fleet failures', function (bool $realFailure): void {
+        MockClient::global([
+            ListInstancesRequest::class => MockResponse::make(['data' => fleet_cli_targets(), 'meta' => ['request_id' => fleet_cli_list_id()]]),
+            ScanInstanceDependenciesRequest::class => function (PendingRequest $pending) use ($realFailure): MockResponse {
+                $id = fleet_cli_scan_id($pending);
+                $response = scan_cli_inventory($realFailure && $id === 17 ? 'stale' : 'present', $id);
+                if ($id === 18) {
+                    $source = $response['data'];
+                    $source['composer']['snapshot']['graph'] = [
+                        'resolutions' => [['id' => 'path:local/sdk', 'ecosystem' => 'composer', 'name' => 'local/sdk', 'version' => 'dev-main', 'regular' => true, 'development' => false, 'source_reference' => 'abc123', 'integrity' => null]],
+                        'requirements' => [['from' => null, 'to' => 'path:local/sdk', 'name' => 'local/sdk', 'constraint' => 'dev-main', 'kind' => 'dependency', 'scope' => 'regular', 'optional' => false]],
+                    ];
+                    $response['data']['sub_projects'] = ['apps/cli' => $source];
+                }
+
+                return MockResponse::make($response);
+            },
+        ]);
+        expect(Artisan::call('instance:dependencies:scan', ['--all' => true, '--json' => true, '--no-interaction' => true]))->toBe($realFailure ? 1 : 0);
+        $json = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        expect($json['succeeded'])->toBe(! $realFailure);
+        expect($json['summary'])->toBe(['attempted' => 3, 'succeeded' => $realFailure ? 2 : 3, 'failed' => $realFailure ? 1 : 0, 'skipped' => 0]);
+        expect($json['instances'][1]['succeeded'])->toBeTrue();
+        expect($json['instances'][1]['sub_projects']['apps/cli']['composer']['snapshot']['graph']['resolutions'][0]['id'])->toBe('path:local/sdk');
+    })->with([false, true]);
+
     it('scans captured targets in list order and continues after one failure', function (): void {
         $scanned = [];
         $mock = MockClient::global([

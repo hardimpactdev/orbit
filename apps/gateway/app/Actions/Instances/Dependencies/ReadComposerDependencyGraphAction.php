@@ -107,6 +107,10 @@ final readonly class ReadComposerDependencyGraphAction
         }
 
         ksort($packages, SORT_STRING);
+        $ids = [];
+        foreach ($packages as $name => $package) {
+            $ids[$name] = ($package->dist->type ?? null) === 'path' ? 'path:'.$name : $name;
+        }
         $this->validateAliases($lock, $packages);
         $providers = $this->providers($manifest, $packages);
         $requirements = [];
@@ -138,7 +142,7 @@ final readonly class ReadComposerDependencyGraphAction
             }
 
             $resolutions[] = new DependencyResolution(
-                id: $name,
+                id: $ids[$name],
                 package: new DependencyIdentity(DependencyEcosystem::Composer, $name),
                 version: $this->safeText($package->version),
                 regular: isset($regular[$name]),
@@ -147,6 +151,12 @@ final readonly class ReadComposerDependencyGraphAction
                 integrity: $this->integrity($package),
             );
         }
+
+        $requirements = array_map(static fn (DependencyRequirement $edge): DependencyRequirement => new DependencyRequirement(
+            $edge->from === null ? null : $ids[$edge->from],
+            $edge->to === null ? null : $ids[$edge->to],
+            $edge->name, $edge->constraint, $edge->kind, $edge->scope, $edge->optional,
+        ), $requirements);
 
         return new DependencyGraph(DependencyEcosystem::Composer, $resolutions, $requirements);
     }
@@ -337,10 +347,6 @@ final readonly class ReadComposerDependencyGraphAction
                 if (! is_string($repository->type ?? null)) {
                     throw new DependencyParseException(errorDetail: 'Composer repository entry is missing its type');
                 }
-
-                if ($repository->type === 'path') {
-                    throw new DependencyParseException('dependencies.unsupported_layout', 'composer.json repositories contains a path repository');
-                }
             }
         }
 
@@ -348,10 +354,6 @@ final readonly class ReadComposerDependencyGraphAction
             if (property_exists($record, $field) && ! $record->{$field} instanceof stdClass) {
                 throw new DependencyParseException(errorDetail: 'composer.lock '.$field.' must be an object');
             }
-        }
-
-        if (($record->dist->type ?? null) === 'path') {
-            throw new DependencyParseException('dependencies.unsupported_layout', 'composer.lock package dist uses a local path');
         }
     }
 

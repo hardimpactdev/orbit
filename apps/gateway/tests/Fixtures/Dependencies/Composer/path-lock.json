@@ -1,0 +1,16 @@
+{
+    "packages": [
+        {
+            "name": "local/sdk",
+            "version": "1.2.3",
+            "dist": {"type": "path", "url": "../../../outside/fixture-secret", "reference": "abc123"},
+            "require": {"sample/common": "^3.0"},
+            "provide": {"local/virtual": "1.0"}
+        },
+        {"name": "sample/common", "version": "3.1.0", "require": {"local/sdk": "^1.0"}}
+    ],
+    "packages-dev": [
+        {"name": "sample/test", "version": "2.0.0", "require": {"local/sdk": "^1.0"}}
+    ],
+    "aliases": []
+}

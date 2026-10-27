@@ -215,14 +215,91 @@ describe('Composer dependency reader', function (): void {
         'ambiguous virtual providers' => [fn (stdClass $lock) => $lock->packages[1]->provide = (object) ['psr/log-implementation' => '3.0']],
     ]);
 
+    it('accepts path repository declarations without inventing packages', function (string $repositories): void {
+        $graph = (new ReadComposerDependencyGraphAction)->execute('{"repositories":'.$repositories.'}', '{"packages":[],"packages-dev":[]}');
+        expect($graph->resolutions)->toBe([]);
+        expect($graph->requirements)->toBe([]);
+    })->with([
+        'list' => '[{"type":"path","url":"../fixture-secret"}]',
+        'named' => '{"local":{"type":"path","url":"../fixture-secret"}}',
+        'after disable' => '[{"packagist.org":false},{"type":"path","url":"../fixture-secret"}]',
+    ]);
+
+    it('records local resolutions and connects direct virtual and cyclic requirements without following paths', function (): void {
+        [$manifest, $lock] = composerReaderFixture('path');
+        $graph = (new ReadComposerDependencyGraphAction)->execute($manifest, $lock);
+        expect(array_map(fn (DependencyResolution $item): array => [$item->id, $item->package->name, $item->version, $item->regular, $item->development], $graph->resolutions))->toBe([
+            ['path:local/sdk', 'local/sdk', '1.2.3', true, true],
+            ['sample/common', 'sample/common', '3.1.0', true, true],
+            ['sample/test', 'sample/test', '2.0.0', false, true],
+        ]);
+        expect($graph->resolutions[0]->sourceReference)->toBe('abc123');
+        expect($graph->resolutions[0]->integrity)->toBeNull();
+        expect($graph->requirements)->toContainEqual(
+            new DependencyRequirement(null, 'path:local/sdk', 'local/sdk', '^1.0', DependencyRequirementKind::Dependency, DependencyScope::Regular),
+            new DependencyRequirement(null, 'path:local/sdk', 'local/virtual', '^1.0', DependencyRequirementKind::Dependency, DependencyScope::Regular),
+            new DependencyRequirement('path:local/sdk', 'sample/common', 'sample/common', '^3.0', DependencyRequirementKind::Dependency, DependencyScope::Regular),
+            new DependencyRequirement('sample/common', 'path:local/sdk', 'local/sdk', '^1.0', DependencyRequirementKind::Dependency, DependencyScope::Regular),
+            new DependencyRequirement('sample/test', 'path:local/sdk', 'local/sdk', '^1.0', DependencyRequirementKind::Dependency, DependencyScope::Regular),
+        );
+        expect(json_encode($graph, JSON_THROW_ON_ERROR))->not->toContain('fixture-secret', '../../../outside');
+    });
+
+    it('reads the Orbit CLI lockfile that uses the local PHP SDK', function (): void {
+        $root = dirname(__DIR__, 7);
+        $graph = (new ReadComposerDependencyGraphAction)->execute(file_get_contents($root.'/apps/cli/composer.json'), file_get_contents($root.'/apps/cli/composer.lock'));
+        $sdk = array_find($graph->resolutions, fn (DependencyResolution $item): bool => $item->package->name === 'nckrtl/orbit-php-sdk');
+        expect($sdk)->not->toBeNull();
+        expect($sdk->id)->toBe('path:nckrtl/orbit-php-sdk');
+        expect($sdk->regular)->toBeTrue();
+    });
+
+    it('records local packages without a path revision', function (?string $reference): void {
+        [$manifest, $lock] = composerReaderFixture('path');
+        $record = json_decode($lock, flags: JSON_THROW_ON_ERROR);
+        $record->packages[0]->dist->reference = $reference;
+        $graph = (new ReadComposerDependencyGraphAction)->execute($manifest, json_encode($record, JSON_THROW_ON_ERROR));
+        expect($graph->resolutions[0]->id)->toBe('path:local/sdk');
+        expect($graph->resolutions[0]->sourceReference)->toBeNull();
+    })->with([null, '']);
+
+    it('rejects malformed local package metadata without leaking its path or credentials', function (string $change): void {
+        [$manifest, $lock] = composerReaderFixture('path');
+        $record = json_decode($lock, flags: JSON_THROW_ON_ERROR);
+        match ($change) {
+            'reference' => $record->packages[0]->dist->reference = 'https://user:fixture-secret@example.test',
+            'version' => $record->packages[0]->version = null,
+            'missing dependency' => $record->packages[0]->require = (object) ['sample/missing' => '*'],
+        };
+        try {
+            (new ReadComposerDependencyGraphAction)->execute($manifest, json_encode($record, JSON_THROW_ON_ERROR));
+            test()->fail('Malformed local package metadata must fail.');
+        } catch (DependencyParseException $error) {
+            expect($error->errorCode)->toBe('dependencies.invalid_composer_input');
+            expect($error->errorDetail ?? '')->not->toContain('fixture-secret', '../../../outside', 'https://');
+        }
+    })->with(['reference', 'version', 'missing dependency']);
+
+    it('keeps aliases and development-only path packages in the same graph', function (): void {
+        [$manifest, $lock] = composerReaderFixture('composer2');
+        $records = json_decode($lock, flags: JSON_THROW_ON_ERROR);
+        foreach (['packages', 'packages-dev'] as $section) {
+            foreach ($records->{$section} as $package) {
+                if (in_array($package->name, ['sample/shared', 'sample/tool'], true)) {
+                    $package->dist = (object) ['type' => 'path', 'url' => '../fixture-secret', 'reference' => null];
+                }
+            }
+        }
+        $graph = (new ReadComposerDependencyGraphAction)->execute($manifest, json_encode($records, JSON_THROW_ON_ERROR));
+        $tool = array_find($graph->resolutions, fn (DependencyResolution $item): bool => $item->package->name === 'sample/tool');
+        expect([$tool->id, $tool->regular, $tool->development])->toBe(['path:sample/tool', false, true]);
+        expect($graph->requirements)->toContainEqual(new DependencyRequirement(null, 'path:sample/shared', 'sample/shared', 'dev-main#abc123 as 1.0.x-dev', DependencyRequirementKind::Dependency, DependencyScope::Regular));
+    });
+
     it('rejects unsupported local layouts', function (string $manifest, string $lock): void {
         expect(fn () => (new ReadComposerDependencyGraphAction)->execute($manifest, $lock))
             ->toThrow(DependencyParseException::class, 'dependencies.unsupported_layout');
     })->with([
         'root workspace' => ['{"workspaces":["packages/*"]}', '{"packages":[],"packages-dev":[]}'],
-        'path repository' => ['{"repositories":[{"type":"path","url":"../other"}]}', '{"packages":[],"packages-dev":[]}'],
-        'named path repository' => ['{"repositories":{"local":{"type":"path","url":"../other"}}}', '{"packages":[],"packages-dev":[]}'],
-        'path after anonymous disable entry' => ['{"repositories":[{"packagist.org":false},{"type":"path","url":"../other"}]}', '{"packages":[],"packages-dev":[]}'],
-        'locked path distribution' => ['{"require":{"sample/lib":"*"}}', '{"packages":[{"name":"sample/lib","version":"1","dist":{"type":"path","url":"../other"}}],"packages-dev":[]}'],
     ]);
 });

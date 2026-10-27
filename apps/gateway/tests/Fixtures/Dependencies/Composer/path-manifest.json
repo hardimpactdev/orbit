@@ -1,0 +1,6 @@
+{
+    "name": "sample/root",
+    "repositories": {"local": {"type": "path", "url": "../fixture-secret/*"}},
+    "require": {"local/sdk": "^1.0", "local/virtual": "^1.0"},
+    "require-dev": {"sample/test": "^2.0"}
+}

@@ -37,16 +37,16 @@ This table sums up each reader.
 
 | Reader | Reads | Resolution ID | Mismatch with `package.json` | Invalid data |
 | --- | --- | --- | --- | --- |
-| Composer | `packages` and `packages-dev` | Package name | Not checked | `dependencies.invalid_composer_input` |
+| Composer | `packages` and `packages-dev` | Package name; `path:<package-name>` for a locked path distribution | Not checked | `dependencies.invalid_composer_input` |
 | npm | `lockfileVersion` 2 and 3, `packages` map | Installation path | `dependencies.stale_npm_lockfile` | `dependencies.invalid_npm_input` |
 | pnpm | `lockfileVersion` 9.0, importer `.` | Snapshot key | `dependencies.stale_pnpm_lockfile` | `dependencies.invalid_pnpm_input` |
 | Bun | Text `bun.lock`, `lockfileVersion` 1 or 2, workspace `""` | Package path | `dependencies.stale_bun_lockfile` | `dependencies.invalid_bun_input` |
 
-A root `workspaces` layout, several importers, path repositories, and local links return `dependencies.unsupported_layout`. The npm reader ignores `workspaces` metadata on transitive package records. An unsupported lockfile version, Bun version 3, and binary `bun.lockb` return `dependencies.unsupported_format`.
+A root `workspaces` layout, several importers, and JavaScript local links return `dependencies.unsupported_layout`. The npm reader ignores `workspaces` metadata on transitive package records. An unsupported lockfile version, Bun version 3, and binary `bun.lockb` return `dependencies.unsupported_format`.
 
 ### Composer
 
-Root `require` and `require-dev` set the two reachability paths. Platform requirements such as `php` and `ext-*` stay unresolved edges. A unique locked provider or replacement satisfies a virtual requirement. Aliases point at the locked resolution. Repository URLs are dropped, and source revisions stay.
+Root `require` and `require-dev` set the two reachability paths. Platform requirements such as `php` and `ext-*` stay unresolved edges. A unique locked provider or replacement satisfies a virtual requirement. Aliases point at the locked resolution. Repository URLs are dropped, and source revisions stay. Path repository declarations are accepted; a declaration alone creates no resolution. A locked `dist.type: path` package uses `path:<canonical-package-name>` as its graph-local resolution ID. Every incoming and outgoing requirement uses that same ID. The package identity remains its canonical Composer name, so regular and development reachability, virtual providers, replacements, aliases, and cycles use the normal Composer rules.
 
 ### npm
 
@@ -62,7 +62,9 @@ Comments and trailing commas are allowed. Git and remote tarball references beco
 
 ### Local packages
 
-A `file:` or `link:` dependency returns `dependencies.unsupported_layout`. Support would need a second read of files at lock-supplied paths, with the same path safety, in the same source observation.
+Composer path distributions carry the name, version, requirements, and optional revision needed to build their inventory in `composer.lock`. Orbit records this locked metadata without following, resolving, or persisting the path URL. This includes paths outside the checkout: no read is authorized by the lockfile. The inventory does not prove that local source exists or matches its recorded revision. A missing lockfile, missing locked requirement, or malformed package still fails normally.
+
+A JavaScript `file:` or `link:` dependency returns `dependencies.unsupported_layout`. Support would need a second read of files at lock-supplied paths, with the same path safety, in the same source observation.
 
 ## Package manager selection
 
@@ -168,6 +170,10 @@ These reasons explain the design. Check them before you propose a change.
 ### Opaque versions
 
 A branch reference or alias is not a release version. Readers keep the locked value as it is and never solve constraints, so the graph shows what the lockfile says.
+
+### Composer path packages from locked metadata
+
+A path repository declaration is a source selection rule, not a reason to reject a complete Composer lockfile. Marking locked path packages through their opaque resolution IDs records local origin within the existing graph and response shape. Reading the referenced directory would expand the source observation and is unnecessary for a lockfile inventory. Unsupported JavaScript local layouts and real scan errors keep their failure behavior; no fleet failure is hidden.
 
 ### Hashed source references
 
