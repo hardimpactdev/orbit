@@ -75,6 +75,7 @@ use App\Actions\Operations\CancelOperationAction;
 use App\Domain\Tasks\TaskProvisionOperation;
 use App\Models\TaskWorkspaceLeaseRecord;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Crypt;
 use Tests\Support\TaskVmSettingsBuilder;
 
 use function Pest\Laravel\mock;
@@ -1064,4 +1065,41 @@ it('stops the worker before a destroy job waits for unpublished reviewed work', 
     expect($vm->fresh()->state)->toBe(TaskVmState::Ready);
     expect($group->fresh()->taskable_id)->not->toBeNull();
     expect($provider->calls)->toBe(['observe']);
+});
+
+it('treats raw-token staged credentials as missing without logging their prefix', function (): void {
+    [$group, $vm] = worker_operation_workspace();
+    $operation = worker_operation_start($group);
+    $reference = $operation->input['worker']['enrollment_reference'];
+    $token = 'pre-deploy-sensitive-prefix.'.str_repeat('a', 64);
+    Cache::put('tasks:worker-enrollment:'.$reference, Crypt::encryptString($token), now()->addMinutes(30));
+    Log::spy();
+
+    expect(app(TaskWorkerEnrollment::class)->read($reference))->toBeNull();
+    app(OperationRunner::class)->run($operation->id);
+
+    expect($operation->refresh()->error_code)->toBe('tasks.worker_enrollment_expired');
+    expect(json_encode([$operation->toArray(), $operation->steps()->get()->toArray()]))->not->toContain('pre-deploy-sensitive-prefix');
+    Log::shouldHaveReceived('error')->once()->withArgs(fn (string $message, array $context): bool => ! str_contains(json_encode([$message, $context]), 'pre-deploy-sensitive-prefix'));
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Running);
+});
+
+it('starts an older worker operation without a server authentication setting', function (): void {
+    [$group, $vm] = worker_operation_workspace();
+    $operation = worker_operation_start($group);
+    $input = $operation->input;
+    unset($input['worker']['server_authenticated']);
+    $operation->update(['input' => $input]);
+    $agents = (new FakeAgentCommandRunner)->answer('swamp.start-worker', function (array $input): array {
+        expect($input['server_token_required'])->toBeFalse();
+        expect($input['server_token'])->toBeNull();
+
+        return ['started' => true];
+    });
+    app()->instance(AgentCommandRunner::class, $agents);
+
+    app(OperationRunner::class)->run($operation->id);
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded);
+    expect($agents->commands())->toBe(['swamp.start-worker']);
 });
