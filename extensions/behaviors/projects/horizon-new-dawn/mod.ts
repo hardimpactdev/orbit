@@ -91,6 +91,19 @@ export const behavior = {
             "Horizon detection checkout must match " + project.repository,
           );
         }
+        const fetched = await git([
+          "-C",
+          cwd,
+          "fetch",
+          "--no-tags",
+          "origin",
+          `refs/heads/${project.defaultBranch}:refs/remotes/origin/${project.defaultBranch}`,
+        ]);
+        if (fetched.code !== 0) {
+          throw new Error(
+            `Could not refresh Horizon origin/${project.defaultBranch}: ${fetched.error.trim()}`,
+          );
+        }
         const head = await git(["-C", cwd, "rev-parse", "HEAD"]);
         const base = await git([
           "-C",

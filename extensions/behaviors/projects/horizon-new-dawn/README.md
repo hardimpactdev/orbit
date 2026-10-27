@@ -44,3 +44,8 @@ Run affected checks from orbit-swamp (one test worker):
 
 See [the parity contract](../../../../../docs/horizon-new-dawn.md) for the
 baseline history and fixture tag pairs.
+
+Detection refreshes `origin/main` before comparing the checkout. Fetch failures
+stop before planning tasks. Empty or non-JSON Gateway responses report the HTTP
+status and require reconciliation. A non-object ledger reports an invalid
+`synced_tag` before reading upstream.

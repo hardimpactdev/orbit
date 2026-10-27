@@ -334,3 +334,21 @@ Deno.test("baseline plan is one task and an up-to-date ledger produces none", ()
     [],
   );
 });
+
+Deno.test("non-object ledgers report an invalid synced_tag without reading upstream", () =>
+  fixture(async (cwd, remote) => {
+    for (const value of ["[]", "null", "42", "true", '"ledger"']) {
+      await Deno.writeTextFile(`${cwd}/${project.ledger}`, value);
+      const error = await assertRejects(
+        () =>
+          detect(cwd, remote, () => {
+            throw new Error("must not read upstream");
+          }),
+        Error,
+      );
+      assertEquals(
+        error.message,
+        "horizon-sync.json synced_tag must be a stable vX.Y.Z tag",
+      );
+    }
+  }));

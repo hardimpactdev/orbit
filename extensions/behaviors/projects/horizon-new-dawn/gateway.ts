@@ -60,10 +60,16 @@ function http(ctx: Context): Http {
         "Horizon Gateway request failed; reconcile before retrying",
       );
     }
-    return {
-      status: Number(text.slice(cut + 1)),
-      body: JSON.parse(text.slice(0, cut)),
-    };
+    const status = Number(text.slice(cut + 1));
+    let parsed: Record<string, unknown> | null;
+    try {
+      parsed = JSON.parse(text.slice(0, cut));
+    } catch {
+      throw new Error(
+        `Horizon Gateway returned an empty or non-JSON body (HTTP ${status}); reconcile before retrying`,
+      );
+    }
+    return { status, body: parsed };
   };
 }
 /** Verify placement using existing receipts only. No enrollment, rotation or startup. */

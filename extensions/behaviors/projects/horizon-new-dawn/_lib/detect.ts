@@ -60,7 +60,7 @@ export function manifest(text: string): Manifest {
     throw new Error("Cannot read horizon-sync.json");
   }
   if (data === null || typeof data !== "object" || Array.isArray(data)) {
-    throw new Error("Cannot read horizon-sync.json");
+    throw new Error("horizon-sync.json synced_tag must be a stable vX.Y.Z tag");
   }
   if (Object.hasOwn(data, "surface")) {
     throw new Error(
