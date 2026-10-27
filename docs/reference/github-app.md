@@ -134,6 +134,8 @@ Each scheduler tick reads a settling group's pull request. While it is open, the
 
 The checks token is separate, because GitHub refuses a whole token request when one permission is not accepted. When GitHub refuses the checks token, the Gateway skips the check runs and still reports conflicts. The check run list follows every page, up to 1,000 runs. A longer list, or one that changes between pages, leaves the health unread for that tick.
 
+The one-off `orbit:tasks:backfill-merged-at` command reads ended tasks' pull requests with the same App token, to fill their [merge time](/reference/tasks#lifecycle-times). It takes the repository from the pull request URL, so a pull request in a repository that moved since still resolves: GitHub redirects the old path.
+
 ### Read review records
 
 Review reads use the App on the Gateway only. The review list is `GET /repos/{owner}/{repo}/pulls/{number}/reviews`. Findings come from `GET /repos/{owner}/{repo}/pulls/{number}/reviews/{review_id}` and `/reviews/{review_id}/comments`. Review lists follow at most 10 pages of 100 records; inline comments from the selected review use at most 5 pages of 100 records. Pagination is accepted only for the expected repository and endpoint on `api.github.com`. A next-page link after the last allowed page is overflow. Invalid records, incomplete pagination, permission failures, and transport failures are unreadable, never a partial successful selection. Review/comment URLs are provenance, not URLs that Orbit fetches.

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Console\Commands\BackfillTaskMergedAtCommand;
 use App\Console\Commands\CollectProblemsCommand;
 use App\Console\Commands\FileProblemsCommand;
 use App\Console\Commands\JevReportCommand;
@@ -168,6 +169,7 @@ final class TasksServiceProvider extends ExtensionServiceProvider
             ReleaseTaskWorkspaceLeaseCommand::class,
             RenderTaskPromptCommand::class,
             TaskGitHubReviewsCommand::class,
+            BackfillTaskMergedAtCommand::class,
             TickTaskSessionsCommand::class,
         ]);
 

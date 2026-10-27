@@ -5,7 +5,7 @@ covers:
   - "apps/gateway/{app/{Data/Tasks/**,Domain/{Tasks,Problems}/**,Infrastructure/Tasks/**,Support/Percentile.php},config/swamp.php}"
   - "apps/gateway/app/{Actions/Tasks/**,Jobs/{PublishTaskVmCommit.php,Problems/**}}"
   - "apps/gateway/app/Http/{Requests/Tasks/**,Controllers/Api/{TasksController,TaskGroupsController,TaskInsightsController,TaskSwampRunsController,AgentThreadsController,TaskQuestionsController}.php}"
-  - "apps/gateway/app/Console/Commands/{ReleaseTaskWorkspaceLeaseCommand,TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand,TaskGitHubReviewsCommand}.php"
+  - "apps/gateway/app/Console/Commands/{ReleaseTaskWorkspaceLeaseCommand,TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand,TaskGitHubReviewsCommand,BackfillTaskMergedAtCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskWorkspaceLeaseRecord,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "{apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py},bin/{task-analyze,task-group-check}}"
   - apps/docs/app/{Documentation/{TaskAnalysis,DocsImpact}.php,Console/Commands/{TaskAnalyzeCommand,DocsImpactCommand}.php}
@@ -1817,11 +1817,15 @@ The task row records three times for [task insights](#task-insights). Each is wr
 | --- | --- |
 | `ready_at` | The task first enters `todo`, at create or when it leaves Backlog |
 | `ended_at` | The task first enters `completed`, `failed`, or `cancelled` |
-| `merged_at` | Orbit confirms that the pull request merged. The value is GitHub's merge time, so a pull request that a person merged counts the same as one Orbit merged |
+| `merged_at` | Orbit merges the pull request, or confirms that it merged |
+
+When Orbit merges, `merged_at` is the time GitHub confirmed the merge. Otherwise it is GitHub's merge time, so a pull request that a person merged counts the same as one Orbit merged.
 
 `started_at` and `settled_at` complete the timeline: the task starts work at `started_at` and enters settling at `settled_at`. Settling holds the pull request, its review, its fixups, and its merge.
 
 Tasks that ended before these fields existed were filled from records that hold the exact time. `ready_at` comes from the `tasks:update` or `tasks:create` Activity entry that set `todo`. `merged_at` comes from the [Jev decision records](#jev-decision-records), then from the `pull request merged` Activity entry. `ended_at` comes from the `tasks:complete` or `tasks:cancel` Activity entry, then from `merged_at`. A time with no such record stays null. A task that the tick failed has no such record, so periods before this release leave most failures out and show a higher yield than the work had.
+
+Many older tasks merged with no such record, because a person merged the pull request before Orbit tracked merges. `php artisan orbit:tasks:backfill-merged-at` fills them from GitHub. For each ended task with a `pr_url` and no `merged_at`, it reads the pull request with the Project's GitHub App token and stores GitHub's merge time. It sets `ended_at` to that time when `ended_at` is null. A pull request that did not merge, or that GitHub cannot return, stays null. The command reports the counts and can run again.
 
 ### Tokens and line diff
 
@@ -1972,7 +1976,7 @@ The task board shows an insights strip above its lanes. It answers one question:
 
 A period holds the tasks whose `ended_at` falls inside it. The previous period is the same length just before it, so each number has a value to compare with. Tasks without `ended_at` are not counted.
 
-A task **merged** when its `watched_pr_completion` or its `merge_status` is `merged`. Every other ended task did not merge: it failed, was cancelled, or ended with its pull request closed.
+A task **merged** when it has a `merged_at`. Every merge path writes it, so a pull request that Orbit merged and one that a person merged count the same. Every other ended task did not merge: it failed, was cancelled, or ended with its pull request closed.
 
 ### Numbers
 

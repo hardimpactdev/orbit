@@ -1036,6 +1036,7 @@ describe('merge on green', function (): void {
         expect($runtime->merges)->toBe([RM_HEAD])
             ->and($group->fresh()?->merge_status)->toBe(TaskMergeStatus::Merged)
             ->and($group->fresh()?->merged_sha)->toBe(str_repeat('f', 40))
+            ->and($group->fresh()?->merged_at?->equalTo(now()->startOfSecond()))->toBeTrue()
             ->and(rm_activity($group))->toContain('pull request merged');
     });
 

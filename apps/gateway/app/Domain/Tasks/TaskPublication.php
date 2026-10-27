@@ -288,7 +288,7 @@ final readonly class TaskPublication
 
             return;
         }
-        $group->update(['merge_status' => TaskMergeStatus::Merged, 'merge_reason' => null, 'merged_sha' => $result->sha]);
+        $group->update(['merge_status' => TaskMergeStatus::Merged, 'merge_reason' => null, 'merged_sha' => $result->sha, 'merged_at' => now()]);
         TaskFinalReview::log($group, 'pull request merged', ['pull_request' => $group->pr_url, 'head_sha' => $head, 'merge_sha' => $result->sha]);
         $this->broadcasts->groupChanged($group->id);
     }

@@ -44,9 +44,12 @@ afterEach(function (): void {
  */
 function insights_task(Project $project, string $status, string $ended, array $group = [], array $thread = []): array
 {
+    $merged = ($group['merged'] ?? false) === true;
+    unset($group['merged']);
     $task = Task::query()->forceCreate([
         'project_id' => $project->id, 'title' => 'Feature', 'brief' => 'Brief.', 'status' => $status,
-        'ended_at' => CarbonImmutable::parse($ended), 'implementer_model' => 'model-a', ...$group,
+        'ended_at' => CarbonImmutable::parse($ended), 'merged_at' => $merged ? CarbonImmutable::parse($ended) : null,
+        'implementer_model' => 'model-a', ...$group,
     ]);
     $subtask = Task::query()->create(['parent_id' => $task->id, 'position' => 1, 'title' => 'Step', 'brief' => 'Step.', 'status' => 'completed']);
     $agent = AgentThread::query()->create([
@@ -75,9 +78,9 @@ function insights_check(Task $subtask, string $status): void
 }
 
 it('reports tokens per merged pull request, yield, first pass, waste, and cost', function (): void {
-    insights_task($this->project, 'completed', '2026-10-20', ['merge_status' => 'merged']);
-    // A person merged this one: Orbit never set merge_status.
-    [$personMerged, $step] = insights_task($this->project, 'completed', '2026-10-21', ['watched_pr_completion' => 'merged']);
+    insights_task($this->project, 'completed', '2026-10-20', ['merged' => true]);
+    // A person merged this one: Orbit never set merge_status, but merged_at holds GitHub's merge time.
+    [$personMerged, $step] = insights_task($this->project, 'completed', '2026-10-21', ['merged' => true]);
     Task::query()->create(['parent_id' => $personMerged->id, 'position' => 2, 'title' => 'Fix', 'brief' => 'Fix.', 'status' => 'completed', 'fixup_problem' => 'final-review']);
     AgentThread::query()->create([
         'task_group_id' => $personMerged->id, 'task_id' => $step->id, 'role' => 'implementer', 'driver' => 'pi',
@@ -97,7 +100,7 @@ it('reports tokens per merged pull request, yield, first pass, waste, and cost',
 
 it('counts only older implementer threads of a subtask as replaced, whatever drives the task', function (): void {
     // An external turn creates the thread without pointing the subtask at it.
-    [, $subtask, $thread] = insights_task($this->project, 'completed', '2026-10-20', ['merge_status' => 'merged', 'orchestration' => 'external']);
+    [, $subtask, $thread] = insights_task($this->project, 'completed', '2026-10-20', ['merged' => true, 'orchestration' => 'external']);
     $subtask->update(['implementer_agent_thread_id' => null]);
     expect($this->getJson('/api/v1/task-insights')->assertOk()->json('data.current.wasted_share'))->toEqual(0);
 
@@ -110,8 +113,8 @@ it('counts only older implementer threads of a subtask as replaced, whatever dri
 });
 
 it('leaves the cost unknown when a thread with tokens has no cost', function (): void {
-    insights_task($this->project, 'completed', '2026-10-20', ['merge_status' => 'merged']);
-    insights_task($this->project, 'completed', '2026-10-21', ['merge_status' => 'merged'], ['cost_usd' => null]);
+    insights_task($this->project, 'completed', '2026-10-20', ['merged' => true]);
+    insights_task($this->project, 'completed', '2026-10-21', ['merged' => true], ['cost_usd' => null]);
 
     $current = $this->getJson('/api/v1/task-insights')->assertOk()->json('data.current');
 
@@ -121,10 +124,10 @@ it('leaves the cost unknown when a thread with tokens has no cost', function ():
 
 it('splits the lead time and counts merged tasks without a ready time as excluded', function (): void {
     insights_task($this->project, 'completed', '2026-10-20', [
-        'merge_status' => 'merged', 'ready_at' => '2026-10-20 08:00:00', 'started_at' => '2026-10-20 09:00:00',
+        'merged' => true, 'ready_at' => '2026-10-20 08:00:00', 'started_at' => '2026-10-20 09:00:00',
         'settled_at' => '2026-10-20 11:00:00', 'merged_at' => '2026-10-20 11:30:00',
     ]);
-    insights_task($this->project, 'completed', '2026-10-21', ['merge_status' => 'merged', 'merged_at' => '2026-10-21 10:00:00']);
+    insights_task($this->project, 'completed', '2026-10-21', ['merged' => true, 'merged_at' => '2026-10-21 10:00:00']);
 
     $current = $this->getJson('/api/v1/task-insights')->assertOk()->json('data.current');
 
@@ -135,7 +138,7 @@ it('splits the lead time and counts merged tasks without a ready time as exclude
 });
 
 it('reports review, handoff, question, cache, and line numbers', function (): void {
-    [$first, $approved] = insights_task($this->project, 'completed', '2026-10-20', ['merge_status' => 'merged', 'lines_added' => 150, 'lines_deleted' => 50], [
+    [$first, $approved] = insights_task($this->project, 'completed', '2026-10-20', ['merged' => true, 'lines_added' => 150, 'lines_deleted' => 50], [
         'tokens' => 2_000, 'input_tokens' => 300, 'cached_input_tokens' => 700,
     ]);
     insights_verdict($approved, 'approved');
@@ -162,9 +165,9 @@ it('reports review, handoff, question, cache, and line numbers', function (): vo
 });
 
 it('compares the period with the one before it and fills days and weeks', function (): void {
-    insights_task($this->project, 'completed', '2026-10-25 10:00:00', ['merge_status' => 'merged']);
+    insights_task($this->project, 'completed', '2026-10-25 10:00:00', ['merged' => true]);
     insights_task($this->project, 'failed', '2026-10-24 10:00:00');
-    insights_task($this->project, 'completed', '2026-10-18 10:00:00', ['merge_status' => 'merged']);
+    insights_task($this->project, 'completed', '2026-10-18 10:00:00', ['merged' => true]);
 
     $data = $this->getJson('/api/v1/task-insights?period=7d')->assertOk()->json('data');
 
@@ -188,9 +191,9 @@ it('filters by Project and breaks the period down by model, Project, and release
         $release = GatewayRelease::query()->create(['sha' => $sha, 'trigger' => 'auto', 'outcome' => 'verified', 'phases' => [], 'duration_ms' => 1]);
         $release->forceFill(['created_at' => CarbonImmutable::parse('2026-10-1'.($index + 1)), 'updated_at' => CarbonImmutable::parse('2026-10-26')])->saveQuietly();
     }
-    insights_task($this->project, 'completed', '2026-10-20', ['merge_status' => 'merged', 'started_at' => '2026-10-11 12:00:00']);
+    insights_task($this->project, 'completed', '2026-10-20', ['merged' => true, 'started_at' => '2026-10-11 12:00:00']);
     insights_task($this->project, 'cancelled', '2026-10-21', ['implementer_model' => 'model-b', 'started_at' => '2026-10-13 12:00:00']);
-    insights_task($other, 'completed', '2026-10-21', ['merge_status' => 'merged']);
+    insights_task($other, 'completed', '2026-10-21', ['merged' => true]);
 
     $filtered = $this->getJson('/api/v1/task-insights?project_id='.$this->project->id)->assertOk()->json('data');
     $all = $this->getJson('/api/v1/task-insights')->assertOk()->json('data.breakdowns.project');
