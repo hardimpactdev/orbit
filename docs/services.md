@@ -77,32 +77,69 @@ currently cannot: SSH to `orbit@10.44.0.3` fails with
 `Permission denied (publickey)`. WireGuard and Gateway access alone do not
 permit deployment. Other hosts need a working SSH identity for that account.
 
-The command resolves Node 17 through Orbit, fetches `origin/main`, and sends a
-git bundle over SSH. Services needs no GitHub credential. After transfer, it
-checks active runs through the authenticated server and fetches the bundle
-into `refs/remotes/bundle/main`. Before stopping the Process, it verifies the
-requested commit, the `main` branch, no tracked edits, a fast-forward from
-an existing `HEAD`, and no untracked path that main adds or replaces. The script
-requires an existing checkout and running authenticated serve; use the manual
-restore below to bootstrap them.
-A bad bundle, divergent checkout or conflicting local file leaves serve running.
-An unrelated untracked model remains in place. If `HEAD` already equals the
-requested commit, deployment checks readiness without stopping or restarting.
+The command resolves Node 17 through Orbit and acquires one protected in-progress
+marker on Services at
+`/home/orbit/.local/state/orbit-swamp/services-deploy-in-progress.json` before
+fetching or changing deployment state. Atomic creation serializes deployments
+from all checkouts and hosts. The marker names the deploying host, PID, and
+protected local snapshot path. A second deployment fails immediately with that
+identity, even if the first client crashed or the checkout already matches main.
+Recover the earlier snapshot before removing a stale marker; never replace it
+with the current paused schedule list.
 
-For a changed commit, it checks active runs again immediately before stopping
-the Process. Serve's default 30-second shutdown drain is the backstop for a run
-that starts in the remaining gap: it waits for in-flight runs before aborting
-them at the deadline. The command then advances the checkout with
-`git merge --ff-only <validated-sha>` and restarts through Orbit. The update
-uses the commit SHA even if another deploy changes the bundle ref. An update
-failure after the stop leaves the Process stopped for inspection. A restart or
-readiness failure also needs inspection; check the Process state before retrying.
+With the marker held, the command fetches `origin/main` and sends a
+git bundle over SSH. Services needs no GitHub credential. Before interrupting
+schedules, it validates the bundle and requested SHA, the live `main` branch,
+tracked edits, fast-forward ancestry, and conflicting untracked paths. A bad
+bundle, divergent checkout, or conflicting local file leaves serve and schedules
+alone. An unrelated untracked model remains in place. If the checkout already
+matches main, it checks authenticated readiness without pausing or restarting.
 
-Readiness uses an authenticated loopback Swamp command, retrying timeouts and
-invalid JSON during startup. The command prints one JSON result with the
-commit, Process ID and whether the checkout changed.
-Failure to remove the temporary bundle is logged to stderr without replacing
-the deployment result or its original error.
+For a changed deployment, the command saves the full schedule list in a unique
+local `swamp-deploy-schedules-*.json` file with mode `0600`. It flushes the file
+before pausing any schedule and prints its path to stderr. The snapshot remains
+available after success or failure. Only enabled, non-orphaned schedules enter
+the pause and restore set. Existing pauses, including `subtasks-driver`, are
+never changed. Schedule IDs identify the restoration set.
+
+With those schedules paused, the command waits at most 180 seconds for
+`swamp run history --active` to become empty. Each read has its own deadline.
+A timeout or unreadable response aborts before stopping serve and restores the
+saved enabled schedules. Do not start manual or webhook work during deployment:
+a schedule pause does not prevent those starts. Serve's default 30-second
+shutdown drain remains a backstop for a run that starts just before the stop.
+
+The command stops the Process, advances the checkout with
+`git merge --ff-only <validated-sha>`, and restarts through Orbit. The update
+uses the commit SHA even if another deploy changes the bundle ref. Readiness
+uses an authenticated loopback Swamp command, retrying timeouts and invalid JSON
+during startup. The JSON result includes the commit, Process ID, whether the
+checkout changed, and the protected `scheduleSnapshot` path.
+
+SIGTERM and SIGHUP raise a deployment error so cleanup runs. SIGHUP is ignored
+during schedule restoration and marker release. Normal exits and handled errors
+restore the schedules whose pauses were attempted, including an uncertain pause
+reply. Untouched schedules are excluded. Restoration attempts continue after an
+individual failure. Live schedule state determines which attempted pauses still
+need a resume. If that evidence is unreadable, the marker stays in place.
+
+The helper observes systemd state before changing the checkout and again when
+restoring schedules; a lost Orbit reply does not determine whether serve is
+stopped. When systemd confirms serve is stopped, native local Swamp commands
+restore the saved state on disk without starting serve. Otherwise restoration
+uses the authenticated server. Unknown or transitional runtime state fails
+closed. A failed restart or readiness check still needs Process inspection.
+
+A schedule restoration failure makes the deployment fail, even if the code
+update succeeded. The error names each failed schedule and the retained snapshot;
+when deployment also failed, its original error remains in the message. Inspect
+serve before retrying those resumes. Never resume schedules whose snapshot says
+`paused: true`. See the [cutover runbook](services-group-cutover.md) for recovery
+commands. The marker is removed only after all attempted pauses have been
+reconciled and resumed successfully, or when deployment exits before any pause.
+It remains after a crash or restoration failure and blocks every later deploy.
+Failure to remove the temporary bundle is logged to stderr without
+replacing the deployment result or its original error.
 
 Python 3, git, SSH and scp are required on the deploying host. SSH uses the
 normal host configuration; `SWAMP_SSH_IDENTITY` can select an existing identity

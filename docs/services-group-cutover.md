@@ -1,18 +1,42 @@
 # Deploy independent group runs on Services
 
-Run this initial cutover from Nick's Mac. Process 281 on Node 17 is the only
-coordinator. Wait for the maintenance cancellation owner to confirm all eight
-detect groups in 2151..2165 are cancelled, their factory runs are closed, and
-worker cleanup is settled. Deploy the follow-up containing `group-fanout` as
-well as `5c74e42`: the original `groups-driver` tries to expand its collection
-before discovery has run and cannot start its children on the pinned Swamp
-version. Do not deploy `5c74e42` alone. Do not start manual workflows during
-cutover.
+Use `bin/deploy-services` from Nick's separate Mac checkout. It snapshots and
+pauses enabled schedules, waits for idle, deploys current main, and restores
+the schedules it paused. After failure, it reconciles all attempted pauses. The
+historical `subtasks-driver` pause stays intact. Process 281 on Node 17 remains
+the only coordinator.
 
-## Pause and drain
+Before an initial migration, have the maintenance cancellation owner confirm
+that old groups and worker cleanup are settled. Do not start manual or webhook
+work during deployment. Include the native `group-fanout` workflow in the target
+main: the original `5c74e42` driver cannot expand a collection produced by an
+earlier step on the pinned Swamp version.
 
-SSH to Services as `orbit` and set these variables. Repeat these exports after
-reconnecting; none prints or copies a credential.
+## Deploy
+
+```sh
+bin/deploy-services
+```
+
+The helper first takes a fixed deployment marker on Services, then fetches
+`origin/main`. Concurrent or crashed deployments fail fast with the earlier
+owner and snapshot path. Do not remove that marker before recovery.
+Require `status: ok`, `node: 17`, `process: 281`,
+and `authenticated: true` in its JSON result, with the expected main SHA. The
+`scheduleSnapshot` field names the retained local snapshot, created with mode
+`0600` before any pause. Keep that file until acceptance ends. A no-change
+deployment checks readiness without pausing schedules and returns a null
+snapshot. See [deployment](services.md#deploy-main) for the 180-second idle
+limit, restoration behavior, and stop/restart failures.
+
+The helper restores schedules before reporting success. If a staged cutover must
+remain paused during inspection, pause schedules deliberately before invoking
+the helper and retain your own protected snapshot. Those existing pauses stay
+untouched; their later restoration is your responsibility.
+
+## Check after deployment
+
+SSH to Services as `orbit` and set these path-only variables:
 
 ```sh
 ssh orbit@10.44.0.3
@@ -20,97 +44,39 @@ export PATH=/home/orbit/.local/bin:$PATH
 export SWAMP_REPO_DIR=/home/orbit/apps/orbit-swamp/default
 export SWAMP_SERVER_URL=ws://127.0.0.1:9417
 export SWAMP_SERVER_TOKEN_FILE=/home/orbit/.config/swamp/serve-driver-token
-swamp workflow schedule list --json > /tmp/swamp-cutover-schedules.json
-python3 - <<'PY'
-import json, subprocess
-schedules = json.load(open('/tmp/swamp-cutover-schedules.json'))['schedules']
-for s in schedules:
-    if not s['paused'] and not s['orphaned']:
-        subprocess.run(['swamp', 'workflow', 'schedule', 'pause', s['workflowId'],
-                        '--reason', 'per-group workflow cutover', '--json'], check=True)
-PY
-swamp workflow schedule list --json
-swamp run history --active --json
-```
-
-This pauses every enabled schedule, including `groups-driver`,
-`maintenance-projects`, `maintenance-workers`, and all scheduled project routine
-and detect workflows. Check that every non-orphaned schedule is paused. Preserve
-the snapshot: it is the restoration list. Never overwrite it after pausing.
-Historical pauses, especially `subtasks-driver`, must remain paused.
-
-Pausing stops future scheduled starts, not active, manual, or webhook runs.
-Let existing runs finish. Require `{"runs":[]}` before deployment. Investigate
-any run that cannot finish; do not cancel or replay uncertain effects blindly.
-
-## Deploy and check while paused
-
-Exit SSH. In the separate Mac checkout run:
-
-```sh
-bin/deploy-services
-```
-
-The script deploys fetched `origin/main`, not an arbitrary requested commit.
-Check the expected main SHA contains `5c74e42`. Require its JSON result to report
-`status: ok`, `node: 17`, `process: 281`, and `authenticated: true`. Runtime data
-and schedule pauses remain in place. See [deployment](services.md#deploy-main)
-for failed-stop or restart handling.
-
-Reconnect and repeat the exports above, then run:
-
-```sh
 git -C "$SWAMP_REPO_DIR" rev-parse HEAD
 swamp workflow schedule list --json
-swamp run history --active --json
 swamp workflow validate groups-driver --json
 swamp workflow validate group-fanout --json
 swamp workflow validate group-supervise --json
 swamp workflow validate group-run --json
 swamp workflow validate maintenance-projects --json
-swamp workflow get groups-driver --json
-swamp workflow get maintenance-projects --json
+swamp workflow history search --workflow groups-driver --json
+swamp workflow history search --workflow maintenance-projects --json
+swamp workflow history search --workflow maintenance-workers --json
 ```
 
-Require the expected checkout SHA, all cutover pauses, no active runs, and valid
-workflows. The effective `groups-driver` cron is `*/5 * * * * *`; it discovers
-then passes the saved lists to `group-fanout`, which fans out `group-supervise`. `maintenance-projects` calls only `project_work`,
-with no routine, detect, or package tick steps. If a schedule override changes
-the effective cron, inspect and correct it before resuming.
+Require the expected SHA and original schedule states. `groups-driver` uses
+`*/5 * * * * *`, discovers groups, then passes the saved lists to `group-fanout`.
+`maintenance-projects` calls only `project_work`, without routine, detect, or
+package tick steps. The three coordinator workflows must succeed.
 
-## Resume and prove ownership
+## Prove ownership
 
-Resume `groups-driver` only if the snapshot says it was enabled:
+Record the deployment completion time. With an eligible active group, inspect:
 
 ```sh
-python3 - <<'PY'
-import json, subprocess
-for s in json.load(open('/tmp/swamp-cutover-schedules.json'))['schedules']:
-    if s['workflowName'] == 'groups-driver' and not s['paused'] and not s['orphaned']:
-        subprocess.run(['swamp', 'workflow', 'schedule', 'resume', s['workflowId'], '--json'], check=True)
-PY
-date -u +%Y-%m-%dT%H:%M:%SZ
-swamp workflow history search --workflow groups-driver --json
 swamp workflow history search --workflow group-supervise --json
 swamp workflow history search --workflow group-run --json
-```
-
-Record that UTC time. Require successful discovery. With an eligible active
-group, `group-supervise` inputs name its work item and factory. Its `group-run`
-inputs include key `tg-ID.gN`, generation `N`, and definition
-`orbit-group-tg-ID`. Inspect a returned run ID and the saved ownership:
-
-```sh
 swamp workflow history get RUN_ID --json
 swamp data query 'modelName == "orbit-group-tg-ID" && (name == "owner" || name == "intent")' --select attributes --json
 ```
 
-Replace `RUN_ID` and `ID` with the observed values. Owner and intent must agree
-on work item, factory, generation, key, and admitted run ID. A duplicate envelope
-may finish with a refused claim; it must never drive work. The owner advances or
-suspends at its durable wait, and only its terminal outcome permits a successor.
-If discovery is empty, no child run is expected. Capture this proof on the next
-authorized group; do not create work solely to make history nonempty.
+Replace `RUN_ID` and `ID` with observed values. Supervisor inputs name the work
+item and factory. Owner and intent agree on work item, factory, generation, key
+`tg-ID.gN`, and admitted run ID. A refused duplicate must never drive work.
+Only the admitted owner's terminal outcome permits a successor. Empty discovery
+needs no child runs; capture this proof on the next authorized group.
 
 After more than one old minute interval, inspect recent runs:
 
@@ -118,43 +84,50 @@ After more than one old minute interval, inspect recent runs:
 swamp run history --json
 ```
 
-There must be no standalone `orbit-driver-groups.tick`,
-`orbit-driver-routine.tick`, `orbit-driver-detect.tick`, or
-`orbit-driver-package.tick` started after the recorded time. Stage work runs as
-`orbit-group-tg-ID.drive`. Historical ticks remain visible; compare their start
-times. Also inspect the first `maintenance-projects` run after restoring it.
+Require no standalone `orbit-driver-groups.tick`, `orbit-driver-routine.tick`,
+`orbit-driver-detect.tick`, or `orbit-driver-package.tick` started after cutover.
+New work runs as `orbit-group-tg-ID.drive`. Historical ticks remain visible;
+compare start times. Confirm existing operation keys survive and cancelled
+groups do not reappear. Never reset factory state or switch to the old tick
+driver while an admitted owner exists.
 
-Resume the two other coordinator schedules if previously enabled:
+## Recover schedule restoration
+
+A failed restoration reports the failed schedule IDs and local protected snapshot
+path. The helper reconciles every attempted pause before returning that error;
+it excludes untouched schedules. Check the Process and checkout first; an update failure can leave serve
+stopped. Do not assume a failure means the code was unchanged.
+
+SIGTERM and SIGHUP normally enter restoration; SIGHUP is ignored while resumes
+run. A crash or failed restoration keeps the fixed in-progress marker and
+blocks later deployments, including no-change runs. The marker names the owner
+host/PID and that host's protected snapshot. Use that snapshot, not a new list
+of already-paused schedules.
+
+After serve is healthy, rerun only the saved enabled resumes from the deploying
+host. Set the snapshot path to the file printed by the failed deployment:
 
 ```sh
-python3 - <<'PY'
-import json, subprocess
-schedules = json.load(open('/tmp/swamp-cutover-schedules.json'))['schedules']
-for name in ('maintenance-workers', 'maintenance-projects'):
-    for s in schedules:
-        if s['workflowName'] == name and not s['paused'] and not s['orphaned']:
-            subprocess.run(['swamp', 'workflow', 'schedule', 'resume', s['workflowId'], '--json'], check=True)
+python3 - /path/to/swamp-deploy-schedules-SNAPSHOT.json <<'PY'
+import json, shlex, subprocess, sys
+for s in json.load(open(sys.argv[1]))['schedules']:
+    if not s['paused'] and not s['orphaned']:
+        command = ['/home/orbit/.local/bin/swamp', 'workflow', 'schedule',
+                   'resume', s['workflowId'], '--server', 'ws://127.0.0.1:9417',
+                   '--token-file', '/home/orbit/.config/swamp/serve-driver-token', '--json']
+        subprocess.run(['ssh', 'orbit@10.44.0.3', shlex.join(command)], check=True)
 PY
-swamp workflow history search --workflow maintenance-workers --json
-swamp workflow history search --workflow maintenance-projects --json
 ```
 
-After their first runs succeed, restore remaining previously enabled schedules:
-
-```sh
-python3 - <<'PY'
-import json, subprocess
-coordinators = {'groups-driver', 'maintenance-workers', 'maintenance-projects'}
-for s in json.load(open('/tmp/swamp-cutover-schedules.json'))['schedules']:
-    if not s['paused'] and not s['orphaned'] and s['workflowName'] not in coordinators | {'subtasks-driver'}:
-        subprocess.run(['swamp', 'workflow', 'schedule', 'resume', s['workflowId'], '--json'], check=True)
-PY
-swamp workflow schedule list --json
-swamp run history --json
-```
-
-Keep `subtasks-driver` paused. Confirm new owners retain existing operation keys,
-no cancelled detect group reappears, and no standalone fleet ticks start.
-If any check fails, keep admissions paused and inspect the saved intent, native
-history, and operation receipts before proceeding. Never reset factory state or
-switch back to the old tick driver while an admitted group owner exists.
+If serve must stay stopped, use the native local form on Services instead:
+`swamp workflow schedule resume WORKFLOW_ID --repo-dir "$SWAMP_REPO_DIR" --json`.
+Unset `SWAMP_SERVER_URL` and `SWAMP_SERVE_URL` first, so the local command does
+not connect to serve. Use only IDs whose snapshot has `paused: false` and
+`orphaned: false`. This restores persisted state for the next start without
+starting serve. Then inspect the schedule list and retain historical pauses.
+After verifying restoration and confirming that the recorded deployer is no
+longer running, remove
+`/home/orbit/.local/state/orbit-swamp/services-deploy-in-progress.json` on
+Services. Its mode is `0600`; do not delete it merely to bypass a busy deployment.
+A force-killed deployment needs this recovery because cleanup cannot run after
+SIGKILL or host loss.
