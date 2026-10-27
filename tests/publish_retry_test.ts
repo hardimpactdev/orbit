@@ -1,3 +1,5 @@
+import { configureGateway } from "./_support/configure_gateway.ts";
+import { installMaintenanceFixture } from "./_support/maintenance_fixture.ts";
 import { SECOND_PROJECT } from "./_support/dependency_projects.ts";
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import { type Scenario, startFakeGateway } from "./_support/fake_gateway.ts";
@@ -23,13 +25,8 @@ async function copyRepo(url: string) {
   await Deno.mkdir(`${dir}/.swamp`);
   const installed = Deno.env.get("SWAMP_TEST_EXTENSIONS") ?? `${REPO}/.swamp/pulled-extensions`;
   assert((await new Deno.Command("cp", { args: ["-r", installed, `${dir}/.swamp/`] }).output()).success);
-  const def = `${dir}/models/@nckrtl/orbit-gateway/orbit-gateway.yaml`;
-  await Deno.writeTextFile(def, (await Deno.readTextFile(def)).replace(/      worker:\n(?:        .*\n)+/, "").replace(/gatewayUrl: .*/, `gatewayUrl: ${url}`).replace("methods: {}", `    - projectId: ${SECOND_PROJECT.projectId}
-      repository: ${SECOND_PROJECT.repository}
-      script: ${SECOND_PROJECT.script}
-      check: ${SECOND_PROJECT.check}
-      defaultBranch: ${SECOND_PROJECT.defaultBranch}
-methods: {}`));
+  await configureGateway(dir, url, [SECOND_PROJECT]);
+  await installMaintenanceFixture(dir);
   return dir;
 }
 
@@ -71,15 +68,18 @@ Deno.test({
       await swamp(dir, "model", "method", "run", "dependency-routine", "approve", "--input", "workItem=tg-7", "--input", "gateId=publish-retry", "--input", "actor=simulated-operator", "--input", "note=Retry the publish");
       await tick(dir, "orbit-driver-routine", "tg-7", 1);
       await until(dir, "orbit-driver-routine", "tg-7", (row) => row.stage === "completed");
-      assertEquals(publishKeys(fake, 7), ["tg-7.publish.c1", "tg-7.publish.c1.summary", "tg-7.publish.c2"]);
+      assertEquals(publishKeys(fake, 7), ["tg-7.publish.c1", "tg-7.publish.c2"]);
       assertEquals(fake.groups.get(7)!.watched_pr_state, "merged");
 
       await until(dir, "orbit-driver-routine", "tg-8", (row) => row.stage === "merged" && (row.waiting ?? "").includes("republish"));
       assertEquals(fake.groups.get(8)!.tasks[0].status, "completed");
       await swamp(dir, "model", "method", "run", "dependency-routine", "approve", "--input", "workItem=tg-8", "--input", "gateId=republish", "--input", "actor=simulated-operator", "--input", "note=Open the pull request again");
       await until(dir, "orbit-driver-routine", "tg-8", (row) => row.stage === "completed");
-      assertEquals(publishKeys(fake, 8), ["tg-8.publish.c1", "tg-8.publish.c1.summary", "tg-8.publish.c2"]);
+      assertEquals(publishKeys(fake, 8), ["tg-8.publish.c1", "tg-8.publish.c2"]);
       assertEquals(fake.groups.get(8)!.watched_pr_state, "merged");
+      assertEquals(fake.groups.get(7)!.counts.summary, 1);
+      assertEquals(fake.groups.get(8)!.counts.summary, 1);
+      assert([...fake.operations.values()].every((op) => op.kind !== "tasks.script"));
       passed = true;
     } finally {
       await fake.close();
@@ -112,14 +112,17 @@ Deno.test({
       await swamp(dir, "model", "method", "run", "dependency-package", "approve", "--input", "workItem=tg-7", "--input", "gateId=publish-retry", "--input", "actor=simulated-operator", "--input", "note=Retry the publish");
       await tick(dir, "orbit-driver-package", "tg-7", 1);
       await until(dir, "orbit-driver-package", "tg-7", (row) => row.stage === "completed");
-      assertEquals(publishKeys(fake, 7), ["tg-7.publish.c1", "tg-7.publish.c1.summary", "tg-7.publish.c2"]);
+      assertEquals(publishKeys(fake, 7), ["tg-7.publish.c1", "tg-7.publish.c2"]);
 
       await workflow(8);
       await until(dir, "orbit-driver-package", "tg-8", (row) => row.stage === "merged" && (row.waiting ?? "").includes("republish"));
       assertEquals(fake.groups.get(8)!.tasks[0].status, "completed");
       await swamp(dir, "model", "method", "run", "dependency-package", "approve", "--input", "workItem=tg-8", "--input", "gateId=republish", "--input", "actor=simulated-operator", "--input", "note=Open the pull request again");
       await until(dir, "orbit-driver-package", "tg-8", (row) => row.stage === "completed");
-      assertEquals(publishKeys(fake, 8), ["tg-8.publish.c1", "tg-8.publish.c1.summary", "tg-8.publish.c2"]);
+      assertEquals(publishKeys(fake, 8), ["tg-8.publish.c1", "tg-8.publish.c2"]);
+      assertEquals(fake.groups.get(7)!.counts.summary, 1);
+      assertEquals(fake.groups.get(8)!.counts.summary, 1);
+      assert([...fake.operations.values()].every((op) => op.kind !== "tasks.script"));
       passed = true;
     } finally {
       await fake.close();

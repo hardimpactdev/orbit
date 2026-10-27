@@ -4,7 +4,6 @@ import { projectConfig } from "../../_lib/project_extension.ts";
 export const behavior = projectConfig("@nckrtl/project-launch-starter-kit", {
   "projectId": 30,
   "repository": "https://github.com/nckrtl/launch-starter-kit.git",
-  "script": "scripts/dependencies",
   "worker": {
     "composerPaths": [
       ".",

@@ -1,9 +1,10 @@
 import { z } from "npm:zod@4";
 import {
   type DependencyProject,
-  DependencyProjectSchema,
   DependencyProjectsSchema,
 } from "./dependency_project_schema.ts";
+
+import { readProjectConfiguration } from "./project_configuration.ts";
 
 export const ProjectExtensionsSchema = z.array(
   z.object({
@@ -67,7 +68,7 @@ export async function projectConfigurations(
       `modelName == ${JSON.stringify(name)} && name == "configuration"`,
       "attributes",
     );
-    const config = DependencyProjectSchema.parse(rows[0]);
+    const config = readProjectConfiguration(rows[0]);
     if (config.projectId !== expectedId) {
       throw new Error(`project extension ${type} returned another Project ID`);
     }

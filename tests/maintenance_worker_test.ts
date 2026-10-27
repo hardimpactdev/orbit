@@ -387,7 +387,7 @@ Deno.test("worker-enabled driver uses the VM Instance path, records existing fac
     await assertRejects(
       () => runStage(args, { ...deps, maintenance: undefined }),
       Error,
-      "fallback is disabled",
+      "maintenance requires the Swamp worker",
     );
   } finally {
     await fake.close();
@@ -1096,4 +1096,109 @@ Deno.test("uncertain starts preserve an absent worker name", async () => {
       get: () => Promise.reject(new Error("no receipt")),
     }), MaintenanceAttention);
   assertEquals(error.workerName, undefined);
+});
+
+Deno.test("pre-retirement running and completed jobs retain their work and results across the config migration", async () => {
+  const stored = JSON.parse(
+    await Deno.readTextFile(
+      new URL(
+        "./fixtures/project-extensions/stage-job-v1.json",
+        import.meta.url,
+      ),
+    ),
+  ) as Job;
+  const config = JSON.parse(stored.inputIdentity!).dependencyProject;
+  delete config.script;
+  for (const state of ["running", "succeeded", "failed"] as const) {
+    const fake = startFakeGateway({ 7: {} });
+    let job: Job = {
+      ...structuredClone(stored),
+      state,
+      ...(state === "running" ? {} : {
+        artifacts: {
+          script: { outcome: state === "succeeded" ? "passed" : "failed" },
+        },
+        evidence: { status: state, runId: "pre-retirement-run" },
+      }),
+    };
+    let runs = 0;
+    const before = structuredClone(job);
+    const http: Http = async (method, path, body, key) => {
+      const response = await fetch(fake.url + path, {
+        method,
+        headers: {
+          "content-type": "application/json",
+          ...(key ? { "Idempotency-Key": key } : {}),
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+      return { status: response.status, body: await response.json() };
+    };
+    const deps = {
+      http,
+      projects: [config],
+      readJob: () => Promise.resolve(structuredClone(job)),
+      writeJob: (value: Job) => {
+        job = structuredClone(value);
+        return Promise.resolve();
+      },
+      maintenance: (
+        _args: StageArgs,
+        group: number,
+        request: Record<string, unknown>,
+      ) => {
+        runs++;
+        assertEquals(group, stored.group);
+        assertEquals(request, stored.request!.body);
+        return Promise.resolve(maintenanceResult(runFixture()));
+      },
+    };
+    const input: StageArgs = {
+      workItem: stored.workItem,
+      key: stored.key,
+      stage: stored.stage,
+      routine: true,
+    };
+    try {
+      await assertRejects(
+        () =>
+          runStage(input, {
+            ...deps,
+            projects: [{
+              ...config,
+              worker: { ...config.worker, jsPaths: [] },
+            }],
+          }),
+        Error,
+        "input conflict",
+      );
+      assertEquals(job, before);
+      const result = await runStage(input, deps);
+      assertEquals(result.state, state === "running" ? "succeeded" : state);
+      assertEquals(result.request, before.request);
+      assertEquals(runs, state === "running" ? 1 : 0);
+      if (state !== "running") {
+        assertEquals(result.artifacts, before.artifacts);
+        assertEquals(result.evidence, before.evidence);
+      }
+      assertEquals(JSON.parse(job.inputIdentity!).schema, 2);
+      assertEquals(fake.operations.size, 0);
+      await runStage(input, deps);
+      assertEquals(runs, state === "running" ? 1 : 0);
+      await assertRejects(
+        () =>
+          runStage(input, {
+            ...deps,
+            projects: [{
+              ...config,
+              worker: { ...config.worker, jsPaths: [] },
+            }],
+          }),
+        Error,
+        "input conflict",
+      );
+    } finally {
+      await fake.close();
+    }
+  }
 });

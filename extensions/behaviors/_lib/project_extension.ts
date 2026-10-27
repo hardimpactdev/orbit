@@ -4,6 +4,11 @@ import {
   DependencyProjectSchema,
 } from "./dependency_project_schema.ts";
 
+import {
+  ConfigurationV2Schema,
+  readProjectConfiguration,
+} from "./project_configuration.ts";
+
 /** A project extension exports data only; maintenance stays in shared behaviors. */
 export function projectConfig(type: string, config: DependencyProject) {
   return {
@@ -14,7 +19,7 @@ export function projectConfig(type: string, config: DependencyProject) {
       configuration: {
         description:
           "Project identity, check, default branch, paths and policy",
-        schema: DependencyProjectSchema,
+        schema: ConfigurationV2Schema,
         lifetime: "infinite",
         garbageCollection: 10,
       },
@@ -35,9 +40,12 @@ export function projectConfig(type: string, config: DependencyProject) {
         }) => {
           const next = DependencyProjectSchema.parse(config);
           const previous = await context.readResource("configuration");
+          const oldConfig = previous
+            ? readProjectConfiguration(previous)
+            : null;
           if (
-            previous &&
-            JSON.stringify(DependencyProjectSchema.parse(previous)) ===
+            previous?.schema === 2 &&
+            JSON.stringify(oldConfig) ===
               JSON.stringify(next)
           ) {
             return { dataHandles: [] };
@@ -47,7 +55,7 @@ export function projectConfig(type: string, config: DependencyProject) {
               await context.writeResource(
                 "configuration",
                 "configuration",
-                next,
+                { ...next, schema: 2 },
               ),
             ],
           };

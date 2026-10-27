@@ -4,7 +4,6 @@ import { projectConfig } from "../../_lib/project_extension.ts";
 export const behavior = projectConfig("@nckrtl/project-fitta", {
   "projectId": 15,
   "repository": "https://github.com/nckrtl/fitta.git",
-  "script": "scripts/dependencies",
   "worker": {
     "composerPaths": [
       ".",

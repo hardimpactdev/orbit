@@ -1,3 +1,7 @@
+import {
+  ConfigurationV2Schema,
+  readProjectConfiguration,
+} from "../extensions/behaviors/_lib/project_configuration.ts";
 import { projectConfig } from "../extensions/behaviors/_lib/project_extension.ts";
 import { inputIdentity } from "../extensions/behaviors/_lib/gateway_stage.ts";
 import {
@@ -5,6 +9,7 @@ import {
   assertEquals,
   assertRejects,
   assertStringIncludes,
+  assertThrows,
 } from "jsr:@std/assert@1.0.19";
 import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016.58";
 import { behavior } from "../extensions/behaviors/projects/nckrtl-com/mod.ts";
@@ -32,12 +37,10 @@ const reports: unknown[] = JSON.parse(
 );
 const registered = [{ projectId: 20, type: "@nckrtl/project-nckrtl-com" }];
 
-Deno.test("project extension returns the old config exactly and produces identical worker inputs", async () => {
+Deno.test("project extension returns config without a repository script and produces identical worker inputs", async () => {
   const { context, getWrittenResources } = createModelTestContext();
   await behavior.methods.configuration.execute({}, context);
-  const config = behavior.resources.configuration.schema.parse(
-    getWrittenResources()[0].data,
-  );
+  const config = readProjectConfiguration(getWrittenResources()[0].data);
   assertEquals(config, original);
   for (const mode of ["routine", "detect", "summary", "package"]) {
     const args = {
@@ -68,7 +71,7 @@ Deno.test("project extension returns the old config exactly and produces identic
 Deno.test("config refresh refuses stale, missing, wrong-project and duplicate extension records", async () => {
   const calls: unknown[] = [];
   let ok = true;
-  let config: unknown = original;
+  let config: unknown = { ...original, schema: 2 };
   const ctx = {
     runModel: (args: unknown) => {
       calls.push(args);
@@ -95,7 +98,7 @@ Deno.test("config refresh refuses stale, missing, wrong-project and duplicate ex
     "cannot read project extension",
   );
   ok = true;
-  config = { ...original, projectId: 99 };
+  config = { ...original, schema: 2, projectId: 99 };
   await assertRejects(
     () => projectConfigurations([], registered, ctx),
     Error,
@@ -272,6 +275,7 @@ Deno.test("detection cannot reuse a routine stage key with another maintenance m
   };
   const identity = inputIdentity(args);
   assertEquals(JSON.parse(identity), {
+    schema: 2,
     routine: true,
     dependencyProject: original,
   });
@@ -333,4 +337,70 @@ Deno.test("cancelled schedule cleanup requires ended children, no assistance and
       { tasks: [{ status: "cancelled", assistance_requested: true }] },
     ]
   ) assertEquals(cleanedCancelledGroup({ ...clean, ...changes }), false);
+});
+
+Deno.test("pre-retirement configuration is rewritten as v2 before the Gateway reads it", async () => {
+  let saved = JSON.parse(
+    await Deno.readTextFile(
+      new URL(
+        "./fixtures/project-extensions/configuration-v1.json",
+        import.meta.url,
+      ),
+    ),
+  );
+  let writes = 0;
+  const ctx = {
+    readResource: () => Promise.resolve(structuredClone(saved)),
+    writeResource: (
+      _spec: string,
+      name: string,
+      value: Record<string, unknown>,
+    ) => {
+      writes++;
+      saved = structuredClone(value);
+      return Promise.resolve({ name });
+    },
+  };
+  const gateway = {
+    runModel: async () => {
+      await behavior.methods.configuration.execute({}, ctx);
+      return { ok: true };
+    },
+    queryData: () => Promise.resolve([saved]),
+  };
+  assertEquals(await projectConfigurations([], registered, gateway, 20), [
+    original,
+  ]);
+  assertEquals(saved.schema, 2);
+  assertEquals("script" in saved, false);
+  assertEquals(writes, 1);
+  assertEquals(await projectConfigurations([], registered, gateway, 20), [
+    original,
+  ]);
+  assertEquals(writes, 1);
+});
+
+Deno.test("configuration migration rejects unknown keys and versions instead of silently dropping them", () => {
+  const legacy = JSON.parse(
+    Deno.readTextFileSync(
+      new URL(
+        "./fixtures/project-extensions/configuration-v1.json",
+        import.meta.url,
+      ),
+    ),
+  );
+  assertEquals(readProjectConfiguration(legacy), original);
+  assertEquals(readProjectConfiguration({ ...original, schema: 2 }), original);
+  for (
+    const invalid of [
+      { ...legacy, extra: true },
+      { ...legacy, schema: 2 },
+      { ...original, schema: 3 },
+      { ...legacy, script: "../outside" },
+      { ...legacy, worker: undefined },
+    ]
+  ) {
+    assertEquals(ConfigurationV2Schema.safeParse(invalid).success, false);
+    assertThrows(() => readProjectConfiguration(invalid));
+  }
 });

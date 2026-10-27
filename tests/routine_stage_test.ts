@@ -1,3 +1,4 @@
+import { maintenanceFixture } from "./_support/maintenance_fixture.ts";
 import { WEBSITE_PROJECT } from "./_support/dependency_projects.ts";
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import {
@@ -49,7 +50,10 @@ async function fixture(scenario = {}) {
     });
     return { status: response.status, body: await response.json() };
   };
+  const worker = maintenanceFixture(fake);
+  worker.prepare();
   const deps = {
+    maintenance: worker.maintenance,
     http,
     projects: [WEBSITE_PROJECT],
     readJob: () => Promise.resolve(job),
@@ -68,6 +72,7 @@ async function fixture(scenario = {}) {
   });
   return {
     fake,
+    worker,
     calls,
     deps,
     args,
@@ -80,81 +85,6 @@ async function fixture(scenario = {}) {
     },
   };
 }
-
-Deno.test("routine script replays the exact saved request after a lost reply, honors polls and never launches twice", async () => {
-  const f = await fixture();
-  try {
-    let lose = true;
-    const http: Http = async (...input) => {
-      const response = await f.deps.http(...input);
-      if (input[0] === "POST" && lose) {
-        lose = false;
-        return { status: 0, body: null };
-      }
-      return response;
-    };
-    const args = f.args("script");
-    const deps = { ...f.deps, http };
-    await runStage(args, deps);
-    const saved = structuredClone(f.get());
-    f.set(saved); // Retained state in a fresh execution, with no in-memory operation id.
-    await runStage(args, deps);
-    await runStage(args, deps); // Poll not due.
-    assertEquals(
-      f.calls.filter((c) => c.path.startsWith("/api/v1/operations/")).length,
-      0,
-    );
-    f.tick();
-    const done = await runStage(args, deps);
-    await runStage(args, deps);
-    assertEquals(done.state, "succeeded");
-    assertEquals(done.artifacts.script.outcome, "passed");
-    assertEquals(f.fake.operations.size, 1);
-    const posts = f.calls.filter((c) => c.method === "POST");
-    assertEquals(posts.length, 2);
-    assertEquals(posts[0], posts[1]);
-    assertEquals(posts[0].body, {
-      subtask: 701,
-      script: "scripts/dependencies",
-      args: ["routine"],
-    });
-    assertEquals(posts[0].key, "tg-7.script.s701.c1");
-  } finally {
-    await f.fake.close();
-  }
-});
-
-Deno.test("routine refuses a foreign or contradictory successful script result without advancing board state", async () => {
-  for (const bad of ["group", "input", "result"]) {
-    const f = await fixture();
-    try {
-      const args = f.args("script");
-      await runStage(args, f.deps);
-      const op = [...f.fake.operations.values()][0];
-      if (bad === "group") op.target_id = 8;
-      if (bad === "input") {
-        op.input = {
-          subtask: 999,
-          script: "scripts/dependencies",
-          args: ["routine"],
-        };
-      }
-      if (bad === "result") {
-        (op.result as Record<string, unknown>).exit_code = 23;
-      }
-      f.tick();
-      await assertRejects(() => runStage(args, f.deps));
-      assertEquals(f.fake.groups.get(7)!.tasks[0].status, "running");
-      assertEquals(f.fake.operations.size, 1);
-      assertEquals(
-        f.calls.filter((c) => c.path.endsWith("/publish")).length,
-        0,
-      );
-    } finally {
-      await f.fake.close();
-    }
-  }
-});
 
 Deno.test("recording a handoff's own artifact before a crash does not conflict with its retained request", async () => {
   const f = await fixture();
@@ -290,7 +220,7 @@ Deno.test("a retained routine request preserves assistance observed after a lost
         await assertRejects(() => runStage(args, f.deps));
       }
       assertEquals(f.calls.filter((c) => c.method === "POST").length, posts);
-      assertEquals(f.fake.operations.size, 1);
+      assertEquals(f.fake.operations.size, 0);
       assertEquals(g.assistance_kind, kind);
     } finally {
       await f.fake.close();
@@ -449,13 +379,7 @@ Deno.test("routine publish uses the summary title and body", async () => {
     const args = f.args("publish", { handoff, workspace: rec({ startingCommit: base }) });
     const started = await runStage(args, f.deps);
     assertEquals(started.state, "running");
-    const script = f.calls.find((c) => c.path.endsWith("/script"))!;
-    assertEquals(script.key, "tg-7.publish.c1.summary");
-    assertEquals(script.body, {
-      subtask: 701,
-      script: "scripts/dependencies",
-      args: ["summary", "--base", base],
-    });
+    assertEquals(f.worker.calls[0].request, { cwd: "/vm/repo", mode: "summary", base });
     f.tick();
     const publishing = await runStage(args, f.deps);
     assertEquals(publishing.state, "running");
@@ -557,7 +481,7 @@ Deno.test("routine publish fails closed and never sends the old pull request tex
     try {
       const args = f.args("publish", { handoff });
       await runStage(args, f.deps);
-      assertEquals(f.calls.find((c) => c.path.endsWith("/script"))!.body!.args, ["summary"]);
+      assertEquals(f.worker.calls[0].request.mode, "summary");
       f.tick();
       const failed = await runStage(args, f.deps);
       assertEquals(failed.state, "failed");
@@ -593,7 +517,7 @@ Deno.test("a changed handoff stays open so publish can summarize, then completes
     const started = await runStage(args, f.deps);
     assertEquals(started.state, "running");
     assertEquals(f.fake.groups.get(7)!.tasks[0].status, "running");
-    assertEquals((f.calls.find((c) => c.path.endsWith("/script"))!.body!.args as string[])[0], "summary");
+    assertEquals(f.worker.calls[0].request.mode, "summary");
     f.tick();
     const publishing = await runStage(args, f.deps);
     assertEquals(publishing.state, "running");
@@ -616,13 +540,13 @@ Deno.test("an unchanged handoff still completes its child for no-change cleanup"
     f.tick();
     await runStage(args, f.deps);
     assertEquals(f.fake.groups.get(7)!.tasks[0].status, "completed");
-    assertEquals(f.calls.filter((c) => c.path.endsWith("/script")).length, 0);
+    assertEquals(f.worker.calls.filter((c) => c.request.mode === "summary").length, 0);
   } finally {
     await f.fake.close();
   }
 });
 
-Deno.test("publish does not script an ended child when no summary was saved", async () => {
+Deno.test("publish does not summarize an ended child when no summary was saved", async () => {
   const f = await fixture();
   try {
     f.fake.groups.get(7)!.tasks[0].status = "completed";
@@ -638,10 +562,11 @@ Deno.test("publish does not script an ended child when no summary was saved", as
   }
 });
 
-Deno.test("a later publish cycle reuses the saved summary and does not script the completed child", async () => {
+Deno.test("a later publish cycle reuses the saved summary and does not summarize the completed child", async () => {
   const f = await fixture({ publishFailOnce: true });
   const jobs = new Map<string, Job>();
   const deps = (key: string) => ({
+    maintenance: f.worker.maintenance,
     http: f.deps.http,
     projects: f.deps.projects,
     now: f.deps.now,
@@ -669,11 +594,11 @@ Deno.test("a later publish cycle reuses the saved summary and does not script th
     const failed = await runStage(publish1, deps(publish1.key));
     assertEquals(failed.state, "failed");
     assertEquals(f.fake.groups.get(7)!.tasks[0].status, "completed");
-    assertEquals(f.calls.filter((c) => c.path.endsWith("/script")).length, 1);
+    assertEquals(f.worker.calls.filter((c) => c.request.mode === "summary").length, 2);
     const publish2 = { ...publish1, key: "tg-7.publish.c2" };
     const started = await runStage(publish2, deps(publish2.key));
     assertEquals(started.state, "running");
-    assertEquals(f.calls.filter((c) => c.path.endsWith("/script")).length, 1);
+    assertEquals(f.worker.calls.filter((c) => c.request.mode === "summary").length, 2);
     const posts = f.calls.filter((c) => c.path.endsWith("/publish"));
     assertEquals(posts.map((c) => c.key), ["tg-7.publish.c1", "tg-7.publish.c2"]);
     assertEquals((posts[1].body!.pull_request as { title: string }).title, (posts[0].body!.pull_request as { title: string }).title);
@@ -718,4 +643,21 @@ Deno.test("completion is durable before best-effort worker revocation, and repla
       await f.fake.close();
     }
   }
+});
+
+Deno.test("a pre-retirement publish job reuses its checked summary after the child ended", async () => {
+  const stored: Job = JSON.parse(await Deno.readTextFile(new URL("./fixtures/project-extensions/publish-job-v1.json", import.meta.url)));
+  const identity = JSON.parse(stored.inputIdentity!);
+  const f = await fixture();
+  try {
+    f.fake.groups.get(7)!.tasks[0].status = "completed";
+    const started = await runStage(f.args("publish", { key: "tg-7.publish.c2", handoff: identity.handoff }), {
+      ...f.deps,
+      readPriorPublish: () => Promise.resolve([stored]),
+    });
+    assertEquals(started.state, "running");
+    assertEquals(started.request!.body.pull_request, stored.request!.body.pull_request);
+    assertEquals(f.worker.calls, []);
+    assertEquals(f.fake.startsOf(7, "publish"), 1);
+  } finally { await f.fake.close(); }
 });

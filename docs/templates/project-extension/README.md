@@ -2,7 +2,7 @@
 
 1. Copy these templates to `extensions/behaviors/projects/<slug>/mod.ts` and
    `manifest.yaml`. Fill every placeholder. Add README and LICENSE files there.
-2. Read the project's current `maintainer.json`, package manifests and setup.
+2. Read the project's package manifests, maintenance paths and setup.
    Copy its exact paths, check, branch and policy. Use `[]` for an unused
    ecosystem. Include application paths such as Hauzer's `mobile/` explicitly.
 3. Add `{ projectId: <id>, type: '@nckrtl/project-<slug>' }` to the Gateway's

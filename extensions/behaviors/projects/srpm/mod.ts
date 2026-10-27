@@ -4,7 +4,6 @@ import { projectConfig } from "../../_lib/project_extension.ts";
 export const behavior = projectConfig("@nckrtl/project-srpm", {
   "projectId": 25,
   "repository": "https://github.com/hardimpactdev/srpm.git",
-  "script": "scripts/dependencies",
   "worker": {
     "composerPaths": [
       ".",

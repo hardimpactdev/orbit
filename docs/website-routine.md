@@ -7,9 +7,8 @@ advances it. The manual workflow below still ticks one existing work item. See
 
 One external Orbit group with one child runs routine maintenance in its task VM.
 Project 20 (`nckrtl/website`) uses the shared Composer and JS extensions on the
-[group worker](task-worker-maintenance.md). Projects without worker support use
-their configured tracked script. Repositories retain dependency constraints,
-release-age rules and package-manager configuration. Add repositories through
+[group worker](task-worker-maintenance.md). All maintained projects use that
+path. Repositories retain dependency constraints, release-age rules and package-manager configuration. Add repositories through
 [project config](dependency-projects.md).
 
 `provision → maintenance → handoff check → publish → wait for merge → complete`
@@ -20,19 +19,15 @@ The official `@swamp/software-factory` definition is `dependency-routine`.
 and creates no groups. Status, dispatch, evidence and advance retain the factory's
 era and cycle rules.
 
-The `script` stage name is retained in the factory contract. For a worker project,
-it starts `tasks.worker`, confirms Swamp enrollment, then places the native
-`maintenance-worker` workflow on `group=<id>`. The extensions receive the VM
-checkout and configured paths/policy. For other projects, it starts `tasks.script`
-with `{subtask, script: <configured path>, args: ["routine"]}`. A worker failure
-never selects the script path. Both paths produce the same scoped factory
-artifact, including outcome and complete working-tree identity.
+The `script` stage name is retained in the factory contract. It starts
+`tasks.worker`, confirms Swamp enrollment, then places the native
+`maintenance-worker` workflow on the enrollment-bound worker name. The
+extensions receive the VM checkout and configured paths/policy. They produce
+the scoped factory artifact, including outcome and complete working-tree identity.
 
-One failed maintenance command or local check gets one implementer turn. On the
-worker path the agent fixes the cause or failing check, then Swamp reruns
-maintenance before another handoff check. On the script path the repair turn
-finishes the routine command and returns for a handoff recheck. A blocked turn,
-second failure or unknown execution parks for assistance. Infrastructure failures
+One failed maintenance command or local check gets one implementer turn. The
+agent fixes the cause or failing check, then Swamp reruns maintenance before
+another handoff check. A blocked turn, second failure or unknown execution parks for assistance. Infrastructure failures
 spend no repair turn. Clearing board assistance does not approve a factory gate.
 
 Gateway handoff runs the Project's check and commits the tree. Publication uses

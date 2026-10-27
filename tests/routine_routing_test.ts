@@ -1,5 +1,6 @@
+import { installMaintenanceFixture } from "./_support/maintenance_fixture.ts";
 import { configureGateway } from "./_support/configure_gateway.ts";
-import { scriptProjectExtension } from "./_support/script_project_extension.ts";
+import { workerProjectExtension } from "./_support/worker_project_extension.ts";
 import { SECOND_PROJECT } from "./_support/dependency_projects.ts";
 // Real official factory and existing driver, isolated from live state and Gateway.
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
@@ -46,7 +47,8 @@ async function copyRepo(url: string) {
       .output()).success,
     "requires already-installed official extensions; never installs",
   );
-  await scriptProjectExtension(dir);
+  await workerProjectExtension(dir);
+  await installMaintenanceFixture(dir);
   await configureGateway(dir, url, [SECOND_PROJECT]);
   return dir;
 }
@@ -105,7 +107,7 @@ Deno.test({
         801: "completed",
         802: "completed",
         803: "assistance",
-        804: "completed",
+        804: "assistance",
         805: "completed",
         806: "assistance",
         807: "assistance",
@@ -161,7 +163,7 @@ Deno.test({
         );
       }
       for (const id of Object.keys(scenarios).map(Number)) {
-        assertEquals(fake.startsOf(id, "script"), 1);
+        assertEquals(fake.groups.get(id)!.counts.maintenance ?? 0, [806, 809].includes(id) ? 0 : [802, 803, 804].includes(id) ? 2 : 1);
         assertEquals(fake.startsOf(id, "analyze"), 0);
         assertEquals(fake.startsOf(id, "review"), 0);
         assertEquals(fake.startsOf(id, "baseline"), 0);
@@ -173,18 +175,16 @@ Deno.test({
         );
         const checks = [802, 803].includes(id)
           ? 2
-          : [806, 807, 809].includes(id)
+          : [804, 806, 807, 809].includes(id)
           ? (id === 807 ? 1 : 0)
           : 1;
         assertEquals(fake.startsOf(id, "handoff"), checks, `checks ${id}`);
         assertEquals(
           fake.startsOf(id, "publish"),
-          [801, 802, 804, 808, 810].includes(id) ? 2 : 0,
-          "summary key plus publish",
+          [801, 802, 808, 810].includes(id) ? 1 : 0,
+          "worker summary precedes publish",
         );
       }
-      const secondScript = [...fake.operations.values()].find((op) => op.target_id === 810 && op.kind === "tasks.script")!;
-      assertEquals(secondScript.input, { subtask: 81001, script: SECOND_PROJECT.script, args: ["routine"] });
       assertEquals(fake.groups.get(810)!.vm_power, "destroyed");
       assertEquals(fake.groups.get(805)!.status, "completed");
       assertEquals(fake.groups.get(803)!.tasks[0].assistance_requested, true);
@@ -200,7 +200,8 @@ Deno.test({
           !["tasks.consult", "tasks.analyze"].includes(String(op.kind))
         ),
       );
-      passed = true;
+      assert([...fake.operations.values()].every((op) => op.kind !== "tasks.script"));
+    passed = true;
     } finally {
       await fake.close();
       if (passed) await Deno.remove(dir, { recursive: true });

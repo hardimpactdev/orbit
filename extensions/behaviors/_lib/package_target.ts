@@ -19,9 +19,6 @@ export const PackageTargetSchema = z.object({
   if (v.manager === "js" && v.package.includes("/") && !v.package.startsWith("@")) ctx.addIssue({ code: "custom", message: "invalid JavaScript package" });
 });
 export type PackageTarget = z.infer<typeof PackageTargetSchema>;
-export function packageArgs(t: PackageTarget): string[] {
-  return ["package", t.manager, t.package, t.version, t.purpose, ...t.advisories];
-}
 export function packageDescription(t: PackageTarget): string {
   return `${t.manager} ${t.package} → ${t.version} (${t.purpose})${t.advisories.length ? `; advisories: ${t.advisories.map((id, i) => `${id}: ${t.advisoryUrls[i]}`).join(", ")}` : ""}`;
 }
@@ -61,7 +58,6 @@ export async function admitPackage(target: PackageTarget, deps: {
   const tasks = g.tasks as Record<string, unknown>[];
   if (g.project_id !== project.projectId || g.orchestration !== "external" || g.status !== "backlog" || g.taskable_id != null || g.vm_power != null || unsafe(g) ||
     !Array.isArray(tasks) || tasks.length !== 1 || tasks[0].status !== "todo" || unsafe(tasks[0])) throw new Error("package admission requires one unused external configured project backlog group with one child");
-  if (target.path && !project.worker) throw new Error("package paths require worker support");
   // Persist before start. A lost response resumes the same immutable selection/run.
   await deps.save(target);
   await deps.start(target.workItem);

@@ -4,7 +4,6 @@ import { projectConfig } from "../../_lib/project_extension.ts";
 export const behavior = projectConfig("@nckrtl/project-platform11", {
   "projectId": 22,
   "repository": "https://github.com/hardimpactdev/platform11.git",
-  "script": "scripts/dependencies",
   "worker": {
     "composerPaths": [
       ".",

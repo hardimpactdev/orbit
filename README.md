@@ -6,11 +6,11 @@ upgrades as the test case. The [dependency routine](docs/website-routine.md) and
 [single-package workflow](docs/website-packages.md) use the official software
 factory and Gateway operations in task VMs.
 
-Project 20 runs the shared maintenance extensions on a Swamp worker inside its
+Maintained projects run the shared maintenance extensions on a Swamp worker inside its
 task VM. [Worker placement and enrollment](docs/task-worker-maintenance.md)
-cover the lifecycle and replay rules. Projects without worker configuration use
-`tasks.script`. Each repository keeps its version constraints and release-age
-policy. One failed update or check gets one repair turn; a second failure parks
+cover the lifecycle and replay rules. Project config requires worker paths and
+contains no repository script. Each repository keeps its version constraints
+and release-age policy. One failed update or check gets one repair turn; a second failure parks
 for assistance. Green work publishes a pull request using the extension summary.
 Unchanged work completes without one. Add repositories with one
 [private project extension](docs/project-extensions.md).

@@ -173,6 +173,43 @@ Deno.test({
   return maintenanceResult(response.body!.data as WorkflowRun);
 }\n` + source.slice(end),
       );
+      // Seed the actual Swamp datastore with the unversioned pre-retirement resource.
+      const projectModule =
+        `${dir}/extensions/behaviors/projects/nckrtl-com/mod.ts`;
+      const projectSource = await Deno.readTextFile(projectModule);
+      const legacy = JSON.parse(
+        await Deno.readTextFile(
+          `${REPO}/tests/fixtures/project-extensions/configuration-v1.json`,
+        ),
+      );
+      await Deno.writeTextFile(
+        projectModule,
+        `
+import { z } from "npm:zod@4";
+import { DependencyProjectSchema } from "../../_lib/dependency_project_schema.ts";
+const config = ${JSON.stringify(legacy)};
+export const behavior = {
+  type: "@nckrtl/project-nckrtl-com", version: "2026.10.27.1", globalArguments: z.object({}),
+  resources: { configuration: { description: "Pre-retirement config", schema: DependencyProjectSchema.extend({ script: z.string() }), lifetime: "infinite", garbageCollection: 10 } },
+  methods: { configuration: { description: "Write the pre-retirement fixture", arguments: z.object({}),
+    execute: async (_args: unknown, context: { writeResource: (spec: string, name: string, value: unknown) => Promise<unknown> }) => ({ dataHandles: [await context.writeResource("configuration", "configuration", config)] }) } }
+};
+`,
+      );
+      await swamp(
+        "model",
+        "create",
+        "@nckrtl/project-nckrtl-com",
+        "project-nckrtl-com",
+      );
+      await swamp(
+        "model",
+        "method",
+        "run",
+        "project-nckrtl-com",
+        "configuration",
+      );
+      await Deno.writeTextFile(projectModule, projectSource);
       const items = [...fake.groups.keys()].filter((id) => id < 78).map((id) =>
         `tg-${id}`
       );
@@ -314,6 +351,8 @@ Deno.test({
           "--json",
         ),
       );
+      assertEquals(config.results[0].schema, 2);
+      assertEquals("script" in config.results[0], false);
       assertEquals(config.results[0].worker, {
         composerPaths: ["."],
         jsPaths: ["."],

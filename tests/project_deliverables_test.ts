@@ -1,3 +1,4 @@
+import { readProjectConfiguration } from "../extensions/behaviors/_lib/project_configuration.ts";
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016.58";
 import { type DependencyProject } from "../extensions/behaviors/_lib/dependency_projects.ts";
@@ -109,8 +110,9 @@ for (const slug of ["nckrtl-com", ...fleet.map((p) => p.slug)]) {
     );
     const { context, getWrittenResources } = createModelTestContext();
     await behavior.methods.configuration.execute({}, context);
-    const project: DependencyProject = behavior.resources.configuration.schema
-      .parse(getWrittenResources()[0].data);
+    const project: DependencyProject = readProjectConfiguration(
+      getWrittenResources()[0].data,
+    );
     const reports = (["composer", "js"] as const).flatMap((manager) => {
       const paths = manager === "composer"
         ? project.worker!.composerPaths

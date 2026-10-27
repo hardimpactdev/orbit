@@ -4,7 +4,6 @@ import { projectConfig } from "../../_lib/project_extension.ts";
 export const behavior = projectConfig("@nckrtl/project-tankwerk", {
   "projectId": 26,
   "repository": "https://github.com/hardimpactdev/tankwerk.git",
-  "script": "scripts/dependencies",
   "worker": {
     "composerPaths": [
       ".",

@@ -4,7 +4,6 @@ import { projectConfig } from "../../_lib/project_extension.ts";
 export const behavior = projectConfig("@nckrtl/project-house-italy", {
   "projectId": 17,
   "repository": "https://github.com/nckrtl/house-italy.git",
-  "script": "scripts/dependencies",
   "worker": {
     "composerPaths": [
       ".",

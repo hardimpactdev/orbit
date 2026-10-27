@@ -26,7 +26,7 @@ is changed.
 | hauzer               | 16       | .              | ., mobile        | composer check                                | .: 7, mobile: 7      |
 | mealou               | 19       | .              | ., mobile        | composer check                                | .: 7, mobile: 7      |
 
-Operator keeps only server/web, as its current maintainer.json specifies. Hauzer
+Operator keeps only server/web in its private extension config. Hauzer
 and Mealou include mobile for Expo. Other manifests outside configured paths
 (such as Operator mac/iOS, Operator Website Slack, and Platform11 design
 templates) do not expand this rollout. Four projects have no explicit age rule;

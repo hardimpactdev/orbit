@@ -19,9 +19,9 @@ continues to own execution state and transitions.
 Before project extensions, `orbit-gateway.globalArguments.dependencyProjects`
 held Project 20 and Project 18 config. It asserts the Gateway's repository URL,
 check command and default branch. Project 20 also supplies worker paths and
-release-age policy. There were no dependency schedules. Repository
-`maintainer.json` and package-manager policy remain the source when preparing
-later project entries.
+release-age policy. There were no dependency schedules. The private extension
+now owns maintenance paths and policy. Maintenance does not read repository
+`maintainer.json` or run a repository maintenance script.
 
 Project 20 moves to `@nckrtl/project-nckrtl-com`. Its config method writes the
 same values as before. The Gateway selects registered project extensions through
@@ -30,10 +30,18 @@ resolved object to the existing routine/package client. It never uses cached
 config after a failed config call. Duplicate Project IDs and Gateway setting
 mismatches refuse dispatch. The 18-project rollout completes this migration; the
 Gateway keeps an empty `dependencyProjects` list. See
-[the fleet inventory](maintained-project-extensions.md). A project with worker
-config cannot fall back to a script. Routing registration contains only its ID
-and extension type. Each stage loads only the matching extension, so adding
+[the fleet inventory](maintained-project-extensions.md). Every project requires
+worker config; the strict schema rejects the former `script` field. Routing
+registration contains only its ID and extension type. Each stage loads only the matching extension, so adding
 projects does not multiply nested calls in a driver tick.
+
+Configuration resources use schema version 2. A configuration read validates the
+unversioned v1 resource, removes its retired `script` field and writes a v2
+resource before the Gateway consumes it. Current resources and new config remain
+strict. Stage input identities also use version 2 and include only the fields
+that define maintenance work. Pre-retirement identities are migrated before
+comparison, including on completed jobs; changes to paths, policy, targets or
+handoff evidence still conflict under the same key.
 
 Private manifests declare the Composer/JS extension dependencies and
 `visibility: private`. Delivery stays in the private Git repository and

@@ -1,5 +1,6 @@
+import { installMaintenanceFixture } from "./_support/maintenance_fixture.ts";
 import { configureGateway } from "./_support/configure_gateway.ts";
-import { scriptProjectExtension } from "./_support/script_project_extension.ts";
+import { workerProjectExtension } from "./_support/worker_project_extension.ts";
 import { SECOND_PROJECT } from "./_support/dependency_projects.ts";
 // End-to-end routing with the unmodified official factory and loopback Gateway.
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
@@ -25,8 +26,9 @@ Deno.test({ name: "dependency-package official factory enforces sequential fresh
       const to = `${dir}/${f}`; await Deno.mkdir(to.slice(0, to.lastIndexOf("/")), { recursive: true }); await Deno.copyFile(`${REPO}/${f}`, to);
     }
     await Deno.mkdir(`${dir}/.swamp`);
-    assert((await new Deno.Command("cp", { args: ["-r", `${REPO}/.swamp/pulled-extensions`, `${dir}/.swamp/`] }).output()).success);
-    await scriptProjectExtension(dir);
+    assert((await new Deno.Command("cp", { args: ["-r", Deno.env.get("SWAMP_TEST_EXTENSIONS") ?? `${REPO}/.swamp/pulled-extensions`, `${dir}/.swamp/`] }).output()).success);
+    await workerProjectExtension(dir);
+  await installMaintenanceFixture(dir);
     await configureGateway(dir, fake.url, [SECOND_PROJECT]);
     const input = (id: number) => ({ workItem: `tg-${id}`, manager: id === 902 ? "js" : "composer", package: id === 902 ? "react" : "livewire/livewire", version: id === 902 ? "20.0.0" : "4.9.9", purpose: id === 902 ? "major" : "security", advisoryUrls: id === 902 ? [] : ["https://github.com/advisories/GHSA-fixture-one", "https://github.com/advisories/GHSA-fixture-two"], advisories: id === 902 ? [] : ["PKSA-xhv3-nr94-h8db", "PKSA-bgw4-5zmg-2njg"] });
     async function workflow(id: number) {
@@ -59,8 +61,6 @@ Deno.test({ name: "dependency-package official factory enforces sequential fresh
     await workflow(906); await until(906, "completed");
     assertEquals(fake.startsOf(906, "repair"), 0);
     assertEquals(fake.groups.get(906)!.vm_power, "destroyed");
-    const secondScript = [...fake.operations.values()].find((op) => op.target_id === 906 && op.kind === "tasks.script")!;
-    assertEquals((secondScript.input as Record<string, unknown>).script, SECOND_PROJECT.script);
     fake.groups.get(901)!.watched_pr_state = "merged";
     await until(901, "completed");
     for (const [path, source] of originals) await Deno.writeTextFile(`${dir}/${path}`, source);
@@ -73,7 +73,7 @@ Deno.test({ name: "dependency-package official factory enforces sequential fresh
     await workflow(903); await until(903, "completed");
     await workflow(905); await until(905, "assistance");
     assertEquals(fake.startsOf(905, "repair"), 1);
-    assertEquals(fake.startsOf(905, "script"), 2);
+    assertEquals(fake.groups.get(905)!.counts.maintenance, 2);
     assertEquals(fake.startsOf(905, "publish"), 0, "a ready repair receipt cannot hide a still-failing package/audit command");
     // Simulated explicit operator cancellation and verified cleanup, never a live write.
     const cancelled = fake.groups.get(905)!;
@@ -84,17 +84,15 @@ Deno.test({ name: "dependency-package official factory enforces sequential fresh
     await workflow(904); await until(904, "assistance");
     await tick(904); await tick(904); // Parked restarts cannot buy another turn.
     for (const id of [901, 902, 903, 904]) {
-      assertEquals(fake.startsOf(id, "provision"), 1); assertEquals(fake.startsOf(id, "script"), id === 902 ? 1 : 2);
+      assertEquals(fake.startsOf(id, "provision"), 1); assertEquals(fake.groups.get(id)!.counts.maintenance ?? 0, id === 902 ? 1 : 2);
       assertEquals(fake.startsOf(id, "repair"), id === 902 ? 0 : 1);
-      assertEquals(fake.startsOf(id, "publish"), id === 904 ? 0 : 2, "summary key plus publish");
+      assertEquals(fake.startsOf(id, "publish"), id === 904 ? 0 : 1, "worker summary precedes publish");
       assertEquals(fake.startsOf(id, "analyze"), 0); assertEquals(fake.startsOf(id, "review"), 0);
-      const op = [...fake.operations.values()].find((o) => o.target_id === id && o.kind === "tasks.script")!;
-      const request = op.input as { args: string[] };
-      const selected = input(id);
-      assertEquals(request.args, ["package", selected.manager, selected.package, selected.version, selected.purpose, ...selected.advisories]);
+
     }
     assertEquals(fake.groups.get(904)!.tasks[0].assistance_requested, true);
     assertEquals(fake.groups.get(901)!.vm_power, "destroyed");
+    assert([...fake.operations.values()].every((op) => op.kind !== "tasks.script"));
     passed = true;
   } finally {
     await fake.close();

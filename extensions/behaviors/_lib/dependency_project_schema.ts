@@ -16,12 +16,6 @@ const MaintenancePaths = z.array(MaintenancePath).refine(
 export const DependencyProjectSchema = z.object({
   projectId: z.number().int().positive(),
   repository: z.string().min(1),
-  script: z.string().regex(
-    /^[A-Za-z0-9_][A-Za-z0-9_.-]*(?:\/[A-Za-z0-9_.-]+)*$/,
-  ).refine(
-    (v) => !v.split("/").some((part) => part === "." || part === ".."),
-    "script must be a relative tracked path",
-  ),
   worker: z.object({
     composerPaths: MaintenancePaths,
     jsPaths: MaintenancePaths,
@@ -35,7 +29,7 @@ export const DependencyProjectSchema = z.object({
         [...v.composerPaths, ...v.jsPaths].includes(p)
       ),
     "worker policy needs a configured path",
-  ).optional(),
+  ),
   check: z.string().min(1),
   defaultBranch: z.string().min(1),
 }).strict();

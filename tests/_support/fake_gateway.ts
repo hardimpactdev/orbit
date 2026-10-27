@@ -106,22 +106,10 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
           return { status: "failed", error_code: "task_vm.invalid_config" };
         }
         g.status = "running";
-        g.taskable_id = 1; g.vm_power = "running";
+        g.taskable_id = s.projectId ? g.id : 1; g.vm_power = "running";
         if (s.provisionIdentity) return { status: "succeeded", result: s.provisionIdentity };
-        return { status: "succeeded", result: { instance_id: 1, node_id: 2, starting_commit: HEAD,
+        return { status: "succeeded", result: { instance_id: g.taskable_id, node_id: 2, starting_commit: HEAD,
           analysis_base: { base: HEAD, instance_id: 1, repository: "https://example.test/repo.git", branch: `task-${g.id}` } } };
-      case "script": {
-        bump(g, "script");
-        const summary = Array.isArray(body.args) && body.args[0] === "summary";
-        if (summary) {
-          if (s.summaryFails) return { status: "succeeded", result: { outcome: "failed", exit_code: 1, output: "No dependency changes to summarize.\n", output_truncated: false, changed: false, head: g.head, tree: g.tree } };
-          return { status: "succeeded", result: { outcome: "passed", exit_code: 0, output: s.summaryGarbage ? "not a pull request" : SUMMARY, output_truncated: s.summaryTruncated === true, changed: false, head: g.head, tree: g.tree } };
-        }
-        if (s.scriptInfrastructureFailure) return { status: "failed", error_code: "tasks.script_unavailable" };
-        if (!s.scriptNoChange) g.tree = "e".repeat(40);
-        return { status: "succeeded", result: { outcome: (s.scriptFails || (s.scriptFailsOnce && g.counts.script === 1)) || s.scriptInterrupted ? "failed" : "passed", exit_code: s.scriptInterrupted ? null : (s.scriptFails || (s.scriptFailsOnce && g.counts.script === 1)) ? 23 : 0,
-          output: s.scriptFails ? "npm update failed" : "updated", output_truncated: false, changed: !s.scriptNoChange, head: g.head, tree: g.tree } };
-      }
       case "analyze": {
         if (s.analysisFailure) return { status: "failed", error_code: s.analysisFailure.error.code, failed_step: "analysis", result: s.analysisFailure };
         if (body.head !== g.head || body.tree !== g.tree) return { status: "failed", error_code: "tasks.analysis_stale" };
@@ -181,6 +169,33 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
       new Response(JSON.stringify(status < 400 ? { data, meta: {} } : data), { status, headers: { "content-type": "application/json" } });
     const project = /^\/api\/v1\/projects\/(\d+)$/.exec(p);
     if (req.method === "GET" && project && projects.has(Number(project[1]))) return json(200, projects.get(Number(project[1])));
+    const instance = /^\/api\/v1\/instances\/(\d+)$/.exec(p);
+    if (req.method === "GET" && instance) {
+      const g = [...groups.values()].find((g) => g.taskable_id === Number(instance[1]));
+      if (g) return json(200, { id: g.taskable_id, project_id: g.project_id, checkout_path: "/vm/repo", starting_commit: HEAD });
+    }
+    const maintenance = /^\/fixture\/maintenance\/(\d+)\/(routine|package|summary|detect)$/.exec(p);
+    if (req.method === "GET" && maintenance) {
+      const g = groups.get(Number(maintenance[1]))!;
+      const s = g.scenario;
+      const mode = maintenance[2];
+      if (s.scriptInfrastructureFailure || s.scriptInterrupted) return json(200, { lastError: "Swamp maintenance requires investigation" });
+      const run = JSON.parse(await Deno.readTextFile(new URL("../fixtures/maintenance-worker/run.json", import.meta.url)));
+      const steps = run.jobs[0].steps;
+      steps[0].dataArtifacts[0].attributes = { head: g.head, tree: g.tree };
+      if (mode === "summary") {
+        bump(g, "summary");
+        steps.find((step: { name: string }) => step.name === "summary").dataArtifacts = [{ name: "summary", attributes: { text: s.summaryGarbage ? "not a pull request" : SUMMARY } }];
+        if (s.summaryFails) steps[1].dataArtifacts = [{ name: "failure", attributes: { exitCode: 1, message: "summary failed" } }];
+        if (s.summaryTruncated) steps.find((step: { name: string }) => step.name === "summary").dataArtifacts = [];
+      } else {
+        const count = bump(g, "maintenance");
+        if (!s.scriptNoChange) g.tree = "e".repeat(40);
+        if (s.scriptFails || (s.scriptFailsOnce && count === 1)) steps[1].dataArtifacts = [{ name: "failure", attributes: { exitCode: 23, message: "fixture command failed" } }];
+      }
+      steps.at(-1).dataArtifacts[0].attributes = { head: g.head, tree: g.tree };
+      return json(200, run);
+    }
     const m = /^\/api\/v1\/task-groups\/(\d+)(\/.*)?$/.exec(p);
     if (m) {
       const g = groups.get(Number(m[1]));
@@ -257,7 +272,7 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
         g.vm_power = "destroyed";
         return json(200, view());
       }
-      const op = /^\/(provision|script|check|analyze|turn|publish)$/.exec(rest);
+      const op = /^\/(provision|check|analyze|turn|publish)$/.exec(rest);
       if (req.method === "POST" && op) {
         const key = req.headers.get("idempotency-key") ?? "";
         starts.set(key, (starts.get(key) ?? 0) + 1);

@@ -1,3 +1,4 @@
+import { readProjectConfiguration } from "../extensions/behaviors/_lib/project_configuration.ts";
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.11";
 import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016.58";
@@ -33,9 +34,11 @@ for (const source of sources) {
     );
     const { context, getWrittenResources } = createModelTestContext();
     await behavior.methods.configuration.execute({}, context);
-    const config: DependencyProject = behavior.resources.configuration.schema
-      .parse(getWrittenResources()[0].data);
+    const config: DependencyProject = readProjectConfiguration(
+      getWrittenResources()[0].data,
+    );
     assertEquals(behavior.type, `@nckrtl/project-${source.slug}`);
+    assertEquals("script" in config, false);
     assertEquals(config.projectId, source.project.id);
     assertEquals(config.repository, source.project.repository_url);
     assertEquals(config.check, source.project.task_check);

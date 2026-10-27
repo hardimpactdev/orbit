@@ -4,7 +4,6 @@ import { projectConfig } from "../../_lib/project_extension.ts";
 export const behavior = projectConfig("@nckrtl/project-hauzer", {
   "projectId": 16,
   "repository": "https://github.com/hardimpactdev/hauzer.git",
-  "script": "scripts/dependencies",
   "worker": {
     "composerPaths": [
       ".",

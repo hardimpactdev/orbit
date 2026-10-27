@@ -4,7 +4,6 @@ import { projectConfig } from "../../_lib/project_extension.ts";
 export const behavior = projectConfig("@nckrtl/project-lindaretel", {
   "projectId": 18,
   "repository": "https://github.com/hardimpactdev/lindaretel.git",
-  "script": "scripts/dependencies",
   "worker": {
     "composerPaths": [
       ".",

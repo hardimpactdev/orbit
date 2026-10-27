@@ -4,7 +4,6 @@ import { projectConfig } from "../../_lib/project_extension.ts";
 export const behavior = projectConfig("@nckrtl/project-ai-cli-proxy", {
   "projectId": 51,
   "repository": "https://github.com/nckrtl/ai-cli-proxy.git",
-  "script": "scripts/dependencies",
   "worker": {
     "composerPaths": [
       ".",

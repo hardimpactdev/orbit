@@ -24,18 +24,12 @@ commits, paths and checks.
    paths and assertions against the repository's release-age policy. Paths must
    be relative, unique within each ecosystem, and stay inside the checkout.
    Policy keys must name configured paths. The VM base image needs Swamp and the
-   Orbit root CA; see [worker maintenance](task-worker-maintenance.md). For a
-   project without worker support, omit `worker` and supply a tracked,
-   executable script accepting `routine`, `detect`,
-   `package <composer|js>
-   <name> <version> <major|security> [advisory-id ...]`,
-   and `summary`.
+   Orbit root CA; see [worker maintenance](task-worker-maintenance.md).
 2. Fill the extension config using the actual Orbit Project ID, exact
    `repository_url`, `task_check` and `default_branch` from
    `orbit project:show <id> --json`. Add its ID/type registration to
-   `projectExtensions`. Retain `script` in the config identity until script
-   projects are retired. A project with `worker` never falls back to it on
-   worker failure. No factory copy, new Gateway endpoint or dependency-specific
+   `projectExtensions`. The schema requires `worker` and rejects the former
+   `script` field. No factory copy, new Gateway endpoint or dependency-specific
    Orbit record is needed.
 3. Run the local fixture tests. After review/merge, the operator applies the
    reviewed Swamp commit and restarts `swamp-serve`. Do not apply a rename while
@@ -51,7 +45,7 @@ commits, paths and checks.
    [package](website-packages.md) for gates, target fields and repair limits.
 
 Unknown/duplicate Project IDs and mismatched Project settings refuse work.
-Worker paths, policy and the tracked script path come from the resolved config.
+Worker paths and policy come from the resolved config.
 Provision and handoff still send only Orbit's supported request fields: the
 Gateway starts from its Project's default branch and runs its Project's check.
 Config asserts those values; it cannot override them or inject a command into an

@@ -1,3 +1,4 @@
+import { maintenanceFixture } from "./_support/maintenance_fixture.ts";
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { DependencyProjectsSchema } from "../extensions/behaviors/_lib/dependency_projects.ts";
 import { runStage, type Http, type Job, type StageArgs } from "../extensions/behaviors/_lib/gateway_stage.ts";
@@ -15,16 +16,18 @@ function fixture() {
     return { status: r.status, body: await r.json() };
   };
   const args: StageArgs = { workItem: "tg-7", stage: "script", key: "tg-7.script.c1", routine: true };
-  const deps = { http, projects: [WEBSITE_PROJECT, SECOND_PROJECT], readJob: () => Promise.resolve(job), writeJob: (value: Job) => { job = structuredClone(value); return Promise.resolve(); } };
-  return { fake, calls, args, deps, restart: () => { job = structuredClone(job); } };
+  const worker = maintenanceFixture(fake);
+  worker.prepare();
+  const deps = { maintenance: worker.maintenance, http, projects: [WEBSITE_PROJECT, SECOND_PROJECT], readJob: () => Promise.resolve(job), writeJob: (value: Job) => { job = structuredClone(value); return Promise.resolve(); } };
+  return { fake, worker, calls, args, deps, restart: () => { job = structuredClone(job); } };
 }
 
-Deno.test("dependency project config refuses duplicate IDs and script paths outside the repository", () => {
+Deno.test("dependency project config requires worker paths and rejects the retired script field", () => {
   assert(DependencyProjectsSchema.safeParse([WEBSITE_PROJECT, SECOND_PROJECT]).success);
   assertEquals(DependencyProjectsSchema.safeParse([WEBSITE_PROJECT, WEBSITE_PROJECT]).success, false);
-  assert(DependencyProjectsSchema.safeParse([{ ...SECOND_PROJECT, script: "dependencies.php" }]).success);
-  for (const script of ["/tmp/run", "../run", "scripts/../run", "scripts/run;bad", "--script"])
-    assertEquals(DependencyProjectsSchema.safeParse([{ ...SECOND_PROJECT, script }]).success, false);
+  const { worker: _worker, ...missing } = WEBSITE_PROJECT;
+  assertEquals(DependencyProjectsSchema.safeParse([missing]).success, false);
+  assertEquals(DependencyProjectsSchema.safeParse([{ ...WEBSITE_PROJECT, script: "scripts/dependencies" }]).success, false);
 });
 
 Deno.test("unknown projects and each mismatched Gateway setting refuse dispatch on repeated restarted calls", async () => {
@@ -43,34 +46,26 @@ Deno.test("unknown projects and each mismatched Gateway setting refuse dispatch 
   }
 });
 
-Deno.test("a second project's saved literal script request survives lost response and refuses changed config under its key", async () => {
+Deno.test("a second project's worker request survives restart and refuses changed config under its key", async () => {
   const f = fixture();
   try {
-    let lost = true;
-    const http: Http = async (...input) => {
-      const r = await f.deps.http(...input);
-      if (input[0] === "POST" && lost) { lost = false; return { status: 0, body: null }; }
-      return r;
-    };
-    const deps = { ...f.deps, http };
-    await runStage(f.args, deps);
+    await runStage(f.args, f.deps);
     f.restart();
-    await assertRejects(() => runStage(f.args, { ...deps, projects: [{ ...SECOND_PROJECT, script: "scripts/another" }] }), Error, "input conflict");
-    await runStage(f.args, deps);
-    const posts = f.calls.filter((c) => c.method === "POST");
-    assertEquals(posts.length, 2);
-    assertEquals(posts[0], posts[1]);
-    assertEquals(posts[0].body, { subtask: 701, script: SECOND_PROJECT.script, args: ["routine"] });
-    assertEquals(f.fake.operations.size, 1);
+    await assertRejects(() => runStage(f.args, { ...f.deps, projects: [{ ...SECOND_PROJECT, worker: { ...SECOND_PROJECT.worker, jsPaths: [] } }] }), Error, "input conflict");
+    const done = await runStage(f.args, f.deps);
+    assertEquals(done.state, "succeeded");
+    assertEquals(f.worker.calls[0], f.worker.calls[1]);
+    assertEquals(f.worker.calls[0].args.dependencyProject, SECOND_PROJECT);
+    assertEquals(f.fake.operations.size, 0);
   } finally { await f.fake.close(); }
 });
 
-Deno.test("second-project repair names its configured script without changing the ordinary check API", async () => {
+Deno.test("second-project repair uses its worker without changing the ordinary check API", async () => {
   const f = fixture();
   try {
     await runStage({ ...f.args, stage: "repair", key: "tg-7.repair.c1", script: { payload: { subtask: 701, outcome: "failed", output: "update failed" }, recordedAt: "2026-10-25T20:00:00Z" } }, f.deps);
     const repair = f.calls.find((c) => c.path.endsWith("/turn"))!;
-    assert(String(repair.body!.prompt).includes(`rerun ${SECOND_PROJECT.script} routine`));
+    assert(String(repair.body!.prompt).includes("Swamp will rerun the extension"));
     assert(!String(repair.body!.prompt).includes("scripts/dependencies"));
     await runStage({ ...f.args, stage: "handoff", key: "tg-7.handoff.c1" }, { ...f.deps, readJob: () => Promise.resolve(null) });
     const check = f.calls.find((c) => c.path.endsWith("/check"))!;

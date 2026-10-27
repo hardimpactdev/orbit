@@ -4,7 +4,6 @@ import { projectConfig } from "../../_lib/project_extension.ts";
 export const behavior = projectConfig("@nckrtl/project-treadmill-website", {
   "projectId": 54,
   "repository": "https://github.com/nckrtl/treadmill-website.git",
-  "script": "scripts/dependencies",
   "worker": {
     "composerPaths": [
       ".",

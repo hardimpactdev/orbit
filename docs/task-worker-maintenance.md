@@ -1,10 +1,12 @@
 # Dependency maintenance on the group worker
 
-Project 20 runs Composer and JavaScript maintenance in its task VM. The official
-software factory and Gateway keep provision, handoff checks and commits, repair
-turns, publication, merge observation and cleanup. Projects without `worker`
-configuration still run their tracked dependency script. A worker failure never
-selects that script path.
+Each maintained project runs Composer and JavaScript maintenance in its task VM.
+The official software factory and Gateway keep provision, handoff checks and
+commits, repair turns, publication, merge observation and cleanup. Every
+maintenance project requires `worker` configuration. Routine updates, package updates, detection and PR summaries all
+run shared extensions on that worker. No maintenance stage calls `tasks.script`,
+reads `maintainer.json`, or runs `scripts/dependencies`. The Gateway operation
+itself remains available for other uses.
 
 The driver uses Swamp's built-in `swamp/enrollment-token` methods on serve. Each
 worker start has a named enrollment with a one-machine limit and a two-hour
@@ -92,5 +94,6 @@ for the real token-authenticated serve/worker test. It verifies that enrollment
 alone gets HTTP 401 and that the worker server credential cannot start workflows,
 list workers or tokens, search models, or query data. It uses two workers, including one from another
 group with a forged label, and fixture package commands. It keeps test enrollment
-in Swamp vault/state and process memory, and stops serve and both workers on exit. Existing routine/package/publish routing tests cover the script
-fallback. No test touches production state or installs website dependencies.
+in Swamp vault/state and process memory, and stops serve and both workers on
+exit. Routine/package/publish routing tests use the worker boundary. No test
+touches production state or installs website dependencies.

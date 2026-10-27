@@ -1,3 +1,4 @@
+import { maintenanceFixture } from "./_support/maintenance_fixture.ts";
 import { WEBSITE_PROJECT } from "./_support/dependency_projects.ts";
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { admitPackage, PackageTargetSchema, type PackageTarget } from "../extensions/behaviors/_lib/package_target.ts";
@@ -22,11 +23,12 @@ function fixture() {
     save: (t: PackageTarget) => { if (!targets.some((x) => x.workItem === t.workItem)) targets.push(structuredClone(t)); return Promise.resolve(); },
     start: (item: string) => { starts++; states.set(item, { stageId: "provision", status: "active" }); return Promise.resolve(); },
   };
+  const worker = maintenanceFixture(fake);
   const jobs = new Map<string, Job>();
   let now = Date.now();
   const args = (stage: StageArgs["stage"], extra = {}): StageArgs => ({ workItem: target.workItem, key: `${target.workItem}.${stage}.c1`, stage, routine: true, packageTarget: target, ...extra });
-  const stageDeps = (key: string, transport = http) => ({ http: transport, projects: [WEBSITE_PROJECT], readJob: () => Promise.resolve(jobs.get(key) ?? null), writeJob: (j: Job) => { jobs.set(key, structuredClone(j)); return Promise.resolve(); }, now: () => now });
-  return { fake, http, calls, admission, jobs, states, args, stageDeps, get starts() { return starts; }, tick: () => { now += 60000; } };
+  const stageDeps = (key: string, transport = http) => { worker.prepare(); return ({ maintenance: worker.maintenance, http: transport, projects: [WEBSITE_PROJECT], readJob: () => Promise.resolve(jobs.get(key) ?? null), writeJob: (j: Job) => { jobs.set(key, structuredClone(j)); return Promise.resolve(); }, now: () => now }); };
+  return { fake, worker, http, calls, admission, jobs, states, args, stageDeps, get starts() { return starts; }, tick: () => { now += 60000; } };
 }
 
 Deno.test("package admission is immutable and restart-safe; next package waits for merge, clean completion and VM cleanup", async () => {
@@ -78,25 +80,20 @@ Deno.test("lost admission response between target save and factory start resumes
   } finally { await f.fake.close(); }
 });
 
-Deno.test("one package script replays a lost response with exact literal args and refuses changed target after restart", async () => {
+Deno.test("package worker request survives restart and refuses a changed target", async () => {
   const f = fixture();
   try {
-    const a = f.args("script");
-    let lost = true;
-    const http: Http = async (...input) => { const r = await f.http(...input); if (input[0] === "POST" && lost) { lost = false; return { status: 0, body: null }; } return r; };
-    const deps = f.stageDeps(a.key, http);
-    await runStage(a, deps);
-    // Fresh memory reconstructed only from the persisted job.
-    f.jobs.set(a.key, structuredClone(f.jobs.get(a.key)!));
-    await assertRejects(() => runStage({ ...a, packageTarget: { ...target, version: "5.0.0" } }, deps), Error, "input conflict");
-    await runStage(a, deps); f.tick();
-    const result = await runStage(a, deps);
-    assertEquals(result.state, "succeeded");
-    assertEquals(f.fake.operations.size, 1);
-    const posts = f.calls.filter((x) => x.method === "POST");
-    assertEquals(posts.length, 2); assertEquals(posts[0], posts[1]);
-    assertEquals(posts[0].body, { subtask: 701, script: "scripts/dependencies", args: ["package", "composer", "livewire/livewire", "4.9.9", "security", ...target.advisories] });
-    assertEquals(posts[0].key, "tg-7.script.s701.c1");
+    const args = f.args("script");
+    const deps = f.stageDeps(args.key);
+    await runStage(args, deps);
+    f.jobs.set(args.key, structuredClone(f.jobs.get(args.key)!));
+    await assertRejects(() => runStage({ ...args, packageTarget: { ...target, version: "5.0.0" } }, deps), Error, "input conflict");
+    const done = await runStage(args, deps);
+    assertEquals(done.state, "succeeded");
+    assertEquals(f.worker.calls[0], f.worker.calls[1]);
+    assertEquals(f.worker.calls[0].args.packageTarget, target);
+    assertEquals(f.worker.calls[0].request.mode, "package");
+    assertEquals(f.fake.operations.size, 0);
   } finally { await f.fake.close(); }
 });
 
@@ -111,7 +108,7 @@ Deno.test("package repair preserves the target and advisories with Gateway-shape
     const post = f.calls.find((x) => x.path.endsWith("/turn"))!;
     const prompt = String(post.body!.prompt);
     assert(prompt.includes("livewire/livewire")); assert(prompt.includes(target.advisories[0]));
-    assert(prompt.includes("do not upgrade another direct package"));
+    assert(prompt.includes("Swamp reruns this exact target"));
     assert(!prompt.includes("rerun scripts/dependencies routine"));
     assertEquals(f.fake.startsOf(7, "repair"), 1);
     assertEquals(f.fake.startsOf(7, "publish"), 0);
@@ -135,12 +132,14 @@ Deno.test("post-repair script keeps prior changed-tree evidence without claiming
   try {
     const args: StageArgs = { workItem: "tg-7", stage: "script", key: "tg-7.script.c2", routine: true, packageTarget: target,
       script: { payload: { subtask: 701, changed: true, tree: "c".repeat(40) }, recordedAt: "2026-10-25T20:00:00Z" } };
-    const deps = { http, projects: [WEBSITE_PROJECT], readJob: () => Promise.resolve(job), writeJob: (j: Job) => { job = structuredClone(j); return Promise.resolve(); }, now: () => now };
+    const worker = maintenanceFixture(fake);
+    worker.prepare();
+    const deps = { maintenance: worker.maintenance, http, projects: [WEBSITE_PROJECT], readJob: () => Promise.resolve(job), writeJob: (j: Job) => { job = structuredClone(j); return Promise.resolve(); }, now: () => now };
     await runStage(args, deps); now += 60000;
     const done = await runStage(args, deps);
     assertEquals(done.artifacts.script.changed, true);
     assertEquals(done.artifacts.script.commandChanged, false);
-    assertEquals(fake.operations.size, 1);
+    assertEquals(fake.operations.size, 0);
   } finally { await fake.close(); }
 });
 
@@ -269,7 +268,7 @@ Deno.test("a package completion reply that never applies stays retryable and the
   } finally { await f.fake.close(); }
 });
 
-Deno.test("package publish does not script an ended child when no summary was saved", async () => {
+Deno.test("package publish does not summarize an ended child when no summary was saved", async () => {
   const f = fixture();
   try {
     f.fake.groups.get(7)!.tasks[0].status = "completed";
@@ -280,7 +279,7 @@ Deno.test("package publish does not script an ended child when no summary was sa
   } finally { await f.fake.close(); }
 });
 
-Deno.test("a later package publish reuses the saved summary and does not script the completed child", async () => {
+Deno.test("a later package publish reuses the saved summary and does not summarize the completed child", async () => {
   const f = fixture();
   f.fake.groups.get(7)!.scenario.publishFailOnce = true;
   const deps = (key: string) => ({
@@ -308,7 +307,7 @@ Deno.test("a later package publish reuses the saved summary and does not script 
     assertEquals(f.fake.groups.get(7)!.tasks[0].status, "completed");
     const publish2 = { ...publish1, key: "tg-7.publish.c2" };
     await runStage(publish2, deps(publish2.key));
-    assertEquals(f.calls.filter((c) => c.path.endsWith("/script")).length, 1);
+    assertEquals(f.worker.calls.filter((c) => c.request.mode === "summary").length, 2);
     assertEquals(f.calls.filter((c) => c.path.endsWith("/publish")).map((c) => c.key), ["tg-7.publish.c1", "tg-7.publish.c2"]);
     f.tick();
     const done = await runStage(publish2, deps(publish2.key));

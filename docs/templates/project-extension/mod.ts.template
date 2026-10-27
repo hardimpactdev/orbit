@@ -3,7 +3,6 @@ import { projectConfig } from "../../_lib/project_extension.ts";
 export const behavior = projectConfig("@nckrtl/project-PROJECT-SLUG", {
   projectId: PROJECT_ID,
   repository: "EXACT_ORBIT_REPOSITORY_URL",
-  script: "scripts/dependencies",
   worker: {
     composerPaths: ["."],
     jsPaths: ["."],
