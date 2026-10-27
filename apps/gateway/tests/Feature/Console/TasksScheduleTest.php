@@ -20,6 +20,7 @@ function task_schedule(bool $enabled): Schedule
 }
 
 it('registers the task tick on the schedule when tasks are enabled', function (): void {
+    config(['swamp.read_token' => 'reader.fixture-token']);
     $schedule = task_schedule(enabled: true);
 
     $commands = array_map(static fn ($event): string => $event->command ?? $event->description, $schedule->events());
@@ -29,7 +30,7 @@ it('registers the task tick on the schedule when tasks are enabled', function ()
     $file = collect($schedule->events())->first(
         static fn ($event): bool => str_contains((string) $event->command, 'problems:file'),
     );
-    expect($schedule->events())->toHaveCount(5)
+    expect($schedule->events())->toHaveCount(6)
         ->and(array_any($commands, static fn (string $command): bool => str_contains($command, 'tasks:tick')))->toBeTrue()
         ->and(array_any($commands, static fn (string $command): bool => str_contains($command, 'tasks:collect-t3-metrics')))->toBeFalse()
         ->and($collect)->not->toBeNull()
@@ -43,10 +44,17 @@ it('registers the task tick on the schedule when tasks are enabled', function ()
 });
 
 it('skips the task tick schedule when tasks are disabled', function (): void {
+    config(['swamp.read_token' => 'reader.fixture-token']);
     $schedule = task_schedule(enabled: false);
+    $reader = collect($schedule->events())->first(
+        static fn ($event): bool => $event->description === 'gateway:swamp-reader:check'
+            || str_contains((string) $event->command, 'gateway:swamp-reader:check'),
+    );
 
-    expect($schedule->events())->toHaveCount(5)
-        ->and(array_all($schedule->events(), static fn ($event): bool => $event->filtersPass(app())))->toBeFalse();
+    expect($schedule->events())->toHaveCount(6)
+        ->and(array_all($schedule->events(), static fn ($event): bool => $event->filtersPass(app())))->toBeFalse()
+        ->and($reader)->not->toBeNull()
+        ->and($reader->filtersPass(app()))->toBeTrue();
 });
 
 it('safely no-ops when the task tick command runs while tasks are disabled', function (): void {
