@@ -395,7 +395,7 @@ A found automatic receipt is the original operation, including its bound caller 
 
 PHP remains the active production policy writer. Policy publication and event admission return `instance.auto_deploy_policy_owner` while the code-owned writer is `gateway`. There is no environment flag or runtime switch. These guarded contracts prepare step 3b without changing the runner or sending duplicate alerts. The same ownership check runs again in the event worker.
 
-Step 3b must change the code-owned writer to `swamp` in the same release that removes the PHP production policy loop and enables Swamp scheduling. Drain policy work before switching. Development defaults keep their PHP owner. Publication then updates only the public projection in `auto_deploy_state`, preserves Gateway rollback blocks, and broadcasts the same Instance DTO used by API, MCP, CLI, and web.
+Step 3b must change the code-owned writer to `swamp` in the same release that removes the PHP production policy loop and enables Swamp scheduling. Drain policy work and transfer the last policy and alert deduplication state before switching. Development defaults keep their PHP owner. Publication then updates only the public projection in `auto_deploy_state`, preserves Gateway rollback blocks, and broadcasts the same Instance DTO used by API, MCP, CLI, and web.
 
 Publication uses a short database transaction without the deployment host lock. It accepts only the cursor and history version Swamp observed, so a later manual action cannot be hidden by a stale publication. Resume and deployment effects remain Gateway-owned. Swamp owns selection, retries, gate caches, alert intents, and publication order; it must serialize ticks for each Instance.
 

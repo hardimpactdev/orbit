@@ -8,6 +8,7 @@
             {
                 "id": 1,
                 "instance_id": 1,
+                "kind": "deploy",
                 "release": "20260101000000",
                 "branch": "main",
                 "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
