@@ -7,11 +7,25 @@ const FactorySchema = z.object({
 const GroupSchema = FactorySchema.extend({
   workItem: z.string().regex(/^tg-[1-9]\d*$/),
 });
+const ConflictSchema = z.object({
+  workItem: GroupSchema.shape.workItem,
+  factories: z.array(z.string()),
+  reason: z.string(),
+});
 type Context = {
   repoDir: string;
-  globalArgs: { factories: z.infer<typeof FactorySchema>[] };
+  definition: { name: string };
+  globalArgs: {
+    factories: z.infer<typeof FactorySchema>[];
+  };
   queryData: (predicate: string, select?: string) => Promise<unknown[]>;
-  runModel: (args: { definition: string; method: string }) => Promise<{
+  runModel: (
+    args: {
+      definition: string;
+      method: string;
+      arguments?: Record<string, unknown>;
+    },
+  ) => Promise<{
     ok: boolean;
     error?: { message: string };
   }>;
@@ -28,13 +42,27 @@ type Context = {
 export const behavior = {
   type: "@nckrtl/orbit-group-runs",
   version: "2026.10.27.1",
-  globalArguments: z.object({ factories: z.array(FactorySchema) }),
+  globalArguments: z.object({
+    factories: z.array(FactorySchema),
+  }),
   resources: {
+    conflict: {
+      description:
+        "Durable identity for assistance about conflicting active factories",
+      schema: z.object({
+        workItem: z.string(),
+        factories: z.array(z.string()),
+        startedAt: z.string(),
+      }),
+      lifetime: "infinite",
+      garbageCollection: 10,
+    },
     groups: {
       description:
         "All active groups and discovery failures, without a fleet call budget",
       schema: z.object({
         groups: z.array(GroupSchema),
+        conflicts: z.array(ConflictSchema),
         errors: z.array(z.object({ factory: z.string(), error: z.string() })),
       }),
       lifetime: "infinite",
@@ -68,6 +96,7 @@ export const behavior = {
 
 export async function discoverGroups(ctx: Omit<Context, "repoDir">) {
   const groups: z.infer<typeof GroupSchema>[] = [];
+  const conflicts: z.infer<typeof ConflictSchema>[] = [];
   const errors: { factory: string; error: string }[] = [];
   const completed = new Set(
     (await ctx.queryData(
@@ -118,14 +147,44 @@ export async function discoverGroups(ctx: Omit<Context, "repoDir">) {
   }
   for (const [workItem, count] of counts) {
     if (count > 1) {
-      errors.push({
-        factory: workItem,
-        error: "group is active in multiple factories",
-      });
+      const factories = groups.filter((g) => g.workItem === workItem).map((g) =>
+        g.factory
+      ).sort();
+      const reason = `group is active in multiple factories: ${
+        factories.join(", ")
+      }; park both factories and reconcile their saved operations before continuing`;
+      errors.push({ factory: workItem, error: reason });
+      try {
+        const definition = ctx.definition.name;
+        const saved = (await ctx.queryData(
+          `modelName == ${JSON.stringify(definition)} && name == ${
+            JSON.stringify(`conflict-${workItem}`)
+          }`,
+          "attributes",
+        ))[0] as
+          | { workItem: string; factories: string[]; startedAt: string }
+          | undefined;
+        // Keep one identity across restart and lost assistance replies.
+        await ctx.writeResource("conflict", `conflict-${workItem}`, {
+          workItem,
+          factories,
+          startedAt: saved?.startedAt ?? new Date().toISOString(),
+        });
+        conflicts.push({ workItem, factories, reason });
+      } catch (error) {
+        errors.push({ factory: workItem, error: String(error) });
+        ctx.logger.warning(
+          "factory conflict identity could not be saved: {error}",
+          {
+            error: String(error),
+          },
+        );
+      }
     }
   }
   const handle = await ctx.writeResource("groups", "groups", {
     groups: groups.filter((g) => counts.get(g.workItem) === 1),
+    conflicts,
     errors,
   });
   return { dataHandles: [handle] };

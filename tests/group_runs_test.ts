@@ -128,6 +128,7 @@ Deno.test("discovery includes many groups in one pass and isolates an unavailabl
   const seen: string[] = [];
   let result: Record<string, unknown> = {};
   const context = {
+    definition: { name: "orbit-group-runs" },
     globalArgs: {
       factories: [
         { factory: "broken", preapprovalModel: "broken-driver" },
@@ -541,4 +542,160 @@ Deno.test("a native workflow failure after successful work still exhausts the ru
     3,
     "the supervisor cannot count the same native outcome again",
   );
+});
+
+Deno.test("checkpoint recovery reserves attempts, parks before more work, and retries the same owner", async () => {
+  const { behavior: group } = await import(
+    "../extensions/behaviors/orbit_group_run.ts"
+  );
+  const request = {
+    workItem: "tg-7",
+    factory: "factory",
+    generation: 1,
+    key: "tg-7.g1",
+    runId: "owner",
+  };
+  const records = new Map<string, Record<string, unknown>>([
+    ["intent", request],
+    ["owner", request],
+  ]);
+  const updates: Record<string, unknown>[] = [];
+  let notifyFails = false;
+  const ctx = {
+    globalArgs: group.globalArguments.parse({
+      factory: "factory",
+      preapprovalModel: "fleet",
+      assistanceModel: "gateway",
+    }),
+    repoDir: "/fixture",
+    definition: { name: "orbit-group-tg-7" },
+    queryData: (p: string) => {
+      const name = /name == "([^"]+)"/.exec(p)?.[1];
+      return Promise.resolve(
+        name && records.has(name) ? [records.get(name)!] : [],
+      );
+    },
+    writeResource: (
+      _spec: string,
+      name: string,
+      data: Record<string, unknown>,
+    ) => {
+      records.set(name, data);
+      return Promise.resolve({ name });
+    },
+    runModel: (
+      call: { method: string; arguments?: Record<string, unknown> },
+    ) => {
+      assertEquals(
+        call.method,
+        "assistance",
+        "no factory operation while parked",
+      );
+      updates.push(call.arguments!);
+      return Promise.resolve({ ok: !notifyFails });
+    },
+    logger: { info() {}, warning() {} },
+  };
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    await group.methods.checkpoint.execute({ ...request, phase: "begin" }, ctx);
+    assertEquals(records.get("recovery")?.attempts, attempt);
+    assertEquals(records.get("recovery")?.allowed, true);
+    // The second process dies before saving its outcome. The reservation remains.
+    if (attempt !== 2) {
+      notifyFails = attempt === 3;
+      const call = () =>
+        group.methods.checkpoint.execute({ ...request, phase: "failed" }, ctx);
+      if (notifyFails) await assertRejects(call);
+      else await call();
+    }
+  }
+  assertEquals(records.get("failures")?.parked, true);
+  assert(String(records.get("failures")?.reason).includes("3 times"));
+  notifyFails = false;
+  for (let visit = 0; visit < 2; visit++) {
+    await group.methods.checkpoint.execute({ ...request, phase: "begin" }, ctx);
+    assertEquals(records.get("recovery")?.attempts, 3);
+    assertEquals(records.get("recovery")?.allowed, false);
+    await group.methods.ensure.execute({ workItem: "tg-7" }, ctx);
+    assertEquals(records.get("reconcile")?.runId, null);
+    assertEquals(records.get("intent"), request);
+  }
+  assertEquals(updates.at(-1)?.gateIds, ["driver-retry-g1"]);
+  await group.methods.retry.execute(
+    { actor: "nick", note: "fixed checkpoint" },
+    ctx,
+  );
+  assertEquals(records.get("recovery")?.attempts, 0);
+  await group.methods.checkpoint.execute({ ...request, phase: "begin" }, ctx);
+  assertEquals(records.get("recovery")?.allowed, true);
+  await group.methods.checkpoint.execute(
+    { ...request, phase: "recovered" },
+    ctx,
+  );
+  assertEquals(records.get("recovery")?.attempts, 0);
+  await assertRejects(() =>
+    group.methods.checkpoint.execute({
+      ...request,
+      runId: "foreign",
+      phase: "begin",
+    }, ctx)
+  );
+});
+
+Deno.test("many conflicting factory memberships retain assistance identities without spending the discovery call budget", async () => {
+  const records = new Map<string, Record<string, unknown>>();
+  const workItems = Array.from({ length: 120 }, (_, i) => `tg-${i + 1}`);
+  const ctx = {
+    definition: { name: "orbit-group-runs" },
+    globalArgs: {
+      factories: ["a", "b"].map((factory) => ({
+        factory,
+        preapprovalModel: factory,
+      })),
+    },
+    queryData: (p: string) => {
+      if (p.includes("schedule-")) return Promise.resolve([]);
+      if (p.includes("conflict-")) {
+        const name = /name == "([^"]+)"/.exec(p)?.[1];
+        return Promise.resolve(
+          name && records.has(name) ? [records.get(name)!] : [],
+        );
+      }
+      return Promise.resolve([[
+        ...workItems.map((workItem) => ({ workItem, status: "active" })),
+        ...(p.includes('"a"')
+          ? [{ workItem: "tg-999", status: "active" }]
+          : []),
+      ]]);
+    },
+    runModel: (call: { method: string }) => {
+      assertEquals(
+        call.method,
+        "status",
+        "notification runs in its own native workflow step",
+      );
+      return Promise.resolve({ ok: true });
+    },
+    writeResource: (
+      _spec: string,
+      name: string,
+      data: Record<string, unknown>,
+    ) => {
+      records.set(name, data);
+      return Promise.resolve({ name });
+    },
+    logger: { warning() {} },
+  };
+  await discoverGroups(ctx);
+  const identity = records.get("conflict-tg-7")?.startedAt;
+  assertEquals(
+    (records.get("groups")?.groups as { workItem: string }[]).map((g) =>
+      g.workItem
+    ),
+    ["tg-999"],
+  );
+  assertEquals((records.get("groups")?.conflicts as unknown[]).length, 120);
+  await discoverGroups(ctx);
+  assertEquals(records.get("conflict-tg-7")?.startedAt, identity);
+  assertEquals(records.get("conflict-tg-7")?.factories, ["a", "b"]);
 });

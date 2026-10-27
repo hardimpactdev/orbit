@@ -16,6 +16,20 @@ REPO = Path(__file__).resolve().parents[1]
 
 
 class GroupWorkflowTest(unittest.TestCase):
+    def test_empty_fanout(self):
+        with tempfile.TemporaryDirectory(prefix="orbit-group-empty-") as temp:
+            root = Path(temp)
+            shutil.copytree(REPO / "workflows", root / "workflows")
+            shutil.copyfile(REPO / ".swamp.yaml", root / ".swamp.yaml")
+            env = dict(os.environ, SWAMP_NO_UPDATE_CHECK="1", SWAMP_NO_TELEMETRY="1")
+            for name in ["SWAMP_SERVER_TOKEN", "SWAMP_SERVER_TOKEN_FILE", "SWAMP_SERVE_URL", "SWAMP_SERVER_URL"]:
+                env.pop(name, None)
+            result = subprocess.run(["swamp", "workflow", "run", "group-fanout", "--stdin", "--json"],
+                                    cwd=root, env=env, text=True, input=json.dumps({"groups": [], "conflicts": []}),
+                                    capture_output=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr[-2000:])
+            self.assertEqual(json.loads(result.stdout)["status"], "succeeded")
+
     def test_parallel_failure_duplicate_restart_and_wait(self):
         with tempfile.TemporaryDirectory(prefix="orbit-group-runs-") as temp:
             root = Path(temp)
@@ -32,27 +46,31 @@ class GroupWorkflowTest(unittest.TestCase):
             for name in ["SWAMP_SERVER_TOKEN", "SWAMP_SERVER_TOKEN_FILE", "SWAMP_SERVE_URL", "SWAMP_SERVER_URL"]:
                 env.pop(name, None)
 
-            def command(*args, body=None):
+            def command(*args, body=None, expected=0):
                 result = subprocess.run(["swamp", *args, "--json"], cwd=root, env=env, text=True,
                                         input=None if body is None else json.dumps(body), capture_output=True, timeout=45)
-                self.assertEqual(result.returncode, 0, f"{args[:3]}: {result.stdout[-2500:]} {result.stderr[-1000:]}")
-                return json.loads(result.stdout)
+                self.assertEqual(result.returncode, expected, f"{args[:3]}: {result.stdout[-2500:]} {result.stderr[-1000:]}")
+                return json.loads(result.stdout) if expected == 0 else None
+
+            definition_paths = {}
 
             def create(kind, name, arguments=None):
                 result = command("behavior", "create", kind, name)
                 path = Path(result["path"])
+                definition_paths[name] = path
                 # Preserve the native scaffold's ID; JSON is valid YAML.
                 definition = {"id": result["id"], "type": kind, "typeVersion": result["version"],
                               "name": name, "version": 1, "globalArguments": arguments or {}}
                 path.write_text(json.dumps(definition))
 
-            create("@swamp/software-factory", "fixture-factory", {"stages": [
+            factory_config = {"stages": [
                 {"id": "work", "initial": True, "work": {"mode": "method", "resultEvidence": "result",
                     "method": {"modelIdOrName": '${{ "fixture-" + self.workItem }}', "methodName": "work",
                                "inputs": {"workItem": "${{ self.workItem }}"}}},
                  "transitions": [{"name": "finish", "to": "done", "gates": [{"type": "evidence-recorded", "config": {"name": "result"}}]}]},
                 {"id": "done", "terminal": True},
-            ]})
+            ]}
+            create("@swamp/software-factory", "fixture-factory", factory_config)
             with socket.socket() as sock:
                 sock.bind(("127.0.0.1", 0))
                 port = sock.getsockname()[1]
@@ -60,14 +78,23 @@ class GroupWorkflowTest(unittest.TestCase):
             # Public dummy credential for an isolated auth-mode=none server.
             token = root / "fixture-token"
             token.write_text("fixture.public-test-value")
+            # Plain loopback WebSockets need no added CA roots or production CA file.
             config = {"factory": "fixture-factory", "repoDir": str(root), "serveUrl": url,
-                      "serveTokenFile": str(token), "maxSteps": 1, "preapprovalModel": "fixture-preapprovals"}
+                      "serveTokenFile": str(token), "caFile": "/dev/null",
+                      "maxSteps": 1, "preapprovalModel": "fixture-preapprovals"}
             # Route the copied native workflow to this isolated server only.
             supervisor = root / "workflows/workflow-group-supervise.yaml"
             yaml = supervisor.read_text().replace("assistanceModel: orbit-gateway", 'assistanceModel: ""')
             overrides = "".join(f"            {key}: {json.dumps(value)}\n" for key, value in config.items()
-                                if key in ["serveUrl", "serveTokenFile", "maxSteps", "repoDir"])
+                                if key in ["serveUrl", "serveTokenFile", "caFile", "maxSteps", "repoDir"])
             supervisor.write_text(yaml.replace("          globalArgs:\n", "          globalArgs:\n" + overrides))
+            for mode in ["routine", "package"]:
+                manual = root / f"workflows/workflow-dependency-{mode}.yaml"
+                source = manual.read_text().replace(f"factory: dependency-{mode}", "factory: fixture-factory")
+                source = source.replace(f"preapprovalModel: orbit-driver-{mode}", "preapprovalModel: fixture-preapprovals")
+                if mode == "package":
+                    source = source.replace("modelIdOrName: orbit-gateway", "modelIdOrName: fixture-tg-8")
+                manual.write_text(source)
             for group in [7, 8, 9, 10]:
                 create("@fixture/group-stage", f"fixture-tg-{group}")
                 create("@nckrtl/orbit-group-run", f"orbit-group-tg-{group}", config)
@@ -135,6 +162,13 @@ class GroupWorkflowTest(unittest.TestCase):
                 until(lambda: history(owners[9]["runId"])["status"] == "failed", "group 9 did not fail independently")
                 until(lambda: status_is(owners[8]["runId"], "suspended"), "group 8 did not reach its durable wait")
                 self.assertEqual(latest("fixture-tg-10", "starts")["count"], 1)
+                # Both manual entry points must join the scheduled group owner.
+                command("workflow", "run", "dependency-routine", "--server", url, "--input", "workItem=tg-8")
+                command("workflow", "run", "dependency-package", "--server", url, "--stdin", body={
+                    "workItem": "tg-8", "manager": "composer", "package": "fixture/package",
+                    "version": "2.0.0", "purpose": "major"})
+                self.assertEqual(latest("orbit-group-tg-8", "owner"), owners[8])
+                self.assertEqual(latest("fixture-tg-8", "starts")["count"], 1)
                 # Duplicate requests for the same generation admit no second owner.
                 duplicate = command("workflow", "run", "group-run", "--server", url, "--detach", "--no-supersede", "--stdin",
                                     body={**owners[8], "definition": "orbit-group-tg-8", "preapprovalModel": "fixture-preapprovals"})
@@ -148,6 +182,22 @@ class GroupWorkflowTest(unittest.TestCase):
                 start()
                 method("orbit-group-runs", "discover")
                 method("orbit-group-tg-7", "ensure", workItem="tg-7")
+                # Missing workflow source makes native checkpoint recovery fail.
+                # The run record remains readable, and no factory/effect is reset.
+                unavailable = root / "workflow-group-run.disabled"
+                workflow.rename(unavailable)
+                try:
+                    for attempt in range(1, 4):
+                        command("behavior", "run", "orbit-group-recovery-tg-7", "recover", "--server", url,
+                                "--input", "definition=orbit-group-tg-7", "--input", f"runId={owners[7]['runId']}", expected=1)
+                        self.assertEqual(latest("orbit-group-tg-7", "recovery")["attempts"], attempt)
+                    self.assertTrue(latest("orbit-group-tg-7", "failures")["parked"])
+                finally:
+                    unavailable.rename(workflow)
+                method("orbit-group-tg-7", "ensure", workItem="tg-7")
+                self.assertEqual(latest("orbit-group-tg-7", "reconcile")["runId"], None)
+                self.assertEqual(latest("orbit-group-tg-7", "intent")["runId"], owners[7]["runId"])
+                method("orbit-group-tg-7", "retry", actor="nick", note="restored workflow source")
                 method("orbit-group-recovery-tg-7", "recover", definition="orbit-group-tg-7", runId=owners[7]["runId"])
                 until(lambda: history(owners[7]["runId"])["status"] in ["suspended", "succeeded"], "owner did not recover")
                 self.assertEqual(latest("fixture-tg-7", "starts")["count"], 1)
@@ -172,6 +222,23 @@ class GroupWorkflowTest(unittest.TestCase):
                 method("orbit-group-tg-9", "retry", actor="nick", note="fixture inspection")
                 method("orbit-group-tg-9", "ensure", workItem="tg-9")
                 self.assertEqual(latest("orbit-group-tg-9", "intent")["generation"], 4)
+                # Conflict notification failure is an allowed native fan-out failure.
+                # Healthy discovered groups must still start their own workflow.
+                create("@swamp/software-factory", "fixture-conflict", factory_config)
+                command("behavior", "run", "fixture-conflict", "start", "--input", "workItem=tg-10")
+                create("@fixture/group-stage", "orbit-gateway")
+                create("@fixture/group-stage", "fixture-tg-11")
+                command("behavior", "run", "fixture-factory", "start", "--input", "workItem=tg-11")
+                # Edit only this test-created definition, preserving its native ID.
+                path = definition_paths["orbit-group-runs"]
+                config_data = json.loads(path.read_text())
+                config_data["globalArguments"]["factories"].append({"factory": "fixture-conflict", "preapprovalModel": "fixture-preapprovals"})
+                path.write_text(json.dumps(config_data))
+                command("workflow", "run", "groups-driver", "--server", url)
+                until(lambda: latest("fixture-tg-11", "starts")["count"] == 1, "conflict notification aborted healthy fan-out")
+                conflicts = latest("orbit-group-runs", "groups")["conflicts"]
+                self.assertEqual([c["workItem"] for c in conflicts], ["tg-10"])
+                self.assertEqual(latest("fixture-tg-10", "starts")["count"], 1)
             finally:
                 if serve and serve.poll() is None:
                     serve.terminate()

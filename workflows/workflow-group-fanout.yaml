@@ -1,0 +1,57 @@
+id: 79c332ed-3e18-4950-8b6c-18c83f974ea1
+name: group-fanout
+description: Reconcile discovered group owners and conflict assistance independently.
+inputs:
+  type: object
+  properties:
+    groups:
+      type: array
+      items:
+        type: object
+        properties:
+          workItem: { type: string }
+          factory: { type: string }
+          preapprovalModel: { type: string }
+        required: [workItem, factory, preapprovalModel]
+    conflicts:
+      type: array
+      items:
+        type: object
+        properties:
+          workItem: { type: string }
+          reason: { type: string }
+          factories: { type: array, items: { type: string } }
+        required: [workItem, reason, factories]
+  required: [groups, conflicts]
+jobs:
+  - name: groups
+    steps:
+      - name: group-${{ self.group.workItem }}
+        forEach:
+          item: group
+          in: '${{ inputs.groups }}'
+        allowFailure: true
+        task:
+          type: workflow
+          workflowIdOrName: group-supervise
+          inputs:
+            workItem: '${{ self.group.workItem }}'
+            factory: '${{ self.group.factory }}'
+            preapprovalModel: '${{ self.group.preapprovalModel }}'
+      - name: conflict-${{ self.conflict.workItem }}
+        forEach:
+          item: conflict
+          in: '${{ inputs.conflicts }}'
+        allowFailure: true
+        task:
+          type: model_method
+          modelIdOrName: orbit-gateway
+          methodName: assistance
+          inputs:
+            workItem: '${{ self.conflict.workItem }}'
+            parked: true
+            stage: driver
+            cycle: 1
+            driverDefinition: orbit-group-runs
+            gateIds: [driver-factory-conflict]
+            reason: '${{ self.conflict.reason }}'

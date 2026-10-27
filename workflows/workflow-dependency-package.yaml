@@ -1,7 +1,7 @@
 id: f6396e8f-001e-48d0-8f89-5ac76037381b
 name: dependency-package
 tags: {}
-description: Admit or resume one explicit package group; one guarded tick, no group creation.
+description: Admit one explicit package target and reconcile its existing per-group owner.
 inputs:
   properties:
     workItem: { type: string }
@@ -27,9 +27,9 @@ jobs:
           - step: admit
             condition: { type: succeeded }
         task:
-          type: model_method
-          modelIdOrName: orbit-driver-package
-          methodName: tick
+          type: workflow
+          workflowIdOrName: group-supervise
           inputs:
-            workItems: '${{ [inputs.workItem] }}'
-            maxSteps: 3
+            workItem: '${{ inputs.workItem }}'
+            factory: dependency-package
+            preapprovalModel: orbit-driver-package

@@ -599,3 +599,60 @@ Deno.test("Gateway resolves driver assistance only from the group's saved retry 
     await server.shutdown();
   }
 });
+
+Deno.test("post-child factory conflict assistance survives lost replies and does not select a factory approval", async () => {
+  const h = harness();
+  const conflict = { workItem: "tg-7", parked: true, stage: "driver", cycle: 1,
+    driverDefinition: "orbit-group-runs", gateIds: ["driver-factory-conflict"],
+    reason: "active in dependency-routine and dependency-package" };
+  h.lose("assistance_requested");
+  await assertRejects(() => syncAssistance(conflict, h.deps));
+  h.forget();
+  await syncAssistance(conflict, h.deps);
+  assertEquals(h.posts().length, 1);
+  assertStringIncludes(h.group.assistance_reason!, "dependency-routine and dependency-package");
+  assertStringIncludes(h.group.assistance_reason!, "driver-factory-conflict");
+  h.approve();
+  await syncAssistance({ ...conflict, parked: false }, h.deps);
+  assertEquals(h.group.assistance_requested, true);
+  h.apply("resolution", "Reconciled both factories", "nick");
+  await syncAssistance(conflict, h.deps);
+  assertEquals(h.posts().length, 1, "preserve the explicit operator resolution");
+});
+
+Deno.test("Gateway raises factory-conflict assistance from its saved discovery identity", async () => {
+  const { behavior: gateway } = await import("../extensions/behaviors/orbit_gateway.ts");
+  const h = harness();
+  const queries: string[] = [];
+  const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async (request) => {
+    if (request.method !== "GET" && request.method !== "POST") return new Response(null, { status: 405 });
+    const response = await h.deps.http(request.method, new URL(request.url).pathname,
+      request.method === "POST" ? await request.json() : undefined);
+    return Response.json(response.body, { status: response.status });
+  });
+  const context = {
+    globalArgs: { gatewayUrl: `http://127.0.0.1:${server.addr.port}`, caFile: "/dev/null", timeoutSeconds: 2 },
+    definition: { name: "orbit-gateway" },
+    queryData: (predicate: string) => {
+      queries.push(predicate);
+      if (predicate.includes('name == "assistance-tg-7"')) return Promise.resolve(h.record() ? [h.record()] : []);
+      if (predicate === 'modelName == "orbit-group-runs" && name == "conflict-tg-7"') return Promise.resolve([{ workItem: "tg-7", startedAt: ERA, factories: ["a", "b"] }]);
+      return Promise.resolve([]);
+    },
+    writeResource: async (_spec: string, name: string, value: Record<string, unknown>) => {
+      await h.deps.writeRecord(value as unknown as AssistanceRecord);
+      return { name };
+    },
+  };
+  const args = { workItem: "tg-7", parked: true, stage: "driver", cycle: 1, gateIds: ["driver-factory-conflict"],
+    driverDefinition: "orbit-group-runs", reason: "active in a, b" };
+  try {
+    await gateway.methods.assistance.execute(args, context);
+    await gateway.methods.assistance.execute(args, context);
+    assertEquals(h.posts().length, 1);
+    assertStringIncludes(h.group.assistance_reason!, ERA);
+    assertEquals(queries.some((q) => q.includes('state-') || q.includes('approval-') || q.includes('name == "retry"')), false);
+  } finally {
+    await server.shutdown();
+  }
+});

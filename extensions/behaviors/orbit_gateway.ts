@@ -292,7 +292,9 @@ export const behavior = {
             handle = await context.writeResource("assistance", `assistance-${args.workItem}`, r as unknown as Record<string, unknown>);
           },
           readJob: (key) => read<Job>(`job-${key}`),
-          readRun: async () => args.factory
+          readRun: async () => args.stage === "driver" && args.gateIds?.[0] === "driver-factory-conflict" && args.driverDefinition
+            ? ((await context.queryData(`modelName == ${JSON.stringify(args.driverDefinition)} && name == ${JSON.stringify(`conflict-${args.workItem}`)}`, "attributes")) as { workItem: string; startedAt: string }[])[0] ?? null
+            : args.factory
             ? ((await context.queryData(`modelName == "${args.factory}" && name == "state-${args.workItem}"`, "attributes")) as { workItem: string; startedAt: string }[])[0] ?? null
             : null,
           readApproval: async (gateId) => /^driver-retry-g[1-9]\d*$/.test(gateId)

@@ -18,6 +18,7 @@
 // The driver never re-dispatches an entry: recovery re-runs the idempotent
 // method under the dispatch already recorded, so the dispatch guard is not used up.
 import { z } from "npm:zod@4";
+import { reconcileStageLaunch, type StageLaunch as Launch } from "./_lib/stage_launch.ts";
 
 const GlobalArgsSchema = z.object({
   factory: z.string().default("orbit-subtask-factory"),
@@ -33,6 +34,7 @@ const GlobalArgsSchema = z.object({
   // liveness comes from swamp's own run summary instead of a claim pid.
   serveUrl: z.string().optional(),
   serveTokenFile: z.string().optional(),
+  caFile: z.string().optional(),
   maxRunSeconds: z.number().int().default(7200),
   // A behavior with an `assistance` method; the driver tells it each tick
   // whether the work item is parked at a human gate.
@@ -182,13 +184,27 @@ function processAlive(pid: number): boolean {
   return r.success && new TextDecoder().decode(r.stdout).trim() !== "";
 }
 
-interface Launch {
-  key: string;
-  workflow: string;
-  launches: number;
-  lastLaunchedAt: string;
-  log: string;
-  runId?: string;
+/** Native history uses the same transport as stage launch. */
+async function stageHistory(ctx: Ctx, args: string[]): Promise<Record<string, unknown>> {
+  const g = ctx.globalArgs;
+  const output = await new Deno.Command(Deno.execPath(), {
+    args: ["workflow", "history", ...args, "--repo-dir", g.repoDir,
+      ...(g.serveUrl ? ["--server", g.serveUrl, "--token-file", g.serveTokenFile ?? ""] : []),
+      ...(g.caFile ? ["--ca-cert", g.caFile] : []), "--json"],
+    stdin: "null", stdout: "piped", stderr: "piped",
+  }).output();
+  if (!output.success) throw new Error("stage workflow history unavailable; launch remains held");
+  return JSON.parse(new TextDecoder().decode(output.stdout));
+}
+
+/** Read or migrate a receipt before any group workflow can launch stage work. */
+export async function stageLaunchReceipt(ctx: Ctx, key: string): Promise<Launch | null> {
+  const name = `launch-${key}`;
+  const own = await latest<Launch>(ctx, ctx.definitionName, name);
+  if (own || !ctx.globalArgs.preapprovalModel || ctx.globalArgs.preapprovalModel === ctx.definitionName) return own;
+  const saved = await latest<Launch>(ctx, ctx.globalArgs.preapprovalModel, name);
+  if (saved) await ctx.writeResource("launch", name, { ...saved });
+  return saved;
 }
 
 /** A terminal run-record status (failed, cancelled, interrupted), or null. */
@@ -232,13 +248,19 @@ async function launchWorkflow(ctx: Ctx, workflow: string, key: string, inputs: R
   const inputFile = `${dir}/${key}.json`;
   const log = `${dir}/${key}.${n}.log`;
   await Deno.writeTextFile(inputFile, JSON.stringify(inputs));
+  const intent: Launch = {
+    key, workflow, launches: n, lastLaunchedAt: new Date().toISOString(), log,
+    pending: true, inputs,
+    priorRunIds: [...(prev?.priorRunIds ?? []), ...(prev?.runId ? [prev.runId] : [])],
+  };
+  await ctx.writeResource("launch", `launch-${key}`, { ...intent });
   let runId: string | undefined;
   if (g.serveUrl) {
     // Through swamp serve: the run lives in serve; --detach returns its id at once.
     // Deno.execPath() is the swamp binary itself; a systemd unit has no shell PATH.
     const out = await new Deno.Command(Deno.execPath(), {
       args: ["workflow", "run", workflow, "--server", g.serveUrl, "--token-file", g.serveTokenFile ?? "", "--detach",
-        "--input-file", inputFile, "--no-supersede", "--json"],
+        "--input-file", inputFile, "--no-supersede", ...(g.caFile ? ["--ca-cert", g.caFile] : []), "--json"],
       cwd: g.repoDir, stdin: "null", stdout: "piped", stderr: "piped",
     }).output();
     const text = new TextDecoder().decode(out.stdout);
@@ -250,7 +272,7 @@ async function launchWorkflow(ctx: Ctx, workflow: string, key: string, inputs: R
     await new Deno.Command("setsid", { args: ["--fork", "sh", "-c", cmd], cwd: g.repoDir, stdin: "null", stdout: "null", stderr: "null" })
       .spawn().status;
   }
-  const launch = { key, workflow, launches: n, lastLaunchedAt: new Date().toISOString(), log, ...(runId ? { runId } : {}) };
+  const launch: Launch = { ...intent, pending: !runId, ...(runId ? { runId } : {}) };
   await ctx.writeResource("launch", `launch-${key}`, launch as unknown as Record<string, unknown>);
   return launch;
 }
@@ -263,7 +285,19 @@ async function workflowStep(ctx: Ctx, workItem: string, key: string, status: Sta
     await call(ctx, g.factory, "record_dispatch", { workItem, mode: "workflow", runId: key });
     killIf("after-dispatch", killAt, ctx);
   }
-  const prev = await latest<Launch>(ctx, ctx.definitionName, `launch-${key}`);
+  let prev = await stageLaunchReceipt(ctx, key);
+  if (prev && prev.workflow !== wf.name) throw new Error("stage workflow differs from its saved launch receipt");
+  if (prev?.pending) {
+    const reconciled = await reconcileStageLaunch(prev, async () => {
+      const history = await stageHistory(ctx, ["search", "--workflow", wf.name,
+        "--input", `key=${key}`, "--input", `workItem=${workItem}`]);
+      return await Promise.all((history.results as { runId: string }[]).map(async (r) =>
+        await stageHistory(ctx, ["get", r.runId]) as unknown as { id: string; inputs: Record<string, unknown> }
+      ));
+    }, async (receipt) => { await ctx.writeResource("launch", `launch-${key}`, { ...receipt }); }, g.startGraceSeconds);
+    prev = reconciled.receipt;
+    if (reconciled.waiting) return { action: null, waiting: reconciled.waiting };
+  }
   const claim = await latest<{ pid: number; startedAt: string; runId: string }>(ctx, g.stageModel, `claim-${key}`);
   if (prev?.runId) {
     // Serve mode: the run has ended once swamp wrote its summary, or once its run
@@ -402,7 +436,7 @@ export const behavior = {
   resources: {
     launch: {
       description: "Detached stage workflow launches per key",
-      schema: z.object({ key: z.string(), workflow: z.string(), launches: z.number(), lastLaunchedAt: z.string(), log: z.string(), runId: z.string().optional() }),
+      schema: z.object({ key: z.string(), workflow: z.string(), launches: z.number(), lastLaunchedAt: z.string(), log: z.string(), runId: z.string().optional(), pending: z.boolean().optional(), inputs: z.record(z.string(), z.unknown()).optional(), priorRunIds: z.array(z.string()).optional() }),
       lifetime: "30d",
       garbageCollection: 10,
     },

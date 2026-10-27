@@ -32,6 +32,14 @@ type Context = Parameters<typeof driver.methods.tick.execute>[1] & {
   repoDir: string;
 };
 const RequestSchema = GroupRunSchema.extend({ runId: z.string() });
+const RecoverySchema = z.object({
+  runId: z.string(),
+  attempts: z.number().int().nonnegative(),
+  allowed: z.boolean(),
+  reason: z.string().nullable(),
+  updatedAt: z.string(),
+});
+type Recovery = z.infer<typeof RecoverySchema>;
 async function read<T>(ctx: Context, name: string): Promise<T | null> {
   return (await ctx.queryData(
     `modelName == ${JSON.stringify(ctx.definition.name)} && name == ${
@@ -142,6 +150,12 @@ export const behavior = {
       lifetime: "infinite",
       garbageCollection: 10,
     },
+    recovery: {
+      description: "Reserved checkpoint attempts for the current native owner",
+      schema: RecoverySchema,
+      lifetime: "infinite",
+      garbageCollection: 10,
+    },
     retry: {
       description:
         "Explicit retry decision for a parked driver generation; grants no factory approval",
@@ -196,6 +210,19 @@ export const behavior = {
       description: "Ensure one owning run for this group, keyed by generation",
       arguments: z.object({ workItem: GroupRunSchema.shape.workItem }),
       execute: async (args: { workItem: string }, ctx: Context) => {
+        const failure = await read<RunFailures>(ctx, "failures");
+        const intent = await read<GroupRun>(ctx, "intent");
+        if (failure?.parked && intent) {
+          await ctx.writeResource("failures", "failures", {
+            ...failure,
+            updatedAt: new Date().toISOString(),
+          });
+          await notifyFailure(ctx, intent, failure);
+          const handle = await ctx.writeResource("reconcile", "reconcile", {
+            runId: null,
+          });
+          return { dataHandles: [handle] };
+        }
         const result = await ensureGroupRun(
           args.workItem,
           ctx.globalArgs.factory,
@@ -342,8 +369,74 @@ export const behavior = {
           ...clearedFailures(intent),
           lastOutcome: "retry" as const,
         };
+        const recovery = await read<Recovery>(ctx, "recovery");
+        if (recovery) {
+          await ctx.writeResource("recovery", "recovery", {
+            ...recovery,
+            attempts: 0,
+            allowed: false,
+            reason: null,
+            updatedAt: new Date().toISOString(),
+          });
+        }
         const handle = await ctx.writeResource("failures", "failures", cleared);
         await notifyFailure(ctx, intent, cleared);
+        return { dataHandles: [handle] };
+      },
+    },
+    checkpoint: {
+      description:
+        "Reserve and settle bounded recovery attempts under the owner lock",
+      arguments: RequestSchema.extend({
+        phase: z.enum(["begin", "failed", "recovered"]),
+      }),
+      execute: async (
+        args: z.infer<typeof RequestSchema> & {
+          phase: "begin" | "failed" | "recovered";
+        },
+        ctx: Context,
+      ) => {
+        const intent = await read<GroupRun>(ctx, "intent");
+        if (
+          intent?.runId !== args.runId || !claimGroupRun(
+            intent,
+            await read<GroupRun>(ctx, "owner"),
+            args,
+          )
+        ) throw new Error("checkpoint recovery does not own this generation");
+        const saved = await read<Recovery>(ctx, "recovery");
+        let attempts = saved?.runId === args.runId ? saved.attempts : 0;
+        let failure = await read<RunFailures>(ctx, "failures");
+        const exhausted = attempts >= ctx.globalArgs.maxConsecutiveFailures;
+        const parked = failure?.parked ||
+          (args.phase !== "recovered" && exhausted);
+        if (args.phase === "begin" && !parked) attempts++;
+        if (args.phase === "recovered" && !failure?.parked) attempts = 0;
+        const reason = parked
+          ? `checkpoint recovery failed or was interrupted ${attempts} times for run ${args.runId}`
+          : args.phase === "failed"
+          ? "checkpoint recovery or resume failed"
+          : null;
+        const handle = await ctx.writeResource("recovery", "recovery", {
+          runId: args.runId,
+          attempts,
+          allowed: args.phase === "begin" && !parked,
+          reason,
+          updatedAt: new Date().toISOString(),
+        });
+        if (parked) {
+          failure = {
+            ...failedRun(
+              failure,
+              intent,
+              reason!,
+              ctx.globalArgs.maxConsecutiveFailures,
+            ),
+            parked: true,
+          };
+          await ctx.writeResource("failures", "failures", failure);
+          await notifyFailure(ctx, intent, failure);
+        }
         return { dataHandles: [handle] };
       },
     },
@@ -363,31 +456,56 @@ export const behavior = {
         if (run.inputs.definition !== args.definition) {
           throw new Error("group recovery definition differs from the run");
         }
-        if (run.status === "interrupted") {
-          // Recover is a local Swamp operation, on the same repository as serve.
-          // Every effect-capable step is guarded and reconciles its saved key.
-          const result = await new Deno.Command(Deno.execPath(), {
-            args: [
-              "workflow",
-              "recover",
-              "group-run",
-              "--run",
-              run.id,
-              "--repo-dir",
-              ctx.repoDir,
-              "--json",
-            ],
-            stdin: "null",
-            stdout: "piped",
-            stderr: "piped",
-          }).output();
-          if (!result.success) {
-            throw new Error("group workflow checkpoint recovery failed");
+        if (
+          run.status !== "interrupted" &&
+          !(run.status === "suspended" && run.awaitingResume)
+        ) {
+          return { dataHandles: [] };
+        }
+        const request = RequestSchema.parse({ ...run.inputs, runId: run.id });
+        const checkpoint = async (phase: "begin" | "failed" | "recovered") => {
+          const result = await ctx.runModel({
+            definition: args.definition,
+            method: "checkpoint",
+            arguments: { ...request, phase },
+          });
+          if (!result.ok) {
+            throw new Error("group recovery checkpoint update failed");
           }
-        } else if (run.status !== "suspended") return { dataHandles: [] };
-        // An open native wait needs no explicit resume. Serve settles its
-        // deadline and continues it. Only recovered unknown work resumes here.
-        if (run.status === "interrupted" || run.awaitingResume) {
+        };
+        // Reserve before the CLI: a killed recovery spends an attempt too.
+        await checkpoint("begin");
+        const recovery = (await ctx.queryData(
+          `modelName == ${
+            JSON.stringify(args.definition)
+          } && name == "recovery"`,
+          "attributes",
+        ))[0] as Recovery | undefined;
+        if (!recovery?.allowed || recovery.runId !== run.id) {
+          return { dataHandles: [] };
+        }
+        try {
+          if (run.status === "interrupted") {
+            // Native recovery is local to the same repository as serve.
+            const result = await new Deno.Command(Deno.execPath(), {
+              args: [
+                "workflow",
+                "recover",
+                "group-run",
+                "--run",
+                run.id,
+                "--repo-dir",
+                ctx.repoDir,
+                "--json",
+              ],
+              stdin: "null",
+              stdout: "piped",
+              stderr: "piped",
+            }).output();
+            if (!result.success) {
+              throw new Error("group workflow checkpoint recovery failed");
+            }
+          }
           await command(ctx, [
             "workflow",
             "resume",
@@ -395,6 +513,10 @@ export const behavior = {
             "--run",
             run.id,
           ]);
+          await checkpoint("recovered");
+        } catch (error) {
+          await checkpoint("failed");
+          throw error;
         }
         return { dataHandles: [] };
       },

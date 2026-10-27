@@ -39,7 +39,10 @@ group at a time. Ownership is keyed by work item and generation.
 ## Bounded runs
 
 Each child workflow receives exactly one factory and work item. Swamp's workflow
-fan-out reconciles the groups in parallel. Discovery does not drive their stages
+fan-out reconciles the groups in parallel. Swamp expands `forEach` before a
+workflow's steps run. Discovery therefore passes its saved lists into the typed
+`group-fanout` child workflow, whose collections are already present at expansion.
+A dependency on the discover step alone cannot defer expansion. Discovery does not drive their stages
 and does not select only four active groups. Admission limits for new package
 work remain separate.
 
@@ -134,6 +137,38 @@ requests require their matching factory approval.
 swamp behavior run orbit-group-tg-1234 retry --input actor=nick --input note="Fixed the driver failure"
 ```
 
+## Stage launches, recovery, and manual triggers
+
+Workflow-mode stages save launch receipts on the group driver, before sending
+any launch request. Each receipt includes the immutable stage inputs and launch
+attempt. Reconcile an uncertain reply by exact workflow, work item, stage key,
+and attempt. A missing or ambiguous receipt parks for assistance after the
+startup grace period; it never resends an uncertain launch. Copy a prior fleet
+receipt into the group definition before continuing an in-flight stage.
+Existing operation keys and recorded factory evidence remain unchanged.
+
+Checkpoint recovery uses a separate bounded budget for the same native owner.
+Persist each attempted recovery under the group lock before calling the CLI.
+Three failed or interrupted attempts park recovery and raise the existing
+`driver-retry-g<generation>` assistance request. Every later supervisor visit
+refreshes assistance without calling recover or starting a successor. Explicit
+retry clears the recovery budget and resumes the same owner and generation.
+Successful checkpoint recovery clears that budget; successful work alone does
+not clear the owner failure streak.
+
+Manual `dependency-routine` and `dependency-package` workflows invoke
+`group-supervise`, so they use the same group lock and admitted owner as the
+schedule. They never call a fleet driver's tick. Package admission still checks
+its saved target before joining that owner.
+
+A work item active in more than one configured factory is excluded from fan-out
+and raises assistance naming all conflicting factories. The native schedule
+retries each notification in its own `allowFailure` fan-out step. Even many
+conflicts cannot spend the discovery method's cross-behavior-call budget or
+stop healthy groups. A saved conflict identity allows post-child assistance
+and lost-response reconciliation without selecting an arbitrary factory era. Factory repair is
+an operator decision; discovery never resets either factory.
+
 ## Exactly-once effects and migration
 
 Keep existing factory names, work-item IDs, stage cycles, dispatch records,
@@ -187,7 +222,8 @@ independent workflow runs, not the size of one invocation tree.
 - Only affected tests run locally, with at most four workers; full suites run in
   CI.
 
-For a normal deployment, pause `groups-driver` and `maintenance-projects` with
+For the initial migration, follow [the Services cutover](services-group-cutover.md).
+For a normal later deployment, pause `groups-driver` and `maintenance-projects` with
 Swamp's schedule commands, then let active short methods finish. The existing
 Services deployment procedure checks for active runs before it stops serve.
 Suspended signal waits are durable and can survive that restart. Deploy the new
@@ -199,27 +235,34 @@ reset, or operation re-key is part of cutover.
 
 ## Local proof
 
-The native integration test uses an isolated Swamp server, four task groups, and
-the official factory. One group blocks after its effect receipt is saved; one
+The native integration test uses an isolated Swamp server and the official
+factory. It starts with four task groups. One group blocks after its effect receipt is saved; one
 fails; the other two record work independently. A duplicate launch of a waiting
 generation exits without a second effect. Killing serve before factory evidence
 is recorded exercises `run doctor --fix`, guarded checkpoint recovery, and
 same-owner resume. A native wait survives the restart, and its next generation
 advances the existing factory. The permanently failing group stops at three
 attempts, stays parked on repeated supervisor visits, and starts a fourth
-generation only after an explicit retry.
+generation only after an explicit retry. The same test makes native recovery
+fail three times, verifies parking, restores the workflow source, and retries
+the same owner. Both manual dependency workflows retain an already scheduled
+owner. The actual discovery and fan-out path starts a fifth healthy group even
+when conflict assistance fails. An empty discovery list also completes safely.
 
 Run affected contracts with one test worker:
 
 ```sh
-~/.swamp/deno/deno test --allow-all tests/group_runs_test.ts tests/driver_test.ts tests/project_detect_progress_test.ts tests/maintenance_worker_test.ts tests/group_assistance_test.ts
+~/.swamp/deno/deno test --allow-all tests/group_runs_test.ts tests/stage_launch_test.ts tests/driver_test.ts tests/project_detect_progress_test.ts tests/maintenance_worker_test.ts tests/group_assistance_test.ts
 python3 -m unittest tests/group_workflow_test.py
 ```
 
 The native test needs `swamp` on PATH and the official factory installed in the
 development clone. It copies those package files into a temporary repository; it
-never installs into or changes the live checkout. CI runs the Deno contracts;
-the native test requires the local Swamp installation and registry identity. The
+never installs into or changes the live checkout. CI also runs this native test
+with the pinned Swamp release and official factory version. The native job uses
+repository secrets `SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN`, with extension-read
+and serve scopes, in isolated account directories removed after the job.
+Missing credentials fail the job instead of skipping the test. The
 pure contracts cover 119 discovered groups, forty concurrent drives above one
 invocation's aggregate call limit, lost launch requests and responses, delayed
 duplicates, generation admission, and saved pre-approvals. The existing worker

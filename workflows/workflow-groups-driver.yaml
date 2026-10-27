@@ -12,16 +12,11 @@ jobs:
           type: behavior
           behavior: orbit-group-runs
           methodName: discover
-      - name: group-${{ self.group.workItem }}
+      - name: fanout
         dependsOn: [{ step: discover, condition: { type: succeeded } }]
-        forEach:
-          item: group
-          in: '${{ steps.discover.outputs.groups }}'
-        allowFailure: true
         task:
           type: workflow
-          workflowIdOrName: group-supervise
+          workflowIdOrName: group-fanout
           inputs:
-            workItem: '${{ self.group.workItem }}'
-            factory: '${{ self.group.factory }}'
-            preapprovalModel: '${{ self.group.preapprovalModel }}'
+            groups: '${{ steps.discover.outputs.groups }}'
+            conflicts: '${{ steps.discover.outputs.conflicts }}'

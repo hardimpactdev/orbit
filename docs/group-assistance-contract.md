@@ -163,3 +163,20 @@ Keep comments and assistance resources. An operator explicitly resolves any
 outstanding group request after checking its current identity; rollback never
 clears it automatically, reopens children, changes status/mode, or transfers work
 to another owner. No Gateway rollback or package fork is required.
+
+## Driver conflicts and failed recovery
+
+A repeated native checkpoint recovery failure uses the same saved group driver
+retry decision as a failed owner generation. Recovery reserves its attempts
+before running the CLI and parks after three failures or interrupted attempts.
+Retry continues that native owner; it does not create a second generation.
+
+A work item active in two factories raises `driver-factory-conflict` assistance
+at the driver stage. Discovery saves `conflict-<workItem>` on `orbit-group-runs`
+with the conflicting factory names and a stable start time before notification.
+The Gateway uses this identity instead of choosing either factory's run era.
+Each conflict notification is a separate native workflow step, so a failed
+notification cannot stop healthy groups. It reconciles lost responses through
+the same comment history and preserves existing operator and safety assistance.
+There is no factory approval or driver retry that resolves this conflict request;
+the operator repairs the factory membership and resolves the board request.

@@ -168,7 +168,9 @@ that pause. Its host workflows depend on `/fast/apps/orbit-swamp-scratch`, PHP,
 Composer, Codex, Claude, GitHub access and the vault's token helper. They are not
 the active external driver and must not be resumed on Services without moving
 and checking those dependencies. Keep the original scratch tree on Beast.
-`groups-driver` uses the Gateway and runs once a minute; task VMs own task work.
+`groups-driver` discovers active groups every five seconds and reconciles their
+independent workflow owners; task VMs own task work. See the
+[initial group-workflow cutover](services-group-cutover.md).
 Full dependency acceptance also requires working task-group provisioning.
 
 The preserved untracked `models/@swamp/git/git-wt-bump-apps-e2e.yaml` is an

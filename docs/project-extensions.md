@@ -170,15 +170,14 @@ three real Swamp routing tests (`maintenance_factory_test.ts`,
 handoff. They use the pinned official extensions, not a fork or test
 replacement.
 
-Those three tests do not run in CI yet. The workflow does not install the Swamp
-CLI, and restoring its pinned official extensions through
-`swamp extension
-install` requires Swamp registry credentials. This repository
-has no Actions secrets for `SWAMP_API_KEY` or `SWAMP_SIGNIN_TOKEN`. They must be
-supplied by the maintainer before a CI install step can work. Never copy a
-developer's key or production datastore into a runner. A passing contract job is
-not evidence that the native routing tests ran in CI; the PR records their local
-results separately.
+Those three routing tests do not run in CI yet. Their contract job does not
+install the Swamp CLI. The separate Maintenance worker native job installs the
+pinned CLI and official factory and runs `group_workflow_test.py`, including
+parallel progress, restart, recovery parking, and manual-workflow ownership.
+That job uses the dedicated `SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN` repository
+secrets. Never copy a developer's key or production datastore into a runner.
+A passing contract job is not evidence that the three routing tests ran in CI;
+the PR records their local results separately.
 
 Read stuck rows and recorded skips on the deployed server:
 

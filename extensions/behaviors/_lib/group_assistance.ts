@@ -12,7 +12,7 @@ export interface GroupRequest {
 const gates: Record<string, string> = { publish: "publish-retry", published: "republish" };
 const ended = ["completed", "failed", "cancelled"];
 const supportedGate = (stage: string, gateId: string) =>
-  gates[stage] === gateId || (stage === "driver" && /^driver-retry-g[1-9]\d*$/.test(gateId));
+  gates[stage] === gateId || (stage === "driver" && /^(driver-retry-g[1-9]\d*|driver-factory-conflict)$/.test(gateId));
 
 interface Comment {
   id: number;

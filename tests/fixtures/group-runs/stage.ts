@@ -24,6 +24,19 @@ export const behavior = {
     },
   },
   methods: {
+    assistance: {
+      description: "Fail a conflict notification to prove sibling isolation",
+      arguments: z.object({ workItem: z.string() }),
+      execute: () => {
+        throw new Error("fixture assistance unavailable");
+      },
+    },
+    admit_package: {
+      description:
+        "Admission fixture; existing target has already been admitted",
+      arguments: z.object({ workItem: z.string() }),
+      execute: () => Promise.resolve({ dataHandles: [] }),
+    },
     work: {
       description: "One keyed fixture effect",
       arguments: z.object({ workItem: z.string(), key: z.string() }),

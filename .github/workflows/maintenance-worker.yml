@@ -11,7 +11,7 @@ on:
       - 'workflows/workflow-maintenance-*.yaml'
       - 'workflows/workflow-group*.yaml'
       - 'models/@nckrtl/orbit-group-runs/**'
-      - 'workflows/workflow-dependency-package.yaml'
+      - 'workflows/workflow-dependency-*.yaml'
       - 'tests/**'
       - '.github/workflows/maintenance-worker.yml'
   push:
@@ -26,7 +26,7 @@ on:
       - 'workflows/workflow-maintenance-*.yaml'
       - 'workflows/workflow-group*.yaml'
       - 'models/@nckrtl/orbit-group-runs/**'
-      - 'workflows/workflow-dependency-package.yaml'
+      - 'workflows/workflow-dependency-*.yaml'
       - 'tests/**'
       - '.github/workflows/maintenance-worker.yml'
 permissions:
@@ -34,6 +34,7 @@ permissions:
 jobs:
   driver:
     runs-on: [self-hosted, hardimpact]
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - uses: denoland/setup-deno@v2
@@ -43,12 +44,51 @@ jobs:
         run: deno check extensions/behaviors/orbit_gateway.ts extensions/behaviors/orbit_driver.ts extensions/behaviors/orbit_group_run.ts extensions/behaviors/orbit_group_runs.ts
       - name: Check worker modules
         run: |
-          deno fmt --check extensions/behaviors/_lib/maintenance_worker.ts extensions/behaviors/_lib/swamp_maintenance.ts tests/maintenance_worker_test.ts tests/maintenance_resources_test.ts tests/worker_enrollment_entry_test.ts extensions/behaviors/_lib/group_runs.ts extensions/behaviors/orbit_group_run.ts extensions/behaviors/orbit_group_runs.ts tests/group_runs_test.ts
-          deno lint extensions/behaviors/_lib/maintenance_worker.ts extensions/behaviors/_lib/swamp_maintenance.ts tests/maintenance_worker_test.ts tests/maintenance_resources_test.ts tests/worker_enrollment_entry_test.ts extensions/behaviors/_lib/group_runs.ts extensions/behaviors/orbit_group_run.ts extensions/behaviors/orbit_group_runs.ts tests/group_runs_test.ts
+          deno fmt --check extensions/behaviors/_lib/maintenance_worker.ts extensions/behaviors/_lib/swamp_maintenance.ts tests/maintenance_worker_test.ts tests/maintenance_resources_test.ts tests/worker_enrollment_entry_test.ts extensions/behaviors/_lib/group_runs.ts extensions/behaviors/orbit_group_run.ts extensions/behaviors/orbit_group_runs.ts tests/group_runs_test.ts extensions/behaviors/_lib/stage_launch.ts tests/stage_launch_test.ts
+          deno lint extensions/behaviors/_lib/maintenance_worker.ts extensions/behaviors/_lib/swamp_maintenance.ts tests/maintenance_worker_test.ts tests/maintenance_resources_test.ts tests/worker_enrollment_entry_test.ts extensions/behaviors/_lib/group_runs.ts extensions/behaviors/orbit_group_run.ts extensions/behaviors/orbit_group_runs.ts tests/group_runs_test.ts extensions/behaviors/_lib/stage_launch.ts tests/stage_launch_test.ts
       - name: Test affected driver contracts (one worker)
         run: >-
           deno test --allow-all
           tests/driver_test.ts tests/group_runs_test.ts tests/group_assistance_test.ts
           tests/dependency_projects_test.ts tests/routine_stage_test.ts
           tests/package_stage_test.ts tests/maintenance_worker_test.ts
-          tests/maintenance_resources_test.ts tests/worker_enrollment_entry_test.ts
+          tests/maintenance_resources_test.ts tests/worker_enrollment_entry_test.ts tests/stage_launch_test.ts
+  native-group-workflows:
+    runs-on: [self-hosted, hardimpact]
+    timeout-minutes: 10
+    env:
+      SWAMP_API_KEY: ${{ secrets.SWAMP_API_KEY }}
+      SWAMP_SIGNIN_TOKEN: ${{ secrets.SWAMP_SIGNIN_TOKEN }}
+      SWAMP_NO_UPDATE_CHECK: '1'
+      SWAMP_NO_TELEMETRY: '1'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Prepare isolated Swamp account
+        shell: bash
+        run: |
+          printf 'SWAMP_HOME=%s\nSWAMP_CONFIG_DIR=%s\n' \
+            "$RUNNER_TEMP/orbit-swamp-native-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            "$RUNNER_TEMP/orbit-swamp-native-config-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
+      - name: Install pinned Swamp
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SWAMP_API_KEY" && test -n "$SWAMP_SIGNIN_TOKEN"
+          mkdir -p "$SWAMP_HOME/bin" "$SWAMP_CONFIG_DIR"
+          curl --fail --location --retry 3 \
+            https://github.com/swamp-club/swamp/releases/download/v20261022.021804.0-sha.983e2929/swamp-linux-x86_64 \
+            --output "$SWAMP_HOME/bin/swamp"
+          printf '%s  %s\n' 940416b92781dad1d48aff0e4f42b48bbcb29fd92aca9bb8ed126aff0f6d135d "$SWAMP_HOME/bin/swamp" | sha256sum --check
+          chmod +x "$SWAMP_HOME/bin/swamp"
+          echo "$SWAMP_HOME/bin" >> "$GITHUB_PATH"
+      - name: Pull official factory and test native group workflows (four workers maximum)
+        shell: bash
+        run: |
+          set -euo pipefail
+          unset SWAMP_API_KEY_FILE SWAMP_SERVER_TOKEN SWAMP_SERVER_TOKEN_FILE SWAMP_SERVE_URL SWAMP_SERVER_URL
+          swamp extension pull @swamp/software-factory@2026.10.23.1 --json
+          python3 -m unittest tests/group_workflow_test.py
+      - name: Remove isolated Swamp account state
+        if: always()
+        shell: bash
+        run: rm -rf -- "$SWAMP_HOME" "$SWAMP_CONFIG_DIR"
