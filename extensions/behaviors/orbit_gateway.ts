@@ -271,9 +271,10 @@ export const behavior = {
         reason: z.string(),
         factory: z.string().optional(),
         gateIds: z.array(z.string()).optional(),
+        driverDefinition: z.string().optional(),
       }),
       execute: async (
-        args: { workItem: string; parked: boolean; stage: string; cycle: number; reason: string; factory?: string; gateIds?: string[] },
+        args: { workItem: string; parked: boolean; stage: string; cycle: number; reason: string; factory?: string; gateIds?: string[]; driverDefinition?: string },
         context: {
           globalArgs: { gatewayUrl: string; caFile: string; timeoutSeconds: number };
           definition: { name: string };
@@ -294,7 +295,11 @@ export const behavior = {
           readRun: async () => args.factory
             ? ((await context.queryData(`modelName == "${args.factory}" && name == "state-${args.workItem}"`, "attributes")) as { workItem: string; startedAt: string }[])[0] ?? null
             : null,
-          readApproval: async (gateId) => args.factory
+          readApproval: async (gateId) => /^driver-retry-g[1-9]\d*$/.test(gateId)
+            ? args.driverDefinition
+              ? ((await context.queryData(`modelName == ${JSON.stringify(args.driverDefinition)} && name == "retry"`, "attributes")) as unknown[])[0] ?? null
+              : null
+            : args.factory
             ? ((await context.queryData(`modelName == "${args.factory}" && name == "approval-${args.workItem}-${gateId}"`, "attributes")) as unknown[])[0] ?? null
             : null,
         });

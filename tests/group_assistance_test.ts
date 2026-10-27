@@ -532,3 +532,70 @@ Deno.test("child write boundary checks all current fields instead of only flags 
     }
   }
 });
+
+Deno.test("post-child driver failure assistance requires the exact explicit generation retry", async () => {
+  const h = harness();
+  const failure = { ...parked, stage: "driver", cycle: 3, gateIds: ["driver-retry-g3"],
+    driverDefinition: "orbit-group-tg-7", reason: "three owner runs failed; inspect and retry the driver" };
+  await syncAssistance(failure, h.deps);
+  assertEquals(h.posts().length, 1);
+  assertStringIncludes(String(h.posts()[0].body!.body), "driver-retry-g3");
+  // A board answer and unrelated factory approval cannot clear or restart it.
+  h.approve();
+  await syncAssistance({ ...failure, parked: false }, h.deps);
+  assertEquals(h.posts().length, 1);
+  h.approve({ gateId: "driver-retry-g2", stageId: "driver", cycle: 2 });
+  await syncAssistance({ ...failure, parked: false }, h.deps);
+  assertEquals(h.posts().length, 1);
+  h.approve({ gateId: "driver-retry-g3", stageId: "driver", cycle: 3 });
+  await syncAssistance({ ...failure, parked: false }, h.deps);
+  assertEquals(h.posts().map((p) => p.body!.type), ["assistance_requested", "resolution"]);
+  assertEquals(h.group.assistance_requested, false);
+});
+
+Deno.test("Gateway resolves driver assistance only from the group's saved retry decision", async () => {
+  const { behavior: gateway } = await import("../extensions/behaviors/orbit_gateway.ts");
+  const h = harness();
+  const queries: string[] = [];
+  let retry: Record<string, unknown> | null = null;
+  const approval = { workItem: "tg-7", gateId: "driver-retry-g3", stageId: "driver", cycle: 3,
+    actor: "nick", decision: "approved", decidedAt: "2026-10-23T12:01:00Z" };
+  const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async (request) => {
+    const method = request.method;
+    if (method !== "GET" && method !== "POST") return new Response(null, { status: 405 });
+    const response = await h.deps.http(method, new URL(request.url).pathname,
+      request.method === "POST" ? await request.json() : undefined);
+    return Response.json(response.body, { status: response.status });
+  });
+  const context = {
+    globalArgs: { gatewayUrl: `http://127.0.0.1:${server.addr.port}`, caFile: "/dev/null", timeoutSeconds: 2 },
+    definition: { name: "orbit-gateway" },
+    queryData: (predicate: string) => {
+      queries.push(predicate);
+      if (predicate.includes('name == "assistance-tg-7"')) return Promise.resolve(h.record() ? [h.record()] : []);
+      if (predicate.includes('name == "state-tg-7"')) return Promise.resolve([{ workItem: "tg-7", startedAt: ERA }]);
+      if (predicate.includes('name == "retry"')) return Promise.resolve(retry ? [retry] : []);
+      // A factory approval with a similar name must never substitute for a driver retry.
+      if (predicate.includes('approval-')) return Promise.resolve([approval]);
+      return Promise.resolve([]);
+    },
+    writeResource: async (_spec: string, name: string, value: Record<string, unknown>) => {
+      await h.deps.writeRecord(value as unknown as AssistanceRecord);
+      return { name };
+    },
+  };
+  const args = { ...parked, stage: "driver", cycle: 3, gateIds: ["driver-retry-g3"], driverDefinition: "orbit-group-tg-7" };
+  try {
+    await gateway.methods.assistance.execute(args, context);
+    await gateway.methods.assistance.execute({ ...args, parked: false }, context);
+    assertEquals(h.posts().length, 1);
+    retry = approval;
+    await gateway.methods.assistance.execute({ ...args, parked: false }, context);
+    assertEquals(h.posts().length, 2);
+    assertEquals(h.group.assistance_requested, false);
+    assertEquals(queries.some((q) => q.includes('modelName == "orbit-group-tg-7" && name == "retry"')), true);
+    assertEquals(queries.some((q) => q.includes('approval-')), false);
+  } finally {
+    await server.shutdown();
+  }
+});

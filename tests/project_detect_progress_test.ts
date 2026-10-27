@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
-import { parse } from "jsr:@std/yaml@1.0.11";
+import { behavior as groupRun } from "../extensions/behaviors/orbit_group_run.ts";
 import { behavior as driver } from "../extensions/behaviors/orbit_driver.ts";
 import {
   type Http,
@@ -23,20 +23,10 @@ import { WEBSITE_PROJECT } from "./_support/dependency_projects.ts";
 // driver, Gateway stage planner, worker startup, placement and result reader are real.
 // maintenance_factory_test also runs detection with the actual official factory.
 Deno.test("scheduled detect takes a ready provision through worker startup and records detection results without extra rotation waits", async () => {
-  const yaml = parse(
-    await Deno.readTextFile(
-      new URL(
-        "../workflows/workflow-maintenance-projects.yaml",
-        import.meta.url,
-      ),
-    ),
-  ) as {
-    jobs: {
-      steps: { name: string; task: { inputs: { maxSteps: number } } }[];
-    }[];
-  };
-  const maxSteps =
-    yaml.jobs[0].steps.find((s) => s.name === "detect")!.task.inputs.maxSteps;
+  const maxSteps = groupRun.globalArguments.parse({
+    factory: "dependency-detect",
+    preapprovalModel: "orbit-driver-detect",
+  }).maxSteps;
   const fake = startFakeGateway({ 7: { scriptNoChange: true } });
   const project = {
     ...WEBSITE_PROJECT,

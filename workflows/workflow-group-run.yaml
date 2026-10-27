@@ -1,0 +1,52 @@
+id: c1adc889-3366-40d0-bcf7-099179e97093
+name: group-run
+description: One admitted generation of one task group, followed by a durable wait.
+autoResume: true
+inputs:
+  type: object
+  properties:
+    workItem: { type: string }
+    factory: { type: string }
+    generation: { type: integer }
+    key: { type: string }
+    definition: { type: string }
+    preapprovalModel: { type: string }
+  required: [workItem, factory, generation, key, definition, preapprovalModel]
+jobs:
+  - name: group
+    steps:
+      - name: claim
+        guard: '${{ false }}'
+        task:
+          type: behavior
+          behavior: '${{ inputs.definition }}'
+          methodName: claim
+          inputs:
+            workItem: '${{ inputs.workItem }}'
+            factory: '${{ inputs.factory }}'
+            generation: '${{ inputs.generation }}'
+            key: '${{ inputs.key }}'
+            runId: '${{ run.id }}'
+      - name: drive
+        dependsOn: [{ step: claim, condition: { type: succeeded } }]
+        guard: '${{ !steps.claim.outputs.admitted }}'
+        task:
+          type: behavior
+          behavior: '${{ inputs.definition }}'
+          methodName: drive
+          inputs:
+            workItem: '${{ inputs.workItem }}'
+            factory: '${{ inputs.factory }}'
+            generation: '${{ inputs.generation }}'
+            key: '${{ inputs.key }}'
+            runId: '${{ run.id }}'
+      - name: wait
+        dependsOn: [{ step: drive, condition: { type: succeeded } }]
+        guard: '${{ steps.drive.outputs.terminal }}'
+        allowFailure: true
+        task:
+          type: wait_for_signal
+          timeout: 10
+          schema:
+            type: object
+            additionalProperties: false

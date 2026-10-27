@@ -8,6 +8,10 @@ run shared extensions on that worker. No maintenance stage calls `tasks.script`,
 reads `maintainer.json`, or runs `scripts/dependencies`. The Gateway operation
 itself remains available for other uses.
 
+[Independent per-group workflow generations](per-group-workflows.md) advance
+each active group. The minute project workflow handles admission and result
+receipts, and the worker workflow handles credential cleanup.
+
 The driver uses Swamp's built-in `swamp/enrollment-token` methods on serve. Each
 worker start has a named enrollment with a one-machine limit and a two-hour
 hard deadline, plus a server access token for the same worker and deadline.

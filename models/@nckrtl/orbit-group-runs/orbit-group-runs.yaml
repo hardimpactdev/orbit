@@ -1,0 +1,17 @@
+type: '@nckrtl/orbit-group-runs'
+typeVersion: 2026.10.27.1
+id: 29c40e5f-5d48-4c59-bec2-6406330dc70c
+name: orbit-group-runs
+version: 1
+tags: {}
+globalArguments:
+  factories:
+    - factory: orbit-groups
+      preapprovalModel: orbit-driver-groups
+    - factory: dependency-routine
+      preapprovalModel: orbit-driver-routine
+    - factory: dependency-detect
+      preapprovalModel: orbit-driver-detect
+    - factory: dependency-package
+      preapprovalModel: orbit-driver-package
+methods: {}

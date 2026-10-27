@@ -1,36 +1,27 @@
 id: d83a5174-05bf-41ab-8468-f36d5fe30b03
 name: groups-driver
-description: >-
-  One tick of the reconcile loop over orbit-groups: each active external Orbit
-  task group takes a few short, guarded steps (record, advance, start the next
-  Gateway operation). Runs every minute under swamp serve.
-tags: {}
+description: Discover every active group and reconcile independent owning runs.
 trigger:
-  schedule: "* * * * *"
-inputs:
-  properties:
-    maxSteps:
-      type: integer
-      default: 3
-      description: Guarded steps per work item per tick
-    workItems:
-      type: array
-      items: { type: string }
-      description: Work items to tick (default every active run)
+  # Croner's native seconds field; validated by the installed Swamp schema.
+  schedule: "*/5 * * * * *"
 jobs:
-  - name: tick
+  - name: groups
     steps:
-      - name: tick
+      - name: discover
         task:
-          type: model_method
-          modelIdOrName: orbit-driver-groups
-          methodName: tick
+          type: behavior
+          behavior: orbit-group-runs
+          methodName: discover
+      - name: group-${{ self.group.workItem }}
+        dependsOn: [{ step: discover, condition: { type: succeeded } }]
+        forEach:
+          item: group
+          in: '${{ steps.discover.outputs.groups }}'
+        allowFailure: true
+        task:
+          type: workflow
+          workflowIdOrName: group-supervise
           inputs:
-            maxSteps: ${{ inputs.maxSteps }}
-            workItems: '${{ has(inputs.workItems) ? inputs.workItems : null }}'
-        dependsOn: []
-        weight: 0
-        allowFailure: false
-    dependsOn: []
-    weight: 0
-version: 1
+            workItem: '${{ self.group.workItem }}'
+            factory: '${{ self.group.factory }}'
+            preapprovalModel: '${{ self.group.preapprovalModel }}'

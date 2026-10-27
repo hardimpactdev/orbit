@@ -234,9 +234,11 @@ decides the next step. Swamp never merges.
 - `tests/factory_routing_test.ts` runs the real factory and driver with swamp in
   a throwaway copy of the repo against a fake Gateway (`tests/_support/`), one
   group per routing case.
-- Driver: `orbit-driver-groups` in method mode;
-  `workflows/workflow-groups-driver.yaml` ticks every minute under swamp serve,
-  three guarded steps per group.
+- Driver: `groups-driver` discovers all active task groups every five seconds.
+  Each group owns independent bounded `group-run` generations with a durable
+  wait between advances. [Generation admission and recovery](docs/per-group-workflows.md)
+  preserve the factory state and operation keys. `maintenance-projects` admits
+  new work and reconciles results; it no longer ticks the group drivers.
 - A group's failed guarded step records an `error` in its tick entry and leaves
   the other groups free to advance. Its next tick reconciles the same factory
   entry and saved operation. If no step returned a status, the error entry's
@@ -262,7 +264,7 @@ decides the next step. Swamp never merges.
 
 ```bash
 swamp model method run orbit-groups start --input workItem=tg-1234
-swamp workflow run groups-driver            # one tick by hand; serve runs it each minute
+swamp workflow run groups-driver            # one discovery pass; serve repeats it
 swamp model method run orbit-groups summary --input workItem=tg-1234
 ```
 

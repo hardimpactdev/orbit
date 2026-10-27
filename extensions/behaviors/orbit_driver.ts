@@ -37,6 +37,8 @@ const GlobalArgsSchema = z.object({
   // A behavior with an `assistance` method; the driver tells it each tick
   // whether the work item is parked at a human gate.
   assistanceModel: z.string().optional(),
+  // Per-group workflows retain approvals saved on the original fleet driver.
+  preapprovalModel: z.string().optional(),
   // swamp caps cross-behavior calls per execution (100). A tick stops starting new
   // steps before it would reach this budget; the next tick resumes with the work
   // items it deferred.
@@ -364,7 +366,10 @@ async function step(ctx: Ctx, workItem: string, killAt?: string): Promise<{ stat
   // Parked at a human gate: apply a stored pre-approval for exactly this entry.
   for (const gateId of pendingGateIds(status)) {
     const name = preapprovalName(workItem, gateId, stage, cycle);
-    const pre = await latest<Preapproval>(ctx, ctx.definitionName, name);
+    const source = ctx.globalArgs.preapprovalModel ?? ctx.definitionName;
+    const pre = await latest<Preapproval>(ctx, source, name);
+    const consumed = source === ctx.definitionName ? pre : await latest<Preapproval>(ctx, ctx.definitionName, name);
+    if (consumed?.appliedAt) continue;
     if (pre === null || pre.appliedAt !== null || pre.workItem !== workItem || pre.gateId !== gateId || pre.stage !== stage || pre.cycle !== cycle ||
       (startedAt === null || !Number.isFinite(Date.parse(startedAt)) || !Number.isFinite(Date.parse(pre.createdAt)) || Date.parse(pre.createdAt) < Date.parse(startedAt))) continue;
     await call(ctx, f, "approve", {
@@ -486,7 +491,7 @@ export const behavior = {
             const parked = (last.waiting ?? "").startsWith("assistance: ");
             try {
               await call(ctx, ctx.globalArgs.assistanceModel, "assistance", {
-                workItem, parked, factory: f, gateIds: parked ? pendingGateIds(last.status) : [], stage: last.status.stage.id, cycle: last.status.stage.cycle,
+                workItem, parked, factory: f, driverDefinition: ctx.definitionName, gateIds: parked ? pendingGateIds(last.status) : [], stage: last.status.stage.id, cycle: last.status.stage.cycle,
                 reason: parked ? last.waiting!.slice("assistance: ".length) : "",
               });
             } catch (e) {

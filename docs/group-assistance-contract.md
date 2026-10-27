@@ -34,7 +34,7 @@ resolve, so clients must not claim atomic ownership protection from a prior read
 ## Swamp adoption rules
 
 Keep ordinary open-child gates on the existing child-comment path. Use group
-comments for the two post-child gates: `publish / publish-retry` and
+comments for the driver failure budget described below and the two post-child factory gates: `publish / publish-retry` and
 `published / republish`. Never reopen or choose an ended child as a substitute.
 
 At each child-comment write boundary, use the fresh group and child snapshot,
@@ -69,7 +69,7 @@ For the group path:
    factory approval and starts no retry.
 4. If a person resolves the board request, keep it resolved while the factory
    remains parked. A resolution comment is recorded input, not gate consent.
-5. Clear only the matching Swamp Direction request after reading an **approved**
+5. For factory gates, clear only the matching Swamp Direction request after reading an **approved**
    official factory approval record for the same work item, gate, stage, cycle
    and current run era. Advancing stage, an old/wrong/rejected decision, or merely
    reporting `parked: false` is insufficient. The driver passes its factory name;
@@ -89,6 +89,28 @@ an extra operation.
 
 No fork of `@swamp/software-factory` is needed. Use its approval resources and
 normal gates as documented by the official authoring/driving guidance.
+
+## Per-group driver failures
+
+The per-group driver parks after three consecutive failed owner generations.
+Its request uses stage `driver`, cycle equal to the failed generation, and gate
+`driver-retry-g<generation>`. This is a driver retry identity, not a factory gate.
+Use the same child route while a child is open and the group route after all
+children end. Keep the full history, current-request, ownership, run-era, and
+safety checks above.
+
+Only an explicit `retry` on `orbit-group-tg-<id>` records a retry decision. The
+Gateway reads that definition's `retry` resource for driver requests. It never
+substitutes a factory approval, another generation, an old run-era decision, or
+a board resolution. The decision must match the work item, driver stage,
+generation, gate, actor, and current factory run era before resolving the
+post-child request. Retry resets only the failure budget. It does not approve a
+factory gate, reset factory state, or start an operation.
+
+The durable failure resource is updated before assistance is sent. A failed
+notification leaves parking in place and is reconciled on later supervisor
+visits. Repeated visits do not consume attempts or start a fourth owner run.
+See [per-group failure policy](per-group-workflows.md#repeated-run-failures).
 
 ## Validation and bounded parent acceptance
 

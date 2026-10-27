@@ -996,6 +996,7 @@ export interface AssistanceArgs {
   reason: string;
   factory?: string;
   gateIds?: string[];
+  driverDefinition?: string;
 }
 
 export interface AssistanceRecord {

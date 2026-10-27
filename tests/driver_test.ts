@@ -77,7 +77,7 @@ Deno.test("parked tick passes the exact gate and factory to assistance without a
   await h.tick(); // A board comment cannot change these factory status/approval resources.
   assertEquals(h.calls.map((c) => c.method), ["status", "assistance", "status", "assistance"]);
   assertEquals(h.calls[1].arguments, {
-    workItem: "tg-7", parked: true, factory: "orbit-groups", gateIds: ["publish-retry"], stage: "publish", cycle: 1,
+    workItem: "tg-7", parked: true, factory: "orbit-groups", driverDefinition: "orbit-driver-groups", gateIds: ["publish-retry"], stage: "publish", cycle: 1,
     reason: "awaiting human approval 'publish-retry'",
   });
 });

@@ -4,10 +4,13 @@ on:
     paths:
       - 'extensions/behaviors/orbit_gateway.ts'
       - 'extensions/behaviors/orbit_driver.ts'
+      - 'extensions/behaviors/orbit_group*.ts'
       - 'extensions/behaviors/_lib/**'
       - 'models/@nckrtl/orbit-gateway/**'
       - 'models/@swamp/software-factory/dependency-*.yaml'
       - 'workflows/workflow-maintenance-*.yaml'
+      - 'workflows/workflow-group*.yaml'
+      - 'models/@nckrtl/orbit-group-runs/**'
       - 'workflows/workflow-dependency-package.yaml'
       - 'tests/**'
       - '.github/workflows/maintenance-worker.yml'
@@ -16,10 +19,13 @@ on:
     paths:
       - 'extensions/behaviors/orbit_gateway.ts'
       - 'extensions/behaviors/orbit_driver.ts'
+      - 'extensions/behaviors/orbit_group*.ts'
       - 'extensions/behaviors/_lib/**'
       - 'models/@nckrtl/orbit-gateway/**'
       - 'models/@swamp/software-factory/dependency-*.yaml'
       - 'workflows/workflow-maintenance-*.yaml'
+      - 'workflows/workflow-group*.yaml'
+      - 'models/@nckrtl/orbit-group-runs/**'
       - 'workflows/workflow-dependency-package.yaml'
       - 'tests/**'
       - '.github/workflows/maintenance-worker.yml'
@@ -34,15 +40,15 @@ jobs:
         with:
           deno-version: v2.9.8
       - name: Check driver types
-        run: deno check extensions/behaviors/orbit_gateway.ts extensions/behaviors/orbit_driver.ts
+        run: deno check extensions/behaviors/orbit_gateway.ts extensions/behaviors/orbit_driver.ts extensions/behaviors/orbit_group_run.ts extensions/behaviors/orbit_group_runs.ts
       - name: Check worker modules
         run: |
-          deno fmt --check extensions/behaviors/_lib/maintenance_worker.ts extensions/behaviors/_lib/swamp_maintenance.ts tests/maintenance_worker_test.ts tests/maintenance_resources_test.ts tests/worker_enrollment_entry_test.ts
-          deno lint extensions/behaviors/_lib/maintenance_worker.ts extensions/behaviors/_lib/swamp_maintenance.ts tests/maintenance_worker_test.ts tests/maintenance_resources_test.ts tests/worker_enrollment_entry_test.ts
+          deno fmt --check extensions/behaviors/_lib/maintenance_worker.ts extensions/behaviors/_lib/swamp_maintenance.ts tests/maintenance_worker_test.ts tests/maintenance_resources_test.ts tests/worker_enrollment_entry_test.ts extensions/behaviors/_lib/group_runs.ts extensions/behaviors/orbit_group_run.ts extensions/behaviors/orbit_group_runs.ts tests/group_runs_test.ts
+          deno lint extensions/behaviors/_lib/maintenance_worker.ts extensions/behaviors/_lib/swamp_maintenance.ts tests/maintenance_worker_test.ts tests/maintenance_resources_test.ts tests/worker_enrollment_entry_test.ts extensions/behaviors/_lib/group_runs.ts extensions/behaviors/orbit_group_run.ts extensions/behaviors/orbit_group_runs.ts tests/group_runs_test.ts
       - name: Test affected driver contracts (one worker)
         run: >-
           deno test --allow-all
-          tests/driver_test.ts
+          tests/driver_test.ts tests/group_runs_test.ts tests/group_assistance_test.ts
           tests/dependency_projects_test.ts tests/routine_stage_test.ts
           tests/package_stage_test.ts tests/maintenance_worker_test.ts
           tests/maintenance_resources_test.ts tests/worker_enrollment_entry_test.ts

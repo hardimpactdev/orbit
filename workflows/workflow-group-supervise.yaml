@@ -1,0 +1,38 @@
+id: de064a59-b3b2-4ae7-a9f6-77ebb4675db1
+name: group-supervise
+description: Reconcile the admitted workflow owner for exactly one task group.
+inputs:
+  type: object
+  properties:
+    workItem: { type: string }
+    factory: { type: string }
+    preapprovalModel: { type: string }
+  required: [workItem, factory, preapprovalModel]
+jobs:
+  - name: group
+    steps:
+      - name: ensure
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/orbit-group-run'
+          behaviorName: '${{ "orbit-group-" + inputs.workItem }}'
+          methodName: ensure
+          globalArgs:
+            factory: '${{ inputs.factory }}'
+            assistanceModel: orbit-gateway
+            preapprovalModel: '${{ inputs.preapprovalModel }}'
+          inputs:
+            workItem: '${{ inputs.workItem }}'
+      - name: recover
+        dependsOn: [{ step: ensure, condition: { type: succeeded } }]
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/orbit-group-run'
+          behaviorName: '${{ "orbit-group-recovery-" + inputs.workItem }}'
+          methodName: recover
+          globalArgs:
+            factory: '${{ inputs.factory }}'
+            preapprovalModel: '${{ inputs.preapprovalModel }}'
+          inputs:
+            definition: '${{ "orbit-group-" + inputs.workItem }}'
+            runId: '${{ steps.ensure.outputs.runId }}'

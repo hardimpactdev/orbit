@@ -11,6 +11,8 @@ export interface GroupRequest {
 
 const gates: Record<string, string> = { publish: "publish-retry", published: "republish" };
 const ended = ["completed", "failed", "cancelled"];
+const supportedGate = (stage: string, gateId: string) =>
+  gates[stage] === gateId || (stage === "driver" && /^driver-retry-g[1-9]\d*$/.test(gateId));
 
 interface Comment {
   id: number;
@@ -29,7 +31,7 @@ function identity(workItem: string, r: GroupRequest): string {
 function fromComment(c: Comment, group: number, workItem: string): GroupRequest | null {
   if (c.type !== "assistance_requested" || c.author !== "swamp" || c.task_group_id !== group || c.task_id !== group) return null;
   const m = /\nGate: ([\w-]+); work item: (tg-\d+); stage: (\w+); cycle: ([1-9]\d*); run: ([^\n]+)$/.exec(c.body);
-  if (!m || m[2] !== workItem || gates[m[3]] !== m[1] || !Number.isFinite(Date.parse(m[5]))) return null;
+  if (!m || m[2] !== workItem || !supportedGate(m[3], m[1]) || !Number.isFinite(Date.parse(m[5]))) return null;
   return { body: c.body, gateId: m[1], stage: m[3], cycle: Number(m[4]), era: m[5] };
 }
 
@@ -102,7 +104,7 @@ export async function syncGroupAssistance(
 
   if (g.assistance_kind !== null || g.assistance_question !== null || g.assistance_reason !== null) return skip("preserved inconsistent inactive group request");
   if (!args.parked) return save({ ...rec, key: null, raisedAt: null, groupRequest: null, skipped: null });
-  const gateId = gates[args.stage];
+  const gateId = args.gateIds?.length === 1 && supportedGate(args.stage, args.gateIds[0]) ? args.gateIds[0] : gates[args.stage];
   if (!gateId || args.gateIds?.length !== 1 || args.gateIds[0] !== gateId) return skip("no single supported post-child gate");
   const r: GroupRequest = { body: "", stage: args.stage, cycle: args.cycle, gateId, era: run.startedAt };
   // A board answer stays an answer even if no factory approval followed. Never
