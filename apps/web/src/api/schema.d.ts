@@ -1612,6 +1612,26 @@ export interface paths {
         patch: operations["instance-deploy-step-update"];
         trace?: never;
     };
+    "/api/v1/instances/{instance}/deploy/automatic": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start an automatic pinned deploy
+         * @description Starts the existing instance.deploy operation for exactly the required full commit SHA. Requires Gateway Node access, an enabled production Instance, and Idempotency-Key. Derives automatic origin from the authorized command and records the caller Node ID. Replays bind caller, command, Instance and commit. Rechecks pause and rollback blocks under the Instance lock before effects. Branch membership is checked on the first-parent chain during queued source preparation; refusal ends with deployment.commit_not_on_branch. Follow with operation:show. See /reference/deployments#pinned-commits-and-automatic-callers.
+         */
+        post: operations["instance-deploy-automatic"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/instances/{instance}/deployments": {
         parameters: {
             query?: never;
@@ -11042,7 +11062,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409). */
+                /** @description A permanent key scoped to this operation kind, target and input. The same request returns the existing operation with HTTP 202; a changed identity returns operation.idempotency_conflict (409). */
                 "Idempotency-Key"?: string;
             };
             path: {
@@ -11053,7 +11073,10 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    /** @description Deploy exactly this full commit SHA as a manual action */
+                    commit?: string;
+                };
             };
         };
         responses: {
@@ -11380,6 +11403,87 @@ export interface operations {
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "instance-deploy-automatic": {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A permanent key scoped to this operation kind, binding caller and command as well as target and input. The same request returns the existing operation with HTTP 202; a changed identity returns operation.idempotency_conflict (409). */
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Numeric Instance ID. */
+                instance: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Required full commit SHA on the deployment branch */
+                    commit: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Accepted. The operation is queued; follow it with `operation:show`. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Operation"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. The key already belongs to another target or input (`operation.idempotency_conflict`), or another operation holds the target (`operation.target_busy`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). A malformed Idempotency-Key also returns `validation.failed`. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -12135,7 +12239,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409). */
+                /** @description A permanent key scoped to this operation kind, target and input. The same request returns the existing operation with HTTP 202; a changed identity returns operation.idempotency_conflict (409). */
                 "Idempotency-Key"?: string;
             };
             path: {
@@ -19872,7 +19976,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409). */
+                /** @description A permanent key scoped to this operation kind, target and input. The same request returns the existing operation with HTTP 202; a changed identity returns operation.idempotency_conflict (409). */
                 "Idempotency-Key": string;
             };
             path: {
@@ -20058,7 +20162,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409). */
+                /** @description A permanent key scoped to this operation kind, target and input. The same request returns the existing operation with HTTP 202; a changed identity returns operation.idempotency_conflict (409). */
                 "Idempotency-Key"?: string;
             };
             path: {
@@ -20351,7 +20455,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409). */
+                /** @description A permanent key scoped to this operation kind, target and input. The same request returns the existing operation with HTTP 202; a changed identity returns operation.idempotency_conflict (409). */
                 "Idempotency-Key"?: string;
             };
             path: {
@@ -20447,7 +20551,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409). */
+                /** @description A permanent key scoped to this operation kind, target and input. The same request returns the existing operation with HTTP 202; a changed identity returns operation.idempotency_conflict (409). */
                 "Idempotency-Key"?: string;
             };
             path: {
@@ -20532,7 +20636,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409). */
+                /** @description A permanent key scoped to this operation kind, target and input. The same request returns the existing operation with HTTP 202; a changed identity returns operation.idempotency_conflict (409). */
                 "Idempotency-Key": string;
             };
             path: {
@@ -21228,7 +21332,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409). */
+                /** @description A permanent key scoped to this operation kind, target and input. The same request returns the existing operation with HTTP 202; a changed identity returns operation.idempotency_conflict (409). */
                 "Idempotency-Key"?: string;
             };
             path: {
@@ -21326,7 +21430,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409). */
+                /** @description A permanent key scoped to this operation kind, target and input. The same request returns the existing operation with HTTP 202; a changed identity returns operation.idempotency_conflict (409). */
                 "Idempotency-Key": string;
             };
             path: {
