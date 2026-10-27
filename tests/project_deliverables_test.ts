@@ -187,7 +187,7 @@ for (const slug of ["nckrtl-com", ...fleet.map((p) => p.slug)]) {
             `${candidate.path === "." ? "" : candidate.path + "/"}${
               candidate.manager === "composer"
                 ? "composer.lock"
-                : "{bun.lock,package-lock.json}"
+                : "{bun.lock,package-lock.json,npm-shrinkwrap.json,pnpm-lock.yaml}"
             }`,
           );
           assertEquals(files[0].change, "modified");

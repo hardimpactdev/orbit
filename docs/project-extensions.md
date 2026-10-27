@@ -64,8 +64,9 @@ Every generated child declares typed deliverables in shared `project_schedule.ts
   and confirms the checkout stayed unchanged instead of requesting a PR.
 - Each package child also declares `dependency-lock`, a file deliverable with
   `change: modified` in the detected path: `composer.lock` for Composer, or
-  `{bun.lock,package-lock.json}` for JavaScript. The latter is Orbit's supported
-  glob alternative for the two lockfile formats accepted by JS maintenance.
+  `{bun.lock,package-lock.json,npm-shrinkwrap.json,pnpm-lock.yaml}` for JavaScript. The latter is Orbit's supported
+  glob alternative for the lockfiles recognized by dependency inventory.
+  Ecosystem maintenance still owns package-manager admission.
 
 Routine runs may finish with no changes, and detection is read-only, so neither
 requires a file diff. Package work requires its selected lockfile to change.

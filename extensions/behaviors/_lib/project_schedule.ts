@@ -139,7 +139,7 @@ function taskDeliverables(
       path: `${prefix}${
         target.manager === "composer"
           ? "composer.lock"
-          : "{bun.lock,package-lock.json}"
+          : "{bun.lock,package-lock.json,npm-shrinkwrap.json,pnpm-lock.yaml}"
       }`,
       change: "modified",
     });
