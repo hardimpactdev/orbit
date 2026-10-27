@@ -107,6 +107,46 @@ export async function ensureProjectGroup(
   return receipt;
 }
 
+/** Typed Orbit handoff requirements; routine no-change and read-only scans need no diff. */
+function taskDeliverables(
+  project: DependencyProject,
+  mode: "routine" | "detect" | "package",
+  target?: { path: string; manager: "composer" | "js" },
+): Record<string, string>[] {
+  const deliverables: Record<string, string>[] = [
+    {
+      id: "project-check",
+      type: "command",
+      description: "Pass the configured project check in the task checkout.",
+      command: project.check,
+      directory: ".",
+    },
+    {
+      id: mode,
+      type: "review",
+      description: mode === "detect"
+        ? "Record Swamp detection reports and worker execution evidence, the passed Gateway check, an unchanged checkout, and worker departure when the group ends."
+        : "Record Swamp maintenance workflow and worker execution evidence, the passed Gateway handoff check, dependency PR or no-change result, and worker departure when the group ends.",
+    },
+  ];
+  if (target) {
+    const prefix = target.path === "." ? "" : `${target.path}/`;
+    deliverables.push({
+      id: "dependency-lock",
+      type: "file",
+      description:
+        "Update the selected package's lockfile in its configured path.",
+      path: `${prefix}${
+        target.manager === "composer"
+          ? "composer.lock"
+          : "{bun.lock,package-lock.json}"
+      }`,
+      change: "modified",
+    });
+  }
+  return deliverables;
+}
+
 export function scheduleReceipt(
   project: DependencyProject,
   mode: "routine" | "detect",
@@ -132,7 +172,7 @@ export function scheduleReceipt(
       brief,
       status: "backlog",
       orchestration: "external",
-      tasks: [{ title, brief }],
+      tasks: [{ title, brief, deliverables: taskDeliverables(project, mode) }],
     },
   };
 }
@@ -245,7 +285,11 @@ export async function findingReceipts(
             brief,
             status: "backlog",
             orchestration: "external",
-            tasks: [{ title, brief }],
+            tasks: [{
+              title,
+              brief,
+              deliverables: taskDeliverables(project, "package", candidate),
+            }],
           },
           ...(target?.success ? { target: target.data } : {}),
         });
@@ -253,6 +297,21 @@ export async function findingReceipts(
     }
   }
   return [...receipts.values()];
+}
+
+/** Orbit cancellation is final even when the factory never got past provision. */
+export function cleanedCancelledGroup(group: Record<string, unknown>): boolean {
+  const noAssistance = (row: Record<string, unknown>) =>
+    !row.assistance_requested && !row.assistance_kind &&
+    !row.assistance_reason && !row.assistance_question;
+  return group.status === "cancelled" &&
+    (group.vm_power === "destroyed" ||
+      (group.vm_power === null && group.taskable_id === null)) &&
+    noAssistance(group) && Array.isArray(group.tasks) &&
+    group.tasks.every((task: Record<string, unknown>) =>
+      ["completed", "cancelled", "failed"].includes(String(task.status)) &&
+      noAssistance(task)
+    );
 }
 
 export const SchedulerIssueSchema = z.object({

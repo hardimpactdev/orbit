@@ -10,6 +10,7 @@ import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016
 import { behavior } from "../extensions/behaviors/projects/nckrtl-com/mod.ts";
 import { projectConfigurations } from "../extensions/behaviors/_lib/project_config.ts";
 import {
+  cleanedCancelledGroup,
   ensureProjectGroup,
   findingReceipts,
   scheduleKey,
@@ -305,4 +306,31 @@ Deno.test("unchanged config reads reuse the resource and changed config writes o
   await changed.methods.configuration.execute({}, ctx);
   assertEquals(versions, 2);
   assertEquals(saved!.check, "composer verify");
+});
+
+Deno.test("cancelled schedule cleanup requires ended children, no assistance and a removed or absent VM", () => {
+  const clean = {
+    status: "cancelled",
+    taskable_id: null,
+    vm_power: null,
+    tasks: [{ status: "cancelled" }],
+  };
+  assertEquals(cleanedCancelledGroup(clean), true);
+  assertEquals(
+    cleanedCancelledGroup({ ...clean, taskable_id: 7, vm_power: "destroyed" }),
+    true,
+  );
+  for (
+    const changes of [
+      { status: "failed" },
+      { taskable_id: 7 },
+      { vm_power: "running" },
+      { vm_power: "parked" },
+      { vm_power: undefined },
+      { assistance_requested: true },
+      { assistance_reason: "Review cancellation" },
+      { tasks: [{ status: "running" }] },
+      { tasks: [{ status: "cancelled", assistance_requested: true }] },
+    ]
+  ) assertEquals(cleanedCancelledGroup({ ...clean, ...changes }), false);
 });

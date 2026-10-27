@@ -1,3 +1,4 @@
+import { taskInputs, todoError } from "./_support/task_contract.ts";
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { behavior } from "../extensions/behaviors/orbit_gateway.ts";
 import { behavior as projectBehavior } from "../extensions/behaviors/projects/nckrtl-com/mod.ts";
@@ -43,6 +44,11 @@ function fixture() {
       ) return json([...groups.values()]);
       if (url.pathname === "/api/v1/task-groups" && req.method === "POST") {
         const body = await req.json();
+        if (!taskInputs.safeParse(body.tasks).success) {
+          return Response.json({ error: { code: "validation.failed" } }, {
+            status: 422,
+          });
+        }
         const id = ++posts;
         const group = {
           ...body,
@@ -59,6 +65,15 @@ function fixture() {
         return json(group, 201);
       }
       const id = Number(url.pathname.split("/").at(-1));
+      if (groups.has(id) && req.method === "PATCH") {
+        const body = await req.json();
+        const group = groups.get(id)!;
+        const error = body.status === "todo" ? todoError(group.tasks) : null;
+        if (error) {
+          return Response.json({ error: { code: error } }, { status: 422 });
+        }
+        Object.assign(group, body);
+      }
       return groups.has(id) ? json(groups.get(id)) : json(null, 404);
     },
   );
@@ -309,6 +324,7 @@ Deno.test("bounded schedule ticks rotate past parked projects", async () => {
   const f = fixture();
   try {
     for (let id = 1; id <= 6; id++) {
+      f.groups.set(id, { id, status: "running" });
       f.data.set(`orbit-gateway/schedule-fixture-${id}`, {
         key: `fixture-${id}`,
         projectId: 20,
@@ -373,6 +389,7 @@ Deno.test("uncertain pending creates and broken active rows are surfaced without
       attempted: true,
       started: true,
     });
+    f.groups.set(97, { id: 97, status: "running" });
     f.data.set("dependency-routine/state-tg-97", {
       stageId: "assistance",
       status: "active",
@@ -442,6 +459,7 @@ Deno.test("a stuck detection finding does not block its siblings or another proj
       started: true,
     };
     f.data.set("orbit-gateway/schedule-other-project", other);
+    f.groups.set(99, { id: 99, status: "running" });
     f.data.set("dependency-routine/state-tg-99", {
       stageId: "provision",
       status: "active",
@@ -483,6 +501,7 @@ Deno.test("a bad package admission is recorded without blocking another project'
       attempted: true,
       started: true,
     });
+    f.groups.set(99, { id: 99, status: "running" });
     f.data.set("dependency-routine/state-tg-99", {
       stageId: "provision",
       status: "active",
@@ -544,5 +563,46 @@ Deno.test("parked and failed routines make daily detection a recorded skip witho
     } finally {
       await f.close();
     }
+  }
+});
+
+Deno.test("a cancelled backlog group with no VM retires its active factory receipt and unblocks detection", async () => {
+  const f = fixture();
+  try {
+    await behavior.methods.schedule_project.execute({
+      projectId: 20,
+      mode: "routine",
+    }, f.ctx);
+    Object.assign(f.groups.get(1)!, {
+      status: "cancelled",
+      taskable_id: null,
+      vm_power: null,
+      tasks: [{ status: "cancelled" }],
+    });
+    // Provision failed before an operation existed. The official factory still says active.
+    await behavior.methods.project_work.execute({}, f.ctx);
+    const routine = [...f.data].find(([key]) =>
+      key.startsWith("orbit-gateway/schedule-20-routine-")
+    )![1] as { completed: boolean };
+    assertEquals(routine.completed, true);
+    assertEquals(
+      (f.data.get("orbit-gateway/project-work") as { routine: string[] })
+        .routine,
+      [],
+    );
+    await behavior.methods.schedule_project.execute({
+      projectId: 20,
+      mode: "detect",
+    }, f.ctx);
+    assertEquals(f.posts(), 2);
+    assertEquals(f.starts(), 2);
+    assertEquals(
+      [...f.data.keys()].some((key) =>
+        key.startsWith("orbit-gateway/scheduler-skip-")
+      ),
+      false,
+    );
+  } finally {
+    await f.close();
   }
 });

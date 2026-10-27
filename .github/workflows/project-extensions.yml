@@ -18,6 +18,7 @@ on:
       - 'docs/maintained-project-extensions.md'
       - 'docs/templates/project-extension/**'
       - 'tests/project_*test.ts'
+      - 'tests/_support/task_contract.ts'
       - 'tests/fixtures/project-extensions/**'
       - '.github/workflows/project-extensions.yml'
   push:
@@ -36,6 +37,7 @@ on:
       - 'workflows/workflow-project-*.yaml'
       - 'workflows/workflow-maintenance-projects.yaml'
       - 'tests/project_*test.ts'
+      - 'tests/_support/task_contract.ts'
       - 'tests/fixtures/project-extensions/**'
       - '.github/workflows/project-extensions.yml'
 permissions:
@@ -52,12 +54,12 @@ jobs:
         run: deno check extensions/behaviors/orbit_gateway.ts extensions/behaviors/projects/*/mod.ts
       - name: Check project extension format and lint
         run: |
-          deno fmt --check extensions/behaviors/_lib/project_extension.ts extensions/behaviors/_lib/project_config.ts extensions/behaviors/_lib/project_schedule.ts extensions/behaviors/projects tests/project_extensions_test.ts tests/project_schedules_test.ts tests/project_fleet_test.ts
-          deno lint extensions/behaviors/_lib/project_extension.ts extensions/behaviors/_lib/project_config.ts extensions/behaviors/_lib/project_schedule.ts extensions/behaviors/projects tests/project_extensions_test.ts tests/project_schedules_test.ts tests/project_fleet_test.ts
+          deno fmt --check extensions/behaviors/_lib/project_extension.ts extensions/behaviors/_lib/project_config.ts extensions/behaviors/_lib/project_schedule.ts extensions/behaviors/projects tests/project_extensions_test.ts tests/project_schedules_test.ts tests/project_fleet_test.ts tests/project_deliverables_test.ts tests/_support/task_contract.ts
+          deno lint extensions/behaviors/_lib/project_extension.ts extensions/behaviors/_lib/project_config.ts extensions/behaviors/_lib/project_schedule.ts extensions/behaviors/projects tests/project_extensions_test.ts tests/project_schedules_test.ts tests/project_fleet_test.ts tests/project_deliverables_test.ts tests/_support/task_contract.ts
       - name: Test affected contracts (one worker)
         run: >-
           deno test --allow-all
-          tests/project_extensions_test.ts tests/project_schedules_test.ts tests/project_fleet_test.ts
+          tests/project_extensions_test.ts tests/project_schedules_test.ts tests/project_fleet_test.ts tests/project_deliverables_test.ts
           tests/dependency_projects_test.ts tests/routine_stage_test.ts
           tests/package_stage_test.ts tests/maintenance_worker_test.ts
           tests/maintenance_resources_test.ts

@@ -55,11 +55,40 @@ factory: provision, detect on the task worker, check, finish without a PR.
 Detection failures or a changed checkout park for assistance. Detection never
 starts a repair turn or publishes changes.
 
+Every generated child declares typed deliverables in shared `project_schedule.ts`:
+
+- `project-check` is a command deliverable. It runs the configured `check` from
+  the repository root (`directory: .`), without a failing-on-base requirement.
+- A review deliverable records workflow and worker evidence, the Gateway check,
+  the PR or no-change result, and worker departure. Detection records its reports
+  and confirms the checkout stayed unchanged instead of requesting a PR.
+- Each package child also declares `dependency-lock`, a file deliverable with
+  `change: modified` in the detected path: `composer.lock` for Composer, or
+  `{bun.lock,package-lock.json}` for JavaScript. The latter is Orbit's supported
+  glob alternative for the two lockfile formats accepted by JS maintenance.
+
+Routine runs may finish with no changes, and detection is read-only, so neither
+requires a file diff. Package work requires its selected lockfile to change.
+These lists stay below Orbit's five-deliverable limit and apply to major and
+advisory children, including advisory tasks that await a selected fixed version.
+The Gateway validates existing file paths against the repository base.
+
+Orbit allows empty deliverables in backlog but refuses the move to todo with
+`tasks.subtask_deliverables_missing`. The old proof groups supplied a review
+deliverable before entering the workflow; the project generator omitted it.
+The scheduler Gateway fixture now enforces typed request shapes and this todo
+guard. Its regression tests create generated groups, move them to todo, and
+prove the former empty child is rejected without changing group status.
+
 A shared minute tick advances scheduled work with the existing Orbit driver. It
 records schedule receipts in Swamp data. Repeated ticks reuse the group and
 factory run. Group creation has no Gateway idempotency contract: save intent
 before POST, reconcile a lost reply by the exact saved group brief, and never
-repeat an uncertain create. Preserve operator and safety assistance.
+repeat an uncertain create. Preserve operator and safety assistance. A cancelled
+Orbit group retires its schedule receipt once every child has ended, assistance
+is clear, and its VM is destroyed or was never allocated. This also applies
+while the official factory still reports provision as active. Keep the factory
+history, stop driving the cancelled work, and allow the next detection slot.
 
 Successful detection creates one ordinary external package group per path,
 ecosystem and major/advisory finding. Repeated scans reuse an unresolved

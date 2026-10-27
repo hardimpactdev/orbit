@@ -1,4 +1,4 @@
-import { ensureProjectGroup, findingReceipts, isolateScheduleRow, scheduleReceipt, ScheduleReceiptSchema, SchedulerIssueSchema, SchedulerSkipSchema, type ScheduleReceipt } from "./_lib/project_schedule.ts";
+import { cleanedCancelledGroup, ensureProjectGroup, findingReceipts, isolateScheduleRow, scheduleReceipt, ScheduleReceiptSchema, SchedulerIssueSchema, SchedulerSkipSchema, type ScheduleReceipt } from "./_lib/project_schedule.ts";
 import { runMaintenance, reconcileWorkers, workerControl, type MaintenanceContext } from "./_lib/swamp_maintenance.ts";
 import { revokeEndedWorker } from "./_lib/maintenance_worker.ts";
 import { projectConfigurations, ProjectExtensionsSchema } from "./_lib/project_config.ts";
@@ -372,18 +372,15 @@ async function projectWork(context: StageContext) {
       await callDefinition(context, factory, "status", { workItem: receipt.workItem });
       const state = (await context.queryData(`modelName == ${JSON.stringify(factory)} && name == ${JSON.stringify(`state-${receipt.workItem}`)}`, "attributes"))[0] as { stageId: string; status: string } | undefined;
       if (!state) throw new Error("scheduled factory state is missing");
-      if (state.status !== "terminal") { work[receipt.mode].push(receipt.workItem!); return; }
-      if (state.stageId !== "completed") {
-        const response = await store.http("GET", `/api/v1/task-groups/${receipt.workItem!.slice(3)}`);
-        const group = response.body?.data as Record<string, unknown> | undefined;
-        if (response.status === 200 && group?.status === "cancelled" && group.vm_power === "destroyed" &&
-          !group.assistance_requested && !group.assistance_kind && !group.assistance_reason && !group.assistance_question &&
-          Array.isArray(group.tasks) && group.tasks.every((task: Record<string, unknown>) =>
-            ["completed", "cancelled", "failed"].includes(String(task.status)) && !task.assistance_requested && !task.assistance_kind && !task.assistance_reason && !task.assistance_question)) {
-          await store.save({ ...receipt, completed: true });
-        }
+      const response = await store.http("GET", `/api/v1/task-groups/${receipt.workItem!.slice(3)}`);
+      const group = response.body?.data as Record<string, unknown> | undefined;
+      if (response.status !== 200 || !group) throw new Error("cannot read scheduled group cancellation state");
+      if (cleanedCancelledGroup(group)) {
+        await store.save({ ...receipt, completed: true });
         return;
       }
+      if (state.status !== "terminal") { work[receipt.mode].push(receipt.workItem!); return; }
+      if (state.stageId !== "completed") return;
       if (receipt.mode === "detect") {
         const config = (await groupConfigurations(receipt.workItem!, context))[0];
         const artifact = (await context.queryData(`modelName == "dependency-detect" && name == ${JSON.stringify(`artifact-${receipt.workItem}-script`)}`, "attributes"))[0] as { payload?: { detections?: unknown[] } } | undefined;
