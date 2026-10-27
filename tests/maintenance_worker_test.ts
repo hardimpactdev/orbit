@@ -24,6 +24,7 @@ import {
 } from "../extensions/behaviors/_lib/gateway_stage.ts";
 import { WEBSITE_PROJECT } from "./_support/dependency_projects.ts";
 import { startFakeGateway } from "./_support/fake_gateway.ts";
+import { behavior as gatewayBehavior } from "../extensions/behaviors/orbit_gateway.ts";
 
 const runFixture = () =>
   JSON.parse(
@@ -87,7 +88,10 @@ function workerHarness() {
       name: string,
       data: Record<string, unknown>,
     ) => {
-      records.set(`orbit-gateway/${name}`, structuredClone(data));
+      records.set(
+        `orbit-gateway/${name}`,
+        gatewayBehavior.resources.worker.schema.parse(structuredClone(data)),
+      );
       return Promise.resolve({ name });
     },
     runModel: (
@@ -110,28 +114,32 @@ function workerHarness() {
   } as MaintenanceContext;
   const http: Http = (method, path, body, key) => {
     if (method === "POST") {
+      const generation = Number(key!.split(".c").at(-1));
       assertEquals(path, "/api/v1/task-groups/7/worker");
       assertEquals(body, {
         worker: {
           orchestrator_url: "wss://swamp.orbit",
-          enrollment_token: "task-group-7-1.fixture-credential",
-          server_token: "task-group-7-1-access.fixture-credential",
+          enrollment_token: `task-group-7-${generation}.fixture-credential`,
+          server_token: `task-group-7-${generation}-access.fixture-credential`,
           labels: { group: "7" },
         },
       });
-      assertEquals(key, "tg-7.worker.c1");
+      assertEquals(key, `tg-7.worker.c${generation}`);
       calls.push({ method, path, key });
       if (lost) {
         lost = false;
         return Promise.resolve({ status: 0, body: null });
       }
-      return Promise.resolve({ status: 202, body: { data: { id: 88 } } });
+      return Promise.resolve({
+        status: 202,
+        body: { data: { id: 87 + generation } },
+      });
     }
     return Promise.resolve({
       status: 200,
       body: {
         data: path.includes("operations")
-          ? workerFixture()
+          ? { ...workerFixture(), id: Number(path.split("/").at(-1)) }
           : { status: groupStatus },
       },
     });
@@ -630,7 +638,7 @@ Deno.test("worker repair keeps the exact package and advisory scope and returns 
   }
 });
 
-Deno.test("successful worker startup without enrollment fails within five minutes, including after token expiry", async () => {
+Deno.test("successful startup retries enrollment with fresh credentials before failing after three attempts", async () => {
   const h = workerHarness();
   let now = Date.now();
   h.deps.now = () => now;
@@ -643,18 +651,37 @@ Deno.test("successful worker startup without enrollment fails within five minute
   h.records.get("task-group-7-1/token-main")!.expiresAt =
     "2000-01-01T00:00:00Z";
   now++;
-  await assertRejects(
-    () => ensureWorker(7, h.deps),
-    MaintenanceAttention,
-    "did not enroll within five minutes",
-  );
+  for (const generation of [2, 3]) {
+    const fresh = await ensureWorker(7, h.deps);
+    assertEquals(fresh.generation, generation);
+    assertEquals(fresh.operationId, null);
+    assertEquals(fresh.startedAt, undefined);
+    for (const suffix of ["", "-access"]) {
+      assertEquals(
+        h.records.get(`task-group-7-${generation - 1}${suffix}/token-main`)!
+          .state,
+        "revoked",
+      );
+    }
+    await ensureWorker(7, h.deps);
+    const started = await ensureWorker(7, h.deps);
+    assertEquals(started.operationId, 87 + generation);
+    assertEquals(started.startedAt, new Date(now).toISOString());
+    now += START_RECEIPT_GRACE_MS;
+  }
+  for (let replay = 0; replay < 2; replay++) {
+    await assertRejects(
+      () => ensureWorker(7, h.deps),
+      MaintenanceAttention,
+      "after 3 startup attempts",
+    );
+  }
   assertEquals(
-    h.calls.filter((call) =>
-      call.method === "mint" && call.modelType === "swamp/enrollment-token"
-    ).length,
-    1,
+    h.calls.filter((call) => call.method === "POST").map((call) => call.key),
+    ["tg-7.worker.c1", "tg-7.worker.c1", "tg-7.worker.c2", "tg-7.worker.c3"],
   );
-  assertEquals(h.calls.filter((call) => call.method === "revoke").length, 0);
+  assertEquals(h.calls.filter((call) => call.method === "mint").length, 6);
+  assert(!JSON.stringify([...h.records]).includes("fixture-credential"));
 });
 
 Deno.test("uncertain workflow launch raises assistance after five minutes without a second dispatch", async () => {
@@ -688,6 +715,163 @@ Deno.test("uncertain workflow launch raises assistance after five minutes withou
     "no Swamp run receipt five minutes",
   );
   assertEquals(launches, 1);
+});
+
+Deno.test("a recovered enrollment keeps the same maintenance job running and replays a lost fresh-start response", async () => {
+  const h = workerHarness();
+  const fake = startFakeGateway({ 7: {} });
+  let job: Job | null = null, now = Date.now(), launches = 0;
+  let intent: WorkflowIntent | null = null;
+  h.deps.now = () => now;
+  const workerHttp = h.deps.http;
+  let lostRetry = true;
+  h.deps.http = async (method, path, body, key) => {
+    const reply = await workerHttp(method, path, body, key);
+    if (key === "tg-7.worker.c2" && lostRetry) {
+      lostRetry = false;
+      throw new Error("lost reply containing fixture-credential");
+    }
+    return reply;
+  };
+  const http: Http = async (method, path) => {
+    if (path === "/api/v1/instances/70") {
+      return {
+        status: 200,
+        body: {
+          data: {
+            id: 70,
+            project_id: 20,
+            checkout_path: "/vm/repo",
+            starting_commit: "a".repeat(40),
+          },
+        },
+      };
+    }
+    const response = await fetch(fake.url + path, { method });
+    return { status: response.status, body: await response.json() };
+  };
+  const deps = {
+    http,
+    projects: [project],
+    readJob: () => Promise.resolve(job),
+    writeJob: (value: Job) => {
+      job = structuredClone(value);
+      return Promise.resolve();
+    },
+    maintenance: async (
+      input: StageArgs,
+      group: number,
+      request: Record<string, unknown>,
+    ) => {
+      const run = await ensurePlacedMaintenance(
+        group,
+        maintenanceInputs(project, input, group, request),
+        h.deps,
+        {
+          read: () => Promise.resolve(intent),
+          save: (value) => {
+            intent = structuredClone(value);
+            return Promise.resolve();
+          },
+          search: () => Promise.resolve([]),
+          launch: () => {
+            launches++;
+            return Promise.resolve(runFixture().id);
+          },
+          get: () =>
+            Promise.resolve({ ...runFixture(), inputs: intent!.inputs }),
+        },
+      );
+      return run ? maintenanceResult(run) : { state: "running" as const };
+    },
+  };
+  try {
+    fake.groups.get(7)!.taskable_id = 70;
+    for (let poll = 0; poll < 3; poll++) {
+      assertEquals((await runStage(args, deps)).state, "running");
+    }
+    now += START_RECEIPT_GRACE_MS;
+    assertEquals((await runStage(args, deps)).state, "running");
+    assertEquals((await h.deps.read(7))!.generation, 2);
+    assertEquals(launches, 0);
+    await assertRejects(
+      () => runStage(args, deps),
+      Error,
+      "worker start transport failed; retry the same key",
+    );
+    assertEquals(job!.state, "running");
+    assertEquals((await runStage(args, deps)).state, "running");
+    h.enroll();
+    const result = await runStage(args, deps);
+    assertEquals(result.state, "succeeded");
+    assertEquals(result.evidence!.workerName, "task-group-7-2");
+    assertEquals(intent!.inputs.worker, "task-group-7-2");
+    assertEquals((await h.deps.read(7))!.enrollmentAttempt, 1);
+    assertEquals((await runStage(args, deps)).state, "succeeded");
+    assertEquals(launches, 1);
+    assertEquals(h.calls.filter((c) => c.method === "POST").map((c) => c.key), [
+      "tg-7.worker.c1",
+      "tg-7.worker.c1",
+      "tg-7.worker.c2",
+      "tg-7.worker.c2",
+    ]);
+    assertEquals(h.calls.filter((c) => c.method === "mint").length, 4);
+    assert(!JSON.stringify([...h.records, job]).includes("fixture-credential"));
+    assertEquals(fake.startsOf(7, "script"), 0);
+  } finally {
+    await fake.close();
+  }
+});
+
+Deno.test("expired staged starts share the enrollment retry budget", async () => {
+  const h = workerHarness();
+  await ensureWorker(7, h.deps);
+  await ensureWorker(7, h.deps);
+  const http = h.deps.http;
+  h.deps.http = async (method, path, body, key) => {
+    const reply = await http(method, path, body, key);
+    if (method === "GET" && path.includes("operations")) {
+      Object.assign(reply.body!.data!, {
+        status: "failed",
+        error_code: "tasks.worker_enrollment_expired",
+      });
+    }
+    return reply;
+  };
+  for (const generation of [2, 3]) {
+    assertEquals((await ensureWorker(7, h.deps)).generation, generation);
+    await ensureWorker(7, h.deps);
+  }
+  await assertRejects(
+    () => ensureWorker(7, h.deps),
+    MaintenanceAttention,
+    "after 3 startup attempts",
+  );
+  assertEquals(h.calls.filter((c) => c.method === "mint").length, 6);
+});
+
+Deno.test("a confirmed worker gets a fresh budget for a later disconnect", async () => {
+  const h = workerHarness();
+  let now = Date.now();
+  h.deps.now = () => now;
+  await ensureWorker(7, h.deps);
+  await ensureWorker(7, h.deps);
+  for (const generation of [2, 3]) {
+    await ensureWorker(7, h.deps);
+    now += START_RECEIPT_GRACE_MS;
+    assertEquals((await ensureWorker(7, h.deps)).generation, generation);
+    await ensureWorker(7, h.deps);
+  }
+  // A worker that eventually enrolls has recovered; a later disconnect starts
+  // a new enrollment sequence without reusing any previous generation's key.
+  h.enroll();
+  const ready = await ensureWorker(7, h.deps);
+  assertEquals(ready.ready, true);
+  assertEquals(ready.enrollmentAttempt, 1);
+  h.deps.connected = () => Promise.resolve(false);
+  const fresh = await ensureWorker(7, h.deps);
+  assertEquals(fresh.generation, 4);
+  assertEquals(fresh.enrollmentAttempt, 1);
 });
 
 Deno.test("saved worker target survives a disconnected or expired worker during active and uncertain writes", async () => {
@@ -815,7 +999,7 @@ Deno.test("worker cleanup continues after one session fails and retries it on th
   assertEquals(saved, [8, 7]);
 });
 
-Deno.test("the enrollment grace starts at the Gateway operation's success even after a driver outage", async () => {
+Deno.test("the enrollment grace starts at operation success after a driver outage and retries before escalation", async () => {
   const h = workerHarness();
   await ensureWorker(7, h.deps);
   await ensureWorker(7, h.deps);
@@ -831,11 +1015,7 @@ Deno.test("the enrollment grace starts at the Gateway operation's success even a
         },
       },
     });
-  await assertRejects(
-    () => ensureWorker(7, h.deps),
-    MaintenanceAttention,
-    "did not enroll within five minutes",
-  );
+  assertEquals((await ensureWorker(7, h.deps)).generation, 2);
 });
 
 Deno.test("worker server authentication is minted for only its worker identity and recovered after a lost mint reply", async () => {

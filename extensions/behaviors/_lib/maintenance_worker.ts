@@ -2,6 +2,7 @@ import { type Http } from "./gateway_stage.ts";
 import { canonical } from "./repository_analysis.ts";
 
 export const START_RECEIPT_GRACE_MS = 5 * 60 * 1000;
+export const MAX_ENROLLMENT_ATTEMPTS = 3;
 export class MaintenanceAttention extends Error {
   constructor(message: string, public workerName?: string) {
     super(message);
@@ -16,6 +17,7 @@ export interface WorkerSession {
   operationId: number | null;
   nextReadAt?: string | null;
   startedAt?: string;
+  enrollmentAttempt?: number;
   ready: boolean;
   revoked: boolean;
 }
@@ -52,7 +54,14 @@ export async function ensureWorker(
     !token ||
     ["revoked", "expired"].includes(token.state) ||
     Date.parse(token.expiresAt) <= (deps.now ?? Date.now)();
-  const rotate = async (previous: WorkerSession) => {
+  const rotate = async (previous: WorkerSession, retryEnrollment = false) => {
+    const attempt = previous.enrollmentAttempt ?? 1;
+    if (retryEnrollment && attempt >= MAX_ENROLLMENT_ATTEMPTS) {
+      throw new MaintenanceAttention(
+        `worker ${previous.tokenName} did not enroll after ${attempt} startup attempts; successful starts have a five minute enrollment limit; inspect the VM's Swamp URL, CA and worker logs`,
+        previous.tokenName,
+      );
+    }
     if (await deps.token(previous.tokenName)) {
       await deps.revoke(previous.tokenName);
     }
@@ -64,6 +73,7 @@ export async function ensureWorker(
       generation: previous.generation + 1,
       tokenName: `task-group-${group}-${previous.generation + 1}`,
       operationId: null,
+      enrollmentAttempt: retryEnrollment ? attempt + 1 : 1,
       ready: false,
       revoked: false,
     };
@@ -84,6 +94,7 @@ export async function ensureWorker(
       generation: 1,
       tokenName: `task-group-${group}-1`,
       operationId: null,
+      enrollmentAttempt: 1,
       ready: false,
       revoked: false,
     };
@@ -108,7 +119,7 @@ export async function ensureWorker(
     }
     if (["failed", "cancelled"].includes(String(op.status))) {
       if (op.error_code === "tasks.worker_enrollment_expired") {
-        return await rotate(session);
+        return await rotate(session, true);
       }
       throw new Error(
         `worker start ${String(op.status)}; reconcile before a new start`,
@@ -146,10 +157,7 @@ export async function ensureWorker(
       !connected && (deps.now ?? Date.now)() - Date.parse(session.startedAt!) >=
         START_RECEIPT_GRACE_MS
     ) {
-      throw new MaintenanceAttention(
-        `worker ${session.tokenName} did not enroll within five minutes of successful startup; inspect the VM's Swamp URL, CA and worker logs`,
-        session.tokenName,
-      );
+      return await rotate(session, true);
     }
     if (expired(await deps.token(session.tokenName))) {
       // Preserve the enrollment deadline across expiry while startup is unconfirmed.
@@ -157,7 +165,7 @@ export async function ensureWorker(
       return await rotate(session);
     }
     if (connected) {
-      session = { ...session, ready: true };
+      session = { ...session, ready: true, enrollmentAttempt: 1 };
       await deps.save(session);
     }
     return session;

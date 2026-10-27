@@ -101,7 +101,7 @@ export const behavior = {
     },
     worker: {
       description: "Public per-group Swamp enrollment and Gateway worker operation receipt",
-      schema: z.object({ group: z.number().int().positive(), generation: z.number().int().positive(), tokenName: z.string(), operationId: z.number().int().positive().nullable(), nextReadAt: z.string().nullable().optional(), startedAt: z.string().optional(), ready: z.boolean(), revoked: z.boolean() }),
+      schema: z.object({ group: z.number().int().positive(), generation: z.number().int().positive(), tokenName: z.string(), operationId: z.number().int().positive().nullable(), nextReadAt: z.string().nullable().optional(), startedAt: z.string().optional(), enrollmentAttempt: z.number().int().positive().optional(), ready: z.boolean(), revoked: z.boolean() }),
       lifetime: "infinite", garbageCollection: 10,
     },
     maintenance: {

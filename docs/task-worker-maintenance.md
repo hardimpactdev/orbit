@@ -23,7 +23,20 @@ from stored requests, fingerprints, logs and method arguments.
 `tasks.worker` resumes a parked VM. A replay uses the same key and the same
 vault credentials. A disconnected or expired worker needs a fresh start key and
 token. Dispatch waits up to five minutes after worker startup succeeds for Swamp
-to confirm enrollment, then fails the job with a reason that raises assistance.
+to confirm enrollment. Before any maintenance workflow is dispatched, an enrollment
+timeout revokes both credentials and retries `tasks.worker` with a fresh pair,
+worker name and operation key. There are at most three startup attempts per
+enrollment sequence, including expired staged enrollments. The maintenance job
+stays running during retries; only exhaustion fails it and raises assistance.
+Confirmed enrollment resets the attempt budget for a later disconnected or
+expired worker. The attempt count survives driver restarts.
+
+A missing worker-operation response is reconciled with the same key before any
+rotation. Only a known successful start that did not enroll, or a known terminal
+expired-enrollment operation, permits an enrollment retry. An existing maintenance
+intent always takes precedence: active or uncertain filesystem work is never
+restarted or moved to another worker by this retry policy.
+
 Ended groups have their enrollment and server tokens revoked by the dependency
 tick and the minute worker cleanup workflow; the Gateway stops the worker before group cleanup. Expiry bounds an outage of
 the driver. No second daemon or token store is needed.
