@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Instances;
 
+use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Instances\Deployment\AutomaticDeployState;
 use App\Models\Instance;
 use Spatie\LaravelData\Attributes\MapOutputName;
@@ -29,6 +30,9 @@ final class InstanceAutoDeployData extends Data
         public ?string $errorCode,
         public ?string $message,
         public ?InstanceAutoDeployPauseData $pause,
+        public int $resumedAfter,
+        /** @var list<string> */
+        public array $blocked,
     ) {}
 
     public static function fromModel(Instance $instance): self
@@ -43,6 +47,8 @@ final class InstanceAutoDeployData extends Data
         $active = $pause !== null && $pause['deployment_id'] > $instance->auto_deploy_resumed_after;
 
         return new self(
+            resumedAfter: $instance->auto_deploy_resumed_after,
+            blocked: array_values(array_unique([...$automatic->blocked(), ...new AutomaticDeployHistory($instance)->rolledAway()])),
             enabled: $enabled,
             gate: $gate,
             warning: $enabled && ! $developmentDefault && $gate === null

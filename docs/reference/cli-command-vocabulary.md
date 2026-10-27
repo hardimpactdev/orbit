@@ -157,3 +157,5 @@ The CLI keeps no alias for a renamed command. The consumers of the CLI are this 
 ### Definitions in the process and schedule families
 
 A Project definition has the same fields as the Process or Schedule it produces. So the `process` and `schedule` families serve it with `--project`. `process:update` without `--project` takes an installed Process ID and reconverges it in place; with `--project`, it takes a definition name and changes later copies only. A separate definition command under the `project` family is a rejected alternative, because it would hide four verbs behind flags.
+
+The [Swamp policy contracts](/reference/deployments#swamp-policy-contracts) also have API/MCP-only routes under `instance:deployment-source`, `instance:auto-deploy`, and `instance:deploy:automatic:receipt`. They serve the trusted policy worker and add no operator commands.

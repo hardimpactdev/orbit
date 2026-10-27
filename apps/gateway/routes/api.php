@@ -22,9 +22,11 @@ use App\Http\Controllers\Api\GatewayStatusesController;
 use App\Http\Controllers\Api\GitHubAppController;
 use App\Http\Controllers\Api\GrafanaAccessAuthorizationController;
 use App\Http\Controllers\Api\InstanceAnalyticsController;
+use App\Http\Controllers\Api\InstanceAutomaticDeployPolicyController;
 use App\Http\Controllers\Api\InstanceClonesController;
 use App\Http\Controllers\Api\InstanceDependenciesController;
 use App\Http\Controllers\Api\InstanceDeploymentsController;
+use App\Http\Controllers\Api\InstanceDeploymentSourceController;
 use App\Http\Controllers\Api\InstanceDeployStepsController;
 use App\Http\Controllers\Api\InstanceEnvironmentImportsController;
 use App\Http\Controllers\Api\InstanceEnvironmentSynchronizationsController;
@@ -409,6 +411,12 @@ Route::prefix('v1')->group(function (): void {
             [InstanceDeploymentsController::class, 'store'],
         )->name('instance:deploy');
 
+        Route::get('instances/{instance}/deployment-source/head', [InstanceDeploymentSourceController::class, 'head'])->name('instance:deployment-source:head');
+        Route::get('instances/{instance}/deployment-source/commits', [InstanceDeploymentSourceController::class, 'commits'])->name('instance:deployment-source:commits');
+        Route::get('instances/{instance}/deployment-source/checks', [InstanceDeploymentSourceController::class, 'checks'])->name('instance:deployment-source:checks');
+        Route::get('instances/{instance}/deploy/automatic/receipt', [InstanceDeploymentsController::class, 'receipt'])->name('instance:deploy:automatic:receipt');
+        Route::put('instances/{instance}/auto-deploy/policy', [InstanceAutomaticDeployPolicyController::class, 'update'])->name('instance:auto-deploy:policy:update');
+        Route::post('instances/{instance}/auto-deploy/events', [InstanceAutomaticDeployPolicyController::class, 'store'])->name('instance:auto-deploy:event:create');
         Route::post('instances/{instance}/deploy/automatic', [InstanceDeploymentsController::class, 'automatic'])->name('instance:deploy:automatic');
         Route::post(
             'instances/{instance}/rollback',

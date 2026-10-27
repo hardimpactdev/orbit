@@ -16,6 +16,7 @@ final class InstanceDeploymentData extends Data
     public function __construct(
         public int $id,
         public int $instanceId,
+        public string $kind,
         public ?string $release,
         public ?string $branch,
         public ?string $commit,
@@ -34,6 +35,7 @@ final class InstanceDeploymentData extends Data
         return new self(
             id: $deployment->id,
             instanceId: $deployment->instance_id,
+            kind: $deployment->kind,
             release: $deployment->release,
             branch: $deployment->branch,
             commit: $deployment->commit,

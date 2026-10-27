@@ -10101,6 +10101,415 @@
         ]
       }
     },
+    "/api/v1/instances/{instance}/auto-deploy/events": {
+      "post": {
+        "operationId": "instance-auto-deploy-event-create",
+        "summary": "instance:auto-deploy:event:create",
+        "tags": [
+          "Instances"
+        ],
+        "parameters": [
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Instance ID."
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]+$"
+            },
+            "description": "A permanent key scoped to this operation kind, binding caller and command as well as target and input. The same request returns the existing operation with HTTP 202; a changed identity returns operation.idempotency_conflict (409)."
+          }
+        ],
+        "description": "Admits a keyed instance.policy_event operation for a notable Activity entry or a Gateway release alert. Requires Gateway Node access and Idempotency-Key. The PHP-owned trial returns instance.auto_deploy_policy_owner. Delivery cannot resume after worker loss. Read its operation receipt rather than admitting a replacement. See /reference/deployments#swamp-policy-contracts.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "event": {
+                    "type": "string",
+                    "enum": [
+                      "activity",
+                      "failed",
+                      "paused",
+                      "stalled"
+                    ]
+                  },
+                  "deployment_id": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 1,
+                    "description": "Conditionally required."
+                  },
+                  "commit": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^[0-9a-f]{40}(?:[0-9a-f]{24})?$(?![\\s\\S])",
+                    "description": "Conditionally required."
+                  },
+                  "since": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Conditionally required."
+                  },
+                  "result": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "up_to_date",
+                      "started",
+                      "deploying",
+                      "busy",
+                      "backing_off",
+                      "failed",
+                      "paused",
+                      "not_deployed",
+                      "gate_pending",
+                      "gate_failed",
+                      "no_green_commit",
+                      "commit_failed"
+                    ],
+                    "description": "Conditionally required."
+                  },
+                  "operation_id": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 1
+                  },
+                  "error_code": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 255
+                  },
+                  "message": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 4096
+                  }
+                },
+                "required": [
+                  "event"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-orbit-operation": "start",
+        "responses": {
+          "202": {
+            "description": "Accepted. The operation is queued; follow it with `operation:show`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Operation"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard. The key already belongs to another target or input (`operation.idempotency_conflict`), or another operation holds the target (`operation.target_busy`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). A malformed Idempotency-Key also returns `validation.failed`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/instances/12/auto-deploy/events\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"event\": \"activity\"}'\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/instances/{instance}/auto-deploy/policy": {
+      "put": {
+        "operationId": "instance-auto-deploy-policy-update",
+        "summary": "instance:auto-deploy:policy:update",
+        "tags": [
+          "Instances"
+        ],
+        "parameters": [
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Instance ID."
+          }
+        ],
+        "description": "Publishes the shared public automatic deployment projection only under Swamp ownership. The PHP-owned trial returns instance.auto_deploy_policy_owner. Requires Gateway Node access. A changed resume cursor or newest deployment ID returns instance.auto_deploy_observation_changed. Preserves Gateway rollback blocks. See /reference/deployments#one-policy-writer-during-the-trial.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "resumed_after": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "last_deployment_id": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "result": {
+                    "type": "string",
+                    "enum": [
+                      "up_to_date",
+                      "started",
+                      "deploying",
+                      "busy",
+                      "backing_off",
+                      "failed",
+                      "paused",
+                      "not_deployed",
+                      "gate_pending",
+                      "gate_failed",
+                      "no_green_commit",
+                      "commit_failed"
+                    ]
+                  },
+                  "commit": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^[0-9a-f]{40}(?:[0-9a-f]{24})?$(?![\\s\\S])"
+                  },
+                  "head": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^[0-9a-f]{40}(?:[0-9a-f]{24})?$(?![\\s\\S])"
+                  },
+                  "since": {
+                    "type": "string"
+                  },
+                  "error_code": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 255
+                  },
+                  "message": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 4096
+                  },
+                  "pause": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "reason": {
+                        "type": "string",
+                        "enum": [
+                          "manual_deploy",
+                          "rollback"
+                        ]
+                      },
+                      "deployment_id": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "commit": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "pattern": "^[0-9a-f]{40}(?:[0-9a-f]{24})?$(?![\\s\\S])"
+                      },
+                      "paused_at": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "resumed_after",
+                  "last_deployment_id",
+                  "result",
+                  "commit",
+                  "head",
+                  "since",
+                  "error_code",
+                  "message",
+                  "pause"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Instance"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X PUT \"https://gateway.orbit/api/v1/instances/12/auto-deploy/policy\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"resumed_after\": 0, \"last_deployment_id\": 0, \"result\": \"up_to_date\", \"commit\": \"example\", \"head\": \"example\", \"since\": \"example\", \"error_code\": \"example\", \"message\": \"example\", \"pause\": {}}'\n"
+          }
+        ]
+      }
+    },
     "/api/v1/instances/{instance}/database-connections/{database_connection}": {
       "delete": {
         "operationId": "instance-database-remove",
@@ -11417,6 +11826,334 @@
             "lang": "php",
             "label": "PHP SDK",
             "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\AutomaticDeployInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new AutomaticDeployInstanceRequest(instanceId: 4, commit: 'value', idempotencyKey: 'value'))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/instances/{instance}/deploy/automatic/receipt": {
+      "get": {
+        "operationId": "instance-deploy-automatic-receipt",
+        "summary": "instance:deploy:automatic:receipt",
+        "tags": [
+          "Instances"
+        ],
+        "parameters": [
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Instance ID."
+          },
+          {
+            "name": "commit",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}(?:[0-9a-f]{24})?$(?![\\s\\S])"
+            }
+          },
+          {
+            "name": "request_key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{1,128}$(?![\\s\\S])"
+            }
+          }
+        ],
+        "description": "Reads the original automatic admission by exact request key, caller, Instance, command, and commit. Returns the operation and retained terminal deployment evidence. A conflicting identity returns operation.idempotency_conflict. A missing receipt does not authorize retry: an admission might still be in flight. This read starts nothing. Requires Gateway Node access.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AutomaticDeployReceipt"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/instances/12/deploy/automatic/receipt?commit=1&request_key=1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/instances/{instance}/deployment-source/checks": {
+      "get": {
+        "operationId": "instance-deployment-source-checks",
+        "summary": "instance:deployment-source:checks",
+        "tags": [
+          "Instances"
+        ],
+        "parameters": [
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Instance ID."
+          },
+          {
+            "name": "commit",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$(?![\\s\\S])"
+            }
+          }
+        ],
+        "description": "Reads the latest exact runs for the configured Project merge check on commit, through the GitHub App. Includes head SHA and App slug so the policy can reject mismatched evidence. Requires Gateway Node access. Empty evidence does not prove success.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DeploymentSourceChecks"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/instances/12/deployment-source/checks?commit=1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/instances/{instance}/deployment-source/commits": {
+      "get": {
+        "operationId": "instance-deployment-source-commits",
+        "summary": "instance:deployment-source:commits",
+        "tags": [
+          "Instances"
+        ],
+        "parameters": [
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Instance ID."
+          },
+          {
+            "name": "base",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$(?![\\s\\S])"
+            }
+          }
+        ],
+        "description": "Reads at most 20 first-parent candidates from the GitHub deployment branch, stopping at base or the end of the bounded listing. Each candidate includes strict ancestry evidence relative to base. Requires Gateway Node access and GitHub App source access. Swamp owns commit selection.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DeploymentSourceCommits"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/instances/12/deployment-source/commits?base=1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/instances/{instance}/deployment-source/head": {
+      "get": {
+        "operationId": "instance-deployment-source-head",
+        "summary": "instance:deployment-source:head",
+        "tags": [
+          "Instances"
+        ],
+        "parameters": [
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Instance ID."
+          }
+        ],
+        "description": "Reads the fresh credentialed head of the Instance deployment branch through the Gateway. Requires Gateway Node access. Does not read the native policy cache. See /reference/deployments#swamp-policy-contracts.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DeploymentSourceHead"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/instances/12/deployment-source/head\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
           }
         ]
       }
@@ -34592,6 +35329,9 @@
           "instance_id": {
             "type": "integer"
           },
+          "kind": {
+            "type": "string"
+          },
           "release": {
             "type": [
               "string",
@@ -35822,6 +36562,15 @@
                 "type": "null"
               }
             ]
+          },
+          "resumed_after": {
+            "type": "integer"
+          },
+          "blocked": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -35948,47 +36697,6 @@
           }
         }
       },
-      "DatabaseConnectionAttachment": {
-        "type": "object",
-        "properties": {
-          "instance_id": {
-            "type": "integer"
-          },
-          "slug": {
-            "type": "string"
-          },
-          "prefix": {
-            "type": "string"
-          },
-          "keys": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "host": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "port": {
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
-          "operation": {
-            "type": "string"
-          },
-          "changed": {
-            "type": "boolean"
-          },
-          "key_count": {
-            "type": "integer"
-          }
-        }
-      },
       "Operation": {
         "type": "object",
         "properties": {
@@ -36074,6 +36782,166 @@
               "integer",
               "null"
             ]
+          }
+        }
+      },
+      "DatabaseConnectionAttachment": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "integer"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "prefix": {
+            "type": "string"
+          },
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "host": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "port": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "operation": {
+            "type": "string"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "key_count": {
+            "type": "integer"
+          }
+        }
+      },
+      "AutomaticDeployReceipt": {
+        "type": "object",
+        "properties": {
+          "request_key": {
+            "type": "string"
+          },
+          "found": {
+            "type": "boolean"
+          },
+          "operation": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Operation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deployment": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/InstanceDeployment"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "DeploymentSourceChecks": {
+        "type": "object",
+        "properties": {
+          "gate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "runs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeploymentSourceCheck"
+            }
+          }
+        }
+      },
+      "DeploymentSourceCheck": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "head_sha": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "app": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "conclusion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "DeploymentSourceCommits": {
+        "type": "object",
+        "properties": {
+          "head": {
+            "type": "string"
+          },
+          "commits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeploymentSourceCommit"
+            }
+          }
+        }
+      },
+      "DeploymentSourceCommit": {
+        "type": "object",
+        "properties": {
+          "sha": {
+            "type": "string"
+          },
+          "parents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "descends_from_deployed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "DeploymentSourceHead": {
+        "type": "object",
+        "properties": {
+          "head": {
+            "type": "string"
           }
         }
       },
