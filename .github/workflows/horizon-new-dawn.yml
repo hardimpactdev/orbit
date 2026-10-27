@@ -1,0 +1,32 @@
+name: Horizon New Dawn parity
+on:
+  pull_request:
+    paths:
+      - 'extensions/behaviors/projects/horizon-new-dawn/**'
+      - 'extensions/behaviors/_lib/maintenance/environment.ts'
+      - 'workflows/workflow-horizon-new-dawn-detect.yaml'
+      - '.github/workflows/horizon-new-dawn.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'extensions/behaviors/projects/horizon-new-dawn/**'
+      - 'extensions/behaviors/_lib/maintenance/environment.ts'
+      - 'workflows/workflow-horizon-new-dawn-detect.yaml'
+      - '.github/workflows/horizon-new-dawn.yml'
+permissions:
+  contents: read
+jobs:
+  parity:
+    runs-on: [self-hosted, hardimpact]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.8
+      - name: Check extension
+        run: |
+          deno fmt --check extensions/behaviors/projects/horizon-new-dawn
+          deno lint extensions/behaviors/projects/horizon-new-dawn
+          deno check extensions/behaviors/projects/horizon-new-dawn/mod.ts extensions/behaviors/projects/horizon-new-dawn/gateway.ts
+      - name: Test parity and task creation (one worker)
+        run: deno test --allow-all extensions/behaviors/projects/horizon-new-dawn/mod_test.ts extensions/behaviors/projects/horizon-new-dawn/queue_test.ts extensions/behaviors/projects/horizon-new-dawn/gateway_test.ts

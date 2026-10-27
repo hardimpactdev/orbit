@@ -1,0 +1,23 @@
+manifestVersion: 1
+name: "@nckrtl/project-horizon-new-dawn"
+version: 2026.10.27.1
+visibility: private
+license: MIT
+description: Horizon New Dawn upstream parity detection and one backlog task per changed item.
+repository: https://github.com/hardimpactdev/orbit-swamp
+behaviors:
+  - projects/horizon-new-dawn/mod.ts
+  - projects/horizon-new-dawn/gateway.ts
+include:
+  - projects/horizon-new-dawn/config.ts
+  - projects/horizon-new-dawn/_lib/detect.ts
+  - projects/horizon-new-dawn/_lib/surface.ts
+  - projects/horizon-new-dawn/_lib/tasks.ts
+  - projects/horizon-new-dawn/_lib/queue.ts
+  - _lib/maintenance/environment.ts
+workflows:
+  - workflow-horizon-new-dawn-detect.yaml
+additionalFiles:
+  - README.md
+  - LICENSE
+labels: [project, horizon, upstream]

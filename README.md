@@ -42,6 +42,14 @@ It shares path safety, clean child environments, exception records, and PR text
 with Composer maintenance. Its summary can cover both ecosystems in one run.
 Project 20 calls it through the group worker workflow.
 
+## Horizon New Dawn project extension
+
+[`@nckrtl/project-horizon-new-dawn`](extensions/behaviors/projects/horizon-new-dawn/README.md)
+detects the next upstream Horizon tag on a group's VM worker and creates one
+backlog parity task per changed item. Its committed package ledger stays in the
+package. [The parity contract](docs/horizon-new-dawn.md) covers the merged
+baseline, pinned fixtures and manual activation. PRs wait for Nick.
+
 ## Setup on Beast
 
 - `swamp` lives in `~/.local/bin`. `~/.config/swamp/env.sh` sets

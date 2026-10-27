@@ -1,0 +1,49 @@
+id: 379393e1-64e7-444b-9d58-3870e28485f4
+name: "@nckrtl/project-horizon-new-dawn-detect"
+description: Detect Horizon parity on an enrolled group worker and create backlog tasks for Nick. No schedule or live task start.
+inputs:
+  properties:
+    group: { type: integer, description: Existing open external Horizon package group with an enrolled worker }
+    worker: { type: string, description: Exact enrollment-bound worker name from the group receipt }
+    cwd: { type: string, description: Horizon package checkout inside that group VM }
+    projectId: { type: integer, description: Orbit Project for nckrtl/horizon-new-dawn, not its website }
+  required: [group, worker, cwd, projectId]
+jobs:
+  - name: verify
+    steps:
+      - name: enrolled
+        task:
+          type: model_method
+          modelIdOrName: orbit-gateway
+          methodName: horizon_worker
+          inputs:
+            group: '${{ inputs.group }}'
+            worker: '${{ inputs.worker }}'
+  - name: detect
+    target: '${{ inputs.worker }}'
+    queueTimeout: 120
+    dependsOn:
+      - job: verify
+        condition: { type: succeeded }
+    steps:
+      - name: upstream
+        task:
+          type: model_method
+          modelType: '@nckrtl/project-horizon-new-dawn'
+          modelName: '${{ "horizon-detect-" + run.id }}'
+          methodName: detect
+          inputs:
+            cwd: '${{ inputs.cwd }}'
+  - name: tasks
+    dependsOn:
+      - job: detect
+        condition: { type: succeeded }
+    steps:
+      - name: backlog
+        task:
+          type: model_method
+          modelIdOrName: orbit-gateway
+          methodName: horizon_tasks
+          inputs:
+            projectId: '${{ inputs.projectId }}'
+            plan: '${{ data.latest("horizon-detect-" + run.id, "plan").attributes }}'
