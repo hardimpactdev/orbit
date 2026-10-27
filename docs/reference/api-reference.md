@@ -65,7 +65,7 @@ The `tasks:check` description follows the [hosted handoff CI contract](/referenc
 
 The `tasks:cancel` description follows [workspace cancellation](/reference/tasks#cancel-a-stuck-task). It describes forced Instance removal for `source_resolved` workspaces with an eligible pending or failed exclusive Route, and how a repeated cancel removes the unattached workspace the group owns. An active or shared Route still refuses removal.
 
-The `tasks:insights` response is `TaskInsightsData`, mapped in the script because the controller returns the data class from its action and does not name it. Its nested data classes give the [task insights](/reference/tasks#task-insights) numbers. The route has no SDK request and no CLI command, because only the web app reads it.
+The `tasks:insights` response is `TaskInsightsData`, mapped in the script because the controller returns the data class from its action and does not name it. Its nested data classes give the [task insights](/reference/tasks#task-insights) numbers, trend, and breakdowns. The route has no SDK request and no CLI command, because only the web app reads it.
 
 The `tasks:agent:show` description names the cursor and the saved transcript, as the [thread read](/reference/tasks#read-a-thread) defines them. Its response uses the fixed `TaskAgentSnapshot` schema, because the controller returns the agent viewer's snapshot or delta event and not a data class.
 
