@@ -3,7 +3,7 @@
     "agent": null,
     "ubuntu": {
         "release": "26.04",
-        "snapshot": "20261026T000000Z"
+        "snapshot": "20261027T000000Z"
     },
     "architectures": [
         "amd64",
