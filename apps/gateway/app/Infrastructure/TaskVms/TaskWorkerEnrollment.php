@@ -6,6 +6,7 @@ namespace App\Infrastructure\TaskVms;
 
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
+use JsonException;
 use SensitiveParameter;
 
 /** Encrypted startup material, kept outside durable operation and job records. */
@@ -27,7 +28,12 @@ final readonly class TaskWorkerEnrollment
         if (! is_string($ciphertext)) {
             return null;
         }
-        $credentials = json_decode(Crypt::decryptString($ciphertext), true, flags: JSON_THROW_ON_ERROR);
+        try {
+            $credentials = json_decode(Crypt::decryptString($ciphertext), true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            // Older staged values contain plaintext tokens, not a credential pair.
+            return null;
+        }
         if (! is_array($credentials) || ! is_string($credentials['enrollment_token'] ?? null)) {
             return null;
         }

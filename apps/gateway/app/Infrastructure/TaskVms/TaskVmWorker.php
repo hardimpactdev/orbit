@@ -58,7 +58,7 @@ final readonly class TaskVmWorker
                 'labels' => (object) ($worker['labels'] ?? []),
                 'enrollment_token' => $token,
                 'server_token' => $credentials['server_token'] ?? null,
-                'server_token_required' => $worker['server_authenticated'],
+                'server_token_required' => $worker['server_authenticated'] ?? false,
             ]);
         } catch (Throwable) {
             // Remote diagnostics may contain credentials; only this fixed error crosses the boundary.
