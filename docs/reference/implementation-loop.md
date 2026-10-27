@@ -118,6 +118,16 @@ Gateway test shards and the privileged, E2E, SDK, CLI, remote-program, Pi server
 
 The fast CI gate uses hosted runners. It needs no Gateway test system packages, privileged test setup or local Swamp credentials.
 
+### macOS agent runner on mini
+
+When the repository variable `ORBIT_MINI_RUNNER` is `true`, the `Rust agent on macOS` job runs on mini, a Mac Node. The job builds and tests the macOS agent, so it needs macOS itself; a Linux container cannot run it. On mini it skips the hosted macOS queue. A pull request from a fork always uses the hosted `macos-15` runner. Set the variable to anything else to move the job back to GitHub-hosted runners.
+
+On mini, checkout keeps `apps/agent/target` between runs, so builds stay warm, and it still resets every tracked file. The job does not install or update Rust and restores no Rust cache, because both would change the account's own `~/.cargo` and toolchain. It only checks that the `aarch64-apple-darwin` and `x86_64-apple-darwin` targets are installed. Update the toolchain by hand while the runner is idle.
+
+The runner is registered to this repository only, with the label `mini`, and runs as a launchd service of the `nckrtl` account. It has no isolation. A job runs with that account's files and SSH keys, and with mini's WireGuard address, which the Gateway trusts as the mini Node. That covers every push and pull request from a branch in this repository, including task handoff pushes that task agents write.
+
+The macOS agent binaries in each release come from this job, so they are built on mini too. The maintainer accepted this for this one job. Do not send other jobs to mini.
+
 ### Self-hosted shard runners
 
 Existing runner provisioning remains available to other workflows. This CI workflow schedules no test shards or publishes quality-cache refs.

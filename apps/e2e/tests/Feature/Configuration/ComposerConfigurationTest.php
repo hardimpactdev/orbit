@@ -755,3 +755,16 @@ it('runs the local builder and documented maintenance regression tests', functio
 
     expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
 })->with(['git-build-watch-tests.py', 'incus-upgrade-runbook-tests.py']);
+
+it('runs the macOS agent job on mini only for repository code, without touching its toolchain', function (): void {
+    $job = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'))['jobs']['agent-macos'];
+    $steps = array_column($job['steps'], null, 'name');
+
+    expect($job['runs-on'])
+        ->toBe('${{ vars.ORBIT_MINI_RUNNER == \'true\' && (github.event_name != \'pull_request\' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(\'["self-hosted", "macOS", "ARM64", "mini"]\') || \'macos-15\' }}')
+        ->and($steps['Check out repository']['with']['clean'])->toBe('${{ runner.environment == \'github-hosted\' }}')
+        ->and($steps['Install Rust toolchain']['if'])->toBe("runner.environment == 'github-hosted'")
+        ->and($steps['Restore Rust caches']['if'])->toBe("runner.environment == 'github-hosted'")
+        ->and($steps["Verify the runner's Rust targets"]['if'])->toBe("runner.environment != 'github-hosted'")
+        ->and($steps["Verify the runner's Rust targets"]['run'])->toContain('aarch64-apple-darwin x86_64-apple-darwin');
+});
