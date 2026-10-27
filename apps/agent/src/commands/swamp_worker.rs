@@ -10,6 +10,7 @@ use std::{collections::BTreeMap, fs, path::Path, time::Duration};
 const UNIT: &str = "orbit-swamp-worker.service";
 const UNIT_PATH: &str = "/run/systemd/system/orbit-swamp-worker.service";
 const TOKEN: &str = "/run/orbit-swamp-worker-enrollment";
+const SERVER_TOKEN: &str = "/run/orbit-swamp-worker-server";
 pub const CA: &str = "/usr/local/share/ca-certificates/orbit-root.crt";
 command_errors! {
     pub enum Error {
@@ -28,6 +29,9 @@ pub struct Input {
     orchestrator_url: String,
     labels: BTreeMap<String, String>,
     enrollment_token: Option<String>,
+    server_token: Option<String>,
+    #[serde(default)]
+    server_token_required: bool,
 }
 #[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Output {
@@ -61,11 +65,15 @@ fn validate(input: &Input) -> Result<(), Error> {
         || input.workspace.len() > 4096
         || !Path::new(&input.workspace).is_absolute()
         || input.workspace.chars().any(|c| c.is_control())
-        || input.enrollment_token.as_ref().is_some_and(|t| {
-            t.len() > 4096
-                || t.split_once('.')
-                    .is_none_or(|(n, s)| !label(n, 128) || s.len() < 16 || !label(s, 4096))
-        })
+        || (!input.server_token_required && input.server_token.is_some())
+        || [&input.enrollment_token, &input.server_token]
+            .into_iter()
+            .flatten()
+            .any(|t| {
+                t.len() > 4096
+                    || t.split_once('.')
+                        .is_none_or(|(n, s)| !label(n, 128) || s.len() < 16 || !label(s, 4096))
+            })
     {
         return Err(invalid());
     }
@@ -93,7 +101,17 @@ fn unit(input: &Input, account: &Account) -> String {
     let home = account.home.to_string_lossy();
     let environment = quote(&format!("HOME={home}"));
     let cache = argument(&format!("--cache-dir={home}/.cache/swamp-worker"));
-    format!("[Unit]\nDescription=Swamp task worker {}\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=exec\nUser=orbit\nGroup=orbit\nWorkingDirectory={workspace}\nEnvironment={environment}\nLoadCredential=enrollment:{TOKEN}\nExecStart=/usr/local/bin/swamp worker connect {} --no-telemetry --token-file=%d/enrollment {cache} --ca-cert={CA}{labels}\nRestart=no\nKillMode=control-group\nKillSignal=SIGTERM\nTimeoutStopSec=30\nUMask=0077\n", input.enrollment_id, argument(&input.orchestrator_url))
+    let server_credential = if input.server_token_required {
+        format!("LoadCredential=server:{SERVER_TOKEN}\n")
+    } else {
+        String::new()
+    };
+    let server_argument = if input.server_token_required {
+        " --server-token-file=%d/server"
+    } else {
+        ""
+    };
+    format!("[Unit]\nDescription=Swamp task worker {}\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=exec\nUser=orbit\nGroup=orbit\nWorkingDirectory={workspace}\nEnvironment={environment}\nLoadCredential=enrollment:{TOKEN}\n{server_credential}ExecStart=/usr/local/bin/swamp worker connect {} --no-telemetry --token-file=%d/enrollment{server_argument} {cache} --ca-cert={CA}{labels}\nRestart=no\nKillMode=control-group\nKillSignal=SIGTERM\nTimeoutStopSec=30\nUMask=0077\n", input.enrollment_id, argument(&input.orchestrator_url))
 }
 fn call(host: &mut impl Host, args: &[&str]) -> Result<(), Error> {
     // Discard diagnostics: systemd and worker output are not a secret-safe boundary.
@@ -129,7 +147,9 @@ fn stop(files: &Files, host: &mut impl Host) -> Result<(), Error> {
         remove(&path)?;
         call(host, &["systemctl", "daemon-reload"])?;
     }
-    remove(&files.path(TOKEN))
+    let removed = remove(&files.path(TOKEN));
+    remove(&files.path(SERVER_TOKEN))?;
+    removed
 }
 fn start(
     files: &Files,
@@ -150,11 +170,15 @@ fn start(
     let running = active(host)?;
     if running && fs::read_to_string(&path).ok().as_deref() == Some(&text) {
         remove(&files.path(TOKEN))?;
+        remove(&files.path(SERVER_TOKEN))?;
         return Ok(Output { started: true });
     }
     let Some(token) = &input.enrollment_token else {
         return Ok(Output { started: false });
     };
+    if input.server_token_required && input.server_token.is_none() {
+        return Ok(Output { started: false });
+    }
     if !files.path(CA).is_file() || !files.path("/usr/local/bin/swamp").is_file() {
         return Err(failed());
     }
@@ -170,17 +194,30 @@ fn start(
             .map_err(|_| failed())?;
     }
     let source = files.path(TOKEN);
-    files
-        .publish(
-            &source,
-            token.as_bytes(),
-            0o600,
-            files.uid,
-            files.gid,
-            false,
-        )
-        .map_err(|_| failed())?;
+    let server_source = files.path(SERVER_TOKEN);
     let result = (|| {
+        files
+            .publish(
+                &source,
+                token.as_bytes(),
+                0o600,
+                files.uid,
+                files.gid,
+                false,
+            )
+            .map_err(|_| failed())?;
+        if let Some(server_token) = &input.server_token {
+            files
+                .publish(
+                    &server_source,
+                    server_token.as_bytes(),
+                    0o600,
+                    files.uid,
+                    files.gid,
+                    false,
+                )
+                .map_err(|_| failed())?;
+        }
         files
             .publish_root(&path, text.as_bytes())
             .map_err(|_| failed())?;
@@ -189,11 +226,13 @@ fn start(
         call(host, &["systemctl", "is-active", "--quiet", UNIT])?;
         Ok(Output { started: true })
     })();
-    let removed = fs::remove_file(source).map_err(|_| failed());
-    if result.is_err() || removed.is_err() {
+    let removed = remove(&source);
+    let server_removed = remove(&server_source);
+    if result.is_err() || removed.is_err() || server_removed.is_err() {
         let _ = stop(files, host);
     }
     removed?;
+    server_removed?;
     result
 }
 pub struct Start;

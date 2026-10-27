@@ -199,3 +199,17 @@ it('keeps every database input variant in the MCP shared field schema', function
         ->and($schema['properties']['database']['anyOf'][0]['type'])->toBe(['string', 'null'])
         ->and($schema['properties']['database']['anyOf'][1]['type'])->toBe('integer');
 });
+
+it('exposes the optional worker server credential as a protected secret in API and MCP', function (): void {
+    $root = dirname(__DIR__, 4);
+    $openapi = json_decode((string) file_get_contents($root.'/docs/openapi.json'), true, flags: JSON_THROW_ON_ERROR);
+    $catalogue = json_decode((string) file_get_contents($root.'/apps/gateway/resources/mcp/tools.json'), true, flags: JSON_THROW_ON_ERROR);
+    foreach (['provision', 'worker'] as $route) {
+        $body = $openapi['paths']['/api/v1/task-groups/{group}/'.$route]['post']['requestBody']['content']['application/json']['schema']['properties']['worker'];
+        $tool = collect($catalogue['tools'])->firstWhere('name', 'tasks-'.$route)['input_schema']['properties']['worker'];
+        expect($body)->toBe($tool);
+        expect($body['properties']['server_token']['writeOnly'])->toBeTrue();
+        expect($body['properties']['server_token']['format'])->toBe('password');
+        expect($body['required'])->not->toContain('server_token');
+    }
+});

@@ -11,19 +11,32 @@ use SensitiveParameter;
 /** Encrypted startup material, kept outside durable operation and job records. */
 final readonly class TaskWorkerEnrollment
 {
-    public function stage(#[SensitiveParameter] string $token): string
+    public function stage(#[SensitiveParameter] string $token, #[SensitiveParameter] ?string $serverToken = null): string
     {
         $reference = bin2hex(random_bytes(32));
-        Cache::put('tasks:worker-enrollment:'.$reference, Crypt::encryptString($token), now()->addMinutes(30));
+        Cache::put('tasks:worker-enrollment:'.$reference, Crypt::encryptString(json_encode(['enrollment_token' => $token, 'server_token' => $serverToken], JSON_THROW_ON_ERROR)), now()->addMinutes(30));
 
         return $reference;
     }
 
-    public function read(string $reference): ?string
+    /** @return array{enrollment_token: string, server_token: ?string}|null */
+    public function read(string $reference): ?array
     {
         $ciphertext = Cache::get('tasks:worker-enrollment:'.$reference);
 
-        return is_string($ciphertext) ? Crypt::decryptString($ciphertext) : null;
+        if (! is_string($ciphertext)) {
+            return null;
+        }
+        $credentials = json_decode(Crypt::decryptString($ciphertext), true, flags: JSON_THROW_ON_ERROR);
+        if (! is_array($credentials) || ! is_string($credentials['enrollment_token'] ?? null)) {
+            return null;
+        }
+        $server = $credentials['server_token'] ?? null;
+        if ($server !== null && ! is_string($server)) {
+            return null;
+        }
+
+        return ['enrollment_token' => $credentials['enrollment_token'], 'server_token' => $server];
     }
 
     public function forget(string $reference): void

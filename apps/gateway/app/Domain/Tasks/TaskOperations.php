@@ -35,9 +35,9 @@ final readonly class TaskOperations
     /** @param Closure(Task): void $validate */
     public function startWithWorker(Task $group, string $kind, #[SensitiveParameter] ?TaskWorkerData $worker, Closure $validate, string $triggeredBy, ?string $requestId): Operation
     {
-        $reference = $worker === null ? null : $this->enrollment->stage($worker->enrollment_token);
+        $reference = $worker === null ? null : $this->enrollment->stage($worker->enrollment_token, $worker->server_token);
         $input = $worker === null ? [] : ['worker' => [
-            'orchestrator_url' => $worker->orchestrator_url, 'labels' => $worker->labels, 'enrollment_reference' => $reference,
+            'orchestrator_url' => $worker->orchestrator_url, 'labels' => $worker->labels, 'enrollment_reference' => $reference, 'server_authenticated' => $worker->server_token !== null,
         ]];
         try {
             $operation = $this->start($group, $kind, $input, $validate, $triggeredBy, $requestId);

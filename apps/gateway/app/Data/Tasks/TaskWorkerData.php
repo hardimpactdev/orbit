@@ -14,11 +14,12 @@ final class TaskWorkerData extends Data
         public string $orchestrator_url,
         #[SensitiveParameter] public string $enrollment_token,
         public array $labels = [],
+        #[SensitiveParameter] public ?string $server_token = null,
     ) {}
 
     /** @return array<string, mixed> */
     public function __debugInfo(): array
     {
-        return ['orchestrator_url' => $this->orchestrator_url, 'enrollment_token' => '[REDACTED]', 'labels' => $this->labels];
+        return ['orchestrator_url' => $this->orchestrator_url, 'enrollment_token' => '[REDACTED]', 'server_token' => '[REDACTED]', 'labels' => $this->labels];
     }
 }

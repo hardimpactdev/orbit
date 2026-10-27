@@ -42,7 +42,8 @@ final readonly class TaskVmWorker
         if (! $vm instanceof TaskVm || $vm->group_id !== $operation->target_id || $vm->state !== TaskVmState::Ready) {
             throw new ResourceOperationException('tasks.no_workspace', 'The group has no task VM workspace.', 409);
         }
-        $token = $this->enrollment->read($reference);
+        $credentials = $this->enrollment->read($reference);
+        $token = $credentials['enrollment_token'] ?? null;
         // A lost startup response can leave a running worker after its staged token was erased.
         if ($token === null && ! $required && ! $vm->worker_stop_required) {
             return;
@@ -56,6 +57,8 @@ final readonly class TaskVmWorker
                 'orchestrator_url' => $worker['orchestrator_url'],
                 'labels' => (object) ($worker['labels'] ?? []),
                 'enrollment_token' => $token,
+                'server_token' => $credentials['server_token'] ?? null,
+                'server_token_required' => $worker['server_authenticated'],
             ]);
         } catch (Throwable) {
             // Remote diagnostics may contain credentials; only this fixed error crosses the boundary.

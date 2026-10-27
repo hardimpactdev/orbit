@@ -67,6 +67,8 @@ fn fixture() -> (Sandbox, Files, Account, Input, Fake) {
         orchestrator_url: "wss://swamp.orbit".into(),
         labels: BTreeMap::from([("group".into(), "2074".into())]),
         enrollment_token: Some("group-2074.0123456789abcdef0123456789abcdef".into()),
+        server_token: None,
+        server_token_required: false,
     };
     (
         Sandbox(root.clone()),
@@ -270,4 +272,44 @@ fn refuses_non_certificate_without_mutating_trust() {
     )
     .is_err());
     assert!(host.calls.is_empty());
+}
+
+#[test]
+fn server_authentication_uses_a_second_runtime_credential_and_survives_replay() {
+    let (_guard, files, account, mut input, mut host) = fixture();
+    input.server_token_required = true;
+    input.server_token = Some("group-access.0123456789abcdef0123456789abcdef".into());
+    let secret = input.server_token.clone().unwrap();
+    assert!(start(&files, &mut host, &account, &input).unwrap().started);
+    let text = fs::read_to_string(files.path(UNIT_PATH)).unwrap();
+    assert!(text.contains("LoadCredential=server:"));
+    assert!(text.contains("--server-token-file=%d/server"));
+    assert!(!text.contains(&secret));
+    assert!(!format!("{:?}", host.calls).contains(&secret));
+    assert!(!files.path(TOKEN).exists());
+    assert!(!files.path(SERVER_TOKEN).exists());
+    input.enrollment_token = None;
+    input.server_token = None;
+    assert!(start(&files, &mut host, &account, &input).unwrap().started);
+}
+
+#[test]
+fn failed_server_authenticated_start_erases_both_startup_credentials() {
+    let (_guard, files, account, mut input, mut host) = fixture();
+    input.server_token_required = true;
+    input.server_token = Some("group-access.0123456789abcdef0123456789abcdef".into());
+    host.fail_start = true;
+    assert!(start(&files, &mut host, &account, &input).is_err());
+    assert!(!files.path(TOKEN).exists());
+    assert!(!files.path(SERVER_TOKEN).exists());
+}
+
+#[test]
+fn validates_the_server_credential_before_replacing_a_worker() {
+    let (_guard, files, account, mut input, mut host) = fixture();
+    input.server_token_required = true;
+    input.server_token = Some("bad-secret\n".into());
+    assert!(start(&files, &mut host, &account, &input).is_err());
+    assert!(host.calls.is_empty());
+    assert!(!files.path(SERVER_TOKEN).exists());
 }
