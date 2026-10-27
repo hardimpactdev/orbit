@@ -517,6 +517,35 @@ Deno.test("child write boundary resolutions recover after independent assistance
   assertEquals(h.group.tasks[1].assistance_requested, false);
 });
 
+Deno.test("before work preserves a current-entry park and resolves only a previous entry's owned child request", async () => {
+  const h = await resolvedOpenChild();
+  await syncAssistance(childGate, restartedDeps(h));
+  const before = structuredClone(h.group);
+  const posts = h.posts().length;
+  for (let n = 0; n < 3; n++) {
+    await syncAssistance({ ...childGate, parked: false, beforeWork: true }, restartedDeps(h));
+  }
+  assertEquals(h.group, before, "an uncertain launch cannot clear its current-entry park");
+  assertEquals(h.posts().length, posts);
+  await syncAssistance({ ...childGate, parked: false, cycle: childGate.cycle + 1, beforeWork: true }, restartedDeps(h));
+  assertEquals(h.posts().length, posts + 1);
+  assertEquals(h.posts().at(-1)!.body!.type, "resolution");
+  assertEquals(h.group.tasks[1].assistance_requested, false);
+});
+
+Deno.test("before work preserves independent assistance while reconciling a previous entry", async () => {
+  for (const kind of causes) {
+    const h = await resolvedOpenChild();
+    await syncAssistance(childGate, restartedDeps(h));
+    independentRequest(h, kind);
+    const before = structuredClone(h.group);
+    const posts = h.posts().length;
+    await syncAssistance({ ...childGate, parked: false, cycle: childGate.cycle + 1, beforeWork: true }, restartedDeps(h));
+    assertEquals(h.group, before);
+    assertEquals(h.posts().length, posts);
+  }
+});
+
 Deno.test("child write boundary checks all current fields instead of only flags or matching reasons", async () => {
   for (const field of ["assistance_kind", "assistance_question", "assistance_reason"] as const) {
     for (const clear of [false, true]) {

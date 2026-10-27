@@ -67,6 +67,29 @@ factory: provision, detect on the task worker, finish without a PR.
 Detection failures or a changed checkout park for assistance. Detection never
 starts a repair turn or publishes changes.
 
+A failed scan with an unchanged checkout can be retried on its existing group
+and VM after its cause is fixed. The operator approves `detect-retry` and grants
+one `cycle-override:script` on the `dependency-detect` factory for that work item.
+The normal group driver follows the `retry` transition back to `script` with a
+fresh cycle and operation key. Old jobs, workflow receipts and failure evidence
+remain readable. Repeating a driver tick or either approval does not redispatch
+an already executed entry. No new group, factory reset or manual data clearing
+is part of recovery. Changed-checkout scans and provisioning failures cannot use
+this transition. A repeated failed scan requires fresh approvals for its new
+assistance entry.
+
+```bash
+swamp behavior run dependency-detect approve --input workItem=tg-1234 --input gateId=detect-retry --input actor=nick
+swamp behavior run dependency-detect approve --input workItem=tg-1234 --input gateId=cycle-override:script --input actor=nick
+```
+
+Run these against the authenticated server only after explicit retry
+authorization. The normal driver clears its own mirrored assistance when it
+resumes, before dispatching the new entry. Assistance for the current entry,
+including an uncertain workflow launch, stays parked. Independent operator or
+safety assistance remains a blocker.
+
+
 Detection installs no dependencies and never invokes Gateway handoff checks.
 Orbit's external-task contract permits completing a child without a handoff
 check; its handoff operation always runs the configured Project check, even
@@ -170,14 +193,16 @@ three real Swamp routing tests (`maintenance_factory_test.ts`,
 handoff. They use the pinned official extensions, not a fork or test
 replacement.
 
-Those three routing tests do not run in CI yet. Their contract job does not
-install the Swamp CLI. The separate Maintenance worker native job installs the
-pinned CLI and official factory and runs `group_workflow_test.py`, including
-parallel progress, restart, recovery parking, and manual-workflow ownership.
+The Maintenance worker native CI job installs the pinned CLI and official
+factory. It runs `maintenance_factory_test.ts`, including same-group detect
+retry through native approval and cycle-override gates. It also runs
+`group_workflow_test.py`, including parallel progress, restart, recovery parking,
+and manual-workflow ownership. The package and routine routing tests still run
+locally; the project contract job does not install the Swamp CLI.
 That job uses the dedicated `SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN` repository
 secrets. Never copy a developer's key or production datastore into a runner.
-A passing contract job is not evidence that the three routing tests ran in CI;
-the PR records their local results separately.
+A passing contract job is not evidence that the native routing tests ran;
+the PR records the applicable native CI and local results separately.
 
 Read stuck rows and recorded skips on the deployed server:
 

@@ -337,6 +337,17 @@ async function workflowStep(ctx: Ctx, workItem: string, key: string, status: Sta
   return { action: `launched ${wf.name} for ${key} (launch ${l.launches})`, waiting: `stage run for ${key} starting` };
 }
 
+async function updateAssistance(ctx: Ctx, workItem: string, status: Status, waiting: string | null, beforeWork = false) {
+  if (!ctx.globalArgs.assistanceModel) return;
+  const parked = (waiting ?? "").startsWith("assistance: ");
+  await call(ctx, ctx.globalArgs.assistanceModel, "assistance", {
+    workItem, parked, factory: ctx.globalArgs.factory, driverDefinition: ctx.definitionName,
+    gateIds: parked ? pendingGateIds(status) : [], stage: status.stage.id, cycle: status.stage.cycle,
+    reason: parked ? waiting!.slice("assistance: ".length) : "",
+    ...(beforeWork ? { beforeWork: true } : {}),
+  });
+}
+
 /** One guarded step for one work item. Returns what it did, or why it waits. */
 async function step(ctx: Ctx, workItem: string, killAt?: string): Promise<{ status: Status; action: string | null; waiting: string | null }> {
   const f = ctx.globalArgs.factory;
@@ -352,6 +363,7 @@ async function step(ctx: Ctx, workItem: string, killAt?: string): Promise<{ stat
   if (work?.mode === "workflow" && work.workflow && work.resultEvidence) {
     const ev = await latest<{ stageId: string; cycle: number; recordedAt?: string }>(ctx, f, `evidence-${workItem}-${work.resultEvidence}`);
     if (!recordedThisEntry(ev, stage, cycle, startedAt)) {
+      await updateAssistance(ctx, workItem, status, null, true);
       return { status, ...(await workflowStep(ctx, workItem, key, status, killAt)) };
     }
   }
@@ -361,6 +373,9 @@ async function step(ctx: Ctx, workItem: string, killAt?: string): Promise<{ stat
     }
     const ev = await latest<{ stageId: string; cycle: number; recordedAt?: string }>(ctx, f, `evidence-${workItem}-${work.resultEvidence}`);
     if (!recordedThisEntry(ev, stage, cycle, startedAt)) {
+      // Reconcile the previous entry's owned assistance before dispatch, also
+      // after a restart between an approved transition and the new work.
+      await updateAssistance(ctx, workItem, status, null, true);
       if (status.dispatch?.required && !status.dispatch.executed) {
         await call(ctx, f, "record_dispatch", { workItem, mode: "method", runId: key });
         killIf("after-dispatch", killAt, ctx);
@@ -522,12 +537,8 @@ export const behavior = {
           }
           if (ctx.globalArgs.assistanceModel && last) {
             // Tell the target system whether this work item now waits for a person.
-            const parked = (last.waiting ?? "").startsWith("assistance: ");
             try {
-              await call(ctx, ctx.globalArgs.assistanceModel, "assistance", {
-                workItem, parked, factory: f, driverDefinition: ctx.definitionName, gateIds: parked ? pendingGateIds(last.status) : [], stage: last.status.stage.id, cycle: last.status.stage.cycle,
-                reason: parked ? last.waiting!.slice("assistance: ".length) : "",
-              });
+              await updateAssistance(ctx, workItem, last.status, last.waiting);
             } catch (e) {
               ctx.logger.warning("{wi}: assistance update failed: {err}", { wi: workItem, err: String(e) });
             }

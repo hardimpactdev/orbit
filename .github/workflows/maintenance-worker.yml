@@ -63,6 +63,9 @@ jobs:
       SWAMP_NO_TELEMETRY: '1'
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.8
       - name: Prepare isolated Swamp account
         shell: bash
         run: |
@@ -89,6 +92,7 @@ jobs:
           swamp extension pull @swamp/software-factory@2026.10.23.1 --json
           python3 -m unittest tests/group_workflow_test.py
           python3 -B -m unittest discover -s tests -p deploy_services_native_test.py -v
+          deno test --allow-all tests/maintenance_factory_test.ts
       - name: Remove isolated Swamp account state
         if: always()
         shell: bash

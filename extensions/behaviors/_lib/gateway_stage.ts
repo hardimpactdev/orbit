@@ -1030,6 +1030,7 @@ export interface AssistanceArgs {
   factory?: string;
   gateIds?: string[];
   driverDefinition?: string;
+  beforeWork?: boolean;
 }
 
 export interface AssistanceRecord {
@@ -1114,6 +1115,9 @@ export async function syncAssistance(args: AssistanceArgs, deps: AssistanceDeps)
     // The current group request is resolved; continue with the ordinary child path.
   }
   const key = `${args.stage}.c${args.cycle}`;
+  // A resumed entry may reconcile the previous gate before work. A current-entry
+  // launch timeout or uncertainty remains parked until its own decision.
+  if (!args.parked && args.beforeWork && rec.key === key) return rec;
   const skip = async (why: string): Promise<AssistanceRecord> => {
     const skipped = { ...rec, skipped: why };
     await deps.writeRecord(skipped);

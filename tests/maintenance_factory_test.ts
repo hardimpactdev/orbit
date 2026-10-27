@@ -21,6 +21,7 @@ Deno.test({
       78: { scriptNoChange: true },
       79: { scriptNoChange: true, scriptFails: true },
       80: {},
+      81: { scriptNoChange: true, scriptFailsOnce: true },
     });
     const counts = new Map<number, number>();
     const remote = Deno.serve(
@@ -122,13 +123,15 @@ Deno.test({
     );
     const dir = await Deno.makeTempDir({ prefix: "worker-factory-routing-" });
     let passed = false;
-    const swamp = async (...args: string[]) => {
-      const out = await new Deno.Command("swamp", {
+    const swampOutput = (...args: string[]) =>
+      new Deno.Command("swamp", {
         args,
         cwd: dir,
         stdout: "piped",
         stderr: "piped",
       }).output();
+    const swamp = async (...args: string[]) => {
+      const out = await swampOutput(...args);
       const text = new TextDecoder().decode(out.stdout);
       assert(
         out.success,
@@ -167,10 +170,12 @@ Deno.test({
       const def = `${dir}/models/@nckrtl/orbit-gateway/orbit-gateway.yaml`;
       await Deno.writeTextFile(
         def,
-        (await Deno.readTextFile(def)).replace(
-          /gatewayUrl: .*/,
-          `gatewayUrl: http://127.0.0.1:${remote.addr.port}`,
-        ),
+        (await Deno.readTextFile(def))
+          .replace(
+            /gatewayUrl: .*/,
+            `gatewayUrl: http://127.0.0.1:${remote.addr.port}`,
+          )
+          .replace(/caFile: .*/, "caFile: /dev/null"),
       );
       const module = `${dir}/extensions/behaviors/_lib/swamp_maintenance.ts`;
       const source = await Deno.readTextFile(module);
@@ -275,6 +280,13 @@ export const behavior = {
             "--json",
           ),
         );
+        assertEquals(
+          query.results[0].items.filter((item: { error?: string }) =>
+            item.error && !item.error.includes("Maintenance VM limit reached")
+          ),
+          [],
+          "native routine driver errors",
+        );
         stages = query.results[0].items.map((item: { stage: string }) =>
           item.stage
         );
@@ -330,7 +342,7 @@ export const behavior = {
       }
       // The detection factory uses the same real config/provider and stage client.
       // It has no repair or publication path, even for command failure or changed trees.
-      const detections = [78, 79, 80].map((id) => `tg-${id}`);
+      const detections = [78, 79, 80, 81].map((id) => `tg-${id}`);
       for (const workItem of detections) {
         await swamp(
           "behavior",
@@ -370,16 +382,33 @@ export const behavior = {
             "--json",
           ),
         );
+        assertEquals(
+          query.results[0].items.filter((item: { error?: string }) =>
+            item.error && !item.error.includes("Maintenance VM limit reached")
+          ),
+          [],
+          "native detect driver errors",
+        );
         detected = query.results[0].items.map((item: { stage: string }) =>
           item.stage
         );
         if (
           JSON.stringify(detected) ===
-            JSON.stringify(["completed", "assistance", "assistance"])
+            JSON.stringify([
+              "completed",
+              "assistance",
+              "assistance",
+              "assistance",
+            ])
         ) break;
       }
-      assertEquals(detected, ["completed", "assistance", "assistance"]);
-      for (const id of [78, 79, 80]) {
+      assertEquals(detected, [
+        "completed",
+        "assistance",
+        "assistance",
+        "assistance",
+      ]);
+      for (const id of [78, 79, 80, 81]) {
         assertEquals(
           fake.startsOf(id, "handoff"),
           0,
@@ -390,6 +419,176 @@ export const behavior = {
         assertEquals(counts.get(id), 1);
       }
       assertEquals(fake.groups.get(78)!.vm_power, "destroyed");
+
+      // Recover the same failed detect group with native approvals and a fresh
+      // script cycle. Never reset a factory or erase the terminal c1 receipt.
+      const query = async (predicate: string) =>
+        JSON.parse(
+          await swamp(
+            "data",
+            "query",
+            predicate,
+            "--select",
+            "attributes",
+            "--json",
+          ),
+        ).results;
+      const oldState = (await query(
+        'modelName == "dependency-detect" && name == "state-tg-79"',
+      ))[0];
+      const oldJob = (await query(
+        'modelName == "orbit-gateway" && name == "job-tg-79.script.c1"',
+      ))[0];
+      assertEquals(oldJob.artifacts.script.outcome, "failed");
+      const retry = [
+        "behavior",
+        "run",
+        "dependency-detect",
+        "advance",
+        "--input",
+        "workItem=tg-79",
+        "--input",
+        "transition=retry",
+      ];
+      assert(
+        !(await swampOutput(...retry)).success,
+        "retry needs human consent",
+      );
+      await swamp(
+        "behavior",
+        "run",
+        "dependency-detect",
+        "approve",
+        "--input",
+        "workItem=tg-79",
+        "--input",
+        "gateId=detect-retry",
+        "--input",
+        "actor=fixture-operator",
+      );
+      assert(
+        !(await swampOutput(...retry)).success,
+        "retry needs one new script cycle grant",
+      );
+      assertEquals(counts.get(79), 1);
+      assertEquals(fake.groups.get(79)!.assistance_requested, true);
+      for (const id of [79, 80, 81]) {
+        for (
+          const gate of id === 79
+            ? ["cycle-override:script"]
+            : ["detect-retry", "cycle-override:script"]
+        ) {
+          await swamp(
+            "behavior",
+            "run",
+            "dependency-detect",
+            "approve",
+            "--input",
+            `workItem=tg-${id}`,
+            "--input",
+            `gateId=${gate}`,
+            "--input",
+            "actor=fixture-operator",
+          );
+        }
+      }
+      // Advancing in one process and driving in another reproduces a restart
+      // after approval, before the old assistance was reconciled.
+      await swamp(
+        "behavior",
+        "run",
+        "dependency-detect",
+        "advance",
+        "--input",
+        "workItem=tg-81",
+        "--input",
+        "transition=retry",
+      );
+      assertEquals(fake.groups.get(81)!.assistance_requested, true);
+      fake.groups.get(79)!.scenario.scriptFails = false; // underlying scan cause fixed
+      for (let n = 0; n < 20; n++) {
+        await swamp(
+          "behavior",
+          "run",
+          "orbit-driver-detect",
+          "tick",
+          "--input-file",
+          `${dir}/detect-tick.json`,
+        );
+        const state = (await query(
+          'modelName == "dependency-detect" && name == "state-tg-79"',
+        ))[0];
+        const restarted = (await query(
+          'modelName == "dependency-detect" && name == "state-tg-81"',
+        ))[0];
+        if (
+          state.stageId === "completed" && restarted.stageId === "completed"
+        ) break;
+      }
+      const retried = (await query(
+        'modelName == "dependency-detect" && name == "state-tg-79"',
+      ))[0];
+      assertEquals(retried.stageId, "completed");
+      assertEquals(
+        retried.startedAt,
+        oldState.startedAt,
+        "factory era preserved",
+      );
+      assertEquals(retried.cycles.script, 2);
+      assertEquals(retried.cycles.provision, 1);
+      assertEquals(
+        (await query(
+          'modelName == "orbit-gateway" && name == "job-tg-79.script.c1"',
+        ))[0],
+        oldJob,
+        "the original failed scan receipt is unchanged",
+      );
+      assertEquals(
+        (await query(
+          'modelName == "orbit-gateway" && name == "job-tg-79.script.c2"',
+        ))[0].artifacts.script.outcome,
+        "passed",
+      );
+      assertEquals(fake.groups.get(79)!.status, "completed");
+      assertEquals(fake.groups.get(79)!.vm_power, "destroyed");
+      assertEquals(fake.groups.get(79)!.assistance_requested, false);
+      assertEquals(counts.get(79), 2);
+      assertEquals(
+        (await query(
+          'modelName == "dependency-detect" && name == "state-tg-81"',
+        ))[0].stageId,
+        "completed",
+        "restart resumes without resetting or re-provisioning",
+      );
+      assertEquals(counts.get(81), 2);
+      assertEquals(fake.groups.get(81)!.assistance_requested, false);
+      assertEquals(
+        (await query(
+          'modelName == "dependency-detect" && name == "state-tg-80"',
+        ))[0].stageId,
+        "assistance",
+        "changed checkout cannot retry even with approvals",
+      );
+      assertEquals(counts.get(80), 1);
+      await swamp(
+        "behavior",
+        "run",
+        "orbit-driver-detect",
+        "tick",
+        "--input-file",
+        `${dir}/detect-tick.json`,
+      );
+      assertEquals(
+        counts.get(79),
+        2,
+        "replayed tick cannot rescan a completed entry",
+      );
+      for (const id of [79, 80, 81]) {
+        assertEquals(fake.startsOf(id, "provision"), 1);
+        assertEquals(fake.startsOf(id, "handoff"), 0);
+        assertEquals(fake.startsOf(id, "repair"), 0);
+        assertEquals(fake.startsOf(id, "publish"), 0);
+      }
       const config = JSON.parse(
         await swamp(
           "data",
@@ -414,6 +613,79 @@ export const behavior = {
         jsPaths: ["."],
         policy: { ".": { minimumReleaseAgeDays: 7 } },
       });
+      // A provision failure reaches assistance before any script artifact exists.
+      // Repeated status reads must remain valid and must never offer scan retry.
+      const noScript = "fixture-no-script";
+      await swamp(
+        "behavior",
+        "run",
+        "dependency-detect",
+        "start",
+        "--input",
+        `workItem=${noScript}`,
+      );
+      await swamp(
+        "behavior",
+        "run",
+        "dependency-detect",
+        "record_dispatch",
+        "--input",
+        `workItem=${noScript}`,
+      );
+      await swamp(
+        "behavior",
+        "run",
+        "dependency-detect",
+        "record_evidence",
+        "--input",
+        `workItem=${noScript}`,
+        "--input",
+        "name=provision-run",
+        "--input",
+        `payload=${
+          JSON.stringify({
+            status: "failed",
+            runId: "fixture-provision-failed",
+          })
+        }`,
+      );
+      await swamp(
+        "behavior",
+        "run",
+        "dependency-detect",
+        "advance",
+        "--input",
+        `workItem=${noScript}`,
+        "--input",
+        "transition=failed",
+      );
+      for (let n = 0; n < 2; n++) {
+        await swamp(
+          "behavior",
+          "run",
+          "dependency-detect",
+          "status",
+          "--input",
+          `workItem=${noScript}`,
+        );
+        const status = (await query(
+          `modelName == "dependency-detect" && name == "status-${noScript}"`,
+        ))[0];
+        assertEquals(status.stage.id, "assistance");
+        const retry = status.transitions.find((t: { name: string }) =>
+          t.name === "retry"
+        );
+        assertEquals(retry.satisfied, false);
+        const cel = retry.gates.find((g: { type: string }) => g.type === "cel");
+        assertEquals(cel.pass, false);
+        assert(
+          cel.reasons.length === 1 &&
+            cel.reasons[0].endsWith("evaluated to false"),
+          `missing artifacts must give a false gate, not a CEL error: ${
+            JSON.stringify(cel.reasons)
+          }`,
+        );
+      }
       passed = true;
     } finally {
       await remote.shutdown();

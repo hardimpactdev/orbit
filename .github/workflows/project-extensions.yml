@@ -71,4 +71,4 @@ jobs:
           tests/maintenance_resources_test.ts
       - name: State native routing coverage
         run: >-
-          echo "::notice::The three native Swamp factory routing tests run locally, not in this job. This contract job does not install Swamp. The separate Maintenance worker native job runs group_workflow_test.py. See docs/project-extensions.md for coverage and PR results."
+          echo "::notice::The package_routing and routine_routing tests run locally, not in this job. This contract job does not install Swamp. The separate Maintenance worker native job runs maintenance_factory_test.ts and group_workflow_test.py. See docs/project-extensions.md for coverage and PR results."

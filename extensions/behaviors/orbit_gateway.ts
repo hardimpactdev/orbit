@@ -276,9 +276,10 @@ export const behavior = {
         factory: z.string().optional(),
         gateIds: z.array(z.string()).optional(),
         driverDefinition: z.string().optional(),
+        beforeWork: z.boolean().optional().describe("Before dispatch, reconcile only assistance from a previous stage entry"),
       }),
       execute: async (
-        args: { workItem: string; parked: boolean; stage: string; cycle: number; reason: string; factory?: string; gateIds?: string[]; driverDefinition?: string },
+        args: { workItem: string; parked: boolean; stage: string; cycle: number; reason: string; factory?: string; gateIds?: string[]; driverDefinition?: string; beforeWork?: boolean },
         context: {
           globalArgs: { gatewayUrl: string; caFile: string; timeoutSeconds: number };
           definition: { name: string };

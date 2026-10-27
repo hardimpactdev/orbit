@@ -139,6 +139,15 @@ globalArguments:
     description: Detection failed or changed the checkout; preserve evidence for the
       operator.
     transitions:
+    - name: retry
+      to: script
+      gates:
+      - type: human-approval
+        config:
+          id: detect-retry
+      - type: cel
+        config:
+          expr: has(artifacts.script) && artifacts.script.outcome == "failed" && !artifacts.script.changed
     - name: acknowledge
       to: failed
       gates:
