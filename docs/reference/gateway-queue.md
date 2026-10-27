@@ -50,6 +50,7 @@ The scheduler dispatches each of these as a unique job. While the job waits or r
 | Command | Every | Queue | Unique for |
 | --- | --- | --- | --- |
 | `tasks:tick` | 10 seconds | `tasks` | 330 seconds |
+| `gateway:swamp-reader:check` | hour | `problems` | 300 seconds |
 | `orbit:auto-deploy` | minute | `tasks` | 600 seconds |
 | `orbit:vault-sync` | minute | `tasks` | 900 seconds |
 | `orbit:desired-fleet-state` | 5 minutes | `tasks` | 600 seconds |
