@@ -152,7 +152,7 @@ A card for a task that asks for direction says `Needs your direction`, and the t
 
 The app waits 100 milliseconds after a task event and refetches each named query once. A refetch that an event starts replaces a request that is still running. An active task's duration counts forward on the page. Token and line counts change with the next event, and the agent thread stream shows live tokens.
 
-The [insights strip](/reference/tasks#task-insights) above the task board reads `GET /api/v1/task-insights` when the board opens and every 5 minutes after. Task events do not refetch it, because one task changes the numbers only a little. The open or closed state of the strip is stored in the browser under `orbit.tasks.insights.expanded`.
+The [insights strip](/reference/tasks#task-insights) above the task board reads `GET /api/v1/task-insights` when the board opens and every 5 minutes after. Task events do not refetch it, because one task changes the numbers only a little. The strip opens on **more**. Its open or closed state is stored in the browser under `orbit.tasks.insights.expanded`.
 
 Checkout ownership is separate from the task board status. A task that waits for another [workspace lease](/reference/tasks#workspace-lease) stays in its current task state and does not gain a check failure. The `tasks:status` API and Doctor expose the holder and waiters for diagnosis.
 
