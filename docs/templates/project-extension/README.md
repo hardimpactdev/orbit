@@ -23,3 +23,7 @@ The project extension contains config and schedules. All package-manager work,
 PR text, worker access and factory state stay in shared extensions. Use the
 private repo deployment bundle. Registry publication needs the orchestrator's
 approval. Do not edit the project repository during phase 4.
+
+Release-age exception history belongs in the private project's `exceptions`
+config and Swamp resource. Preserve any existing dates and durations when
+preparing a project. See [exception storage](../../project-maintenance-exceptions.md).

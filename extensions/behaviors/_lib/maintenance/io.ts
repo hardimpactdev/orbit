@@ -8,9 +8,11 @@ export class MaintenanceFailure extends Error {
   }
 }
 
+import { emptyExceptions, ExceptionsSchema } from "./exceptions.ts";
 import { PolicySchema } from "./policy_schema.ts";
 export { PolicySchema } from "./policy_schema.ts";
 export const CommonSchema = z.strictObject({
+  exceptions: ExceptionsSchema.default(emptyExceptions),
   captureFailure: z.boolean().optional(),
   cwd: z.string().min(1),
   paths: z.array(z.string().min(1)).min(1).default(["."]),

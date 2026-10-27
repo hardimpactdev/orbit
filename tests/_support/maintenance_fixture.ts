@@ -52,10 +52,10 @@ export async function installMaintenanceFixture(dir: string) {
   const module = `${dir}/extensions/behaviors/_lib/swamp_maintenance.ts`;
   const source = await Deno.readTextFile(module);
   const start = source.indexOf(
-    "  const inputs = maintenanceInputs",
+    "  let inputs = maintenanceInputs",
     source.indexOf("export async function runMaintenance("),
   );
-  const end = source.indexOf("\nfunction resource(", start);
+  const end = source.indexOf("\n/** Swamp stores worker receipts", start);
   assert(start > 0 && end > start);
   await Deno.writeTextFile(
     module,
@@ -63,6 +63,7 @@ export async function installMaintenanceFixture(dir: string) {
       `  const response = await http("GET", \`/fixture/maintenance/\${group}/\${request.mode}\`);
   const data = response.body!.data as Record<string, unknown>;
   if (data.lastError) return { state: "failed", lastError: String(data.lastError) };
+  await recordMaintenanceExceptions(data as WorkflowRun, args.dependencyProject!.projectId, context);
   return maintenanceResult(data as WorkflowRun);
 }\n` + source.slice(end),
   );

@@ -14,6 +14,7 @@ import {
   maintenanceInputs,
   maintenanceResult,
   reconcileWorkers,
+  recordMaintenanceExceptions,
   workerControl,
 } from "../extensions/behaviors/_lib/swamp_maintenance.ts";
 import {
@@ -290,6 +291,7 @@ Deno.test("package placement carries VM cwd, configured paths/policy and literal
     cwd: "/vm/repo",
     paths: ["."],
     policy: project.worker.policy,
+    exceptions: project.exceptions,
     captureFailure: true,
     path: ".",
     package: "react",
@@ -301,6 +303,7 @@ Deno.test("package placement carries VM cwd, configured paths/policy and literal
     cwd: "/vm/repo",
     paths: ["."],
     policy: project.worker.policy,
+    exceptions: project.exceptions,
     captureFailure: true,
   });
 });
@@ -1201,4 +1204,108 @@ Deno.test("pre-retirement running and completed jobs retain their work and resul
       await fake.close();
     }
   }
+});
+
+Deno.test("retained workflow exception snapshots survive new project receipts and pre-ledger inputs", async () => {
+  const request = { mode: "routine", cwd: "/vm/repo" };
+  const first = maintenanceInputs(project, args, 7, request);
+  const future = {
+    ...project,
+    exceptions: {
+      schema: 1 as const,
+      exceptions: [{
+        path: ".",
+        manager: "composer" as const,
+        package: "new/pkg",
+        recorded_on: "2026-10-27",
+        days: 7,
+      }],
+    },
+  };
+  assertEquals(maintenanceInputs(future, args, 7, request, first), first);
+  const legacy = structuredClone(first);
+  for (
+    const key of ["composer", "js", "composerCommon", "jsCommon", "summary"]
+  ) delete (legacy[key] as Record<string, unknown>).exceptions;
+  assertEquals(maintenanceInputs(future, args, 7, request, legacy), legacy);
+  const workChanged = maintenanceInputs(
+    { ...future, worker: { ...future.worker, policy: {} } },
+    args,
+    7,
+    request,
+    first,
+  );
+  await assertRejects(
+    () =>
+      ensureMaintenance(workChanged, {
+        read: () =>
+          Promise.resolve({
+            key: first.key,
+            inputs: first,
+            runId: "existing",
+            createdAt: "2026-10-27T00:00:00Z",
+          }),
+        save: () => {
+          throw new Error("must not save");
+        },
+        search: () => {
+          throw new Error("must not search");
+        },
+        launch: () => {
+          throw new Error("must not launch");
+        },
+        get: () => {
+          throw new Error("must not read");
+        },
+      }),
+    Error,
+    "input conflict",
+  );
+});
+
+Deno.test("exception receipts are saved on the owning project even when a worker run was interrupted", async () => {
+  const run = runFixture();
+  run.status = "interrupted";
+  const receipt = {
+    schema: 1,
+    exceptions: [{
+      path: ".",
+      manager: "composer",
+      package: "fixture/pkg",
+      recorded_on: "2026-10-27",
+      days: 7,
+    }],
+  };
+  run.jobs[0].steps[1].dataArtifacts = [{
+    name: "exceptions",
+    attributes: receipt,
+  }];
+  const calls: unknown[] = [];
+  let ok = false;
+  const ctx = {
+    globalArgs: {
+      projectExtensions: [{
+        projectId: 20,
+        type: "@nckrtl/project-nckrtl-com",
+      }],
+    },
+    runModel: (call: unknown) => {
+      calls.push(call);
+      return Promise.resolve({ ok });
+    },
+  } as unknown as MaintenanceContext;
+  await assertRejects(
+    () => recordMaintenanceExceptions(run, 20, ctx),
+    Error,
+    "cannot record",
+  );
+  ok = true;
+  await recordMaintenanceExceptions(run, 20, ctx);
+  assertEquals(calls[0], calls[1]);
+  assertEquals(calls[1], {
+    modelType: "@nckrtl/project-nckrtl-com",
+    name: "project-nckrtl-com",
+    method: "record_exceptions",
+    arguments: receipt,
+  });
 });

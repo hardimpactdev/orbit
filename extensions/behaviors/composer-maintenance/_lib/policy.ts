@@ -1,7 +1,9 @@
+import { write } from "../../_lib/maintenance/context.ts";
+import { type Context } from "../../_lib/maintenance/context.ts";
 import {
   dueExceptions,
+  ExceptionsSchema,
   recordException,
-  records,
 } from "../../_lib/maintenance/exceptions.ts";
 import { z } from "npm:zod@4";
 import {
@@ -45,10 +47,11 @@ async function vet(place: Place) {
 }
 
 export async function allowSecurity(
-  root: string,
   place: Place,
   name: string,
   policy: CommonArgs["policy"],
+  document: CommonArgs["exceptions"],
+  ctx: Context,
 ): Promise<void> {
   const current = await vet(place);
   if (current === null || current.age === undefined) return;
@@ -58,17 +61,22 @@ export async function allowSecurity(
       64,
     );
   }
-  // Parse existing records before changing either file.
-  const document = await records(root);
+  await write(
+    ctx,
+    "exceptions",
+    ExceptionsSchema,
+    recordException(document, place, "composer", name, current.age),
+  );
   if (!current.excludes.includes(name)) {
     current.data["minimum-release-age-exclude"] = [...current.excludes, name];
     await writeJson(`${place.dir}/vet.json`, current.data);
   }
-  await recordException(root, document, place, "composer", name, current.age);
 }
 
-export async function staleExceptions(root: string, places: Place[]) {
-  const document = await records(root);
+export async function staleExceptions(
+  document: CommonArgs["exceptions"],
+  places: Place[],
+) {
   if (document.exceptions.length === 0) return [];
   const excluded = new Set<string>();
   for (const place of places) {

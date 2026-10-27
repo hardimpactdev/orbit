@@ -35,9 +35,10 @@ worker config; the strict schema rejects the former `script` field. Routing
 registration contains only its ID and extension type. Each stage loads only the matching extension, so adding
 projects does not multiply nested calls in a driver tick.
 
-Configuration resources use schema version 2. A configuration read validates the
-unversioned v1 resource, removes its retired `script` field and writes a v2
-resource before the Gateway consumes it. Current resources and new config remain
+Configuration resources use schema version 3. A configuration read migrates the
+unversioned v1 resource and schema 2 records before the Gateway consumes them.
+Version 3 includes the project exception records. See
+[release-age exceptions](project-maintenance-exceptions.md). Current resources and new config remain
 strict. Stage input identities also use version 2 and include only the fields
 that define maintenance work. Pre-retirement identities are migrated before
 comparison, including on completed jobs; changes to paths, policy, targets or

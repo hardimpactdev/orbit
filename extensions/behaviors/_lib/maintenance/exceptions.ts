@@ -1,60 +1,65 @@
 import { z } from "npm:zod@4";
-import {
-  decode,
-  MaintenanceFailure,
-  optionalText,
-  type Place,
-  writeJson,
-} from "./io.ts";
-const RecordSchema = z.looseObject({
+import { type Place } from "./io.ts";
+export const ExceptionSchema = z.looseObject({
   path: z.string(),
-  manager: z.string(),
+  manager: z.enum(["composer", "js"]),
   package: z.string(),
   recorded_on: z.iso.date(),
   days: z.number().int().nonnegative(),
 });
-const RecordsSchema = z.looseObject({
+export const ExceptionsSchema = z.looseObject({
   schema: z.literal(1),
-  exceptions: z.array(RecordSchema),
+  exceptions: z.array(ExceptionSchema),
 });
-export async function records(root: string) {
-  const text = await optionalText(`${root}/maintainer-exceptions.json`);
-  if (text === null) return { schema: 1 as const, exceptions: [] };
-  const parsed = RecordsSchema.safeParse(
-    decode(text, "maintainer-exceptions.json"),
-  );
-  if (!parsed.success) {
-    throw new MaintenanceFailure("Cannot read maintainer-exceptions.json");
+export type Exceptions = z.infer<typeof ExceptionsSchema>;
+export const emptyExceptions = (): Exceptions => ({
+  schema: 1,
+  exceptions: [],
+});
+
+/** Keep the first date and all metadata for each package, path and ecosystem. */
+export function mergeExceptions(...documents: unknown[]): Exceptions {
+  let merged = emptyExceptions();
+  const seen = new Set<string>();
+  for (const input of documents) {
+    const document = ExceptionsSchema.parse(input);
+    const rows = document.exceptions.filter((row) => {
+      const key = JSON.stringify([row.path, row.manager, row.package]);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    merged = {
+      ...merged,
+      ...document,
+      exceptions: [...merged.exceptions, ...rows],
+    };
   }
-  return parsed.data;
+  return merged;
 }
 
-/** Append once, keeping the original date and every unrelated record and field. */
-export async function recordException(
-  root: string,
-  document: Awaited<ReturnType<typeof records>>,
+export function recordException(
+  document: Exceptions,
   place: Place,
-  manager: string,
+  manager: "composer" | "js",
   name: string,
   days: number,
-) {
-  if (
-    document.exceptions.some((r) =>
-      r.path === place.path && r.manager === manager && r.package === name
-    )
-  ) return;
-  document.exceptions.push({
-    path: place.path,
-    manager,
-    package: name,
-    recorded_on: new Date().toISOString().slice(0, 10),
-    days,
+): Exceptions {
+  return mergeExceptions(document, {
+    schema: 1,
+    exceptions: [{
+      path: place.path,
+      manager,
+      package: name,
+      recorded_on: new Date().toISOString().slice(0, 10),
+      days,
+    }],
   });
-  await writeJson(`${root}/maintainer-exceptions.json`, document);
 }
-/** Report elapsed exclusions without changing the policy or ledger. */
+
+/** Report elapsed exclusions without changing the policy or exception records. */
 export function dueExceptions<M extends string>(
-  document: Awaited<ReturnType<typeof records>>,
+  document: Exceptions,
   manager: M,
   excluded: Set<string>,
 ) {

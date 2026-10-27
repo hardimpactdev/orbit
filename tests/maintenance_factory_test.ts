@@ -88,6 +88,21 @@ Deno.test({
               }];
             }
           }
+          if (group.id === 74) {
+            steps[1].dataArtifacts.push({
+              name: "exceptions",
+              attributes: {
+                schema: 1,
+                exceptions: [{
+                  path: ".",
+                  manager: "composer",
+                  package: "fixture/pkg",
+                  recorded_on: "2026-10-27",
+                  days: 7,
+                }],
+              },
+            });
+          }
           steps.at(-1).dataArtifacts[0].attributes = {
             head: group.head,
             tree: group.tree,
@@ -159,10 +174,10 @@ Deno.test({
       const module = `${dir}/extensions/behaviors/_lib/swamp_maintenance.ts`;
       const source = await Deno.readTextFile(module);
       const start = source.indexOf(
-        "  const inputs = maintenanceInputs",
+        "  let inputs = maintenanceInputs",
         source.indexOf("export async function runMaintenance("),
       );
-      const end = source.indexOf("\nfunction resource(", start);
+      const end = source.indexOf("\n/** Swamp stores worker receipts", start);
       assert(start > 0 && end > start);
       // Replace only the transport boundary. The driver, products and factory stay real.
       await Deno.writeTextFile(
@@ -170,6 +185,7 @@ Deno.test({
         source.slice(0, start) +
           `  const response = await http("GET", \`/fixture/maintenance/\${group}/\${request.mode}\`);
   if ((response.body!.data as Record<string, unknown>).lastError) return { state: "failed", lastError: String((response.body!.data as Record<string, unknown>).lastError) };
+  await recordMaintenanceExceptions(response.body!.data as WorkflowRun, args.dependencyProject!.projectId, context);
   return maintenanceResult(response.body!.data as WorkflowRun);
 }\n` + source.slice(end),
       );
@@ -190,7 +206,7 @@ import { DependencyProjectSchema } from "../../_lib/dependency_project_schema.ts
 const config = ${JSON.stringify(legacy)};
 export const behavior = {
   type: "@nckrtl/project-nckrtl-com", version: "2026.10.27.1", globalArguments: z.object({}),
-  resources: { configuration: { description: "Pre-retirement config", schema: DependencyProjectSchema.extend({ script: z.string() }), lifetime: "infinite", garbageCollection: 10 } },
+  resources: { configuration: { description: "Pre-retirement config", schema: DependencyProjectSchema.omit({ exceptions: true }).extend({ script: z.string() }), lifetime: "infinite", garbageCollection: 10 } },
   methods: { configuration: { description: "Write the pre-retirement fixture", arguments: z.object({}),
     execute: async (_args: unknown, context: { writeResource: (spec: string, name: string, value: unknown) => Promise<unknown> }) => ({ dataHandles: [await context.writeResource("configuration", "configuration", config)] }) } }
 };
@@ -351,7 +367,14 @@ export const behavior = {
           "--json",
         ),
       );
-      assertEquals(config.results[0].schema, 2);
+      assertEquals(config.results[0].schema, 3);
+      assertEquals(config.results[0].exceptions.exceptions, [{
+        path: ".",
+        manager: "composer",
+        package: "fixture/pkg",
+        recorded_on: "2026-10-27",
+        days: 7,
+      }]);
       assertEquals("script" in config.results[0], false);
       assertEquals(config.results[0].worker, {
         composerPaths: ["."],

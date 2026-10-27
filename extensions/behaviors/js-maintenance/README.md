@@ -5,6 +5,13 @@ supplied checkout. The checkout needs no maintenance package, PHP, or Composer
 for JavaScript work. This extension does not commit, publish, run project
 checks, or open PRs.
 
+`exceptions` supplies schema 1 release-age records from project config (default
+`{ "schema": 1, "exceptions": [] }`). No method reads or writes
+`maintainer-exceptions.json`. Security methods emit an `exceptions` resource
+before adding a package-manager exclusion. This receipt is returned even after a
+completed command failure when `captureFailure` is true. The caller persists it
+in the private project extension. These resources have an infinite lifetime.
+
 ## Inputs and resources
 
 All four methods take `cwd`, an existing checkout directory, and `paths`, a list
@@ -20,12 +27,12 @@ age to match `ceil(install.minimumReleaseAge / 86400)`. With no existing Bun age
 rule, no policy or exception is written. npm's one-install bypass does not need
 an assertion. Mixed summaries read Composer policy but do not change it.
 
-Each successful method writes one schema 1 resource of the same name (`detect`
-writes `detection`). Resources live for 30 days and retain 20 versions. Failures
-write no success resource. Invalid arguments exit 64; invalid paths or reports
-exit 70; missing tools exit 127. Update failures preserve the command exit code.
-A security update that leaves findings exits 1. An empty summary exits 1 with
-`No dependency changes to summarize.`
+Each successful method writes a primary schema 1 resource of the same name
+(`detect` writes `detection`). Resources live for 30 days and retain 20
+versions. Failures write no success resource. Invalid arguments exit 64; invalid
+paths or reports exit 70; missing tools exit 127. Update failures preserve the
+command exit code. A security update that leaves findings exits 1. An empty
+summary exits 1 with `No dependency changes to summarize.`
 
 Example method arguments:
 

@@ -71,6 +71,7 @@ jobs:
             cwd: '${{ inputs.cwd }}'
             paths: '${{ inputs.composerPaths }}'
             policy: '${{ inputs.composerCommon.policy }}'
+            exceptions: '${{ has(inputs.composerCommon.exceptions) ? inputs.composerCommon.exceptions : {"schema": 1, "exceptions": []} }}'
             captureFailure: true
       - name: js_detect
         guard: "${{ !(inputs.mode == 'package' && size(inputs.jsPaths) > 0) || (has(steps.composer) && has(steps.composer.outputs) && has(steps.composer.outputs.exitCode)) || (has(steps.js) && has(steps.js.outputs) && has(steps.js.outputs.exitCode)) || (has(steps.composer_detect) && has(steps.composer_detect.outputs) && has(steps.composer_detect.outputs.exitCode)) }}"
@@ -88,6 +89,7 @@ jobs:
             cwd: '${{ inputs.cwd }}'
             paths: '${{ inputs.jsPaths }}'
             policy: '${{ inputs.jsCommon.policy }}'
+            exceptions: '${{ has(inputs.jsCommon.exceptions) ? inputs.jsCommon.exceptions : {"schema": 1, "exceptions": []} }}'
             captureFailure: true
       - name: summary
         guard: "${{ !(inputs.mode == 'summary') }}"
@@ -105,6 +107,7 @@ jobs:
             cwd: '${{ inputs.cwd }}'
             paths: '${{ inputs.summary.paths }}'
             policy: '${{ inputs.summary.policy }}'
+            exceptions: '${{ has(inputs.summary.exceptions) ? inputs.summary.exceptions : {"schema": 1, "exceptions": []} }}'
             base: '${{ inputs.summary.base }}'
             captureFailure: true
       - name: after

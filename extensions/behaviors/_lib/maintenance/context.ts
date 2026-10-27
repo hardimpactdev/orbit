@@ -51,18 +51,32 @@ export function failureReceipts<
   for (const method of Object.values(methods)) {
     const execute = method.execute;
     method.execute = async (input, ctx) => {
+      const receipts = new Map<string, { name: string }>();
+      const recording: Context = {
+        ...ctx,
+        writeResource: async (spec, name, data) => {
+          const handle = await ctx.writeResource(spec, name, data);
+          receipts.set(handle.name, handle);
+          return handle;
+        },
+      };
+      let result;
       try {
-        return await execute(input, ctx);
+        result = await execute(input, recording);
       } catch (error) {
         if (
           !(input as { captureFailure?: boolean }).captureFailure ||
           !(error instanceof MaintenanceFailure) || ctx.signal?.aborted
         ) throw error;
-        return await write(ctx, "failure", FailureSchema, {
+        result = await write(recording, "failure", FailureSchema, {
           exitCode: error.exitCode || 70,
           message: error.message.slice(-16000),
         });
       }
+      for (const handle of result.dataHandles) {
+        receipts.set(handle.name, handle);
+      }
+      return { dataHandles: [...receipts.values()] };
     };
   }
   return methods;

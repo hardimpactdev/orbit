@@ -1,8 +1,10 @@
+import { write } from "../../_lib/maintenance/context.ts";
+import { type Context } from "../../_lib/maintenance/context.ts";
 import { z } from "npm:zod@4";
 import {
   dueExceptions,
+  ExceptionsSchema,
   recordException,
-  records,
 } from "../../_lib/maintenance/exceptions.ts";
 import {
   type CommonArgs,
@@ -60,10 +62,11 @@ async function bunfig(place: Place) {
   };
 }
 export async function allowSecurity(
-  root: string,
   place: Place,
   name: string,
   policy: CommonArgs["policy"],
+  document: CommonArgs["exceptions"],
+  ctx: Context,
 ) {
   const current = await bunfig(place);
   if (current === null) return;
@@ -73,7 +76,12 @@ export async function allowSecurity(
       64,
     );
   }
-  const document = await records(root);
+  await write(
+    ctx,
+    "exceptions",
+    ExceptionsSchema,
+    recordException(document, place, "js", name, current.days),
+  );
   if (!current.excludes.includes(name)) {
     const rendered = `minimumReleaseAgeExcludes = ${
       JSON.stringify([...current.excludes, name])
@@ -89,10 +97,12 @@ export async function allowSecurity(
       current.text.replace(current.section[0], () => section),
     );
   }
-  await recordException(root, document, place, "js", name, current.days);
 }
-export async function staleExceptions(root: string, places: Place[]) {
-  const document = await records(root), excluded = new Set<string>();
+export async function staleExceptions(
+  document: CommonArgs["exceptions"],
+  places: Place[],
+) {
+  const excluded = new Set<string>();
   if (!document.exceptions.length) return [];
   for (const place of places) {
     for (const name of (await bunfig(place))?.excludes ?? []) {

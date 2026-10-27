@@ -1,5 +1,5 @@
 import {
-  ConfigurationV2Schema,
+  ConfigurationV3Schema,
   readProjectConfiguration,
 } from "../extensions/behaviors/_lib/project_configuration.ts";
 import { projectConfig } from "../extensions/behaviors/_lib/project_extension.ts";
@@ -71,7 +71,7 @@ Deno.test("project extension returns config without a repository script and prod
 Deno.test("config refresh refuses stale, missing, wrong-project and duplicate extension records", async () => {
   const calls: unknown[] = [];
   let ok = true;
-  let config: unknown = { ...original, schema: 2 };
+  let config: unknown = { ...original, schema: 3 };
   const ctx = {
     runModel: (args: unknown) => {
       calls.push(args);
@@ -98,7 +98,7 @@ Deno.test("config refresh refuses stale, missing, wrong-project and duplicate ex
     "cannot read project extension",
   );
   ok = true;
-  config = { ...original, schema: 2, projectId: 99 };
+  config = { ...original, schema: 3, projectId: 99 };
   await assertRejects(
     () => projectConfigurations([], registered, ctx),
     Error,
@@ -277,7 +277,9 @@ Deno.test("detection cannot reuse a routine stage key with another maintenance m
   assertEquals(JSON.parse(identity), {
     schema: 2,
     routine: true,
-    dependencyProject: original,
+    dependencyProject: Object.fromEntries(
+      Object.entries(original).filter(([key]) => key !== "exceptions"),
+    ),
   });
   assert(inputIdentity({ ...args, detection: true }) !== identity);
 });
@@ -286,7 +288,8 @@ Deno.test("unchanged config reads reuse the resource and changed config writes o
   let saved: Record<string, unknown> | null = null;
   let versions = 0;
   const ctx = {
-    readResource: () => Promise.resolve(saved),
+    readResource: (name: string) =>
+      Promise.resolve(name === "configuration" ? saved : null),
     writeResource: (
       _spec: string,
       name: string,
@@ -339,7 +342,7 @@ Deno.test("cancelled schedule cleanup requires ended children, no assistance and
   ) assertEquals(cleanedCancelledGroup({ ...clean, ...changes }), false);
 });
 
-Deno.test("pre-retirement configuration is rewritten as v2 before the Gateway reads it", async () => {
+Deno.test("pre-retirement configuration is rewritten as v3 before the Gateway reads it", async () => {
   let saved = JSON.parse(
     await Deno.readTextFile(
       new URL(
@@ -350,7 +353,8 @@ Deno.test("pre-retirement configuration is rewritten as v2 before the Gateway re
   );
   let writes = 0;
   const ctx = {
-    readResource: () => Promise.resolve(structuredClone(saved)),
+    readResource: (name: string) =>
+      Promise.resolve(name === "configuration" ? structuredClone(saved) : null),
     writeResource: (
       _spec: string,
       name: string,
@@ -371,7 +375,7 @@ Deno.test("pre-retirement configuration is rewritten as v2 before the Gateway re
   assertEquals(await projectConfigurations([], registered, gateway, 20), [
     original,
   ]);
-  assertEquals(saved.schema, 2);
+  assertEquals(saved.schema, 3);
   assertEquals("script" in saved, false);
   assertEquals(writes, 1);
   assertEquals(await projectConfigurations([], registered, gateway, 20), [
@@ -390,17 +394,120 @@ Deno.test("configuration migration rejects unknown keys and versions instead of 
     ),
   );
   assertEquals(readProjectConfiguration(legacy), original);
-  assertEquals(readProjectConfiguration({ ...original, schema: 2 }), original);
+  assertEquals(readProjectConfiguration({ ...original, schema: 3 }), original);
   for (
     const invalid of [
       { ...legacy, extra: true },
-      { ...legacy, schema: 2 },
-      { ...original, schema: 3 },
+      { ...legacy, schema: 3 },
+      { ...original, schema: 4 },
       { ...legacy, script: "../outside" },
       { ...legacy, worker: undefined },
     ]
   ) {
-    assertEquals(ConfigurationV2Schema.safeParse(invalid).success, false);
+    assertEquals(ConfigurationV3Schema.safeParse(invalid).success, false);
     assertThrows(() => readProjectConfiguration(invalid));
   }
+});
+
+Deno.test("project exception receipts survive config refresh and duplicate delivery without resetting dates", async () => {
+  const config = {
+    ...original,
+    exceptions: {
+      schema: 1 as const,
+      exceptions: [{
+        path: ".",
+        manager: "composer" as const,
+        package: "seed/pkg",
+        recorded_on: "2026-10-26",
+        days: 7,
+      }],
+    },
+  };
+  const extension = projectConfig("@nckrtl/project-fixture", config);
+  const resources = new Map<string, Record<string, unknown>>();
+  let writes = 0;
+  const context = {
+    readResource: (name: string) =>
+      Promise.resolve(structuredClone(resources.get(name) ?? null)),
+    writeResource: (
+      _spec: string,
+      name: string,
+      value: Record<string, unknown>,
+    ) => {
+      resources.set(name, structuredClone(value));
+      writes++;
+      return Promise.resolve({ name });
+    },
+  };
+  const receipt = {
+    schema: 1 as const,
+    exceptions: [{
+      path: ".",
+      manager: "js" as const,
+      package: "fresh",
+      recorded_on: "2026-10-27",
+      days: 7,
+    }],
+  };
+  await extension.methods.record_exceptions.execute(receipt, context);
+  await extension.methods.configuration.execute({}, context);
+  const saved = readProjectConfiguration(resources.get("configuration"));
+  assertEquals(saved.exceptions.exceptions, [
+    ...config.exceptions.exceptions,
+    ...receipt.exceptions,
+  ]);
+  const count = writes;
+  await extension.methods.record_exceptions.execute({
+    ...receipt,
+    exceptions: [{
+      ...receipt.exceptions[0],
+      recorded_on: "2026-11-01",
+      days: 14,
+    }],
+  }, context);
+  await extension.methods.configuration.execute({}, context);
+  assertEquals(writes, count);
+  assertEquals(readProjectConfiguration(resources.get("configuration")), saved);
+  await assertRejects(
+    () =>
+      extension.methods.record_exceptions.execute({
+        ...receipt,
+        exceptions: [{ ...receipt.exceptions[0], path: "other" }],
+      }, context),
+    Error,
+    "not configured",
+  );
+});
+
+Deno.test("schema 2 configuration migrates to schema 3 with the project exception seed", async () => {
+  const { script: _script, ...previous } = JSON.parse(
+    await Deno.readTextFile(
+      new URL(
+        "./fixtures/project-extensions/configuration-v1.json",
+        import.meta.url,
+      ),
+    ),
+  );
+  const resources = new Map<string, Record<string, unknown>>([[
+    "configuration",
+    { ...previous, schema: 2 },
+  ]]);
+  const ctx = {
+    readResource: (name: string) =>
+      Promise.resolve(resources.get(name) ?? null),
+    writeResource: (
+      _spec: string,
+      name: string,
+      value: Record<string, unknown>,
+    ) => {
+      resources.set(name, value);
+      return Promise.resolve({ name });
+    },
+  };
+  await behavior.methods.configuration.execute({}, ctx);
+  assertEquals(resources.get("configuration")!.schema, 3);
+  assertEquals(
+    readProjectConfiguration(resources.get("configuration")),
+    original,
+  );
 });

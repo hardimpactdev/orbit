@@ -39,6 +39,13 @@ Pass the input file to
 advisory above illustrate the input shape; detect the current findings before
 choosing a target.
 
+`exceptions` supplies schema 1 release-age records from project config (default
+`{ "schema": 1, "exceptions": [] }`). No method reads or writes
+`maintainer-exceptions.json`. Security methods emit an `exceptions` resource
+before adding a package-manager exclusion. This receipt is returned even after a
+completed command failure when `captureFailure` is true. The caller persists it
+in the private project extension. These resources have an infinite lifetime.
+
 ## Methods
 
 - `routine`: sequential `composer update --no-interaction` in every configured

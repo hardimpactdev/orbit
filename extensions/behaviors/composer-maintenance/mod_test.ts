@@ -1,4 +1,8 @@
 import {
+  emptyExceptions,
+  type Exceptions,
+} from "../_lib/maintenance/exceptions.ts";
+import {
   assert,
   assertEquals,
   assertRejects,
@@ -49,6 +53,8 @@ const php = await binary("php");
 const git = await binary("git");
 
 class Repo {
+  exceptions: unknown = emptyExceptions();
+  handles: string[] = [];
   constructor(readonly temp: string, readonly cwd: string) {}
   async json(file: string, data: unknown, path = ".") {
     const dir = `${this.cwd}/${path}`;
@@ -109,11 +115,33 @@ class Repo {
       a: unknown,
       c: typeof context,
     ) => Promise<unknown>;
-    await execute({ cwd: this.cwd, policy, ...args }, context);
-    const outputs = getWrittenResources();
+    try {
+      const returned = await execute({
+        cwd: this.cwd,
+        policy,
+        exceptions: this.exceptions,
+        ...args,
+      }, context) as { dataHandles: { name: string }[] };
+      this.handles = returned.dataHandles.map((handle) => handle.name);
+    } finally {
+      const receipt = getWrittenResources().find((r) =>
+        r.name === "exceptions"
+      );
+      if (receipt) this.exceptions = receipt.data;
+    }
+    const outputs = getWrittenResources().filter((r) =>
+      r.name !== "exceptions"
+    );
     assertEquals(outputs.length, 1);
     const output = outputs[0];
-    const spec = behavior.resources[method === "detect" ? "detection" : method];
+    const spec = behavior
+      .resources[
+        output.name === "failure"
+          ? "failure"
+          : method === "detect"
+          ? "detection"
+          : method
+      ];
     assert(spec.schema.safeParse(output.data).success);
     return output.data as Record<string, unknown>;
   }
@@ -415,7 +443,7 @@ test("security clears both advisories without vendor and records one exception",
     "minimum-release-age": 7,
     "minimum-release-age-exclude": ["existing/pkg", "livewire/livewire"],
   });
-  assertEquals(await r.read("maintainer-exceptions.json"), {
+  assertEquals(r.exceptions as Exceptions, {
     schema: 1,
     exceptions: [{
       path: ".",
@@ -454,11 +482,11 @@ test("security rejects remaining and newly reported advisories", async (r) => {
 test("security does not duplicate an exclusion or reset its date", async (r) => {
   const fixture = { [audit]: [{ code: 1, data: finding }, emptyAudit] };
   await r.execute("package", security, fixture);
-  const document = await r.read("maintainer-exceptions.json");
+  const document = r.exceptions as Exceptions;
   document.exceptions[0].recorded_on = "2026-10-01";
-  await r.json("maintainer-exceptions.json", document);
+  r.exceptions = document;
   await r.execute("package", security, fixture);
-  assertEquals(await r.read("maintainer-exceptions.json"), document);
+  assertEquals(r.exceptions as Exceptions, document);
   assertEquals((await r.read("vet.json"))["minimum-release-age-exclude"], [
     "existing/pkg",
     "livewire/livewire",
@@ -575,7 +603,7 @@ test("detect reports a due exception and leaves policy untouched", async (r) => 
       days: 7,
     }],
   };
-  await r.json("maintainer-exceptions.json", document);
+  r.exceptions = document;
   const vet = await Deno.readTextFile(`${r.cwd}/vet.json`);
   assertEquals(await r.execute("detect"), {
     schema: 1,
@@ -589,11 +617,11 @@ test("detect reports a due exception and leaves policy untouched", async (r) => 
     }],
   });
   assertEquals(await Deno.readTextFile(`${r.cwd}/vet.json`), vet);
-  assertEquals(await r.read("maintainer-exceptions.json"), document);
+  assertEquals(r.exceptions as Exceptions, document);
 });
 for (const removed of [false, true]) {
   test(`detect omits an exception that is ${removed ? "removed" : "not due"}`, async (r) => {
-    await r.json("maintainer-exceptions.json", {
+    r.exceptions = {
       schema: 1,
       exceptions: [{
         path: ".",
@@ -604,7 +632,7 @@ for (const removed of [false, true]) {
           : new Date().toISOString().slice(0, 10),
         days: 7,
       }],
-    });
+    };
     assertEquals(await r.execute("detect"), { schema: 1, candidates: [] });
   });
 }
@@ -621,8 +649,8 @@ for (
   }]
 ) {
   test(`detect rejects unusable exception records ${JSON.stringify(document)}`, async (r) => {
-    await r.json("maintainer-exceptions.json", document);
-    await r.failure("detect", {}, emptyDetect, 70);
+    r.exceptions = document;
+    await r.failure("detect", {}, emptyDetect, 64);
   });
 }
 for (
@@ -1012,7 +1040,7 @@ test("summary preserves the original Composer-only patch case", async (r) => {
     ),
   );
 });
-test("security records the configured path in the root exception ledger", async (r) => {
+test("security records the configured path in the project exception receipt", async (r) => {
   await r.json("composer.json", manifest, "server/web");
   await r.json(
     "vet.json",
@@ -1031,19 +1059,19 @@ test("security records the configured path in the root exception ledger", async 
     "minimum-release-age-exclude": ["livewire/livewire"],
   });
   assertEquals(
-    (await r.read("maintainer-exceptions.json")).exceptions[0].path,
+    (r.exceptions as Exceptions).exceptions[0].path,
     "server/web",
   );
 });
-test("security validates an existing ledger before changing Vet", async (r) => {
+test("security validates an exception input before changing Vet", async (r) => {
   const before = await r.read("vet.json");
-  await r.json("maintainer-exceptions.json", { schema: 2, exceptions: [] });
+  r.exceptions = { schema: 2, exceptions: [] };
   await r.failure(
     "package",
     security,
     { [audit]: [{ code: 1, data: finding }] },
-    70,
-    "Cannot read maintainer-exceptions.json",
+    64,
+    "exceptions",
   );
   assertEquals(await r.read("vet.json"), before);
   assertEquals(await r.read("composer.json"), manifest);
@@ -1112,17 +1140,17 @@ test("security preserves extra ledger and record keys when adding an exception",
     advisoryIds: ["GHSA-existing"],
     note: { owner: "project" },
   };
-  await r.json("maintainer-exceptions.json", {
+  r.exceptions = {
     schema: 1,
     notes: { owner: "project" },
     exceptions: [record],
-  });
+  };
   await r.execute("package", security, {
     [audit]: [{ code: 1, data: finding }, emptyAudit],
   });
-  const result = await r.read("maintainer-exceptions.json");
+  const result = r.exceptions as Exceptions;
   assertEquals(result.notes, { owner: "project" });
-  assertEquals(result.exceptions[0], record);
+  assertEquals(result.exceptions[0] as Record<string, unknown>, record);
   assertEquals(result.exceptions.length, 2);
   assertEquals(result.exceptions[1].package, "livewire/livewire");
 });
@@ -1141,4 +1169,38 @@ test("JSON report stdout remains limited to 8 MiB in bytes", async (r) => {
     70,
     "Output from composer is too large",
   );
+});
+
+test("repository exception files are ignored and never overwritten", async (r) => {
+  const original = '{"schema":99,"must":"stay untouched"}';
+  await Deno.writeTextFile(`${r.cwd}/maintainer-exceptions.json`, original);
+  await r.execute("package", security, {
+    [audit]: [{ code: 1, data: finding }, emptyAudit],
+  });
+  assertEquals(
+    (r.exceptions as Exceptions).exceptions[0].package,
+    "livewire/livewire",
+  );
+  assertEquals(
+    await Deno.readTextFile(`${r.cwd}/maintainer-exceptions.json`),
+    original,
+  );
+  await r.execute("detect");
+  assertEquals(
+    await Deno.readTextFile(`${r.cwd}/maintainer-exceptions.json`),
+    original,
+  );
+});
+test("a failed security command still returns its exception receipt", async (r) => {
+  const result = await r.execute("package", {
+    ...security,
+    captureFailure: true,
+  }, { [audit]: [{ code: 1, data: finding }] });
+  assertEquals(result.exitCode, 1);
+  assertEquals(r.handles, ["exceptions", "failure"]);
+  assertEquals(
+    (r.exceptions as Exceptions).exceptions[0].package,
+    "livewire/livewire",
+  );
+  assertEquals(await r.exists("maintainer-exceptions.json"), false);
 });

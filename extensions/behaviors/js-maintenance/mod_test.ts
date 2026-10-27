@@ -1,4 +1,8 @@
 import {
+  emptyExceptions,
+  type Exceptions,
+} from "../_lib/maintenance/exceptions.ts";
+import {
   assert,
   assertEquals,
   assertRejects,
@@ -51,6 +55,8 @@ const php = await binary("php");
 const git = await binary("git");
 
 class Repo {
+  exceptions: unknown = emptyExceptions();
+  handles: string[] = [];
   constructor(readonly temp: string, readonly cwd: string) {}
   async json(file: string, data: unknown, path = ".") {
     const dir = `${this.cwd}/${path}`;
@@ -111,19 +117,37 @@ class Repo {
       a: unknown,
       c: typeof context,
     ) => Promise<unknown>;
-    await execute({
-      cwd: this.cwd,
-      policy: Object.fromEntries(
-        ((args.paths as string[] | undefined) ?? ["."]).map(
-          (p) => [p, { minimumReleaseAgeDays: 7 }],
+    try {
+      const returned = await execute({
+        cwd: this.cwd,
+        exceptions: this.exceptions,
+        policy: Object.fromEntries(
+          ((args.paths as string[] | undefined) ?? ["."]).map(
+            (p) => [p, { minimumReleaseAgeDays: 7 }],
+          ),
         ),
-      ),
-      ...args,
-    }, context);
-    const outputs = getWrittenResources();
+        ...args,
+      }, context) as { dataHandles: { name: string }[] };
+      this.handles = returned.dataHandles.map((handle) => handle.name);
+    } finally {
+      const receipt = getWrittenResources().find((r) =>
+        r.name === "exceptions"
+      );
+      if (receipt) this.exceptions = receipt.data;
+    }
+    const outputs = getWrittenResources().filter((r) =>
+      r.name !== "exceptions"
+    );
     assertEquals(outputs.length, 1);
     const output = outputs[0];
-    const spec = behavior.resources[method === "detect" ? "detection" : method];
+    const spec = behavior
+      .resources[
+        output.name === "failure"
+          ? "failure"
+          : method === "detect"
+          ? "detection"
+          : method
+      ];
     assert(spec.schema.safeParse(output.data).success);
     return output.data as Record<string, unknown>;
   }
@@ -876,7 +900,7 @@ test("Bun security changes only the named release-age exclusion and records its 
     `${r.cwd}/bunfig.toml`,
     '[install]\nminimumReleaseAge = 604800\nminimumReleaseAgeExcludes = ["existing"]\n\n[test]\ncoverage = true\n',
   );
-  await r.json("maintainer-exceptions.json", {
+  r.exceptions = {
     schema: 1,
     owner: "keep",
     exceptions: [{
@@ -887,7 +911,7 @@ test("Bun security changes only the named release-age exclusion and records its 
       days: 7,
       note: "keep",
     }],
-  });
+  };
   await r.execute("package", security, {
     [audit]: [{ data: bunFinding }, { data: {} }],
   });
@@ -897,7 +921,7 @@ test("Bun security changes only the named release-age exclusion and records its 
     'minimumReleaseAgeExcludes = ["existing","shadcn"]',
   );
   assertStringIncludes(text, "[test]\ncoverage = true");
-  const ledger = await r.read("maintainer-exceptions.json");
+  const ledger = r.exceptions as Exceptions;
   assertEquals(ledger.owner, "keep");
   assertEquals(ledger.exceptions[0].note, "keep");
   assertEquals(ledger.exceptions[1], {
@@ -993,23 +1017,23 @@ test("Bun exclusion and record are not duplicated on retry", async (r) => {
   await r.execute("package", security, responses);
   assertEquals(await Deno.readTextFile(`${r.cwd}/bunfig.toml`), before);
   assertEquals(
-    (await r.read("maintainer-exceptions.json")).exceptions.length,
+    (r.exceptions as Exceptions).exceptions.length,
     1,
   );
 });
-test("Bun malformed exception ledger fails before exclusion write", async (r) => {
+test("Bun malformed exception input fails before exclusion write", async (r) => {
   await r.bun({ shadcn: "^4" }, { shadcn: bunEntry("shadcn", "4.21.0") });
   await Deno.writeTextFile(
     `${r.cwd}/bunfig.toml`,
     "[install]\nminimumReleaseAge = 604800\n",
   );
-  await r.json("maintainer-exceptions.json", { schema: 9 });
+  r.exceptions = { schema: 9 };
   await r.failure(
     "package",
     security,
     { [audit]: [{ data: bunFinding }] },
-    70,
-    "maintainer-exceptions",
+    64,
+    "exceptions",
   );
   assert(
     !(await Deno.readTextFile(`${r.cwd}/bunfig.toml`)).includes("Excludes"),
@@ -1021,7 +1045,7 @@ test("stale Bun exceptions retain the maintainer date and manager contract", asy
     `${r.cwd}/bunfig.toml`,
     '[install]\nminimumReleaseAge = 604800\nminimumReleaseAgeExcludes = ["shadcn"]\n',
   );
-  await r.json("maintainer-exceptions.json", {
+  r.exceptions = {
     schema: 1,
     exceptions: [{
       path: ".",
@@ -1036,7 +1060,7 @@ test("stale Bun exceptions retain the maintainer date and manager contract", asy
       recorded_on: "2026-01-01",
       days: 7,
     }],
-  });
+  };
   const result = await r.execute("detect", {}, bunReports(""));
   assertEquals(result.stale_exceptions, [{
     path: ".",
@@ -1822,4 +1846,42 @@ test("Bun package mode attaches the real transitive advisory before adding its o
     await Deno.readTextFile(`${r.cwd}/bunfig.toml`),
     'minimumReleaseAgeExcludes = ["shadcn"]',
   );
+});
+
+test("repository exception files are ignored and never overwritten", async (r) => {
+  await r.bun({ shadcn: "^4" }, { shadcn: bunEntry("shadcn", "4.21.0") });
+  await Deno.writeTextFile(
+    `${r.cwd}/bunfig.toml`,
+    "[install]\nminimumReleaseAge = 604800\n",
+  );
+  const original = '{"schema":99,"must":"stay untouched"}';
+  await Deno.writeTextFile(`${r.cwd}/maintainer-exceptions.json`, original);
+  await r.execute("package", security, {
+    [audit]: [{ data: bunFinding }, { data: {} }],
+  });
+  assertEquals((r.exceptions as Exceptions).exceptions[0].package, "shadcn");
+  assertEquals(
+    await Deno.readTextFile(`${r.cwd}/maintainer-exceptions.json`),
+    original,
+  );
+  await r.execute("detect", {}, bunReports(""));
+  assertEquals(
+    await Deno.readTextFile(`${r.cwd}/maintainer-exceptions.json`),
+    original,
+  );
+});
+test("a failed Bun security command still returns its exception receipt", async (r) => {
+  await r.bun({ shadcn: "^4" }, { shadcn: bunEntry("shadcn", "4.21.0") });
+  await Deno.writeTextFile(
+    `${r.cwd}/bunfig.toml`,
+    "[install]\nminimumReleaseAge = 604800\n",
+  );
+  const result = await r.execute("package", {
+    ...security,
+    captureFailure: true,
+  }, { [audit]: [{ data: bunFinding }] });
+  assertEquals(result.exitCode, 1);
+  assertEquals(r.handles, ["exceptions", "failure"]);
+  assertEquals((r.exceptions as Exceptions).exceptions[0].package, "shadcn");
+  assertEquals(await r.exists("maintainer-exceptions.json"), false);
 });

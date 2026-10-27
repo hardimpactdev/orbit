@@ -52,13 +52,19 @@ import json,sys,pathlib
 if pathlib.Path('fail').exists(): sys.exit(23)
 if sys.argv[1]=='update':
  manifest=json.loads(pathlib.Path('composer.json').read_text())
- version='2.0.0' if manifest['require']['vendor/pkg']=='^2.0.0' else '1.1.0'
+ if pathlib.Path('fail-security-update').exists(): sys.exit(23)
+ version=manifest['require']['vendor/pkg'].removeprefix('^')
+ if version=='1.0': version='1.1.0'
  pathlib.Path('composer.lock').write_text(json.dumps({'packages':[{'name':'vendor/pkg','version':version}],'packages-dev':[]}))
 elif sys.argv[1]=='require':
  name,version=sys.argv[2].split(':',1)
  manifest=json.loads(pathlib.Path('composer.json').read_text());manifest['require'][name]=version
  pathlib.Path('composer.json').write_text(json.dumps(manifest))
-elif sys.argv[1]=='audit':print('{"advisories":[]}')
+elif sys.argv[1]=='audit':
+ fixed=pathlib.Path('security-target')
+ version=json.loads(pathlib.Path('composer.lock').read_text())['packages'][0]['version']
+ advisories={'vendor/pkg':[{'advisoryId':'PKSA-fixture-one','title':'fixture security','link':'https://example.test/advisory','affectedVersions':'<'+fixed.read_text()}]} if fixed.exists() and version!=fixed.read_text() else []
+ print(json.dumps({'advisories':advisories}))
 elif sys.argv[1]=='outdated':print('{"locked":[]}')
 else:sys.exit(64)
 ''')
@@ -223,6 +229,20 @@ else:sys.exit(64)
                     summary = run("summary", 4)
                     self.assertIn("vendor/pkg", summary["summary"]["summary"]["text"])
                     self.assertEqual(summary["before"]["snapshot"], summary["after"]["snapshot"])
+                    (work / "security-target").write_text("2.0.1")
+                    common["exceptions"] = {"schema": 1, "exceptions": []}
+                    security = run("package", 6, path=".", package="vendor/pkg", version="2.0.1", purpose="security", advisoryIds=["PKSA-fixture-one"])
+                    recorded = security["composer"]["exceptions"]
+                    self.assertEqual(recorded["exceptions"][0]["package"], "vendor/pkg")
+                    self.assertEqual(recorded["exceptions"][0]["days"], 7)
+                    self.assertFalse((work / "maintainer-exceptions.json").exists())
+                    common["exceptions"] = recorded
+                    (work / "security-target").write_text("2.0.2")
+                    (work / "fail-security-update").touch()
+                    failed_security = run("package", 7, path=".", package="vendor/pkg", version="2.0.2", purpose="security", advisoryIds=["PKSA-fixture-one"])
+                    self.assertEqual(failed_security["composer"]["exceptions"], recorded)
+                    self.assertEqual(failed_security["composer"]["failure"]["exitCode"], 23)
+                    self.assertFalse((work / "maintainer-exceptions.json").exists())
                     (work / "fail").touch()
                     failure = run("routine", 5)
                     self.assertEqual(failure["composer"]["failure"]["exitCode"], 23)

@@ -1,3 +1,8 @@
+import {
+  emptyExceptions,
+  ExceptionsSchema,
+  mergeExceptions,
+} from "./maintenance/exceptions.ts";
 import { type DependencyProject } from "./dependency_projects.ts";
 import { type Http, type StageArgs } from "./gateway_stage.ts";
 import {
@@ -14,6 +19,7 @@ import {
 
 export interface MaintenanceContext {
   globalArgs: {
+    projectExtensions?: { projectId: number; type: string }[];
     enrollmentVault: string;
     workerUrl: string;
     serveUrl: string;
@@ -209,6 +215,7 @@ export function maintenanceInputs(
   args: StageArgs,
   group: number,
   request: Record<string, unknown>,
+  retained?: Record<string, unknown>,
 ): Record<string, unknown> & { key: string } {
   const worker = project.worker!;
   const target = args.packageTarget;
@@ -234,6 +241,7 @@ export function maintenanceInputs(
     paths,
     policy: policy(paths),
     captureFailure: true,
+    exceptions: project.exceptions,
   });
   const packageInput = target && mode === "package"
     ? {
@@ -245,7 +253,7 @@ export function maintenanceInputs(
     }
     : {};
   const all = [...new Set([...worker.composerPaths, ...worker.jsPaths])];
-  return {
+  const inputs: Record<string, unknown> & { key: string } = {
     key: args.stage === "publish" ? `${args.key}.summary` : args.key,
     name: (args.stage === "publish" ? `${args.key}.summary` : args.key)
       .replaceAll(".", "-"),
@@ -264,6 +272,20 @@ export function maintenanceInputs(
       ...(request.base ? { base: request.base } : {}),
     },
   };
+  if (retained) {
+    // Exception history is audit metadata. An existing workflow keeps its exact
+    // snapshot, including inputs saved before this field existed.
+    for (
+      const field of ["composer", "js", "composerCommon", "jsCommon", "summary"]
+    ) {
+      const prior = retained[field] as Record<string, unknown>;
+      const current = inputs[field] as Record<string, unknown>;
+      if (Object.hasOwn(prior, "exceptions")) {
+        current.exceptions = prior.exceptions;
+      } else delete current.exceptions;
+    }
+  }
+  return inputs;
 }
 
 export interface MaintenanceResult {
@@ -280,19 +302,30 @@ export async function runMaintenance(
   context: MaintenanceContext,
   http: Http,
 ): Promise<MaintenanceResult> {
-  const inputs = maintenanceInputs(
+  let inputs = maintenanceInputs(
     args.dependencyProject!,
     args,
     group,
     request,
   );
+  const workflow = workflowControl(context);
+  const retained = await workflow.read(inputs.key);
+  if (retained) {
+    inputs = maintenanceInputs(
+      args.dependencyProject!,
+      args,
+      group,
+      request,
+      retained.inputs,
+    );
+  }
   let run: WorkflowRun | null;
   try {
     run = await ensurePlacedMaintenance(
       group,
       inputs,
       workerControl(context, http),
-      workflowControl(context),
+      workflow,
     );
   } catch (error) {
     if (!(error instanceof MaintenanceAttention)) throw error;
@@ -305,7 +338,48 @@ export async function runMaintenance(
   if (!run || ["running", "pending"].includes(run.status)) {
     return { state: "running", ...(run ? { runId: run.id } : {}) };
   }
+  await recordMaintenanceExceptions(
+    run,
+    args.dependencyProject!.projectId,
+    context,
+  );
   return maintenanceResult(run);
+}
+
+/** Swamp stores worker receipts on the owning private project extension. */
+export async function recordMaintenanceExceptions(
+  run: WorkflowRun,
+  projectId: number,
+  context: MaintenanceContext,
+) {
+  const documents = run.jobs.flatMap((job) =>
+    job.steps.flatMap((step) => {
+      const receipt = resource(step, "exceptions");
+      return receipt ? [ExceptionsSchema.parse(receipt)] : [];
+    })
+  );
+  if (!documents.length) return;
+  const exceptions = mergeExceptions(emptyExceptions(), ...documents);
+  if (!exceptions.exceptions.length) return;
+  const entry = context.globalArgs.projectExtensions?.find((entry) =>
+    entry.projectId === projectId
+  );
+  if (!entry) {
+    throw new Error(
+      `no project extension owns exceptions for Project ${projectId}`,
+    );
+  }
+  const result = await context.runModel({
+    modelType: entry.type,
+    name: entry.type.slice("@nckrtl/".length),
+    method: "record_exceptions",
+    arguments: exceptions,
+  });
+  if (!result.ok) {
+    throw new Error(
+      `cannot record project exceptions for Project ${projectId}`,
+    );
+  }
 }
 
 function resource(

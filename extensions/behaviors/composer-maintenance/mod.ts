@@ -1,3 +1,4 @@
+import { ExceptionsSchema } from "../_lib/maintenance/exceptions.ts";
 /** Composer maintenance in a supplied checkout, with no orchestration dependency. */
 import {
   type Context,
@@ -77,6 +78,12 @@ export const behavior = {
   globalArguments: z.strictObject({}),
   resources: {
     failure: failureResource,
+    exceptions: {
+      description: "Release-age exception receipts",
+      schema: ExceptionsSchema,
+      lifetime: "infinite",
+      garbageCollection: 20,
+    },
     routine: {
       description: "Completed Composer routine paths",
       schema: RoutineSchema,
@@ -185,7 +192,7 @@ export const behavior = {
             candidates.set(key, row);
           }
         }
-        const stale = await staleExceptions(project.root, project.places);
+        const stale = await staleExceptions(args.exceptions, project.places);
         return await write(ctx, "detection", DetectionSchema, {
           schema: 1,
           candidates: [...candidates.keys()].sort().map((key) =>
@@ -237,7 +244,13 @@ export const behavior = {
             );
           }
           if (before.length) {
-            await allowSecurity(project.root, place, args.package, args.policy);
+            await allowSecurity(
+              place,
+              args.package,
+              args.policy,
+              args.exceptions,
+              ctx,
+            );
           }
         }
         const target = args.purpose === "major"

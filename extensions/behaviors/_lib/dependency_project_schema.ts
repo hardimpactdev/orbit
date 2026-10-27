@@ -1,4 +1,5 @@
 import { z } from "npm:zod@4";
+import { emptyExceptions, ExceptionsSchema } from "./maintenance/exceptions.ts";
 import { PolicySchema } from "./maintenance/policy_schema.ts";
 
 const MaintenancePath = z.string().min(1).refine(
@@ -14,6 +15,7 @@ const MaintenancePaths = z.array(MaintenancePath).refine(
 );
 
 export const DependencyProjectSchema = z.object({
+  exceptions: ExceptionsSchema.default(emptyExceptions),
   projectId: z.number().int().positive(),
   repository: z.string().min(1),
   worker: z.object({

@@ -181,3 +181,37 @@ Deno.test("the fleet registers all 18 projects once and owns private, correctly 
     }
   }
 });
+
+Deno.test("private project config preserves every exception ledger found in the 20-repository inventory", async () => {
+  const inventory = JSON.parse(
+    await Deno.readTextFile(
+      new URL(
+        "./fixtures/project-extensions/exception-inventory.json",
+        import.meta.url,
+      ),
+    ),
+  ) as {
+    name: string;
+    nameWithOwner: string;
+    fileSha?: string;
+    exceptions: unknown;
+  }[];
+  assertEquals(inventory.length, 20);
+  const withLedger = inventory.filter((row) => row.exceptions !== null);
+  assertEquals(withLedger.map((row) => row.nameWithOwner), [
+    "nckrtl/recall",
+    "hardimpactdev/laravel-toolbar-site",
+    "nckrtl/operator-website",
+    "nckrtl/operator",
+  ]);
+  for (const row of withLedger) {
+    assert(/^[a-f0-9]{40}$/.test(row.fileSha!));
+    const { behavior } = await import(
+      new URL(`extensions/behaviors/projects/${row.name}/mod.ts`, repo).href
+    );
+    const { context, getWrittenResources } = createModelTestContext();
+    await behavior.methods.configuration.execute({}, context);
+    const config = readProjectConfiguration(getWrittenResources()[0].data);
+    assertEquals(config.exceptions, row.exceptions);
+  }
+});

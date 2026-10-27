@@ -1,0 +1,210 @@
+[
+  {
+    "defaultBranchRef": {
+      "name": "main"
+    },
+    "name": "launch-starter-kit",
+    "nameWithOwner": "nckrtl/launch-starter-kit",
+    "exceptions": null
+  },
+  {
+    "defaultBranchRef": {
+      "name": "main"
+    },
+    "name": "launch",
+    "nameWithOwner": "nckrtl/launch",
+    "exceptions": null
+  },
+  {
+    "defaultBranchRef": {
+      "name": "main"
+    },
+    "name": "treadmill-website",
+    "nameWithOwner": "nckrtl/treadmill-website",
+    "exceptions": null
+  },
+  {
+    "defaultBranchRef": {
+      "name": "main"
+    },
+    "name": "orbit-website",
+    "nameWithOwner": "hardimpactdev/orbit-website",
+    "exceptions": null
+  },
+  {
+    "defaultBranchRef": {
+      "name": "main"
+    },
+    "name": "website",
+    "nameWithOwner": "nckrtl/website",
+    "exceptions": null
+  },
+  {
+    "defaultBranchRef": {
+      "name": "main"
+    },
+    "name": "recall",
+    "nameWithOwner": "nckrtl/recall",
+    "fileSha": "11d6a17719ec3ff2f8490ee0bae0d54b7ace3114",
+    "exceptions": {
+      "schema": 1,
+      "exceptions": [
+        {
+          "path": ".",
+          "manager": "composer",
+          "package": "hardimpactdev/maintainer",
+          "recorded_on": "2026-10-26",
+          "days": 7
+        }
+      ]
+    }
+  },
+  {
+    "defaultBranchRef": {
+      "name": "main"
+    },
+    "name": "ai-cli-proxy",
+    "nameWithOwner": "nckrtl/ai-cli-proxy",
+    "exceptions": null
+  },
+  {
+    "defaultBranchRef": {
+      "name": "main"
+    },
+    "name": "laravel-toolbar-site",
+    "nameWithOwner": "hardimpactdev/laravel-toolbar-site",
+    "fileSha": "11d6a17719ec3ff2f8490ee0bae0d54b7ace3114",
+    "exceptions": {
+      "schema": 1,
+      "exceptions": [
+        {
+          "path": ".",
+          "manager": "composer",
+          "package": "hardimpactdev/maintainer",
+          "recorded_on": "2026-10-26",
+          "days": 7
+        }
+      ]
+    }
+  },
+  {
+    "defaultBranchRef": {
+      "name": "main"
+    },
+    "name": "operator-website",
+    "nameWithOwner": "nckrtl/operator-website",
+    "fileSha": "11d6a17719ec3ff2f8490ee0bae0d54b7ace3114",
+    "exceptions": {
+      "schema": 1,
+      "exceptions": [
+        {
+          "path": ".",
+          "manager": "composer",
+          "package": "hardimpactdev/maintainer",
+          "recorded_on": "2026-10-26",
+          "days": 7
+        }
+      ]
+    }
+  },
+  {
+    "defaultBranchRef": {
+      "name": "main"
+    },
+    "name": "operator",
+    "nameWithOwner": "nckrtl/operator",
+    "fileSha": "cdc7c687ab971fabcae9ca61348ce6d1e17c3b11",
+    "exceptions": {
+      "schema": 1,
+      "exceptions": [
+        {
+          "path": "server/web",
+          "manager": "composer",
+          "package": "hardimpactdev/maintainer",
+          "recorded_on": "2026-10-26",
+          "days": 7
+        }
+      ]
+    }
+  },
+  {
+    "defaultBranchRef": {
+      "name": "main"
+    },
+    "name": "fitta",
+    "nameWithOwner": "nckrtl/fitta",
+    "exceptions": null
+  },
+  {
+    "defaultBranchRef": {
+      "name": "main"
+    },
+    "name": "house-italy",
+    "nameWithOwner": "nckrtl/house-italy",
+    "exceptions": null
+  },
+  {
+    "defaultBranchRef": {
+      "name": "main"
+    },
+    "name": "lindaretel",
+    "nameWithOwner": "hardimpactdev/lindaretel",
+    "exceptions": null
+  },
+  {
+    "defaultBranchRef": {
+      "name": "main"
+    },
+    "name": "srpm",
+    "nameWithOwner": "hardimpactdev/srpm",
+    "exceptions": null
+  },
+  {
+    "defaultBranchRef": {
+      "name": "main"
+    },
+    "name": "tankwerk",
+    "nameWithOwner": "hardimpactdev/tankwerk",
+    "exceptions": null
+  },
+  {
+    "defaultBranchRef": {
+      "name": "main"
+    },
+    "name": "ditis-hr",
+    "nameWithOwner": "hardimpactdev/ditis-hr",
+    "exceptions": null
+  },
+  {
+    "defaultBranchRef": {
+      "name": "main"
+    },
+    "name": "platform11",
+    "nameWithOwner": "hardimpactdev/platform11",
+    "exceptions": null
+  },
+  {
+    "defaultBranchRef": {
+      "name": "main"
+    },
+    "name": "horizon-new-dawn-website",
+    "nameWithOwner": "nckrtl/horizon-new-dawn-website",
+    "exceptions": null
+  },
+  {
+    "defaultBranchRef": {
+      "name": "main"
+    },
+    "name": "hauzer",
+    "nameWithOwner": "hardimpactdev/hauzer",
+    "exceptions": null
+  },
+  {
+    "defaultBranchRef": {
+      "name": "main"
+    },
+    "name": "mealou",
+    "nameWithOwner": "hardimpactdev/mealou",
+    "exceptions": null
+  }
+]

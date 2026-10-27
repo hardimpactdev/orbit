@@ -205,7 +205,7 @@ Deno.test("scheduler uses extension config and reconciles a lost factory-start r
     assertEquals(f.starts(), 1);
     assertEquals(f.data.get("project-nckrtl-com/configuration"), {
       ...original,
-      schema: 2,
+      schema: 3,
     });
     const work = f.data.get("orbit-gateway/project-work");
     // The recovered intent enters the driver list on the next minute tick.

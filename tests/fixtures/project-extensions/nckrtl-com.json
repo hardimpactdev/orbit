@@ -7,5 +7,6 @@
     "policy": { ".": { "minimumReleaseAgeDays": 7 } }
   },
   "check": "composer check",
-  "defaultBranch": "main"
+  "defaultBranch": "main",
+  "exceptions": { "schema": 1, "exceptions": [] }
 }

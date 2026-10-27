@@ -54,6 +54,10 @@ Composer. It shares path safety, clean child environments, exception records,
 and PR text with Composer maintenance. Its summary can cover both ecosystems in
 one run. Project 20 calls it through the group worker workflow.
 
+[Release-age exception records](docs/project-maintenance-exceptions.md) belong
+to private project config and Swamp resources, including records returned after
+failed security commands. The checkout needs no exception ledger.
+
 ## Horizon New Dawn project extension
 
 [`@nckrtl/project-horizon-new-dawn`](extensions/behaviors/projects/horizon-new-dawn/README.md)

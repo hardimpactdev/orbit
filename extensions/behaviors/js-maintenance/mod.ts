@@ -1,3 +1,4 @@
+import { ExceptionsSchema } from "../_lib/maintenance/exceptions.ts";
 import {
   snapshotMethod,
   SnapshotSchema,
@@ -102,6 +103,12 @@ export const behavior = {
       garbageCollection: 20,
     },
     failure: failureResource,
+    exceptions: {
+      description: "Release-age exception receipts",
+      schema: ExceptionsSchema,
+      lifetime: "infinite",
+      garbageCollection: 20,
+    },
     routine: {
       description: "Completed JavaScript routine paths",
       schema: RoutineSchema,
@@ -191,7 +198,7 @@ export const behavior = {
             candidates.set(key, row);
           }
         }
-        const stale = await staleExceptions(p.root, p.places);
+        const stale = await staleExceptions(args.exceptions, p.places);
         return await write(ctx, "detection", DetectionSchema, {
           schema: 1,
           candidates: [...candidates.keys()].sort().map((k) =>
@@ -248,7 +255,13 @@ export const behavior = {
             );
           }
           if (before.length && js.manager === "bun") {
-            await allowSecurity(p.root, js, args.package, args.policy);
+            await allowSecurity(
+              js,
+              args.package,
+              args.policy,
+              args.exceptions,
+              ctx,
+            );
           }
         }
         const target = args.purpose === "major"
