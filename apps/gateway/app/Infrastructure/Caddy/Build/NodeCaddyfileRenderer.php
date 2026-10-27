@@ -63,12 +63,14 @@ final readonly class NodeCaddyfileRenderer
 
         try {
             $taskVmRange = TaskVmSettings::caddyGuardRange();
+            $swampHost = TaskVmSettings::caddySwampHost();
         } catch (TaskVmException $exception) {
             $problems[] = $exception->getMessage();
             $taskVmRange = null;
+            $swampHost = null;
         }
 
-        $listeners = NodeCaddyListeners::forSites($node, $sites, app(VpnSettings::class)->subnet(), $taskVmRange);
+        $listeners = NodeCaddyListeners::forSites($node, $sites, app(VpnSettings::class)->subnet(), $taskVmRange, $swampHost);
 
         $blocks = [];
         $rendered = [];

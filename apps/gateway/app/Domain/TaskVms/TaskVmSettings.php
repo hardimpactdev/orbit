@@ -25,8 +25,8 @@ use InvalidArgumentException;
  * at least one host.
  *
  * The reserved WireGuard range is always a private network. As soon as task VMs are enabled or the
- * Cluster, the origin or a host is set, it must also lie inside the Gateway's VPN subnet, and no
- * bridge may overlap that subnet. With nothing set, the Gateway reads no VPN setting, so a fleet on
+ * Cluster, the origin, the Swamp hostname or a host is set, it must also lie inside the Gateway's VPN subnet.
+ * No bridge may overlap that subnet. With nothing set, the Gateway reads no VPN setting, so a fleet on
  * another subnet keeps working: a range outside the subnet reserves no fleet address.
  */
 final readonly class TaskVmSettings
@@ -50,6 +50,7 @@ final readonly class TaskVmSettings
         public ?TaskVmUpCloud $upcloud = null,
         public array $mediumProjectIds = [],
         public array $topologyPaths = [],
+        public ?string $swampHost = null,
     ) {}
 
     /** @throws TaskVmException `task_vm.invalid_config` for the first invalid value */
@@ -57,6 +58,7 @@ final readonly class TaskVmSettings
     {
         $config = self::config();
         $enabled = ($config['enabled'] ?? null) === true;
+        $swampHost = self::caddySwampHost();
         $range = TaskVmConfig::wireguardRange($config['wireguard_range'] ?? null);
         $clusterId = TaskVmConfig::filled($config['dev_cluster_id'] ?? null);
         $origin = TaskVmConfig::filled($config['model_proxy_origin'] ?? null);
@@ -137,6 +139,7 @@ final readonly class TaskVmSettings
             upcloud: TaskVmUpCloud::fromConfig(is_array($config['upcloud'] ?? null) ? $config['upcloud'] : [], $enabled),
             mediumProjectIds: array_values(array_unique(TaskVmConfig::ints($values['medium_projects']))),
             topologyPaths: $topology,
+            swampHost: $swampHost,
         );
     }
 
@@ -155,8 +158,8 @@ final readonly class TaskVmSettings
     }
 
     /**
-     * The reserved range that every Node's Caddy refuses on every site except the Gateway API and Reverb, or
-     * null while task VMs are not configured. It reads only what the guard needs, so another invalid task VM
+     * The reserved range every Node's Caddy refuses except on the Gateway API, Reverb and the configured Swamp
+     * site, or null while task VMs are not configured. It reads only what the guard needs, so another invalid task VM
      * value never blocks a Caddy build. Once task VMs are configured, an invalid range throws: the guard
      * fails closed.
      */
@@ -165,6 +168,28 @@ final readonly class TaskVmSettings
         $config = self::config();
 
         return self::configured($config) ? TaskVmConfig::wireguardRange($config['wireguard_range'] ?? null)->value() : null;
+    }
+
+    /** The one Swamp hostname that Caddy admits. Share validation with full task VM settings. */
+    public static function caddySwampHost(): ?string
+    {
+        $host = TaskVmConfig::filled(Config::get('task_vms.swamp_host'));
+        if ($host === null) {
+            return null;
+        }
+
+        $message = 'swamp_host must be one DNS hostname, for example swamp.orbit.';
+        $valid = TaskVmConfig::validate(['swamp_host' => $host], [
+            'swamp_host' => ['required', 'string', static function (string $attribute, mixed $value, Closure $fail) use ($message): void {
+                if (! is_string($value) || strlen($value) > 253 || ! str_contains($value, '.') || str_ends_with($value, '.')
+                    || filter_var($value, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) === false
+                    || filter_var($value, FILTER_VALIDATE_IP) !== false) {
+                    $fail($message);
+                }
+            }],
+        ], ['swamp_host' => $message]);
+
+        return (string) $valid->string('swamp_host')->lower();
     }
 
     public function host(int $nodeId): TaskVmHost
@@ -195,7 +220,7 @@ final readonly class TaskVmSettings
     }
 
     /**
-     * Task VMs are enabled, or the Cluster, the origin, or an active Node's host intent is set.
+     * Task VMs are enabled, or the Cluster, the origin, the Swamp hostname, or an active Node's host intent is set.
      *
      * @param  array<string, mixed>  $config
      */
@@ -204,6 +229,7 @@ final readonly class TaskVmSettings
         return ($config['enabled'] ?? null) === true
             || TaskVmConfig::filled($config['dev_cluster_id'] ?? null) !== null
             || TaskVmConfig::filled($config['model_proxy_origin'] ?? null) !== null
+            || TaskVmConfig::filled($config['swamp_host'] ?? null) !== null
             || (is_array($config['incus'] ?? null) ? $config['incus']['hosts'] ?? null : null) !== [];
     }
 

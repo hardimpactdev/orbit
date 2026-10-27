@@ -118,7 +118,7 @@ The guard closes two paths that the listener alone leaves open. Linux accepts a 
 
 The TLS handshake completes before the abort, and Caddy shares its certificate cache across listeners. A client that names a private hostname on the public listener therefore completes TLS with that site's certificate. Then it gets Caddy's empty `200` response, because no private site is on that listener.
 
-After an operator configures [task VMs](/reference/compute-drivers#refuse-task-vms-in-caddy), every site except `gateway.orbit` and `reverb.orbit` also aborts a client in the reserved task VM range, `task_vms.wireguard_range`. That range lies inside the VPN subnet. A task VM needs TCP 443 on the Gateway and `websocket` Nodes for the Gateway API and Reverb, and one listener there serves every private site. A site that admits every client gets only the task VM pair:
+After an operator configures [task VMs](/reference/compute-drivers#refuse-task-vms-in-caddy), every site except `gateway.orbit`, `reverb.orbit`, and the optional Swamp site named by `task_vms.swamp_host` also aborts a client in the reserved task VM range, `task_vms.wireguard_range`. That range lies inside the VPN subnet. A task VM needs TCP 443 on the Gateway and `websocket` Nodes for the Gateway API and Reverb, and one listener there serves every private site. A site that admits every client gets only the task VM pair:
 
 ```caddy
 analytics.orbit {
@@ -131,7 +131,9 @@ analytics.orbit {
 }
 ```
 
-Until task VMs are configured, no site has the task VM pair.
+The Swamp exception admits exactly one hostname on port 443. Set `ORBIT_TASK_VMS_SWAMP_HOST=swamp.orbit` in the Gateway environment for the private Swamp Route. It accepts one DNS hostname, without a scheme, port, path, wildcard, or list. It does not admit subdomains, other ports, public Ingress sites, or blocks with extra hostnames. The normal client-range guard still applies. An unset or empty value admits no Swamp site.
+
+Until task VMs are configured, no site has the task VM pair. Setting `swamp_host` also counts as configuring task VMs.
 
 Caddy cannot start with a missing listen address. So every build first checks that each specific address it binds exists on the Node. When a stored LAN address is missing, for example after a DHCP lease changed, the build stops at stage `addresses`, leaves the live Caddyfile unchanged, and names the address:
 
@@ -203,7 +205,7 @@ The next convergence of a Caddy role on the Node installs Caddy and builds the N
 
 A failed build does not publish a new file. A build fails when a site cannot render from stored state, when two sites collide, when Caddy is below the floor, or when the Node lacks an address the file binds. It also fails when `caddy validate` rejects the file, or when Caddy fails to reload.
 
-While [task VMs](/reference/compute-drivers#refuse-task-vms-in-caddy) are configured and `task_vms.wireguard_range` is invalid, every build on every Node fails at stage `render`, because Orbit cannot render the task VM guard. That includes the Gateway release handoff, which then fails with `gateway.release_caddy_failed`. Correct the range in the Gateway's environment and run `gateway:release:configure`. No other task VM value affects a build.
+While [task VMs](/reference/compute-drivers#refuse-task-vms-in-caddy) are configured and `task_vms.wireguard_range` is invalid, every build on every Node fails at stage `render`, because Orbit cannot render the task VM guard. That includes the Gateway release handoff, which then fails with `gateway.release_caddy_failed`. Correct the range in the Gateway's environment and run `gateway:release:configure`. An invalid `task_vms.swamp_host` also refuses a build at stage `render`. No other task VM value affects a build.
 
 A failed reload leaves Caddy on the configuration it already runs. The agent points `/etc/caddy/Caddyfile` back at the previous version and asks Caddy to load it again. It never restarts a running Caddy. It starts Caddy only when Caddy is not running.
 
@@ -289,6 +291,8 @@ Sites in a replaced file stop serving after that build. Move a hand-placed site 
 ## Check a Node with Doctor
 
 [`orbit doctor`](/cli/doctor) reads a Node's sites only from the one live `/etc/caddy/Caddyfile`. It never reads a file that the live Caddyfile imports.
+
+Changing or clearing `task_vms.swamp_host` changes the expected build on the Node that serves that hostname. Doctor reports `role.caddy_build_drift` until `php artisan orbit:caddy-build NODE` applies it.
 
 The `role` family renders the Node's build from stored state and compares it byte for byte with the live file. It reports `role.caddy_build_drift` once per Node, on the first active role that publishes Caddy sites, and lists the Node's site sources in the summary:
 

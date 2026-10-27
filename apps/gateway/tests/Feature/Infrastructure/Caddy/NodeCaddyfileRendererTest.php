@@ -6,6 +6,7 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
@@ -467,6 +468,85 @@ describe('task VM guard', function (): void {
             ])
             ->and($caddyfile->content)->toContain("https://shop.test {\n    bind 10.44.0.3\n    @orbit_task_vms remote_ip 10.44.0.128/25\n    abort @orbit_task_vms\n")
             ->and(preg_replace('/\n[ \t]*@orbit_task_vms remote_ip 10\.44\.0\.128\/25\n[ \t]*abort @orbit_task_vms/', '', $caddyfile->content))->toBe($unconfigured);
+    });
+
+    it('admits only the configured Swamp proxy on Services and preserves every other guard', function (): void {
+        $node = caddy_build_services_node();
+        foreach (['swamp.orbit', 'executor.orbit'] as $host) {
+            $route = Route::query()->create([
+                'kind' => RouteKind::CustomProxy, 'node_id' => $node->id, 'domain' => $host,
+                'provenance' => RouteProvenance::Explicit, 'publication' => RoutePublication::Private,
+                'status' => RouteStatus::Pending,
+            ]);
+            $route->customProxy()->create(['node_id' => $node->id, 'upstream' => 'http://127.0.0.1:9417']);
+            $route->update(['status' => RouteStatus::Active]);
+        }
+        caddy_build_task_vms();
+        $before = caddy_build_renderer()->render($node);
+        config(['task_vms.swamp_host' => 'swamp.orbit']);
+        $after = caddy_build_renderer()->render($node);
+
+        expect($after->buildable())->toBeTrue();
+        foreach ($after->blocks as $index => $block) {
+            if (str_contains($block['block'], 'https://swamp.orbit {')) {
+                expect($before->blocks[$index]['block'])->toContain('abort @orbit_task_vms')
+                    ->and($block['block'])->not->toContain('orbit_task_vms');
+            } else {
+                expect($block)->toBe($before->blocks[$index]);
+            }
+        }
+        expect($after->content)->toContain('https://swamp.orbit {', 'https://executor.orbit {');
+        if (new ExecutableFinder()->find('caddy') !== null) {
+            expect(caddy_adapt($after->content)->succeeded())->toBeTrue();
+        }
+        config(['task_vms.swamp_host' => '']);
+        expect(caddy_build_renderer()->render($node)->content)->toBe($before->content);
+    });
+
+    it('keeps the exception exact and the ordinary private client guard intact', function (): void {
+        caddy_build_task_vms(['swamp_host' => 'swamp.orbit']);
+        $caddyfile = caddy_build_compose([
+            caddy_build_rendered_site(CaddyListenerRule::WireGuard, host: 'swamp.orbit', source: 'app-dev'),
+            caddy_build_rendered_site(CaddyListenerRule::Wildcard, host: 'worker.swamp.orbit', source: 'app-dev'),
+            caddy_build_rendered_site(CaddyListenerRule::Wildcard, host: 'swamp.orbit.example', source: 'app-dev'),
+            caddy_build_rendered_site(CaddyListenerRule::Wildcard, host: 'swamp.orbit', source: 'app-dev', port: 8443),
+        ]);
+
+        expect($caddyfile->buildable())->toBeTrue()
+            ->and($caddyfile->blocks[0]['block'])->toContain('abort @orbit_outside')->not->toContain('orbit_task_vms');
+        foreach (array_slice($caddyfile->blocks, 1) as $block) {
+            expect($block['block'])->toContain('abort @orbit_task_vms');
+        }
+    });
+
+    it('never admits a public site even when its hostname matches Swamp', function (): void {
+        caddy_build_task_vms(['swamp_host' => 'swamp.orbit']);
+        $caddyfile = caddy_build_compose([
+            caddy_build_rendered_site(CaddyListenerRule::Public, host: 'swamp.orbit', source: 'ingress'),
+        ], ingress: true);
+
+        expect($caddyfile->buildable())->toBeTrue()
+            ->and($caddyfile->content)->toContain('abort @orbit_task_vms');
+    });
+
+    it('never admits extra hostnames sharing a Swamp site block', function (): void {
+        caddy_build_task_vms(['swamp_host' => 'swamp.orbit']);
+        $caddyfile = caddy_build_compose([new CaddySite(
+            source: 'app-dev', name: 'aliases', listener: CaddyListenerRule::Wildcard,
+            hosts: ['swamp.orbit', 'executor.orbit'], port: 443,
+            body: "swamp.orbit, executor.orbit {\n    bind __BIND__\n}\n", bindPlaceholder: '__BIND__',
+        )]);
+
+        expect($caddyfile->buildable())->toBeTrue()
+            ->and($caddyfile->content)->toContain('abort @orbit_task_vms');
+    });
+
+    it('refuses the build for an invalid Swamp hostname', function (): void {
+        caddy_build_task_vms(['swamp_host' => '*.orbit']);
+        $caddyfile = caddy_build_renderer()->render(caddy_build_services_node());
+
+        expect($caddyfile->buildable())->toBeFalse()
+            ->and($caddyfile->problems)->toBe(['The task VM config is invalid: swamp_host must be one DNS hostname, for example swamp.orbit.']);
     });
 
     it('refuses the range on metrics.orbit but not on gateway.orbit', function (): void {
