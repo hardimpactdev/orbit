@@ -29,6 +29,8 @@ fn mode(path: &Path, bits: u32) {
 }
 #[path = "support/privileged_agent.rs"]
 mod privileged_agent;
+#[path = "support/executable.rs"]
+mod test_support;
 use privileged_agent::Agent;
 
 struct Fixture {
@@ -100,7 +102,7 @@ impl Fixture {
         let path = match wrapper {
             Some(script) => {
                 self.directory("bin", 0o700);
-                self.write("bin/setfacl", script);
+                test_support::executable(self.path("bin/setfacl"), script);
                 mode(&self.path("bin/setfacl"), 0o700);
                 format!(
                     "{}:/usr/local/bin:/usr/bin:/bin",

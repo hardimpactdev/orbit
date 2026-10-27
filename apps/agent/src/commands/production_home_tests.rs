@@ -540,8 +540,7 @@ fn rebuilds_only_an_existing_configuration_cache_of_the_current_release() {
             let fixture = Fixture::new();
             let php = fixture.base.join("php");
             fs::create_dir_all(&php).unwrap();
-            fs::write(php.join("php8.5"), ARTISAN).unwrap();
-            fs::set_permissions(php.join("php8.5"), fs::Permissions::from_mode(0o755)).unwrap();
+            crate::test_support::executable(php.join("php8.5"), ARTISAN);
             fs::write(php.join("fail"), fail.to_string()).unwrap();
             let application = fixture.home.home.join(format!("releases/r1{suffix}"));
             fs::create_dir_all(application.join("bootstrap/cache")).unwrap();

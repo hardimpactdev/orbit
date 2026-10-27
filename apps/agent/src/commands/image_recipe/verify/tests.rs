@@ -64,8 +64,7 @@ fn verifies_pnpm_from_the_managed_home_when_the_caller_uses_another_directory() 
     .unwrap();
     // Like pnpm, this probe reads configuration relative to its working directory.
     let pnpm = scope.join("bin/pnpm");
-    fs::write(&pnpm, "#!/bin/sh\ncat ./probe-version\n").unwrap();
-    fs::set_permissions(&pnpm, fs::Permissions::from_mode(0o755)).unwrap();
+    crate::test_support::executable(&pnpm, "#!/bin/sh\ncat ./probe-version\n");
     fs::write(account.home.join("probe-version"), "12.11.2\n").unwrap();
     std::os::unix::fs::symlink(&pnpm, files.path("/usr/local/bin/pnpm")).unwrap();
     input.recipe.tools = serde_json::from_value(json!({"pnpm": {

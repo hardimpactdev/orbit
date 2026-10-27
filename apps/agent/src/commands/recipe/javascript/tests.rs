@@ -426,8 +426,7 @@ fn pnpm_metadata_is_current_only_when_the_account_launcher_executes_that_version
         ("#!/bin/sh\nprintf '9.0.0\\n'\n", None),
         ("#!/bin/sh\nprintf '10.0.0\\n'\n", Some("10.0.0")),
     ] {
-        fs::write(scope.join("bin/pnpm"), launcher).unwrap();
-        fs::set_permissions(scope.join("bin/pnpm"), fs::Permissions::from_mode(0o755)).unwrap();
+        crate::test_support::executable(scope.join("bin/pnpm"), launcher);
         let observed = inspect(
             &mut HostWithRealLauncher(&context),
             &files,
@@ -535,12 +534,10 @@ fn real_pinned_dispatcher_runs_projects_and_preserves_existing_global_content() 
     let global = work.0.join("global-package");
     fs::create_dir(&global).unwrap();
     fs::write(global.join("package.json"), r#"{"name":"recipe-global-proof","version":"1.0.0","bin":{"recipe-global-proof":"index.js"}}"#).unwrap();
-    fs::write(
+    crate::test_support::executable(
         global.join("index.js"),
         "#!/usr/bin/env node\nconsole.log(84)\n",
-    )
-    .unwrap();
-    fs::set_permissions(global.join("index.js"), fs::Permissions::from_mode(0o755)).unwrap();
+    );
     let global = global.to_str().unwrap();
     for (argv, expected) in [
         (

@@ -2,7 +2,7 @@
 //! files, the stub `networkctl reconfigure` restores the provider DNS of `eth0`, and every stub logs its call.
 
 use super::*;
-use std::{collections::BTreeMap, os::unix::fs::PermissionsExt, path::PathBuf};
+use std::{collections::BTreeMap, path::PathBuf};
 
 const KEY: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 
@@ -138,12 +138,10 @@ impl Fixture {
             ("networkctl", NETWORKCTL),
         ] {
             let path = root.join("bin").join(name);
-            fs::write(
+            crate::test_support::executable(
                 &path,
                 format!("#!/bin/bash\nset -eu\nROOT='{}'\n{body}\n", root.display()),
-            )
-            .unwrap();
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+            );
         }
         let fixture = Self {
             host: Host {

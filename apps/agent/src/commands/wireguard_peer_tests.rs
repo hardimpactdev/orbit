@@ -38,15 +38,13 @@ fn fixture(underlay: bool) -> Fixture {
     let f = Fixture::new(underlay, false);
     for (name, body) in [("systemctl", SYSTEMCTL), ("wg", WG)] {
         let path = f.root.join("bin").join(name);
-        fs::write(
+        crate::test_support::executable(
             &path,
             format!(
                 "#!/bin/bash\nset -eu\nROOT='{}'\n{body}\n",
                 f.root.display()
             ),
-        )
-        .unwrap();
-        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+        );
     }
     f.write("state/active", "active\n");
     f.write("state/enabled", "enabled\n");

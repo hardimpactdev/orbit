@@ -260,16 +260,10 @@ fn no_fsmonitor_runs_in_the_checkout_or_its_submodules() {
     sh_git(&input.base, &["push", "--quiet", "origin", "main"]);
     let marker = fixture.base.join("monitor-ran");
     let monitor = fixture.base.join("monitor");
-    fs::write(
+    crate::test_support::executable(
         &monitor,
         format!("#!/bin/sh\nprintf ran >> '{}'\n", marker.display()),
-    )
-    .unwrap();
-    fs::set_permissions(
-        &monitor,
-        std::os::unix::fs::PermissionsExt::from_mode(0o755),
-    )
-    .unwrap();
+    );
     for directory in [input.base.clone(), input.base.join("nested")] {
         sh_git(
             &directory,

@@ -291,8 +291,7 @@ fn reads_the_current_release_of_a_production_home_and_each_monorepo_sub_project(
 fn runs_the_update_in_the_directory_and_answers_124_at_its_deadline() {
     let source = Sandbox::new();
     let composer = source.0.join("composer");
-    fs::write(&composer, "#!/bin/sh\nprintf '%s ' \"$@\" > \"$2/arguments\"\n[ -e \"$2/hang\" ] && sleep 30\nexit 0\n").unwrap();
-    fs::set_permissions(&composer, fs::Permissions::from_mode(0o755)).unwrap();
+    crate::test_support::executable(&composer, "#!/bin/sh\nprintf '%s ' \"$@\" > \"$2/arguments\"\n[ -e \"$2/hang\" ] && sleep 30\nexit 0\n");
     let input = UpdateInput {
         directory: source.path(),
         ecosystem: Ecosystem::Composer,
@@ -322,8 +321,7 @@ fn runs_the_update_in_the_directory_and_answers_124_at_its_deadline() {
 
 fn fake_vp(path: &Path, version: &str) {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(path, format!("#!/bin/sh\necho 'vp v{version}'\n")).unwrap();
-    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+    crate::test_support::executable(path, format!("#!/bin/sh\necho 'vp v{version}'\n"));
 }
 
 #[test]

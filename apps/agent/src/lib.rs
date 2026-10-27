@@ -12,6 +12,9 @@ pub mod command;
 pub mod commands;
 pub mod logs;
 pub mod realtime;
+#[cfg(test)]
+#[path = "../tests/support/executable.rs"]
+mod test_support;
 pub mod workspace;
 use workspace::WorkspaceState;
 
@@ -528,6 +531,22 @@ impl Liveness {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fixture_executable_replaces_an_inode_with_an_open_write_descriptor() {
+        let work = crate::commands::recipe::WorkDir::new().unwrap();
+        let path = work.0.join("fixture tool 'quoted'");
+        std::fs::write(&path, "old").unwrap();
+        // Linux rejects exec while any process holds a write descriptor. Keeping
+        // one here reproduces the effect of another test's child inheriting it.
+        let writer = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+        crate::test_support::executable(&path, "#!/bin/sh\nprintf '%s' 'new fixture'\n");
+        let output = std::process::Command::new(&path).output().unwrap();
+        assert!(output.status.success());
+        assert_eq!(output.stdout, b"new fixture");
+        drop(writer);
+    }
+
     #[test]
     fn reports_the_version_with_the_binary_digest_as_build_metadata() {
         assert_eq!(

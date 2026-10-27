@@ -299,8 +299,10 @@ mod reload_tests {
         fs::create_dir(&root).unwrap();
         let program = root.join("systemctl");
         let log = root.join("systemctl.log");
-        fs::write(&program, "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$0.log\"\n").unwrap();
-        fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
+        crate::test_support::executable(
+            &program,
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$0.log\"\n",
+        );
         let lock_path = root.join("locks/caddy.lock");
         let uid = rustix::process::geteuid().as_raw();
         let gid = rustix::process::getegid().as_raw();
@@ -317,7 +319,7 @@ mod reload_tests {
             "reload caddy\nreload caddy\n"
         );
 
-        fs::write(&program, "#!/bin/sh\nexit 1\n").unwrap();
+        crate::test_support::executable(&program, "#!/bin/sh\nexit 1\n");
         assert_eq!(reload(), Err(ReloadError::Failed {}));
         let held = lock_at(&lock_path, uid, gid, Duration::ZERO).unwrap();
         drop(held);

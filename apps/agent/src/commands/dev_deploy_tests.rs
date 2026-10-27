@@ -384,7 +384,7 @@ fn lifecycle_repeat_helper() {
     );
 
     let executable = checkout.join("project-tool");
-    fs::write(&executable, "#!/bin/sh\nprintf '%s' \"$VP_HOME\"\n").unwrap();
+    crate::test_support::executable(&executable, "#!/bin/sh\nprintf '%s' \"$VP_HOME\"\n");
     fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
     let script = "./project-tool\ncat /proc/$$/cmdline > command-line\n";
     let mut input = lifecycle_input(&checkout, script);
