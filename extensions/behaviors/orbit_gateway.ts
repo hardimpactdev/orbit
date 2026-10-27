@@ -1,6 +1,7 @@
+import { project as horizonProject } from "./projects/horizon-new-dawn/config.ts";
 import { cleanedCancelledGroup, ensureProjectGroup, findingReceipts, isolateScheduleRow, scheduleReceipt, ScheduleReceiptSchema, SchedulerIssueSchema, SchedulerSkipSchema, type ScheduleReceipt } from "./_lib/project_schedule.ts";
 import { runMaintenance, reconcileWorkers, workerControl, type MaintenanceContext } from "./_lib/swamp_maintenance.ts";
-import { revokeEndedWorker } from "./_lib/maintenance_worker.ts";
+import { ensureWorker, revokeEndedWorker } from "./_lib/maintenance_worker.ts";
 import { projectConfigurations, ProjectExtensionsSchema } from "./_lib/project_config.ts";
 import { assertProjectSettings, DependencyProjectsSchema } from "./_lib/dependency_projects.ts";
 import { admitPackage, PackageTargetSchema, type PackageTarget } from "./_lib/package_target.ts";
@@ -131,6 +132,49 @@ export const behavior = {
     },
   },
   methods: {
+    ensure_worker: {
+      description: "Enroll or reconcile worker startup on one provisioned external group; never starts agents or task work",
+      arguments: z.object({ group: z.number().int().positive() }),
+      execute: async (args: { group: number }, context: StageContext) => {
+        const http = curlHttp(context.globalArgs);
+        const response = await http("GET", `/api/v1/task-groups/${args.group}`);
+        const group = response.body?.data as { id?: number; project_id?: number; brief?: string; orchestration?: string; status?: string; taskable_id?: number | null } | undefined;
+        if (response.status !== 200 || group?.id !== args.group || group.orchestration !== "external" ||
+          !["running", "reviewing"].includes(group.status ?? "") ||
+          !Number.isSafeInteger(group.taskable_id) || Number(group.taskable_id) < 1) {
+          throw new Error("Worker enrollment requires an open, provisioned external task group");
+        }
+        if (typeof group.brief !== "string" || !group.brief.split(/\r?\n/).includes("Swamp driver: orbit-gateway")) {
+          throw new Error("Worker enrollment requires the Swamp driver brief");
+        }
+        if (!Number.isSafeInteger(group.project_id) || Number(group.project_id) < 1) throw new Error("Worker Project is not configured");
+        if (group.project_id === horizonProject.projectId) {
+          await assertProjectSettings({
+            projectId: horizonProject.projectId,
+            repository: `https://github.com/${horizonProject.repository}.git`,
+            check: horizonProject.checkCommand,
+            defaultBranch: horizonProject.defaultBranch,
+          }, http);
+        } else {
+          const configs = await projectConfigurations(context.globalArgs.dependencyProjects, context.globalArgs.projectExtensions, context, group.project_id);
+          const config = configs.find((entry) => entry.projectId === group.project_id);
+          if (!config) throw new Error(`Worker Project ${group.project_id} is not configured`);
+          await assertProjectSettings(config, http);
+        }
+        const existing = (await context.queryData(`modelName == ${JSON.stringify(context.definition.name)} && name == ${JSON.stringify(`worker-${args.group}`)}`, "attributes"))[0] as { ready?: boolean } | undefined;
+        if (existing?.ready) throw new Error("The group worker is already enrolled; use its owning workflow to reconcile it");
+        const handles: { name: string }[] = [];
+        await ensureWorker(args.group, workerControl({
+          ...context,
+          writeResource: async (spec, name, value) => {
+            const handle = await context.writeResource(spec, name, value);
+            handles.push(handle);
+            return handle;
+          },
+        }, http));
+        return { dataHandles: handles };
+      },
+    },
     schedule_project: {
       description: "Start or reconcile one project's scheduled routine or detection group",
       arguments: z.object({ projectId: z.number().int().positive(), mode: z.enum(["routine", "detect"]) }),

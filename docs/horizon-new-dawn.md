@@ -50,6 +50,25 @@ not mint tokens, start workers or change placement. The worker job uses that
 exact name. The server job reads that run's `plan` resource through CEL and
 calls the Gateway's `horizon_tasks` extension method.
 
+For a first scan without an existing worker, create one external detection-only
+`todo` group on Project 57. Include the exact line `Swamp driver: orbit-gateway`
+in its brief, then provision it through `orbit-gateway.stage` with
+stage `provision`. Do not start a factory or agent. Run
+`orbit-gateway.ensure_worker` for that group until its public worker receipt is
+ready. This method uses the shared enrollment, server-token and `tasks.worker`
+lifecycle. Enrollment admits only running or reviewing external groups with a
+workspace and the driver brief. Their Project must be Horizon Project 57 or a
+configured project extension, and its Gateway settings must match config.
+Settling and waiting-for-review groups cannot enroll. It starts no task work
+and refuses to replace an already-enrolled worker.
+Read the VM Instance's checkout path and use
+the receipt's exact worker name in the Horizon workflow.
+
+After the scan, cancel the detection-only group through the Gateway. Run
+`orbit-gateway.reconcile_workers` and verify the group has no attached Instance,
+its VM is removed, and both worker credentials are revoked. Candidate groups
+remain backlog. This operator setup requires explicit detection-only approval.
+
 Task creation produces an external **backlog** group containing one child per
 candidate, in order. No factory or agent starts. A repeated detection reuses
 its saved group receipt. A lost create reply is reconciled by the exact brief;

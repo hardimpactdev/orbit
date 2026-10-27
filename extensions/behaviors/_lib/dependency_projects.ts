@@ -31,7 +31,10 @@ export async function dependencyProject(
 
 /** The Gateway owns these settings; config asserts them, never overrides them. */
 export async function assertProjectSettings(
-  config: DependencyProject,
+  config: Pick<
+    DependencyProject,
+    "projectId" | "repository" | "check" | "defaultBranch"
+  >,
   http: Http,
 ): Promise<void> {
   const response = await http("GET", `/api/v1/projects/${config.projectId}`);

@@ -35,11 +35,11 @@ jobs:
         run: deno check extensions/behaviors/orbit_gateway.ts
       - name: Check worker modules
         run: |
-          deno fmt --check extensions/behaviors/_lib/maintenance_worker.ts extensions/behaviors/_lib/swamp_maintenance.ts tests/maintenance_worker_test.ts tests/maintenance_resources_test.ts
-          deno lint extensions/behaviors/_lib/maintenance_worker.ts extensions/behaviors/_lib/swamp_maintenance.ts tests/maintenance_worker_test.ts tests/maintenance_resources_test.ts
+          deno fmt --check extensions/behaviors/_lib/maintenance_worker.ts extensions/behaviors/_lib/swamp_maintenance.ts tests/maintenance_worker_test.ts tests/maintenance_resources_test.ts tests/worker_enrollment_entry_test.ts
+          deno lint extensions/behaviors/_lib/maintenance_worker.ts extensions/behaviors/_lib/swamp_maintenance.ts tests/maintenance_worker_test.ts tests/maintenance_resources_test.ts tests/worker_enrollment_entry_test.ts
       - name: Test affected driver contracts (one worker)
         run: >-
           deno test --allow-all
           tests/dependency_projects_test.ts tests/routine_stage_test.ts
           tests/package_stage_test.ts tests/maintenance_worker_test.ts
-          tests/maintenance_resources_test.ts
+          tests/maintenance_resources_test.ts tests/worker_enrollment_entry_test.ts
