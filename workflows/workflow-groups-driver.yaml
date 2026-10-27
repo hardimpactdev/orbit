@@ -2,8 +2,8 @@ id: d83a5174-05bf-41ab-8468-f36d5fe30b03
 name: groups-driver
 description: Discover every active group and reconcile independent owning runs.
 trigger:
-  # Croner's native seconds field; validated by the installed Swamp schema.
-  schedule: "*/5 * * * * *"
+  # Discovery and fan-out take 35–47 seconds under the first live load.
+  schedule: "0 * * * * *"
 jobs:
   - name: groups
     steps:

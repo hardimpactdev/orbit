@@ -57,7 +57,16 @@ swamp workflow history search --workflow maintenance-workers --json
 ```
 
 Require the expected SHA and original schedule states. `groups-driver` uses
-`*/5 * * * * *`, discovers groups, then passes the saved lists to `group-fanout`.
+`0 * * * * *`, discovers groups, then passes the saved lists to `group-fanout`.
+Worker cleanup fires at second 35 and project reconciliation at second 40.
+Check `/health` for each coordinator's `queued`, `oldestQueuedAt`, and
+`lastQueueDelayMs`; a growing queue needs investigation before deployment.
+Pausing must suppress queued fires as well as new ones. On Swamp `983e2929`,
+ordinary queued fires bypass the pause
+([Swamp #4048](https://swamp-club.com/lab/4048)). The helper installs and verifies a
+temporary native deny grant for `service:scheduler` before pausing, so those
+queued fires cannot start runs during the drain. Updating cron alone cannot
+fix that deployment barrier.
 `maintenance-projects` calls only `project_work`, without routine, detect, or
 package tick steps. The three coordinator workflows must succeed.
 
@@ -126,7 +135,19 @@ not connect to serve. Use only IDs whose snapshot has `paused: false` and
 `orphaned: false`. This restores persisted state for the next start without
 starting serve. Then inspect the schedule list and retain historical pauses.
 After verifying restoration and confirming that the recorded deployer is no
-longer running, remove
+longer running, inspect `schedulerGuard` in the snapshot or marker. If present,
+read its ID with
+`swamp data query 'modelName == "GUARD_NAME" && name == "grant-main"' --select attributes --server "$SWAMP_SERVER_URL" --json`.
+Revoke that exact `@swamp/grant` definition with
+`swamp behavior run GUARD_NAME revoke --server "$SWAMP_SERVER_URL" --json`,
+then run `swamp access reload --server "$SWAMP_SERVER_URL" --json` and verify
+with `swamp access check --subject service:scheduler --action run --on 'workflow:*' --server "$SWAMP_SERVER_URL" --json`.
+The guard's ID must no longer appear among `matchingGrants`; existing policy
+may still deny scheduling for another reason. If serve stays stopped, revoke
+with `--repo-dir "$SWAMP_REPO_DIR"` after unsetting the server URL variables;
+policy reload occurs on its next start. A lost create reply may leave no grant
+yet: reconcile its native run history before releasing the marker, rather than
+assuming it cannot arrive. Finally, remove
 `/home/orbit/.local/state/orbit-swamp/services-deploy-in-progress.json` on
 Services. Its mode is `0600`; do not delete it merely to bypass a busy deployment.
 A force-killed deployment needs this recovery because cleanup cannot run after

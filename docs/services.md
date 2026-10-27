@@ -104,6 +104,35 @@ never changed. Schedule IDs identify the restoration set.
 
 With those schedules paused, the command waits at most 180 seconds for
 `swamp run history --active` to become empty. Each read has its own deadline.
+A pause must also suppress ordinary cron fires that queued before the pause;
+checking only new fires and restart replays does not make a deployment idle.
+The native deployment regression fills that queue before pausing, then requires
+zero new starts while draining it. Swamp `983e2929` fails this check: its
+ordinary queued fires do not recheck the pause before execution.
+
+Until [Swamp #4048](https://swamp-club.com/lab/4048) fixes that path,
+deployment installs a native `@swamp/grant`
+denying `service:scheduler` the `run` action on workflows. It explicitly reloads
+and verifies that policy before pausing schedules. Native dispatch authorizes
+every queued entry before starting its run, so the grant blocks stale fires
+without cancelling work already running. Manual and webhook principals retain
+their existing policy. The unique guard name is saved in the protected snapshot
+and in-progress marker before creation, so a lost response cannot hide it.
+After schedule restoration, deployment revokes that exact grant and verifies
+the live policy again. If serve is stopped, it revokes through the native local
+command instead. Uncertain creation or failed cleanup retains the marker and
+reports the guard name for recovery. A no-change deployment creates no grant.
+Once #4048 ships, pin its official release in a separate PR and remove the
+guard. Keep the native paused-queue regression passing without it.
+
+The 180-second limit covers the successful runs observed since the independent
+group cutover on 2026-10-27: the longest workflow took 105.024 seconds and the
+longest `group-run` took 75.941 seconds. This is an operational limit, not a
+wall-clock bound on every workflow. Older `stage-handoff` runs reached 647.187
+seconds; long work can still abort deployment safely and needs its own idle
+window. A queue of paused fires must be skipped, not worked through by raising
+the deployment timeout.
+
 A timeout or unreadable response aborts before stopping serve and restores the
 saved enabled schedules. Do not start manual or webhook work during deployment:
 a schedule pause does not prevent those starts. Serve's default 30-second
@@ -136,7 +165,8 @@ when deployment also failed, its original error remains in the message. Inspect
 serve before retrying those resumes. Never resume schedules whose snapshot says
 `paused: true`. See the [cutover runbook](services-group-cutover.md) for recovery
 commands. The marker is removed only after all attempted pauses have been
-reconciled and resumed successfully, or when deployment exits before any pause.
+reconciled and resumed successfully and the scheduler guard is cleared, or when
+deployment exits before creating a guard or pausing anything.
 It remains after a crash or restoration failure and blocks every later deploy.
 Failure to remove the temporary bundle is logged to stderr without
 replacing the deployment result or its original error.

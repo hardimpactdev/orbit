@@ -64,6 +64,13 @@ class DeployTest(unittest.TestCase):
         self.second_run_on_active = False
         self.second_run_error = None
         self.fail_pause_before_apply = False
+        self.guard_grant = None
+        self.guard_policy = False
+        self.guard_events = []
+        self.fail_guard_create = False
+        self.guard_create_unapplied = False
+        self.fail_guard_revoke = False
+        self.fail_policy = False
         self.clock = 0
         self.named_temporary_file = tempfile.NamedTemporaryFile
         self.git("init", "-q", "-b", "main", str(self.origin))
@@ -113,10 +120,37 @@ class DeployTest(unittest.TestCase):
                 return ""
             if source == deploy.STATE:
                 return "ActiveState=active\nMainPID=123\n" if self.running else "ActiveState=inactive\nMainPID=0\n"
+            if source == deploy.GUARD_CREATE:
+                self.guard_events.append("create")
+                if not self.guard_create_unapplied:
+                    self.guard_grant = {"id": "fixture-guard", "subject": {"kind": "service", "name": "scheduler"},
+                                        "effect": "deny", "actions": ["run"],
+                                        "resource": {"kind": "workflow", "pattern": "*"}, "state": "active"}
+                if self.fail_guard_create:
+                    raise RuntimeError("Guard create reply lost")
+                return "{}"
+            if source in (deploy.GUARD_READ, deploy.GUARD_READ_STOPPED):
+                return json.dumps({"results": [self.guard_grant] if self.guard_grant else []})
+            if source in (deploy.GUARD_REVOKE, deploy.GUARD_REVOKE_STOPPED):
+                self.guard_events.append("revoke-offline" if source == deploy.GUARD_REVOKE_STOPPED else "revoke")
+                if self.fail_guard_revoke:
+                    raise RuntimeError("Guard revoke failed")
+                self.guard_grant["state"] = "revoked"
+                return "{}"
+            if source == deploy.POLICY_RELOAD:
+                self.guard_events.append("reload")
+                if not self.fail_policy:
+                    self.guard_policy = bool(self.guard_grant and self.guard_grant["state"] == "active")
+                return "{}"
+            if source == deploy.GUARD_CHECK:
+                self.guard_events.append("check")
+                return json.dumps({"effect": "deny" if self.guard_policy else "allow",
+                                   "matchingGrants": [{"grantId": "fixture-guard"}] if self.guard_policy else []})
             if source in (deploy.SCHEDULES, deploy.LIST_STOPPED):
                 self.events.append("snapshot")
                 return json.dumps({"schedules": self.schedules})
             if source in (deploy.PAUSE, deploy.RESUME, deploy.RESUME_STOPPED):
+                self.assertTrue(self.guard_policy, "scheduler must stay denied through pause and restoration")
                 workflow = shlex.split(argv[-1])[-1]
                 pause = source == deploy.PAUSE
                 self.events.append(("pause-" if pause else "resume-") + workflow)
@@ -137,6 +171,7 @@ class DeployTest(unittest.TestCase):
                     raise RuntimeError("Schedule transport failed")
                 return "{}"
             if source == deploy.ACTIVE:
+                self.assertTrue(self.guard_policy, "scheduler must be denied during the drain")
                 self.events.append("active")
                 if self.second_run_on_active:
                     self.second_run_on_active = False
@@ -228,6 +263,53 @@ class DeployTest(unittest.TestCase):
         loser = next(r for r in results if r.returncode)
         self.assertIn(winner["snapshot"], loser.stderr)
         self.assertIn(winner["host"], loser.stderr)
+
+    def test_scheduler_guard_is_verified_before_pauses_and_revoked_after_restore(self):
+        self.change_main()
+        self.execute()
+        self.assertEqual(self.guard_events, ["create", "reload", "check", "revoke", "reload", "check"])
+        self.assertEqual(self.guard_grant["state"], "revoked")
+        self.assertFalse(self.guard_policy)
+        self.assertFalse(self.marker.exists())
+
+    def test_lost_guard_create_reply_is_reconciled_and_revoked_without_pausing(self):
+        self.change_main()
+        self.fail_guard_create = True
+        with self.assertRaisesRegex(RuntimeError, "Guard create reply lost"):
+            self.execute()
+        self.assertEqual(self.guard_grant["state"], "revoked")
+        self.assertFalse(self.marker.exists())
+        self.assertFalse(any(e.startswith("pause-") for e in self.events))
+
+    def test_unresolved_guard_create_keeps_its_identity_and_marker(self):
+        self.change_main()
+        self.fail_guard_create = True
+        self.guard_create_unapplied = True
+        with self.assertRaisesRegex(RuntimeError, "Scheduler guard cleanup failed"):
+            self.execute()
+        marker = json.loads(self.marker.read_text())
+        snapshot = json.loads(Path(marker["snapshot"]).read_text())
+        self.assertEqual(marker["schedulerGuard"], snapshot["schedulerGuard"])
+        self.assertFalse(any(e.startswith("pause-") for e in self.events))
+        self.assertNotIn("process:stop", self.calls)
+
+    def test_guard_revoke_failure_restores_schedules_but_keeps_marker(self):
+        self.change_main()
+        self.fail_guard_revoke = True
+        with self.assertRaisesRegex(RuntimeError, "Guard revoke failed"):
+            self.execute()
+        self.assertEqual(self.schedules, self.initial_schedules)
+        self.assertTrue(self.marker.exists())
+        self.assertTrue(self.guard_policy)
+
+    def test_unverified_policy_aborts_before_any_pause_or_stop(self):
+        self.change_main()
+        self.fail_policy = True
+        with self.assertRaisesRegex(RuntimeError, "Live scheduler policy"):
+            self.execute()
+        self.assertFalse(any(e.startswith("pause-") for e in self.events))
+        self.assertNotIn("process:stop", self.calls)
+        self.assertFalse(self.marker.exists())
 
     def test_second_full_deployment_is_refused_while_the_first_has_paused_schedules(self):
         self.change_main()

@@ -2,7 +2,7 @@ id: 99c1eb72-934a-4b25-afaa-b79f2ffb7e6d
 name: maintenance-workers
 description: Revoke group enrollment after every Gateway group-end path.
 trigger:
-  schedule: "* * * * *"
+  schedule: "35 * * * * *"
 jobs:
   - name: cleanup
     steps:

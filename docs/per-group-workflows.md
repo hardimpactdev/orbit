@@ -203,8 +203,17 @@ schedule receipts, pending admission, and finding creation recoverable from
 their saved requests. Never run old and new drivers against the same group
 concurrently during migration.
 
-`groups-driver` uses a native five-second schedule (Croner's seconds field,
-accepted by the installed workflow validator). Each child has a ten-second
+`groups-driver` discovers groups at second zero of each minute. Discovery and
+fan-out took 35–47 seconds in the first live wave; a five-second cron was faster
+than one invocation and filled Swamp's shared scheduler queue. The project
+reconciler fires at second 40 and worker cleanup at second 35, rather than
+putting all three coordinators into the queue at the minute boundary. Swamp
+skips a fire while its workflow is running but queues another while it is
+waiting for a slot; it has no skip-if-queued setting. Monitor queue delay when
+group count or run time grows. The schedule controls discovery and successor
+admission; admitted groups still execute independently in parallel.
+
+Each child has a ten-second
 durable wait. Serve's continuation sweep controls when the wait finishes: the
 default sweep interval is thirty seconds. The coordinator can shorten it with
 `--continuation-sweep-interval 5s` when deploying; it is not a second driver.

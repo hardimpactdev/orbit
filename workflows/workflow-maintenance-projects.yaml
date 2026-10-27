@@ -2,7 +2,7 @@ id: a37dfa1b-1633-475f-90c7-dfd9c83008ca
 name: maintenance-projects
 description: Admit scheduled work and reconcile findings and completed group receipts.
 trigger:
-  schedule: '* * * * *'
+  schedule: '40 * * * * *'
 jobs:
   - name: reconcile
     steps:

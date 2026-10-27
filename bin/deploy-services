@@ -60,6 +60,39 @@ STATE = r'''
 systemctl show "$1" --property=ActiveState --property=MainPID
 '''
 
+GUARD_CREATE = r'''
+"$1" behavior run @swamp/grant create "$3" --input subject=service:scheduler --input effect=deny --input 'actions=["run"]' --input resourceKind=workflow --input 'resourcePattern=*' --input source=method --input createdBy=user:local --server ws://127.0.0.1:9417 --token-file "$2" --json
+'''
+
+GUARD_READ = r'''
+"$1" data query "$3" --select attributes --server ws://127.0.0.1:9417 --token-file "$2" --json
+'''
+
+GUARD_READ_STOPPED = r'''
+unset SWAMP_SERVER_URL SWAMP_SERVE_URL
+"$1" data query "$3" --select attributes --repo-dir "$2" --json
+'''
+
+GUARD_REVOKE = r'''
+"$1" behavior run "$3" revoke --server ws://127.0.0.1:9417 --token-file "$2" --json
+'''
+
+GUARD_REVOKE_STOPPED = r'''
+unset SWAMP_SERVER_URL SWAMP_SERVE_URL
+"$1" behavior run "$3" revoke --repo-dir "$2" --json
+'''
+
+POLICY_RELOAD = r'''
+"$1" access reload --server ws://127.0.0.1:9417 --token-file "$2" --json
+'''
+
+GUARD_CHECK = r'''
+"$1" access check --subject service:scheduler --action run --on 'workflow:*' --server ws://127.0.0.1:9417 --token-file "$2" --json
+# A denied decision exits 1. The caller still validates its JSON and grant id.
+status=$?
+[ "$status" -eq 0 ] || [ "$status" -eq 1 ]
+'''
+
 ACQUIRE = r'''
 python3 - "$1" "$2" <<'LOCK_PY'
 import json, os, sys, tempfile
@@ -224,10 +257,12 @@ def deployment_lock(remote):
         json.dump({"schedules": []}, snapshot)
         snapshot.flush()
         os.fsync(snapshot.fileno())
-    owner = json.dumps({"host": socket.gethostname(), "pid": os.getpid(), "snapshot": snapshot.name})
+    guard = "services-deploy-" + Path(snapshot.name).stem.removeprefix("swamp-deploy-schedules-")
+    owner = json.dumps({"host": socket.gethostname(), "pid": os.getpid(), "snapshot": snapshot.name,
+                        "schedulerGuard": guard})
     print(f"Protected schedule snapshot: {snapshot.name}", file=sys.stderr)
     remote(ACQUIRE, LOCK_FILE, owner, timeout=30)
-    progress = {"snapshot": snapshot.name, "restored": True}
+    progress = {"snapshot": snapshot.name, "restored": True, "guard": guard, "guardPending": False}
     original_error = None
     try:
         yield progress
@@ -236,7 +271,7 @@ def deployment_lock(remote):
         raise
     finally:
         with ignore_hangup():
-            if progress["restored"]:
+            if progress["restored"] and not progress["guardPending"]:
                 try:
                     remote(RELEASE, LOCK_FILE, owner, timeout=30)
                 except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
@@ -261,57 +296,124 @@ def schedule_list(remote, token, offline=False):
 
 
 @contextlib.contextmanager
-def paused_schedules(remote, token, stopped, progress):
-    schedules = schedule_list(remote, token)
-    enabled = [s for s in schedules if not s["paused"] and not s["orphaned"]]
-    path = progress["snapshot"]
-    with open(path, "w") as snapshot:
-        json.dump({"schedules": schedules}, snapshot)
-        snapshot.flush()
-        os.fsync(snapshot.fileno())
-    attempted, uncertain = [], set()
+def scheduler_guard(remote, token, stopped, progress):
+    """Work around https://swamp-club.com/lab/4048 with native authorization.
+
+    Remove the guard once #4048 ships and its official release is pinned.
+    """
+    name = progress["guard"]
+    predicate = f'modelName == {json.dumps(name)} && name == "grant-main"'
+
+    def read(offline):
+        result = json.loads(remote(GUARD_READ_STOPPED if offline else GUARD_READ, SWAMP,
+                                   APP if offline else token, predicate, timeout=30))
+        rows = result.get("results") if isinstance(result, dict) else None
+        if not isinstance(rows, list) or len(rows) != 1:
+            raise RuntimeError("Cannot establish scheduler guard outcome; retain its marker for reconciliation")
+        grant = rows[0]
+        if (not isinstance(grant, dict) or not isinstance(grant.get("id"), str)
+                or grant.get("subject") != {"kind": "service", "name": "scheduler"}
+                or grant.get("effect") != "deny" or grant.get("actions") != ["run"]
+                or grant.get("resource") != {"kind": "workflow", "pattern": "*"}
+                or grant.get("condition") is not None or grant.get("methods") is not None
+                or grant.get("state") not in ("active", "revoked")):
+            raise RuntimeError("Scheduler guard identity differs; refusing to change it")
+        return grant
+
+    def policy(grant_id, active):
+        remote(POLICY_RELOAD, SWAMP, token, timeout=30)
+        result = json.loads(remote(GUARD_CHECK, SWAMP, token, timeout=30))
+        matches = result.get("matchingGrants") if isinstance(result, dict) else None
+        if (not isinstance(matches, list)
+                or any(not isinstance(g, dict) for g in matches)
+                or any(g.get("grantId") == grant_id for g in matches) != active
+                or (active and result.get("effect") != "deny")):
+            raise RuntimeError("Live scheduler policy does not match the deployment guard")
+
+    progress["guardPending"] = True  # Before POST: a lost reply must remain recoverable.
     original_error = None
     try:
-        for schedule in enabled:
-            progress["restored"] = False
-            attempted.append(schedule)
-            try:
-                remote(PAUSE, SWAMP, token, schedule["workflowId"], timeout=30)
-            except BaseException:
-                uncertain.add(schedule["workflowId"])
-                raise
-        yield path
+        remote(GUARD_CREATE, SWAMP, token, name, timeout=30)
+        grant = read(False)
+        if grant["state"] != "active":
+            raise RuntimeError("Deployment scheduler guard is not active")
+        policy(grant["id"], True)
+        yield
     except BaseException as error:
         original_error = error
         raise
     finally:
         with ignore_hangup():
-            failures = []
-            if attempted:
-                try:
-                    offline = stopped()
-                    current = {s["workflowId"]: s for s in schedule_list(remote, token, offline)}
-                except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
-                    failures.append(f"Cannot observe schedule restoration state: {error}")
-                else:
-                    for schedule in attempted:
-                        workflow = schedule["workflowId"]
-                        try:
-                            if workflow not in current:
-                                raise RuntimeError("Schedule missing from restoration evidence")
-                            if not current[workflow]["paused"]:
-                                if workflow in uncertain:
-                                    raise RuntimeError("Pause outcome is uncertain; inspect before releasing the marker")
-                                continue
-                            remote(RESUME_STOPPED if offline else RESUME, SWAMP,
-                                   APP if offline else token, workflow, timeout=30)
-                        except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
-                            failures.append(f'{schedule.get("workflowName", workflow)} ({workflow}): {error}')
-            if failures:
+            try:
+                offline = stopped()
+                grant = read(offline)
+                if grant["state"] == "active":
+                    remote(GUARD_REVOKE_STOPPED if offline else GUARD_REVOKE, SWAMP,
+                           APP if offline else token, name, timeout=30)
+                if read(offline)["state"] != "revoked":
+                    raise RuntimeError("Scheduler guard is still active after revoke")
+                if not offline:
+                    policy(grant["id"], False)
+                progress["guardPending"] = False
+            except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
                 prefix = f"Deployment failed: {original_error}. " if original_error else ""
-                raise RuntimeError(prefix + "Schedule resume failed: " + "; ".join(failures)
-                                   + f". Recover {LOCK_FILE}; snapshot {path}") from original_error
-            progress["restored"] = True
+                raise RuntimeError(prefix + f"Scheduler guard cleanup failed: {error}. Recover {name}; "
+                                   f"retained {LOCK_FILE}; snapshot {progress['snapshot']}") from original_error
+
+
+@contextlib.contextmanager
+def paused_schedules(remote, token, stopped, progress):
+    schedules = schedule_list(remote, token)
+    enabled = [s for s in schedules if not s["paused"] and not s["orphaned"]]
+    path = progress["snapshot"]
+    with open(path, "w") as snapshot:
+        json.dump({"schedules": schedules, "schedulerGuard": progress["guard"]}, snapshot)
+        snapshot.flush()
+        os.fsync(snapshot.fileno())
+    with scheduler_guard(remote, token, stopped, progress):
+        attempted, uncertain = [], set()
+        original_error = None
+        try:
+            for schedule in enabled:
+                progress["restored"] = False
+                attempted.append(schedule)
+                try:
+                    remote(PAUSE, SWAMP, token, schedule["workflowId"], timeout=30)
+                except BaseException:
+                    uncertain.add(schedule["workflowId"])
+                    raise
+            yield path
+        except BaseException as error:
+            original_error = error
+            raise
+        finally:
+            with ignore_hangup():
+                failures = []
+                if attempted:
+                    try:
+                        offline = stopped()
+                        current = {s["workflowId"]: s for s in schedule_list(remote, token, offline)}
+                    except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
+                        failures.append(f"Cannot observe schedule restoration state: {error}")
+                    else:
+                        for schedule in attempted:
+                            workflow = schedule["workflowId"]
+                            try:
+                                if workflow not in current:
+                                    raise RuntimeError("Schedule missing from restoration evidence")
+                                if not current[workflow]["paused"]:
+                                    if workflow in uncertain:
+                                        raise RuntimeError("Pause outcome is uncertain; inspect before releasing the marker")
+                                    continue
+                                remote(RESUME_STOPPED if offline else RESUME, SWAMP,
+                                       APP if offline else token, workflow, timeout=30)
+                            except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
+                                failures.append(f'{schedule.get("workflowName", workflow)} ({workflow}): {error}')
+                if failures:
+                    prefix = f"Deployment failed: {original_error}. " if original_error else ""
+                    raise RuntimeError(prefix + "Schedule resume failed: " + "; ".join(failures)
+                                       + f". Recover {LOCK_FILE}; snapshot {path}") from original_error
+                progress["restored"] = True
 
 
 def deploy():
