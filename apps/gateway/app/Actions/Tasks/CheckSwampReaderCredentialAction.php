@@ -9,6 +9,7 @@ use App\Domain\Settings\SettingRepository;
 use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
 use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\SwampReaderAssistance;
 use App\Domain\Tasks\SwampReaderCredential;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskExtensionState;
@@ -50,10 +51,8 @@ final readonly class CheckSwampReaderCredentialAction
                 throw new RuntimeException('Swamp reader rotation needs assistance, but the orbit Project is missing.');
             }
             $scope = new SettingScope(SettingScopeType::Gateway);
-            $key = 'swamp.reader_assistance.'.hash('sha256', $token);
-            $reason = $expiry === null
-                ? 'The Gateway Swamp reader expiry is unknown. Install a replacement with recorded expiry.'
-                : 'The Gateway Swamp reader expires at '.$expiry->toISOString().'. Rotate it before expiry.';
+            $key = SwampReaderAssistance::key($token);
+            $reason = SwampReaderAssistance::reason($expiry);
 
             return DB::transaction(function () use ($scope, $key, $reason, $project): int {
                 $id = $this->settings->get($scope, $key);

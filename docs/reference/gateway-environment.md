@@ -7,6 +7,7 @@ covers:
   - apps/gateway/app/Actions/Tasks/*SwampReaderCredentialAction.php
   - apps/gateway/app/Console/Commands/*SwampReaderCredentialCommand.php
   - apps/gateway/app/Domain/Tasks/SwampReaderCredential.php
+  - apps/gateway/app/Domain/Tasks/SwampReaderAssistance.php
   - apps/gateway/app/Infrastructure/Tasks/SwampReaderEnvironment.php
 ---
 
@@ -59,7 +60,9 @@ The Gateway operator owns rotation. Swamp requires admin authority to mint or re
        gateway:swamp-reader:install --expires-at="$expires_at"
    ```
 
-   The command holds the Gateway release lock, verifies a fresh workflow-history read with the candidate credential, and creates a private mode-`0600` backup before changing the env file. It preserves other settings and replaces the token, its name, and its expiry in one atomic rename. Duplicate definitions, invalid env input, and unsafe files refuse before mutation. A failed live read leaves the env file unchanged. Successful output contains only the token name, expiry, and backup path.
+   The command holds the Gateway release lock, verifies a fresh workflow-history read with the candidate credential, and creates a private mode-`0600` backup before changing the env file. It preserves other settings and replaces the token, its name, and its expiry in one atomic rename. Duplicate definitions, invalid env input, and unsafe files refuse before mutation.
+
+   After the verified replacement is installed, the command clears the previous credential's own rotation assistance. A failed live read or env write leaves that assistance open. A newer operator direction or unrelated assistance stays unchanged. Successful output contains only the token name, expiry, and backup path.
 
 3. Apply the env change and verify the serving Gateway.
 
@@ -71,9 +74,13 @@ The Gateway operator owns rotation. Swamp requires admin authority to mint or re
 
 4. Revoke the old token only after that read succeeds.
 
-   On Swamp, run `swamp access token revoke <old-name>`. Resolve the Orbit assistance request after verification and revocation. If configuration application or serving verification fails, keep the old token valid, restore the protected backup, apply configuration again, and revoke the unused replacement.
+   On Swamp, run `swamp access token revoke <old-name>`. The installer clears the old rotation assistance. Complete its task after serving verification and revocation. If configuration application or serving verification fails, keep the old token valid, restore the protected backup, apply configuration again, and revoke the unused replacement.
 
-`ORBIT_SWAMP_READ_TOKEN_NAME` and `ORBIT_SWAMP_READ_TOKEN_EXPIRES_AT` record the installed credential. For an existing installation without these fields, the first hourly check requests assistance to install a replacement with recorded expiry. Run `gateway:swamp-reader:check` to check now. A due request stays visible after expiry; a token with no reader configured is skipped. Missing the `orbit` Project or disabling Tasks makes a due check fail visibly. The request is an operator action and starts no agent or workflow.
+`ORBIT_SWAMP_READ_TOKEN_NAME` and `ORBIT_SWAMP_READ_TOKEN_EXPIRES_AT` record the installed credential.
+
+For an existing installation without these fields, the first hourly check requests assistance. When the name and expiry are already known, back up the env file privately, then add or replace only these two metadata keys in a private editor. Leave `ORBIT_SWAMP_READ_TOKEN` unchanged. Apply configuration with `gateway:release:configure`, then run `gateway:swamp-reader:check`. This records metadata without revealing the token. If assistance was already raised, resolve that request after a fresh serving read confirms the existing credential.
+
+Run `gateway:swamp-reader:check` to check now. A due request stays visible after expiry; a token with no reader configured is skipped. Missing the `orbit` Project or disabling Tasks makes a due check fail visibly. The request is an operator action and starts no agent or workflow.
 
 Minting under a new name keeps the old credential valid until the replacement works. `swamp access token rotate <name>` revokes and replaces that name immediately, so it is not used for this handoff. Keep private backups under the Gateway operator's retention policy.
 
