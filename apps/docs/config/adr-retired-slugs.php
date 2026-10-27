@@ -224,4 +224,5 @@ return [
     '0236' => ['0236-measure-task-delivery-from-recorded-lifecycle-times'],
     '0237' => ['0237-read-swamp-task-output-through-the-gateway'],
     '0239' => ['0239-let-swamp-own-dependency-maintenance'],
+    '0238' => ['0238-run-linux-on-x86-64-only'],
 ];

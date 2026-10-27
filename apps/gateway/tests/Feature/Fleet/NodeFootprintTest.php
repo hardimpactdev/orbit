@@ -148,7 +148,7 @@ it('re-applies artifacts for a new native pin but ignores unrelated manifest cha
     mkdir($root, 0700);
     $manifest = ['commit' => str_repeat('a', 40), 'version' => '0.5.0', 'artifacts' => [
         'linux-x86_64' => ['sha256' => str_repeat('1', 64), 'path' => 'first'],
-        'linux-aarch64' => ['sha256' => str_repeat('2', 64), 'path' => 'arm'],
+        'macos-aarch64' => ['sha256' => str_repeat('2', 64), 'path' => 'mac'],
     ]];
     $delivery = static function (array $contents) use ($root): AgentDelivery {
         file_put_contents($root.'/manifest.json', json_encode($contents, JSON_THROW_ON_ERROR));
@@ -172,7 +172,7 @@ it('re-applies artifacts for a new native pin but ignores unrelated manifest cha
             ->and($updated->expected($node)->artifacts['caddy-package'])->not->toBe($original['caddy-package']);
         $caddy->applied = $package->applied = [];
         $manifest['artifacts']['linux-x86_64']['path'] = 'moved';
-        $manifest['artifacts']['linux-aarch64']['sha256'] = str_repeat('4', 64);
+        $manifest['artifacts']['macos-aarch64']['sha256'] = str_repeat('4', 64);
         $manifest['commit'] = str_repeat('b', 40);
         $unchanged = new NodeFootprint($delivery($manifest), [$package, $caddy]);
         expect($unchanged->drifted($node))->toBeFalse();

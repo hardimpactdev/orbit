@@ -54,14 +54,13 @@ describe('Caddy package', function (): void {
         'ingress' => [RoleName::Ingress, true],
     ]);
 
-    it('passes only the pinned release, digests, and version floor to the agent', function (): void {
+    it('passes only the pinned release, amd64 digest, and version floor to the agent', function (): void {
         $agents = (new FakeAgentCommandRunner)->answer('caddy.install-package', ['changed' => true, 'version' => '2.10.2']);
 
         expect((new AgentCaddyPackage($agents))->install(new Node(['name' => 'dev']))->stdout)->toBe(AgentCaddyPackage::Changed."\n")
             ->and($agents->calls[0]['input'])->toBe([
                 'release' => '2.11.7',
                 'amd64_sha512' => '47e8351c2317b427af14a103e763ca1118a3d2396a88b4c0669cdec9c4a68a957690194e2423a1633f53135741c33a41bdac2b55515b7d0f7adc8b733add50d9',
-                'arm64_sha512' => 'ac32f03f0eea04021f2d4e5d89bfd01b84ead115f2eba9d2a0d06447e86d4af932899e56f090993a566d0925dbd1063002929b395541a8c5f5e51d7039f7375a',
                 'minimum_version' => '2.9.0',
             ]);
     });

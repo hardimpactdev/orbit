@@ -63,7 +63,7 @@ Each asset has `platform`, the release asset `name`, the HTTPS download `url`, a
 }
 ```
 
-The example shows one asset of each list. The Gateway returns the Linux x86_64 and macOS arm64 CLI assets and the agent assets in the release manifest.
+The example shows one asset of each list. The Gateway returns Linux x86_64 and macOS arm64 CLI assets and Linux x86_64 and both macOS agent architectures.
 
 ### Where it is served
 

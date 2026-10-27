@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\Firewall\FirewallOperationException;
-use App\Domain\Nodes\NodeArchitectureMismatchException;
 use App\Domain\Nodes\NodeObservation;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeProvisioningIdentity;
@@ -209,10 +208,29 @@ it('stops before installation when architecture selection or its validation fail
         $agents->answer = static fn () => throw new AgentRunnerFailure('agent.install', AgentRunnerFailure::Transport, 'No architecture.');
     }
     expect(fn () => base_node_converger($agents)->converge($node, base_identity(), 'SHA256:pinned', recordObservation: static function (): void {
-        throw new NodeArchitectureMismatchException('base-node', 'aarch64', 'x86_64');
-    }))->toThrow($probeFails ? NodeProvisioningException::class : NodeArchitectureMismatchException::class);
+        throw new RuntimeException('The observation is refused.');
+    }))->toThrow($probeFails ? NodeProvisioningException::class : RuntimeException::class);
     expect(array_column($agents->calls, 'command'))->toBe(['stage-architecture']);
 })->with([false, true]);
+
+it('refuses a Linux ARM machine before it records the observation or stages the agent', function (string $architecture): void {
+    $node = base_provisionable_node();
+    $agents = new BaseAdmissionAgents;
+    $agents->architecture = $architecture;
+    $recorded = false;
+
+    expect(fn () => base_node_converger($agents)->converge($node, base_identity(), 'SHA256:pinned', recordObservation: static function () use (&$recorded): void {
+        $recorded = true;
+    }))->toThrow(function (NodeProvisioningException $e) use ($node, $architecture): void {
+        expect($e->errorCode)->toBe('node.architecture_unsupported')
+            ->and($e->status)->toBe(422)
+            ->and($e->step)->toBe('machine-architecture')
+            ->and($e->getMessage())->toBe("Node [{$node->name}] reports architecture [{$architecture}]. Linux Nodes must be [x86_64].");
+    });
+    expect($recorded)->toBeFalse()
+        ->and(array_column($agents->calls, 'command'))->toBe(['stage-architecture'])
+        ->and($node->fresh()->architecture)->toBeNull();
+})->with(['aarch64', 'arm64']);
 
 it('maps native failures and stops before networking', function (string $command, string $code, string $step, string $publicCode): void {
     $agents = new BaseAdmissionAgents;

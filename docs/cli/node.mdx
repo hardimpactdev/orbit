@@ -65,7 +65,7 @@ orbit node:add <name> [host] [options]
 | `--user=USER` | `root` for a new Node, the managed user for an existing Node | Bootstrap SSH user. |
 | `--orbit-user=USER` | `orbit` for a new Node | Managed user that every later Gateway command uses. |
 | `--platform=PLATFORM` | `linux` | `linux` for Ubuntu service Nodes, or `macos` for tools on an existing account and tunnel. |
-| `--architecture=ARCH` | the observed value | Machine architecture, such as `x86_64`. A given value must equal the observed one. |
+| `--architecture=ARCH` | the observed value | Machine architecture. A given value must equal the observed one. A Linux Node accepts only `x86_64`; another value, or a Linux machine that reports another architecture, fails with `node.architecture_unsupported`. |
 | `--tld=TLD` | none | Node TLD. Required for `app-dev`, unless the Node joins an active Cluster with a TLD. A production Node needs it for [clone](/cli/instance#orbit-instanceclone) preview domains. It cannot equal, be an ancestor of, or be a descendant of `orbit` or the configured VPN domain. Comparisons ignore case and the VPN domain’s optional root dot, and use DNS label boundaries. |
 | `--role=ROLE` | none | Role to assign. Repeat for more roles. Without it, see [Nodes without roles](/reference/node-provisioning#nodes-without-roles). |
 | `--cluster=ID` | none | Cluster to join. |

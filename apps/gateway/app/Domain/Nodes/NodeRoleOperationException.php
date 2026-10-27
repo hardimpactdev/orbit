@@ -28,6 +28,8 @@ final class NodeRoleOperationException extends RuntimeException implements Rende
         string $message,
         ?CommandResult $result = null,
         ?Throwable $previous = null,
+        /** HTTP 502, or the status of the Node convergence refusal it wraps. */
+        public readonly int $status = 502,
     ) {
         $this->underlyingErrorCode = NodeLockLoss::in($previous) ? NodeLockLoss::ErrorCode : $underlyingErrorCode;
         $this->result = $result === null

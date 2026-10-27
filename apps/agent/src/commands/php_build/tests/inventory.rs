@@ -21,6 +21,10 @@ fn invalid_input_and_platform_refuse_before_program_execution() {
     assert_eq!(f.apply().unwrap_err().kind, Kind::InputInvalid);
     assert!(f.host.calls.is_empty());
     f.input.repack.package = "dpkg-repack".into();
+    f.input.versions.get_mut("8.5").unwrap().packages[0].architecture = "arm64".into();
+    assert_eq!(f.apply().unwrap_err().kind, Kind::InputInvalid);
+    assert!(f.host.calls.is_empty());
+    f.input.versions.get_mut("8.5").unwrap().packages[0].architecture = "amd64".into();
     write(
         &f.files,
         "/etc/os-release",
@@ -35,7 +39,9 @@ fn invalid_input_and_platform_refuse_before_program_execution() {
 fn unavailable_architecture_and_conflicting_pins_refuse_before_changes() {
     let mut f = Fixture::new();
     f.host.arch = "arm64".into();
-    assert_eq!(f.apply().unwrap_err().kind, Kind::DownloadFailed);
+    let refused = f.apply().unwrap_err();
+    assert_eq!(refused.kind, Kind::ExecutionFailed);
+    assert_eq!(refused.data.diagnostic.unwrap().stage, "architecture");
     assert!(!f.files.path(CACHE).exists());
     f.host.arch = "amd64".into();
     let mut other = f.input.versions["8.5"].clone();

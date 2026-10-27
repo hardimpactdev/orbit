@@ -20,7 +20,6 @@ Supported targets and GitHub Actions artifact contract:
 
   mac arm      dest apps/cli/builds/dist/mac/mac-arm      artifact orbit-macos-arm64
   linux x64    dest apps/cli/builds/dist/linux/linux-x64  artifact orbit-linux-x64
-  linux arm    dest apps/cli/builds/dist/linux/linux-arm  artifact orbit-linux-arm64
 EOF
 }
 
@@ -44,7 +43,7 @@ fi
 }
 
 case "$platform:$architecture" in
-    mac:arm|linux:x64|linux:arm)
+    mac:arm|linux:x64)
         ;;
     *)
         fail "unsupported target: ${platform} ${architecture}"

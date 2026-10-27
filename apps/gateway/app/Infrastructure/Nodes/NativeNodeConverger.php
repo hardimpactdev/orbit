@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Nodes;
 
 use App\Domain\Firewall\FirewallOperationException;
+use App\Domain\Nodes\MachineArchitecture;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeObservation;
 use App\Domain\Nodes\NodeProvisioningException;
@@ -158,6 +159,15 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
             $architecture = $this->agents->architectureOver($node, $bootstrapConnection);
         } catch (AgentRunnerFailure $exception) {
             throw new NodeProvisioningException('machine-architecture', 'node.architecture_unavailable', "Could not observe the machine architecture of node [{$node->name}].", $exception, $exception->result);
+        }
+        // Linux Nodes are x86_64 only. Refuse another machine before anything is staged or recorded.
+        if ($architecture !== MachineArchitecture::Linux) {
+            throw new NodeProvisioningException(
+                'machine-architecture',
+                'node.architecture_unsupported',
+                "Node [{$node->name}] reports architecture [{$architecture}]. Linux Nodes must be [".MachineArchitecture::Linux.'].',
+                status: 422,
+            );
         }
         $observation = new NodeObservation($architecture);
         $recordObservation?->__invoke($observation);

@@ -15,7 +15,7 @@ covers:
 
 Orbit installs the exact PHP build that the [machine software recipe](/reference/compute-drivers#php-build) pins, from Sury packages, and serves each site through PHP-FPM over a Unix socket. Development Instances on a Node share one PHP-FPM service per PHP version. Each production Instance that serves PHP gets its own PHP-FPM service, with its own OPcache.
 
-Managed PHP supports amd64 only. PHP installation on arm64 fails with `PHP is not available for arm64`; Orbit never substitutes packages from another architecture.
+Managed PHP supports amd64 only, because [Linux Nodes are x86_64 only](/reference/node-provisioning#machine-architecture). Orbit never substitutes packages from another architecture.
 
 ## Select the PHP version
 

@@ -24,12 +24,7 @@ pub fn platform(host: &mut impl Host, files: &Files, input: &Input) -> Result<()
             "Unsupported operating system",
         ));
     }
-    if apt::architecture(host)? != input.architecture.name() {
-        return Err(Failure::new(
-            "architecture",
-            "The observed architecture differs from the recipe",
-        ));
-    }
+    apt::architecture(host)?;
     if apt::packages(host)?.contains_key("docker-ce") {
         return Err(Failure::new(
             "docker-provider:docker-ce",

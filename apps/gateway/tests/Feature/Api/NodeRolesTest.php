@@ -11,12 +11,16 @@ use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Nodes\GatewayPrivateDnsRoute;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeLockLoss;
+use App\Domain\Nodes\NodeObservation;
+use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleFollowUpReport;
 use App\Domain\Nodes\NodeRoleOperationException;
+use App\Domain\Nodes\RecoverableNodeConverger;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
@@ -130,6 +134,34 @@ it('keeps ordinary role mutation on target access', function (): void {
 
     $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'app-dev'])
         ->assertCreated();
+});
+
+it('refuses a role on a Linux ARM Node with HTTP 422 and assigns nothing', function (): void {
+    $this->node->update(['architecture' => 'aarch64', 'user' => 'orbit']);
+    $this->caller->accessibleNodes()->attach($this->node);
+    // The native converger refuses a Linux machine that is not x86_64 at its architecture probe.
+    app()->instance(NodeConverger::class, new class implements NodeConverger, RecoverableNodeConverger
+    {
+        public function converge(Node $node, NodeProvisioningIdentity $identity, ?string $expectedSshHostFingerprint = null, bool $rolelessOperator = false, ?Closure $recordObservation = null): NodeObservation
+        {
+            throw new NodeProvisioningException('machine-architecture', 'node.architecture_unsupported', "Node [{$node->name}] reports architecture [aarch64]. Linux Nodes must be [x86_64].", status: 422);
+        }
+
+        public function convergeRecoverably(Node $node, NodeProvisioningIdentity $identity, ?string $expectedSshHostFingerprint, Closure $completion, bool $rolelessOperator = false, ?Closure $recordObservation = null): void
+        {
+            $completion($this->converge($node, $identity, $expectedSshHostFingerprint, $rolelessOperator, $recordObservation));
+        }
+    });
+
+    $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'app-dev'])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'node_role.convergence_failed')
+        ->assertJsonPath('error.details.error_code', 'node.architecture_unsupported')
+        ->assertJsonPath('error.details.step', 'converge:machine-architecture')
+        ->assertJsonPath('error.message', 'Node [role-target] reports architecture [aarch64]. Linux Nodes must be [x86_64].');
+
+    expect($this->node->roles()->exists())->toBeFalse()
+        ->and($this->roleLifecycle->converged)->toBe([]);
 });
 
 it('exposes only the exact numeric node role routes and methods', function (): void {

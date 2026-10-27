@@ -99,7 +99,7 @@ final readonly class TopologyGuestPreparer
         $architectures = [];
         foreach ($this->host->execAll($commands) as $guest => $result) {
             $architecture = trim($result->stdout);
-            if (! $result->successful() || ! in_array($architecture, ['amd64', 'arm64'], true)) {
+            if (! $result->successful() || $architecture !== 'amd64') {
                 throw new RuntimeException("Cannot determine the pnpm architecture on {$guest}.");
             }
             $architectures[$guest] = $architecture;

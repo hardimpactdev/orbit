@@ -119,11 +119,10 @@ function cli_release_artifacts(): string
 {
     $root = (string) cli_release_temp('orbit-cli-artifacts');
     cli_release_fake_binary($root.'/artifacts/orbit-linux-x64/linux-x64', 'linux-x86_64');
-    cli_release_fake_binary($root.'/artifacts/orbit-linux-arm64/linux-arm', 'linux-aarch64');
     cli_release_fake_binary($root.'/artifacts/orbit-macos-arm64/mac-arm', 'macos-arm64');
     // CI's tested agent delivery, as tools/combine_agent_delivery.py writes it.
     $manifest = ['commit' => str_repeat('a', 40), 'version' => '0.5.0', 'artifacts' => []];
-    foreach (['linux-aarch64', 'linux-x86_64', 'macos-aarch64', 'macos-x86_64'] as $platform) {
+    foreach (['linux-x86_64', 'macos-aarch64', 'macos-x86_64'] as $platform) {
         cli_release_fake_binary($root.'/agent-delivery/orbit-agent-'.$platform, $platform);
         $manifest['artifacts'][$platform] = ['path' => 'orbit-agent-'.$platform, 'sha256' => hash_file('sha256', $root.'/agent-delivery/orbit-agent-'.$platform)];
     }
@@ -231,10 +230,8 @@ describe('CLI release assets', function (): void {
         [$exitCode, , $stderr] = cli_release_assets($root, '0.4681.0');
 
         $names = [
-            'orbit-0.4681.0-linux-aarch64',
             'orbit-0.4681.0-linux-x86_64',
             'orbit-0.4681.0-macos-arm64',
-            'orbit-agent-linux-aarch64',
             'orbit-agent-linux-x86_64',
             'orbit-agent-macos-aarch64',
             'orbit-agent-macos-x86_64',
@@ -267,7 +264,7 @@ describe('CLI release assets', function (): void {
         match ($fault) {
             'digest' => File::append($root.'/agent-delivery/orbit-agent-linux-x86_64', 'changed'),
             'platform' => cli_release_fake_binary($root.'/agent-delivery/orbit-agent-macos-x86_64', 'macos-aarch64'),
-            'missing' => File::delete($root.'/agent-delivery/orbit-agent-linux-aarch64'),
+            'missing' => File::delete($root.'/agent-delivery/orbit-agent-macos-aarch64'),
         };
 
         [$exitCode, , $stderr] = cli_release_assets($root, '0.4681.0');
@@ -283,12 +280,27 @@ describe('CLI release assets', function (): void {
 
     it('refuses a binary built for another platform', function (): void {
         $root = cli_release_artifacts();
-        cli_release_fake_binary($root.'/artifacts/orbit-linux-arm64/linux-arm', 'linux-x86_64');
+        cli_release_fake_binary($root.'/artifacts/orbit-linux-x64/linux-x64', 'linux-aarch64');
 
         [$exitCode, , $stderr] = cli_release_assets($root, '0.4681.0');
 
         expect($exitCode)->toBe(1)
-            ->and($stderr)->toContain('is not a linux-aarch64 executable')
+            ->and($stderr)->toContain('is not a linux-x86_64 executable')
+            ->and($root.'/release')->not->toBeDirectory();
+    });
+
+    it('refuses an agent delivery that names a Linux arm64 binary', function (): void {
+        $root = cli_release_artifacts();
+        cli_release_fake_binary($root.'/agent-delivery/orbit-agent-linux-aarch64', 'linux-aarch64');
+        $manifest = json_decode(File::get($root.'/agent-delivery/manifest.json'), true);
+        $manifest['artifacts']['linux-aarch64'] = ['path' => 'orbit-agent-linux-aarch64', 'sha256' => hash_file('sha256', $root.'/agent-delivery/orbit-agent-linux-aarch64')];
+        ksort($manifest['artifacts']);
+        File::put($root.'/agent-delivery/manifest.json', json_encode($manifest));
+
+        [$exitCode, , $stderr] = cli_release_assets($root, '0.4681.0');
+
+        expect($exitCode)->toBe(1)
+            ->and($stderr)->toContain('the agent manifest does not name exactly linux-x86_64 macos-aarch64 macos-x86_64')
             ->and($root.'/release')->not->toBeDirectory();
     });
 
@@ -460,8 +472,8 @@ describe('CLI release workflow', function (): void {
     it('names the missing provenance bundle when the release of the commit exists without it', function (bool $withBundle, int $exitCode, string $output): void {
         $bin = (string) cli_release_temp('orbit-cli-release-bin');
         File::ensureDirectoryExists($bin);
-        $names = ['SHA256SUMS', 'manifest.json', 'orbit-0.2.0-linux-aarch64', 'orbit-0.2.0-linux-x86_64', 'orbit-0.2.0-macos-arm64',
-            'orbit-agent-linux-aarch64', 'orbit-agent-linux-x86_64', 'orbit-agent-macos-aarch64', 'orbit-agent-macos-x86_64', ...($withBundle ? ['provenance.sigstore.json'] : [])];
+        $names = ['SHA256SUMS', 'manifest.json', 'orbit-0.2.0-linux-x86_64', 'orbit-0.2.0-macos-arm64',
+            'orbit-agent-linux-x86_64', 'orbit-agent-macos-aarch64', 'orbit-agent-macos-x86_64', ...($withBundle ? ['provenance.sigstore.json'] : [])];
         File::put($bin.'/release.json', json_encode(['assets' => array_map(static fn (string $name): array => ['name' => $name], $names)]));
         File::put($bin.'/gh', "#!/bin/sh\ncase \"\$2\" in\n  */releases/tags/*) cat '{$bin}/release.json' ;;\n  *) echo \"\$COMMIT\" ;;\nesac\n");
         chmod($bin.'/gh', 0755);
@@ -587,7 +599,6 @@ describe('CLI binary workflow', function (): void {
         // PHPacker appends the PHAR to a prebuilt PHP, so a macOS target needs no Mac to build.
         expect($runners)->toBe([
             'linux-x64' => 'ubuntu-26.04',
-            'linux-arm64' => 'ubuntu-26.04',
             'macos-arm64' => 'ubuntu-26.04',
         ])
             ->and($build['outputs'])->toBe(['version' => '${{ steps.version.outputs.value }}']);
@@ -598,26 +609,14 @@ describe('CLI binary workflow', function (): void {
         $native = array_column($build['strategy']['matrix']['include'], 'native', 'target');
         $run = collect($build['steps'])->firstWhere('name', 'Run the binary on its own platform');
 
-        expect($native)->toBe(['linux-x64' => true, 'linux-arm64' => false, 'macos-arm64' => false])
+        expect($native)->toBe(['linux-x64' => true, 'macos-arm64' => false])
             ->and($run['if'])->toBe('matrix.native')
             ->and($run['run'])->toContain('env -i HOME="$home" PATH=/usr/bin:/bin "$BINARY" --version')
             ->and($run['run'])->toContain('test "$reported" = "Orbit ${VERSION}"');
     });
 
-    it('runs the cross-built Linux arm64 binary on a hosted arm64 runner without PHP', function (): void {
-        $runArm64 = cli_binary_workflow()['jobs']['run-linux-arm64'];
-        $run = collect($runArm64['steps'])->firstWhere('name', 'Run the binary on its own platform');
-
-        expect($runArm64['runs-on'])->toBe('ubuntu-26.04-arm')
-            ->and($runArm64['needs'])->toBe('build')
-            ->and(cli_binary_step_uses($runArm64))->toBe(['actions/download-artifact'])
-            ->and($runArm64['steps'][0]['with'])->toBe(['name' => 'orbit-linux-arm64', 'path' => 'binary'])
-            ->and($run['env'])->toBe(['VERSION' => '${{ needs.build.outputs.version }}'])
-            ->and($run['run'])->toContain('chmod 0755 binary/linux-arm')
-            ->and($run['run'])->toContain('env -i HOME="$home" PATH=/usr/bin:/bin binary/linux-arm --version')
-            ->and($run['run'])->toContain('test "$reported" = "Orbit ${VERSION}"')
-            ->and($run['run'])->not->toContain('php')
-            ->and($run['run'])->not->toContain('composer');
+    it('builds and runs no Linux arm64 binary', function (): void {
+        expect(array_keys(cli_binary_workflow()['jobs']))->toBe(['build', 'run-macos']);
     });
 
     it('runs the macOS binary on a hosted Mac without PHP', function (): void {
@@ -651,13 +650,12 @@ describe('CLI binary workflow', function (): void {
         }
     });
 
-    it('publishes only after every build job and native arm64 run succeeds', function (): void {
+    it('publishes only after every build job and the native macOS run succeed', function (): void {
         $jobs = cli_release_workflow()['jobs'];
 
         expect($jobs['publish']['needs'])->toBe(['resolve', 'build'])
             ->and($jobs['build']['uses'])->toBe('./.github/workflows/orbit-cli-binary.yml')
             ->and(cli_binary_workflow()['permissions'])->toBe(['contents' => 'read'])
-            ->and(cli_binary_workflow()['jobs']['run-macos'])->not->toHaveKey('permissions')
-            ->and(cli_binary_workflow()['jobs']['run-linux-arm64'])->not->toHaveKey('permissions');
+            ->and(cli_binary_workflow()['jobs']['run-macos'])->not->toHaveKey('permissions');
     });
 });

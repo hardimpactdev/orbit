@@ -43,12 +43,17 @@ final readonly class NativeSelfUpdateHost implements SelfUpdateHost
 
     public function platform(): ?string
     {
-        $machine = strtolower(php_uname('m'));
+        return self::releasePlatform(PHP_OS_FAMILY, php_uname('m'));
+    }
+
+    /** The release platform of an OS family and machine name. Linux releases are x86_64 only. */
+    public static function releasePlatform(string $osFamily, string $machine): ?string
+    {
+        $machine = strtolower($machine);
 
         return match (true) {
-            PHP_OS_FAMILY === 'Linux' && in_array($machine, ['x86_64', 'amd64'], true) => 'linux-x86_64',
-            PHP_OS_FAMILY === 'Linux' && in_array($machine, ['aarch64', 'arm64'], true) => 'linux-aarch64',
-            PHP_OS_FAMILY === 'Darwin' && $machine === 'arm64' => 'macos-arm64',
+            $osFamily === 'Linux' && in_array($machine, ['x86_64', 'amd64'], true) => 'linux-x86_64',
+            $osFamily === 'Darwin' && $machine === 'arm64' => 'macos-arm64',
             default => null,
         };
     }

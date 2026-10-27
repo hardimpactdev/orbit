@@ -409,7 +409,7 @@ fn real_global_lifecycle_preserves_other_packages_and_repeats() {
         .into_iter()
         .map(|name| (name.into(), recipe["tools"][name].clone()))
         .collect();
-    let input: Input = serde_json::from_value(json!({"user":account.name, "snapshot":recipe["ubuntu"]["snapshot"], "architecture":if cfg!(target_arch="aarch64") {"arm64"} else {"amd64"}, "tools":pins, "artifact_mirror":recipe["artifact_mirror"], "vp_lock":include_str!("../../../../gateway/resources/machine-software/vite-plus-package-lock.json")})).unwrap();
+    let input: Input = serde_json::from_value(json!({"user":account.name, "snapshot":recipe["ubuntu"]["snapshot"], "architecture":"amd64", "tools":pins, "artifact_mirror":recipe["artifact_mirror"], "vp_lock":include_str!("../../../../gateway/resources/machine-software/vite-plus-package-lock.json")})).unwrap();
     let context = Context::new(Platform::Linux, Instant::now() + Duration::from_secs(900));
     recipe::javascript::converge(
         &mut recipe::Native(&context),

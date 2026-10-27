@@ -10,16 +10,15 @@ Usage:
 Turns the Orbit CLI Binary workflow artifacts and CI's tested agent delivery
 into the assets of one Orbit release. <artifact-dir> holds one directory per
 CLI artifact, as actions/download-artifact writes them. <agent-dir> is CI's
-agent-delivery artifact: the four agent binaries and manifest.json.
+agent-delivery artifact: the three agent binaries and manifest.json.
 <download-url> is the release's HTTPS download path, which the manifest names
 for each agent binary. <out-dir> must not exist yet.
 
   artifact                       release asset
   orbit-linux-x64/linux-x64      orbit-<version>-linux-x86_64
-  orbit-linux-arm64/linux-arm    orbit-<version>-linux-aarch64
   orbit-macos-arm64/mac-arm      orbit-<version>-macos-arm64
-  <agent-dir>/orbit-agent-*      orbit-agent-linux-x86_64, orbit-agent-linux-aarch64,
-                                 orbit-agent-macos-aarch64, orbit-agent-macos-x86_64
+  <agent-dir>/orbit-agent-*      orbit-agent-linux-x86_64, orbit-agent-macos-aarch64,
+                                 orbit-agent-macos-x86_64
   <agent-dir>/manifest.json      manifest.json, with each binary's URL
 
 It refuses a version that is not 0.N.0, a missing or empty binary, a binary
@@ -72,9 +71,6 @@ check_platform() {
         linux-x86_64)
             [[ "$bytes" == 7f454c4602* && "${bytes:36:4}" == "3e00" ]]
             ;;
-        linux-aarch64)
-            [[ "$bytes" == 7f454c4602* && "${bytes:36:4}" == "b700" ]]
-            ;;
         macos-arm64|macos-aarch64)
             [[ "$bytes" == cffaedfe0c000001* ]]
             ;;
@@ -86,11 +82,10 @@ check_platform() {
 
 targets=(
     'orbit-linux-x64/linux-x64:linux-x86_64'
-    'orbit-linux-arm64/linux-arm:linux-aarch64'
     'orbit-macos-arm64/mac-arm:macos-arm64'
 )
 
-agent_platforms=(linux-aarch64 linux-x86_64 macos-aarch64 macos-x86_64)
+agent_platforms=(linux-x86_64 macos-aarch64 macos-x86_64)
 
 for target in "${targets[@]}"; do
     source_path="${artifact_dir}/${target%%:*}"

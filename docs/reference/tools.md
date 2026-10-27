@@ -360,7 +360,7 @@ The compatible tag is computed by the agent. On macOS it reads the product versi
 
 When the major is 11 or higher, Orbit uses that major. It does not turn the display alias `10.16` into `big_sur`. A version with no row, including major `10`, has no compatible bottle. Apple silicon uses `arm64_` plus the symbol, so macOS 27 is `arm64_golden_gate`. Intel macOS, `x86_64`, uses the symbol alone. Any other macOS CPU has no compatible bottle. Update this table when Homebrew adds a symbol. Until then that OS has no compatible bottle.
 
-Linux does not use the table. `x86_64` maps to `x86_64_linux`. `aarch64` and `arm64` map to `arm64_linux`.
+Linux does not use the table. `x86_64` maps to `x86_64_linux`. Any other Linux CPU, including `aarch64`, has no compatible bottle.
 
 A bottle file keyed by that tag is compatible. A file keyed `all` is compatible only when the current tag is absent. An older OS tag, such as `arm64_sequoia` on macOS 27, is not compatible. If neither the current tag nor `all` has a checksummed file, the formula is refused before any change. Adopt uses block `bottle_unavailable`.
 

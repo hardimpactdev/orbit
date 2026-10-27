@@ -151,6 +151,7 @@ final readonly class AddNodeRoleAction
                 message: $exception->getMessage(),
                 result: $exception->result,
                 previous: $exception,
+                status: $exception->status,
             );
         }
 

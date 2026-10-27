@@ -99,7 +99,7 @@ node's identity.
 
 ```bash
 php artisan orbit:node-provision operator '<PUBLIC_SSH_HOST>' \
-    --architecture='<x86_64-or-aarch64>' \
+    --architecture=x86_64 \
     --host-key-fingerprint='SHA256:<APPROVED_HOST_KEY_FINGERPRINT>'
 ```
 

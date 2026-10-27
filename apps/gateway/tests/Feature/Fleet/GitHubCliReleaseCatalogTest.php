@@ -126,7 +126,7 @@ describe(GitHubCliReleaseCatalog::class, function (): void {
             ...cli_release_fixture_json('release.json'),
             'assets' => array_map(static fn (array $asset): array => [...$asset, 'state' => 'starter'], cli_release_fixture_json('release.json')['assets']),
         ])], 'release_incomplete'],
-        'SHA256SUMS without a binary' => [static fn (): array => ['/hardimpactdev/orbit/releases/download/cli-v0.4681.0/SHA256SUMS' => Http::response(implode("\n", array_slice(explode("\n", cli_release_fixture('SHA256SUMS')), 0, 2))."\n")], 'release_incomplete'],
+        'SHA256SUMS without a binary' => [static fn (): array => ['/hardimpactdev/orbit/releases/download/cli-v0.4681.0/SHA256SUMS' => Http::response(implode("\n", array_slice(explode("\n", cli_release_fixture('SHA256SUMS')), 0, 1))."\n")], 'release_incomplete'],
         'SHA256SUMS in another format' => [static fn (): array => ['/hardimpactdev/orbit/releases/download/cli-v0.4681.0/SHA256SUMS' => Http::response(str_replace('  ', ' *', cli_release_fixture('SHA256SUMS')))], 'release_incomplete'],
         'release without provenance' => [static fn (): array => ['/hardimpactdev/orbit/releases/download/cli-v0.4681.0/provenance.sigstore.json' => Http::response('Not Found', 404)], 'release_unverified'],
         'provenance for another SHA256SUMS' => [static fn (): array => ['/hardimpactdev/orbit/releases/download/cli-v0.4681.0/provenance.sigstore.json' => Http::response(SigstoreTestSigner::instance()->bundle(['SHA256SUMS' => 'other']))], 'release_unverified'],

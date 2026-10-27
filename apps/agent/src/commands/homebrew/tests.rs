@@ -171,23 +171,19 @@ fn unsupported_or_malformed_product_versions_do_not_invent_a_bottle() {
 }
 
 #[test]
-fn linux_bottle_tags_follow_the_host_architecture() {
-    for (value, tag) in [
-        ("x86_64\n", "x86_64_linux"),
-        ("aarch64\n", "arm64_linux"),
-        ("arm64\n", "arm64_linux"),
-    ] {
-        let mut host = Fake::text(value);
-        assert_eq!(
-            bottle_tag(&mut host, Platform::Linux, None).unwrap().tag,
-            tag
-        );
-        assert_eq!(host.calls[0].argv, ["/usr/bin/uname", "-m"]);
-    }
+fn linux_bottle_tags_support_only_x86_64() {
+    let mut host = Fake::text("x86_64\n");
     assert_eq!(
-        bottle_tag(&mut Fake::text("riscv64\n"), Platform::Linux, None),
-        Err(Error::Bottle {})
+        bottle_tag(&mut host, Platform::Linux, None).unwrap().tag,
+        "x86_64_linux"
     );
+    assert_eq!(host.calls[0].argv, ["/usr/bin/uname", "-m"]);
+    for value in ["aarch64\n", "arm64\n", "riscv64\n"] {
+        assert_eq!(
+            bottle_tag(&mut Fake::text(value), Platform::Linux, None),
+            Err(Error::Bottle {})
+        );
+    }
 }
 
 #[test]

@@ -60,7 +60,6 @@ fn metadata_reply(formula: Value) -> Output {
 fn candidates_and_mutations_use_native_platform_tags_and_fixed_core_argv() {
     for (platform, probe, tag) in [
         (Platform::Linux, "x86_64", "x86_64_linux"),
-        (Platform::Linux, "aarch64", "arm64_linux"),
         (Platform::Macos, "27.0.1", "arm64_golden_gate"),
     ] {
         for operation in [Operation::Install, Operation::Update, Operation::Remove] {

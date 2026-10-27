@@ -180,7 +180,7 @@ final readonly class TopologyComposer
         $architectures = [];
         foreach ($this->host->execAll($requests) as $node => $result) {
             $architecture = trim($result->stdout);
-            if (! $result->successful() || preg_match('/\A(?:x86_64|aarch64)\z/', $architecture) !== 1) {
+            if (! $result->successful() || $architecture !== 'x86_64') {
                 throw new RuntimeException("Node {$node} reported no valid machine architecture.");
             }
             $architectures[$node] = $architecture;

@@ -1080,6 +1080,10 @@
     {
       "source": "/decisions/0237-read-swamp-task-output-through-the-gateway",
       "destination": "/reference/tasks#swamp-output-stays-a-read"
+    },
+    {
+      "source": "/decisions/0238-run-linux-on-x86-64-only",
+      "destination": "/reference/cli-binaries#linux-x86_64-only"
     }
   ]
 }

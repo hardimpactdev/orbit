@@ -121,12 +121,7 @@ fn materialize(
     deadline: Instant,
 ) -> Result<Output> {
     input.validate().map_err(|_| Error::Invalid {})?;
-    let architecture = if cfg!(target_arch = "aarch64") {
-        "arm64"
-    } else {
-        "amd64"
-    };
-    if input.architecture.name() != architecture {
+    if !cfg!(target_arch = "x86_64") {
         return Err(Error::Invalid {});
     }
     if input.tools.len() != 4

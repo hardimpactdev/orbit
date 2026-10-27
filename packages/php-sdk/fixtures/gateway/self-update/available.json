@@ -37,12 +37,6 @@
                         "name": "orbit-agent-linux-x86_64",
                         "url": "https://github.com/hardimpactdev/orbit/releases/download/agent-v0123456789abcdef0123456789abcdef01234567/orbit-agent-linux-x86_64",
                         "sha256": "bdea47122857fc91744c5121856bff82dc6d3153339f539ce3ce07185eb6b9aa"
-                    },
-                    {
-                        "platform": "linux-aarch64",
-                        "name": "orbit-agent-linux-aarch64",
-                        "url": "https://github.com/hardimpactdev/orbit/releases/download/agent-v0123456789abcdef0123456789abcdef01234567/orbit-agent-linux-aarch64",
-                        "sha256": "c74a22f1c7b269ad5b98c820bb2b44c7088df04f576174e458ac795ab9fd485c"
                     }
                 ]
             }

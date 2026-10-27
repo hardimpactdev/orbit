@@ -45,10 +45,10 @@ describe('TopologyNodePrograms', function () {
 
     it('renders the Gateway purpose roles for convergence without the SSH bootstrap program', function (): void {
         $root = topologyNodeProgramsRoot(renderingArtisan());
-        $rendered = new TopologyNodePrograms($root)->for(TopologyRecipe::fromOption(null)->node('gateway'), 'aarch64');
+        $rendered = new TopologyNodePrograms($root)->for(TopologyRecipe::fromOption(null)->node('gateway'), 'x86_64');
         $call = json_decode((string) file_get_contents($root.'/rendered.json'), true, 8, JSON_THROW_ON_ERROR);
 
-        expect($call['argv'])->toBe(['orbit:node-programs', 'gateway', 'vpn', '--architecture=aarch64', '--json', '--no-interaction'])
+        expect($call['argv'])->toBe(['orbit:node-programs', 'gateway', 'vpn', '--architecture=x86_64', '--json', '--no-interaction'])
             ->and(array_column($rendered['programs'], 'name'))->toBe(['gateway-prerequisites', 'vpn-prerequisites'])
             ->and(array_unique(array_column($rendered['programs'], 'user')))->toBe(['orbit'])
             ->and($rendered['agent'])->toBe(['path' => '/home/orbit/orbit/apps/agent/delivery/orbit-agent', 'sha256' => str_repeat('a', 64)]);

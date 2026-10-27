@@ -71,11 +71,11 @@ final readonly class RecipeLoader
         $document = $this->object(json_decode($json, false, 64, JSON_THROW_ON_ERROR), '$');
         $digests = [];
         foreach ($delivery->artifacts() as $platform => $artifact) {
-            if (in_array($platform, ['linux-x86_64', 'linux-aarch64'], true)) {
+            if ($platform === 'linux-x86_64') {
                 $digests[$platform] = $artifact['sha256'];
             }
         }
-        $this->require($digests !== [], 'agent: the delivery has no Linux artifacts.');
+        $this->require($digests !== [], 'agent: the delivery has no Linux x86_64 artifact.');
         $document->agent = (object) $digests;
 
         return $this->decode(json_encode($document, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
@@ -87,12 +87,12 @@ final readonly class RecipeLoader
         $this->rejectDuplicateKeys($json);
         $root = $this->object($data, '$', ['schema_version', 'ubuntu', 'architectures', 'tools', 'common', 'php', 'roles', 'base', 'artifact_mirror', 'git', 'agent']);
         $rawAgent = $root->agent === null ? [] : get_object_vars($this->object($root->agent, 'agent'));
-        $this->require($root->agent === null || $rawAgent !== [], 'agent: expected resolved Linux digests or null source intent.');
+        $this->require($root->agent === null || $rawAgent !== [], 'agent: expected the resolved Linux x86_64 digest or null source intent.');
         $agent = [];
         foreach ($rawAgent as $platform => $rawDigest) {
             $digest = $this->text($rawDigest, 'agent digest');
-            $this->require(in_array($platform, ['linux-x86_64', 'linux-aarch64'], true)
-                && preg_match('/\A[0-9a-f]{64}\z/D', $digest) === 1, 'agent: expected Linux platform SHA-256 digests.');
+            $this->require($platform === 'linux-x86_64'
+                && preg_match('/\A[0-9a-f]{64}\z/D', $digest) === 1, 'agent: expected a Linux x86_64 SHA-256 digest.');
             $agent[$this->text($platform, 'agent platform')] = $digest;
         }
         $mirror = $this->text($root->artifact_mirror, 'artifact_mirror');
@@ -110,15 +110,14 @@ final readonly class RecipeLoader
         $date = DateTimeImmutable::createFromFormat('!Ymd\THis\Z', $snapshot);
         $this->require($date !== false && $date->format('Ymd\THis\Z') === $snapshot, 'ubuntu.snapshot: expected a real UTC date YYYYMMDDTHHMMSSZ.');
         $architectures = $this->strings($root->architectures, 'architectures');
-        $this->require($architectures !== [] && array_diff($architectures, ['amd64', 'arm64']) === [], 'architectures: expected non-empty list of amd64 and/or arm64.');
+        // Linux Nodes are x86_64 only, so the recipe pins amd64 software only.
+        $this->require($architectures === ['amd64'], 'architectures: expected [amd64]; Linux Nodes are x86_64 only.');
         $rawTools = $this->object($root->tools, 'tools');
         $tools = [];
         $catalog = self::catalog();
         $phpSets = $this->phpSets($root->php, $catalog);
-        $phpPackages = $phpSets['shared'];
         foreach ($phpSets['versions'] as $set) {
             $catalog = [...$catalog, ...array_fill_keys($set['packages'], 'artifact')];
-            $phpPackages = [...$phpPackages, ...$set['packages']];
         }
         foreach (get_object_vars($rawTools) as $name => $raw) {
             $this->require(isset($catalog[$name]), "tools.{$name}: unknown tool.");
@@ -144,14 +143,7 @@ final readonly class RecipeLoader
             }
             $rawArtifacts = $this->object($pin->artifacts, "tools.{$name}.artifacts");
             $keys = array_keys(get_object_vars($rawArtifacts));
-            $this->require($keys !== [] && array_diff($keys, $architectures) === [], "tools.{$name}.artifacts: unsupported or missing architectures.");
-            if (in_array($name, $phpPackages, true) || $name === 'chrome-headless-shell') {
-                $this->require($keys === ['amd64'], "tools.{$name}.artifacts: ".($name === 'chrome-headless-shell' ? 'Chrome' : 'PHP').' supports amd64 only.');
-            } elseif ($source !== 'internal') {
-                $this->require(array_diff($architectures, $keys) === [], "tools.{$name}.artifacts: every declared architecture needs a pin.");
-            }
-            // This seed has no Pi arm64 binary. Do not silently assign amd64 bytes to that profile.
-            $this->require($name !== 'pi' || $keys === ['amd64'], 'tools.pi.artifacts: this recipe version supports Pi on amd64 only.');
+            $this->require($keys === $architectures, "tools.{$name}.artifacts: expected exactly one amd64 pin.");
             $artifacts = [];
             foreach (get_object_vars($rawArtifacts) as $architecture => $rawArtifact) {
                 $field = "tools.{$name}.artifacts.{$architecture}";
@@ -177,7 +169,7 @@ final readonly class RecipeLoader
                 } else {
                     $url = parse_url($location);
                     $this->require(is_array($url) && ($url['scheme'] ?? '') === 'https' && isset($url['host']) && ! isset($url['user']) && ! isset($url['pass']) && ! isset($url['fragment']), "{$field}.url: expected an HTTPS release URL.");
-                    $this->require(preg_match('~(?:latest|stable|/lts(?:/|$)|/install(?:[./]|$))~i', $location) !== 1 && preg_match('~(?:^|[/_-])v?'.preg_quote(str_ends_with($location, '.deb') ? (preg_replace('/^[0-9]+:/', '', $artifactVersion ?? $version) ?? $version) : ($artifactVersion ?? $version), '~').'(?=$|[/_]|-(?:linux|x86_64|aarch64)(?:[-./]|$)|\\.tar\\.|\\.tgz$|\\.zip$|\\.deb$)~D', rawurldecode($location)) === 1, "{$field}.url: expected the exact version in an immutable release URL, not an installer/channel.");
+                    $this->require(preg_match('~(?:latest|stable|/lts(?:/|$)|/install(?:[./]|$))~i', $location) !== 1 && preg_match('~(?:^|[/_-])v?'.preg_quote(str_ends_with($location, '.deb') ? (preg_replace('/^[0-9]+:/', '', $artifactVersion ?? $version) ?? $version) : ($artifactVersion ?? $version), '~').'(?=$|[/_]|-(?:linux|x86_64)(?:[-./]|$)|\\.tar\\.|\\.tgz$|\\.zip$|\\.deb$)~D', rawurldecode($location)) === 1, "{$field}.url: expected the exact version in an immutable release URL, not an installer/channel.");
                 }
                 $artifacts[$architecture] = new ArtifactPin($location, $algorithm, $digest, $artifactVersion);
             }
@@ -356,8 +348,6 @@ final readonly class RecipeLoader
                 $this->require($artifact->algorithm === 'sha256' && $artifact->location === $expected, "tools.{$name}: expected a SHA-256-pinned git-core PPA Debian artifact.");
             }
         }
-        $digests = array_map(static fn (ArtifactPin $pin): string => $pin->digest, $tools['git-man']->artifacts);
-        $this->require(count(array_unique($digests)) === 1, 'git-man: architecture-independent artifacts must have the same digest.');
     }
 
     private function require(bool $condition, string $message): void

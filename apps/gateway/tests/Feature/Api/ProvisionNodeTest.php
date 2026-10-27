@@ -655,7 +655,7 @@ describe('POST /api/v1/nodes', function (): void {
                 ?string $expectedSshHostFingerprint = null,
                 bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
-                $observation = new NodeObservation('aarch64');
+                $observation = new NodeObservation('x86_64');
                 $recordObservation?->__invoke($observation);
 
                 return $observation;
@@ -670,12 +670,12 @@ describe('POST /api/v1/nodes', function (): void {
             ])
             ->assertCreated()
             ->assertJsonPath('data.status', 'active')
-            ->assertJsonPath('data.architecture', 'aarch64');
+            ->assertJsonPath('data.architecture', 'x86_64');
 
-        expect(Node::query()->where('name', 'linux-node')->sole()->architecture)->toBe('aarch64');
+        expect(Node::query()->where('name', 'linux-node')->sole()->architecture)->toBe('x86_64');
     });
 
-    it('refuses an explicit architecture that differs from the observed one', function (): void {
+    it('refuses a Linux ARM machine with HTTP 422 at the architecture step', function (): void {
         app()->instance(NodeConverger::class, new class implements NodeConverger
         {
             public function converge(
@@ -684,10 +684,7 @@ describe('POST /api/v1/nodes', function (): void {
                 ?string $expectedSshHostFingerprint = null,
                 bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
-                $observation = new NodeObservation('aarch64');
-                $recordObservation?->__invoke($observation);
-
-                return $observation;
+                throw new NodeProvisioningException('machine-architecture', 'node.architecture_unsupported', "Node [{$node->name}] reports architecture [aarch64]. Linux Nodes must be [x86_64].", status: 422);
             }
         });
 
@@ -695,21 +692,35 @@ describe('POST /api/v1/nodes', function (): void {
             ->postJson('/api/v1/nodes', [
                 'name' => 'linux-node',
                 'public_ssh_host' => '192.0.2.60',
-                'architecture' => 'x86_64',
                 'host_key_fingerprint' => 'SHA256:'.str_repeat(string: 'A', times: 43),
             ])
-            ->assertStatus(409)
-            ->assertJsonPath('error.code', 'node.architecture_mismatch')
-            ->assertJsonPath('error.message', 'Node [linux-node] reports architecture [aarch64], not [x86_64].');
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node.architecture_unsupported')
+            ->assertJsonPath('error.details.step', 'machine-architecture')
+            ->assertJsonPath('error.message', 'Node [linux-node] reports architecture [aarch64]. Linux Nodes must be [x86_64].');
 
         $node = Node::query()->where('name', 'linux-node')->sole();
 
         expect($node->status)
             ->toBe(LifecycleStatus::Failed)
             ->and($node->error_code)
-            ->toBe('node.architecture_mismatch')
+            ->toBe('node.architecture_unsupported')
             ->and($node->architecture)
             ->toBeNull();
+    });
+
+    it('refuses a Linux ARM architecture in the request before it connects', function (): void {
+        $this
+            ->postJson('/api/v1/nodes', [
+                'name' => 'linux-node',
+                'public_ssh_host' => '192.0.2.60',
+                'architecture' => 'aarch64',
+                'host_key_fingerprint' => 'SHA256:'.str_repeat(string: 'A', times: 43),
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node.architecture_unsupported');
+
+        expect(Node::query()->where('name', 'linux-node')->exists())->toBeFalse();
     });
 
     it('rejects an unsafe WireGuard endpoint override at the API boundary', function (): void {

@@ -50,13 +50,12 @@ it('prints the artifact contract for --help', function (): void {
     expect($exitCode)->toBe(0)
         ->and($output)->toContain('mac arm')
         ->and($output)->toContain('linux x64')
-        ->and($output)->toContain('linux arm')
+        ->and($output)->not->toContain('linux arm')
         ->and($output)->toContain('apps/cli/builds/dist/mac/mac-arm')
         ->and($output)->toContain('apps/cli/builds/dist/linux/linux-x64')
-        ->and($output)->toContain('apps/cli/builds/dist/linux/linux-arm')
         ->and($output)->toContain('orbit-macos-arm64')
         ->and($output)->toContain('orbit-linux-x64')
-        ->and($output)->toContain('orbit-linux-arm64');
+        ->and($output)->not->toContain('orbit-linux-arm64');
 });
 
 it('exits 2 when a target is missing', function (): void {
@@ -71,6 +70,13 @@ it('refuses an unsupported target', function (): void {
 
     expect($exitCode)->toBe(1)
         ->and($output)->toContain('unsupported target: windows x64');
+});
+
+it('refuses a Linux arm target because Linux machines are x86_64 only', function (): void {
+    [$exitCode, $output] = run_cli_binary_script(cli_binary_builder_script(), ['linux', 'arm']);
+
+    expect($exitCode)->toBe(1)
+        ->and($output)->toContain('unsupported target: linux arm');
 });
 
 it('keeps the workflow targets, artifact names, dest paths, and build runners aligned with the builder', function (): void {
@@ -90,7 +96,6 @@ it('keeps the workflow targets, artifact names, dest paths, and build runners al
     expect($workflow)->toBeString()
         ->and($builder)->toBeString()
         ->and($workflow)->toContain($target('linux-x64', 'ubuntu-26.04', 'linux', 'x64', 'orbit-linux-x64', 'apps/cli/builds/dist/linux/linux-x64', 'true'))
-        ->and($workflow)->toContain($target('linux-arm64', 'ubuntu-26.04', 'linux', 'arm', 'orbit-linux-arm64', 'apps/cli/builds/dist/linux/linux-arm', 'false'))
         ->and($workflow)->toContain($target('macos-arm64', 'ubuntu-26.04', 'mac', 'arm', 'orbit-macos-arm64', 'apps/cli/builds/dist/mac/mac-arm', 'false'))
         ->and($workflow)->toContain('bin/orbit-build-cli-binary "${{ matrix.platform }}" "${{ matrix.architecture }}" "$VERSION"')
         ->and($workflow)->toContain('test "$reported" = "Orbit ${VERSION}"')
@@ -100,7 +105,9 @@ it('keeps the workflow targets, artifact names, dest paths, and build runners al
         ->and($workflow)->not->toContain('self-hosted')
         ->and($workflow)->not->toContain('ORBIT_MINI_RUNNER')
         ->and($workflow)->not->toContain('macos-latest')
-        ->and($builder)->toContain('mac:arm|linux:x64|linux:arm)')
+        ->and($workflow)->not->toContain('linux-arm')
+        ->and($workflow)->not->toContain('ubuntu-26.04-arm')
+        ->and($builder)->toContain('mac:arm|linux:x64)')
         ->and($builder)->toContain('--dest=./builds/dist')
         ->and($builder)->toContain('packages/php-sdk')
         ->and($builder)->toContain('vendor/nckrtl/orbit-php-sdk')

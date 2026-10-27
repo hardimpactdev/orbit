@@ -87,6 +87,10 @@ fn origin_checks_the_exact_installed_version_and_every_listing() {
         &BTreeSet::new()
     ));
     assert!(!ubuntu_index(
+        "http://ports.ubuntu.com/ubuntu-ports resolute/main arm64 Packages",
+        &BTreeSet::new()
+    ));
+    assert!(!ubuntu_index(
         "file:///ubuntu resolute/main amd64 Packages",
         &BTreeSet::new()
     ));

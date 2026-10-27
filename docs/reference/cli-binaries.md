@@ -44,17 +44,16 @@ Each release has one CLI binary per supported platform, the agent delivery that 
 | Asset | Platform | Built on | Run on |
 | --- | --- | --- | --- |
 | `orbit-0.N.0-linux-x86_64` | Linux x86_64 | Hosted `ubuntu-26.04` | The same runner |
-| `orbit-0.N.0-linux-aarch64` | Linux arm64 | Hosted `ubuntu-26.04-arm` | The same runner |
 | `orbit-0.N.0-macos-arm64` | macOS on Apple silicon | Hosted `ubuntu-26.04` | Hosted `macos-26` |
-| `orbit-agent-<platform>`, `manifest.json` | The four [agent](/reference/node-agent#releases) platforms | The commit's CI run | The commit's CI run |
-| `SHA256SUMS` | Checksums of the seven binaries | | |
-| `provenance.sigstore.json` | The [provenance](#provenance) of the nine files above | | |
+| `orbit-agent-<platform>`, `manifest.json` | The three [agent](/reference/node-agent#releases) platforms | The commit's CI run | The commit's CI run |
+| `SHA256SUMS` | Checksums of the five binaries | | |
+| `provenance.sigstore.json` | The [provenance](#provenance) of the seven files above | | |
 
 Each CLI binary is one executable file with a static PHP 8.5 inside. The Linux names follow `uname -m`, as the agent's do. `SHA256SUMS` has the `sha256sum` format: one line per binary, sorted by name, with the lowercase hex digest, two spaces, and the asset name.
 
 ### Provenance
 
-The publish job signs the release with the workflow's own identity. `actions/attest-build-provenance` takes the job's OIDC token, gets a short-lived certificate from Sigstore's public Fulcio CA, and records the signature in Sigstore's public Rekor log. The job needs `id-token: write` and `attestations: write`, and no secret. It signs one in-toto statement with SLSA provenance v1. Its subjects are the nine files above, each with its SHA-256 digest. The job adds the Sigstore bundle as `provenance.sigstore.json` to the same `gh release create` call, so the release appears with it.
+The publish job signs the release with the workflow's own identity. `actions/attest-build-provenance` takes the job's OIDC token, gets a short-lived certificate from Sigstore's public Fulcio CA, and records the signature in Sigstore's public Rekor log. The job needs `id-token: write` and `attestations: write`, and no secret. It signs one in-toto statement with SLSA provenance v1. Its subjects are the seven files above, each with its SHA-256 digest. The job adds the Sigstore bundle as `provenance.sigstore.json` to the same `gh release create` call, so the release appears with it.
 
 The certificate names the workflow file and its ref, `orbit-cli-release.yml@refs/heads/main`. A `workflow_run` after CI and a `workflow_dispatch` backfill both run the workflow on `refs/heads/main`, so both sign with that identity. No other workflow or branch can produce it.
 
@@ -77,7 +76,7 @@ The Gateway, a Node installer, and `orbit self-update` rely on these rules. They
 | Tag for commit `C` | `cli-v0.N.0`, where `N` is `git rev-list --count C` |
 | What `N` counts | Every commit that `C` reaches, not only first-parent commits. A shallow clone gives a wrong `N` |
 | Asset URL | `https://github.com/hardimpactdev/orbit/releases/download/cli-v<version>/orbit-<version>-<platform>` |
-| Platforms | `linux-x86_64`, `linux-aarch64`, `macos-arm64` |
+| Platforms | `linux-x86_64`, `macos-arm64` |
 | Checksums URL | `https://github.com/hardimpactdev/orbit/releases/download/cli-v<version>/SHA256SUMS` |
 | Provenance URL | `https://github.com/hardimpactdev/orbit/releases/download/cli-v<version>/provenance.sigstore.json` |
 | Signing identity | Certificate SAN `https://github.com/hardimpactdev/orbit/.github/workflows/orbit-cli-release.yml@refs/heads/main`, OIDC issuer `https://token.actions.githubusercontent.com` |
@@ -138,7 +137,7 @@ When the Gateway's fleet runs a newer release, other commands print a notice to 
 
 When a green `main` commit has no release, for example because the workflow failed on a GitHub outage, run `Orbit CLI Release` with `workflow_dispatch` on `main` and pass the full commit SHA. A dispatch from another branch does nothing. The run applies the same checks, including the first-parent history check. It takes the agent from the newest passing CI run on `main` for that commit, so it works only while that run's `agent-delivery` artifact exists, 30 days.
 
-The build uses the commit's own builder, so a commit from before CLI releases existed cannot be published: its builder has no Linux arm64 target. When the release already exists for that commit with every asset, the run changes nothing. A release published before provenance existed lacks the bundle, so its run fails and replaces nothing. When a tag or release for that version points elsewhere or lacks assets, the run fails and replaces nothing. An unfinished draft from an earlier run is deleted and rebuilt.
+The build uses the commit's own builder, so a commit whose builder cannot build every target cannot be published. When the release already exists for that commit with every asset, the run changes nothing. A release published before provenance existed lacks the bundle, so its run fails and replaces nothing. When a tag or release for that version points elsewhere or lacks assets, the run fails and replaces nothing. An unfinished draft from an earlier run is deleted and rebuilt.
 
 ### Commits without a release
 
@@ -153,19 +152,18 @@ The publish step then fails with the error `Release refused for a non-tip commit
 
 ## Pull-request builds
 
-The `Orbit CLI Binary` workflow, `.github/workflows/orbit-cli-binary.yml`, builds the three targets on pull requests to `main` that change the CLI, PHP SDK, PHP recipe or its build scripts, Rust agent, agent build adapter, binary build or version scripts, or the binary workflow itself. Unrelated pull requests skip it. Each PR has one concurrency group, and a newer run cancels its superseded run. The workflow also runs on `workflow_dispatch`. The release workflow calls the same `workflow_call` entry for the commit it publishes, without sharing a PR concurrency group. Pull-request builds are packaging checks, not part of `Required checks`. PR binary artifacts stay for 7 days; release-transfer and manual-build artifacts stay for 30 days.
+The `Orbit CLI Binary` workflow, `.github/workflows/orbit-cli-binary.yml`, builds the two targets on pull requests to `main` that change the CLI, PHP SDK, PHP recipe or its build scripts, Rust agent, agent build adapter, binary build or version scripts, or the binary workflow itself. Unrelated pull requests skip it. Each PR has one concurrency group, and a newer run cancels its superseded run. The workflow also runs on `workflow_dispatch`. The release workflow calls the same `workflow_call` entry for the commit it publishes, without sharing a PR concurrency group. Pull-request builds are packaging checks, not part of `Required checks`. PR binary artifacts stay for 7 days; release-transfer and manual-build artifacts stay for 30 days.
 
 | Target | Build runner | Run runner | Builder | Artifact | File |
 | --- | --- | --- | --- | --- | --- |
 | Linux x86_64 | `ubuntu-26.04` | The same | `bin/orbit-build-cli-binary linux x64 <version>` | `orbit-linux-x64` | `apps/cli/builds/dist/linux/linux-x64` |
-| Linux arm64 | `ubuntu-26.04` | `ubuntu-26.04-arm` | `bin/orbit-build-cli-binary linux arm <version>` | `orbit-linux-arm64` | `apps/cli/builds/dist/linux/linux-arm` |
 | macOS Apple silicon | `ubuntu-26.04` | `macos-26` | `bin/orbit-build-cli-binary mac arm <version>` | `orbit-macos-arm64` | `apps/cli/builds/dist/mac/mac-arm` |
 
 Composer installs in the build workflow receive the read-only job token through `COMPOSER_AUTH`, including the production install inside the binary builder. The release verifier downloads `SHA256SUMS` through the authenticated GitHub CLI.
 
 The `Build` jobs build every target on Linux amd64. Each one installs the recipe's exact PHP build and a pinned Composer through `.github/actions/php`, as every PHP job does ([One PHP build in CI](/reference/implementation-loop#one-php-build-in-ci)). That PHP only builds the PHAR; the binary carries PHPacker's static PHP.
 
-The Linux x86_64 build job runs its own binary. The `Run linux-arm64` and `Run macos-arm64` jobs download their artifacts on hosted native runners and run them. These jobs need no PHP, Composer, or checkout. Every run uses an empty environment and requires `orbit --version` to print the build version. A binary that does not start fails the workflow, and the release workflow publishes only when every job passes.
+The Linux x86_64 build job runs its own binary. The `Run macos-arm64` job downloads its artifact on a hosted Mac and runs it. That job needs no PHP, Composer, or checkout. Every run uses an empty environment and requires `orbit --version` to print the build version. A binary that does not start fails the workflow, and the release workflow publishes only when every job passes.
 
 ## Build locally
 
@@ -181,7 +179,7 @@ The builder needs PHP with zlib, Composer, rsync, and `apps/cli/phpacker/vendor/
 
 PHPacker reads the `php-bin` release list from GitHub. The builder requires `GITHUB_TOKEN` or `GH_TOKEN` and tries the build up to four times. Its adapter authenticates both release metadata and the archive download. It downloads directly from `codeload.github.com` with redirects disabled, so the token cannot follow a redirect to another host. PHPacker still unpacks and caches the binaries in its normal private cache.
 
-`bin/orbit-cli-release-assets <version> <artifact-dir> <out-dir>` turns the three downloaded artifacts into the release assets and `SHA256SUMS`. It refuses a version that is not `0.N.0`, a missing or empty binary, and a binary built for another platform.
+`bin/orbit-cli-release-assets <version> <artifact-dir> <out-dir>` turns the two downloaded artifacts into the release assets and `SHA256SUMS`. It refuses a version that is not `0.N.0`, a missing or empty binary, and a binary built for another platform.
 
 The CLI requires `illuminate/http` as a production dependency and binds `Illuminate\Http\Client\Factory` itself. `realtime:tail` uses Laravel's HTTP client to authorize the Reverb channel after the WebSocket connects. A binary without that package fails there with `Target class [Illuminate\Http\Client\Factory] does not exist`.
 
@@ -189,7 +187,7 @@ The CLI requires `illuminate/http` as a production dependency and binds `Illumin
 
 The binary contract has these limits.
 
-- Only Linux x86_64, Linux arm64, and macOS on Apple silicon are built. Windows and Intel Macs are not.
+- Only Linux x86_64 and macOS on Apple silicon are built. Linux arm64, Windows, and Intel Macs are not ([Linux x86_64 only](#linux-x86_64-only)).
 - The binaries are not notarized. The macOS binary keeps the ad-hoc signature of PHPacker's PHP build. A download with `curl` gets no quarantine flag and runs; a browser download needs `xattr -d com.apple.quarantine`.
 - `SHA256SUMS` comes from the same release, so alone it detects a damaged download, not a forged release.
 - The [provenance](#provenance) bundle proves that this workflow on `main` built the files. A client that does not verify it trusts GitHub for that.
@@ -230,15 +228,19 @@ A client that verified a checksum must get the same file later, so a published r
 
 ### Build on Linux, run on each platform
 
-PHPacker does not compile. It appends the PHAR to a prebuilt static PHP binary for the target, so any host writes the same file for a target. An amd64 Linux runner therefore builds the Linux arm64 and macOS binaries too. Managed recipe PHP supports amd64 only; the arm64 CLI binary still carries its own static PHP. Native runners prove that each binary starts on its platform without installing recipe PHP.
+PHPacker does not compile. It appends the PHAR to a prebuilt static PHP binary for the target, so any host writes the same file for a target. An amd64 Linux runner therefore builds the macOS binary too. Managed recipe PHP supports amd64 only; the macOS binary carries its own static PHP. The native Mac proves that the binary starts there without installing recipe PHP.
 
 The macOS job only runs the binary, so it needs no PHP. In October 2026 `shivammathur/setup-php` could not install PHP 8.5 on `macos-26`. That one failed job blocked every CLI release, and the fleet rollout waited for a Linux binary that was never published. Now the Mac needs nothing that a hosted runner does not already have. The release still waits for the macOS run, so it never publishes a macOS binary that does not start.
 
-The repository is public, so hosted macOS and Linux arm64 runners cost nothing. An earlier design built macOS on mini, a Mac Node on the Orbit network, through a self-hosted runner. That runner was not registered, so CI skipped the macOS job and a macOS binary needed a manual build over SSH. A hosted job also never needs a path into the Orbit network. The agent's macOS CI job is different: it runs on mini when `ORBIT_MINI_RUNNER` is `true` ([macOS agent runner](/reference/implementation-loop#macos-agent-runner-on-mini)).
+The repository is public, so hosted macOS runners cost nothing. An earlier design built macOS on mini, a Mac Node on the Orbit network, through a self-hosted runner. That runner was not registered, so CI skipped the macOS job and a macOS binary needed a manual build over SSH. A hosted job also never needs a path into the Orbit network. The agent's macOS CI job is different: it runs on mini when `ORBIT_MINI_RUNNER` is `true` ([macOS agent runner](/reference/implementation-loop#macos-agent-runner-on-mini)).
 
-### Linux arm64
+### Linux x86_64 only
 
-Managed Linux Nodes can be arm64; the agent already ships for both. Every managed Node that runs the CLI needs a binary for its architecture.
+Every Linux machine in the fleet is x86_64, so Orbit builds no Linux arm64 binary of the CLI or the agent. A build and a native run for a platform no machine uses would only add CI time and a way for a release to fail.
+
+The rule covers the whole fleet, not only the binaries. The machine software recipe pins `amd64` packages only, and [provisioning](/reference/node-provisioning) refuses a Linux Node that is not x86_64 with `node.architecture_unsupported`. Keeping Linux arm64 in the recipe while no agent ships for it would claim support that Orbit cannot deliver.
+
+Each Linux arm64 agent build took about four minutes of the agent CI job, which compiles the release agent once now. A Linux arm64 machine would need this decision reversed: an agent build, recipe pins, and a provisioning path together.
 
 ### PHPacker in its own project
 

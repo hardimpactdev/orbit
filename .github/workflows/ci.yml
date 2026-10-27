@@ -167,13 +167,13 @@ jobs:
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
       with:
-        targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
+        targets: x86_64-unknown-linux-musl
     - name: Restore Rust caches
       uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
       with:
         workspaces: apps/agent
-    - name: Install cross compiler
-      run: command -v cross >/dev/null || cargo install cross --locked
+    - name: Install musl compiler
+      run: sudo apt-get update && sudo apt-get install --no-install-recommends --yes musl-tools
     - name: Build the agent delivery
       run: scripts/build-delivery "$RUNNER_TEMP/agent-delivery"
     - name: Upload the agent delivery

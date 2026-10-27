@@ -30,12 +30,15 @@ final class AgentDelivery
         private readonly string $cacheDirectory,
     ) {}
 
-    /** The artifact key of a Node, such as `linux-x86_64`. */
+    /**
+     * The artifact key of a Node, such as `linux-x86_64`. Only macOS has an ARM build: Apple silicon reports
+     * `arm64` and maps to `macos-aarch64`. Linux Nodes are x86_64 only, so a Linux ARM Node has no build.
+     */
     public static function key(Node|AgentGuest $node): string
     {
-        $architecture = match ($node->architecture) {
-            'arm64', 'aarch64' => 'aarch64',
-            'amd64', 'x86_64' => 'x86_64',
+        $architecture = match (true) {
+            in_array($node->architecture, ['amd64', 'x86_64'], true) => 'x86_64',
+            $node->platform === 'macos' && in_array($node->architecture, ['arm64', 'aarch64'], true) => 'aarch64',
             default => (string) $node->architecture,
         };
 

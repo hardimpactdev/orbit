@@ -146,19 +146,8 @@ pub fn signed_sources(files: &Files, source: Option<&Path>) -> Result<SignedSour
 pub fn snapshot_source(snapshot: &str) -> String {
     format!("Types: deb\nURIs: https://snapshot.ubuntu.com/ubuntu/{snapshot}/\nSuites: resolute resolute-updates resolute-security\nComponents: main universe restricted multiverse\nSigned-By: {UBUNTU_KEYRING}\nCheck-Valid-Until: no\n")
 }
-pub fn rolling_source(architecture: &str) -> String {
-    let (archive, security) = if architecture == "arm64" {
-        (
-            "http://ports.ubuntu.com/ubuntu-ports",
-            "http://ports.ubuntu.com/ubuntu-ports",
-        )
-    } else {
-        (
-            "http://archive.ubuntu.com/ubuntu",
-            "http://security.ubuntu.com/ubuntu",
-        )
-    };
-    format!("Types: deb\nURIs: {archive}\nSuites: resolute resolute-updates resolute-backports\nComponents: main universe restricted multiverse\nSigned-By: {UBUNTU_KEYRING}\n\nTypes: deb\nURIs: {security}\nSuites: resolute-security\nComponents: main universe restricted multiverse\nSigned-By: {UBUNTU_KEYRING}\n")
+pub fn rolling_source() -> String {
+    format!("Types: deb\nURIs: http://archive.ubuntu.com/ubuntu\nSuites: resolute resolute-updates resolute-backports\nComponents: main universe restricted multiverse\nSigned-By: {UBUNTU_KEYRING}\n\nTypes: deb\nURIs: http://security.ubuntu.com/ubuntu\nSuites: resolute-security\nComponents: main universe restricted multiverse\nSigned-By: {UBUNTU_KEYRING}\n")
 }
 pub fn ubuntu_repair(files: &Files) -> Result<Option<Vec<u8>>, Failure> {
     let path = files.apt().join("sources.list.d/ubuntu.sources");

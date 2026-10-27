@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the agent delivery that a Gateway pins (ADR 0225): static Linux binaries and a native macOS command binary, their
+# Builds the agent delivery that a Gateway pins (ADR 0225): a static x86_64 Linux binary and native macOS command binaries, their
 # SHA256SUMS, and manifest.json with the source commit, the Cargo version, and each artifact's SHA-256.
 #
 # Usage: scripts/build-delivery OUT_DIR [--commit SHA] [--url-base URL] [--target TRIPLE ...]
@@ -7,11 +7,10 @@
 #   --commit    The source commit the manifest names. Defaults to the last commit that changed apps/agent.
 #   --url-base  Adds a release URL to each artifact, such as
 #               https://github.com/hardimpactdev/orbit/releases/download/cli-v<version>, as a release names it.
-#   --target    A Rust target to build; repeat for more. Defaults to x86_64 and aarch64 musl.
-#               An installed `cross` builds every target; without it, cargo needs that target's C toolchain.
+#   --target    A Rust target to build; repeat for more. Defaults to x86_64 musl, which needs musl-gcc (musl-tools).
 set -euo pipefail
 
-usage() { sed -n '2,12p' "$0" >&2; exit 2; }
+usage() { sed -n '2,10p' "$0" >&2; exit 2; }
 [[ $# -ge 1 ]] || usage
 out=$1; shift
 commit=
@@ -25,7 +24,7 @@ while [[ $# -gt 0 ]]; do
         *) usage ;;
     esac
 done
-[[ ${#targets[@]} -gt 0 ]] || targets=(x86_64-unknown-linux-musl aarch64-unknown-linux-musl)
+[[ ${#targets[@]} -gt 0 ]] || targets=(x86_64-unknown-linux-musl)
 
 agent=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$agent"
@@ -40,16 +39,11 @@ artifacts='{}'
 for target in "${targets[@]}"; do
     case $target in
         x86_64-*linux*) key=linux-x86_64 ;;
-        aarch64-*linux*) key=linux-aarch64 ;;
         aarch64-apple-darwin) key=macos-aarch64 ;;
         x86_64-apple-darwin) key=macos-x86_64 ;;
         *) echo "build-delivery: unsupported target $target" >&2; exit 1 ;;
     esac
-    if [[ "$target" != *apple* ]] && command -v cross >/dev/null; then
-        cross build --locked --release --target "$target"
-    else
-        cargo build --locked --release --target "$target"
-    fi
+    cargo build --locked --release --target "$target"
     name="orbit-agent-$key"
     install -m 0755 "target/$target/release/orbit-agent" "$out/$name"
     sha=$(shasum -a 256 "$out/$name" | cut -d ' ' -f 1)

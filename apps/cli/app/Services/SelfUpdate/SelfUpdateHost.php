@@ -9,7 +9,7 @@ interface SelfUpdateHost
 {
     public function runningBinary(): RunningBinary;
 
-    /** The release platform of this machine: `linux-x86_64`, `linux-aarch64`, `macos-arm64`, or null. */
+    /** The release platform of this machine: `linux-x86_64`, `macos-arm64`, or null. */
     public function platform(): ?string;
 
     public function isRoot(): bool;

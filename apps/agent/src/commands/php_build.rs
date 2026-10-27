@@ -230,7 +230,7 @@ impl Input {
             for pin in &build.packages {
                 if !valid_package(&pin.name)
                     || !valid_version(&pin.version)
-                    || !["amd64", "arm64"].contains(&pin.architecture.as_str())
+                    || pin.architecture != "amd64"
                     || !https(&pin.url)
                     || !valid_digest(&pin.sha256, 64)
                     || !identities.insert((&pin.name, &pin.architecture))

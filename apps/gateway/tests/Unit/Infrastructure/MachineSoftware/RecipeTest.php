@@ -74,25 +74,24 @@ describe('machine recipe structure and identity', function (): void {
         $manifest = ['commit' => str_repeat('f', 40), 'version' => '0.5.0', 'artifacts' => app(AgentDelivery::class)->artifacts()];
         $path = tempnam(sys_get_temp_dir(), 'recipe-delivery-');
         try {
-            foreach (['linux-x86_64', 'linux-aarch64'] as $platform) {
-                $changed = $manifest;
-                $changed['artifacts'][$platform]['sha256'] = str_repeat('e', 64);
-                file_put_contents($path, json_encode($changed, JSON_THROW_ON_ERROR));
-                $recipe = $loader->load(delivery: new AgentDelivery($path, '/unused'));
+            $changed = $manifest;
+            $changed['artifacts']['linux-x86_64']['sha256'] = str_repeat('e', 64);
+            file_put_contents($path, json_encode($changed, JSON_THROW_ON_ERROR));
+            $recipe = $loader->load(delivery: new AgentDelivery($path, '/unused'));
 
-                expect($recipe->identity)->not->toBe($original->identity);
-                expect($recipe->agentDigests[$platform])->toBe(str_repeat('e', 64));
-                expect($loader->decode($recipe->json)->identity)->toBe($recipe->identity);
-                expect($loader->decode($original->json)->agentDigests)->toBe($original->agentDigests);
-            }
+            expect($recipe->identity)->not->toBe($original->identity);
+            expect($recipe->agentDigests)->toBe(['linux-x86_64' => str_repeat('e', 64)]);
+            expect($loader->decode($recipe->json)->identity)->toBe($recipe->identity);
+            expect($loader->decode($original->json)->agentDigests)->toBe($original->agentDigests);
             $manifest['artifacts'] = array_reverse($manifest['artifacts'], true);
             $manifest['artifacts']['linux-x86_64']['path'] = '/relocated/agent';
             $manifest['artifacts']['macos-aarch64'] = ['sha256' => str_repeat('d', 64), 'path' => '/mac/agent'];
+            $manifest['artifacts']['linux-aarch64'] = ['sha256' => str_repeat('c', 64), 'path' => '/arm/agent'];
             file_put_contents($path, json_encode($manifest, JSON_THROW_ON_ERROR));
 
             expect($loader->load(delivery: new AgentDelivery($path, '/unused'))->identity)->toBe($original->identity);
             expect($original->agentDigest('amd64'))->toBe($original->agentDigest('x86_64'));
-            expect($original->agentDigest('arm64'))->toBe($original->agentDigest('aarch64'));
+            expect(fn () => $original->agentDigest('aarch64'))->toThrow(InvalidArgumentException::class, 'no agent platform for [aarch64]');
             expect($original->tools)->not->toHaveKey('orbit-agent');
             expect(fn () => $loader->decode(file_get_contents(resource_path('machine-software/recipe.json')))->agentDigest('amd64'))
                 ->toThrow(InvalidArgumentException::class, 'no resolved agent digest');
@@ -108,22 +107,22 @@ describe('machine recipe structure and identity', function (): void {
         expect(fn () => new RecipeLoader()->decode(json_encode($document, JSON_THROW_ON_ERROR)))
             ->toThrow(InvalidArgumentException::class);
     })->with(['empty' => [(object) []], 'list' => [[str_repeat('a', 64)]], 'bad digest' => [['linux-x86_64' => 'bad']],
-        'wrong platform' => [['macos-aarch64' => str_repeat('a', 64)]]]);
+        'wrong platform' => [['macos-aarch64' => str_repeat('a', 64)]], 'linux arm' => [['linux-aarch64' => str_repeat('a', 64)]]]);
 
-    it('refuses a delivery without Linux artifacts', function (): void {
+    it('refuses a delivery without a Linux x86_64 artifact', function (array $artifacts): void {
         $path = tempnam(sys_get_temp_dir(), 'recipe-delivery-');
-        file_put_contents($path, json_encode(['commit' => 'test', 'version' => '0.5.0', 'artifacts' => []], JSON_THROW_ON_ERROR));
+        file_put_contents($path, json_encode(['commit' => 'test', 'version' => '0.5.0', 'artifacts' => $artifacts], JSON_THROW_ON_ERROR));
         try {
             expect(fn () => new RecipeLoader()->load(delivery: new AgentDelivery($path, '/unused')))
-                ->toThrow(InvalidArgumentException::class, 'no Linux artifacts');
+                ->toThrow(InvalidArgumentException::class, 'no Linux x86_64 artifact');
         } finally {
             unlink($path);
         }
-    });
+    })->with(['none' => [[]], 'Linux ARM only' => [['linux-aarch64' => ['sha256' => str_repeat('a', 64)]]]]);
 
     it('selects the exact architecture build of the complete Incus LTS set', function (): void {
         $document = machine_recipe_document();
-        $versions = ['amd64' => '1:7.0.42-ubuntu26.04-202610010001', 'arm64' => '1:7.0.42-ubuntu26.04-202610010002'];
+        $versions = ['amd64' => '1:7.0.42-ubuntu26.04-202610010001'];
         foreach (RecipeLoader::IncusPackages as $name) {
             $document['tools'][$name]['version'] = '7.0.42';
             foreach ($versions as $architecture => $version) {
@@ -149,12 +148,12 @@ describe('machine recipe structure and identity', function (): void {
 
     it('refuses mismatched or untrusted Incus artifacts', function (string $field, string $value): void {
         $document = machine_recipe_document();
-        $document['tools']['incus-client']['artifacts']['arm64'][$field] = $value;
+        $document['tools']['incus-client']['artifacts']['amd64'][$field] = $value;
 
         expect(fn () => machine_recipe_decode($document))->toThrow(InvalidArgumentException::class);
     })->with([
         ['version', '1:7.0.1-ubuntu26.04-202607310543'],
-        ['url', 'https://untrusted.example/incus-client_7.0.1-ubuntu26.04-202609250512_arm64.deb'],
+        ['url', 'https://untrusted.example/incus-client_7.0.1-ubuntu26.04-202609250512_amd64.deb'],
     ]);
 
     it('owns one git-core Git build in every profile and architecture', function (): void {
@@ -166,7 +165,7 @@ describe('machine recipe structure and identity', function (): void {
         foreach (['git', 'git-man'] as $name) {
             expect($recipe->tools[$name]->source)->toBe('artifact')
                 ->and($recipe->tools[$name]->version)->toBe('1:2.55.0-0ppa1~ubuntu26.04.2')
-                ->and(array_keys($recipe->tools[$name]->artifacts))->toBe(['amd64', 'arm64']);
+                ->and(array_keys($recipe->tools[$name]->artifacts))->toBe(['amd64']);
         }
     });
 
@@ -208,9 +207,6 @@ describe('machine recipe structure and identity', function (): void {
             $document['common'] = array_values(array_diff($document['common'], ['git-man']));
             $document['roles']['app-dev'][] = 'git-man';
         }, 'common: missing git-man'],
-        'different all bytes' => [function (&$document): void {
-            $document['tools']['git-man']['artifacts']['arm64']['sha256'] = str_repeat('a', 64);
-        }, 'architecture-independent artifacts must have the same digest'],
     ]);
 
     it('pins the complete Vite+ runtime lock and refuses a changed digest or package pin', function (): void {
@@ -337,8 +333,7 @@ describe('machine recipe structure and identity', function (): void {
             }
         }
         expect($recipe->tools['caddy']->version)->toBe(AgentCaddyPackage::RELEASE)
-            ->and($recipe->tools['caddy']->artifacts['amd64']->digest)->toBe(AgentCaddyPackage::AMD64_SHA512)
-            ->and($recipe->tools['caddy']->artifacts['arm64']->digest)->toBe(AgentCaddyPackage::ARM64_SHA512);
+            ->and($recipe->tools['caddy']->artifacts['amd64']->digest)->toBe(AgentCaddyPackage::AMD64_SHA512);
     });
 
     it('names the rollback tool, the PCOV profiles and the mirror', function (): void {
@@ -516,9 +511,15 @@ describe('machine recipe structure and identity', function (): void {
         'unversioned URL' => [function (&$d): void {
             $d['tools']['node']['artifacts']['amd64']['url'] = 'https://nodejs.org/latest';
         }, 'exact version'],
-        'invented Pi arm64' => [function (&$d): void {
-            $d['tools']['pi']['artifacts']['arm64'] = $d['tools']['pi']['artifacts']['amd64'];
-        }, 'amd64 only'],
+        'Linux ARM architecture' => [function (&$d): void {
+            $d['architectures'][] = 'arm64';
+        }, 'architectures: expected [amd64]'],
+        'arm64 artifact' => [function (&$d): void {
+            $d['tools']['node']['artifacts']['arm64'] = $d['tools']['node']['artifacts']['amd64'];
+        }, 'expected exactly one amd64 pin'],
+        'missing amd64 artifact' => [function (&$d): void {
+            $d['tools']['node']['artifacts'] = ['arm64' => $d['tools']['node']['artifacts']['amd64']];
+        }, 'expected exactly one amd64 pin'],
     ]);
 
     it('rejects a missing Git pin with a recipe validation exception', function (): void {
@@ -546,20 +547,14 @@ describe('machine recipe structure and identity', function (): void {
         }
     });
 
-    it('rejects unknown profiles and PHP profiles on arm64 while keeping other profiles available', function (): void {
+    it('rejects unknown profiles and every profile on arm64', function (): void {
         $recipe = new RecipeLoader()->load();
         expect(fn () => $recipe->profile('typo'))->toThrow(InvalidArgumentException::class, 'Unknown role/profile')
-            ->and(fn () => $recipe->profile('base', 'arm64'))->toThrow(InvalidArgumentException::class, 'PHP is not available for arm64')
-            ->and(fn () => $recipe->profile('app-dev', 'arm64'))->toThrow(InvalidArgumentException::class, 'PHP is not available for arm64')
-            ->and($recipe->profile('operator', 'arm64'))->toContain('git')
-            ->and($recipe->supportedArchitectures('app-dev'))->toBe(['amd64']);
-    });
-
-    it('rejects an arm64 artifact in the PHP package set', function (): void {
-        $document = machine_recipe_document();
-        $document['tools']['php8.5-common']['artifacts']['arm64'] = $document['tools']['php8.5-common']['artifacts']['amd64'];
-
-        expect(fn () => machine_recipe_decode($document))->toThrow(InvalidArgumentException::class, 'PHP supports amd64 only');
+            ->and(fn () => $recipe->profile('app-dev', 'arm64'))->toThrow(InvalidArgumentException::class, 'Unknown architecture [arm64]')
+            ->and(fn () => $recipe->profile('operator', 'arm64'))->toThrow(InvalidArgumentException::class, 'Unknown architecture [arm64]')
+            ->and($recipe->profile('operator', 'amd64'))->toContain('git')
+            ->and($recipe->supportedArchitectures('app-dev'))->toBe(['amd64'])
+            ->and($recipe->supportedArchitectures('operator'))->toBe(['amd64']);
     });
 });
 
@@ -715,7 +710,7 @@ describe('machine recipe command', function (): void {
         $this->artisan('orbit:machine-recipe', ['--role' => 'operator'])
             ->expectsOutputToContain('Identity: sha256:')
             ->expectsOutputToContain('structure only; availability and integrity NOT checked')
-            ->expectsOutputToContain('operator (architectures: amd64, arm64)')
+            ->expectsOutputToContain('operator (architectures: amd64)')
             ->assertSuccessful();
         Http::assertNothingSent();
     });
@@ -829,9 +824,9 @@ describe('machine recipe command', function (): void {
             ->expectsOutputToContain('stale Ubuntu pin')->assertFailed();
     });
 
-    it('refuses unknown roles and unsupported Pi architecture', function (): void {
+    it('refuses unknown roles and the arm64 architecture', function (): void {
         $this->artisan('orbit:machine-recipe', ['--role' => 'typo'])->expectsOutputToContain('Unknown role/profile')->assertFailed();
-        $this->artisan('orbit:machine-recipe', ['--role' => 'base', '--architecture' => 'arm64'])->expectsOutputToContain('PHP is not available for arm64')->assertFailed();
+        $this->artisan('orbit:machine-recipe', ['--role' => 'operator', '--architecture' => 'arm64'])->expectsOutputToContain('Unknown architecture [arm64]')->assertFailed();
     });
 
     it('validates the whole recipe even when only operator tools are displayed', function (): void {
@@ -857,8 +852,8 @@ it('accepts a native artifact version for any artifact package and rejects a cha
 it('maps machine architectures to recipe architectures in one place and refuses others', function (): void {
     expect(MachineRecipe::architecture('x86_64'))->toBe('amd64')
         ->and(MachineRecipe::architecture('amd64'))->toBe('amd64')
-        ->and(MachineRecipe::architecture('aarch64'))->toBe('arm64')
-        ->and(MachineRecipe::architecture('arm64'))->toBe('arm64')
+        ->and(MachineRecipe::architecture('aarch64'))->toBeNull()
+        ->and(MachineRecipe::architecture('arm64'))->toBeNull()
         ->and(MachineRecipe::architecture('riscv64'))->toBeNull()
         ->and(MachineRecipe::architecture(null))->toBeNull();
     expect(fn () => NodeRecipeProgram::architecture(new Node(['architecture' => null])))

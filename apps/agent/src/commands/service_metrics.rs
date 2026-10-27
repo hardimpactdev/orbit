@@ -210,7 +210,7 @@ impl State {
 /// The only external effects: fixed systemd/UFW commands and bounded HTTP requests.
 trait Host {
     fn command(&mut self, program: &str, args: &[String]) -> Result<(bool, String)>;
-    fn download(&mut self, machine: &str) -> Result<Vec<u8>>;
+    fn download(&mut self) -> Result<Vec<u8>>;
     fn ready(&mut self, address: &str) -> Result<()>;
 }
 
@@ -259,8 +259,8 @@ impl Host for NativeHost {
             String::from_utf8_lossy(&output.stdout).into_owned(),
         ))
     }
-    fn download(&mut self, machine: &str) -> Result<Vec<u8>> {
-        Self::get(&format!("https://github.com/cboxdk/fpm-exporter/releases/download/v3.1.1/fpm-exporter-linux-{machine}"), 64 * 1024 * 1024, true)
+    fn download(&mut self) -> Result<Vec<u8>> {
+        Self::get("https://github.com/cboxdk/fpm-exporter/releases/download/v3.1.1/fpm-exporter-linux-amd64", 64 * 1024 * 1024, true)
     }
     fn ready(&mut self, address: &str) -> Result<()> {
         for attempt in 0..5 {
@@ -290,7 +290,6 @@ struct Runtime<H> {
     binary: PathBuf,
     owner: u32,
     checksum: String,
-    machine: &'static str,
     host: H,
 }
 
@@ -472,7 +471,7 @@ impl<H: Host> Runtime<H> {
     fn apply(&mut self, desired: &State) -> Result<()> {
         let before = self.inspect()?;
         if desired.binary && !before.binary {
-            let bytes = self.host.download(self.machine)?;
+            let bytes = self.host.download()?;
             if format!("{:x}", Sha256::digest(&bytes)) != self.checksum {
                 return Err(failed("exporter checksum"));
             }
@@ -560,6 +559,14 @@ impl<H: Host> Runtime<H> {
     }
 }
 
+/// Linux Nodes are x86_64 only, so Orbit pins only the amd64 exporter release.
+fn exporter_checksum(architecture: &str) -> Result<&'static str> {
+    match architecture {
+        "x86_64" => Ok("570d2b3d3284179c47acff8efd8f73ea650e42a2c6bd08c0a8e95cb4b0e3ca98"),
+        _ => Err(invalid("exporter architecture")),
+    }
+}
+
 pub struct ServiceRuntime;
 impl Command for ServiceRuntime {
     const NAME: &'static str = "metrics.service-runtime";
@@ -579,17 +586,7 @@ impl Command for ServiceRuntime {
         Some("service-metrics".into())
     }
     fn run(input: Input, _: &Context) -> Result<Output> {
-        let (machine, checksum) = match std::env::consts::ARCH {
-            "x86_64" => (
-                "amd64",
-                "570d2b3d3284179c47acff8efd8f73ea650e42a2c6bd08c0a8e95cb4b0e3ca98",
-            ),
-            "aarch64" => (
-                "arm64",
-                "d9773dfef3f6efbbbea0fe8be40ea79652d71ea24b20bfe89690ab026e205442",
-            ),
-            _ => return Err(invalid("exporter architecture")),
-        };
+        let checksum = exporter_checksum(std::env::consts::ARCH)?;
         Runtime {
             filesystem_root: "/".into(),
             root: "/etc/orbit/service-metrics".into(),
@@ -597,7 +594,6 @@ impl Command for ServiceRuntime {
             binary: "/usr/local/bin/orbit-fpm-exporter".into(),
             owner: 0,
             checksum: checksum.into(),
-            machine,
             host: NativeHost,
         }
         .run(input)

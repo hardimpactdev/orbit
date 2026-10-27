@@ -13,7 +13,7 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 final class FleetReleaseAssetData extends Data
 {
     public function __construct(
-        /** The platform the binary runs on: `linux-x86_64`, `linux-aarch64`, or `macos-arm64`. */
+        /** The platform the binary runs on: `linux-x86_64` or `macos-arm64`. */
         public string $platform,
         /** The release asset name, such as `orbit-0.4681.0-linux-x86_64`. */
         public string $name,

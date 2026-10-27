@@ -6,13 +6,11 @@ use std::collections::BTreeMap;
 #[serde(rename_all = "lowercase")]
 pub enum Architecture {
     Amd64,
-    Arm64,
 }
 impl Architecture {
     pub fn name(self) -> &'static str {
         match self {
             Self::Amd64 => "amd64",
-            Self::Arm64 => "arm64",
         }
     }
 }

@@ -30,7 +30,8 @@ describe('gateway response fixtures', function (): void {
             ->assertJsonPath('data.cli.status', 'available')
             ->assertJsonPath('data.cli.version', '0.4681.0')
             ->assertJsonPath('data.cli.assets.0.platform', 'linux-x86_64')
-            ->assertJsonPath('data.agent.assets.1.platform', 'linux-aarch64');
+            ->assertJsonCount(2, 'data.cli.assets')
+            ->assertJsonPath('data.agent.assets.*.platform', ['linux-x86_64']);
 
         record_fixture($response, 'gateway/self-update/available', ShowDesiredFleetStateRequest::class, 'GET /api/v1/gateway/desired-fleet-state');
     });
