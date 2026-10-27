@@ -59,7 +59,15 @@ A weekly routine starts one external group with one child and starts the
 existing `dependency-routine` factory. The dependency drivers reserve
 nested-call capacity with `maxCallsPerTick: 60`. The shared schedule tick
 rotates four active groups at a time, so parked work cannot starve other
-projects. A daily detection run uses a separate instance of the official
+projects. Detection ticks take up to three guarded steps per selected group.
+This lets a ready provision result be recorded, its transition taken, and the
+worker start requested in the same visit. A running operation still ends that
+visit immediately. The driver retains its call budget and defers remaining
+work when needed. With nineteen groups, the four-group rotation visits each
+about every five minutes; one step per visit used to leave ready VMs idle
+across several rotations before worker startup.
+
+A daily detection run uses a separate instance of the official
 factory: provision, detect on the task worker, check, finish without a PR.
 Detection failures or a changed checkout park for assistance. Detection never
 starts a repair turn or publishes changes.

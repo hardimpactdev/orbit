@@ -1,4 +1,5 @@
 // Real official factory and driver; the remote-workflow boundary returns native fixtures.
+import { parse } from "jsr:@std/yaml@1.0.11";
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import { startFakeGateway } from "./_support/fake_gateway.ts";
 
@@ -318,9 +319,22 @@ export const behavior = {
           `workItem=${workItem}`,
         );
       }
+      // Use the deployed scheduler settings rather than a faster test-only tick.
+      const schedule = parse(
+        await Deno.readTextFile(
+          `${dir}/workflows/workflow-maintenance-projects.yaml`,
+        ),
+      ) as {
+        jobs: {
+          steps: { name: string; task: { inputs: { maxSteps: number } } }[];
+        }[];
+      };
+      const detectSteps = schedule.jobs[0].steps.find((step) =>
+        step.name === "detect"
+      )!.task.inputs.maxSteps;
       await Deno.writeTextFile(
         `${dir}/detect-tick.json`,
-        JSON.stringify({ workItems: detections, maxSteps: 3 }),
+        JSON.stringify({ workItems: detections, maxSteps: detectSteps }),
       );
       let detected: string[] = [];
       for (let n = 0; n < 20; n++) {

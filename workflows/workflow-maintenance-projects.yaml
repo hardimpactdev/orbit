@@ -36,7 +36,7 @@ jobs:
       inputs:
         workItems: ${{ data.latest("orbit-gateway", "project-work").attributes.detect
           }}
-        maxSteps: 1
+        maxSteps: 3
   - name: package
     dependsOn:
     - step: work
