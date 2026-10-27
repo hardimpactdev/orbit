@@ -163,9 +163,28 @@ A deployment and a rollback each run as an [operation](/reference/operations) on
 
 | Request | Body | Result |
 | --- | --- | --- |
-| `POST /api/v1/instances/{instance}/deploy` | `{}` | `202` with an `instance.deploy` operation. Follow it with `GET /api/v1/operations/{operation}`. |
+| `POST /api/v1/instances/{instance}/deploy` | `{}` or `{"commit":"SHA"}` | `202` with an `instance.deploy` operation. Follow it with `GET /api/v1/operations/{operation}`. |
+| `POST /api/v1/instances/{instance}/deploy/automatic` | `{"commit":"SHA"}` and `Idempotency-Key` | `202` with the automatic `instance.deploy` receipt. Requires Gateway Node access. |
 | `POST /api/v1/instances/{instance}/rollback` | `{"release": "<name>"}` | `202` with an `instance.rollback` operation that selects one retained release. Follow it with `GET /api/v1/operations/{operation}`. |
 | `GET /api/v1/instances/{instance}/releases` | none | `releases`, the retained release names, and `selected_release`, which can be null. A development default has none. |
+
+### Pinned commits and automatic callers
+
+`instance:deploy --commit=SHA` sends `{"commit":"SHA"}` to the existing deploy endpoint. Omit `commit` to keep the manual branch-head behavior. SHA is exactly 40 or 64 lowercase hexadecimal characters. The Gateway checks Instance eligibility and the Project's recorded repository identity before admission. The queued source-preparation step checks the managed repository binding and requires the commit on the deployment branch's first-parent chain before environment sync, user steps or activation. Invalid membership ends the operation with `deployment.commit_not_on_branch`; a moved head either still contains the pinned commit or fails. It never substitutes the new head. Development defaults use the Project default branch.
+
+`POST /api/v1/instances/{instance}/deploy/automatic` and MCP `instance-deploy-automatic` start the same `instance.deploy` operation with automatic origin. They require a commit, an `Idempotency-Key`, an eligible production Instance with automatic deployment enabled, and Gateway Node access.
+
+This service contract has no CLI command. Swamp invokes it with its Gateway-peer authority; operator deploys use `instance:deploy --commit=SHA` and keep manual identity and pause behavior. The normal deploy endpoint always keeps the authenticated caller's manual identity, including when the caller has Gateway access. Both reject unknown body fields, including `triggered_by`, `automatic` and `caller_node_id`.
+
+Swamp runs as `swamp serve` on Services. Its Gateway calls use Services' existing active WireGuard peer identity, derived from the connection address, with the existing directed Services-to-Gateway access edge. Gateway access is already fleet-wide authority; it also authorizes this automatic command. Access only to a production Node permits manual deploys but does not permit automatic origin. No per-command permission, new bearer token or client-supplied identity is introduced. Establishing that access and starting a Swamp policy workflow are separate operator actions; this contract changes no live configuration.
+
+The automatic receipt stores the authenticated caller Node ID and pinned commit in operation input, the Instance in its target, and the request key and fingerprint in the operation framework. The fingerprint binds caller and command as well as target and input. The same request returns its existing operation even after completion; another caller, command, Instance or commit with the same key returns `operation.idempotency_conflict`. Manual deploys and other operation kinds keep their existing key semantics across callers.
+
+Under the Instance lock, the automatic operation rechecks enablement, manual pause and rolled-away blocks before effects.
+
+A manual deploy or rollback row pauses it regardless of whether that attempt is running, failed or succeeded. A rollback records its rolled-away block when its outcome is recorded, before history pruning, so resume and history pruning cannot lose it while the native policy runner is idle. `auto_deploy=true` resumes after the newest manual row and keeps the block. A paused operation ends with `deployment.paused`; a rolled-away commit ends with `deployment.commit_blocked`. A manual action that has already started and still holds the Instance makes a new start busy. A rollback may supersede an unclaimed queued deploy under the existing rules.
+
+These primitives retain the existing operation receipt, history, output, recovery, target exclusion and cooperative cancellation. The native automatic deploy runner continues to own its current policy. No Swamp workflow is installed by these commands.
 
 ### The deploy operation
 

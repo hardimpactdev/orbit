@@ -211,7 +211,9 @@ def load_controllers():
         for m in re.finditer(r'public function (\w+)\((.*?)\)\s*:\s*([\w|\\]+)', s, re.S):
             params = re.sub(r'\s+', ' ', m.group(2))
             body = block(s, s.find(')', m.end(2)))
-            marker = bool(re.search(r'#\[StartsOperation\(', s[:m.start()].rsplit('public function', 1)[-1]))
+            marker_match = re.search(r'#\[StartsOperation\((.*?)\)\]', s[:m.start()].rsplit('public function', 1)[-1], re.S)
+            marker = marker_match is not None
+            marker_input = marker_match.group(1) if marker_match else ''
             if re.search(r'\b202\b', body) and re.search(r'\bOperationData::', body) and not marker:
                 sys.exit(f'bin/docs-openapi: {f.relative_to(ROOT)}::{m.group(1)} answers 202 with OperationData but has no #[StartsOperation] marker')
             ctrl[f'{f.stem}@{m.group(1)}'] = {
@@ -220,6 +222,8 @@ def load_controllers():
                 'created': bool(re.search(r'\b201\b', body)),
                 # The same endpoint marker enables shared idempotency handling at runtime.
                 'starts_operation': marker,
+                'requires_key': bool(re.search(r'\brequiresKey:\s*true\b', marker_input)),
+                'binds_caller': bool(re.search(r'\bbindCaller:\s*true\b', marker_input)),
             }
     return ctrl
 
@@ -677,7 +681,7 @@ SUMMARIES = {
     'project:schedule-definition:destroy': 'Remove a Schedule definition',
     'instance:list': 'List Instances', 'instance:show': 'Show an Instance', 'instance:create': 'Create an Instance', 'instance:register': 'Register an Instance', 'instance:update': 'Update production deployment settings', 'instance:destroy': 'Remove an Instance',
     'instance:clone': 'Clone an Instance', 'instance:deployment-layout:prepare': 'Prepare the deployment layout', 'instance:deploy-step:list': 'List deploy steps', 'instance:deploy-step:create': 'Create a deploy step', 'instance:deploy-step:update': 'Update a deploy step', 'instance:deploy-step:destroy': 'Remove a deploy step',
-    'instance:deployment-config:show': 'Show the deployment configuration', 'instance:deployment-config:update': 'Replace the deployment configuration', 'instance:deploy': 'Deploy an Instance', 'operation:list': 'List operations', 'operation:show': 'Show an operation', 'operation:cancel': 'Cancel an operation', 'instance:release:list': 'List retained releases', 'instance:rollback': 'Roll back an Instance',
+    'instance:deployment-config:show': 'Show the deployment configuration', 'instance:deployment-config:update': 'Replace the deployment configuration', 'instance:deploy': 'Deploy an Instance', 'instance:deploy:automatic': 'Start an automatic pinned deploy', 'operation:list': 'List operations', 'operation:show': 'Show an operation', 'operation:cancel': 'Cancel an operation', 'instance:release:list': 'List retained releases', 'instance:rollback': 'Roll back an Instance',
     'instance:database:add': 'Attach a Database connection', 'instance:database:remove': 'Detach a Database connection',
     'instance:websocket:add': 'Attach a WebSocket app', 'instance:websocket:remove': 'Detach a WebSocket app',
     'websocket:app:list': 'List WebSocket apps', 'websocket:app:show': 'Show a WebSocket app', 'websocket:app:create': 'Create a WebSocket app', 'websocket:app:destroy': 'Remove a WebSocket app',
@@ -719,6 +723,7 @@ DESCRIPTIONS = {
     'gateway:status': 'Returns the Gateway name, version, and status, and the release the Gateway runs from. This endpoint needs no WireGuard identity. For an active WireGuard peer it also returns `auto_release`, whether automatic releases are enabled or paused, and `desired_fleet_state`, the object `gateway:desired-fleet-state` returns, as last cached; it is null until the state is resolved and for any other caller. This endpoint never waits for Git or GitHub.',
     'gateway:desired-fleet-state': 'Returns what every machine in the fleet should run for the Gateway\'s commit (ADR 0202): the full commit SHA, the CLI release CI published for that commit with the SHA-256 of each platform binary from its `SHA256SUMS`, and the pinned `orbit-agent` with the SHA-256 of each Linux binary. Any active WireGuard peer may read it, with or without Node access. `cli.status` is `available`; `pending` with `reason` `release_missing` and the version and tag while CI has not published the release yet; or `unavailable` with a `reason`. None of these is an error. `orbit self-update` reads this endpoint.',
     'gateway:release:deploy': 'Queues a manual release of one commit and starts `orbit-gateway-release-run@<record>.service`, which prepares, migrates, switches, verifies, and smoke-tests it. Answers 202 with the queued release record; the release never runs in the API request. Follow it with `gateway:release:show <id>` until `finished` is true. See /reference/gateway-recovery#deploy-a-release.',
+    'instance:deploy:automatic': 'Starts the existing instance.deploy operation for exactly the required full commit SHA. Requires Gateway Node access, an enabled production Instance, and Idempotency-Key. Derives automatic origin from the authorized command and records the caller Node ID. Replays bind caller, command, Instance and commit. Rechecks pause and rollback blocks under the Instance lock before effects. Branch membership is checked on the first-parent chain during queued source preparation; refusal ends with deployment.commit_not_on_branch. Follow with operation:show. See /reference/deployments#pinned-commits-and-automatic-callers.',
     'instance:deploy': 'Starts an `instance.deploy` operation and answers 202 with it at once; the deploy runs on the Gateway queue. Follow it with `operation:show` and `after_sequence` after `poll_after_seconds`, until `status` is `succeeded`, `failed`, or `cancelled`. A second deploy while one holds the Instance returns `operation.target_busy` (409) with `details.operation_id`. See /reference/operations.',
     'instance:rollback': 'Starts an `instance.rollback` operation that selects one retained release, and answers 202 with it at once; the rollback runs on the Gateway queue. Follow it with `operation:show` and `after_sequence` after `poll_after_seconds`, until `status` is `succeeded`, `failed`, or `cancelled`. A release the Instance does not retain returns `rollback.release_not_retained` (422) and changes nothing. A deploy of the Instance that no worker has started ends `cancelled` with `operation.superseded`; any other operation that holds the Instance, such as a deploy a worker has started, returns `operation.target_busy` (409) with `details.operation_id`. See /reference/deployments#the-rollback-operation.',
     'tasks:swamp-runs': 'Returns the latest five Swamp workflow runs for this task group, with bounded redacted step output and a run log tail. Poll every five seconds. Availability is available, stale with the last successful snapshot, or unavailable. Requires Gateway access and the Tasks extension. See /reference/tasks#swamp-run-output.',
@@ -1951,9 +1956,9 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     if starts_operation:
         op['x-orbit-operation'] = 'start'
         op['parameters'].append({
-            'name': 'Idempotency-Key', 'in': 'header', 'required': route['name'] in ('tasks:analyze', 'tasks:script', 'tasks:worker'),
+            'name': 'Idempotency-Key', 'in': 'header', 'required': controllers.get(action, {}).get('requires_key', False),
             'schema': {'type': 'string', 'minLength': 1, 'maxLength': 128, 'pattern': '^[A-Za-z0-9._:-]+$'},
-            'description': 'A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409).',
+            'description': ('A permanent key scoped to this operation kind, binding caller and command as well as target and input.' if controllers.get(action, {}).get('binds_caller', False) else 'A permanent key scoped to this operation kind, target and input.') + ' The same request returns the existing operation with HTTP 202; a changed identity returns operation.idempotency_conflict (409).',
         })
         if body_schema is None:
             op['requestBody'] = {'required': True, 'content': {'application/json': {'schema': {'type': 'object', 'additionalProperties': False}}}}
@@ -2048,7 +2053,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             responses['200'] = websocket_envelope(data, 'Saved operation status, including superseded results.')
             if route['name'] != 'websocket:operation:show':
                 responses['202'] = websocket_envelope(data, 'Saved; application is pending. Follow the operation status URL.')
-                op['parameters'].append({'name': 'Idempotency-Key', 'in': 'header', 'required': route['name'] in ('tasks:analyze', 'tasks:script', 'tasks:worker'), 'schema': {'type': 'string', 'maxLength': 128}, 'description': 'Reuse the same key when retrying this change.'})
+                op['parameters'].append({'name': 'Idempotency-Key', 'in': 'header', 'required': route['name'] in ('tasks:analyze', 'tasks:script', 'tasks:worker', 'instance:deploy:automatic'), 'schema': {'type': 'string', 'maxLength': 128}, 'description': 'Reuse the same key when retrying this change.'})
             if route['name'] == 'websocket:app:create':
                 responses['201'] = websocket_envelope(data, 'Created and confirmed by every required process.')
         elif starts_operation:

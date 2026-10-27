@@ -31,6 +31,7 @@ use Orbit\Sdk\Requests\DatabaseServers\CreateDatabaseServerRequest;
 use Orbit\Sdk\Requests\DatabaseServers\DestroyDatabaseServerRequest;
 use Orbit\Sdk\Requests\DatabaseServers\ListDatabaseServersRequest;
 use Orbit\Sdk\Requests\DatabaseServers\ShowDatabaseServerRequest;
+use Orbit\Sdk\Requests\Deployments\AutomaticDeployInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\CreateInstanceDeployStepRequest;
 use Orbit\Sdk\Requests\Deployments\DeployInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\DestroyInstanceDeployStepRequest;
@@ -370,7 +371,7 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Fleet\\ResumeFleetRolloutRequest',
             'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeRequest',
         ];
-        $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($webSocketRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($aiRouterRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 17;
+        $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($webSocketRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($aiRouterRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 18;
         $expectedRequests = [
             'Orbit\\Sdk\\Requests\\Tools\\ListToolManagersRequest',
             'Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest',
@@ -491,7 +492,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(DestroyInstanceDeployStepRequest::class)
             ->toContain(UpdateProjectRequest::class)
             ->toContain(UpdateInstanceRequest::class)
-            ->toContain(DeployInstanceRequest::class)
+            ->toContain(DeployInstanceRequest::class, AutomaticDeployInstanceRequest::class)
             ->toContain(RollbackInstanceRequest::class)
             ->toContain(ListInstanceReleasesRequest::class)
             ->toContain(ListInstanceDeploymentsRequest::class)
@@ -625,7 +626,7 @@ describe('repository guidance bootstrap', function (): void {
                 'Keep Instance environment transport limited to an ID-or-domain selector, optional import replacement, one key and string value for update, an empty synchronization body, and the bounded value-free operation result.',
             )
             ->toContain(
-                'Keep Instance deployment transport limited to named deploy-step create, list, update, and destroy, Instance branch update, explicit deploy and rollback starts, and retained-release inspection.',
+                'Keep Instance deployment transport limited to named deploy-step create, list, update, and destroy, Instance branch update, explicit deploy and rollback starts, trusted automatic pinned deploy starts, and retained-release inspection.',
             )
             ->toContain(
                 "Keep Project runtime definition transport limited to a numeric Project ID, a definition name for item operations, and the caller's exact JSON document for create and full update.",

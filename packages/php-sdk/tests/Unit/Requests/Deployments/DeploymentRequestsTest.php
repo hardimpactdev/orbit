@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
+use Orbit\Sdk\Requests\Deployments\AutomaticDeployInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\CreateInstanceDeployStepRequest;
 use Orbit\Sdk\Requests\Deployments\DeployInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\DestroyInstanceDeployStepRequest;
@@ -208,3 +209,14 @@ function deployment_request_id(): string
 {
     return '0198e15c-bf97-7c23-8f1f-61b8fe67a846';
 }
+
+it('transports pinned manual and trusted automatic starts without a client trigger', function (): void {
+    $sha = str_repeat('b', 40);
+    $manual = new DeployInstanceRequest(17, 'manual.key', $sha);
+    $automatic = new AutomaticDeployInstanceRequest(17, $sha, 'automatic.key');
+    expect($manual->resolveEndpoint())->toBe('/api/v1/instances/17/deploy');
+    expect($manual->body()->all())->toBe(['commit' => $sha]);
+    expect($automatic->resolveEndpoint())->toBe('/api/v1/instances/17/deploy/automatic');
+    expect($automatic->body()->all())->toBe(['commit' => $sha]);
+    expect($automatic->headers()->get('Idempotency-Key'))->toBe('automatic.key');
+});

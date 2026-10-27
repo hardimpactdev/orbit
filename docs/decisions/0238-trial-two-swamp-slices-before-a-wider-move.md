@@ -41,6 +41,8 @@ Run two bounded trials. Complete and measure each slice before approving a wider
 
 Swamp owns the production policy now in `RunAutomaticDeploysAction` and `AutomaticDeployHistory`: commit selection, gate checks, retry backoff, blocked commits, pause state, and alerts. It calls Gateway primitives to deploy. The Gateway keeps deployment effects, target locks, validated inputs, authorization, and deploy history. Orbit keeps deployment of development defaults; shared policy code is split by behavior and removed only where no retained caller needs it.
 
+The [frozen slice 1 parity cases](/reference/automatic-deploy-parity) name the expected policy results and existing public-surface proof.
+
 Two public contracts are prerequisites:
 
 - **Validated pinned-commit deploy.** A supported Gateway API accepts a full commit SHA and starts the existing `instance.deploy` operation for exactly that commit. It validates the SHA, Instance eligibility, repository identity, and branch membership. A moved branch head cannot change the selected commit. The internal optional commit argument is not yet this public contract.

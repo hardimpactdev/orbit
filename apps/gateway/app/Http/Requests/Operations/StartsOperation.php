@@ -11,5 +11,5 @@ use Attribute;
 final readonly class StartsOperation
 {
     /** @param list<string> $secretInputs Dot paths excluded from the idempotency fingerprint. */
-    public function __construct(public string $kind, public bool $requiresKey = false, public ?int $maxJsonBytes = null, public array $secretInputs = []) {}
+    public function __construct(public string $kind, public bool $requiresKey = false, public ?int $maxJsonBytes = null, public array $secretInputs = [], public bool $bindCaller = false) {}
 }

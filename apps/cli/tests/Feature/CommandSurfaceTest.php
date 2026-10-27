@@ -264,6 +264,7 @@ describe('command vocabulary', function (): void {
         expect(CommandVocabulary::routeRequiresMatchingCommand('metrics:list', $commands))->toBeTrue();
         expect($commands)->not->toContain('metrics:list');
         expect(CommandVocabulary::routeRequiresMatchingCommand('schedule:complete', $commands))->toBeFalse();
+        expect(CommandVocabulary::routeRequiresMatchingCommand('instance:deploy:automatic', ['instance:deploy']))->toBeFalse();
         expect(CommandVocabulary::routeRequiresMatchingCommand('instance:dependencies:show', ['instance:dependencies:scan']))->toBeFalse();
         expect(CommandVocabulary::routeRequiresMatchingCommand('instance:dependencies:update', ['instance:dependencies:update']))->toBeTrue();
         expect(CommandVocabulary::routeRequiresMatchingCommand('instance:dependencies:update', ['instance:dependencies:scan']))->toBeTrue();
@@ -717,7 +718,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ['slug'],
             ['instance' => null, 'prefix' => null, 'force' => false, 'json' => false],
         ],
-        'instance:deploy' => [['instance'], ['idempotency-key' => null, 'json' => false]],
+        'instance:deploy' => [['instance'], ['commit' => null, 'idempotency-key' => null, 'json' => false]],
         'instance:deploy-step:create' => [
             ['instance', 'name'],
             [
@@ -1582,3 +1583,7 @@ it('refuses a malformed lifecycle rebalance before contacting the Gateway', func
 it('does not register removed Instance path proxy commands', function (string $operation): void {
     expect(app(Kernel::class)->all())->not->toHaveKey('instance:path-proxy:'.$operation);
 })->with(['set', 'show', 'unset']);
+
+it('keeps trusted automatic starts on API and MCP while CLI deploys remain manual', function (): void {
+    expect(app(Kernel::class)->all())->not->toHaveKey('instance:deploy:automatic');
+});

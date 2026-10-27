@@ -1596,6 +1596,29 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/automatic-deploy-parity.md",
+            "title": "Automatic deployment parity",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "apps/web"
+            ],
+            "concepts": [
+                "Activity",
+                "Deployment",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/reference/browser-access.md",
             "title": "Browser access to the Gateway",
             "kind": "reference",

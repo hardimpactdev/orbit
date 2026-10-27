@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Http\Requests\DatabaseConnections\UpdateDatabaseConnectionRequest;
+use App\Http\Requests\Instances\AutomaticDeployInstanceRequest;
+use App\Http\Requests\Instances\DeployInstanceRequest;
 use App\Http\Requests\Instances\StoreInstanceDeployStepRequest;
 use App\Http\Requests\Instances\UpdateInstanceDeployStepRequest;
 use App\Http\Requests\Instances\UpdateInstanceRequest;
@@ -36,10 +38,17 @@ it('publishes validated write body fields in OpenAPI and MCP', function (string 
         expect($input['properties'][$field])->toBe($body['properties'][$field]);
     }
 
-    $pathFields = array_column($operation['parameters'], 'name');
-    $pathFields = array_map(fn (string $field): string => $operationId === 'instance-deploy-step-update' && $field === 'name' ? 'step' : $field, $pathFields);
-    expect(array_keys($input['properties']))->toEqualCanonicalizing([...$pathFields, ...array_keys($types)]);
-    expect($input['required'] ?? [])->toEqualCanonicalizing([...$pathFields, ...$required]);
+    $inputName = fn (string $field): string => $operationId === 'instance-deploy-step-update' && $field === 'name' ? 'step' : $field;
+    $parameterFields = array_map($inputName, array_column($operation['parameters'], 'name'));
+    $requiredParameters = array_filter($operation['parameters'], static fn (array $parameter): bool => $parameter['required'] ?? false);
+    $requiredFields = array_map($inputName, array_column($requiredParameters, 'name'));
+    expect(array_keys($input['properties']))->toEqualCanonicalizing([...$parameterFields, ...array_keys($types)]);
+    expect($input['required'] ?? [])->toEqualCanonicalizing([...$requiredFields, ...$required]);
+
+    if (isset($types['commit'])) {
+        expect($operation['requestBody']['required'])->toBeTrue();
+        expect($body['properties']['commit']['pattern'])->toBe('^[0-9a-f]{40}(?:[0-9a-f]{24})?$(?![\\s\\S])');
+    }
 
     if (isset($types['phase'])) {
         expect($body['properties']['phase']['enum'])->toBe(['before_activation', 'after_activation']);
@@ -68,6 +77,8 @@ it('publishes validated write body fields in OpenAPI and MCP', function (string 
         expect($body['properties']['timeout_seconds']['maximum'])->toBe(900);
     }
 })->with([
+    'manual pinned deploy' => ['instance-deploy', DeployInstanceRequest::class, ['commit' => 'string'], []],
+    'trusted automatic deploy' => ['instance-deploy-automatic', AutomaticDeployInstanceRequest::class, ['commit' => 'string'], ['commit']],
     'instance deployment settings' => ['instance-update', UpdateInstanceRequest::class, ['branch' => 'string', 'shared_paths' => ['array', 'null'], 'auto_deploy' => 'boolean'], []],
     'create deploy step' => ['instance-deploy-step-create', StoreInstanceDeployStepRequest::class, [
         'name' => 'string', 'command' => 'string', 'phase' => 'string', 'timeout_seconds' => 'integer', 'before' => 'string', 'after' => 'string',
@@ -148,7 +159,6 @@ it('publishes empty-object bodies with the runtime requiredness', function (stri
     expect($tool['input_schema']['required'])->toBe($tool['path_inputs']);
     expect($tool['query_inputs'])->toBe([]);
 })->with([
-    'deploy' => ['instance-deploy', true],
     'environment sync' => ['env-sync', true],
     'dependency scan' => ['instance-dependencies-scan', true],
     'dependency update' => ['instance-dependencies-update', true],
