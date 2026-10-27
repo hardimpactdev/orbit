@@ -68,6 +68,7 @@ use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\LeasedAgentDriver;
 use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
 use App\Domain\Tasks\PrunePendingTaskThreads;
+use App\Domain\Tasks\SwampReaderAssistance;
 use App\Domain\Tasks\SwampReaderCredential;
 use App\Domain\Tasks\TaskableType;
 use App\Domain\Tasks\TaskAgentSpawner;
@@ -1022,6 +1023,11 @@ final class TaskOrchestrationEntryPoints
         ],
         InstallSwampReaderCredentialAction::class => [
             'execute' => 'Verifies and installs the Gateway reader credential without executing task work or changing group orchestration.',
+        ],
+        SwampReaderAssistance::class => [
+            'key' => 'Identifies a reader credential assistance request without starting task work.',
+            'reason' => 'Describes a reader expiry request without changing task state.',
+            'clear' => 'Clears only the replaced reader assistance request without advancing task execution.',
         ],
         SwampReaderCredential::class => [
             'fromReveal' => 'Validates bounded reader reveal input without executing task work.',

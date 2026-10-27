@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Actions\Tasks;
 
+use App\Domain\Tasks\SwampReaderAssistance;
 use App\Domain\Tasks\SwampReaderCredential;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\Tasks\SwampReaderEnvironment;
 use App\Infrastructure\Tasks\WebSocketSwampRunReader;
+use Illuminate\Support\Facades\DB;
 use RuntimeException;
 use Throwable;
 
@@ -18,6 +20,7 @@ final readonly class InstallSwampReaderCredentialAction
         private GatewayReleaseLock $lock,
         private SwampReaderEnvironment $environment,
         private WebSocketClient $socket,
+        private SwampReaderAssistance $assistance,
     ) {}
 
     /** @return array{name: string, expires_at: string, backup: string} */
@@ -36,7 +39,11 @@ final readonly class InstallSwampReaderCredentialAction
             } catch (Throwable) {
                 throw new RuntimeException('The replacement could not read Swamp. The shared env was not changed.');
             }
-            $backup = $this->environment->install($original, $credential);
+            $backup = DB::transaction(function () use ($original, $credential, $settings): string {
+                $this->assistance->clear($settings['ORBIT_SWAMP_READ_TOKEN'] ?? '');
+
+                return $this->environment->install($original, $credential);
+            });
 
             return ['name' => $credential->name, 'expires_at' => $credential->expiresAt->format('Y-m-d\TH:i:s.u\Z'), 'backup' => $backup];
         });

@@ -203,6 +203,7 @@ use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Domain\SourceControl\RemoteBranchHeads;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
+use App\Domain\Tasks\SwampReaderAssistance;
 use App\Domain\Tools\ToolInspector;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerRegistry;
@@ -592,6 +593,7 @@ final class ApplicationServiceProvider extends ServiceProvider
             $app->make(GatewayReleaseLock::class),
             $app->make(SwampReaderEnvironment::class),
             new StreamWebSocketClient(2_097_152, 2_097_152),
+            $app->make(SwampReaderAssistance::class),
         ));
 
         $this->app->scoped(OperationIdempotency::class);

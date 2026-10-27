@@ -7,7 +7,9 @@ use App\Actions\Tasks\InstallSwampReaderCredentialAction;
 use App\Console\Commands\CheckSwampReaderCredentialCommand;
 use App\Console\Commands\InstallSwampReaderCredentialCommand;
 use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\SwampReaderAssistance;
 use App\Domain\Tasks\SwampReaderCredential;
+use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -102,7 +104,7 @@ function reader_socket(bool $available = true): WebSocketClient
 function install_with_socket(WebSocketClient $socket): void
 {
     app()->instance(InstallSwampReaderCredentialAction::class, new InstallSwampReaderCredentialAction(
-        app(GatewayReleaseLock::class), app(SwampReaderEnvironment::class), $socket,
+        app(GatewayReleaseLock::class), app(SwampReaderEnvironment::class), $socket, app(SwampReaderAssistance::class),
     ));
 }
 
@@ -279,3 +281,64 @@ it('registers both internal commands and checks expiry hourly', function (): voi
     config(['swamp.read_token' => 'configured.fixture-token']);
     expect($event->filtersPass(app()))->toBeTrue();
 });
+
+it('clears the old rotation request only after a healthy replacement is installed', function (bool $knownExpiry): void {
+    reader_assistance_project();
+    if ($knownExpiry) {
+        $this->travelTo('2026-11-19 12:00:00');
+    } else {
+        file_put_contents($this->envPath, str_replace('ORBIT_SWAMP_READ_TOKEN_EXPIRES_AT=2026-11-26T12:00:00Z', 'ORBIT_SWAMP_READ_TOKEN_EXPIRES_AT=', $this->original));
+    }
+    $id = app(CheckSwampReaderCredentialAction::class)->execute();
+    $oldGroup = Task::topLevel()->findOrFail($id);
+    $unrelated = Task::topLevel()->create(['project_id' => $oldGroup->project_id, 'title' => 'Other reader assistance', 'brief' => 'Preserve this request.', 'status' => TaskGroupStatus::Backlog]);
+    TaskAssistance::apply($unrelated, AssistanceKind::Direction, $oldGroup->assistance_question, $oldGroup->assistance_reason);
+    if (! $knownExpiry) {
+        file_put_contents($this->envPath, $this->original);
+    }
+    install_with_socket(reader_socket());
+    expect(install_reader_input(json_encode($this->reveal), '2026-12-19T12:00:00Z')[0])->toBe(0);
+    $group = Task::topLevel()->findOrFail($id);
+    expect($group->assistance_requested)->toBeFalse();
+    expect($group->assistance_kind)->toBeNull();
+    expect($group->assistance_question)->toBeNull();
+    expect($group->status)->toBe(TaskGroupStatus::Backlog);
+    expect($unrelated->refresh()->assistance_requested)->toBeTrue();
+    expect(app(CheckSwampReaderCredentialAction::class)->execute())->toBeNull();
+})->with([true, false]);
+
+it('preserves a changed request on the old credential task', function (string $change): void {
+    reader_assistance_project();
+    $this->travelTo('2026-11-19 12:00:00');
+    $id = app(CheckSwampReaderCredentialAction::class)->execute();
+    $group = Task::topLevel()->findOrFail($id);
+    $question = $change === 'reason' ? 'Check revocation first.' : $group->assistance_question;
+    $reason = $change === 'reason' ? 'Check revocation first.' : $group->assistance_reason;
+    if ($change === 'question') {
+        $question = 'Keep the old token until serving verification.';
+    }
+    $kind = $change === 'kind' ? AssistanceKind::Failure : AssistanceKind::Direction;
+    TaskAssistance::apply($group, $kind, $question, $reason, replaceFailure: true, replaceDirection: true);
+    $before = $group->only(TaskAssistance::Fields);
+    install_with_socket(reader_socket());
+    expect(install_reader_input(json_encode($this->reveal), '2026-12-19T12:00:00Z')[0])->toBe(0);
+    expect($group->refresh()->assistance_requested)->toBeTrue();
+    expect($group->only(TaskAssistance::Fields))->toBe($before);
+})->with(['reason', 'question', 'kind']);
+
+it('keeps the rotation request open when verification or installation fails', function (bool $available): void {
+    reader_assistance_project();
+    $this->travelTo('2026-11-19 12:00:00');
+    $id = app(CheckSwampReaderCredentialAction::class)->execute();
+    install_with_socket(reader_socket($available));
+    if ($available) {
+        chmod(dirname($this->envPath), 0500);
+    }
+    try {
+        expect(install_reader_input(json_encode($this->reveal), '2026-12-19T12:00:00Z')[0])->toBe(1);
+        expect(Task::topLevel()->findOrFail($id)->assistance_requested)->toBeTrue();
+        expect(file_get_contents($this->envPath))->toBe($this->original);
+    } finally {
+        chmod(dirname($this->envPath), 0700);
+    }
+})->with([false, true]);
