@@ -1,0 +1,12 @@
+{
+  "projectId": 20,
+  "repository": "git@github.com:nckrtl/website.git",
+  "script": "scripts/dependencies",
+  "worker": {
+    "composerPaths": ["."],
+    "jsPaths": ["."],
+    "policy": { ".": { "minimumReleaseAgeDays": 7 } }
+  },
+  "check": "composer check",
+  "defaultBranch": "main"
+}

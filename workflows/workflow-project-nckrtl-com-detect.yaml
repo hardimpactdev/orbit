@@ -1,0 +1,16 @@
+id: 4813f832-ac91-47af-8504-d8a521ed93e7
+name: "@nckrtl/project-nckrtl-com/detect"
+description: nckrtl.com detect through its private project extension.
+trigger:
+  schedule: 0 3 * * *
+jobs:
+- name: start
+  steps:
+  - name: detect
+    task:
+      type: model_method
+      modelIdOrName: orbit-gateway
+      methodName: schedule_project
+      inputs:
+        projectId: 20
+        mode: detect

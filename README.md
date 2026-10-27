@@ -13,7 +13,7 @@ cover the lifecycle and replay rules. Projects without worker configuration use
 policy. One failed update or check gets one repair turn; a second failure parks
 for assistance. Green work publishes a pull request using the extension summary.
 Unchanged work completes without one. Add repositories with one
-[project config entry](docs/dependency-projects.md).
+[private project extension](docs/project-extensions.md).
 
 The earlier [dependency planner](docs/dependency-workflow-adoption.md) remains
 historical and is not part of this flow. External review-and-merge/topology
@@ -24,6 +24,15 @@ admission stays closed.
 The orchestrator runs as an Orbit-managed Node Process on Services. Beast's
 original unit is stopped and disabled, with its files retained. See the
 [layout, bundle deployment and cutover procedure](docs/services.md).
+
+## Private project extensions
+
+`@nckrtl/project-nckrtl-com` holds Project 20's config and weekly routine/daily
+detection schedules. Shared factories and the group worker do the work. Detection
+creates separate major/advisory tasks; exact major targets enter the existing
+package sequence, while security tasks wait for verified fixed versions. See
+[the design and rollout](docs/project-extensions.md) and
+[extension template](docs/templates/project-extension/README.md).
 
 ## Composer maintenance extension
 

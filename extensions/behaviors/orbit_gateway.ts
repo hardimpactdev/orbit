@@ -1,6 +1,8 @@
+import { ensureProjectGroup, findingReceipts, scheduleReceipt, ScheduleReceiptSchema, type ScheduleReceipt } from "./_lib/project_schedule.ts";
 import { runMaintenance, reconcileWorkers, workerControl, type MaintenanceContext } from "./_lib/swamp_maintenance.ts";
 import { revokeEndedWorker } from "./_lib/maintenance_worker.ts";
-import { DependencyProjectsSchema } from "./_lib/dependency_projects.ts";
+import { projectConfigurations, ProjectExtensionsSchema } from "./_lib/project_config.ts";
+import { assertProjectSettings, DependencyProjectsSchema } from "./_lib/dependency_projects.ts";
 import { admitPackage, PackageTargetSchema, type PackageTarget } from "./_lib/package_target.ts";
 // @nckrtl/orbit-gateway — the stage work of the orbit-groups factory.
 // `stage` ensures one Gateway task operation per driver key and never waits:
@@ -12,6 +14,7 @@ import { type StageArgs } from "./_lib/gateway_stage.ts";
 
 const GlobalArgsSchema = z.object({
   dependencyProjects: DependencyProjectsSchema.default([]),
+  projectExtensions: ProjectExtensionsSchema.default([]),
   enrollmentVault: z.string().min(1).default("default"),
   workerUrl: z.string().default("wss://swamp.orbit"),
   serveUrl: z.string().default("wss://swamp.orbit"),
@@ -76,9 +79,18 @@ export function curlHttp(g: Pick<GlobalArgs, "gatewayUrl" | "caFile" | "timeoutS
 
 export const behavior = {
   type: "@nckrtl/orbit-gateway",
-  version: "2026.10.27.1",
+  version: "2026.10.27.2",
   globalArguments: GlobalArgsSchema,
   resources: {
+    schedule: {
+      description: "Project schedule and package finding group-creation receipts",
+      schema: ScheduleReceiptSchema, lifetime: "infinite", garbageCollection: 10,
+    },
+    projectWork: {
+      description: "Scheduled work items for the existing factory drivers",
+      schema: z.object({ routine: z.array(z.string()), detect: z.array(z.string()), package: z.array(z.string()), nextOffset: z.number().int().nonnegative(), nextQueueOffset: z.number().int().nonnegative() }),
+      lifetime: "infinite", garbageCollection: 10,
+    },
     worker: {
       description: "Public per-group Swamp enrollment and Gateway worker operation receipt",
       schema: z.object({ group: z.number().int().positive(), generation: z.number().int().positive(), tokenName: z.string(), operationId: z.number().int().positive().nullable(), nextReadAt: z.string().nullable().optional(), startedAt: z.string().optional(), ready: z.boolean(), revoked: z.boolean() }),
@@ -111,6 +123,39 @@ export const behavior = {
     },
   },
   methods: {
+    schedule_project: {
+      description: "Start or reconcile one project's scheduled routine or detection group",
+      arguments: z.object({ projectId: z.number().int().positive(), mode: z.enum(["routine", "detect"]) }),
+      execute: async (args: { projectId: number; mode: "routine" | "detect" }, context: StageContext) => {
+        const configs = await projectConfigurations(context.globalArgs.dependencyProjects, context.globalArgs.projectExtensions, context, args.projectId);
+        const config = configs[0];
+        if (!config?.worker) throw new Error("scheduled maintenance requires a configured project worker");
+        await assertProjectSettings(config, curlHttp(context.globalArgs));
+        const store = scheduleStore(context);
+        const desired = scheduleReceipt(config, args.mode);
+        // Only one scheduled routine/detect workspace per project at a time.
+        const other = (await scheduleRows(context)).find((r) => r.projectId === args.projectId && r.mode !== "package" && r.key !== desired.key && !r.completed);
+        if (other) throw new Error(`scheduled project work ${other.key} must finish before a new run`);
+        let receipt = await ensureProjectGroup(desired, store);
+        if (!receipt.started) {
+          await startFactory(context, args.mode === "detect" ? "dependency-detect" : "dependency-routine", receipt.workItem!);
+          receipt = { ...receipt, started: true };
+          await store.save(receipt);
+        }
+        return { dataHandles: [] };
+      },
+    },
+    project_work: {
+      description: "Read official factory state, fan detection into package tasks, and list scheduled driver work",
+      arguments: z.object({}),
+      execute: async (_args: Record<string, never>, context: StageContext) => projectWork(context),
+    },
+    detect: {
+      description: "Read-only detection through the existing worker, check and no-change completion path",
+      arguments: z.object({ workItem: z.string(), stage: z.enum(["provision", "script", "handoff", "finish"]), key: z.string(),
+        script: z.unknown().optional(), handoff: z.unknown().optional() }),
+      execute: (args: StageArgs, context: StageContext) => executeStage({ ...args, routine: true, detection: true }, context),
+    },
     reconcile_workers: {
       description: "Revoke enrollment for ended groups, including external cancellation",
       arguments: z.object({}),
@@ -131,7 +176,7 @@ export const behavior = {
         const runs = (await context.queryData('modelName == "dependency-package" && name == "status-_factory"', "attributes.runs"))[0] as { workItem: string; stageId: string; status: string }[];
         await admitPackage(target, {
           http: curlHttp(context.globalArgs),
-          projects: context.globalArgs.dependencyProjects,
+          projects: await groupConfigurations(target.workItem, context),
           targets: await context.queryData(`modelName == "${context.definition.name}" && name.startsWith("package-")`, "attributes") as PackageTarget[],
           runState: (workItem) => Promise.resolve(runs.find((run) => run.workItem === workItem) ?? null),
           save: async (value) => { handle = await context.writeResource("packageTarget", `package-${target.workItem}`, value); },
@@ -140,6 +185,11 @@ export const behavior = {
             if (!r.ok) throw new Error(r.error?.message ?? "cannot start package factory");
           },
         });
+        const receipt = (await scheduleRows(context)).find((r) => r.mode === "package" && r.workItem === target.workItem);
+        if (receipt) {
+          const selection = { path: target.path, manager: target.manager, package: target.package, version: target.version, purpose: target.purpose, advisoryUrls: target.advisoryUrls, advisories: target.advisories };
+          await scheduleStore(context).save({ ...receipt, target: selection, started: true });
+        }
         return { dataHandles: handle ? [handle] : [] };
       },
     },
@@ -219,6 +269,7 @@ export const behavior = {
 };
 
 interface StageContext extends MaintenanceContext {
+  runModel: MaintenanceContext["runModel"] & ((args: { definition: string; method: string; arguments?: Record<string, unknown> }) => Promise<{ ok: boolean; error?: { message: string } }>);
   globalArgs: GlobalArgs;
   definition: { name: string };
   queryData: (predicate: string, select?: string) => Promise<unknown[]>;
@@ -230,10 +281,10 @@ async function executeStage(args: StageArgs, context: StageContext) {
   let handle: { name: string } | null = null;
   const http = curlHttp(context.globalArgs);
   const job = await runStage(args, {
-    maintenance: (input, group, request) => runMaintenance(input, group, request, context, http),
+    maintenance: (input, group, request) => runMaintenance(input, group, input.detection && input.stage === "script" ? { ...request, mode: "detect" } : request, context, http),
     revokeWorker: (group) => revokeEndedWorker(group, workerControl(context, http)),
     http,
-    projects: context.globalArgs.dependencyProjects,
+    projects: args.routine ? await groupConfigurations(args.workItem, context) : [],
     readJob: async () => {
       const rows = (await context.queryData(
         `modelName == "${context.definition.name}" && name == "job-${args.key}"`, "attributes",
@@ -252,4 +303,111 @@ async function executeStage(args: StageArgs, context: StageContext) {
     status: job.operationStatus ?? "", err: job.lastError ?? "",
   });
   return { dataHandles: handle ? [handle] : [] };
+}
+
+async function groupConfigurations(workItem: string, context: StageContext) {
+  if (!/^tg-[1-9]\d*$/.test(workItem)) throw new Error("invalid dependency work item");
+  const response = await curlHttp(context.globalArgs)("GET", `/api/v1/task-groups/${workItem.slice(3)}`);
+  const group = response.body?.data as { project_id?: number } | undefined;
+  if (response.status !== 200 || !group?.project_id) throw new Error("cannot read dependency group");
+  return projectConfigurations(context.globalArgs.dependencyProjects, context.globalArgs.projectExtensions, context, group.project_id);
+}
+
+function scheduleStore(context: StageContext) {
+  return {
+    http: curlHttp(context.globalArgs),
+    read: async (key: string) => (await context.queryData(`modelName == ${JSON.stringify(context.definition.name)} && name == ${JSON.stringify(`schedule-${key}`)}`, "attributes"))[0] as ScheduleReceipt | undefined ?? null,
+    save: async (receipt: ScheduleReceipt) => { await context.writeResource("schedule", `schedule-${receipt.key}`, receipt); },
+  };
+}
+async function scheduleRows(context: StageContext) {
+  return (await context.queryData(`modelName == ${JSON.stringify(context.definition.name)} && name.startsWith("schedule-")`, "attributes")).map((r) => ScheduleReceiptSchema.parse(r));
+}
+async function callDefinition(context: StageContext, definition: string, method: string, args: Record<string, unknown> = {}) {
+  const result = await context.runModel({ definition, method, arguments: args });
+  if (!result.ok) throw new Error(result.error?.message ?? `${definition}.${method} failed`);
+}
+
+async function startFactory(context: StageContext, factory: string, workItem: string) {
+  const state = await context.queryData(`modelName == ${JSON.stringify(factory)} && name == ${JSON.stringify(`state-${workItem}`)}`, "attributes");
+  if (!state.length) await callDefinition(context, factory, "start", { workItem });
+}
+
+async function projectWork(context: StageContext) {
+  const store = scheduleStore(context);
+  const work: Record<"routine" | "detect" | "package", string[]> = { routine: [], detect: [], package: [] };
+  const rows = await scheduleRows(context);
+  for (const pending of rows.filter((r) => !r.started && r.mode !== "package").slice(0, 4)) {
+    const receipt = await ensureProjectGroup(pending, store);
+    await startFactory(context, receipt.mode === "detect" ? "dependency-detect" : "dependency-routine", receipt.workItem!);
+    await store.save({ ...receipt, started: true });
+  }
+  // Rotate bounded batches so a parked project cannot starve the rest of the fleet.
+  const active = rows.filter((r) => r.started && !r.completed);
+  const previous = (await context.queryData(`modelName == ${JSON.stringify(context.definition.name)} && name == "project-work"`, "attributes"))[0] as { nextOffset?: number; nextQueueOffset?: number } | undefined;
+  const offset = active.length ? (previous?.nextOffset ?? 0) % active.length : 0;
+  const batch = [...active.slice(offset), ...active.slice(0, offset)].slice(0, 4);
+  for (const receipt of batch) {
+    const factory = receipt.mode === "detect" ? "dependency-detect" : receipt.mode === "package" ? "dependency-package" : "dependency-routine";
+    await callDefinition(context, factory, "status", { workItem: receipt.workItem });
+    const state = (await context.queryData(`modelName == ${JSON.stringify(factory)} && name == ${JSON.stringify(`state-${receipt.workItem}`)}`, "attributes"))[0] as { stageId: string; status: string } | undefined;
+    if (!state) throw new Error("scheduled factory state is missing");
+    if (state.status !== "terminal") { work[receipt.mode].push(receipt.workItem!); continue; }
+    if (state.stageId !== "completed") {
+      const response = await store.http("GET", `/api/v1/task-groups/${receipt.workItem!.slice(3)}`);
+      const group = response.body?.data as Record<string, unknown> | undefined;
+      if (response.status === 200 && group?.status === "cancelled" && group.vm_power === "destroyed" &&
+        !group.assistance_requested && !group.assistance_kind && !group.assistance_reason && !group.assistance_question &&
+        Array.isArray(group.tasks) && group.tasks.every((task: Record<string, unknown>) =>
+          ["completed", "cancelled", "failed"].includes(String(task.status)) && !task.assistance_requested && !task.assistance_kind && !task.assistance_reason && !task.assistance_question)) {
+        await store.save({ ...receipt, completed: true });
+      }
+      continue;
+    }
+    if (receipt.mode === "detect") {
+      const config = (await groupConfigurations(receipt.workItem!, context))[0];
+      const artifact = (await context.queryData(`modelName == "dependency-detect" && name == ${JSON.stringify(`artifact-${receipt.workItem}-script`)}`, "attributes"))[0] as { payload?: { detections?: unknown[] } } | undefined;
+      if (!Array.isArray(artifact?.payload?.detections)) throw new Error("completed detection has no report evidence");
+      const findings = await findingReceipts(config, artifact.payload.detections);
+      for (const finding of findings) {
+        const existing = await store.read(finding.key);
+        await ensureProjectGroup(existing ?? finding, store);
+      }
+    }
+    await store.save({ ...receipt, completed: true });
+  }
+  // Existing admission owns package ordering. Tasks without an exact target remain backlog.
+  const seenProjects = new Set<number>();
+  const queuedRows = (await scheduleRows(context)).filter((r) => {
+    if (r.mode !== "package" || !r.target || r.started || r.completed || seenProjects.has(r.projectId)) return false;
+    seenProjects.add(r.projectId);
+    return true;
+  });
+  const queueOffset = queuedRows.length ? (previous?.nextQueueOffset ?? 0) % queuedRows.length : 0;
+  const queueBatch = [...queuedRows.slice(queueOffset), ...queuedRows.slice(0, queueOffset)].slice(0, 4);
+  for (const queued of queueBatch) {
+    await callDefinition(context, "dependency-package", "status");
+    const runs = (await context.queryData('modelName == "dependency-package" && name == "status-_factory"', "attributes.runs"))[0] as { workItem: string; stageId: string; status: string }[];
+    const target = PackageTargetSchema.parse({ ...queued.target, workItem: queued.workItem });
+    try {
+      await admitPackage(target, {
+        http: store.http,
+        projects: await groupConfigurations(target.workItem, context),
+        targets: await context.queryData(`modelName == ${JSON.stringify(context.definition.name)} && name.startsWith("package-")`, "attributes") as PackageTarget[],
+        runState: (item) => Promise.resolve(runs.find((r) => r.workItem === item) ?? null),
+        save: async (value) => { await context.writeResource("packageTarget", `package-${target.workItem}`, value); },
+        start: async (item) => {
+          // A lost start reply is reconciled from the official factory state.
+          const existing = runs.find((r) => r.workItem === item);
+          if (!existing) await callDefinition(context, "dependency-package", "start", { workItem: item });
+        },
+      });
+      await store.save({ ...queued, started: true });
+      work.package.push(target.workItem);
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.startsWith("previous package ")) throw error;
+    }
+  }
+  const handle = await context.writeResource("projectWork", "project-work", { ...work, nextOffset: active.length ? (offset + batch.length) % active.length : 0, nextQueueOffset: queuedRows.length ? (queueOffset + queueBatch.length) % queuedRows.length : 0 });
+  return { dataHandles: [handle] };
 }

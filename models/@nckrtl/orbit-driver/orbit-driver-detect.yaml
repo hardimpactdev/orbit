@@ -1,0 +1,12 @@
+type: '@nckrtl/orbit-driver'
+typeVersion: 2026.10.23.1
+id: 03e17ee3-f36e-414b-9dff-ae4a85654166
+name: orbit-driver-detect
+version: 1
+tags: {}
+globalArguments:
+  factory: dependency-detect
+  assistanceModel: orbit-gateway
+  # Leave room for nested project-config and worker calls.
+  maxCallsPerTick: 60
+methods: {}

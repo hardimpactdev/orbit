@@ -7,4 +7,6 @@ tags: {}
 globalArguments:
   factory: dependency-package
   assistanceModel: orbit-gateway
+  # Leave room for nested project-config and worker calls.
+  maxCallsPerTick: 60
 methods: {}

@@ -8,10 +8,8 @@ export class MaintenanceFailure extends Error {
   }
 }
 
-export const PolicySchema = z.record(
-  z.string(),
-  z.strictObject({ minimumReleaseAgeDays: z.number().int().nonnegative() }),
-);
+import { PolicySchema } from "./policy_schema.ts";
+export { PolicySchema } from "./policy_schema.ts";
 export const CommonSchema = z.strictObject({
   captureFailure: z.boolean().optional(),
   cwd: z.string().min(1),

@@ -1,5 +1,5 @@
 type: '@nckrtl/orbit-gateway'
-typeVersion: 2026.10.27.1
+typeVersion: 2026.10.27.2
 id: f5fa45d6-6307-48b6-a094-9aae8f79febc
 name: orbit-gateway
 version: 1
@@ -10,16 +10,8 @@ globalArguments:
   gatewayUrl: https://gateway.orbit
   caFile: /usr/local/share/ca-certificates/orbit-managed-root-ca.crt
   timeoutSeconds: 60
+  projectExtensions: [{ projectId: 20, type: '@nckrtl/project-nckrtl-com' }]
   dependencyProjects:
-    - projectId: 20
-      repository: git@github.com:nckrtl/website.git
-      script: scripts/dependencies
-      worker:
-        composerPaths: ["."]
-        jsPaths: ["."]
-        policy: { ".": { minimumReleaseAgeDays: 7 } }
-      check: composer check
-      defaultBranch: main
     - projectId: 18
       repository: https://github.com/hardimpactdev/lindaretel.git
       script: scripts/dependencies

@@ -1,0 +1,62 @@
+name: Project maintenance extensions
+on:
+  pull_request:
+    paths:
+      - 'extensions/behaviors/projects/**'
+      - 'extensions/behaviors/_lib/project_*.ts'
+      - 'extensions/behaviors/_lib/dependency_project*.ts'
+      - 'extensions/behaviors/_lib/maintenance/policy_schema.ts'
+      - 'extensions/behaviors/orbit_gateway.ts'
+      - 'models/@nckrtl/orbit-gateway/**'
+      - 'models/@swamp/software-factory/dependency-detect.yaml'
+      - 'models/@nckrtl/orbit-driver/orbit-driver-detect.yaml'
+      - 'models/@nckrtl/orbit-driver/orbit-driver-routine.yaml'
+      - 'models/@nckrtl/orbit-driver/orbit-driver-package.yaml'
+      - 'workflows/workflow-project-*.yaml'
+      - 'workflows/workflow-maintenance-projects.yaml'
+      - 'docs/project-extensions.md'
+      - 'docs/templates/project-extension/**'
+      - 'tests/project_*test.ts'
+      - 'tests/fixtures/project-extensions/**'
+      - '.github/workflows/project-extensions.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'extensions/behaviors/projects/**'
+      - 'extensions/behaviors/_lib/project_*.ts'
+      - 'extensions/behaviors/_lib/dependency_project*.ts'
+      - 'extensions/behaviors/_lib/maintenance/policy_schema.ts'
+      - 'extensions/behaviors/orbit_gateway.ts'
+      - 'models/@nckrtl/orbit-gateway/**'
+      - 'models/@swamp/software-factory/dependency-detect.yaml'
+      - 'models/@nckrtl/orbit-driver/orbit-driver-detect.yaml'
+      - 'models/@nckrtl/orbit-driver/orbit-driver-routine.yaml'
+      - 'models/@nckrtl/orbit-driver/orbit-driver-package.yaml'
+      - 'workflows/workflow-project-*.yaml'
+      - 'workflows/workflow-maintenance-projects.yaml'
+      - 'tests/project_*test.ts'
+      - 'tests/fixtures/project-extensions/**'
+      - '.github/workflows/project-extensions.yml'
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: [self-hosted, hardimpact]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.8
+      - name: Check project extension types
+        run: deno check extensions/behaviors/orbit_gateway.ts extensions/behaviors/projects/nckrtl-com/mod.ts
+      - name: Check project extension format and lint
+        run: |
+          deno fmt --check extensions/behaviors/_lib/project_extension.ts extensions/behaviors/_lib/project_config.ts extensions/behaviors/_lib/project_schedule.ts extensions/behaviors/projects tests/project_extensions_test.ts tests/project_schedules_test.ts
+          deno lint extensions/behaviors/_lib/project_extension.ts extensions/behaviors/_lib/project_config.ts extensions/behaviors/_lib/project_schedule.ts extensions/behaviors/projects tests/project_extensions_test.ts tests/project_schedules_test.ts
+      - name: Test affected contracts (one worker)
+        run: >-
+          deno test --allow-all
+          tests/project_extensions_test.ts tests/project_schedules_test.ts
+          tests/dependency_projects_test.ts tests/routine_stage_test.ts
+          tests/package_stage_test.ts tests/maintenance_worker_test.ts
+          tests/maintenance_resources_test.ts

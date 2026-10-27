@@ -1,0 +1,52 @@
+id: a37dfa1b-1633-475f-90c7-dfd9c83008ca
+name: maintenance-projects
+description: Advance project schedules with the existing official factory drivers.
+trigger:
+  schedule: '* * * * *'
+jobs:
+- name: tick
+  steps:
+  - name: work
+    task:
+      type: model_method
+      modelIdOrName: orbit-gateway
+      methodName: project_work
+  - name: routine
+    dependsOn:
+    - step: work
+      condition:
+        type: succeeded
+    task:
+      type: model_method
+      modelIdOrName: orbit-driver-routine
+      methodName: tick
+      inputs:
+        workItems: ${{ data.latest("orbit-gateway", "project-work").attributes.routine
+          }}
+        maxSteps: 1
+  - name: detect
+    dependsOn:
+    - step: work
+      condition:
+        type: succeeded
+    task:
+      type: model_method
+      modelIdOrName: orbit-driver-detect
+      methodName: tick
+      inputs:
+        workItems: ${{ data.latest("orbit-gateway", "project-work").attributes.detect
+          }}
+        maxSteps: 1
+  - name: package
+    dependsOn:
+    - step: work
+      condition:
+        type: succeeded
+    task:
+      type: model_method
+      modelIdOrName: orbit-driver-package
+      methodName: tick
+      inputs:
+        workItems: ${{ data.latest("orbit-gateway", "project-work").attributes.package
+          }}
+        maxSteps: 1

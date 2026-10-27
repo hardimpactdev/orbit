@@ -1,22 +1,21 @@
 # Add a repository to dependency updates
 
-The shared `dependency-routine` and `dependency-package` factories use the
-existing Orbit Project ID on each group to select one entry in
-`models/@nckrtl/orbit-gateway/orbit-gateway.yaml`, under
-`globalArguments.dependencyProjects`. Website is the first entry:
+New projects use one [private project extension](project-extensions.md).
+Start with the [template](templates/project-extension/README.md). Project 20 is
+`@nckrtl/project-nckrtl-com`; its paths, policy, check and branch live in that
+extension's `mod.ts`. The Gateway keeps only its routing registration:
 
 ```yaml
-dependencyProjects:
+projectExtensions:
   - projectId: 20
-    repository: git@github.com:nckrtl/website.git
-    script: scripts/dependencies
-    worker:
-      composerPaths: ["."]
-      jsPaths: ["."]
-      policy: { ".": { minimumReleaseAgeDays: 7 } }
-    check: composer check
-    defaultBranch: main
+    type: '@nckrtl/project-nckrtl-com'
 ```
+
+The shared `dependency-routine` and `dependency-package` factories select the
+config by the group's Orbit Project ID. The Gateway refreshes that extension's
+configuration resource through Swamp before each stage or package admission.
+It validates the returned Project ID and settings before dispatch. Project 18
+remains in `dependencyProjects` until its own extension rollout.
 
 1. Install the repository's package managers and tools through Project setup,
    including local Vite+ when used. Configure `worker` with the Composer and JS
@@ -27,9 +26,10 @@ dependencyProjects:
    For a project without worker support, omit `worker` and supply a tracked,
    executable script accepting `routine`, `detect`, `package <composer|js>
    <name> <version> <major|security> [advisory-id ...]`, and `summary`.
-2. Add one entry using the actual Orbit Project ID, exact `repository_url`,
+2. Fill the extension config using the actual Orbit Project ID, exact `repository_url`,
    `task_check` and `default_branch` from `orbit project:show <id> --json`.
-   Set `script` to the fallback path relative to the repo root. A project with
+   Add its ID/type registration to `projectExtensions`. Retain `script` in the
+   config identity until script projects are retired. A project with
    `worker` never falls back to it on worker failure. No factory copy,
    new Gateway endpoint or dependency-specific Orbit record is needed.
 3. Run the local fixture tests. After review/merge, the operator applies the
@@ -46,7 +46,7 @@ dependencyProjects:
    [package](website-packages.md) for gates, target fields and repair limits.
 
 Unknown/duplicate Project IDs and mismatched Project settings refuse work.
-Worker paths, policy and the fallback script path come from this config.
+Worker paths, policy and the tracked script path come from the resolved config.
 Provision and handoff still send only
 Orbit's supported request fields: the Gateway starts from its Project's default
 branch and runs its Project's check. Config asserts those values; it cannot

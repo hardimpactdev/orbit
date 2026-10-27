@@ -17,6 +17,9 @@ Deno.test({
       75: { handoffFailOnce: true },
       76: {},
       77: {},
+      78: { scriptNoChange: true },
+      79: { scriptNoChange: true, scriptFails: true },
+      80: {},
     });
     const counts = new Map<number, number>();
     const remote = Deno.serve(
@@ -62,6 +65,16 @@ Deno.test({
                 },
               }];
           } else {
+            if (mode === "detect") {
+              steps[1].dataArtifacts = [{
+                name: "detection",
+                attributes: { schema: 1, candidates: [] },
+              }];
+              steps[2].dataArtifacts = [{
+                name: "detection",
+                attributes: { schema: 1, candidates: [] },
+              }];
+            }
             const count = (counts.get(group.id) ?? 0) + 1;
             counts.set(group.id, count);
             if (!group.scenario.scriptNoChange) group.tree = "e".repeat(40);
@@ -160,7 +173,9 @@ Deno.test({
   return maintenanceResult(response.body!.data as WorkflowRun);
 }\n` + source.slice(end),
       );
-      const items = [...fake.groups.keys()].map((id) => `tg-${id}`);
+      const items = [...fake.groups.keys()].filter((id) => id < 78).map((id) =>
+        `tg-${id}`
+      );
       for (const item of items) {
         await swamp(
           "model",
@@ -237,6 +252,73 @@ Deno.test({
       assert(
         [...fake.operations.values()].every((op) => op.kind !== "tasks.script"),
       );
+      // The detection factory uses the same real config/provider and stage client.
+      // It has no repair or publication path, even for command failure or changed trees.
+      const detections = [78, 79, 80].map((id) => `tg-${id}`);
+      for (const workItem of detections) {
+        await swamp(
+          "behavior",
+          "run",
+          "dependency-detect",
+          "start",
+          "--input",
+          `workItem=${workItem}`,
+        );
+      }
+      await Deno.writeTextFile(
+        `${dir}/detect-tick.json`,
+        JSON.stringify({ workItems: detections, maxSteps: 3 }),
+      );
+      let detected: string[] = [];
+      for (let n = 0; n < 20; n++) {
+        await swamp(
+          "behavior",
+          "run",
+          "orbit-driver-detect",
+          "tick",
+          "--input-file",
+          `${dir}/detect-tick.json`,
+        );
+        const query = JSON.parse(
+          await swamp(
+            "data",
+            "query",
+            'modelName == "orbit-driver-detect" && name == "tick"',
+            "--select",
+            "attributes",
+            "--json",
+          ),
+        );
+        detected = query.results[0].items.map((item: { stage: string }) =>
+          item.stage
+        );
+        if (
+          JSON.stringify(detected) ===
+            JSON.stringify(["completed", "assistance", "assistance"])
+        ) break;
+      }
+      assertEquals(detected, ["completed", "assistance", "assistance"]);
+      for (const id of [78, 79, 80]) {
+        assertEquals(fake.startsOf(id, "repair"), 0);
+        assertEquals(fake.startsOf(id, "publish"), 0);
+        assertEquals(counts.get(id), 1);
+      }
+      assertEquals(fake.groups.get(78)!.vm_power, "destroyed");
+      const config = JSON.parse(
+        await swamp(
+          "data",
+          "query",
+          'modelName == "project-nckrtl-com" && name == "configuration"',
+          "--select",
+          "attributes",
+          "--json",
+        ),
+      );
+      assertEquals(config.results[0].worker, {
+        composerPaths: ["."],
+        jsPaths: ["."],
+        policy: { ".": { minimumReleaseAgeDays: 7 } },
+      });
       passed = true;
     } finally {
       await remote.shutdown();

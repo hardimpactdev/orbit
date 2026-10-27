@@ -68,6 +68,7 @@ export interface Job {
 }
 
 export interface StageArgs {
+  detection?: boolean;
   workItem: string;
   stage: Stage;
   key: string;
@@ -169,7 +170,7 @@ export function inputIdentity(args: StageArgs): string {
     const e = envelope(rec);
     return e ? { recordedAt: e.recordedAt, payload: e.payload } : null;
   };
-  if (args.routine) return JSON.stringify({ routine: true, dependencyProject: args.dependencyProject, ...(args.packageTarget ? { packageTarget: args.packageTarget } : {}),
+  if (args.routine) return JSON.stringify({ routine: true, dependencyProject: args.dependencyProject, ...(args.detection ? { detection: true } : {}), ...(args.packageTarget ? { packageTarget: args.packageTarget } : {}),
     ...(args.stage === "handoff" ? { script: ref(args.script), change: ref(args.change) } : {}),
     ...(["repair", "publish", "finish"].includes(args.stage) ? { handoff: ref(args.handoff) } : {}),
     ...(["repair", "finish"].includes(args.stage) ? { script: ref(args.script) } : {}) });

@@ -16,6 +16,7 @@ include:
   - _lib/maintenance/context.ts
   - _lib/maintenance/environment.ts
   - _lib/maintenance/exceptions.ts
+  - _lib/maintenance/policy_schema.ts
   - _lib/maintenance/io.ts
   - _lib/maintenance/changes.ts
   - _lib/maintenance/summary.ts

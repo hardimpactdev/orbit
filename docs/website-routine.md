@@ -1,5 +1,10 @@
 # Routine dependency updates
 
+Project 20 resolves its config from the private `@nckrtl/project-nckrtl-com`
+extension. Its scheduled entry starts a weekly group and the shared minute tick
+advances it. The manual workflow below still ticks one existing work item. See
+[project extensions](project-extensions.md) for schedules and detection tasks.
+
 One external Orbit group with one child runs routine maintenance in its task VM.
 Project 20 (`nckrtl/website`) uses the shared Composer and JS extensions on the
 [group worker](task-worker-maintenance.md). Projects without worker support use

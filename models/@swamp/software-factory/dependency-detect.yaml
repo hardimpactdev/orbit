@@ -1,0 +1,200 @@
+type: '@swamp/software-factory'
+typeVersion: 2026.06.24.1
+id: 6d481c40-1708-43fa-ba33-4a51113aca9a
+name: dependency-detect
+version: 1
+tags: {}
+globalArguments:
+  stages:
+  - id: provision
+    initial: true
+    maxCycles: 1
+    work:
+      mode: method
+      method:
+        modelIdOrName: orbit-gateway
+        methodName: detect
+        inputs:
+          workItem: ${{ self.workItem }}
+          stage: provision
+      resultEvidence: provision-run
+    artifacts:
+    - name: workspace
+      schema:
+        type: object
+        additionalProperties: true
+        required:
+        - group
+        - operationId
+        - outcome
+        - instanceId
+        - nodeId
+    transitions:
+    - name: ready
+      to: script
+      gates:
+      - type: evidence-recorded
+        config:
+          name: provision-run
+          requireField:
+            status: succeeded
+    - name: failed
+      to: assistance
+      gates:
+      - type: evidence-recorded
+        config:
+          name: provision-run
+          requireField:
+            status: failed
+  - id: script
+    maxCycles: 1
+    work:
+      mode: method
+      method:
+        modelIdOrName: orbit-gateway
+        methodName: detect
+        inputs:
+          workItem: ${{ self.workItem }}
+          stage: script
+          script: ${{ data.latest(self.name, "artifact-script") }}
+      resultEvidence: script-run
+    artifacts:
+    - name: script
+      schema:
+        type: object
+        additionalProperties: true
+        required:
+        - subtask
+        - outcome
+        - exit_code
+        - output
+        - output_truncated
+        - changed
+        - head
+        - tree
+        properties:
+          subtask:
+            type: integer
+            minimum: 1
+          outcome:
+            type: string
+            enum:
+            - passed
+            - failed
+          output:
+            type: string
+          output_truncated:
+            type: boolean
+          changed:
+            type: boolean
+          head:
+            type: string
+          tree:
+            type: string
+    transitions:
+    - name: check
+      to: handoff
+      gates:
+      - type: evidence-recorded
+        config:
+          name: script-run
+          requireField:
+            status: succeeded
+      - type: cel
+        config:
+          expr: artifacts.script.outcome == "passed" && !artifacts.script.changed
+    - name: stop
+      to: assistance
+      gates:
+      - type: evidence-recorded
+        config:
+          name: script-run
+      - type: cel
+        config:
+          expr: evidence.script_run.status == "failed" || artifacts.script.outcome
+            != "passed" || artifacts.script.changed
+  - id: handoff
+    maxCycles: 1
+    work:
+      mode: method
+      method:
+        modelIdOrName: orbit-gateway
+        methodName: detect
+        inputs:
+          workItem: ${{ self.workItem }}
+          stage: handoff
+          script: ${{ data.latest(self.name, "artifact-script") }}
+      resultEvidence: handoff-run
+    artifacts:
+    - name: handoff
+      schema:
+        type: object
+        additionalProperties: true
+        required:
+        - subtask
+        - outcome
+        - checkId
+        - commit
+        - candidate
+        - output
+    transitions:
+    - name: unchanged
+      to: finish
+      gates:
+      - type: evidence-recorded
+        config:
+          name: handoff-run
+          requireField:
+            status: succeeded
+      - type: cel
+        config:
+          expr: artifacts.handoff.outcome == "passed" && !artifacts.script.changed
+            && artifacts.handoff.candidate.tree == artifacts.script.tree
+    - name: stop
+      to: assistance
+      gates:
+      - type: evidence-recorded
+        config:
+          name: handoff-run
+      - type: cel
+        config:
+          expr: evidence.handoff_run.status == "failed" || artifacts.handoff.outcome
+            != "passed" || artifacts.handoff.candidate.tree != artifacts.script.tree
+  - id: finish
+    maxCycles: 1
+    work:
+      mode: method
+      method:
+        modelIdOrName: orbit-gateway
+        methodName: detect
+        inputs:
+          workItem: ${{ self.workItem }}
+          stage: finish
+          handoff: ${{ data.latest(self.name, "artifact-handoff") }}
+          script: ${{ data.latest(self.name, "artifact-script") }}
+      resultEvidence: finish-run
+    transitions:
+    - name: done
+      to: completed
+      gates:
+      - type: evidence-recorded
+        config:
+          name: finish-run
+          requireField:
+            status: succeeded
+            completed: true
+  - id: assistance
+    description: Detection failed or changed the checkout; preserve evidence for the
+      operator.
+    transitions:
+    - name: acknowledge
+      to: failed
+      gates:
+      - type: human-approval
+        config:
+          id: routine-assistance
+  - id: completed
+    terminal: true
+  - id: failed
+    terminal: true
+methods: {}
