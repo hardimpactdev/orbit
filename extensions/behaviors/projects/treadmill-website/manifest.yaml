@@ -1,0 +1,25 @@
+manifestVersion: 1
+name: "@nckrtl/project-treadmill-website"
+version: 2026.10.27.1
+visibility: private
+license: MIT
+description: treadmill-website maintenance configuration and schedules.
+repository: https://github.com/hardimpactdev/orbit-swamp
+behaviors:
+  - projects/treadmill-website/mod.ts
+include:
+  - _lib/project_extension.ts
+  - _lib/dependency_project_schema.ts
+  - _lib/maintenance/policy_schema.ts
+workflows:
+  - workflow-project-treadmill-website-routine.yaml
+  - workflow-project-treadmill-website-detect.yaml
+additionalFiles:
+  - README.md
+  - LICENSE
+dependencies:
+  - "@nckrtl/composer-maintenance"
+  - "@nckrtl/js-maintenance"
+labels:
+  - project
+  - dependencies

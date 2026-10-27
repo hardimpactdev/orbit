@@ -1,0 +1,16 @@
+id: bb61fc57-41ee-4d48-acc5-128141d1be89
+name: '@nckrtl/project-ai-cli-proxy/detect'
+description: ai-cli-proxy detect through its private project extension.
+trigger:
+  schedule: 0 4 * * *
+jobs:
+- name: start
+  steps:
+  - name: detect
+    task:
+      type: model_method
+      modelIdOrName: orbit-gateway
+      methodName: schedule_project
+      inputs:
+        projectId: 51
+        mode: detect

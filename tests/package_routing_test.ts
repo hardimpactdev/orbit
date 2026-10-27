@@ -1,3 +1,4 @@
+import { configureGateway } from "./_support/configure_gateway.ts";
 import { scriptProjectExtension } from "./_support/script_project_extension.ts";
 import { SECOND_PROJECT } from "./_support/dependency_projects.ts";
 // End-to-end routing with the unmodified official factory and loopback Gateway.
@@ -26,13 +27,7 @@ Deno.test({ name: "dependency-package official factory enforces sequential fresh
     await Deno.mkdir(`${dir}/.swamp`);
     assert((await new Deno.Command("cp", { args: ["-r", `${REPO}/.swamp/pulled-extensions`, `${dir}/.swamp/`] }).output()).success);
     await scriptProjectExtension(dir);
-    const def = `${dir}/models/@nckrtl/orbit-gateway/orbit-gateway.yaml`;
-    await Deno.writeTextFile(def, (await Deno.readTextFile(def)).replace(/gatewayUrl: .*/, `gatewayUrl: ${fake.url}`).replace("methods: {}", `    - projectId: ${SECOND_PROJECT.projectId}
-      repository: ${SECOND_PROJECT.repository}
-      script: ${SECOND_PROJECT.script}
-      check: ${SECOND_PROJECT.check}
-      defaultBranch: ${SECOND_PROJECT.defaultBranch}
-methods: {}`));
+    await configureGateway(dir, fake.url, [SECOND_PROJECT]);
     const input = (id: number) => ({ workItem: `tg-${id}`, manager: id === 902 ? "js" : "composer", package: id === 902 ? "react" : "livewire/livewire", version: id === 902 ? "20.0.0" : "4.9.9", purpose: id === 902 ? "major" : "security", advisoryUrls: id === 902 ? [] : ["https://github.com/advisories/GHSA-fixture-one", "https://github.com/advisories/GHSA-fixture-two"], advisories: id === 902 ? [] : ["PKSA-xhv3-nr94-h8db", "PKSA-bgw4-5zmg-2njg"] });
     async function workflow(id: number) {
       await Deno.writeTextFile(`${dir}/input.json`, JSON.stringify(input(id)));

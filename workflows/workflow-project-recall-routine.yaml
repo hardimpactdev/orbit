@@ -1,0 +1,16 @@
+id: b877e67a-4b8f-449d-bfe1-f72093700025
+name: '@nckrtl/project-recall/routine'
+description: recall routine through its private project extension.
+trigger:
+  schedule: 50 2 * * 1
+jobs:
+- name: start
+  steps:
+  - name: routine
+    task:
+      type: model_method
+      modelIdOrName: orbit-gateway
+      methodName: schedule_project
+      inputs:
+        projectId: 49
+        mode: routine

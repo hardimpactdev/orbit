@@ -1,0 +1,16 @@
+id: c2dbcbb0-dad0-4dc2-a45a-fb999fdfc07f
+name: '@nckrtl/project-launch-starter-kit/routine'
+description: launch-starter-kit routine through its private project extension.
+trigger:
+  schedule: 10 2 * * 1
+jobs:
+- name: start
+  steps:
+  - name: routine
+    task:
+      type: model_method
+      modelIdOrName: orbit-gateway
+      methodName: schedule_project
+      inputs:
+        projectId: 30
+        mode: routine

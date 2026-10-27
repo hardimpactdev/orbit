@@ -1,0 +1,16 @@
+id: e0b94cfd-2454-464a-8152-21c0078e260b
+name: '@nckrtl/project-fitta/detect'
+description: fitta detect through its private project extension.
+trigger:
+  schedule: 40 4 * * *
+jobs:
+- name: start
+  steps:
+  - name: detect
+    task:
+      type: model_method
+      modelIdOrName: orbit-gateway
+      methodName: schedule_project
+      inputs:
+        projectId: 15
+        mode: detect

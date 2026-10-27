@@ -1,0 +1,469 @@
+[
+  {
+    "slug": "launch-starter-kit",
+    "project": {
+      "id": 30,
+      "repository_url": "https://github.com/nckrtl/launch-starter-kit.git",
+      "task_check": "composer test && composer analyse && vp check",
+      "default_branch": "main"
+    },
+    "source": {
+      "repository": "nckrtl/launch-starter-kit",
+      "commit": "ff78892665557b21e50b19d2f05fdc62d79fb1b2"
+    },
+    "manifestPaths": [
+      "composer.json",
+      "package.json"
+    ],
+    "setup": {}
+  },
+  {
+    "slug": "launch",
+    "project": {
+      "id": 32,
+      "repository_url": "https://github.com/nckrtl/launch.git",
+      "task_check": "composer check",
+      "default_branch": "main"
+    },
+    "source": {
+      "repository": "nckrtl/launch",
+      "commit": "a3342aeba7504333a20b58159fd6de6bcd3186e4"
+    },
+    "manifestPaths": [
+      "composer.json",
+      "package.json"
+    ],
+    "setup": {
+      "bunfig.toml": "[install]\n# Routine releases wait seven days. Security exceptions require explicit review;\n# see docs/dependency-policy.md. Existing bun.lock entries are not re-resolved.\nminimumReleaseAge = 604800\n",
+      "vet.json": {
+        "minimum-release-age": 7,
+        "minimum-release-age-exclude": [
+          "hardimpactdev/maintainer"
+        ]
+      }
+    }
+  },
+  {
+    "slug": "treadmill-website",
+    "project": {
+      "id": 54,
+      "repository_url": "https://github.com/nckrtl/treadmill-website.git",
+      "task_check": "composer test && composer analyse && vp check",
+      "default_branch": "main"
+    },
+    "source": {
+      "repository": "nckrtl/treadmill-website",
+      "commit": "756c216f767fad953debba582d460efd96a4e677"
+    },
+    "manifestPaths": [
+      "composer.json",
+      "package.json"
+    ],
+    "setup": {}
+  },
+  {
+    "slug": "orbit-website",
+    "project": {
+      "id": 33,
+      "repository_url": "https://github.com/nckrtl/orbit-website.git",
+      "task_check": "composer test && composer analyse && vp check",
+      "default_branch": "main"
+    },
+    "source": {
+      "repository": "nckrtl/orbit-website",
+      "commit": "3ce37e1ddc5ef241d33de18c8c261b609a43fd6d"
+    },
+    "manifestPaths": [
+      "composer.json",
+      "package.json"
+    ],
+    "setup": {}
+  },
+  {
+    "slug": "recall",
+    "project": {
+      "id": 49,
+      "repository_url": "https://github.com/nckrtl/recall.git",
+      "task_check": "composer check",
+      "default_branch": "main"
+    },
+    "source": {
+      "repository": "nckrtl/recall",
+      "commit": "dae9bb793981913c3352db5a3650ec204061ac15"
+    },
+    "manifestPaths": [
+      "composer.json",
+      "package.json"
+    ],
+    "setup": {
+      "bunfig.toml": "[install]\n# Routine releases wait seven days. Security exceptions require explicit review;\n# see docs/dependency-policy.md. Existing bun.lock entries are not re-resolved.\nminimumReleaseAge = 604800\n",
+      "vet.json": {
+        "minimum-release-age": 7,
+        "minimum-release-age-exclude": [
+          "hardimpactdev/maintainer"
+        ]
+      }
+    }
+  },
+  {
+    "slug": "ai-cli-proxy",
+    "project": {
+      "id": 51,
+      "repository_url": "https://github.com/nckrtl/ai-cli-proxy.git",
+      "task_check": "composer check",
+      "default_branch": "main"
+    },
+    "source": {
+      "repository": "nckrtl/ai-cli-proxy",
+      "commit": "d8b8f364f0529ea1601353139acd0cdbd0cf1a55"
+    },
+    "manifestPaths": [
+      "composer.json",
+      "package.json"
+    ],
+    "setup": {}
+  },
+  {
+    "slug": "laravel-toolbar-site",
+    "project": {
+      "id": 28,
+      "repository_url": "https://github.com/hardimpactdev/laravel-toolbar-site.git",
+      "task_check": "composer check",
+      "default_branch": "main"
+    },
+    "source": {
+      "repository": "hardimpactdev/laravel-toolbar-site",
+      "commit": "9484e29531e2af920ac92821147f14c490b7ed43"
+    },
+    "manifestPaths": [
+      "composer.json",
+      "package.json"
+    ],
+    "setup": {
+      ".npmrc": "# Routine releases wait seven days (npm 11.10+); security fixes: see docs/dependency-policy.md.\n# Applies only when npm resolves versions. `npm ci` installs package-lock.json as it is.\nmin-release-age=7\n",
+      "vet.json": {
+        "minimum-release-age": 7,
+        "minimum-release-age-exclude": [
+          "hardimpactdev/maintainer"
+        ]
+      }
+    }
+  },
+  {
+    "slug": "operator-website",
+    "project": {
+      "id": 47,
+      "repository_url": "https://github.com/nckrtl/operator-website.git",
+      "task_check": "composer check",
+      "default_branch": "main"
+    },
+    "source": {
+      "repository": "nckrtl/operator-website",
+      "commit": "2a33ba586533c61a6aa140eaca7f543c8814480d"
+    },
+    "manifestPaths": [
+      "composer.json",
+      "package.json",
+      "slack/package.json"
+    ],
+    "setup": {
+      "bunfig.toml": "[install]\n# Routine releases wait seven days. Security exceptions require explicit review;\n# see docs/dependency-policy.md. Existing bun.lock entries are not re-resolved.\nminimumReleaseAge = 604800\n",
+      "vet.json": {
+        "minimum-release-age": 7,
+        "minimum-release-age-exclude": [
+          "hardimpactdev/maintainer"
+        ]
+      }
+    }
+  },
+  {
+    "slug": "operator",
+    "project": {
+      "id": 48,
+      "repository_url": "https://github.com/nckrtl/operator.git",
+      "task_check": "composer --working-dir=server/web check",
+      "default_branch": "main"
+    },
+    "source": {
+      "repository": "nckrtl/operator",
+      "commit": "a27158a0bd0da86e83af50dd314227fa976f840e"
+    },
+    "manifestPaths": [
+      "ios/design/package.json",
+      "mac/package.json",
+      "server/web/composer.json",
+      "server/web/package.json"
+    ],
+    "setup": {
+      "mac/bunfig.toml": "[install]\n# Routine releases wait seven days; security fixes follow server/web/docs/dependency-policy.md.\n# Existing bun.lock entries are not re-resolved.\nminimumReleaseAge = 604800\n",
+      "maintainer.json": {
+        "paths": [
+          "server/web"
+        ]
+      },
+      "server/web/bunfig.toml": "[install]\n# Routine releases wait seven days; security fixes follow server/web/docs/dependency-policy.md.\n# Existing bun.lock entries are not re-resolved.\nminimumReleaseAge = 604800\n",
+      "server/web/vet.json": {
+        "minimum-release-age": 7,
+        "minimum-release-age-exclude": [
+          "hardimpactdev/maintainer"
+        ]
+      }
+    }
+  },
+  {
+    "slug": "fitta",
+    "project": {
+      "id": 15,
+      "repository_url": "https://github.com/nckrtl/fitta.git",
+      "task_check": "composer check",
+      "default_branch": "main"
+    },
+    "source": {
+      "repository": "nckrtl/fitta",
+      "commit": "dc5a6949f69dee4582bb1d7ef1e66cdd40d376e6"
+    },
+    "manifestPaths": [
+      "composer.json",
+      "package.json"
+    ],
+    "setup": {
+      ".npmrc": "ignore-scripts=true\n",
+      "bunfig.toml": "[install]\n# Routine releases wait seven days. Security exceptions require explicit review;\n# see docs/dependency-policy.md. Existing bun.lock entries are not re-resolved.\nminimumReleaseAge = 604800\n",
+      "vet.json": {
+        "minimum-release-age": 7,
+        "minimum-release-age-exclude": [
+          "hardimpactdev/maintainer"
+        ]
+      }
+    }
+  },
+  {
+    "slug": "house-italy",
+    "project": {
+      "id": 17,
+      "repository_url": "https://github.com/nckrtl/house-italy.git",
+      "task_check": "composer check",
+      "default_branch": "main"
+    },
+    "source": {
+      "repository": "nckrtl/house-italy",
+      "commit": "37367f60c1e1edf4946f5f48b148173555b7df91"
+    },
+    "manifestPaths": [
+      "composer.json",
+      "package.json"
+    ],
+    "setup": {
+      "bunfig.toml": "[install]\n# Routine releases wait seven days. Security exceptions require explicit review;\n# see docs/dependency-policy.md. Existing bun.lock entries are not re-resolved.\nminimumReleaseAge = 604800\n",
+      "vet.json": {
+        "minimum-release-age": 7,
+        "minimum-release-age-exclude": [
+          "hardimpactdev/maintainer"
+        ]
+      }
+    }
+  },
+  {
+    "slug": "lindaretel",
+    "project": {
+      "id": 18,
+      "repository_url": "https://github.com/hardimpactdev/lindaretel.git",
+      "task_check": "composer check",
+      "default_branch": "main"
+    },
+    "source": {
+      "repository": "hardimpactdev/lindaretel",
+      "commit": "9f596317ac1730836774bf47018e4ec835e15c5f"
+    },
+    "manifestPaths": [
+      "composer.json",
+      "package.json"
+    ],
+    "setup": {
+      "bunfig.toml": "[install]\n# Routine releases wait seven days. Security exceptions require explicit review;\n# see docs/dependency-policy.md. Existing bun.lock entries are not re-resolved.\nminimumReleaseAge = 604800\n",
+      "vet.json": {
+        "minimum-release-age": 7,
+        "minimum-release-age-exclude": [
+          "hardimpactdev/maintainer"
+        ]
+      }
+    }
+  },
+  {
+    "slug": "srpm",
+    "project": {
+      "id": 25,
+      "repository_url": "https://github.com/hardimpactdev/srpm.git",
+      "task_check": "composer check",
+      "default_branch": "main"
+    },
+    "source": {
+      "repository": "hardimpactdev/srpm",
+      "commit": "a3144e31109bfb4ed775a50924bf084676fe629e"
+    },
+    "manifestPaths": [
+      "composer.json",
+      "package.json"
+    ],
+    "setup": {
+      "bunfig.toml": "[install]\n# Routine releases wait seven days. Security exceptions require explicit review;\n# see docs/dependency-policy.md. Existing bun.lock entries are not re-resolved.\nminimumReleaseAge = 604800\n# Security exception: launch-ui 0.0.32 (GHSA-5qjj-4xww-7phc). Remove after 2026-10-16.\nminimumReleaseAgeExcludes = [\"@nckrtl/launch-ui\"]\n",
+      "vet.json": {
+        "minimum-release-age": 7,
+        "minimum-release-age-exclude": [
+          "hardimpactdev/maintainer"
+        ]
+      }
+    }
+  },
+  {
+    "slug": "tankwerk",
+    "project": {
+      "id": 26,
+      "repository_url": "https://github.com/hardimpactdev/tankwerk.git",
+      "task_check": "composer check",
+      "default_branch": "main"
+    },
+    "source": {
+      "repository": "hardimpactdev/tankwerk",
+      "commit": "8433beadf1a617abc0820caae37181ac13f2f8a3"
+    },
+    "manifestPaths": [
+      "composer.json",
+      "package.json"
+    ],
+    "setup": {
+      "bunfig.toml": "[install]\n# Routine releases wait seven days. Security exceptions require explicit review;\n# see docs/dependency-policy.md. Existing bun.lock entries are not re-resolved.\nminimumReleaseAge = 604800\n",
+      "vet.json": {
+        "minimum-release-age": 7,
+        "minimum-release-age-exclude": [
+          "hardimpactdev/maintainer"
+        ]
+      }
+    }
+  },
+  {
+    "slug": "ditis-hr",
+    "project": {
+      "id": 13,
+      "repository_url": "https://github.com/hardimpactdev/ditis-hr.git",
+      "task_check": "composer check",
+      "default_branch": "main"
+    },
+    "source": {
+      "repository": "hardimpactdev/ditis-hr",
+      "commit": "61ffc1bf2a4ae8e1593a0a1939dcd66260b03afd"
+    },
+    "manifestPaths": [
+      "composer.json",
+      "package.json"
+    ],
+    "setup": {
+      "bunfig.toml": "[install]\n# Routine releases wait seven days. Security exceptions require explicit review;\n# see docs/dependency-policy.md. Existing bun.lock entries are not re-resolved.\nminimumReleaseAge = 604800\n",
+      "vet.json": {
+        "minimum-release-age": 7,
+        "minimum-release-age-exclude": [
+          "hardimpactdev/maintainer"
+        ]
+      }
+    }
+  },
+  {
+    "slug": "platform11",
+    "project": {
+      "id": 22,
+      "repository_url": "https://github.com/hardimpactdev/platform11.git",
+      "task_check": "composer check",
+      "default_branch": "main"
+    },
+    "source": {
+      "repository": "hardimpactdev/platform11",
+      "commit": "cb0d7a56b3932cdf30cbbed943385be8926821d0"
+    },
+    "manifestPaths": [
+      "composer.json",
+      "package.json",
+      "tailwind-plus-studio/studio-js/package.json",
+      "tailwind-plus-studio/studio-ts/package.json"
+    ],
+    "setup": {
+      "bunfig.toml": "[install]\n# Routine releases wait seven days. Security exceptions require explicit review;\n# see docs/dependency-policy.md. Existing bun.lock entries are not re-resolved.\nminimumReleaseAge = 604800\n",
+      "vet.json": {
+        "minimum-release-age": 7,
+        "minimum-release-age-exclude": [
+          "hardimpactdev/maintainer"
+        ]
+      }
+    }
+  },
+  {
+    "slug": "hauzer",
+    "project": {
+      "id": 16,
+      "repository_url": "https://github.com/hardimpactdev/hauzer.git",
+      "task_check": "composer check",
+      "default_branch": "main"
+    },
+    "source": {
+      "repository": "hardimpactdev/hauzer",
+      "commit": "ec9082cb89214796533dbbbfcf050ba24da4e5f8"
+    },
+    "manifestPaths": [
+      "composer.json",
+      "mobile/modules/hauzer-card-import/package.json",
+      "mobile/package.json",
+      "package.json"
+    ],
+    "setup": {
+      ".npmrc": "# Routine releases wait seven days (npm 11.10+); see docs/dependency-policy.md.\n# npm ci installs package-lock.json as it is and is not affected.\nmin-release-age=7\n",
+      "maintainer.json": {
+        "paths": [
+          ".",
+          "mobile"
+        ]
+      },
+      "mobile/.npmrc": "min-release-age=7\n",
+      "vet.json": {
+        "minimum-release-age": 7,
+        "minimum-release-age-exclude": [
+          "hardimpactdev/sync-engine",
+          "hardimpactdev/maintainer"
+        ]
+      }
+    }
+  },
+  {
+    "slug": "mealou",
+    "project": {
+      "id": 19,
+      "repository_url": "https://github.com/hardimpactdev/mealou.git",
+      "task_check": "composer check",
+      "default_branch": "main"
+    },
+    "source": {
+      "repository": "hardimpactdev/mealou",
+      "commit": "ddab70273357ad9302373732d875f60cf17d0e0a"
+    },
+    "manifestPaths": [
+      "composer.json",
+      "mobile/package.json",
+      "package.json"
+    ],
+    "setup": {
+      ".npmrc": "# Routine releases wait seven days (npm 11.10+); see docs/dependency-policy.md.\n# npm ci installs package-lock.json as it is and is not affected.\nmin-release-age=7\n",
+      "maintainer.json": {
+        "paths": [
+          ".",
+          "mobile"
+        ]
+      },
+      "mobile/.npmrc": "# Routine releases wait seven days (npm 11.10+); see docs/dependency-policy.md.\n# npm ci installs package-lock.json as it is and is not affected.\nmin-release-age=7\n",
+      "vet.json": {
+        "minimum-release-age": 7,
+        "minimum-release-age-exclude": [
+          "hardimpactdev/sync-engine",
+          "hardimpactdev/maintainer"
+        ]
+      }
+    }
+  }
+]

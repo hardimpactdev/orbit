@@ -1,0 +1,16 @@
+id: 3d737825-ce09-46b4-9df7-4491d2b06482
+name: '@nckrtl/project-ai-cli-proxy/routine'
+description: ai-cli-proxy routine through its private project extension.
+trigger:
+  schedule: 0 3 * * 1
+jobs:
+- name: start
+  steps:
+  - name: routine
+    task:
+      type: model_method
+      modelIdOrName: orbit-gateway
+      methodName: schedule_project
+      inputs:
+        projectId: 51
+        mode: routine

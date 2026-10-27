@@ -1,0 +1,16 @@
+id: 47e3a7bd-2ce5-4764-bc39-61bfe95f6b11
+name: '@nckrtl/project-fitta/routine'
+description: fitta routine through its private project extension.
+trigger:
+  schedule: 40 3 * * 1
+jobs:
+- name: start
+  steps:
+  - name: routine
+    task:
+      type: model_method
+      modelIdOrName: orbit-gateway
+      methodName: schedule_project
+      inputs:
+        projectId: 15
+        mode: routine

@@ -2,8 +2,8 @@
 
 A spike to test whether [Swamp](https://swamp-club.com) can replace the
 hand-rolled orchestration in Orbit's tasks feature. It uses Orbit dependency
-upgrades as the test case. The [dependency routine](docs/website-routine.md)
-and [single-package workflow](docs/website-packages.md) use the official software
+upgrades as the test case. The [dependency routine](docs/website-routine.md) and
+[single-package workflow](docs/website-packages.md) use the official software
 factory and Gateway operations in task VMs.
 
 Project 20 runs the shared maintenance extensions on a Swamp worker inside its
@@ -28,28 +28,31 @@ original unit is stopped and disabled, with its files retained. See the
 ## Private project extensions
 
 `@nckrtl/project-nckrtl-com` holds Project 20's config and weekly routine/daily
-detection schedules. Shared factories and the group worker do the work. Detection
-creates separate major/advisory tasks; exact major targets enter the existing
-package sequence, while security tasks wait for verified fixed versions. See
-[the design and rollout](docs/project-extensions.md) and
-[extension template](docs/templates/project-extension/README.md).
+detection schedules. Shared factories and the group worker do the work.
+Detection creates separate major/advisory tasks; exact major targets enter the
+existing package sequence, while security tasks wait for verified fixed
+versions. See [the design and rollout](docs/project-extensions.md) and
+[extension template](docs/templates/project-extension/README.md). The
+[fleet inventory](docs/maintained-project-extensions.md) covers the other 18
+maintained projects and their source config.
 
 ## Composer maintenance extension
 
 [`@nckrtl/composer-maintenance`](extensions/behaviors/composer-maintenance/README.md)
 provides `routine`, `detect`, `package`, and `summary` methods for a supplied
 checkout. It takes paths and policy as inputs, reads Composer lockfiles without
-`vendor/`, and records temporary Vet security exceptions. Its private manifest supports `nckrtl` collective distribution. Project 20 calls
-it through the group worker workflow.
+`vendor/`, and records temporary Vet security exceptions. Its private manifest
+supports `nckrtl` collective distribution. Project 20 calls it through the group
+worker workflow.
 
 ## JavaScript maintenance extension
 
-[`@nckrtl/js-maintenance`](extensions/behaviors/js-maintenance/README.md) provides
-matching `routine`, `detect`, `package`, and `summary` methods for npm, Bun, Vite+,
-and Expo. JavaScript-only checkouts need no maintenance package or Composer.
-It shares path safety, clean child environments, exception records, and PR text
-with Composer maintenance. Its summary can cover both ecosystems in one run.
-Project 20 calls it through the group worker workflow.
+[`@nckrtl/js-maintenance`](extensions/behaviors/js-maintenance/README.md)
+provides matching `routine`, `detect`, `package`, and `summary` methods for npm,
+Bun, Vite+, and Expo. JavaScript-only checkouts need no maintenance package or
+Composer. It shares path safety, clean child environments, exception records,
+and PR text with Composer maintenance. Its summary can cover both ecosystems in
+one run. Project 20 calls it through the group worker workflow.
 
 ## Horizon New Dawn project extension
 
@@ -79,18 +82,20 @@ an approval gate that runs only when the plan has a major upgrade (or
 `--input requireApproval=true`).
 
 This is the earlier host-scratch spike, not a supported task-VM execution path.
-Do not run it to bypass the [dependency adoption boundary](docs/dependency-workflow-adoption.md).
-Its major-approval stub is not exact dependency-plan consent.
+Do not run it to bypass the
+[dependency adoption boundary](docs/dependency-workflow-adoption.md). Its
+major-approval stub is not exact dependency-plan consent.
 
-The behavior type `@nckrtl/orbit-deps` is in `extensions/behaviors/orbit_deps.ts`.
+The behavior type `@nckrtl/orbit-deps` is in
+`extensions/behaviors/orbit_deps.ts`.
 
 - `scan` reads `GET /api/v1/instances/315/dependencies` from the Gateway.
-  Instance 315 is the `default` development Instance of Project 46.
-  The Gateway authenticates by WireGuard peer, and curl trusts the Orbit root
-  CA. For each sub-project and ecosystem, `scan` compares the Gateway's file
-  hashes with `origin/main` in the scratch clone. Where a hash differs, or the
-  Gateway scan failed, `scan` reads the manifest and lockfile with `git show`
-  and records the reason.
+  Instance 315 is the `default` development Instance of Project 46. The Gateway
+  authenticates by WireGuard peer, and curl trusts the Orbit root CA. For each
+  sub-project and ecosystem, `scan` compares the Gateway's file hashes with
+  `origin/main` in the scratch clone. Where a hash differs, or the Gateway scan
+  failed, `scan` reads the manifest and lockfile with `git show` and records the
+  reason.
 - `plan` (the dependency-planner) checks every direct dependency against
   Packagist (`p2`) or the npm registry. It records an `upgrade-plan` with one
   `within-constraints` subtask per sub-project and one `constraint-change`
@@ -116,13 +121,13 @@ mechanical → handoff → review → approved
               consult ────┘
 ```
 
-| Stage | Work | LLM |
-| --- | --- | --- |
-| mechanical | `composer update` in the sub-project, committed with the key as a trailer | none |
-| handoff | the sub-project's `composer check` and `composer test` (full Pest suite) | none |
-| implement | one Codex turn (gpt-6.1-sol, high) with the failing output, open findings or a consult answer | 1 per entry |
-| consult | the reviewer (Claude, claude-opus-5-5) answers a `BLOCKED:` question | 1 per entry |
-| review | one read-only Claude review; records a `code-review` findings artifact | 1 per entry |
+| Stage      | Work                                                                                          | LLM         |
+| ---------- | --------------------------------------------------------------------------------------------- | ----------- |
+| mechanical | `composer update` in the sub-project, committed with the key as a trailer                     | none        |
+| handoff    | the sub-project's `composer check` and `composer test` (full Pest suite)                      | none        |
+| implement  | one Codex turn (gpt-6.1-sol, high) with the failing output, open findings or a consult answer | 1 per entry |
+| consult    | the reviewer (Claude, claude-opus-5-5) answers a `BLOCKED:` question                          | 1 per entry |
+| review     | one read-only Claude review; records a `code-review` findings artifact                        | 1 per entry |
 
 Both agents reach their models through CLIProxyAPI (AI Router). Swamp itself
 never calls an LLM.
@@ -132,8 +137,8 @@ Orbit's caps (same in v1 and v2):
 - Consult cap 2: `consult.maxCycles: 2`. The 3rd consult parks for
   `approve gateId=cycle-override:consult`.
 - Handoff reminders 3: each handoff records `consecutiveFailures`, reset by a
-  pass. `fail` is open while it is ≤ 3; the 4th failure only has `assist`,
-  which needs `handoff-assistance`.
+  pass. `fail` is open while it is ≤ 3; the 4th failure only has `assist`, which
+  needs `handoff-assistance`.
 - Max cycles: implement 6, review 3, handoff 10. A trip parks for
   `cycle-override:<stage>`; grants add one entry each.
 
@@ -142,13 +147,14 @@ Orbit's caps (same in v1 and v2):
 - Factory: `models/@swamp/software-factory/orbit-subtasks.yaml`. Each stage's
   work is `mode: workflow`; every transition also needs `workflow-succeeded`,
   verified against Swamp's own run record.
-- Stage workflows: `workflows/workflow-stage-{mechanical,handoff,implement,consult,review}.yaml`.
+- Stage workflows:
+  `workflows/workflow-stage-{mechanical,handoff,implement,consult,review}.yaml`.
   They run on `@swamp/git` (`ensure_worktree`, `commit`, `log`, `diff`),
-  `@nckrtl/composer` (`install_all`, `update`, `script`; allowlisted child
-  env) and `@swamp/agent-runner` (Claude `review`/`run`; the `run_codex`
-  extension in `extensions/behaviors/agent_runner_codex.ts` routes Codex
-  through CLIProxyAPI until lab #3769 lands). The Codex token helper is the
-  vault secret `default/CLIPROXY_CODEX_AUTH`.
+  `@nckrtl/composer` (`install_all`, `update`, `script`; allowlisted child env)
+  and `@swamp/agent-runner` (Claude `review`/`run`; the `run_codex` extension in
+  `extensions/behaviors/agent_runner_codex.ts` routes Codex through CLIProxyAPI
+  until lab #3769 lands). The Codex token helper is the vault secret
+  `default/CLIPROXY_CODEX_AUTH`.
 - Each run claims its key (`orbit-stage.claim`), and its last step
   (`orbit-stage.report`) records the stage's artifacts and resultEvidence with
   `run.id` (the factory DESIGN's self-reporting variant).
@@ -184,23 +190,25 @@ live proof from pending amendments and interruption proof. PR6 delivered
 [group assistance](docs/group-assistance-contract.md); live adoption remains
 unproven. The next docs-only proposal is the
 [review-and-merge API contract](docs/review-and-merge-contract.md), with
-[hosted handoff CI](docs/gateway-handoff-ci-brief.md) as the first native Gateway
-task. The [tick inventory](docs/tick-engine-inventory.md) marks retained effects
-and safety.
+[hosted handoff CI](docs/gateway-handoff-ci-brief.md) as the first native
+Gateway task. The [tick inventory](docs/tick-engine-inventory.md) marks retained
+effects and safety.
 
 Swamp drives an Orbit task group with `orchestration: external` only through
 Gateway operations. Orbit runs every effect in the group's task VM; Swamp
 decides the next step. Swamp never merges.
 
-- Factory: `models/@swamp/software-factory/orbit-groups.yaml`. One work item
-  is one task group, `tg-<group id>`:
+- Factory: `models/@swamp/software-factory/orbit-groups.yaml`. One work item is
+  one task group, `tg-<group id>`:
   `provision → baseline → plan → analyze → implement → handoff → analyze → review
-  → (analyze | publish) → published → completed`. Rework and next-child paths
-  require fresh analysis. The plan stage records the complete cumulative typed
-  inventory and requires explicit authorization; see the adoption contract.
-- Stage work: `@nckrtl/orbit-gateway.stage` (`extensions/behaviors/orbit_gateway.ts`,
-  logic in `_lib/gateway_stage.ts`). Each call starts or reads one operation
-  (`tasks.provision`, `tasks.check`, `tasks.analyze`, `tasks.turn`, `tasks.publish`) with
+  → (analyze | publish) → published → completed`.
+  Rework and next-child paths require fresh analysis. The plan stage records the
+  complete cumulative typed inventory and requires explicit authorization; see
+  the adoption contract.
+- Stage work: `@nckrtl/orbit-gateway.stage`
+  (`extensions/behaviors/orbit_gateway.ts`, logic in `_lib/gateway_stage.ts`).
+  Each call starts or reads one operation (`tasks.provision`, `tasks.check`,
+  `tasks.analyze`, `tasks.turn`, `tasks.publish`) with
   `Idempotency-Key: tg-<id>.<stage>.s<subtask>.c<cycle>`, stores the request and
   the operation id in `job-<key>`, and returns at once. A replay sends the
   stored request, so the Gateway returns the same operation.
@@ -209,34 +217,36 @@ decides the next step. Swamp never merges.
 - Every failed or cancelled operation has a route. A failed provision that ended
   the Orbit group ends the run in `failed`, because a retry needs a new group;
   one that left the group open (a cancelled queued provision stays `todo`)
-  retries after `provision-retry`. Baseline,
-  handoff, review and publish retry under a new cycle key after an approval
-  (`baseline-retry`, `handoff-retry`, `review-retry`, `publish-retry`). A pull
-  request closed unmerged publishes again after `republish`. A blocked turn or
-  one without a receipt parks for `implement-retry` or `review-retry`, and a
-  failing baseline for `baseline-override`.
-- Caps count per subtask: 6 implement attempts, 3 reviews, and at most 3
-  failing handoffs in a row (the 4th needs `handoff-assistance`; a pass resets
-  the streak). The counters live in each stage's artifact; the stage
-  `maxCycles` are only run-wide safety nets.
+  retries after `provision-retry`. Baseline, handoff, review and publish retry
+  under a new cycle key after an approval (`baseline-retry`, `handoff-retry`,
+  `review-retry`, `publish-retry`). A pull request closed unmerged publishes
+  again after `republish`. A blocked turn or one without a receipt parks for
+  `implement-retry` or `review-retry`, and a failing baseline for
+  `baseline-override`.
+- Caps count per subtask: 6 implement attempts, 3 reviews, and at most 3 failing
+  handoffs in a row (the 4th needs `handoff-assistance`; a pass resets the
+  streak). The counters live in each stage's artifact; the stage `maxCycles` are
+  only run-wide safety nets.
 - `tests/factory_routing_test.ts` runs the real factory and driver with swamp in
   a throwaway copy of the repo against a fake Gateway (`tests/_support/`), one
   group per routing case.
-- Driver: `orbit-driver-groups` in method mode; `workflows/workflow-groups-driver.yaml`
-  ticks every minute under swamp serve, three guarded steps per group.
+- Driver: `orbit-driver-groups` in method mode;
+  `workflows/workflow-groups-driver.yaml` ticks every minute under swamp serve,
+  three guarded steps per group.
 - Pre-approvals: a person can approve a gate before the run reaches it. The
-  driver stores it for one exact work item, gate, stage and cycle, and the
-  first tick that parks there applies it if it was created in the current run era.
+  driver stores it for one exact work item, gate, stage and cycle, and the first
+  tick that parks there applies it if it was created in the current run era.
   `swamp model method run orbit-driver-groups preapprove --input workItem=tg-1234
   --input gateId=baseline-override --input stage=baseline --input cycle=1 --input actor=nick`
-- Board assistance: ordinary gates use the current open child's comments as before.
-  After all children end, `publish-retry` and `republish` use group comments with
-  the work item, stage, cycle, gate and run era. Each reconciliation reads full
-  history and the current request. It preserves operator replacements and safety
-  causes. Only the matching explicit factory approval permits clearing Swamp's
-  Direction request; a board resolution alone neither approves nor starts a retry.
-  Comments can be duplicated after a lost response, and the API has no conditional
-  resolution. See the [delivered contract and adoption rules](docs/group-assistance-contract.md).
+- Board assistance: ordinary gates use the current open child's comments as
+  before. After all children end, `publish-retry` and `republish` use group
+  comments with the work item, stage, cycle, gate and run era. Each
+  reconciliation reads full history and the current request. It preserves
+  operator replacements and safety causes. Only the matching explicit factory
+  approval permits clearing Swamp's Direction request; a board resolution alone
+  neither approves nor starts a retry. Comments can be duplicated after a lost
+  response, and the API has no conditional resolution. See the
+  [delivered contract and adoption rules](docs/group-assistance-contract.md).
 - swamp caps one execution at 100 cross-behavior calls. A tick stops starting
   steps at `maxCallsPerTick` (90) and the next tick starts with the work items
   it deferred. Evidence from before a `reset` never counts as the current
@@ -250,10 +260,10 @@ swamp model method run orbit-groups summary --input workItem=tg-1234
 
 ### Serve on Beast
 
-- User unit `swamp-serve` on `127.0.0.1:9417` (9090 is Prometheus), token
-  auth, admin `user:nckrtl`, Club key from `~/.config/swamp/api-key`.
-  The drop-in `swamp-serve.service.d/path.conf` sets `PATH` (Composer, PHP,
-  `claude`, `codex`) and turns off update checks and telemetry.
+- User unit `swamp-serve` on `127.0.0.1:9417` (9090 is Prometheus), token auth,
+  admin `user:nckrtl`, Club key from `~/.config/swamp/api-key`. The drop-in
+  `swamp-serve.service.d/path.conf` sets `PATH` (Composer, PHP, `claude`,
+  `codex`) and turns off update checks and telemetry.
 - `subtasks-driver` has a 1-minute `trigger.schedule`. Pause it with
   `swamp workflow schedule pause subtasks-driver --reason …`.
 - The driver authenticates with the serve token `serve-driver` in
@@ -276,9 +286,9 @@ The stage workflows were generated once and are edited as YAML from here on.
 
 ### v1: detached effect jobs (`orbit-subtask-factory`)
 
-Kept for comparison. Stage work is `mode: method` on `orbit-subtask.run`,
-which launches bash effects (`bin/run-effect`, `bin/effects/*.sh`) as detached
-jobs with marker dirs and a per-key flock. Kill tests:
+Kept for comparison. Stage work is `mode: method` on `orbit-subtask.run`, which
+launches bash effects (`bin/run-effect`, `bin/effects/*.sh`) as detached jobs
+with marker dirs and a per-key flock. Kill tests:
 `swamp model method run orbit-driver tick --input killAt=<point>`
 (`after-dispatch`, `after-launch`, `before-evidence`, `after-evidence`,
 `before-advance`). `bin/effects/fake.sh` replays scripted stage results when

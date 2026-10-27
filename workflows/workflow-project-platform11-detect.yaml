@@ -1,0 +1,16 @@
+id: 62fca3c2-9fe7-4966-8a5e-e41bd7fbd5a5
+name: '@nckrtl/project-platform11/detect'
+description: platform11 detect through its private project extension.
+trigger:
+  schedule: 40 5 * * *
+jobs:
+- name: start
+  steps:
+  - name: detect
+    task:
+      type: model_method
+      modelIdOrName: orbit-gateway
+      methodName: schedule_project
+      inputs:
+        projectId: 22
+        mode: detect

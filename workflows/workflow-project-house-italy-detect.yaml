@@ -1,0 +1,16 @@
+id: 10ed6ae9-a6f3-49dc-8036-79fe30502ff4
+name: '@nckrtl/project-house-italy/detect'
+description: house-italy detect through its private project extension.
+trigger:
+  schedule: 50 4 * * *
+jobs:
+- name: start
+  steps:
+  - name: detect
+    task:
+      type: model_method
+      modelIdOrName: orbit-gateway
+      methodName: schedule_project
+      inputs:
+        projectId: 17
+        mode: detect

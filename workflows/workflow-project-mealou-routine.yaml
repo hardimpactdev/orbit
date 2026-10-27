@@ -1,0 +1,16 @@
+id: bcdc0730-0c55-4896-804e-ee55f78b3f3f
+name: '@nckrtl/project-mealou/routine'
+description: mealou routine through its private project extension.
+trigger:
+  schedule: 0 5 * * 1
+jobs:
+- name: start
+  steps:
+  - name: routine
+    task:
+      type: model_method
+      modelIdOrName: orbit-gateway
+      methodName: schedule_project
+      inputs:
+        projectId: 19
+        mode: routine

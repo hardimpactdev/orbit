@@ -1,20 +1,51 @@
 type: '@nckrtl/orbit-gateway'
-typeVersion: 2026.10.27.2
+typeVersion: 2026.10.27.3
 id: f5fa45d6-6307-48b6-a094-9aae8f79febc
 name: orbit-gateway
 version: 1
 tags: {}
-# The Gateway client for externally orchestrated task groups (ADR 0229).
-# Beast authenticates by its WireGuard address; only the Orbit root CA is needed.
 globalArguments:
   gatewayUrl: https://gateway.orbit
   caFile: /usr/local/share/ca-certificates/orbit-managed-root-ca.crt
   timeoutSeconds: 60
-  projectExtensions: [{ projectId: 20, type: '@nckrtl/project-nckrtl-com' }]
-  dependencyProjects:
-    - projectId: 18
-      repository: https://github.com/hardimpactdev/lindaretel.git
-      script: scripts/dependencies
-      check: composer check
-      defaultBranch: main
+  projectExtensions:
+  - projectId: 20
+    type: '@nckrtl/project-nckrtl-com'
+  - projectId: 30
+    type: '@nckrtl/project-launch-starter-kit'
+  - projectId: 32
+    type: '@nckrtl/project-launch'
+  - projectId: 54
+    type: '@nckrtl/project-treadmill-website'
+  - projectId: 33
+    type: '@nckrtl/project-orbit-website'
+  - projectId: 49
+    type: '@nckrtl/project-recall'
+  - projectId: 51
+    type: '@nckrtl/project-ai-cli-proxy'
+  - projectId: 28
+    type: '@nckrtl/project-laravel-toolbar-site'
+  - projectId: 47
+    type: '@nckrtl/project-operator-website'
+  - projectId: 48
+    type: '@nckrtl/project-operator'
+  - projectId: 15
+    type: '@nckrtl/project-fitta'
+  - projectId: 17
+    type: '@nckrtl/project-house-italy'
+  - projectId: 18
+    type: '@nckrtl/project-lindaretel'
+  - projectId: 25
+    type: '@nckrtl/project-srpm'
+  - projectId: 26
+    type: '@nckrtl/project-tankwerk'
+  - projectId: 13
+    type: '@nckrtl/project-ditis-hr'
+  - projectId: 22
+    type: '@nckrtl/project-platform11'
+  - projectId: 16
+    type: '@nckrtl/project-hauzer'
+  - projectId: 19
+    type: '@nckrtl/project-mealou'
+  dependencyProjects: []
 methods: {}

@@ -24,20 +24,34 @@ export function projectConfig(type: string, config: DependencyProject) {
         description: "Read this project's maintenance configuration",
         arguments: z.object({}),
         execute: async (_args: Record<string, never>, context: {
+          readResource: (
+            name: string,
+          ) => Promise<Record<string, unknown> | null>;
           writeResource: (
             spec: string,
             name: string,
             value: Record<string, unknown>,
           ) => Promise<{ name: string }>;
-        }) => ({
-          dataHandles: [
-            await context.writeResource(
-              "configuration",
-              "configuration",
-              DependencyProjectSchema.parse(config),
-            ),
-          ],
-        }),
+        }) => {
+          const next = DependencyProjectSchema.parse(config);
+          const previous = await context.readResource("configuration");
+          if (
+            previous &&
+            JSON.stringify(DependencyProjectSchema.parse(previous)) ===
+              JSON.stringify(next)
+          ) {
+            return { dataHandles: [] };
+          }
+          return {
+            dataHandles: [
+              await context.writeResource(
+                "configuration",
+                "configuration",
+                next,
+              ),
+            ],
+          };
+        },
       },
     },
   };

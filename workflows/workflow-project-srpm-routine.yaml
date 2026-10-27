@@ -1,0 +1,16 @@
+id: b463cd40-4899-46ae-a902-7b708489a55e
+name: '@nckrtl/project-srpm/routine'
+description: srpm routine through its private project extension.
+trigger:
+  schedule: 10 4 * * 1
+jobs:
+- name: start
+  steps:
+  - name: routine
+    task:
+      type: model_method
+      modelIdOrName: orbit-gateway
+      methodName: schedule_project
+      inputs:
+        projectId: 25
+        mode: routine

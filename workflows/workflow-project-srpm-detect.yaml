@@ -1,0 +1,16 @@
+id: f71697b1-b93f-4ee0-a536-e263063c5366
+name: '@nckrtl/project-srpm/detect'
+description: srpm detect through its private project extension.
+trigger:
+  schedule: 10 5 * * *
+jobs:
+- name: start
+  steps:
+  - name: detect
+    task:
+      type: model_method
+      modelIdOrName: orbit-gateway
+      methodName: schedule_project
+      inputs:
+        projectId: 25
+        mode: detect

@@ -1,0 +1,16 @@
+id: 7edb645b-89de-4b86-a5ce-5b1e96dfd011
+name: '@nckrtl/project-launch-starter-kit/detect'
+description: launch-starter-kit detect through its private project extension.
+trigger:
+  schedule: 10 3 * * *
+jobs:
+- name: start
+  steps:
+  - name: detect
+    task:
+      type: model_method
+      modelIdOrName: orbit-gateway
+      methodName: schedule_project
+      inputs:
+        projectId: 30
+        mode: detect

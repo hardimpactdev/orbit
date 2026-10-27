@@ -1,3 +1,4 @@
+import { configureGateway } from "./_support/configure_gateway.ts";
 import { scriptProjectExtension } from "./_support/script_project_extension.ts";
 import { SECOND_PROJECT } from "./_support/dependency_projects.ts";
 // Real official factory and existing driver, isolated from live state and Gateway.
@@ -46,19 +47,7 @@ async function copyRepo(url: string) {
     "requires already-installed official extensions; never installs",
   );
   await scriptProjectExtension(dir);
-  const def = `${dir}/models/@nckrtl/orbit-gateway/orbit-gateway.yaml`;
-  await Deno.writeTextFile(
-    def,
-    (await Deno.readTextFile(def)).replace(
-      /gatewayUrl: .*/,
-      `gatewayUrl: ${url}`,
-    ).replace("methods: {}", `    - projectId: ${SECOND_PROJECT.projectId}
-      repository: ${SECOND_PROJECT.repository}
-      script: ${SECOND_PROJECT.script}
-      check: ${SECOND_PROJECT.check}
-      defaultBranch: ${SECOND_PROJECT.defaultBranch}
-methods: {}`),
-  );
+  await configureGateway(dir, url, [SECOND_PROJECT]);
   return dir;
 }
 

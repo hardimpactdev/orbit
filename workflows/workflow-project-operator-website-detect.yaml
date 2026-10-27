@@ -1,0 +1,16 @@
+id: 0d4205cb-b8b2-404b-b333-92503030ba46
+name: '@nckrtl/project-operator-website/detect'
+description: operator-website detect through its private project extension.
+trigger:
+  schedule: 20 4 * * *
+jobs:
+- name: start
+  steps:
+  - name: detect
+    task:
+      type: model_method
+      modelIdOrName: orbit-gateway
+      methodName: schedule_project
+      inputs:
+        projectId: 47
+        mode: detect

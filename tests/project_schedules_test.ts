@@ -1,7 +1,11 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { behavior } from "../extensions/behaviors/orbit_gateway.ts";
 import { behavior as projectBehavior } from "../extensions/behaviors/projects/nckrtl-com/mod.ts";
-import { ScheduleReceiptSchema } from "../extensions/behaviors/_lib/project_schedule.ts";
+import {
+  findingReceipts,
+  scheduleReceipt,
+  ScheduleReceiptSchema,
+} from "../extensions/behaviors/_lib/project_schedule.ts";
 const original = JSON.parse(
   await Deno.readTextFile(
     new URL("./fixtures/project-extensions/nckrtl-com.json", import.meta.url),
@@ -111,6 +115,11 @@ function fixture() {
     ) => {
       if (args.modelType === projectBehavior.type) {
         await projectBehavior.methods.configuration.execute({}, {
+          readResource: (name) =>
+            Promise.resolve(
+              data.get(`${args.name}/${name}`) as Record<string, unknown> ??
+                null,
+            ),
           writeResource: (_spec, name, value) => {
             data.set(`${args.name}/${name}`, value);
             return Promise.resolve({ name });
@@ -189,6 +198,8 @@ Deno.test("scheduler uses extension config and reconciles a lost factory-start r
       package: [],
       nextOffset: 0,
       nextQueueOffset: 0,
+      nextPendingOffset: 0,
+      issues: [],
     });
     assertEquals(work, {
       routine: [],
@@ -196,16 +207,18 @@ Deno.test("scheduler uses extension config and reconciles a lost factory-start r
       package: [],
       nextOffset: 0,
       nextQueueOffset: 0,
+      nextPendingOffset: 0,
+      issues: [],
     });
-    await assertRejects(
-      () =>
-        behavior.methods.schedule_project.execute({
-          projectId: 20,
-          mode: "detect",
-        }, f.ctx),
-      Error,
-      "must finish",
-    );
+    await behavior.methods.schedule_project.execute({
+      projectId: 20,
+      mode: "detect",
+    }, f.ctx);
+    const skip = [...f.data].find(([key]) =>
+      key.startsWith("orbit-gateway/scheduler-skip-")
+    )![1] as { blocker: string; reason: string };
+    assertEquals(skip.blocker.includes("20-routine-"), true);
+    assertEquals(skip.reason.includes("skip this detect fire"), true);
     assertEquals(f.posts(), 1);
   } finally {
     await f.close();
@@ -325,5 +338,211 @@ Deno.test("bounded schedule ticks rotate past parked projects", async () => {
     assertEquals(f.posts(), 0);
   } finally {
     await f.close();
+  }
+});
+
+Deno.test("uncertain pending creates and broken active rows are surfaced without stalling other projects", async () => {
+  const f = fixture();
+  try {
+    const bad = {
+      ...scheduleReceipt(original, "routine"),
+      key: "uncertain-project-99",
+      projectId: 99,
+      attempted: true,
+    };
+    const good = {
+      ...scheduleReceipt(original, "routine"),
+      key: "healthy-project-20",
+    };
+    f.data.set(`orbit-gateway/schedule-${bad.key}`, bad);
+    f.data.set(`orbit-gateway/schedule-${good.key}`, good);
+    const broken = {
+      ...good,
+      key: "broken-active",
+      projectId: 98,
+      workItem: "tg-98",
+      attempted: true,
+      started: true,
+    };
+    f.data.set(`orbit-gateway/schedule-${broken.key}`, broken);
+    f.data.set("orbit-gateway/schedule-active-other", {
+      ...good,
+      key: "active-other",
+      projectId: 97,
+      workItem: "tg-97",
+      attempted: true,
+      started: true,
+    });
+    f.data.set("dependency-routine/state-tg-97", {
+      stageId: "assistance",
+      status: "active",
+    });
+    await behavior.methods.project_work.execute({}, f.ctx);
+    let work = f.data.get("orbit-gateway/project-work") as {
+      routine: string[];
+      issues: { key: string; reason: string }[];
+    };
+    assertEquals(f.posts(), 1);
+    assertEquals(f.starts(), 1);
+    assertEquals(work.routine, ["tg-97"]);
+    assertEquals(
+      work.issues.some((i) =>
+        i.key === bad.key && i.reason.includes("uncertain create")
+      ),
+      true,
+    );
+    assertEquals(
+      work.issues.some((i) =>
+        i.key === broken.key && i.reason.includes("state is missing")
+      ),
+      true,
+    );
+    // Reconciliation can adopt a recovered response; it never resends the create.
+    f.groups.set(99, { ...bad.request, id: 99, project_id: 99 });
+    await behavior.methods.project_work.execute({}, f.ctx);
+    work = f.data.get("orbit-gateway/project-work") as typeof work;
+    assertEquals(f.posts(), 1);
+    assertEquals(f.starts(), 2);
+    assertEquals(work.routine.includes("tg-1"), true);
+    assertEquals(work.issues.some((i) => i.key === bad.key), false);
+    assertEquals(
+      (f.data.get(`orbit-gateway/scheduler-issue-pending-${bad.key}`) as {
+        status: string;
+      }).status,
+      "resolved",
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+Deno.test("a stuck detection finding does not block its siblings or another project's driver", async () => {
+  const f = fixture();
+  try {
+    await behavior.methods.schedule_project.execute({
+      projectId: 20,
+      mode: "detect",
+    }, f.ctx);
+    f.data.set("dependency-detect/state-tg-1", {
+      stageId: "completed",
+      status: "terminal",
+    });
+    f.data.set("dependency-detect/artifact-tg-1-script", {
+      payload: { detections: reports },
+    });
+    const findings = await findingReceipts(original, reports);
+    const stuck = { ...findings[0], attempted: true };
+    f.data.set(`orbit-gateway/schedule-${stuck.key}`, stuck);
+    const other = {
+      ...scheduleReceipt(original, "routine"),
+      key: "other-project",
+      projectId: 99,
+      workItem: "tg-99",
+      attempted: true,
+      started: true,
+    };
+    f.data.set("orbit-gateway/schedule-other-project", other);
+    f.data.set("dependency-routine/state-tg-99", {
+      stageId: "provision",
+      status: "active",
+    });
+    await behavior.methods.project_work.execute({}, f.ctx);
+    const work = f.data.get("orbit-gateway/project-work") as {
+      routine: string[];
+      issues: { key: string; phase: string }[];
+    };
+    assertEquals(f.posts(), 5); // Scan plus the other four findings.
+    assertEquals(work.routine, ["tg-99"]);
+    assertEquals(
+      work.issues.some((i) => i.key === stuck.key && i.phase === "finding"),
+      true,
+    );
+    const scan = [...f.data].find(([key]) =>
+      key.startsWith("orbit-gateway/schedule-20-detect-")
+    )![1] as { completed: boolean };
+    assertEquals(scan.completed, false);
+  } finally {
+    await f.close();
+  }
+});
+
+Deno.test("a bad package admission is recorded without blocking another project's active run", async () => {
+  const f = fixture();
+  try {
+    const queued = (await findingReceipts(original, reports))[0];
+    f.data.set(`orbit-gateway/schedule-${queued.key}`, {
+      ...queued,
+      workItem: "tg-404",
+      attempted: true,
+    });
+    f.data.set("orbit-gateway/schedule-other-active", {
+      ...scheduleReceipt(original, "routine"),
+      key: "other-active",
+      projectId: 99,
+      workItem: "tg-99",
+      attempted: true,
+      started: true,
+    });
+    f.data.set("dependency-routine/state-tg-99", {
+      stageId: "provision",
+      status: "active",
+    });
+    await behavior.methods.project_work.execute({}, f.ctx);
+    const work = f.data.get("orbit-gateway/project-work") as {
+      routine: string[];
+      issues: { key: string; phase: string }[];
+    };
+    assertEquals(work.routine, ["tg-99"]);
+    assertEquals(
+      work.issues.some((i) => i.key === queued.key && i.phase === "admission"),
+      true,
+    );
+    assertEquals(f.posts(), 0);
+  } finally {
+    await f.close();
+  }
+});
+
+Deno.test("parked and failed routines make daily detection a recorded skip without a group", async () => {
+  for (
+    const state of [{ stageId: "assistance", status: "active" }, {
+      stageId: "failed",
+      status: "terminal",
+    }]
+  ) {
+    const f = fixture();
+    try {
+      const blocked = {
+        ...scheduleReceipt(
+          original,
+          "routine",
+          new Date("2026-01-05T02:00:00Z"),
+        ),
+        workItem: "tg-88",
+        attempted: true,
+        started: true,
+      };
+      f.data.set(`orbit-gateway/schedule-${blocked.key}`, blocked);
+      f.data.set("dependency-routine/state-tg-88", state);
+      const result = await behavior.methods.schedule_project.execute({
+        projectId: 20,
+        mode: "detect",
+      }, f.ctx);
+      assertEquals(result.dataHandles.length, 1);
+      const skip = [...f.data].find(([key]) =>
+        key.startsWith("orbit-gateway/scheduler-skip-")
+      )![1] as { blocker: string; reason: string };
+      assertEquals(skip.blocker, blocked.key);
+      assertEquals(skip.reason.includes("unfinished"), true);
+      assertEquals(f.posts(), 0);
+      assertEquals(
+        [...f.data.keys()].filter((key) =>
+          key.startsWith("orbit-gateway/schedule-")
+        ).length,
+        1,
+      );
+    } finally {
+      await f.close();
+    }
   }
 });

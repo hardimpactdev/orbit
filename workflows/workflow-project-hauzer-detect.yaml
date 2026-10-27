@@ -1,0 +1,16 @@
+id: 22db2610-9393-4915-917c-d5a37bb1103f
+name: '@nckrtl/project-hauzer/detect'
+description: hauzer detect through its private project extension.
+trigger:
+  schedule: 50 5 * * *
+jobs:
+- name: start
+  steps:
+  - name: detect
+    task:
+      type: model_method
+      modelIdOrName: orbit-gateway
+      methodName: schedule_project
+      inputs:
+        projectId: 16
+        mode: detect

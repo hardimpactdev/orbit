@@ -1,0 +1,16 @@
+id: 0f791014-2b60-42da-8eb4-eabed7ed9002
+name: '@nckrtl/project-platform11/routine'
+description: platform11 routine through its private project extension.
+trigger:
+  schedule: 40 4 * * 1
+jobs:
+- name: start
+  steps:
+  - name: routine
+    task:
+      type: model_method
+      modelIdOrName: orbit-gateway
+      methodName: schedule_project
+      inputs:
+        projectId: 22
+        mode: routine

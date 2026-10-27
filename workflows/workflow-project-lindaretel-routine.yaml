@@ -1,0 +1,16 @@
+id: 5968d816-1722-4ca1-be1b-7fd83dca2c3b
+name: '@nckrtl/project-lindaretel/routine'
+description: lindaretel routine through its private project extension.
+trigger:
+  schedule: 0 4 * * 1
+jobs:
+- name: start
+  steps:
+  - name: routine
+    task:
+      type: model_method
+      modelIdOrName: orbit-gateway
+      methodName: schedule_project
+      inputs:
+        projectId: 18
+        mode: routine

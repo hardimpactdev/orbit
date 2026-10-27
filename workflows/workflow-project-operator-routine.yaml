@@ -1,0 +1,16 @@
+id: ba6106a1-2887-4b9c-ad09-7568aab9fb8e
+name: '@nckrtl/project-operator/routine'
+description: operator routine through its private project extension.
+trigger:
+  schedule: 30 3 * * 1
+jobs:
+- name: start
+  steps:
+  - name: routine
+    task:
+      type: model_method
+      modelIdOrName: orbit-gateway
+      methodName: schedule_project
+      inputs:
+        projectId: 48
+        mode: routine

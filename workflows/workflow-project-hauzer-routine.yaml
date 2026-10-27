@@ -1,0 +1,16 @@
+id: bba82853-d275-48b5-9838-9c0ba708cbd3
+name: '@nckrtl/project-hauzer/routine'
+description: hauzer routine through its private project extension.
+trigger:
+  schedule: 50 4 * * 1
+jobs:
+- name: start
+  steps:
+  - name: routine
+    task:
+      type: model_method
+      modelIdOrName: orbit-gateway
+      methodName: schedule_project
+      inputs:
+        projectId: 16
+        mode: routine

@@ -1,0 +1,16 @@
+id: f2e0ca37-5f66-4c3c-a03c-22645e311312
+name: '@nckrtl/project-treadmill-website/detect'
+description: treadmill-website detect through its private project extension.
+trigger:
+  schedule: 30 3 * * *
+jobs:
+- name: start
+  steps:
+  - name: detect
+    task:
+      type: model_method
+      modelIdOrName: orbit-gateway
+      methodName: schedule_project
+      inputs:
+        projectId: 54
+        mode: detect

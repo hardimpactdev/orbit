@@ -1,0 +1,25 @@
+manifestVersion: 1
+name: "@nckrtl/project-mealou"
+version: 2026.10.27.1
+visibility: private
+license: MIT
+description: mealou maintenance configuration and schedules.
+repository: https://github.com/hardimpactdev/orbit-swamp
+behaviors:
+  - projects/mealou/mod.ts
+include:
+  - _lib/project_extension.ts
+  - _lib/dependency_project_schema.ts
+  - _lib/maintenance/policy_schema.ts
+workflows:
+  - workflow-project-mealou-routine.yaml
+  - workflow-project-mealou-detect.yaml
+additionalFiles:
+  - README.md
+  - LICENSE
+dependencies:
+  - "@nckrtl/composer-maintenance"
+  - "@nckrtl/js-maintenance"
+labels:
+  - project
+  - dependencies

@@ -1,0 +1,16 @@
+id: 65c7fe47-9034-41e2-9691-3c9216e93f18
+name: '@nckrtl/project-ditis-hr/detect'
+description: ditis-hr detect through its private project extension.
+trigger:
+  schedule: 30 5 * * *
+jobs:
+- name: start
+  steps:
+  - name: detect
+    task:
+      type: model_method
+      modelIdOrName: orbit-gateway
+      methodName: schedule_project
+      inputs:
+        projectId: 13
+        mode: detect

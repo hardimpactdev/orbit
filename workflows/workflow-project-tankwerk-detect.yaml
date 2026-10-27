@@ -1,0 +1,16 @@
+id: 63693ce7-cb9c-4803-9302-40ec6ee17ba8
+name: '@nckrtl/project-tankwerk/detect'
+description: tankwerk detect through its private project extension.
+trigger:
+  schedule: 20 5 * * *
+jobs:
+- name: start
+  steps:
+  - name: detect
+    task:
+      type: model_method
+      modelIdOrName: orbit-gateway
+      methodName: schedule_project
+      inputs:
+        projectId: 26
+        mode: detect

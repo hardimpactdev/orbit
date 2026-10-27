@@ -254,3 +254,63 @@ export async function findingReceipts(
   }
   return [...receipts.values()];
 }
+
+export const SchedulerIssueSchema = z.object({
+  key: z.string(),
+  projectId: z.number().int().positive(),
+  phase: z.enum(["pending", "active", "finding", "admission"]),
+  reason: z.string(),
+  status: z.enum(["open", "resolved"]),
+}).strict();
+export const SchedulerSkipSchema = z.object({
+  key: z.string(),
+  projectId: z.number().int().positive(),
+  mode: z.enum(["routine", "detect"]),
+  blocker: z.string(),
+  reason: z.string(),
+}).strict();
+
+interface SchedulerContext {
+  definition: { name: string };
+  queryData: (predicate: string, select?: string) => Promise<unknown[]>;
+  writeResource: (
+    spec: string,
+    name: string,
+    value: Record<string, unknown>,
+  ) => Promise<{ name: string }>;
+}
+
+/** A bad row remains visible in Swamp data while other rows keep progressing. */
+export async function isolateScheduleRow(
+  context: SchedulerContext,
+  receipt: Pick<ScheduleReceipt, "key" | "projectId">,
+  phase: z.infer<typeof SchedulerIssueSchema>["phase"],
+  action: () => Promise<void>,
+): Promise<boolean> {
+  let reason: string | null = null;
+  try {
+    await action();
+  } catch (error) {
+    reason = error instanceof Error ? error.message : String(error);
+  }
+  const name = `scheduler-issue-${phase}-${receipt.key}`;
+  const previous = (await context.queryData(
+    `modelName == ${JSON.stringify(context.definition.name)} && name == ${
+      JSON.stringify(name)
+    }`,
+    "attributes",
+  ))[0];
+  if (reason !== null || previous) {
+    const next = SchedulerIssueSchema.parse({
+      key: receipt.key,
+      projectId: receipt.projectId,
+      phase,
+      reason: reason ?? (previous as { reason: string }).reason,
+      status: reason === null ? "resolved" : "open",
+    });
+    if (canonical(previous ?? null) !== canonical(next)) {
+      await context.writeResource("schedulerIssue", name, next);
+    }
+  }
+  return reason === null;
+}

@@ -1,0 +1,16 @@
+id: e32f4949-d0d6-43cf-a2cd-dd63980bf7b4
+name: '@nckrtl/project-ditis-hr/routine'
+description: ditis-hr routine through its private project extension.
+trigger:
+  schedule: 30 4 * * 1
+jobs:
+- name: start
+  steps:
+  - name: routine
+    task:
+      type: model_method
+      modelIdOrName: orbit-gateway
+      methodName: schedule_project
+      inputs:
+        projectId: 13
+        mode: routine

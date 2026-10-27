@@ -1,0 +1,16 @@
+id: fb8806b2-b46f-430a-a14c-17ae9430ee3b
+name: '@nckrtl/project-orbit-website/routine'
+description: orbit-website routine through its private project extension.
+trigger:
+  schedule: 40 2 * * 1
+jobs:
+- name: start
+  steps:
+  - name: routine
+    task:
+      type: model_method
+      modelIdOrName: orbit-gateway
+      methodName: schedule_project
+      inputs:
+        projectId: 33
+        mode: routine

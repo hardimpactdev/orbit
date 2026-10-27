@@ -1,0 +1,25 @@
+manifestVersion: 1
+name: "@nckrtl/project-fitta"
+version: 2026.10.27.1
+visibility: private
+license: MIT
+description: fitta maintenance configuration and schedules.
+repository: https://github.com/hardimpactdev/orbit-swamp
+behaviors:
+  - projects/fitta/mod.ts
+include:
+  - _lib/project_extension.ts
+  - _lib/dependency_project_schema.ts
+  - _lib/maintenance/policy_schema.ts
+workflows:
+  - workflow-project-fitta-routine.yaml
+  - workflow-project-fitta-detect.yaml
+additionalFiles:
+  - README.md
+  - LICENSE
+dependencies:
+  - "@nckrtl/composer-maintenance"
+  - "@nckrtl/js-maintenance"
+labels:
+  - project
+  - dependencies

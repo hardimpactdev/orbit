@@ -1,0 +1,16 @@
+id: 442d08dc-f770-4ac6-a958-7cf896d32d51
+name: '@nckrtl/project-tankwerk/routine'
+description: tankwerk routine through its private project extension.
+trigger:
+  schedule: 20 4 * * 1
+jobs:
+- name: start
+  steps:
+  - name: routine
+    task:
+      type: model_method
+      modelIdOrName: orbit-gateway
+      methodName: schedule_project
+      inputs:
+        projectId: 26
+        mode: routine

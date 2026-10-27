@@ -1,3 +1,4 @@
+import { projectConfig } from "../extensions/behaviors/_lib/project_extension.ts";
 import { inputIdentity } from "../extensions/behaviors/_lib/gateway_stage.ts";
 import {
   assert,
@@ -274,4 +275,34 @@ Deno.test("detection cannot reuse a routine stage key with another maintenance m
     dependencyProject: original,
   });
   assert(inputIdentity({ ...args, detection: true }) !== identity);
+});
+
+Deno.test("unchanged config reads reuse the resource and changed config writes one new version", async () => {
+  let saved: Record<string, unknown> | null = null;
+  let versions = 0;
+  const ctx = {
+    readResource: () => Promise.resolve(saved),
+    writeResource: (
+      _spec: string,
+      name: string,
+      value: Record<string, unknown>,
+    ) => {
+      versions++;
+      saved = value;
+      return Promise.resolve({ name });
+    },
+  };
+  await behavior.methods.configuration.execute({}, ctx);
+  assertEquals(versions, 1);
+  assertEquals(await behavior.methods.configuration.execute({}, ctx), {
+    dataHandles: [],
+  });
+  assertEquals(versions, 1);
+  const changed = projectConfig(behavior.type, {
+    ...original,
+    check: "composer verify",
+  });
+  await changed.methods.configuration.execute({}, ctx);
+  assertEquals(versions, 2);
+  assertEquals(saved!.check, "composer verify");
 });

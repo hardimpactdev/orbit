@@ -15,6 +15,7 @@ on:
       - 'workflows/workflow-project-*.yaml'
       - 'workflows/workflow-maintenance-projects.yaml'
       - 'docs/project-extensions.md'
+      - 'docs/maintained-project-extensions.md'
       - 'docs/templates/project-extension/**'
       - 'tests/project_*test.ts'
       - 'tests/fixtures/project-extensions/**'
@@ -48,15 +49,18 @@ jobs:
         with:
           deno-version: v2.9.8
       - name: Check project extension types
-        run: deno check extensions/behaviors/orbit_gateway.ts extensions/behaviors/projects/nckrtl-com/mod.ts
+        run: deno check extensions/behaviors/orbit_gateway.ts extensions/behaviors/projects/*/mod.ts
       - name: Check project extension format and lint
         run: |
-          deno fmt --check extensions/behaviors/_lib/project_extension.ts extensions/behaviors/_lib/project_config.ts extensions/behaviors/_lib/project_schedule.ts extensions/behaviors/projects tests/project_extensions_test.ts tests/project_schedules_test.ts
-          deno lint extensions/behaviors/_lib/project_extension.ts extensions/behaviors/_lib/project_config.ts extensions/behaviors/_lib/project_schedule.ts extensions/behaviors/projects tests/project_extensions_test.ts tests/project_schedules_test.ts
+          deno fmt --check extensions/behaviors/_lib/project_extension.ts extensions/behaviors/_lib/project_config.ts extensions/behaviors/_lib/project_schedule.ts extensions/behaviors/projects tests/project_extensions_test.ts tests/project_schedules_test.ts tests/project_fleet_test.ts
+          deno lint extensions/behaviors/_lib/project_extension.ts extensions/behaviors/_lib/project_config.ts extensions/behaviors/_lib/project_schedule.ts extensions/behaviors/projects tests/project_extensions_test.ts tests/project_schedules_test.ts tests/project_fleet_test.ts
       - name: Test affected contracts (one worker)
         run: >-
           deno test --allow-all
-          tests/project_extensions_test.ts tests/project_schedules_test.ts
+          tests/project_extensions_test.ts tests/project_schedules_test.ts tests/project_fleet_test.ts
           tests/dependency_projects_test.ts tests/routine_stage_test.ts
           tests/package_stage_test.ts tests/maintenance_worker_test.ts
           tests/maintenance_resources_test.ts
+      - name: State native routing coverage
+        run: >-
+          echo "::notice::The three native Swamp factory routing tests run locally, not in this job. CI has no Swamp CLI install or registry credentials. See docs/project-extensions.md for prerequisites and PR results."
