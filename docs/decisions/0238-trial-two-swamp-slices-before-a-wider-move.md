@@ -1,7 +1,7 @@
 ---
 title: "ADR 0238: Trial two Swamp slices before a wider move"
 sidebarTitle: "0238 Swamp slice trials"
-description: "Proposed. Measure automatic production deploy policy and the tool command group in Swamp before moving more Orbit work."
+description: "In progress. Measure automatic production deploy policy and the tool command group in Swamp before moving more Orbit work."
 ---
 
 # ADR 0238: Trial two Swamp slices before a wider move
@@ -10,15 +10,15 @@ Trial automatic production deploy policy and the `tool` command group in [orbit-
 
 ## Status
 
-Proposed.
+In progress.
 
 Principle: [Lean](/mission#principles). Move work only when measured savings justify its cost. The trial proposes a narrow exception to [One way, one name](/mission#principles): Swamp owns these two slices while the Gateway operation engine and agent runner keep their other users. Each migrated behavior has one active owner. There is no runtime fallback or duplicate writer.
 
-The thresholds below are proposals for Nick. This record authorizes no implementation or live rollout. The current [deployment](/reference/deployments), [Tool](/reference/tools), and [Node command](/reference/node-agent#commands) contracts remain in force until a slice ships.
+The trial needs Nick's acceptance of the thresholds below before any porting starts. This record authorizes no implementation or live rollout. The current [deployment](/reference/deployments), [Tool](/reference/tools), and [Node command](/reference/node-agent#commands) contracts remain in force until a slice ships.
 
 ## Context
 
-The goal is less Orbit code and less Orbit CI time, with the same features. A hard dependency on Swamp is accepted. Use Swamp's defaults: Deno, the official `@swamp-club/swamp-testing` kit, and `@swamp/software-factory` without a fork. If Swamp leaves Deno, follow Swamp. Do not build an Orbit workflow wrapper or a second test framework.
+The goal is less Orbit code and less Orbit CI time, with the same features. A hard dependency on Swamp is accepted. Use Swamp's defaults: Deno, the official `@swamp-club/swamp-testing` kit, and `@swamp/software-factory` without a fork. Do not build an Orbit workflow wrapper or a second test framework.
 
 A read-only study at Orbit commit `46afd964c4557140c9dae18ae6949eb349a46b70` found the move viable in part. These are estimates from that study, not measurements of the trials:
 
@@ -30,6 +30,8 @@ A read-only study at Orbit commit `46afd964c4557140c9dae18ae6949eb349a46b70` fou
 Most potential CI savings depend on Rust agent delivery builds. Moving tests alone does not remove those builds. A moved command can still leave shared code and dependencies behind.
 
 The main risks are a write whose outcome is unknown after a worker drops, loss of live output, and loss of locks or authorization. The pinned Swamp studied returns console output with the final result. That alone cannot replace live deploy output. Record the exact Swamp version and package pins when each trial starts; remeasure after an upstream change.
+
+Swamp runs on Deno, whose team [joined Cloudflare](https://deno.com/blog/cloudflare). Monthly bug and security releases continue until about October 2027, then official runtime development ends. Orbit follows Swamp's runtime choice; if Swamp moves off Deno, the slices' extensions and tests migrate with it.
 
 ## Decision
 
@@ -230,4 +232,4 @@ The trials also affect `apps/agent` and hardimpactdev/orbit-swamp. This proposal
 - Components: apps/docs, apps/gateway, apps/cli, apps/web, packages/php-sdk
 - ADRs: limits [0209](/decisions/0209-run-long-operations-as-durable-queued-operations), [0218](/decisions/0218-take-long-commands-off-the-request-path), and [0229](/decisions/0229-let-an-orchestrator-drive-task-work-through-gateway-operations) for the two trials; supersedes none.
 - Detail: [Automatic deployments](/reference/deployments#automatic-deployments), [Tools](/reference/tools), [Node commands](/reference/node-agent#commands), and [Operations](/reference/operations).
-- Verify: the frozen parity cases; official-kit Deno tests against the replaced Rust/Pest cases; disposable worker-loss, cancellation, authorization, and shared-lock checks; the live windows and before/after CI comparison above. For this docs-only proposal: `composer docs-build`, `composer docs-lint`, `composer docs-nav`, `npx mint validate`, and `npx mint broken-links`. The existing lifecycle lint requires `In progress.`; this record keeps the requested `Proposed.` status.
+- Verify: the frozen parity cases; official-kit Deno tests against the replaced Rust/Pest cases; disposable worker-loss, cancellation, authorization, and shared-lock checks; the live windows and before/after CI comparison above. For this docs-only proposal: `composer docs-build`, `composer docs-lint`, `composer docs-nav`, `npx mint validate`, and `npx mint broken-links`.
