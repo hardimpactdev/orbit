@@ -19,6 +19,7 @@ export function fixture() {
   let starts = 0;
   let loseStart = false;
   let mismatch = false;
+  let createStatus = 201, createAttempts = 0;
   const server = Deno.serve(
     { hostname: "127.0.0.1", port: 0, onListen() {} },
     async (req) => {
@@ -37,6 +38,12 @@ export function fixture() {
         url.pathname === "/api/v1/task-groups" && req.method === "GET"
       ) return json([...groups.values()]);
       if (url.pathname === "/api/v1/task-groups" && req.method === "POST") {
+        createAttempts++;
+        if (createStatus !== 201) {
+          return Response.json({ error: { code: "validation.failed" } }, {
+            status: createStatus,
+          });
+        }
         const body = await req.json();
         if (!taskInputs.safeParse(body.tasks).success) {
           return Response.json({ error: { code: "validation.failed" } }, {
@@ -167,6 +174,10 @@ export function fixture() {
     groups,
     close: () => server.shutdown(),
     posts: () => posts,
+    createAttempts: () => createAttempts,
+    createStatus: (status: number) => {
+      createStatus = status;
+    },
     starts: () => starts,
     loseStart: () => {
       loseStart = true;

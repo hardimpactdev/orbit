@@ -1,4 +1,4 @@
-import { AdmissionSchema, reserveMaintenance, orderProjects, type Admission, type AdmissionIntent } from "./_lib/project_admission.ts";
+import { AdmissionSchema, reconcileAdmissions, reserveMaintenance, orderProjects, type Admission, type AdmissionIntent } from "./_lib/project_admission.ts";
 import { project as horizonProject } from "./projects/horizon-new-dawn/config.ts";
 import { cleanedCancelledGroup, ensureProjectGroup, projectFindings, batchReceipt, FindingsSchema, isolateScheduleRow, scheduleReceipt, ScheduleReceiptSchema, SchedulerIssueSchema, SchedulerSkipSchema, type ScheduleReceipt } from "./_lib/project_schedule.ts";
 import { runMaintenance, reconcileWorkers, workerControl, type MaintenanceContext } from "./_lib/swamp_maintenance.ts";
@@ -81,7 +81,7 @@ export function curlHttp(g: Pick<GlobalArgs, "gatewayUrl" | "caFile" | "timeoutS
 
 export const behavior = {
   type: "@nckrtl/orbit-gateway",
-  version: "2026.10.27.4",
+  version: "2026.10.27.5",
   globalArguments: GlobalArgsSchema,
   resources: {
     schedule: {
@@ -454,6 +454,22 @@ async function projectWork(context: StageContext) {
       detect: [],
       package: [],
     };
+  await reconcileAdmissions({
+    admissions: (await context.queryData(
+      `modelName == ${JSON.stringify(context.definition.name)} && name.startsWith("admission-")`,
+      "attributes",
+    )).map(a => AdmissionSchema.parse(a)),
+    receipts: await scheduleRows(context),
+    http: store.http,
+    save: async a => {
+      await context.writeResource("admission", `admission-${a.key}`, a);
+    },
+    saveReceipt: store.save,
+    assistance: async (a, reason) => {
+      await isolateScheduleRow(context, a, "admission", () =>
+        reason === null ? Promise.resolve() : Promise.reject(new Error(reason)));
+    },
+  });
   const rows = await scheduleRows(context);
   const previous =
     (await context.queryData(
@@ -615,6 +631,7 @@ async function projectWork(context: StageContext) {
         workItem: receipt.workItem,
       });
       if (!claim.admitted) {
+        if (claim.admission?.released) await store.save({ ...receipt, completed: true });
         return;
       }
       receipt = await ensureProjectGroup(receipt, store);

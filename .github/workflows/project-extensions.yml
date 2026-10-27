@@ -60,12 +60,12 @@ jobs:
         run: deno check extensions/behaviors/orbit_gateway.ts extensions/behaviors/projects/*/mod.ts
       - name: Check project extension format and lint
         run: |
-          deno fmt --check extensions/behaviors/_lib/project_extension.ts extensions/behaviors/_lib/project_config.ts extensions/behaviors/_lib/project_schedule.ts extensions/behaviors/projects tests/project_extensions_test.ts tests/project_schedules_test.ts tests/project_fleet_test.ts tests/project_deliverables_test.ts tests/project_detect_progress_test.ts tests/project_detect_completion_test.ts tests/project_batches_test.ts tests/_support/task_contract.ts tests/_support/project_scheduler.ts
-          deno lint extensions/behaviors/_lib/project_extension.ts extensions/behaviors/_lib/project_config.ts extensions/behaviors/_lib/project_schedule.ts extensions/behaviors/projects tests/project_extensions_test.ts tests/project_schedules_test.ts tests/project_fleet_test.ts tests/project_deliverables_test.ts tests/project_detect_progress_test.ts tests/project_detect_completion_test.ts tests/project_batches_test.ts tests/_support/task_contract.ts tests/_support/project_scheduler.ts
+          deno fmt --check extensions/behaviors/_lib/project_admission.ts extensions/behaviors/_lib/project_extension.ts extensions/behaviors/_lib/project_config.ts extensions/behaviors/_lib/project_schedule.ts extensions/behaviors/projects tests/project_extensions_test.ts tests/project_schedules_test.ts tests/project_fleet_test.ts tests/project_deliverables_test.ts tests/project_detect_progress_test.ts tests/project_detect_completion_test.ts tests/project_batches_test.ts tests/project_admission_test.ts tests/_support/task_contract.ts tests/_support/project_scheduler.ts
+          deno lint extensions/behaviors/_lib/project_admission.ts extensions/behaviors/_lib/project_extension.ts extensions/behaviors/_lib/project_config.ts extensions/behaviors/_lib/project_schedule.ts extensions/behaviors/projects tests/project_extensions_test.ts tests/project_schedules_test.ts tests/project_fleet_test.ts tests/project_deliverables_test.ts tests/project_detect_progress_test.ts tests/project_detect_completion_test.ts tests/project_batches_test.ts tests/project_admission_test.ts tests/_support/task_contract.ts tests/_support/project_scheduler.ts
       - name: Test affected contracts (one worker)
         run: >-
           deno test --allow-all
-          tests/project_extensions_test.ts tests/project_schedules_test.ts tests/project_fleet_test.ts tests/project_deliverables_test.ts tests/project_detect_progress_test.ts tests/project_detect_completion_test.ts tests/project_batches_test.ts
+          tests/project_extensions_test.ts tests/project_schedules_test.ts tests/project_fleet_test.ts tests/project_deliverables_test.ts tests/project_detect_progress_test.ts tests/project_detect_completion_test.ts tests/project_batches_test.ts tests/project_admission_test.ts
           tests/dependency_projects_test.ts tests/routine_stage_test.ts
           tests/package_stage_test.ts tests/maintenance_worker_test.ts
           tests/maintenance_resources_test.ts

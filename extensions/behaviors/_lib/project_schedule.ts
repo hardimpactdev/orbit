@@ -39,6 +39,37 @@ export function scheduleKey(
   return `${project}-${mode}-${day.toISOString().slice(0, 10)}`;
 }
 
+/** Exact saved-request reconciliation is shared by create retries and reservation expiry. */
+export async function findScheduledGroup(
+  receipt: ScheduleReceipt,
+  http: Http,
+): Promise<string | null> {
+  const response = await http(
+    "GET",
+    `/api/v1/task-groups?project_id=${receipt.projectId}`,
+  );
+  if (response.status !== 200 || !Array.isArray(response.body?.data)) {
+    throw new Error(
+      "cannot reconcile scheduled group creation: Orbit evidence is unreadable; slot retained",
+    );
+  }
+  const matches = (response.body.data as Record<string, unknown>[]).filter(
+    (g) =>
+      g.project_id === receipt.projectId && g.brief === receipt.request.brief &&
+      g.orchestration === "external",
+  );
+  if (!matches.length) return null;
+  if (
+    matches.length !== 1 || !Number.isSafeInteger(matches[0].id) ||
+    Number(matches[0].id) <= 0
+  ) {
+    throw new Error(
+      `scheduled group ${receipt.key} has an uncertain create: matching Orbit groups are ambiguous; slot retained`,
+    );
+  }
+  return `tg-${matches[0].id}`;
+}
+
 /** Group creation is not keyed at the Gateway: never resend an uncertain POST. */
 export async function ensureProjectGroup(
   desired: ScheduleReceipt,
@@ -56,28 +87,13 @@ export async function ensureProjectGroup(
   receipt ??= desired;
   if (receipt.workItem) return receipt;
   if (receipt.attempted) {
-    const response = await store.http(
-      "GET",
-      `/api/v1/task-groups?project_id=${receipt.projectId}`,
-    );
-    if (response.status !== 200 || !Array.isArray(response.body?.data)) {
-      throw new Error("cannot reconcile scheduled group creation");
-    }
-    const matches = (response.body.data as Record<string, unknown>[]).filter((
-      g,
-    ) =>
-      g.project_id === receipt!.projectId &&
-      g.brief === receipt!.request.brief && g.orchestration === "external"
-    );
-    if (
-      matches.length !== 1 || !Number.isSafeInteger(matches[0].id) ||
-      Number(matches[0].id) <= 0
-    ) {
+    const workItem = await findScheduledGroup(receipt, store.http);
+    if (!workItem) {
       throw new Error(
         `scheduled group ${receipt.key} has an uncertain create; reconcile its saved request before retrying`,
       );
     }
-    receipt = { ...receipt, workItem: `tg-${matches[0].id}` };
+    receipt = { ...receipt, workItem };
     await store.save(receipt);
     return receipt;
   }
