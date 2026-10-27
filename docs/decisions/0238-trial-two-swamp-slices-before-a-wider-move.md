@@ -31,7 +31,7 @@ Most potential CI savings depend on Rust agent delivery builds. Moving tests alo
 
 The main risks are a write whose outcome is unknown after a worker drops, loss of live output, and loss of locks or authorization. The pinned Swamp studied returns console output with the final result. That alone cannot replace live deploy output. Record the exact Swamp version and package pins when each trial starts; remeasure after an upstream change.
 
-Swamp runs on Deno, whose team [joined Cloudflare](https://deno.com/blog/cloudflare). Monthly bug and security releases continue until about October 2027, then official runtime development ends. Orbit follows Swamp's runtime choice; if Swamp moves off Deno, the slices' extensions and tests migrate with it.
+Swamp runs on Deno, whose team [joined Cloudflare](https://deno.com/blog/cloudflare). Monthly bug and security releases continue until about October 2027, then official runtime development ends. Orbit follows Swamp's runtime choice; if Swamp moves off Deno, the slices' extensions and tests migrate with it. On 2026-10-23, a Swamp team member said in the Swamp Discord that extensions will not need a rewrite into another language because "plenty of runtimes" can run TypeScript, which lowers the migration risk to runtime-specific APIs such as `Deno.*` calls rather than a language rewrite.
 
 ## Decision
 
