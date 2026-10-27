@@ -3910,7 +3910,7 @@ export interface paths {
         };
         /**
          * Show task insights
-         * @description Returns task delivery numbers for the tasks that ended in the last `period` (`7d` or `30d`, default `30d`) and the period before it, optionally for one `project_id`: tokens and cost per merged pull request, lead time and its parts, yield, first-pass shares, wasted tokens, review, handoff, question, and cache numbers. It also returns 12 weekly values with the verified Gateway releases, daily outcomes, and breakdowns by model, Project, and release. The web task board reads it; there is no CLI command. Returns `extension.disabled` while the extension is off. See /reference/tasks#task-insights.
+         * @description Returns task delivery numbers for the tasks that ended in the last `period` (`7d` or `30d`, default `30d`) and the period before it, optionally for one `project_id`: tokens and cost per merged pull request, lead time and its parts, yield, first-pass shares, wasted tokens, review, handoff, question, and cache numbers. It also returns 12 weekly values, daily outcomes, and breakdowns by model, Project, and release. The web task board reads it; there is no CLI command. Returns `extension.disabled` while the extension is off. See /reference/tasks#task-insights.
          */
         get: operations["tasks-insights"];
         put?: never;
@@ -5328,7 +5328,6 @@ export interface components {
             previous?: components["schemas"]["TaskInsightsSummary"];
             weekly?: components["schemas"]["TaskInsightsWeek"][];
             daily?: components["schemas"]["TaskInsightsDay"][];
-            releases?: components["schemas"]["TaskInsightsRelease"][];
             breakdowns?: components["schemas"]["TaskInsightsBreakdowns"];
         };
         TaskInsightsSummary: {
@@ -5366,10 +5365,6 @@ export interface components {
             date?: string;
             merged?: number;
             not_merged?: number;
-        };
-        TaskInsightsRelease: {
-            sha?: string;
-            started_at?: string;
         };
         TaskInsightsBreakdowns: {
             model?: components["schemas"]["TaskInsightsBreakdownRow"][];

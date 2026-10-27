@@ -198,13 +198,13 @@ it('filters by Project and breaks the period down by model, Project, and release
     $filtered = $this->getJson('/api/v1/task-insights?project_id='.$this->project->id)->assertOk()->json('data');
     $all = $this->getJson('/api/v1/task-insights')->assertOk()->json('data.breakdowns.project');
 
-    expect($filtered['current'])->toMatchArray(['tasks' => 2, 'merged' => 1])
+    expect($filtered)->not->toHaveKey('releases')
+        ->and($filtered['current'])->toMatchArray(['tasks' => 2, 'merged' => 1])
         ->and(array_column($filtered['breakdowns']['model'], 'key'))->toBe(['model-a', 'model-b'])
         ->and($filtered['breakdowns']['release'])->toBe([
             ['key' => 'aaaaaaaaaaaa', 'label' => 'aaaaaaa', 'tasks' => 1, 'merged' => 1, 'tokens_per_merged_pr' => 1_000, 'lead_time_ms' => null, 'yield' => 1],
             ['key' => 'bbbbbbbbbbbb', 'label' => 'bbbbbbb', 'tasks' => 1, 'merged' => 0, 'tokens_per_merged_pr' => null, 'lead_time_ms' => null, 'yield' => 0],
         ])
-        ->and(array_column($filtered['releases'], 'sha'))->toBe(['aaaaaaaaaaaa', 'bbbbbbbbbbbb'])
         ->and(array_column($all, 'label'))->toBe(['INS', 'OTH']);
 });
 

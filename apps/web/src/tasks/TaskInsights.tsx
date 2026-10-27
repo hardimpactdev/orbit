@@ -270,7 +270,7 @@ export function TaskInsightsStrip() {
                     {expanded && data !== undefined && (
                         <div data-testid="insights-details" className="mt-[12px] space-y-[12px]">
                             <div className="grid grid-cols-1 gap-[16px] lg:grid-cols-2">
-                                <WeeklyTrend weeks={data.weekly} releases={data.releases} />
+                                <WeeklyTrend weeks={data.weekly} />
                                 <DailyOutcomes days={data.daily} />
                             </div>
                             <LeadTimeBar summary={now} />

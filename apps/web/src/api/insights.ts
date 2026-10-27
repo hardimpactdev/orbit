@@ -12,7 +12,6 @@ export type InsightsSummary = Omit<
 };
 export type InsightsWeek = Required<Schemas["TaskInsightsWeek"]>;
 export type InsightsDay = Required<Schemas["TaskInsightsDay"]>;
-export type InsightsRelease = Required<Schemas["TaskInsightsRelease"]>;
 export type InsightsBreakdownRow = Required<Schemas["TaskInsightsBreakdownRow"]>;
 export type InsightsDimension = "model" | "project" | "release";
 export type TaskInsights = {
@@ -23,7 +22,6 @@ export type TaskInsights = {
     previous: InsightsSummary;
     weekly: InsightsWeek[];
     daily: InsightsDay[];
-    releases: InsightsRelease[];
     breakdowns: Record<InsightsDimension, InsightsBreakdownRow[]>;
 };
 

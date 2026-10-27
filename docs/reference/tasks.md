@@ -2010,15 +2010,14 @@ A replaced implementer thread is one whose subtask has a newer implementer threa
 The response also holds:
 
 - `weekly`: `tokens_per_merged_pr`, `tasks`, and `merged` for each of the last 12 weeks, whatever the period.
-- `releases`: each verified [Gateway release](/reference/gateway-recovery) that began in those 12 weeks, with its commit and `started_at`. The chart marks each one on the trend.
 - `daily`: merged and not merged tasks for each day of the period.
-- `breakdowns`: `tasks`, `merged`, `tokens_per_merged_pr`, `lead_time_ms`, and `yield` for each implementer model, each Project, and each Gateway release. A task belongs to the last verified release that began before the task's `started_at`.
+- `breakdowns`: `tasks`, `merged`, `tokens_per_merged_pr`, `lead_time_ms`, and `yield` for each implementer model, each Project, and each [Gateway release](/reference/gateway-recovery). A task belongs to the last verified release that began before the task's `started_at`.
 
 ### On the board
 
 The strip shows tokens per merged PR with its cost, lead time, yield, first-pass pull requests, and wasted tokens. Each shows its change against the previous period, green when better and red when worse. Fewer tokens, a shorter lead time, and less waste are better. A higher yield and first-pass share are better. The strip has a 7-day and 30-day switch and a Project filter.
 
-**More** opens the rest: the weekly trend with release marks, the daily outcomes, the lead time split into queue, work, and merge wait, the other numbers above, and the breakdown table. The browser remembers whether the strip is open. The strip shows on the Tasks board only, not on an Instance's board.
+**More** opens the rest: the weekly trend, the daily outcomes, the lead time split into queue, work, and merge wait, the other numbers above, and the breakdown table. The browser remembers whether the strip is open. The strip shows on the Tasks board only, not on an Instance's board.
 
 ## Agent viewer
 
@@ -2486,7 +2485,9 @@ A task stores its own lifecycle times. `updated_at` moves on any write, and the 
 
 `merged_at` is GitHub's merge time, read when Orbit confirms the merge. `merge_status` is set only when Orbit merges, so it misses a pull request that a person merged. Counting merges from GitHub's answer covers both.
 
-A release is placed by the time its record was created. The record changes after verification, so `updated_at` would move a release mark.
+A task's release is found by the time each release record was created. The record changes after verification, so `updated_at` would move a task to a later release.
+
+The weekly trend marks no releases. Automatic releases ship many times a day, so marks would cover the line. The release breakdown compares them instead.
 
 Tokens are summed from the threads, not from the task `tokens`. The task total leaves out an implementer thread that a later thread replaced, and those tokens are exactly the waste the insights must show.
 

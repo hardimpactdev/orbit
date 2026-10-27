@@ -8,7 +8,6 @@ use App\Data\Tasks\TaskInsightsBreakdownRowData;
 use App\Data\Tasks\TaskInsightsBreakdownsData;
 use App\Data\Tasks\TaskInsightsData;
 use App\Data\Tasks\TaskInsightsDayData;
-use App\Data\Tasks\TaskInsightsReleaseData;
 use App\Data\Tasks\TaskInsightsSummaryData;
 use App\Data\Tasks\TaskInsightsWeekData;
 use App\Models\AgentThread;
@@ -70,12 +69,6 @@ final class TaskInsights
 
                 return new TaskInsightsDayData($start->toDateString(), $this->mergedCount($ended), count($ended) - $this->mergedCount($ended));
             }, range(0, $days - 1)),
-            releases: array_values(array_filter(array_map(
-                static fn (GatewayRelease $release): ?TaskInsightsReleaseData => $release->sha !== null && $release->created_at?->gte($trendFrom) === true
-                    ? new TaskInsightsReleaseData($release->sha, $release->created_at->toIso8601String())
-                    : null,
-                $releases->all(),
-            ))),
             breakdowns: new TaskInsightsBreakdownsData(
                 model: $this->breakdown($current, 'model'),
                 project: $this->breakdown($current, 'project'),
