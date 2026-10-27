@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: "@nckrtl/js-maintenance"
-version: 2026.10.27.1
+version: 2026.10.27.2
 visibility: private
 license: MIT
 description: npm, Bun, Vite+, and Expo updates, advisory detection, and dependency PR descriptions.
@@ -8,6 +8,8 @@ repository: https://github.com/hardimpactdev/orbit-swamp
 behaviors:
   - js-maintenance/mod.ts
 include:
+  - js-maintenance/_lib/batch.ts
+  - _lib/maintenance/batch.ts
   - _lib/maintenance/snapshot.ts
   - js-maintenance/_lib/workspace.ts
   - js-maintenance/_lib/reports.ts

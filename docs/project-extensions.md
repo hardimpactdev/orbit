@@ -55,40 +55,51 @@ IDs are created by Swamp and remain stable.
 
 ## Schedules and shared work
 
-A weekly routine starts one external group with one child and starts the
-existing `dependency-routine` factory. The dependency drivers reserve
-nested-call capacity with `maxCallsPerTick: 60`. The shared schedule tick
-rotates four active groups at a time, so parked work cannot starve other
-projects. Detection ticks take up to three guarded steps per selected group.
-This lets a ready provision result be recorded, its transition taken, and the
-worker start requested in the same visit. A running operation still ends that
-visit immediately. The driver retains its call budget and defers remaining
-work when needed. With nineteen groups, the four-group rotation visits each
-about every five minutes; one step per visit used to leave ready VMs idle
-across several rotations before worker startup.
+A weekly routine records one intent. Shared admission reserves capacity before
+creating one external group with one child and starting the
+existing `dependency-routine` factory. Independent native group workflows advance
+each admitted factory run; the minute admission workflow only reconciles schedule
+receipts and findings. The shared reservation cap limits new maintenance VMs,
+not the advancement of existing work. See [per-group workflows](per-group-workflows.md).
 
 A daily detection run uses a separate instance of the official
-factory: provision, detect on the task worker, check, finish without a PR.
+factory: provision, detect on the task worker, finish without a PR.
 Detection failures or a changed checkout park for assistance. Detection never
 starts a repair turn or publishes changes.
 
+Detection installs no dependencies and never invokes Gateway handoff checks.
+Orbit's external-task contract permits completing a child without a handoff
+check; its handoff operation always runs the configured Project check, even
+when a child declares only review deliverables. The detect finish stage instead
+requires a successful worker scan, one report per configured ecosystem, an
+unchanged HEAD and tree, the matching open child, and no assistance or PR. It
+completes that child and uses the existing group completion and worker cleanup.
+The shared stage client refuses check, repair, turn and publish stages for detect.
+
+Existing detect groups created with `project-check` and failed handoff jobs do
+not migrate on deployment. Preserve their scan reports, then have the operator
+cancel them before a replacement scan. Do not reset failed checks, rewrite
+running deliverables or invent a passing handoff receipt.
+
+
 Every generated child declares typed deliverables in shared `project_schedule.ts`:
 
-- `project-check` is a command deliverable. It runs the configured `check` from
-  the repository root (`directory: .`), without a failing-on-base requirement.
+- Routine and package children have a `project-check` command deliverable. It
+  runs the configured `check` from the repository root (`directory: .`), without
+  a failing-on-base requirement. Detection has no command or file deliverable.
 - A review deliverable records workflow and worker evidence, the Gateway check,
-  the PR or no-change result, and worker departure. Detection records its reports
-  and confirms the checkout stayed unchanged instead of requesting a PR.
+  the PR or no-change result, and worker departure. Detection records successful
+  scan reports and matching checkout snapshots instead of a project check or PR.
 - Each package child also declares `dependency-lock`, a file deliverable with
-  `change: modified` in the detected path: `composer.lock` for Composer, or
+  `change: modified` across the selected paths: `composer.lock` for Composer, or
   `{bun.lock,package-lock.json,npm-shrinkwrap.json,pnpm-lock.yaml}` for JavaScript. The latter is Orbit's supported
   glob alternative for the lockfiles recognized by dependency inventory.
   Ecosystem maintenance still owns package-manager admission.
 
 Routine runs may finish with no changes, and detection is read-only, so neither
 requires a file diff. Package work requires its selected lockfile to change.
-These lists stay below Orbit's five-deliverable limit and apply to major and
-advisory children, including advisory tasks that await a selected fixed version.
+These lists stay below Orbit's five-deliverable limit and apply to the single
+batch child. Findings without an eligible target have no Orbit child.
 The Gateway validates existing file paths against the repository base.
 
 Orbit allows empty deliverables in backlog but refuses the move to todo with
@@ -98,8 +109,8 @@ The scheduler Gateway fixture now enforces typed request shapes and this todo
 guard. Its regression tests create generated groups, move them to todo, and
 prove the former empty child is rejected without changing group status.
 
-A shared minute tick advances scheduled work with the existing Orbit driver. It
-records schedule receipts in Swamp data. Repeated ticks reuse the group and
+A shared minute workflow reconciles schedule receipts and admits work. Independent
+group workflows advance the official factory runs. Schedule receipts stay in Swamp data. Repeated ticks reuse the group and
 factory run. Group creation has no Gateway idempotency contract: save intent
 before POST, reconcile a lost reply by the exact saved group brief, and never
 repeat an uncertain create. Preserve operator and safety assistance. A cancelled
@@ -108,22 +119,11 @@ is clear, and its VM is destroyed or was never allocated. This also applies
 while the official factory still reports provision as active. Keep the factory
 history, stop driving the cancelled work, and allow the next detection slot.
 
-Successful detection creates one ordinary external package group per path,
-ecosystem and major/advisory finding. Repeated scans reuse an unresolved
-finding. Each task contains the detection evidence and project policy. A major
-with a stable detected version can enter `dependency-package`; security findings
-without a verified fixed version remain backlog tasks for explicit target
-selection. Never invent a fixed version or weaken policy. Package runs retain
-the existing per-project sequence: the previous package must merge and complete,
-or be cancelled, cleaned up and acknowledged, before the next is admitted. The
-package extension still verifies advisories after applying a selected version.
-
-The weekly entry defaults to Monday 02:00 UTC, detection to daily 03:00 UTC.
-Swamp's schedule pause/resume and trigger override commands control activation.
-Deploy only after reconciling active work. Do not change an in-flight group's
-resolved config or worker enrollment. The orchestrator reviews, merges and runs
-`bin/deploy-services` from Nick's Mac; implementation threads never deploy or
-merge.
+Successful detection saves one project findings document with eligible batch
+selections and blocked reasons. It creates no package groups. Shared admission
+reserves one of four maintenance VM places before creating one batch group per
+project, with security priority and fair project rotation. Routine and detect
+intents share the same budget. See [project batches](website-packages.md).
 
 ## Acceptance and rollout
 

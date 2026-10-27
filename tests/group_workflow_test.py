@@ -165,8 +165,8 @@ class GroupWorkflowTest(unittest.TestCase):
                 # Both manual entry points must join the scheduled group owner.
                 command("workflow", "run", "dependency-routine", "--server", url, "--input", "workItem=tg-8")
                 command("workflow", "run", "dependency-package", "--server", url, "--stdin", body={
-                    "workItem": "tg-8", "manager": "composer", "package": "fixture/package",
-                    "version": "2.0.0", "purpose": "major"})
+                    "workItem": "tg-8", "targets": [{"manager": "composer", "package": "fixture/package",
+                    "version": "2.0.0", "purpose": "major"}]})
                 self.assertEqual(latest("orbit-group-tg-8", "owner"), owners[8])
                 self.assertEqual(latest("fixture-tg-8", "starts")["count"], 1)
                 # Duplicate requests for the same generation admit no second owner.

@@ -18,6 +18,12 @@ class MaintenanceWorkflowTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="maintenance-workflow-") as temp:
             root = Path(temp)
             shutil.copytree(REPO / "extensions", root / "extensions")
+            # Replace only public registry metadata in this disposable fixture.
+            batch_module = root / "extensions/behaviors/composer-maintenance/_lib/batch.ts"
+            source = batch_module.read_text()
+            start, end = source.index("export async function releases("), source.index("function select(")
+            batch_module.write_text(source[:start] + "export async function releases(_c: {package:string}) { return ['2.0.0','2.0.1','2.0.2'].map(version=>({version,publishedAt:'2020-01-01T00:00:00Z'})); }\n" + source[end:])
+
             (root / "workflows").mkdir()
             shutil.copyfile(REPO / "workflows/workflow-maintenance-worker.yaml",
                             root / "workflows/workflow-maintenance-worker.yaml")
@@ -206,9 +212,10 @@ else:sys.exit(64)
                     common = {"cwd": str(work), "paths": ["."], "policy": {".": {"minimumReleaseAgeDays": 7}}, "captureFailure": True}
 
                     def run(mode, number, **extra):
-                        inputs = dict(key=f"tg-7.script.c{number}", name=f"tg-7-script-c{number}", group="7", worker="task-group-7-1", cwd=str(work), mode=mode, method=mode, composerPaths=["."], jsPaths=["."], composer=dict(common, **extra), js=common, composerCommon=common, jsCommon=dict(common, paths=[]), summary=dict(common, base=base))
+                        inputs = dict(key=f"tg-7.script.c{number}", name=f"tg-7-script-c{number}", group="7", worker="task-group-7-1", cwd=str(work), mode=mode, method="batch" if mode == "package" else mode, composerPaths=["."], jsPaths=["."], composer=dict(common, **extra), js=common, composerCommon=common, jsCommon=dict(common, paths=[]), summary=dict(common, base=base))
                         if mode == "package":
                             inputs["jsPaths"] = []
+                            inputs["composer"] = dict(common, targets=[dict(path=extra.get("path", "."),manager="composer",package=extra["package"],version=extra["version"],purpose=extra["purpose"],advisories=extra.get("advisoryIds", []),advisoryUrls=["https://example.test/advisory" for _ in extra.get("advisoryIds", [])])])
                         output = json.loads(command("swamp", "workflow", "run", "maintenance-worker", "--server", url, "--stdin", "--json", stdin=json.dumps(inputs)))
                         history = json.loads(command("swamp", "workflow", "history", "get", output["id"], "--server", url, "--json"))
                         self.assertEqual(history["status"], "succeeded")
@@ -223,8 +230,10 @@ else:sys.exit(64)
                     detect = run("detect", 2)
                     self.assertEqual(detect["composer"]["detection"]["candidates"], [])
                     self.assertEqual(detect["js"]["detection"]["candidates"], [])
+                    self.assertEqual(detect["composer_plan"]["plan"]["targets"], [])
+                    self.assertEqual(detect["js_plan"]["plan"]["targets"], [])
                     package = run("package", 3, path=".", package="vendor/pkg", version="2.0.0", purpose="major", advisoryIds=[])
-                    self.assertEqual(package["composer"]["package"]["version"], "2.0.0")
+                    self.assertEqual(package["composer"]["batch"]["targets"][0]["version"], "2.0.0")
                     self.assertEqual(package["composer_detect"]["detection"]["candidates"], [])
                     summary = run("summary", 4)
                     self.assertIn("vendor/pkg", summary["summary"]["summary"]["text"])
@@ -232,15 +241,13 @@ else:sys.exit(64)
                     (work / "security-target").write_text("2.0.1")
                     common["exceptions"] = {"schema": 1, "exceptions": []}
                     security = run("package", 6, path=".", package="vendor/pkg", version="2.0.1", purpose="security", advisoryIds=["PKSA-fixture-one"])
-                    recorded = security["composer"]["exceptions"]
-                    self.assertEqual(recorded["exceptions"][0]["package"], "vendor/pkg")
-                    self.assertEqual(recorded["exceptions"][0]["days"], 7)
+                    self.assertNotIn("exceptions", security["composer"], "batch fixes never bypass release-age policy")
+                    self.assertEqual(json.loads((work / "vet.json").read_text()), {"minimum-release-age": 7})
                     self.assertFalse((work / "maintainer-exceptions.json").exists())
-                    common["exceptions"] = recorded
                     (work / "security-target").write_text("2.0.2")
                     (work / "fail-security-update").touch()
                     failed_security = run("package", 7, path=".", package="vendor/pkg", version="2.0.2", purpose="security", advisoryIds=["PKSA-fixture-one"])
-                    self.assertEqual(failed_security["composer"]["exceptions"], recorded)
+                    self.assertNotIn("exceptions", failed_security["composer"])
                     self.assertEqual(failed_security["composer"]["failure"]["exitCode"], 23)
                     self.assertFalse((work / "maintainer-exceptions.json").exists())
                     (work / "fail").touch()

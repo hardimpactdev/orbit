@@ -5,12 +5,14 @@ on:
     paths:
       - 'extensions/behaviors/composer-maintenance/**'
       - 'extensions/behaviors/_lib/maintenance/**'
+      - 'tests/batch_maintenance_test.ts'
       - '.github/workflows/composer-maintenance.yml'
   push:
     branches: [main]
     paths:
       - 'extensions/behaviors/composer-maintenance/**'
       - 'extensions/behaviors/_lib/maintenance/**'
+      - 'tests/batch_maintenance_test.ts'
       - '.github/workflows/composer-maintenance.yml'
 
 permissions:
@@ -39,4 +41,4 @@ jobs:
       - name: Lint extension
         run: deno lint extensions/behaviors/composer-maintenance extensions/behaviors/_lib/maintenance
       - name: Test Composer maintenance (one worker)
-        run: deno test --allow-all extensions/behaviors/composer-maintenance/mod_test.ts tests/lib_test.ts
+        run: deno test --allow-all extensions/behaviors/composer-maintenance/mod_test.ts tests/lib_test.ts tests/batch_maintenance_test.ts

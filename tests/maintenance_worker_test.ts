@@ -271,13 +271,15 @@ Deno.test("lost Swamp workflow start adopts the exact run; a missing or foreign 
 Deno.test("package placement carries VM cwd, configured paths/policy and literal advisory IDs; detection inputs have no package arguments", () => {
   const target = {
     workItem: "tg-7",
-    path: ".",
-    manager: "js" as const,
-    package: "react",
-    version: "20.0.0",
-    purpose: "security" as const,
-    advisories: ["GHSA-test"],
-    advisoryUrls: ["https://github.com/advisories/GHSA-test"],
+    targets: [{
+      path: ".",
+      manager: "js" as const,
+      package: "react",
+      version: "20.0.0",
+      purpose: "security" as const,
+      advisories: ["GHSA-test"],
+      advisoryUrls: ["https://github.com/advisories/GHSA-test"],
+    }],
   };
   const input = maintenanceInputs(
     project,
@@ -287,17 +289,14 @@ Deno.test("package placement carries VM cwd, configured paths/policy and literal
   );
   assertEquals(input.group, "7");
   assertEquals(input.composerPaths, []);
+  assertEquals(input.method, "batch");
   assertEquals(input.js, {
     cwd: "/vm/repo",
     paths: ["."],
     policy: project.worker.policy,
     exceptions: project.exceptions,
     captureFailure: true,
-    path: ".",
-    package: "react",
-    version: "20.0.0",
-    purpose: "security",
-    advisoryIds: ["GHSA-test"],
+    targets: target.targets,
   });
   assertEquals(input.jsCommon, {
     cwd: "/vm/repo",
@@ -602,13 +601,15 @@ Deno.test("worker repair keeps the exact package and advisory scope and returns 
     },
     packageTarget: {
       workItem: "tg-7",
-      manager: "composer",
-      path: ".",
-      package: "livewire/livewire",
-      version: "4.4.8",
-      purpose: "security",
-      advisories: ["PKSA-fixture"],
-      advisoryUrls: ["https://github.com/advisories/GHSA-fixture"],
+      targets: [{
+        manager: "composer",
+        path: ".",
+        package: "livewire/livewire",
+        version: "4.4.8",
+        purpose: "security",
+        advisories: ["PKSA-fixture"],
+        advisoryUrls: ["https://github.com/advisories/GHSA-fixture"],
+      }],
     },
   };
   const deps = {
@@ -626,10 +627,10 @@ Deno.test("worker repair keeps the exact package and advisory scope and returns 
     assert(prompt.includes("livewire/livewire → 4.4.8"));
     assert(
       prompt.includes(
-        "PKSA-fixture: https://github.com/advisories/GHSA-fixture",
+        "PKSA-fixture",
       ),
     );
-    assert(prompt.includes("Swamp reruns this exact target"));
+    assert(prompt.includes("Swamp reruns this exact batch"));
     assert(!prompt.includes("Finish scripts/dependencies"));
     now += 60000;
     assertEquals(

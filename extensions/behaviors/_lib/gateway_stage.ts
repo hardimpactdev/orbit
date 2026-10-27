@@ -429,7 +429,7 @@ async function plan(args: StageArgs, group: number, http: Http, deps: Deps): Pro
       if (!args.routine) {
         return req("/publish", {
           check: h.payload.checkId,
-          pull_request: { title: g.title, body: `${g.brief}${args.packageTarget ? `\n\nSingle package: ${packageDescription(args.packageTarget)}.` : ""}\n\nDriven by Swamp through ADR 0229 Gateway operations (group ${group}).` },
+          pull_request: { title: g.title, body: `${g.brief}${args.packageTarget ? `\n\nProject batch: ${packageDescription(args.packageTarget)}.` : ""}\n\nDriven by Swamp through ADR 0229 Gateway operations (group ${group}).` },
         }, null);
       }
       const subtask = h.payload.subtask;
@@ -458,7 +458,7 @@ async function plan(args: StageArgs, group: number, http: Http, deps: Deps): Pro
       const h = ofSubtask(args.handoff, t.id);
       const script = ofSubtask(args.script, t.id);
       if (!(h && ["failed", "changed"].includes(String(h.outcome))) && !(script && script.outcome === "failed")) throw new Error("repair requires failed script or local check evidence");
-      const scope = `${args.packageTarget ? `Only ${packageDescription(args.packageTarget)} at path ${args.packageTarget.path ?? "."}. Swamp reruns this exact target and verifies its selected advisories. ` : ""}The Swamp worker owns dependency commands. Fix their cause and the failing checks only; do not make unrelated dependency updates. Swamp will rerun the extension after this turn. `;
+      const scope = `${args.packageTarget ? `Only ${packageDescription(args.packageTarget)}. Swamp reruns this exact batch and verifies its selected advisories. ` : ""}The Swamp worker owns dependency commands. Fix their cause and the failing checks only; do not make unrelated dependency updates. Swamp will rerun the extension after this turn. `;
       return req("/turn", { subtask: t.id, role: "implementer", thread: "new", prompt:
         implementerPrompt(g, t, null, envelope(args.handoff), null) +
         "\n\n" + scope + "This is the single routine dependency repair turn. Preserve manifest ranges, overrides and release-age/security policy. " +
@@ -749,6 +749,29 @@ function hasAssistance(r: AssistanceFields): boolean {
   return r.assistance_requested !== false || r.assistance_kind !== null || r.assistance_reason !== null || r.assistance_question !== null;
 }
 
+/** Read-only detection has no handoff check: the worker records scan and snapshot evidence. */
+async function finishDetection(job: Job, args: StageArgs, http: Http): Promise<Job> {
+  const scan = envelope(args.script)?.payload;
+  const worker = args.dependencyProject?.worker;
+  const expected = Number(Boolean(worker?.composerPaths.length)) + Number(Boolean(worker?.jsPaths.length));
+  if (!args.routine || !scan || scan.outcome !== "passed" || scan.exit_code !== 0 ||
+    scan.changed !== false || !Number.isSafeInteger(scan.subtask) ||
+    ![scan.head, scan.tree].every((value) => typeof value === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(value)) ||
+    !expected || !Array.isArray(scan.detections) || scan.detections.length !== expected ||
+    !scan.detections.every((report: Record<string, unknown>) => report?.schema === 1 && Array.isArray(report.candidates))) {
+    throw new Error("detect finish requires successful unchanged scan evidence and every ecosystem report");
+  }
+  const group = await readGroup(http, job.group);
+  if (group.tasks.length !== 1 || group.tasks[0].id !== scan.subtask ||
+    hasAssistance(group) || group.tasks.some(hasAssistance) || group.watched_pr_url ||
+    !["running", "reviewing", "settling", "completed"].includes(group.status) ||
+    !["running", "reviewing", "completed"].includes(group.tasks[0].status)) {
+    throw new Error("detect finish preserves the matching child, group state and assistance");
+  }
+  if (group.tasks[0].status !== "completed") await setSubtaskStatus(http, job.group, group.tasks[0], "completed");
+  return await completeUnchangedGroup(job, http);
+}
+
 /** No-change cleanup uses existing board moves and completion; never invent a PR. */
 async function finishRoutine(job: Job, args: StageArgs, http: Http): Promise<Job> {
   const h = envelope(args.handoff)?.payload;
@@ -758,6 +781,13 @@ async function finishRoutine(job: Job, args: StageArgs, http: Http): Promise<Job
   const g = await readGroup(http, job.group);
   if (g.status === "completed" && !hasAssistance(g) && !g.tasks.some(hasAssistance)) return { ...job, state: "succeeded", evidence: { status: "succeeded", runId: job.key, completed: true } };
   if (g.tasks.length !== 1 || g.tasks[0].id !== h.subtask || g.tasks[0].status !== "completed" || hasAssistance(g) || g.tasks.some(hasAssistance) || g.watched_pr_url) throw new Error("no-change cleanup requires its completed child and no assistance or PR");
+  return await completeUnchangedGroup(job, http);
+}
+
+async function completeUnchangedGroup(job: Job, http: Http): Promise<Job> {
+  const g = await readGroup(http, job.group);
+  if (hasAssistance(g) || g.tasks.some(hasAssistance) || g.watched_pr_url || g.tasks.some((t) => t.status !== "completed")) throw new Error("no-change cleanup preserves completed children and no assistance or PR");
+  if (g.status === "completed" && !hasAssistance(g) && !g.tasks.some(hasAssistance)) return { ...job, state: "succeeded", evidence: { status: "succeeded", runId: job.key, completed: true } };
   if (g.status !== "settling") {
     const moved = await http("PATCH", `/api/v1/task-groups/${job.group}`, { status: "settling" });
     if (moved.status !== 200) throw new Error(`no-change settling refused: ${errorCode(moved)}`);
@@ -814,6 +844,9 @@ function pullRequestSummary(output: string): { title: string; body: string } {
 /** One ensure call for one driver key. */
 export async function runStage(args: StageArgs, deps: Deps): Promise<Job> {
   const group = groupOf(args.workItem);
+  if (args.detection && (!args.routine || !["provision", "script", "finish"].includes(args.stage))) {
+    throw new Error("detect permits only provision, read-only scan and finish; no check, repair, turn or publication");
+  }
   if (args.routine) args = { ...args, dependencyProject: await dependencyProject(deps.http, group, deps.projects ?? []) };
   if (args.packageTarget) {
     args.packageTarget = PackageTargetSchema.parse(args.packageTarget);
@@ -850,7 +883,7 @@ export async function runStage(args: StageArgs, deps: Deps): Promise<Job> {
     };
 
   if (args.stage === "finish") {
-    job = await finishRoutine(job, args, deps.http);
+    job = args.detection ? await finishDetection(job, args, deps.http) : await finishRoutine(job, args, deps.http);
     await deps.writeJob(job);
     try { await deps.revokeWorker?.(group); } catch { /* Minute cleanup retries. */ }
     return job;

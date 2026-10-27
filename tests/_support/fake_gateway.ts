@@ -196,6 +196,7 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
       steps.at(-1).dataArtifacts[0].attributes = { head: g.head, tree: g.tree };
       return json(200, run);
     }
+    if (p === "/api/v1/task-groups" && req.method === "GET") return json(200,[...groups.values()].map(g=>({...g,scenario:undefined,counts:undefined})));
     const m = /^\/api\/v1\/task-groups\/(\d+)(\/.*)?$/.exec(p);
     if (m) {
       const g = groups.get(Number(m[1]));

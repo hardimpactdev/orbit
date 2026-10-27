@@ -8,6 +8,7 @@ on:
       - 'extensions/behaviors/_lib/maintenance/**'
       - 'extensions/behaviors/_lib/composer_lock.ts'
       - 'tests/lib_test.ts'
+      - 'tests/batch_maintenance_test.ts'
       - '.github/workflows/js-maintenance.yml'
   push:
     branches: [main]
@@ -17,6 +18,7 @@ on:
       - 'extensions/behaviors/_lib/maintenance/**'
       - 'extensions/behaviors/_lib/composer_lock.ts'
       - 'tests/lib_test.ts'
+      - 'tests/batch_maintenance_test.ts'
       - '.github/workflows/js-maintenance.yml'
 
 permissions:
@@ -45,4 +47,4 @@ jobs:
       - name: Lint extensions
         run: deno lint extensions/behaviors/js-maintenance extensions/behaviors/composer-maintenance extensions/behaviors/_lib/maintenance
       - name: Test maintenance (one worker)
-        run: deno test --allow-all extensions/behaviors/js-maintenance/mod_test.ts extensions/behaviors/composer-maintenance/mod_test.ts tests/lib_test.ts
+        run: deno test --allow-all extensions/behaviors/js-maintenance/mod_test.ts extensions/behaviors/composer-maintenance/mod_test.ts tests/lib_test.ts tests/batch_maintenance_test.ts

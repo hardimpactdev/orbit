@@ -55,12 +55,44 @@ jobs:
           modelName: '${{ "maintenance-js-" + inputs.name }}'
           methodName: '${{ inputs.method }}'
           inputs: '${{ inputs.js }}'
+      - name: composer_plan
+        guard: "${{ !(inputs.mode == 'detect' && size(inputs.composerPaths) > 0) || !(has(steps.composer.outputs) && has(steps.composer.outputs.candidates)) }}"
+        dependsOn:
+          - step: js
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        task:
+          type: model_method
+          modelType: '@nckrtl/composer-maintenance'
+          modelName: '${{ "maintenance-composer-plan-" + inputs.name }}'
+          methodName: plan
+          inputs:
+            cwd: '${{ inputs.cwd }}'
+            paths: '${{ inputs.composerPaths }}'
+            policy: '${{ inputs.composerCommon.policy }}'
+            candidates: '${{ steps.composer.outputs.candidates }}'
+            captureFailure: true
+      - name: js_plan
+        guard: "${{ !(inputs.mode == 'detect' && size(inputs.jsPaths) > 0) || !(has(steps.js.outputs) && has(steps.js.outputs.candidates)) }}"
+        dependsOn:
+          - step: composer_plan
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        task:
+          type: model_method
+          modelType: '@nckrtl/js-maintenance'
+          modelName: '${{ "maintenance-js-plan-" + inputs.name }}'
+          methodName: plan
+          inputs:
+            cwd: '${{ inputs.cwd }}'
+            paths: '${{ inputs.jsPaths }}'
+            policy: '${{ inputs.jsCommon.policy }}'
+            candidates: '${{ steps.js.outputs.candidates }}'
+            captureFailure: true
       - name: composer_detect
         guard: "${{ !(inputs.mode == 'package' && size(inputs.composerPaths) > 0) || (has(steps.composer) && has(steps.composer.outputs) && has(steps.composer.outputs.exitCode)) || (has(steps.js) && has(steps.js.outputs) && has(steps.js.outputs.exitCode)) }}"
         dependsOn:
           - step: before
             condition: { type: succeeded }
-          - step: js
+          - step: js_plan
             condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
         task:
           type: model_method
@@ -117,6 +149,10 @@ jobs:
           - step: composer
             condition: { type: or, conditions: [{ type: succeeded }, { type: failed }, { type: skipped }] }
           - step: js
+            condition: { type: or, conditions: [{ type: succeeded }, { type: failed }, { type: skipped }] }
+          - step: composer_plan
+            condition: { type: or, conditions: [{ type: succeeded }, { type: failed }, { type: skipped }] }
+          - step: js_plan
             condition: { type: or, conditions: [{ type: succeeded }, { type: failed }, { type: skipped }] }
           - step: composer_detect
             condition: { type: or, conditions: [{ type: succeeded }, { type: failed }, { type: skipped }] }

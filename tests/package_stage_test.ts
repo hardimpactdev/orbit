@@ -5,7 +5,7 @@ import { admitPackage, PackageTargetSchema, type PackageTarget } from "../extens
 import { runStage, type Http, type Job, type StageArgs } from "../extensions/behaviors/_lib/gateway_stage.ts";
 import { startFakeGateway } from "./_support/fake_gateway.ts";
 
-const target: PackageTarget = { workItem: "tg-7", manager: "composer", package: "livewire/livewire", version: "4.9.9", purpose: "security", advisoryUrls: ["https://github.com/advisories/GHSA-fixture-one", "https://github.com/advisories/GHSA-fixture-two"], advisories: ["PKSA-xhv3-nr94-h8db", "PKSA-bgw4-5zmg-2njg"] };
+const target: PackageTarget = { workItem: "tg-7", targets: [{ path:".", manager: "composer", package: "livewire/livewire", version: "4.9.9", purpose: "security", advisoryUrls: ["https://github.com/advisories/GHSA-fixture-one", "https://github.com/advisories/GHSA-fixture-two"], advisories: ["PKSA-xhv3-nr94-h8db", "PKSA-bgw4-5zmg-2njg"] }] };
 function fixture() {
   const fake = startFakeGateway({ 7: { prStaysOpen: true }, 8: {} });
   const calls: { method: string; path: string; body?: Record<string, unknown>; key?: string }[] = [];
@@ -37,7 +37,7 @@ Deno.test("package admission is immutable and restart-safe; next package waits f
     await admitPackage(target, f.admission);
     await admitPackage(structuredClone(target), f.admission);
     assertEquals(f.starts, 1);
-    await assertRejects(() => admitPackage({ ...target, package: "other/package" }, f.admission), Error, "immutable");
+    await assertRejects(() => admitPackage({ ...target, targets:[{...target.targets[0],package:"other/package"}] }, f.admission), Error, "immutable");
     const next = { ...target, workItem: "tg-8" };
     const first = f.fake.groups.get(7)!;
     for (const status of ["running", "waiting_for_review", "failed", "cancelled"]) {
@@ -87,7 +87,7 @@ Deno.test("package worker request survives restart and refuses a changed target"
     const deps = f.stageDeps(args.key);
     await runStage(args, deps);
     f.jobs.set(args.key, structuredClone(f.jobs.get(args.key)!));
-    await assertRejects(() => runStage({ ...args, packageTarget: { ...target, version: "5.0.0" } }, deps), Error, "input conflict");
+    await assertRejects(() => runStage({ ...args, packageTarget: { ...target, targets:[{...target.targets[0],version:"5.0.0"}] } }, deps), Error, "input conflict");
     const done = await runStage(args, deps);
     assertEquals(done.state, "succeeded");
     assertEquals(f.worker.calls[0], f.worker.calls[1]);
@@ -107,8 +107,8 @@ Deno.test("package repair preserves the target and advisories with Gateway-shape
     assertEquals(done.artifacts.change.outcome, "ready_for_review");
     const post = f.calls.find((x) => x.path.endsWith("/turn"))!;
     const prompt = String(post.body!.prompt);
-    assert(prompt.includes("livewire/livewire")); assert(prompt.includes(target.advisories[0]));
-    assert(prompt.includes("Swamp reruns this exact target"));
+    assert(prompt.includes("livewire/livewire")); assert(prompt.includes(target.targets[0].advisories[0]));
+    assert(prompt.includes("Swamp reruns this exact batch"));
     assert(!prompt.includes("rerun scripts/dependencies routine"));
     assertEquals(f.fake.startsOf(7, "repair"), 1);
     assertEquals(f.fake.startsOf(7, "publish"), 0);
@@ -117,7 +117,7 @@ Deno.test("package repair preserves the target and advisories with Gateway-shape
 
 Deno.test("single-package schema refuses several packages, shell/option inputs and a missing security identity", () => {
   for (const patch of [{ package: "livewire/livewire other/pkg" }, { package: "--force" }, { version: "latest" }, { advisories: [] }, { manager: "npm" }]) {
-    assertEquals(PackageTargetSchema.safeParse({ ...target, ...patch }).success, false);
+    assertEquals(PackageTargetSchema.safeParse({ ...target, targets:[{...target.targets[0],...patch}] }).success, false);
   }
 });
 

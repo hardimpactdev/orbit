@@ -1,5 +1,21 @@
 # JavaScript maintenance
 
+## Project batches
+
+Scheduled project maintenance uses `plan` and `batch`. `plan` takes the normal
+checkout/path/policy arguments plus detection `candidates`. It resolves eligible
+versions together in a disposable tracked checkout and returns `targets` and
+`blocked` reasons. The source checkout stays unchanged. `batch` takes the same
+arguments plus the complete immutable `targets` array and applies them in one
+resolver operation per path. Each target contains `path`, `manager`, `package`,
+exact stable `version`, `purpose`, `advisories` and `advisoryUrls`.
+
+These methods enforce release age for security and major updates alike,
+including resolver-changed transitive packages. They never add an age exception.
+Application checks the fresh lock and current advisories before changing files,
+refuses stale downgrades and permits exact-target retries after repair. Swamp's
+project scheduler owns batch admission; these methods create no groups or PRs.
+
 `@nckrtl/js-maintenance` runs npm, Bun, Vite+, and Expo maintenance in a
 supplied checkout. The checkout needs no maintenance package, PHP, or Composer
 for JavaScript work. This extension does not commit, publish, run project

@@ -2,16 +2,11 @@ import { z } from "npm:zod@4";
 import { type DependencyProject } from "./dependency_projects.ts";
 import { type Http } from "./gateway_stage.ts";
 import { canonical, sha256 } from "./repository_analysis.ts";
-import { PackageTargetSchema } from "./package_target.ts";
-
-const PackageSelectionSchema = z.object(PackageTargetSchema.shape).omit({
-  workItem: true,
-})
-  .refine(
-    (target) =>
-      PackageTargetSchema.safeParse({ ...target, workItem: "tg-1" }).success,
-    "invalid package selection",
-  );
+import {
+  BatchPlanSchema,
+  TargetsSchema,
+  type UpdateTarget,
+} from "./maintenance/batch.ts";
 
 export const ScheduleReceiptSchema = z.object({
   key: z.string(),
@@ -22,7 +17,7 @@ export const ScheduleReceiptSchema = z.object({
   workItem: z.string().regex(/^tg-[1-9]\d*$/).nullable(),
   started: z.boolean(),
   completed: z.boolean(),
-  target: PackageSelectionSchema.optional(),
+  targets: TargetsSchema.optional(),
 }).strict();
 export type ScheduleReceipt = z.infer<typeof ScheduleReceiptSchema>;
 export interface ScheduleStore {
@@ -54,7 +49,7 @@ export async function ensureProjectGroup(
     receipt &&
     (receipt.projectId !== desired.projectId || receipt.mode !== desired.mode ||
       canonical(receipt.request) !== canonical(desired.request) ||
-      canonical(receipt.target ?? null) !== canonical(desired.target ?? null))
+      canonical(receipt.targets ?? null) !== canonical(desired.targets ?? null))
   ) {
     throw new Error("scheduled group input conflict");
   }
@@ -111,36 +106,44 @@ export async function ensureProjectGroup(
 function taskDeliverables(
   project: DependencyProject,
   mode: "routine" | "detect" | "package",
-  target?: { path: string; manager: "composer" | "js" },
+  targets?: UpdateTarget[],
 ): Record<string, string>[] {
   const deliverables: Record<string, string>[] = [
-    {
+    ...(mode === "detect" ? [] : [{
       id: "project-check",
       type: "command",
       description: "Pass the configured project check in the task checkout.",
       command: project.check,
       directory: ".",
-    },
+    }]),
     {
       id: mode,
       type: "review",
       description: mode === "detect"
-        ? "Record Swamp detection reports and worker execution evidence, the passed Gateway check, an unchanged checkout, and worker departure when the group ends."
+        ? "Record successful Swamp detection reports and worker execution evidence, matching before/after checkout snapshots, and worker departure when the group ends."
         : "Record Swamp maintenance workflow and worker execution evidence, the passed Gateway handoff check, dependency PR or no-change result, and worker departure when the group ends.",
     },
   ];
-  if (target) {
-    const prefix = target.path === "." ? "" : `${target.path}/`;
+  if (targets?.length) {
+    const locks = [
+      ...new Set(
+        targets.flatMap((target) =>
+          (target.manager === "composer" ? ["composer.lock"] : [
+            "bun.lock",
+            "package-lock.json",
+            "npm-shrinkwrap.json",
+            "pnpm-lock.yaml",
+          ]).map((name) =>
+            `${target.path === "." ? "" : target.path + "/"}${name}`
+          )
+        ),
+      ),
+    ];
     deliverables.push({
       id: "dependency-lock",
       type: "file",
-      description:
-        "Update the selected package's lockfile in its configured path.",
-      path: `${prefix}${
-        target.manager === "composer"
-          ? "composer.lock"
-          : "{bun.lock,package-lock.json,npm-shrinkwrap.json,pnpm-lock.yaml}"
-      }`,
+      description: "Record the selected project batch lockfile changes.",
+      path: locks.length === 1 ? locks[0] : `{${locks.join(",")}}`,
       change: "modified",
     });
   }
@@ -177,126 +180,86 @@ export function scheduleReceipt(
   };
 }
 
-const AdvisorySchema = z.object({
-  id: z.string().min(1),
-  url: z.string().nullable(),
-  title: z.string(),
-  affected: z.string().nullable(),
-}).passthrough();
-const CandidateSchema = z.object({
-  path: z.string().min(1),
-  manager: z.enum(["composer", "js"]),
-  package: z.string().min(1),
-  reasons: z.array(z.enum(["major", "security"])).min(1),
-  advisories: z.array(AdvisorySchema),
-  current: z.string().optional(),
-  latest: z.string().optional(),
-});
-const DetectionSchema = z.object({
+export const FindingsSchema = z.strictObject({
   schema: z.literal(1),
-  candidates: z.array(CandidateSchema),
+  key: z.string(),
+  projectId: z.number().int().positive(),
+  source: z.string(),
+  reports: z.array(z.unknown()),
+  plans: z.array(BatchPlanSchema),
+  targets: z.array(TargetsSchema.element),
+  blocked: z.array(BatchPlanSchema.shape.blocked.element),
 });
-
-/** Each advisory is a separate task. No fixed security version is inferred from a major candidate. */
-export async function findingReceipts(
+export type Findings = z.infer<typeof FindingsSchema>;
+/** Detection stores findings. Only an admitted project batch becomes an Orbit group. */
+export function projectFindings(
   project: DependencyProject,
+  source: string,
   reports: unknown[],
-): Promise<ScheduleReceipt[]> {
-  const expected = Number(Boolean(project.worker?.composerPaths.length)) +
-    Number(Boolean(project.worker?.jsPaths.length));
-  if (reports.length !== expected || !expected) {
-    throw new Error("detection is missing an ecosystem report");
+  plans: unknown[],
+): Findings {
+  const expected = Number(Boolean(project.worker.composerPaths.length)) +
+    Number(Boolean(project.worker.jsPaths.length));
+  if (reports.length !== expected || plans.length !== expected) {
+    throw new Error(
+      "detection is missing an ecosystem report or eligible-target plan",
+    );
   }
-  const receipts = new Map<string, ScheduleReceipt>();
-  for (const report of reports) {
-    for (const candidate of DetectionSchema.parse(report).candidates) {
-      const paths = candidate.manager === "composer"
-        ? project.worker?.composerPaths
-        : project.worker?.jsPaths;
-      if (!paths?.includes(candidate.path)) {
-        throw new Error("detection path is not configured for its ecosystem");
-      }
-      if (
-        candidate.reasons.includes("security") && !candidate.advisories.length
-      ) throw new Error("security detection has no advisory evidence");
-      const findings = [
-        ...(candidate.reasons.includes("major")
-          ? [{
-            purpose: "major" as const,
-            id: candidate.latest ?? "unknown",
-            advisory: null,
-          }]
-          : []),
-        ...candidate.advisories.map((a) => ({
-          purpose: "security" as const,
-          id: a.id,
-          advisory: a,
-        })),
-      ];
-      for (const finding of findings) {
-        const key = `finding-${await sha256(
-          canonical([
-            project.projectId,
-            candidate.path,
-            candidate.manager,
-            candidate.package,
-            finding.purpose,
-            finding.id,
-          ]),
-        )}`;
-        const title = `${
-          finding.purpose === "major" ? "Upgrade" : "Fix advisory in"
-        } ${candidate.package}${
-          finding.purpose === "major" && candidate.latest
-            ? ` to ${candidate.latest}`
-            : ""
-        }`.slice(0, 160);
-        const brief =
-          `${title} in ${candidate.path} (${candidate.manager}). One package and one PR. Preserve unrelated constraints and project policy. Use the shared Swamp maintenance extension; Gateway owns checks and publication. Security requires an exact verified fixed version and current advisory evidence before admission.\n\nDetection: ${
-            JSON.stringify({
-              ...candidate,
-              advisories: finding.advisory ? [finding.advisory] : [],
-            })
-          }\nFinding: ${finding.id}\nPolicy: ${
-            JSON.stringify(project.worker!.policy)
-          }\nCheck: ${project.check}\nSwamp schedule: ${key}`;
-        const target = finding.purpose === "major"
-          ? PackageSelectionSchema.safeParse({
-            path: candidate.path,
-            manager: candidate.manager,
-            package: candidate.package,
-            version: candidate.latest,
-            purpose: "major",
-            advisoryUrls: [],
-            advisories: [],
-          })
-          : null;
-        receipts.set(key, {
-          key,
-          projectId: project.projectId,
-          mode: "package",
-          attempted: false,
-          workItem: null,
-          started: false,
-          completed: false,
-          request: {
-            project_id: project.projectId,
-            title,
-            brief,
-            status: "backlog",
-            orchestration: "external",
-            tasks: [{
-              title,
-              brief,
-              deliverables: taskDeliverables(project, "package", candidate),
-            }],
-          },
-          ...(target?.success ? { target: target.data } : {}),
-        });
-      }
-    }
+  const parsed = plans.map((p) => BatchPlanSchema.parse(p));
+  const targets = parsed.flatMap((p) => p.targets),
+    blocked = parsed.flatMap((p) => p.blocked);
+  for (const t of [...targets, ...blocked]) {
+    if (
+      !project.worker[t.manager === "composer" ? "composerPaths" : "jsPaths"]
+        .includes(t.path)
+    ) throw new Error("detection path is not configured for its ecosystem");
   }
-  return [...receipts.values()];
+  if (targets.length) TargetsSchema.parse(targets);
+  return FindingsSchema.parse({
+    schema: 1,
+    key: `${project.projectId}-${source}`,
+    projectId: project.projectId,
+    source,
+    reports,
+    plans: parsed,
+    targets,
+    blocked,
+  });
+}
+export async function batchReceipt(
+  project: DependencyProject,
+  findings: Findings,
+): Promise<ScheduleReceipt> {
+  TargetsSchema.parse(findings.targets);
+  const key = `batch-${await sha256(
+    canonical([findings.projectId, findings.source, findings.targets]),
+  )}`;
+  const title = "Update all eligible dependency majors and advisory fixes";
+  // The complete immutable selections stay in Swamp; keep Orbit's child brief under 8000 bytes.
+  const brief =
+    `${title}. Apply the entire admitted Swamp batch in one VM and one PR. Preserve unrelated constraints and release-age policy. Gateway owns checks, repair and publication.\n\nBatch: ${findings.key}\nTargets: ${findings.targets.length}\nBlocked findings retained: ${findings.blocked.length}\nCheck: ${project.check}\nSwamp schedule: ${key}`;
+  return {
+    key,
+    projectId: project.projectId,
+    mode: "package",
+    attempted: false,
+    workItem: null,
+    started: false,
+    completed: false,
+    targets: findings.targets,
+    request: {
+      project_id: project.projectId,
+      title,
+      brief,
+      status: "backlog",
+      orchestration: "external",
+      tasks: [{
+        title,
+        brief,
+        deliverables: taskDeliverables(project, "package", findings.targets),
+      }],
+    },
+  };
 }
 
 /** Orbit cancellation is final even when the factory never got past provision. */

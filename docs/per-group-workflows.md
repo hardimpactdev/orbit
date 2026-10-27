@@ -42,9 +42,12 @@ Each child workflow receives exactly one factory and work item. Swamp's workflow
 fan-out reconciles the groups in parallel. Swamp expands `forEach` before a
 workflow's steps run. Discovery therefore passes its saved lists into the typed
 `group-fanout` child workflow, whose collections are already present at expansion.
-A dependency on the discover step alone cannot defer expansion. Discovery does not drive their stages
-and does not select only four active groups. Admission limits for new package
-work remain separate.
+A dependency on the discover step alone cannot defer expansion. Discovery does
+not drive their stages and does not select only four active groups. Shared
+admission reserves at most four maintenance VMs across routine, detect
+and package work, including provisioning and parked VMs. It runs under the
+existing orbit-gateway behavior lock before group creation; each group still
+advances independently after admission. See [project batches](website-packages.md).
 
 Each child uses a driver definition named by work item, with its factory saved
 in the generation intent. It performs bounded guarded advances and returns when

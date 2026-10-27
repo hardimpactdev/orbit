@@ -8,16 +8,16 @@ import {
   assert,
   assertEquals,
   assertRejects,
-  assertStringIncludes,
   assertThrows,
 } from "jsr:@std/assert@1.0.19";
 import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016.58";
 import { behavior } from "../extensions/behaviors/projects/nckrtl-com/mod.ts";
 import { projectConfigurations } from "../extensions/behaviors/_lib/project_config.ts";
 import {
+  batchReceipt,
   cleanedCancelledGroup,
   ensureProjectGroup,
-  findingReceipts,
+  projectFindings,
   scheduleKey,
   type ScheduleReceipt,
   scheduleReceipt,
@@ -30,7 +30,7 @@ const original: DependencyProject = JSON.parse(
     new URL("./fixtures/project-extensions/nckrtl-com.json", import.meta.url),
   ),
 );
-const reports: unknown[] = JSON.parse(
+const reports = JSON.parse(
   await Deno.readTextFile(
     new URL("./fixtures/project-extensions/detection.json", import.meta.url),
   ),
@@ -51,12 +51,15 @@ Deno.test("project extension returns config without a repository script and prod
         ? {
           packageTarget: {
             workItem: "tg-7",
-            manager: "composer" as const,
-            package: "fixture/framework",
-            version: "2.1.0",
-            purpose: "major" as const,
-            advisories: [],
-            advisoryUrls: [],
+            targets: [{
+              path: ".",
+              manager: "composer" as const,
+              package: "fixture/framework",
+              version: "2.1.0",
+              purpose: "major" as const,
+              advisories: [],
+              advisoryUrls: [],
+            }],
           },
         }
         : {}),
@@ -217,52 +220,50 @@ Deno.test("weekly slots cross year boundaries and daily detection stays separate
     "20-detect-2027-01-03",
   );
 });
-Deno.test("detection creates one task per major or advisory and never invents a security target", async () => {
-  const findings = await findingReceipts(original, reports);
-  assertEquals(findings.length, 5);
-  assertEquals(findings.filter((f) => f.target).length, 2);
-  assert(
-    findings.every((f) =>
-      f.mode === "package" && (f.request.tasks as unknown[]).length === 1
-    ),
-  );
-  const security = findings.filter((f) => !f.target);
-  for (const id of ["PKSA-first", "PKSA-second", "123456"]) {
-    assert(
-      security.some((f) => String(f.request.brief).includes(`Finding: ${id}`)),
-    );
-  }
-  for (const finding of security) {
-    assertStringIncludes(
-      String(finding.request.brief),
-      "https://github.com/advisories/",
-    );
-    assertStringIncludes(
-      String(finding.request.brief),
-      "minimumReleaseAgeDays",
-    );
-  }
-  const duplicated = (structuredClone(reports) as { candidates: unknown[] }[])
-    .map((report) => ({
-      ...report,
-      candidates: [...report.candidates, ...report.candidates],
-    }));
-  assertEquals(await findingReceipts(original, duplicated), findings);
-  await assertRejects(
-    () => findingReceipts(original, []),
+Deno.test("project findings retain reports and blocked reasons and create one deterministic whole batch receipt", async () => {
+  const plans = reports.map((
+    r: {
+      candidates: {
+        path: string;
+        manager: string;
+        package: string;
+        latest?: string;
+        advisories: { id: string; url: string }[];
+      }[];
+    },
+  ) => ({
+    schema: 1,
+    targets: r.candidates.filter((c) => c.latest).map((c) => ({
+      path: c.path,
+      manager: c.manager,
+      package: c.package,
+      version: c.latest,
+      purpose: c.advisories.length ? "security" : "major",
+      advisories: c.advisories.map((a) => a.id),
+      advisoryUrls: c.advisories.map((a) => a.url),
+    })),
+    blocked: [],
+  }));
+  const findings = await projectFindings(original, "source", reports, plans);
+  const receipt = await batchReceipt(original, findings);
+  assertEquals(receipt.targets?.length, 2);
+  assertEquals((receipt.request.tasks as unknown[]).length, 1);
+  assertEquals(await batchReceipt(original, findings), receipt);
+  assertThrows(
+    () => projectFindings(original, "source", [], plans),
     Error,
-    "missing an ecosystem report",
+    "missing an ecosystem",
   );
-  const otherPath = structuredClone(reports) as {
-    candidates: { path: string }[];
-  }[];
-  otherPath[0].candidates[0].path = "../escape";
-  await assertRejects(
-    () => findingReceipts(original, otherPath),
+  assertThrows(
+    () =>
+      projectFindings(original, "source", reports, [{
+        schema: 1,
+        targets: [{ ...plans[0].targets[0], path: "outside" }],
+        blocked: [],
+      }, plans[1]]),
     Error,
     "not configured",
   );
-  await assertRejects(() => findingReceipts(original, [{ schema: 1 }]));
 });
 
 Deno.test("detection cannot reuse a routine stage key with another maintenance mode", () => {

@@ -8,8 +8,9 @@ import {
   runStage,
 } from "../extensions/behaviors/_lib/gateway_stage.ts";
 import {
+  batchReceipt,
   ensureProjectGroup,
-  findingReceipts,
+  projectFindings,
   type ScheduleReceipt,
   scheduleReceipt,
 } from "../extensions/behaviors/_lib/project_schedule.ts";
@@ -140,7 +141,27 @@ for (const slug of ["nckrtl-com", ...fleet.map((p) => p.slug)]) {
     const desired = [
       scheduleReceipt(project, "routine"),
       scheduleReceipt(project, "detect"),
-      ...await findingReceipts(project, reports),
+      await batchReceipt(
+        project,
+        await projectFindings(
+          project,
+          "fixture",
+          reports,
+          reports.map((r) => ({
+            schema: 1,
+            targets: r.candidates.map((c) => ({
+              path: c.path,
+              manager: c.manager,
+              package: c.package,
+              version: c.latest,
+              purpose: "security",
+              advisories: c.advisories.map((a) => a.id),
+              advisoryUrls: c.advisories.map((a) => a.url),
+            })),
+            blocked: [],
+          })),
+        ),
+      ),
     ];
     const f = gateway(project);
     for (const input of desired) {
@@ -166,31 +187,29 @@ for (const slug of ["nckrtl-com", ...fleet.map((p) => p.slug)]) {
       assertEquals(result.operationStatus, "queued");
       assertEquals(result.lastError, null);
       for (const task of tasks) {
-        assertEquals(task.deliverables?.find((d) => d.type === "command"), {
-          id: "project-check",
-          type: "command",
-          description:
-            "Pass the configured project check in the task checkout.",
-          command: project.check,
-          directory: ".",
-        });
+        assertEquals(
+          task.deliverables?.find((d) => d.type === "command"),
+          input.mode === "detect" ? undefined : {
+            id: "project-check",
+            type: "command",
+            description:
+              "Pass the configured project check in the task checkout.",
+            command: project.check,
+            directory: ".",
+          },
+        );
         assert(task.deliverables!.some((d) => d.type === "review"));
         const files = task.deliverables!.filter((d) => d.type === "file");
         if (input.mode !== "package") {
           assertEquals(files, []); // No-change routine and read-only detect remain valid.
         } else {
           assertEquals(files.length, 1);
-          const candidate = reports.flatMap((r) => r.candidates).find((c) =>
-            String(input.request.brief).includes(`in ${c.path} (${c.manager}).`)
-          )!;
-          assert(candidate);
-          assertEquals(
-            files[0].path,
-            `${candidate.path === "." ? "" : candidate.path + "/"}${
-              candidate.manager === "composer"
-                ? "composer.lock"
-                : "{bun.lock,package-lock.json,npm-shrinkwrap.json,pnpm-lock.yaml}"
-            }`,
+          assert(
+            input.targets!.every((t) =>
+              files[0].path!.includes(
+                t.manager === "composer" ? "composer.lock" : "bun.lock",
+              )
+            ),
           );
           assertEquals(files[0].change, "modified");
         }

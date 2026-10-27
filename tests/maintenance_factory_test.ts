@@ -1,5 +1,5 @@
 // Real official factory and driver; the remote-workflow boundary returns native fixtures.
-import { parse } from "jsr:@std/yaml@1.0.11";
+import { behavior as groupRun } from "../extensions/behaviors/orbit_group_run.ts";
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import { startFakeGateway } from "./_support/fake_gateway.ts";
 
@@ -306,6 +306,28 @@ export const behavior = {
       assert(
         [...fake.operations.values()].every((op) => op.kind !== "tasks.script"),
       );
+      // Simulated operator cancellation frees the three parked fixture VMs before
+      // the next independent scenarios. Production cancellation is never performed.
+      for (const id of [74, 76, 77]) {
+        const group = fake.groups.get(id)!;
+        Object.assign(group, {
+          status: "cancelled",
+          vm_power: "destroyed",
+          assistance_requested: false,
+          assistance_kind: null,
+          assistance_question: null,
+          assistance_reason: null,
+        });
+        for (const task of group.tasks) {
+          Object.assign(task, {
+            status: "cancelled",
+            assistance_requested: false,
+            assistance_kind: null,
+            assistance_question: null,
+            assistance_reason: null,
+          });
+        }
+      }
       // The detection factory uses the same real config/provider and stage client.
       // It has no repair or publication path, even for command failure or changed trees.
       const detections = [78, 79, 80].map((id) => `tg-${id}`);
@@ -319,19 +341,11 @@ export const behavior = {
           `workItem=${workItem}`,
         );
       }
-      // Use the deployed scheduler settings rather than a faster test-only tick.
-      const schedule = parse(
-        await Deno.readTextFile(
-          `${dir}/workflows/workflow-maintenance-projects.yaml`,
-        ),
-      ) as {
-        jobs: {
-          steps: { name: string; task: { inputs: { maxSteps: number } } }[];
-        }[];
-      };
-      const detectSteps = schedule.jobs[0].steps.find((step) =>
-        step.name === "detect"
-      )!.task.inputs.maxSteps;
+      // Use the native per-group driver's deployed guarded-advance limit.
+      const detectSteps = groupRun.globalArguments.parse({
+        factory: "dependency-detect",
+        preapprovalModel: "orbit-driver-detect",
+      }).maxSteps;
       await Deno.writeTextFile(
         `${dir}/detect-tick.json`,
         JSON.stringify({ workItems: detections, maxSteps: detectSteps }),
@@ -366,6 +380,11 @@ export const behavior = {
       }
       assertEquals(detected, ["completed", "assistance", "assistance"]);
       for (const id of [78, 79, 80]) {
+        assertEquals(
+          fake.startsOf(id, "handoff"),
+          0,
+          "detect needs no installed project tools",
+        );
         assertEquals(fake.startsOf(id, "repair"), 0);
         assertEquals(fake.startsOf(id, "publish"), 0);
         assertEquals(counts.get(id), 1);

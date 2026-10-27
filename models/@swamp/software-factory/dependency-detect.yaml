@@ -92,8 +92,8 @@ globalArguments:
           tree:
             type: string
     transitions:
-    - name: check
-      to: handoff
+    - name: unchanged
+      to: finish
       gates:
       - type: evidence-recorded
         config:
@@ -113,53 +113,6 @@ globalArguments:
         config:
           expr: evidence.script_run.status == "failed" || artifacts.script.outcome
             != "passed" || artifacts.script.changed
-  - id: handoff
-    maxCycles: 1
-    work:
-      mode: method
-      method:
-        modelIdOrName: orbit-gateway
-        methodName: detect
-        inputs:
-          workItem: ${{ self.workItem }}
-          stage: handoff
-          script: ${{ data.latest(self.name, "artifact-script") }}
-      resultEvidence: handoff-run
-    artifacts:
-    - name: handoff
-      schema:
-        type: object
-        additionalProperties: true
-        required:
-        - subtask
-        - outcome
-        - checkId
-        - commit
-        - candidate
-        - output
-    transitions:
-    - name: unchanged
-      to: finish
-      gates:
-      - type: evidence-recorded
-        config:
-          name: handoff-run
-          requireField:
-            status: succeeded
-      - type: cel
-        config:
-          expr: artifacts.handoff.outcome == "passed" && !artifacts.script.changed
-            && artifacts.handoff.candidate.tree == artifacts.script.tree
-    - name: stop
-      to: assistance
-      gates:
-      - type: evidence-recorded
-        config:
-          name: handoff-run
-      - type: cel
-        config:
-          expr: evidence.handoff_run.status == "failed" || artifacts.handoff.outcome
-            != "passed" || artifacts.handoff.candidate.tree != artifacts.script.tree
   - id: finish
     maxCycles: 1
     work:
@@ -170,7 +123,6 @@ globalArguments:
         inputs:
           workItem: ${{ self.workItem }}
           stage: finish
-          handoff: ${{ data.latest(self.name, "artifact-handoff") }}
           script: ${{ data.latest(self.name, "artifact-script") }}
       resultEvidence: finish-run
     transitions:

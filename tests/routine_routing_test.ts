@@ -72,7 +72,12 @@ Deno.test({
       810: { projectId: SECOND_PROJECT.projectId },
     };
     const fake = startFakeGateway(scenarios);
-    fake.projects.set(SECOND_PROJECT.projectId, { id: SECOND_PROJECT.projectId, repository_url: SECOND_PROJECT.repository, task_check: SECOND_PROJECT.check, default_branch: SECOND_PROJECT.defaultBranch });
+    fake.projects.set(SECOND_PROJECT.projectId, {
+      id: SECOND_PROJECT.projectId,
+      repository_url: SECOND_PROJECT.repository,
+      task_check: SECOND_PROJECT.check,
+      default_branch: SECOND_PROJECT.defaultBranch,
+    });
     const dir = await copyRepo(fake.url);
     let passed = false;
     try {
@@ -115,13 +120,30 @@ Deno.test({
         809: "assistance",
         810: "completed",
       };
+      const retired = new Set<number>(),
+        parkedVisits = new Map<number, number>();
+      const preserved = new Map<
+        number,
+        typeof fake.groups extends Map<number, infer G> ? G : never
+      >();
       const done = () =>
         Object.entries(expected).every(([id, stage]) =>
           seen.get(Number(id))?.stage === stage &&
+          (!["assistance", "publish"].includes(stage) ||
+            retired.has(Number(id))) &&
           (Number(id) !== 808 ||
             seen.get(808)?.waiting?.includes("publish-retry"))
         );
       for (let n = 0; n < 40 && !done(); n++) {
+        await Deno.writeTextFile(
+          `${dir}/tick.json`,
+          JSON.stringify({
+            workItems: items.filter((item) =>
+              !retired.has(Number(item.slice(3)))
+            ),
+            maxSteps: 3,
+          }),
+        );
         await swamp(
           dir,
           "model",
@@ -146,9 +168,54 @@ Deno.test({
         );
         for (const row of q.results[0].items) {
           seen.set(Number(row.workItem.slice(3)), row);
+          const id = Number(row.workItem.slice(3));
+          if (
+            ["assistance", "publish"].includes(expected[id]) &&
+            row.stage === expected[id] &&
+            (id !== 808 || row.waiting?.includes("publish-retry"))
+          ) {
+            const visits = (parkedVisits.get(id) ?? 0) + 1;
+            parkedVisits.set(id, visits);
+            if (visits >= 3) {
+              // The operator cancels each independent fixture after two parked
+              // replays. Keep its factory history and evidence, free its VM,
+              // then run the remaining scenarios under the real four-VM cap.
+              const group = fake.groups.get(id)!;
+              preserved.set(id, structuredClone(group));
+              retired.add(id);
+              Object.assign(group, {
+                status: "cancelled",
+                vm_power: "destroyed",
+                assistance_requested: false,
+                assistance_kind: null,
+                assistance_question: null,
+                assistance_reason: null,
+              });
+              for (const task of group.tasks) {
+                Object.assign(task, {
+                  status: ["completed", "failed"].includes(task.status)
+                    ? task.status
+                    : "cancelled",
+                  assistance_requested: false,
+                  assistance_kind: null,
+                  assistance_question: null,
+                  assistance_reason: null,
+                });
+              }
+            }
+          }
         }
       }
       assert(done(), JSON.stringify([...seen]));
+      await Deno.writeTextFile(
+        `${dir}/tick.json`,
+        JSON.stringify({
+          workItems: items.filter((item) =>
+            !retired.has(Number(item.slice(3)))
+          ),
+          maxSteps: 3,
+        }),
+      );
       // Repeated parked and completed ticks never buy a second turn or bypass consent.
       for (let n = 0; n < 2; n++) {
         await swamp(
@@ -163,7 +230,10 @@ Deno.test({
         );
       }
       for (const id of Object.keys(scenarios).map(Number)) {
-        assertEquals(fake.groups.get(id)!.counts.maintenance ?? 0, [806, 809].includes(id) ? 0 : [802, 803, 804].includes(id) ? 2 : 1);
+        assertEquals(
+          fake.groups.get(id)!.counts.maintenance ?? 0,
+          [806, 809].includes(id) ? 0 : [802, 803, 804].includes(id) ? 2 : 1,
+        );
         assertEquals(fake.startsOf(id, "analyze"), 0);
         assertEquals(fake.startsOf(id, "review"), 0);
         assertEquals(fake.startsOf(id, "baseline"), 0);
@@ -187,9 +257,9 @@ Deno.test({
       }
       assertEquals(fake.groups.get(810)!.vm_power, "destroyed");
       assertEquals(fake.groups.get(805)!.status, "completed");
-      assertEquals(fake.groups.get(803)!.tasks[0].assistance_requested, true);
+      assertEquals(preserved.get(803)!.tasks[0].assistance_requested, true);
       assertEquals(
-        fake.groups.get(808)!.assistance_requested,
+        preserved.get(808)!.assistance_requested,
         true,
         "publish assistance uses ended-child group comments",
       );
@@ -200,8 +270,10 @@ Deno.test({
           !["tasks.consult", "tasks.analyze"].includes(String(op.kind))
         ),
       );
-      assert([...fake.operations.values()].every((op) => op.kind !== "tasks.script"));
-    passed = true;
+      assert(
+        [...fake.operations.values()].every((op) => op.kind !== "tasks.script"),
+      );
+      passed = true;
     } finally {
       await fake.close();
       if (passed) await Deno.remove(dir, { recursive: true });

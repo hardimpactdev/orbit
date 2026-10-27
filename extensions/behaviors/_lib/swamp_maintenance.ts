@@ -220,17 +220,23 @@ export function maintenanceInputs(
   const worker = project.worker!;
   const target = args.packageTarget;
   const mode = String(request.mode);
-  const selected = target ? [target.path ?? "."] : null;
-  if (
-    target &&
-    !worker[target.manager === "composer" ? "composerPaths" : "jsPaths"]
-      .includes(selected![0])
-  ) throw new Error("package path is not configured for its ecosystem");
+  const targets = target?.targets ?? [];
+  for (const t of targets) {
+    if (
+      !worker[t.manager === "composer" ? "composerPaths" : "jsPaths"].includes(
+        t.path,
+      )
+    ) throw new Error("package path is not configured for its ecosystem");
+  }
   const composerPaths = target
-    ? target.manager === "composer" ? selected! : []
+    ? [
+      ...new Set(
+        targets.filter((t) => t.manager === "composer").map((t) => t.path),
+      ),
+    ]
     : worker.composerPaths;
   const jsPaths = target
-    ? target.manager === "js" ? selected! : []
+    ? [...new Set(targets.filter((t) => t.manager === "js").map((t) => t.path))]
     : worker.jsPaths;
   const policy = (paths: string[]) =>
     Object.fromEntries(
@@ -243,15 +249,10 @@ export function maintenanceInputs(
     captureFailure: true,
     exceptions: project.exceptions,
   });
-  const packageInput = target && mode === "package"
-    ? {
-      path: target.path ?? ".",
-      package: target.package,
-      version: target.version,
-      purpose: target.purpose,
-      advisoryIds: target.advisories,
-    }
-    : {};
+  const packageInput = (manager: string) =>
+    target && mode === "package"
+      ? { targets: targets.filter((t) => t.manager === manager) }
+      : {};
   const all = [...new Set([...worker.composerPaths, ...worker.jsPaths])];
   const inputs: Record<string, unknown> & { key: string } = {
     key: args.stage === "publish" ? `${args.key}.summary` : args.key,
@@ -260,11 +261,15 @@ export function maintenanceInputs(
     group: String(group),
     cwd: request.cwd,
     mode,
-    method: mode === "summary" ? "summary" : mode,
+    method: mode === "summary"
+      ? "summary"
+      : mode === "package"
+      ? "batch"
+      : mode,
     composerPaths,
     jsPaths,
-    composer: { ...common(composerPaths), ...packageInput },
-    js: { ...common(jsPaths), ...packageInput },
+    composer: { ...common(composerPaths), ...packageInput("composer") },
+    js: { ...common(jsPaths), ...packageInput("js") },
     composerCommon: common(composerPaths),
     jsCommon: common(jsPaths),
     summary: {
@@ -449,12 +454,16 @@ export function maintenanceResult(run: WorkflowRun): MaintenanceResult {
         )
         : String(summary?.text ?? "Maintenance extensions completed."),
       output_truncated: false,
-      changed: before.tree !== after.tree,
+      changed: before.head !== after.head || before.tree !== after.tree,
       head: after.head,
       tree: after.tree,
       ...(summary
         ? { summary: { title: summary.title, body: summary.body } }
         : {}),
+      plans: steps.flatMap((step) => {
+        const plan = resource(step, "plan");
+        return plan ? [plan] : [];
+      }),
       detections: steps.flatMap((step) => {
         const detection = resource(step, "detection");
         return detection ? [detection] : [];

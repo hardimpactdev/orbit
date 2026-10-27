@@ -3,7 +3,7 @@
 A spike to test whether [Swamp](https://swamp-club.com) can replace the
 hand-rolled orchestration in Orbit's tasks feature. It uses Orbit dependency
 upgrades as the test case. The [dependency routine](docs/website-routine.md) and
-[single-package workflow](docs/website-packages.md) use the official software
+[project batch workflow](docs/website-packages.md) use the official software
 factory and Gateway operations in task VMs.
 
 Maintained projects run the shared maintenance extensions on a Swamp worker inside its

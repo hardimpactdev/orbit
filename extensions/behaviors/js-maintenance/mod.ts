@@ -1,3 +1,9 @@
+import {
+  BatchPlanSchema,
+  type Candidate,
+  TargetsSchema,
+} from "../_lib/maintenance/batch.ts";
+import { batch, plan } from "./_lib/batch.ts";
 import { ExceptionsSchema } from "../_lib/maintenance/exceptions.ts";
 import {
   snapshotMethod,
@@ -93,7 +99,7 @@ async function project(args: z.infer<typeof CommonSchema>) {
 /** Local commands with versioned schema 1 resources, matching Composer maintenance. */
 export const behavior = {
   type: "@nckrtl/js-maintenance",
-  version: "2026.10.27.1",
+  version: "2026.10.27.2",
   globalArguments: z.strictObject({}),
   resources: {
     snapshot: {
@@ -120,6 +126,18 @@ export const behavior = {
       schema: DetectionSchema,
       lifetime: "30d",
       garbageCollection: 20,
+    },
+    batch: {
+      description: "Completed project batch targets",
+      schema: z.strictObject({ schema: z.literal(1), targets: TargetsSchema }),
+      lifetime: "30d",
+      garbageCollection: 20,
+    },
+    plan: {
+      description: "Eligible batch targets and blocked findings",
+      schema: BatchPlanSchema,
+      lifetime: "infinite",
+      garbageCollection: 10,
     },
     package: {
       description: "One completed dependency update",
@@ -206,6 +224,44 @@ export const behavior = {
           ),
           ...(stale.length ? { stale_exceptions: stale } : {}),
         });
+      },
+    },
+    plan: {
+      description:
+        "Resolve all eligible targets in a disposable checkout without changing the source",
+      arguments: CommonSchema.extend({ candidates: z.array(CandidateSchema) }),
+      execute: async (
+        input: z.input<typeof CommonSchema> & { candidates: Candidate[] },
+        ctx: Context,
+      ) => {
+        const { candidates, ...common } = input;
+        return await write(
+          ctx,
+          "plan",
+          BatchPlanSchema,
+          await plan(parse(CommonSchema, common), candidates, ctx.signal),
+        );
+      },
+    },
+    batch: {
+      description:
+        "Apply every selected project target together; preserve release-age policy",
+      arguments: CommonSchema.extend({ targets: TargetsSchema }),
+      execute: async (
+        input: z.input<typeof CommonSchema> & {
+          targets: z.infer<typeof TargetsSchema>;
+        },
+        ctx: Context,
+      ) => {
+        const { targets, ...common } = input;
+        TargetsSchema.parse(targets);
+        await batch(parse(CommonSchema, common), targets, ctx.signal);
+        return await write(
+          ctx,
+          "batch",
+          z.strictObject({ schema: z.literal(1), targets: TargetsSchema }),
+          { schema: 1, targets },
+        );
       },
     },
     package: {

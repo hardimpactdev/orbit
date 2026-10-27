@@ -30,7 +30,7 @@ Deno.test({ name: "dependency-package official factory enforces sequential fresh
     await workerProjectExtension(dir);
   await installMaintenanceFixture(dir);
     await configureGateway(dir, fake.url, [SECOND_PROJECT]);
-    const input = (id: number) => ({ workItem: `tg-${id}`, manager: id === 902 ? "js" : "composer", package: id === 902 ? "react" : "livewire/livewire", version: id === 902 ? "20.0.0" : "4.9.9", purpose: id === 902 ? "major" : "security", advisoryUrls: id === 902 ? [] : ["https://github.com/advisories/GHSA-fixture-one", "https://github.com/advisories/GHSA-fixture-two"], advisories: id === 902 ? [] : ["PKSA-xhv3-nr94-h8db", "PKSA-bgw4-5zmg-2njg"] });
+    const input = (id: number) => ({ workItem: `tg-${id}`, targets:[{path:".",manager: id === 902 ? "js" : "composer", package: id === 902 ? "react" : "livewire/livewire", version: id === 902 ? "20.0.0" : "4.9.9", purpose: id === 902 ? "major" : "security", advisoryUrls: id === 902 ? [] : ["https://github.com/advisories/GHSA-fixture-one", "https://github.com/advisories/GHSA-fixture-two"], advisories: id === 902 ? [] : ["PKSA-xhv3-nr94-h8db", "PKSA-bgw4-5zmg-2njg"] }] });
     async function workflow(id: number) {
       await Deno.writeTextFile(`${dir}/input.json`, JSON.stringify(input(id)));
       await swamp(dir, "workflow", "run", "dependency-package", "--input-file", `${dir}/input.json`);
@@ -55,7 +55,7 @@ Deno.test({ name: "dependency-package official factory enforces sequential fresh
     await until(901, "merged");
     assertEquals(fake.startsOf(901, "repair"), 1); assertEquals(fake.startsOf(901, "handoff"), 2);
     let refused = false;
-    try { await workflow(902); } catch (e) { refused = String(e).includes("previous package"); }
+    try { await workflow(902); } catch (e) { refused = /previous package|unfinished maintenance/.test(String(e)); }
     assert(refused); assertEquals(fake.startsOf(902, "provision"), 0);
     // A waiting website PR does not block an independent configured project.
     await workflow(906); await until(906, "completed");
