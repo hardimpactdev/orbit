@@ -159,3 +159,16 @@ CI checks the runner’s existing PHP 8.5 with JSON and uses
 tool cache without sudo. A missing PHP runtime or JSON extension fails
 immediately. Node, Bun, and Composer are binary fixtures in these tests; CI does
 not install them.
+
+## Workflow failure receipts
+
+`captureFailure: true` turns a completed maintenance error into a `failure`
+resource with `exitCode` and `message`. It writes no success resource. The
+caller must inspect that receipt before advancing. The default still throws.
+Abort and infrastructure errors always throw, so a lost worker never looks like
+a command that completed and can be repaired.
+
+`snapshot` takes only `cwd`. It writes `snapshot` with the Git HEAD and the tree
+of all tracked and untracked, non-ignored files. It uses a temporary index and
+leaves HEAD and the real index intact. Composer-only checkouts are supported.
+Gateway handoff still owns commits.

@@ -2,17 +2,18 @@
 
 A spike to test whether [Swamp](https://swamp-club.com) can replace the
 hand-rolled orchestration in Orbit's tasks feature. It uses Orbit dependency
-upgrades as the test case. The current routine uses repo-owned commands and
-Gateway operations in task VMs. Authoring and fixture validation change no live
-Gateway or task records.
+upgrades as the test case. The [dependency routine](docs/website-routine.md)
+and [single-package workflow](docs/website-packages.md) use the official software
+factory and Gateway operations in task VMs.
 
-The [dependency routine workflow](docs/website-routine.md) adds task-VM dependency
-updates through the generic `tasks.script` operation. Each repo owns the
-commands and allowed versions. One failed update/check gets one repair turn;
-a second failure parks for assistance. Green work publishes a pull request whose title and text come from the repository summary. If that summary fails, publication stops. Unchanged
-work completes without one. Start only after the Orbit operation and website
-script merge and the Gateway release is verified. Nick owns the first live run.
-The [single-package workflow](docs/website-packages.md) handles one explicit major or security target per new group. It waits for merge and cleanup before admitting another package, with one repair turn and a fresh script/audit rerun before publication. Detection and version policy remain in each repo. Add repositories with one [project config entry](docs/dependency-projects.md).
+Project 20 runs the shared maintenance extensions on a Swamp worker inside its
+task VM. [Worker placement and enrollment](docs/task-worker-maintenance.md)
+cover the lifecycle and replay rules. Projects without worker configuration use
+`tasks.script`. Each repository keeps its version constraints and release-age
+policy. One failed update or check gets one repair turn; a second failure parks
+for assistance. Green work publishes a pull request using the extension summary.
+Unchanged work completes without one. Add repositories with one
+[project config entry](docs/dependency-projects.md).
 
 The earlier [dependency planner](docs/dependency-workflow-adoption.md) remains
 historical and is not part of this flow. External review-and-merge/topology
@@ -29,9 +30,8 @@ original unit is stopped and disabled, with its files retained. See the
 [`@nckrtl/composer-maintenance`](extensions/behaviors/composer-maintenance/README.md)
 provides `routine`, `detect`, `package`, and `summary` methods for a supplied
 checkout. It takes paths and policy as inputs, reads Composer lockfiles without
-`vendor/`, and records temporary Vet security exceptions. Its manifest is ready
-for private `nckrtl` collective distribution. It is not published or connected to
-the live dependency workflows; worker wiring is a later phase.
+`vendor/`, and records temporary Vet security exceptions. Its private manifest supports `nckrtl` collective distribution. Project 20 calls
+it through the group worker workflow.
 
 ## JavaScript maintenance extension
 
@@ -40,7 +40,7 @@ matching `routine`, `detect`, `package`, and `summary` methods for npm, Bun, Vit
 and Expo. JavaScript-only checkouts need no maintenance package or Composer.
 It shares path safety, clean child environments, exception records, and PR text
 with Composer maintenance. Its summary can cover both ecosystems in one run.
-It is not published or connected to live dependency workflows.
+Project 20 calls it through the group worker workflow.
 
 ## Setup on Beast
 

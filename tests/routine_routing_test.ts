@@ -47,7 +47,7 @@ async function copyRepo(url: string) {
   const def = `${dir}/models/@nckrtl/orbit-gateway/orbit-gateway.yaml`;
   await Deno.writeTextFile(
     def,
-    (await Deno.readTextFile(def)).replace(
+    (await Deno.readTextFile(def)).replace(/      worker:\n(?:        .*\n)+/, "").replace(
       /gatewayUrl: .*/,
       `gatewayUrl: ${url}`,
     ).replace("methods: {}", `    - projectId: ${SECOND_PROJECT.projectId}

@@ -10,19 +10,27 @@ dependencyProjects:
   - projectId: 20
     repository: git@github.com:nckrtl/website.git
     script: scripts/dependencies
+    worker:
+      composerPaths: ["."]
+      jsPaths: ["."]
+      policy: { ".": { minimumReleaseAgeDays: 7 } }
     check: composer check
     defaultBranch: main
 ```
 
-1. Merge the repo's tracked, executable dependency script. It must accept
-   `routine`, `detect`, and `package <composer|js> <name> <version>
-   <major|security> [advisory-id ...]` as literal arguments. The repo owns
-   constraints, audits, release-age rules and package-manager commands. Its
-   Project setup must install the tools the script needs (including local Vite+
-   for repos that use it).
+1. Install the repository's package managers and tools through Project setup,
+   including local Vite+ when used. Configure `worker` with the Composer and JS
+   paths and assertions against the repository's release-age policy. Paths must
+   be relative, unique within each ecosystem, and stay inside the checkout.
+   Policy keys must name configured paths. The VM base image needs Swamp and
+   the Orbit root CA; see [worker maintenance](task-worker-maintenance.md).
+   For a project without worker support, omit `worker` and supply a tracked,
+   executable script accepting `routine`, `detect`, `package <composer|js>
+   <name> <version> <major|security> [advisory-id ...]`, and `summary`.
 2. Add one entry using the actual Orbit Project ID, exact `repository_url`,
    `task_check` and `default_branch` from `orbit project:show <id> --json`.
-   Set `script` to the tracked path relative to the repo root. No factory copy,
+   Set `script` to the fallback path relative to the repo root. A project with
+   `worker` never falls back to it on worker failure. No factory copy,
    new Gateway endpoint or dependency-specific Orbit record is needed.
 3. Run the local fixture tests. After review/merge, the operator applies the
    reviewed Swamp commit and restarts `swamp-serve`. Do not apply a rename while
@@ -38,16 +46,18 @@ dependencyProjects:
    [package](website-packages.md) for gates, target fields and repair limits.
 
 Unknown/duplicate Project IDs and mismatched Project settings refuse work.
-The script path comes from this config. Provision and handoff still send only
+Worker paths, policy and the fallback script path come from this config.
+Provision and handoff still send only
 Orbit's supported request fields: the Gateway starts from its Project's default
 branch and runs its Project's check. Config asserts those values; it cannot
 override them or inject a command into an operation. Request identity includes
 the selected config, so a changed config cannot replay a stage under the same
 key. Reconcile existing receipts before changing a running project's entry.
 
-Routine behavior is unchanged: update, check, at most one repair, recheck,
-publish or clean no-change completion. Package behavior is unchanged: one
-explicit package per fresh group, one repair plus script/audit verification,
+Routine work updates, checks, allows at most one repair, reruns worker
+maintenance after repair, then checks again before publication or clean
+no-change completion. Package behavior is unchanged: one
+explicit package per fresh group, one repair plus maintenance/audit verification,
 then publish. Each project's next package waits for its own previous package
 to merge and complete with the VM destroyed, or to be cancelled, cleaned up and
 acknowledged. Work in another configured project does not block it. Operator

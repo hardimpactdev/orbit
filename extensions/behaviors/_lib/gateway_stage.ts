@@ -1,3 +1,4 @@
+import { type MaintenanceResult } from "./swamp_maintenance.ts";
 import { dependencyProject, type DependencyProject } from "./dependency_projects.ts";
 import { packageArgs, packageDescription, PackageTargetSchema, type PackageTarget } from "./package_target.ts";
 import { type GroupRequest, syncGroupAssistance } from "./group_assistance.ts";
@@ -86,6 +87,8 @@ export interface StageArgs {
 export interface Deps {
   http: Http;
   projects?: DependencyProject[];
+  maintenance?: (args: StageArgs, group: number, request: Record<string, unknown>) => Promise<MaintenanceResult>;
+  revokeWorker?: (group: number) => Promise<void>;
   readJob: () => Promise<Job | null>;
   writeJob: (job: Job) => Promise<void>;
   /** Earlier publish jobs for this work item, so a later cycle can reuse a summary. */
@@ -116,6 +119,7 @@ export interface GroupRow extends AssistanceFields {
   watched_pr_state?: string | null;
   watched_pr_url?: string | null;
   pr_url?: string | null;
+  taskable_id?: number;
   tasks: TaskRow[];
 }
 
@@ -371,6 +375,17 @@ async function completePublishChild(http: Http, group: number, subtask: number):
   throw new Error(`moving subtask ${child.id} to completed: ${errorCode(r)}`);
 }
 
+async function maintenanceRequest(args: StageArgs, g: GroupRow, http: Http, mode: string): Promise<PlannedRequest> {
+  if (!Number.isSafeInteger(g.taskable_id)) throw new Error("maintenance requires the group's ready VM Instance");
+  const response = await http("GET", `/api/v1/instances/${g.taskable_id}`);
+  const instance = data(response);
+  if (response.status !== 200 || instance.id !== g.taskable_id || instance.project_id !== args.dependencyProject!.projectId ||
+    typeof instance.checkout_path !== "string" || !instance.checkout_path.startsWith("/")) throw new Error("maintenance workspace identity differs");
+  const base = envelope(args.workspace)?.payload.startingCommit ?? instance.starting_commit;
+  if (typeof base !== "string" || !/^[a-f0-9]{40}$/.test(base)) throw new Error("maintenance requires the immutable provision starting commit");
+  return { path: "swamp:maintenance", body: { cwd: instance.checkout_path, mode, base }, idempotencyKey: mode === "summary" ? `${args.key}.summary` : args.key };
+}
+
 /** Plan the operation for a stage. Returns null for `merged`, which starts no operation. */
 async function plan(args: StageArgs, group: number, http: Http, deps: Deps): Promise<{ subtask: number | null; request: PlannedRequest | null; analysisContext?: Job["analysisContext"] }> {
   const g = await readGroup(http, group);
@@ -401,13 +416,14 @@ async function plan(args: StageArgs, group: number, http: Http, deps: Deps): Pro
       }
       const subtask = h.payload.subtask;
       if (!Number.isSafeInteger(subtask) || Number(subtask) < 1) throw new Error("publish summary needs the handoff subtask");
-      if (!args.dependencyProject) throw new Error("publish summary needs the configured dependency script");
+      if (!args.dependencyProject) throw new Error("publish summary needs the configured dependency project");
       const saved = await savedSummary(args, h.payload.checkId as number, deps);
       if (saved) return req("/publish", { check: h.payload.checkId, pull_request: saved }, null);
       const child = g.tasks.find((t) => t.id === Number(subtask));
       if (!child || ["completed", "failed", "cancelled"].includes(child.status)) {
         throw new Error("publish has no saved summary for this checked commit, and its child has ended");
       }
+      if (args.dependencyProject.worker) return { subtask: Number(subtask), request: await maintenanceRequest(args, g, http, "summary") };
       return {
         subtask: Number(subtask),
         request: {
@@ -426,17 +442,21 @@ async function plan(args: StageArgs, group: number, http: Http, deps: Deps): Pro
     case "script":
       if (!args.routine) throw new Error("script stage requires the routine method");
       await setSubtaskStatus(http, group, t, "running");
+      if (args.dependencyProject!.worker) return { subtask: t.id, request: await maintenanceRequest(args, g, http, args.packageTarget ? "package" : "routine") };
       return req("/script", { subtask: t.id, script: args.dependencyProject!.script, args: args.packageTarget ? packageArgs(args.packageTarget) : ["routine"] }, t.id);
     case "repair": {
       if (!args.routine) throw new Error("repair stage requires the routine method");
       const h = ofSubtask(args.handoff, t.id);
       const script = ofSubtask(args.script, t.id);
       if (!(h && ["failed", "changed"].includes(String(h.outcome))) && !(script && script.outcome === "failed")) throw new Error("repair requires failed script or local check evidence");
-      const scope = args.packageTarget ? `Only ${packageDescription(args.packageTarget)}. Finish ${args.dependencyProject!.script} ${packageArgs(args.packageTarget).join(" ")}; do not upgrade another direct package. A security fix must clear the selected package advisories. ` : "";
+      const workerRepair = args.dependencyProject!.worker ? "The Swamp worker owns dependency commands. Fix their cause and the failing checks only; do not run scripts/dependencies or make unrelated dependency updates. Swamp will rerun the extension after this turn. " : "";
+      const scope = workerRepair
+        ? `${args.packageTarget ? `Only ${packageDescription(args.packageTarget)} at path ${args.packageTarget.path ?? "."}. Swamp reruns this exact target and verifies its selected advisories. ` : ""}${workerRepair}`
+        : args.packageTarget ? `Only ${packageDescription(args.packageTarget)}. Finish ${args.dependencyProject!.script} ${packageArgs(args.packageTarget).join(" ")}; do not upgrade another direct package. A security fix must clear the selected package advisories. ` : "";
       return req("/turn", { subtask: t.id, role: "implementer", thread: "new", prompt:
         implementerPrompt(g, t, null, envelope(args.handoff), null) +
         "\n\n" + scope + "This is the single routine dependency repair turn. Preserve manifest ranges, overrides and release-age/security policy. " +
-        (args.packageTarget ? "If the selected package command failed, fix its cause and rerun that exact command in this VM; do not claim ready until it completes. " : `If the routine command failed, fix its cause and rerun ${args.dependencyProject!.script} routine in this VM; do not claim ready until it completes. `) +
+        (workerRepair ? "" : args.packageTarget ? "If the selected package command failed, fix its cause and rerun that exact command in this VM; do not claim ready until it completes. " : `If the routine command failed, fix its cause and rerun ${args.dependencyProject!.script} routine in this VM; do not claim ready until it completes. `) +
         (args.packageTarget ? "Fix the failing checks. Do not add unrelated upgrades or changes. " : "Fix the failing checks. Do not add majors or unrelated changes. ") + "Stop blocked if you cannot finish within this turn. " +
         `\nRoutine command output: ${String(script?.output ?? "")}` }, t.id);
     }
@@ -547,6 +567,17 @@ function failureArtifacts(job: Job, op: Record<string, unknown>, args: StageArgs
   return { [job.stage]: { ...common, checkId: scoped ? result.check_id ?? null : null, commit: null, deliverables: [], output: "" } };
 }
 
+function scriptProducts(job: Job, result: Record<string, unknown>, args: StageArgs, evidence: Record<string, unknown>): Pick<Job, "artifacts" | "evidence"> {
+  if (!["passed", "failed"].includes(String(result.outcome)) ||
+    (result.exit_code !== null && !Number.isInteger(result.exit_code)) || typeof result.changed !== "boolean" ||
+    typeof result.output !== "string" || typeof result.output_truncated !== "boolean" ||
+    ![result.head, result.tree].every((v) => typeof v === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(v)) ||
+    (result.outcome === "passed") !== (result.exit_code === 0)) throw new Error("invalid scoped script result");
+  const earlier = ofSubtask(args.script, job.subtask);
+  const changed = result.changed || earlier?.changed === true || (earlier?.tree != null && earlier.tree !== result.tree);
+  return { artifacts: { script: { subtask: job.subtask, ...result, changed: Boolean(changed), ...(args.packageTarget ? { commandChanged: result.changed } : {}) } }, evidence };
+}
+
 /** Map a succeeded operation's result to the factory products of its stage. */
 async function products(job: Job, op: Record<string, unknown>, http: Http, args: StageArgs): Promise<Pick<Job, "artifacts" | "evidence"> & { state?: Job["state"]; lastError?: string }> {
   const result = (op.result ?? {}) as Record<string, unknown>;
@@ -595,15 +626,10 @@ async function products(job: Job, op: Record<string, unknown>, http: Http, args:
     }
     case "script": {
       requireOperation(job, op);
-      if (canonical(op.input) !== canonical(job.request?.body) || !["passed", "failed"].includes(String(result.outcome)) ||
-        (result.exit_code !== null && !Number.isInteger(result.exit_code)) || typeof result.changed !== "boolean" ||
-        typeof result.output !== "string" || typeof result.output_truncated !== "boolean" ||
-        ![result.head, result.tree].every((v) => typeof v === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(v)) ||
-        (result.outcome === "passed") !== (result.exit_code === 0)) throw new Error("invalid scoped script result");
-      const earlier = args.packageTarget ? ofSubtask(args.script, job.subtask) : null;
-      const changed = result.changed || earlier?.changed === true || (earlier?.tree != null && earlier.tree !== result.tree);
-      return { artifacts: { script: { subtask: job.subtask, ...result, changed: Boolean(changed), ...(args.packageTarget ? { commandChanged: result.changed } : {}) } }, evidence: ev() };
+      if (canonical(op.input) !== canonical(job.request?.body)) throw new Error("script input differs");
+      return scriptProducts(job, result, args, ev());
     }
+
     case "baseline":
     case "handoff": {
       if (args.routine) {
@@ -650,6 +676,7 @@ async function products(job: Job, op: Record<string, unknown>, http: Http, args:
       // The Gateway returns the thread as its id (TaskTurnOperation).
       const artifact: Record<string, unknown> = {
         subtask: job.subtask,
+        ...(args.routine && args.dependencyProject?.worker ? { rerunMaintenance: true } : {}),
         outcome: job.invalidated ? "blocked" : outcome,
         summary: receipt ? String(receipt.summary ?? "") : "",
         question: receipt?.question ?? null,
@@ -839,11 +866,13 @@ export async function runStage(args: StageArgs, deps: Deps): Promise<Job> {
   if (args.stage === "finish") {
     job = await finishRoutine(job, args, deps.http);
     await deps.writeJob(job);
+    try { await deps.revokeWorker?.(group); } catch { /* Minute cleanup retries. */ }
     return job;
   }
   if (args.stage === "merged") {
     job = await merged(job, deps.http, args.routine);
     await deps.writeJob(job);
+    try { await deps.revokeWorker?.(group); } catch { /* Minute cleanup retries. */ }
     return job;
   }
 
@@ -867,9 +896,37 @@ export async function runStage(args: StageArgs, deps: Deps): Promise<Job> {
       // A retained request may outlive an operator change or a lost response.
       // Reconcile receipts under the same key only while the observed group is safe.
       const g = await readGroup(deps.http, group);
-      if (g.orchestration !== "external" || g.tasks.length !== 1 ||
+      if (g.orchestration !== "external" || ENDED_GROUP.includes(g.status) || g.tasks.length !== 1 ||
         (current.subtask !== null && g.tasks[0].id !== current.subtask) ||
         hasAssistance(g) || g.tasks.some(hasAssistance)) throw new Error("routine dispatch preserves current children/operator/safety assistance");
+    }
+    if (req.path === "swamp:maintenance") {
+      if (!deps.maintenance) throw new Error("worker maintenance support is unavailable; script fallback is disabled for this project");
+      const outcome = await deps.maintenance(args, group, req.body);
+      if (outcome.state === "running") {
+        current = { ...current, operationStatus: "Swamp worker maintenance", lastError: null };
+      } else if (outcome.state === "failed" || !outcome.result) {
+        current = { ...current, state: "failed", lastError: outcome.lastError ?? "Swamp maintenance requires investigation", evidence: { status: "failed", runId: outcome.runId ?? args.key, workerName: outcome.workerName, error: outcome.lastError ?? "Swamp maintenance requires investigation" } };
+      } else if (args.stage === "script") {
+        current = { ...current, state: "succeeded", ...scriptProducts(current, outcome.result, args, { status: "succeeded", runId: outcome.runId, workerName: outcome.workerName }) };
+      } else {
+        const result = outcome.result;
+        const handoff = envelope(args.handoff)!.payload;
+        if (result.outcome !== "passed" || result.changed !== false || result.head !== handoff.commit || result.tree !== (handoff.candidate as Candidate)?.tree) {
+          current = { ...current, state: "failed", lastError: "dependency summary failed or changed the checked tree", evidence: { status: "failed", runId: outcome.runId } };
+        } else {
+          try {
+            const text = pullRequestSummary(`${String(result.output)}\n\nTested: ${args.dependencyProject!.check} (Gateway check ${String(handoff.checkId)}).`);
+            current = { ...current, request: { path: `/api/v1/task-groups/${group}/publish`, body: { check: handoff.checkId, pull_request: text }, idempotencyKey: idempotencyKey(args.key, null) } };
+          } catch {
+            current = { ...current, state: "failed", lastError: "dependency summary is unreadable", evidence: { status: "failed", runId: outcome.runId } };
+          }
+          await deps.writeJob(current);
+          if (current.state === "running") return launch(current);
+        }
+      }
+      await deps.writeJob(current);
+      return current;
     }
     if (args.routine && req.path.endsWith("/publish")) {
       const subtask = Number(envelope(args.handoff)?.payload.subtask);

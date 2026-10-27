@@ -5,6 +5,7 @@ description: Admit or resume one explicit package group; one guarded tick, no gr
 inputs:
   properties:
     workItem: { type: string }
+    path: { type: string }
     manager: { type: string, enum: [composer, js] }
     package: { type: string }
     version: { type: string }
@@ -20,14 +21,7 @@ jobs:
           type: model_method
           modelIdOrName: orbit-gateway
           methodName: admit_package
-          inputs:
-            workItem: '${{ inputs.workItem }}'
-            manager: '${{ inputs.manager }}'
-            package: '${{ inputs.package }}'
-            version: '${{ inputs.version }}'
-            purpose: '${{ inputs.purpose }}'
-            advisories: '${{ inputs.advisories }}'
-            advisoryUrls: '${{ inputs.advisoryUrls }}'
+          inputs: '${{ inputs }}'
       - name: reconcile
         dependsOn:
           - step: admit

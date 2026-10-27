@@ -1,0 +1,129 @@
+id: 49a3af66-d0c5-47e1-9038-12741e8b1033
+name: maintenance-worker
+description: Maintenance extensions on one task group's worker; Gateway owns handoff and commits.
+target: '${{ inputs.worker }}'
+queueTimeout: 120
+writes: true
+inputs:
+  properties:
+    key: { type: string }
+    name: { type: string }
+    group: { type: string }
+    worker: { type: string }
+    cwd: { type: string }
+    mode: { type: string }
+    method: { type: string }
+    composer: { type: object }
+    js: { type: object }
+    composerPaths: { type: array, items: { type: string } }
+    jsPaths: { type: array, items: { type: string } }
+    summary: { type: object }
+    composerCommon: { type: object }
+    jsCommon: { type: object }
+  required: [key, name, group, worker, cwd, mode, method, composer, js, composerPaths, jsPaths, summary, composerCommon, jsCommon]
+jobs:
+  - name: maintenance
+    steps:
+      - name: before
+        task:
+          type: model_method
+          modelType: '@nckrtl/js-maintenance'
+          modelName: '${{ "maintenance-git-" + inputs.name }}'
+          methodName: snapshot
+          inputs: { cwd: '${{ inputs.cwd }}' }
+      - name: composer
+        guard: "${{ !(inputs.mode != 'summary' && size(inputs.composerPaths) > 0) }}"
+        dependsOn:
+          - step: before
+            condition: { type: succeeded }
+        task:
+          type: model_method
+          modelType: '@nckrtl/composer-maintenance'
+          modelName: '${{ "maintenance-composer-" + inputs.name }}'
+          methodName: '${{ inputs.method }}'
+          inputs: '${{ inputs.composer }}'
+      - name: js
+        guard: "${{ !(inputs.mode != 'summary' && size(inputs.jsPaths) > 0) || (has(steps.composer) && has(steps.composer.outputs) && has(steps.composer.outputs.exitCode)) }}"
+        dependsOn:
+          - step: before
+            condition: { type: succeeded }
+          - step: composer
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        task:
+          type: model_method
+          modelType: '@nckrtl/js-maintenance'
+          modelName: '${{ "maintenance-js-" + inputs.name }}'
+          methodName: '${{ inputs.method }}'
+          inputs: '${{ inputs.js }}'
+      - name: composer_detect
+        guard: "${{ !(inputs.mode == 'package' && size(inputs.composerPaths) > 0) || (has(steps.composer) && has(steps.composer.outputs) && has(steps.composer.outputs.exitCode)) || (has(steps.js) && has(steps.js.outputs) && has(steps.js.outputs.exitCode)) }}"
+        dependsOn:
+          - step: before
+            condition: { type: succeeded }
+          - step: js
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        task:
+          type: model_method
+          modelType: '@nckrtl/composer-maintenance'
+          modelName: '${{ "maintenance-composer_detect-" + inputs.name }}'
+          methodName: 'detect'
+          inputs:
+            cwd: '${{ inputs.cwd }}'
+            paths: '${{ inputs.composerPaths }}'
+            policy: '${{ inputs.composerCommon.policy }}'
+            captureFailure: true
+      - name: js_detect
+        guard: "${{ !(inputs.mode == 'package' && size(inputs.jsPaths) > 0) || (has(steps.composer) && has(steps.composer.outputs) && has(steps.composer.outputs.exitCode)) || (has(steps.js) && has(steps.js.outputs) && has(steps.js.outputs.exitCode)) || (has(steps.composer_detect) && has(steps.composer_detect.outputs) && has(steps.composer_detect.outputs.exitCode)) }}"
+        dependsOn:
+          - step: before
+            condition: { type: succeeded }
+          - step: composer_detect
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        task:
+          type: model_method
+          modelType: '@nckrtl/js-maintenance'
+          modelName: '${{ "maintenance-js_detect-" + inputs.name }}'
+          methodName: 'detect'
+          inputs:
+            cwd: '${{ inputs.cwd }}'
+            paths: '${{ inputs.jsPaths }}'
+            policy: '${{ inputs.jsCommon.policy }}'
+            captureFailure: true
+      - name: summary
+        guard: "${{ !(inputs.mode == 'summary') }}"
+        dependsOn:
+          - step: before
+            condition: { type: succeeded }
+          - step: js_detect
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        task:
+          type: model_method
+          modelType: '@nckrtl/js-maintenance'
+          modelName: '${{ "maintenance-summary-" + inputs.name }}'
+          methodName: 'summary'
+          inputs:
+            cwd: '${{ inputs.cwd }}'
+            paths: '${{ inputs.summary.paths }}'
+            policy: '${{ inputs.summary.policy }}'
+            base: '${{ inputs.summary.base }}'
+            captureFailure: true
+      - name: after
+        dependsOn:
+          - step: before
+            condition: { type: or, conditions: [{ type: succeeded }, { type: failed }, { type: skipped }] }
+          - step: composer
+            condition: { type: or, conditions: [{ type: succeeded }, { type: failed }, { type: skipped }] }
+          - step: js
+            condition: { type: or, conditions: [{ type: succeeded }, { type: failed }, { type: skipped }] }
+          - step: composer_detect
+            condition: { type: or, conditions: [{ type: succeeded }, { type: failed }, { type: skipped }] }
+          - step: js_detect
+            condition: { type: or, conditions: [{ type: succeeded }, { type: failed }, { type: skipped }] }
+          - step: summary
+            condition: { type: or, conditions: [{ type: succeeded }, { type: failed }, { type: skipped }] }
+        task:
+          type: model_method
+          modelType: '@nckrtl/js-maintenance'
+          modelName: '${{ "maintenance-git-" + inputs.name }}'
+          methodName: snapshot
+          inputs: { cwd: '${{ inputs.cwd }}' }

@@ -1,5 +1,11 @@
 /** Composer maintenance in a supplied checkout, with no orchestration dependency. */
-import { type Context, parse, write } from "../_lib/maintenance/context.ts";
+import {
+  type Context,
+  failureReceipts,
+  failureResource,
+  parse,
+  write,
+} from "../_lib/maintenance/context.ts";
 import { z } from "npm:zod@4";
 import {
   AdvisorySchema,
@@ -67,9 +73,10 @@ const SummarySchema = z.strictObject({
 /** Swamp behavior: local commands and versioned schema 1 resources. */
 export const behavior = {
   type: "@nckrtl/composer-maintenance",
-  version: "2026.10.26.1",
+  version: "2026.10.27.1",
   globalArguments: z.strictObject({}),
   resources: {
+    failure: failureResource,
     routine: {
       description: "Completed Composer routine paths",
       schema: RoutineSchema,
@@ -95,7 +102,7 @@ export const behavior = {
       garbageCollection: 20,
     },
   },
-  methods: {
+  methods: failureReceipts({
     routine: {
       description:
         "Update each configured Composer path within declared ranges; stop on failure",
@@ -288,5 +295,5 @@ export const behavior = {
         );
       },
     },
-  },
+  }),
 };

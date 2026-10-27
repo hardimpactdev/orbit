@@ -685,3 +685,37 @@ Deno.test("a later publish cycle reuses the saved summary and does not script th
     await f.fake.close();
   }
 });
+
+Deno.test("completion is durable before best-effort worker revocation, and replay does not repeat cleanup", async () => {
+  for (const stage of ["finish", "merged"] as const) {
+    const f = await fixture();
+    try {
+      const group = f.fake.groups.get(7)!;
+      group.tasks[0].status = "completed";
+      group.watched_pr_state = stage === "merged" ? "merged" : null;
+      let revokes = 0;
+      const deps = {
+        ...f.deps,
+        revokeWorker: () => {
+          revokes++;
+          assertEquals(
+            f.get()!.state,
+            "succeeded",
+            "save completion before contacting Swamp",
+          );
+          throw new Error("Swamp unavailable; minute sweep will retry");
+        },
+      };
+      const args = f.args(stage, { script, handoff });
+      assertEquals((await runStage(args, deps)).state, "succeeded");
+      assertEquals((await runStage(args, deps)).state, "succeeded");
+      assertEquals(revokes, 1);
+      assertEquals(
+        f.calls.filter((call) => call.path.endsWith("/complete")).length,
+        1,
+      );
+    } finally {
+      await f.fake.close();
+    }
+  }
+});

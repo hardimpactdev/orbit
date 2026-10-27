@@ -5,6 +5,7 @@ import { canonical } from "./repository_analysis.ts";
 
 export const PackageTargetSchema = z.object({
   workItem: z.string().regex(/^tg-[1-9]\d*$/),
+  path: z.string().min(1).optional(),
   manager: z.enum(["composer", "js"]),
   package: z.string().regex(/^(?:@[a-z0-9][a-z0-9_.-]*\/)?[a-z0-9][a-z0-9_.-]*(?:\/[a-z0-9][a-z0-9_.-]*)?$/),
   version: z.string().regex(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/),
@@ -60,6 +61,7 @@ export async function admitPackage(target: PackageTarget, deps: {
   const tasks = g.tasks as Record<string, unknown>[];
   if (g.project_id !== project.projectId || g.orchestration !== "external" || g.status !== "backlog" || g.taskable_id != null || g.vm_power != null || unsafe(g) ||
     !Array.isArray(tasks) || tasks.length !== 1 || tasks[0].status !== "todo" || unsafe(tasks[0])) throw new Error("package admission requires one unused external configured project backlog group with one child");
+  if (target.path && !project.worker) throw new Error("package paths require worker support");
   // Persist before start. A lost response resumes the same immutable selection/run.
   await deps.save(target);
   await deps.start(target.workItem);

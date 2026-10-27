@@ -25,7 +25,7 @@ Deno.test({ name: "dependency-package official factory enforces sequential fresh
     await Deno.mkdir(`${dir}/.swamp`);
     assert((await new Deno.Command("cp", { args: ["-r", `${REPO}/.swamp/pulled-extensions`, `${dir}/.swamp/`] }).output()).success);
     const def = `${dir}/models/@nckrtl/orbit-gateway/orbit-gateway.yaml`;
-    await Deno.writeTextFile(def, (await Deno.readTextFile(def)).replace(/gatewayUrl: .*/, `gatewayUrl: ${fake.url}`).replace("methods: {}", `    - projectId: ${SECOND_PROJECT.projectId}
+    await Deno.writeTextFile(def, (await Deno.readTextFile(def)).replace(/      worker:\n(?:        .*\n)+/, "").replace(/gatewayUrl: .*/, `gatewayUrl: ${fake.url}`).replace("methods: {}", `    - projectId: ${SECOND_PROJECT.projectId}
       repository: ${SECOND_PROJECT.repository}
       script: ${SECOND_PROJECT.script}
       check: ${SECOND_PROJECT.check}

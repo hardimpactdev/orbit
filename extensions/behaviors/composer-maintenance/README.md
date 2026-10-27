@@ -99,9 +99,9 @@ receives the same clean environment allowlist as `@nckrtl/composer`, without
 parent agent markers. The 8 MiB stdout limit applies only to JSON reports;
 update commands can produce longer output. Methods need only `writeResource` and
 the cancellation signal from Swamp. They never call `context.runModel()`, a
-Gateway, an LLM, or a host-side orchestration layer. Worker installation and
-workflow wiring are separate work. Existing workflows, models, the official
-`@swamp/software-factory`, and production serve are unchanged.
+Gateway, an LLM, or a host-side orchestration layer. The
+[group worker workflow](../../../docs/task-worker-maintenance.md) supplies
+placement and enrollment. The official factory implementation stays unchanged.
 
 The clean environment drops `NPM_TOKEN` and `COMPOSER_AUTH`. Private registries
 need explicit credential handling in a later change.
@@ -139,3 +139,11 @@ come from [maintainer](https://github.com/hardimpactdev/maintainer), PRs #1–#5
 and the website's
 [dependency policy](https://github.com/nckrtl/website/blob/main/docs/dependency-policy.md).
 See `fixtures/README.md` for provenance and the Composer case mapping.
+
+## Workflow failure receipts
+
+`captureFailure: true` turns a completed maintenance error into a `failure`
+resource with `exitCode` and `message`. It writes no success resource. The
+caller must inspect that receipt before advancing. The default still throws.
+Abort and infrastructure errors always throw, so a lost worker never looks like
+a command that completed and can be repaired.

@@ -1,0 +1,15 @@
+{
+  "id": "b4964c2a-b648-4000-8000-000000000007",
+  "workflowName": "maintenance-worker",
+  "status": "succeeded",
+  "inputs": {"worker": "task-group-7-1"},
+  "jobs": [{"name": "maintenance", "steps": [
+    {"name": "before", "status": "succeeded", "dataArtifacts": [{"name":"snapshot", "attributes":{"head":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "tree":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}]},
+    {"name": "composer", "status": "succeeded", "dataArtifacts": [{"name":"routine", "attributes":{"schema":1,"paths":["."]}}]},
+    {"name": "js", "status": "succeeded", "dataArtifacts": [{"name":"routine", "attributes":{"schema":1,"paths":["."]}}]},
+    {"name": "composer_detect", "status": "skipped"},
+    {"name": "js_detect", "status": "skipped"},
+    {"name": "summary", "status": "skipped"},
+    {"name": "after", "status": "succeeded", "dataArtifacts": [{"name":"snapshot", "attributes":{"head":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "tree":"cccccccccccccccccccccccccccccccccccccccc"}}]}
+  ]}]
+}

@@ -1,6 +1,16 @@
+import {
+  snapshotMethod,
+  SnapshotSchema,
+} from "../_lib/maintenance/snapshot.ts";
 /** JavaScript maintenance in a supplied checkout; no Composer or orchestrator is needed. */
 import { z } from "npm:zod@4";
-import { type Context, parse, write } from "../_lib/maintenance/context.ts";
+import {
+  type Context,
+  failureReceipts,
+  failureResource,
+  parse,
+  write,
+} from "../_lib/maintenance/context.ts";
 import {
   AdvisorySchema,
   CommonSchema,
@@ -82,9 +92,16 @@ async function project(args: z.infer<typeof CommonSchema>) {
 /** Local commands with versioned schema 1 resources, matching Composer maintenance. */
 export const behavior = {
   type: "@nckrtl/js-maintenance",
-  version: "2026.10.26.1",
+  version: "2026.10.27.1",
   globalArguments: z.strictObject({}),
   resources: {
+    snapshot: {
+      description: "HEAD and whole working-tree identity for Gateway handoff",
+      schema: SnapshotSchema,
+      lifetime: "30d",
+      garbageCollection: 20,
+    },
+    failure: failureResource,
     routine: {
       description: "Completed JavaScript routine paths",
       schema: RoutineSchema,
@@ -110,7 +127,8 @@ export const behavior = {
       garbageCollection: 20,
     },
   },
-  methods: {
+  methods: failureReceipts({
+    snapshot: snapshotMethod,
     routine: {
       description:
         "Update configured JS paths within declared ranges; stop on failure",
@@ -321,5 +339,5 @@ export const behavior = {
         );
       },
     },
-  },
+  }),
 };

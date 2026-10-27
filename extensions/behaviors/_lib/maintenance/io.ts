@@ -13,6 +13,7 @@ export const PolicySchema = z.record(
   z.strictObject({ minimumReleaseAgeDays: z.number().int().nonnegative() }),
 );
 export const CommonSchema = z.strictObject({
+  captureFailure: z.boolean().optional(),
   cwd: z.string().min(1),
   paths: z.array(z.string().min(1)).min(1).default(["."]),
   policy: PolicySchema.describe(

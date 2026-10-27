@@ -1,3 +1,5 @@
+import { runMaintenance, reconcileWorkers, workerControl, type MaintenanceContext } from "./_lib/swamp_maintenance.ts";
+import { revokeEndedWorker } from "./_lib/maintenance_worker.ts";
 import { DependencyProjectsSchema } from "./_lib/dependency_projects.ts";
 import { admitPackage, PackageTargetSchema, type PackageTarget } from "./_lib/package_target.ts";
 // @nckrtl/orbit-gateway — the stage work of the orbit-groups factory.
@@ -10,6 +12,10 @@ import { type StageArgs } from "./_lib/gateway_stage.ts";
 
 const GlobalArgsSchema = z.object({
   dependencyProjects: DependencyProjectsSchema.default([]),
+  enrollmentVault: z.string().min(1).default("default"),
+  workerUrl: z.string().default("wss://swamp.orbit"),
+  serveUrl: z.string().default("wss://swamp.orbit"),
+  serveTokenFile: z.string().default("/home/orbit/.config/swamp/serve-driver-token"),
   gatewayUrl: z.string().default("https://gateway.orbit"),
   caFile: z.string().default("/usr/local/share/ca-certificates/orbit-managed-root-ca.crt"),
   timeoutSeconds: z.number().int().default(60),
@@ -70,9 +76,19 @@ export function curlHttp(g: Pick<GlobalArgs, "gatewayUrl" | "caFile" | "timeoutS
 
 export const behavior = {
   type: "@nckrtl/orbit-gateway",
-  version: "2026.10.25.6",
+  version: "2026.10.27.1",
   globalArguments: GlobalArgsSchema,
   resources: {
+    worker: {
+      description: "Public per-group Swamp enrollment and Gateway worker operation receipt",
+      schema: z.object({ group: z.number().int().positive(), generation: z.number().int().positive(), tokenName: z.string(), operationId: z.number().int().positive().nullable(), nextReadAt: z.string().nullable().optional(), startedAt: z.string().optional(), ready: z.boolean(), revoked: z.boolean() }),
+      lifetime: "infinite", garbageCollection: 10,
+    },
+    maintenance: {
+      description: "Swamp workflow start intent and adopted run; no credentials",
+      schema: z.object({ key: z.string(), inputs: z.record(z.string(), z.unknown()), runId: z.string().nullable(), createdAt: z.string() }),
+      lifetime: "infinite", garbageCollection: 10,
+    },
     packageTarget: { description: "Immutable single-package selection per admitted group", schema: PackageTargetSchema, lifetime: "infinite", garbageCollection: 10 },
     job: {
       description: "One Gateway task operation per driver key, with its stage products",
@@ -95,6 +111,14 @@ export const behavior = {
     },
   },
   methods: {
+    reconcile_workers: {
+      description: "Revoke enrollment for ended groups, including external cancellation",
+      arguments: z.object({}),
+      execute: async (_args: Record<string, never>, context: StageContext) => {
+        await reconcileWorkers(context, curlHttp(context.globalArgs));
+        return { dataHandles: [] };
+      },
+    },
     admit_package: {
       description: "Admit one unused configured project group after its earlier packages merged and completed; never creates a group",
       arguments: PackageTargetSchema.strip(), // Swamp merges global args into method validation.
@@ -194,7 +218,7 @@ export const behavior = {
   },
 };
 
-interface StageContext {
+interface StageContext extends MaintenanceContext {
   globalArgs: GlobalArgs;
   definition: { name: string };
   queryData: (predicate: string, select?: string) => Promise<unknown[]>;
@@ -204,8 +228,11 @@ interface StageContext {
 
 async function executeStage(args: StageArgs, context: StageContext) {
   let handle: { name: string } | null = null;
+  const http = curlHttp(context.globalArgs);
   const job = await runStage(args, {
-    http: curlHttp(context.globalArgs),
+    maintenance: (input, group, request) => runMaintenance(input, group, request, context, http),
+    revokeWorker: (group) => revokeEndedWorker(group, workerControl(context, http)),
+    http,
     projects: context.globalArgs.dependencyProjects,
     readJob: async () => {
       const rows = (await context.queryData(

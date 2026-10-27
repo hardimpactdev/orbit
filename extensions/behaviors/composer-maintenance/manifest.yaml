@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: "@nckrtl/composer-maintenance"
-version: 2026.10.26.1
+version: 2026.10.27.1
 visibility: private
 license: MIT
 description: Composer updates, locked detection, security exceptions, and dependency PR descriptions.

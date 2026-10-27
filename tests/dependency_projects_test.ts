@@ -80,3 +80,11 @@ Deno.test("second-project repair names its configured script without changing th
     assertEquals(f.fake.startsOf(7, "handoff"), 1);
   } finally { await f.fake.close(); }
 });
+
+Deno.test("worker configuration refuses escaping, duplicate and unconfigured policy paths", () => {
+  const worker = { composerPaths: ["."], jsPaths: [], policy: { ".": { minimumReleaseAgeDays: 7 } } };
+  assert(DependencyProjectsSchema.safeParse([{ ...WEBSITE_PROJECT, worker }]).success);
+  for (const patch of [{ composerPaths: [] }, { composerPaths: ["../other"] }, { composerPaths: ["/host"] }, { composerPaths: [".", "."] }, { policy: { "unknown": { minimumReleaseAgeDays: 7 } } }]) {
+    assertEquals(DependencyProjectsSchema.safeParse([{ ...WEBSITE_PROJECT, worker: { ...worker, ...patch } }]).success, false);
+  }
+});

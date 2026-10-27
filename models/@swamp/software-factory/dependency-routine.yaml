@@ -25,10 +25,10 @@ globalArguments:
           to: assistance
           gates: [{ type: evidence-recorded, config: { name: provision-run, requireField: { status: failed } } }]
     - id: script
-      maxCycles: 1
+      maxCycles: 2
       work:
         mode: method
-        method: { modelIdOrName: orbit-gateway, methodName: routine, inputs: { workItem: '${{ self.workItem }}', stage: script } }
+        method: { modelIdOrName: orbit-gateway, methodName: routine, inputs: { workItem: '${{ self.workItem }}', stage: script, script: '${{ data.latest(self.name, "artifact-script") }}' } }
         resultEvidence: script-run
       artifacts:
         - name: script
@@ -54,12 +54,12 @@ globalArguments:
           to: repair
           gates:
             - { type: evidence-recorded, config: { name: script-run, requireField: { status: succeeded } } }
-            - { type: cel, config: { expr: 'artifacts.script.outcome == "failed" && artifacts.script.exit_code != null' } }
+            - { type: cel, config: { expr: 'artifacts.script.outcome == "failed" && artifacts.script.exit_code != null && !has(artifacts.change)' } }
         - name: unknown
           to: assistance
           gates:
             - { type: evidence-recorded, config: { name: script-run } }
-            - { type: cel, config: { expr: 'evidence.script_run.status == "failed" || (has(artifacts.script) && artifacts.script.exit_code == null)' } }
+            - { type: cel, config: { expr: 'evidence.script_run.status == "failed" || (has(artifacts.script) && (artifacts.script.exit_code == null || (has(artifacts.change) && artifacts.script.outcome == "failed")))' } }
     - id: handoff
       maxCycles: 2
       work:
@@ -114,11 +114,16 @@ globalArguments:
         - name: change
           schema: { type: object, additionalProperties: true, required: [subtask, outcome] }
       transitions:
+        - name: rerun
+          to: script
+          gates:
+            - { type: evidence-recorded, config: { name: repair-run, requireField: { status: succeeded } } }
+            - { type: cel, config: { expr: 'artifacts.change.outcome == "ready_for_review" && has(artifacts.change.rerunMaintenance) && artifacts.change.rerunMaintenance' } }
         - name: recheck
           to: handoff
           gates:
             - { type: evidence-recorded, config: { name: repair-run, requireField: { status: succeeded } } }
-            - { type: cel, config: { expr: 'artifacts.change.outcome == "ready_for_review"' } }
+            - { type: cel, config: { expr: 'artifacts.change.outcome == "ready_for_review" && !has(artifacts.change.rerunMaintenance)' } }
         - name: stop
           to: assistance
           gates:

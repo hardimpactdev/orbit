@@ -1,0 +1,45 @@
+name: Maintenance worker
+on:
+  pull_request:
+    paths:
+      - 'extensions/behaviors/orbit_gateway.ts'
+      - 'extensions/behaviors/_lib/**'
+      - 'models/@nckrtl/orbit-gateway/**'
+      - 'models/@swamp/software-factory/dependency-*.yaml'
+      - 'workflows/workflow-maintenance-*.yaml'
+      - 'workflows/workflow-dependency-package.yaml'
+      - 'tests/**'
+      - '.github/workflows/maintenance-worker.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'extensions/behaviors/orbit_gateway.ts'
+      - 'extensions/behaviors/_lib/**'
+      - 'models/@nckrtl/orbit-gateway/**'
+      - 'models/@swamp/software-factory/dependency-*.yaml'
+      - 'workflows/workflow-maintenance-*.yaml'
+      - 'workflows/workflow-dependency-package.yaml'
+      - 'tests/**'
+      - '.github/workflows/maintenance-worker.yml'
+permissions:
+  contents: read
+jobs:
+  driver:
+    runs-on: [self-hosted, hardimpact]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.8
+      - name: Check driver types
+        run: deno check extensions/behaviors/orbit_gateway.ts
+      - name: Check worker modules
+        run: |
+          deno fmt --check extensions/behaviors/_lib/maintenance_worker.ts extensions/behaviors/_lib/swamp_maintenance.ts tests/maintenance_worker_test.ts tests/maintenance_resources_test.ts
+          deno lint extensions/behaviors/_lib/maintenance_worker.ts extensions/behaviors/_lib/swamp_maintenance.ts tests/maintenance_worker_test.ts tests/maintenance_resources_test.ts
+      - name: Test affected driver contracts (one worker)
+        run: >-
+          deno test --allow-all
+          tests/dependency_projects_test.ts tests/routine_stage_test.ts
+          tests/package_stage_test.ts tests/maintenance_worker_test.ts
+          tests/maintenance_resources_test.ts

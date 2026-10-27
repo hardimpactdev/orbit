@@ -38,7 +38,8 @@ orbit process:create swamp-serve --node=17 --runtime=systemd --user=orbit \
   --command=--port --command=9417 --command=--host --command=127.0.0.1 \
   --command=--auth-mode --command=token --command=--admins --command=user:nckrtl \
   --command=--club-api-key-file --command=/home/orbit/.config/swamp/api-key \
-  --command=--trusted-hosts --command=swamp.orbit --command=--trust-proxy
+  --command=--trusted-hosts --command=swamp.orbit --command=--trust-proxy \
+  --command=--dispatch-env-allow=,
 ```
 
 The command creates a stopped Process with `restart_policy: always` and
@@ -53,6 +54,12 @@ through Services' Caddy. Only WireGuard peers can reach it. Clients use
 root CA. Never publish this Route publicly. The
 [Swamp manual](https://swamp-club.com/manual/how-to/set-up-tls-for-swamp-serve)
 describes this reverse proxy arrangement.
+
+The final argv entry is `--dispatch-env-allow=,`. Swamp drops empty fields in this
+comma-separated list, so it ships no serve environment variables to task VMs.
+The pinned CLI rejects a literal empty flag argument. Keep the explicit empty
+list when updating Process 281; omitting the flag restores Swamp's default
+dispatch environment. The worker supplies its own runtime environment.
 
 ## Deploy main
 
