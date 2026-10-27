@@ -878,3 +878,42 @@ Deno.test("worker server authentication is minted for only its worker identity a
   );
   assert(!JSON.stringify([...h.records]).includes("fixture-credential"));
 });
+
+Deno.test("missing worker names stay absent in maintenance receipts", () => {
+  for (
+    const state of ["succeeded", "failed", "step-failed", "malformed-receipt"]
+  ) {
+    const run = runFixture();
+    delete run.inputs.worker;
+    if (state === "failed") run.status = "failed";
+    if (state === "step-failed") run.jobs[0].steps[1].status = "failed";
+    if (state === "malformed-receipt") {
+      run.jobs[0].steps[1].dataArtifacts = [{
+        name: "failure",
+        attributes: { exitCode: "invalid" },
+      }];
+    }
+    const result = maintenanceResult(run);
+    assertEquals(result.workerName, undefined);
+    assert(!JSON.stringify(result).includes('"workerName"'));
+  }
+});
+
+Deno.test("uncertain starts preserve an absent worker name", async () => {
+  const inputs = { key: "missing-worker" };
+  const intent: WorkflowIntent = {
+    key: inputs.key,
+    inputs,
+    runId: null,
+    createdAt: new Date(0).toISOString(),
+  };
+  const error = await assertRejects(() =>
+    ensureMaintenance(inputs, {
+      read: () => Promise.resolve(intent),
+      save: () => Promise.reject(new Error("must not save")),
+      search: () => Promise.resolve([]),
+      launch: () => Promise.reject(new Error("must not dispatch")),
+      get: () => Promise.reject(new Error("no receipt")),
+    }), MaintenanceAttention);
+  assertEquals(error.workerName, undefined);
+});

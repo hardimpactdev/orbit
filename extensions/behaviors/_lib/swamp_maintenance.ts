@@ -316,6 +316,9 @@ function resource(
     ?.attributes;
 }
 export function maintenanceResult(run: WorkflowRun): MaintenanceResult {
+  const workerName = typeof run.inputs.worker === "string"
+    ? run.inputs.worker
+    : undefined;
   const steps = run.jobs.flatMap((job) => job.steps);
   const before = resource(
     steps.find((step) => step.name === "before"),
@@ -334,14 +337,14 @@ export function maintenanceResult(run: WorkflowRun): MaintenanceResult {
     return {
       state: "failed",
       runId: run.id,
-      workerName: String(run.inputs.worker),
+      workerName,
     };
   }
   if (steps.some((step) => step.status === "failed")) {
     return {
       state: "failed",
       runId: run.id,
-      workerName: String(run.inputs.worker),
+      workerName,
     };
   }
   const receipts = steps.map((step) => resource(step, "failure")).filter((
@@ -351,7 +354,7 @@ export function maintenanceResult(run: WorkflowRun): MaintenanceResult {
     return {
       state: "failed",
       runId: run.id,
-      workerName: String(run.inputs.worker),
+      workerName,
     };
   }
   const failures = receipts;
@@ -362,7 +365,7 @@ export function maintenanceResult(run: WorkflowRun): MaintenanceResult {
   return {
     state: "succeeded",
     runId: run.id,
-    workerName: String(run.inputs.worker),
+    workerName,
     result: {
       outcome: failures.length ? "failed" : "passed",
       exit_code: failures.length ? receipts[0]!.exitCode : 0,

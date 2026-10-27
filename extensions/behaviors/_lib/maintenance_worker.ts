@@ -323,7 +323,9 @@ export async function ensureMaintenance(
       ) {
         throw new MaintenanceAttention(
           `maintenance ${intent.key} has no Swamp run receipt five minutes after dispatch intent; inspect serve history before any retry; it was not dispatched again`,
-          String(intent.inputs.worker),
+          typeof intent.inputs.worker === "string"
+            ? intent.inputs.worker
+            : undefined,
         );
       }
       return null;
