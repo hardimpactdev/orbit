@@ -43,8 +43,8 @@ compare exact JSON output. No network or running Horizon service is required.
 
 ## Manual entry point
 
-The `@nckrtl/project-horizon-new-dawn-detect` workflow takes `group`, `worker`, `cwd` and
-`projectId`. `group` must already be an open external package group with an
+The `@nckrtl/project-horizon-new-dawn-detect` workflow takes `group`, `worker` and
+`cwd`. Project 57 comes from config. `group` must already be an open external package group with an
 enrolled worker. The workflow checks its existing enrollment receipt; it does
 not mint tokens, start workers or change placement. The worker job uses that
 exact name. The server job reads that run's `plan` resource through CEL and
@@ -56,11 +56,10 @@ its saved group receipt. A lost create reply is reconciled by the exact brief;
 an uncertain absent or duplicate group requires the orchestrator to reconcile.
 The Gateway group limit of 50 tasks fails explicitly instead of dropping items.
 
-Before live acceptance, configure an Orbit Project for the package. Project 27
-points to `nckrtl/horizon-new-dawn-website`, which is a different repository.
-Both admission and worker validation reject it. The package Project must have
-review and merge off so that its PRs wait for Nick. Its check must use the
-package's actual `composer quality` script. Compatibility tests also need an
-isolated local Redis and the exact selected Horizon version installed in a
-temporary test environment. The repository currently has no `composer check`
-script.
+Project 57 `horizon-new-dawn` points to `nckrtl/horizon-new-dawn`, with
+root `.`, branch `main`, and check
+`composer format:test && composer analyse && composer test`. Project 27
+`horizon-new-dawn-website` points to `nckrtl/horizon-new-dawn-website`. Both admission and worker validation reject
+Project 27. Project 57 has review and merge off so that parity PRs wait for Nick.
+Compatibility tests also need an isolated local Redis and the exact selected
+Horizon version installed in a temporary test environment.

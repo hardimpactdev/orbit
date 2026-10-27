@@ -13,7 +13,8 @@ Deno.test("worker admission checks the current enrollment, package repo and merg
   };
   let repo = "git@github.com:nckrtl/horizon-new-dawn.git",
     review = false,
-    status = "running";
+    status = "running",
+    projectId = project.projectId as number;
   const calls: string[] = [];
   const http: Http = (method, path) => {
     assertEquals(method, "GET");
@@ -22,7 +23,7 @@ Deno.test("worker admission checks the current enrollment, package repo and merg
       status: 200,
       body: {
         data: path.includes("/task-groups/")
-          ? { project_id: 123, orchestration: "external", status }
+          ? { project_id: projectId, orchestration: "external", status }
           : { repository_url: repo, review_and_merge: review },
       },
     });
@@ -38,7 +39,7 @@ Deno.test("worker admission checks the current enrollment, package repo and merg
   const run = () =>
     verifyWorker(args, "orbit-gateway", project.repository, read, http);
   await run();
-  assertEquals(calls, ["/api/v1/task-groups/456", "/api/v1/projects/123"]);
+  assertEquals(calls, ["/api/v1/task-groups/456", "/api/v1/projects/57"]);
   for (
     const change of [{ tokenName: "task-group-456-1" }, { ready: false }, {
       revoked: true,
@@ -59,6 +60,9 @@ Deno.test("worker admission checks the current enrollment, package repo and merg
   review = true;
   await assertRejects(run, Error, "wait for Nick");
   review = false;
+  projectId = 27;
+  await assertRejects(run, Error, "package Project 57");
+  projectId = project.projectId;
   status = "completed";
   await assertRejects(run, Error, "open external group");
   assertEquals(extension.type, "@nckrtl/orbit-gateway");
@@ -272,4 +276,19 @@ Deno.test("Gateway HTML and empty bodies produce clear status-bearing errors", a
     await server.shutdown();
     await Deno.remove(caFile);
   }
+});
+
+Deno.test("Horizon task admission defaults to package Project 57 and rejects the website Project", () => {
+  const args = {
+    plan: {
+      schema: 1,
+      baseline: false,
+      synced_tag: "v5.50.1",
+      tag: null,
+      tasks: [],
+    },
+  };
+  const schema = extension.methods[0].horizon_tasks.arguments;
+  assertEquals(schema.parse(args).projectId, 57);
+  assertEquals(schema.safeParse({ ...args, projectId: 27 }).success, false);
 });

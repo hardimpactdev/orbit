@@ -183,7 +183,7 @@ for (const pair of pairs) {
         );
         assertEquals(task.deliverables.map((d) => d.command), [
           "composer test:compatibility",
-          "composer quality",
+          "composer format:test && composer analyse && composer test",
         ]);
       });
       await ledger(cwd, pair.to);

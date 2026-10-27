@@ -112,6 +112,11 @@ export async function verifyWorker(
     group.status !== 200 || !data || data.orchestration !== "external" ||
     ["completed", "failed", "cancelled"].includes(data.status ?? "")
   ) throw new Error("Horizon detection requires an open external group");
+  if (data.project_id !== project.projectId) {
+    throw new Error(
+      `Horizon detection requires package Project ${project.projectId}`,
+    );
+  }
   const response = await gateway(
     "GET",
     `/api/v1/projects/${data.project_id}`,
@@ -132,7 +137,7 @@ export async function verifyWorker(
 }
 
 const ArgsSchema = z.object({
-  projectId: z.number().int().positive(),
+  projectId: z.literal(project.projectId).default(project.projectId),
   plan: PlanSchema,
 });
 export const extension = {

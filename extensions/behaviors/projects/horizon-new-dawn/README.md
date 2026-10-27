@@ -1,9 +1,9 @@
 # Horizon New Dawn project extension
 
 Private `@nckrtl/project-horizon-new-dawn` moves upstream detection out of the
-package's maintenance script. `config.ts` holds repository identity, paths,
-ledger location, checks and Nick's merge approval. The ledger stays in the
-package. This extension does not use generic dependency maintenance.
+package's maintenance script. `config.ts` holds Project 57, repository identity,
+paths, ledger location, checks and Nick's merge approval. The ledger stays in
+the package. This extension does not use generic dependency maintenance.
 
 - `configuration` writes the project config resource.
 - `detect({cwd})` runs on the group's VM worker. It writes the script-compatible
@@ -13,22 +13,25 @@ package. This extension does not use generic dependency maintenance.
   committed.
 - The Gateway extension's `horizon_worker` verifies the existing enrollment
   receipt and open package group. It never changes worker lifecycle state.
-- `horizon_tasks({projectId, plan})` on `orbit-gateway` creates one external
-  **backlog** group containing the planned tasks. It checks the Project's exact
-  repository and requires automatic review/merge to be off. A repeated scan
-  reuses the group's receipt. An uncertain create stops for reconciliation.
+- `horizon_tasks({plan})` on `orbit-gateway` creates one external **backlog**
+  group containing the planned tasks. It selects package Project 57 and checks
+  the Project's exact repository and requires automatic review/merge to be off.
+  A repeated scan reuses the group's receipt. An uncertain create stops for
+  reconciliation.
 
 `@nckrtl/project-horizon-new-dawn-detect` verifies worker placement on the
 server, runs detection on that worker and materializes tasks on the server using
 Swamp data references. It requires an existing enrolled package task group, its
-exact worker name, its VM checkout path and the correct package Project ID. It
+exact worker name and its VM checkout path. The Project ID comes from config. It
 has no schedule and starts no factory run. The orchestrator must authorize a
 live call. When started, parity tasks run through the existing official software
 factory and Gateway; PRs wait for Nick. No factory engine is copied.
 
 The merged package baseline is already at `v5.50.1`. Do not repeat it. Detection
-cannot proceed on Project 27: that Project points to the separate website repo.
-The package Project must be configured before live acceptance.
+cannot proceed on Project 27 `horizon-new-dawn-website`: that Project points to
+the separate website repo. Project 57 `horizon-new-dawn` is the package Project.
+Its check is `composer format:test && composer analyse && composer test`, and
+review and merge remain off so that parity PRs wait for Nick.
 
 Delivery stays in the private orbit-swamp deployment bundle. Do not publish this
 manifest to the registry without the orchestrator's approval. After merge, the

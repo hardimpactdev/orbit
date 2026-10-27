@@ -5,6 +5,8 @@ import { project } from "./config.ts";
 import { repository } from "./_lib/queue.ts";
 
 const ConfigurationSchema = z.object({
+  projectId: z.number().int().positive(),
+  slug: z.string().min(1),
   repository: z.string(),
   defaultBranch: z.string(),
   paths: z.array(z.string()),
