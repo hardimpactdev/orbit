@@ -13,6 +13,8 @@ covers:
 
 # Node agent
 
+The Gateway reuses its bounded TLS WebSocket transport to read [Swamp run output](/reference/tasks#swamp-run-output), with a separate read-only credential. This read contacts Swamp on Services directly; it sends no command to the Node agent or task VM. The observer keeps its existing message limits.
+
 `orbit-agent` is a small Rust program on every managed Linux Node. It observes Node state, runs typed commands, and supplies fixed service entry points.
 
 The **observer** is a long-running service. It reports that it runs, the state of the Node's Orbit Processes, and the Git state of the Node's task checkouts. While someone watches a log live, it also reads that log and sends the lines to the Gateway. The web app shows these reports live. The Gateway keeps a [view](#gateway-view) of them to skip repeated SSH reads.

@@ -33,6 +33,23 @@ describe(StreamWebSocketClient::class, function (): void {
         }
     });
 
+    it('sends reader authorization in a header and accepts a bounded larger reply', function (): void {
+        $server = ScriptedWebSocketServer::start('frames');
+        try {
+            $base = $server->endpoint();
+            $endpoint = new WebSocketEndpoint($base->address, $base->port, $base->serverName, '/', $base->caPath, 'fixture-reader-token');
+            $client = new StreamWebSocketClient(2_097_152, 2_097_152);
+            $client->connect($endpoint, 1.0);
+            expect($server->waitFor('reader-authorization='))->toBe('reader-authorization=yes')
+                ->and($server->waitFor('request='))->toBe('request=GET / HTTP/1.1');
+            $messages = ScriptedWebSocketServer::messages($client, 4, 1.0);
+            expect(array_column($messages, 'event'))->toContain('too-big');
+            $client->close();
+        } finally {
+            $server->stop();
+        }
+    });
+
     it('refuses a certificate for another name', function (): void {
         $server = ScriptedWebSocketServer::start('frames');
 
@@ -197,7 +214,7 @@ describe(StreamWebSocketClient::class, function (): void {
             /** @var list<float> the subscriber's time when it first saw each connection lost */
             public array $lostAt = [];
 
-            private StreamWebSocketClient $inner;
+            private readonly StreamWebSocketClient $inner;
 
             private bool $connected = false;
 

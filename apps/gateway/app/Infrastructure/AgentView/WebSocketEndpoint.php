@@ -17,5 +17,6 @@ final readonly class WebSocketEndpoint
         public string $serverName,
         public string $path,
         public string $caPath,
+        #[\SensitiveParameter] public ?string $bearerToken = null,
     ) {}
 }

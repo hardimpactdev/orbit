@@ -3736,6 +3736,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/task-groups/{group}/swamp-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show task Swamp runs
+         * @description Returns the latest five Swamp workflow runs for this task group, with bounded redacted step output and a run log tail. Poll every five seconds. Availability is available, stale with the last successful snapshot, or unavailable. Requires Gateway access and the Tasks extension. See /reference/tasks#swamp-run-output.
+         */
+        get: operations["tasks-swamp-runs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/task-groups/{group}/tasks": {
         parameters: {
             query?: never;
@@ -5273,6 +5293,32 @@ export interface components {
             summary?: string;
             changes?: string[];
             breaking?: string[];
+        };
+        TaskSwampRuns: {
+            availability?: string;
+            observed_at?: string | null;
+            runs?: components["schemas"]["TaskSwampRun"][];
+            truncated?: boolean;
+        };
+        TaskSwampRun: {
+            id?: string;
+            workflow?: string;
+            status?: string;
+            started_at?: string | null;
+            completed_at?: string | null;
+            steps?: components["schemas"]["TaskSwampStep"][];
+            log?: string;
+            log_truncated?: boolean;
+            steps_truncated?: boolean;
+        };
+        TaskSwampStep: {
+            job?: string;
+            name?: string;
+            status?: string;
+            started_at?: string | null;
+            completed_at?: string | null;
+            output?: string;
+            truncated?: boolean;
         };
         TaskInsights: {
             period?: string;
@@ -20560,6 +20606,59 @@ export interface operations {
             };
             /** @description The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed. */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-swamp-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Task group ID. */
+                group: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskSwampRuns"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -1,3 +1,4 @@
+import { SwampRuns } from "../tasks/SwampRuns";
 import { AgentSessions } from "../tasks/AgentSessions";
 import { TaskComments } from "../tasks/TaskComments";
 import { TaskInsightsStrip } from "../tasks/TaskInsights";
@@ -443,6 +444,7 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
                             </p>
                         </Frame>
                     )}
+                    {subtaskId === undefined && <SwampRuns groupId={task.id} />}
                     <div className="grid min-w-0 shrink-0 grid-cols-1 gap-[var(--panel-gap)] lg:grid-cols-2">
                         <Properties
                             title="Task"

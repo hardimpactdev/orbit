@@ -2010,6 +2010,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Deployment",
                 "Doctor",
                 "Extension",
                 "Gateway",

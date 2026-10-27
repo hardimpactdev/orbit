@@ -16,7 +16,7 @@ covers:
 
 An extension is an optional Gateway feature with one switch. [`extension`](/cli/extension) describes the switch, the commands, and what each client does while an extension is off. This page describes how an extension is built: where its code lives, how it adds behavior to core, and the rule that keeps core independent of it.
 
-ADR [0210](/decisions/0210-give-each-extension-its-own-code-boundary) is moving the extensions behind this boundary one at a time. Documents, Vault, Conn, and the AI router have moved. Tasks has a switch and provider, but its code is still in core.
+ADR [0210](/decisions/0210-give-each-extension-its-own-code-boundary) is moving the extensions behind this boundary one at a time. Documents, Vault, Conn, and the AI router have moved. Tasks has a switch and provider, but its code is still in core. The Tasks provider also binds its read-only Swamp history client; the [task output route](/reference/tasks#swamp-run-output) stays behind the Tasks switch.
 
 ## The extensions
 

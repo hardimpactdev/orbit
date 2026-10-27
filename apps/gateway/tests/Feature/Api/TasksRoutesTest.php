@@ -98,6 +98,7 @@ it('exposes the tasks routes with stable methods', function (): void {
 
     expect($routes)->toBe([
         'tasks:status' => ['api/v1/tasks/status', ['GET', 'HEAD']],
+        'tasks:swamp-runs' => ['api/v1/task-groups/{group}/swamp-runs', ['GET', 'HEAD']],
         'tasks:agents' => ['api/v1/task-groups/{group}/agents', ['GET', 'HEAD']],
         'tasks:agent:show' => ['api/v1/task-groups/{group}/agents/{session}', ['GET', 'HEAD']],
         'tasks:agent-stream' => ['api/v1/task-groups/{group}/agents/{session}/stream', ['GET', 'HEAD']],

@@ -697,6 +697,19 @@ export function createDemoGateway() {
                               "The ai-router extension is disabled or unconfigured.",
                           ),
             ],
+            [
+                "GET",
+                /^\/api\/v1\/task-groups\/(\d+)\/swamp-runs$/,
+                ([group = ""]) =>
+                    ok(
+                        byRoute.get(`GET /api/v1/task-groups/{group}/swamp-runs#${group}`) ?? {
+                            availability: "available",
+                            observed_at: new Date().toISOString(),
+                            runs: [],
+                            truncated: false,
+                        },
+                    ),
+            ],
             ["GET", /^\/api\/v1\/task-groups$/, () => ok(taskGroups)],
             [
                 "GET",

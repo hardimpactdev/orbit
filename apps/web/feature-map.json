@@ -42,10 +42,14 @@
     },
     {
         "path": "/tasks/$id",
-        "purpose": "One task group, its subtasks, and its agent threads.",
+        "purpose": "One task group, its Swamp runs, subtasks, and agent threads.",
         "reach": "Open Tasks in the main nav, then choose a group.",
         "controls": [
             { "testid": "task-group-title", "purpose": "The group title." },
+            {
+                "testid": "task-swamp-runs",
+                "purpose": "Workflow state, step output, run logs, and availability."
+            },
             { "testid": "subtask-card", "purpose": "Opens one subtask." },
             { "testid": "agent-sessions", "purpose": "The group's agent threads." }
         ]

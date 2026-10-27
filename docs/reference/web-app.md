@@ -125,6 +125,8 @@ CPU and memory come from [`process.usage`](/reference/events#process-usage) even
 
 ## Live tasks
 
+The task group page shows a Swamp panel above its properties and subtasks, including groups without agent threads. It polls only the Gateway every five seconds. Runs and steps show their state, and expandable output uses plain text. Truncated output has a label. Running steps explain that worker output may arrive on completion. Stale and unavailable reads stay visible without hiding the task. [Swamp run output](/reference/tasks#swamp-run-output) defines the read, bounds, credentials, and failure states.
+
 The generated task types expose only `baseline` and `handoff` check kinds, and `orbit_push` and `pull_request_review` reviewed-commit sources. [Final review](/reference/tasks#final-review) publishes the reviewed head; CI on the merge ref checks integration.
 
 The generated task cancellation description follows the [cancel contract](/reference/tasks#cancel-a-stuck-task): cleanup removes eligible pending or failed exclusive Routes with `source_resolved` workspaces and retries the unattached workspace the task owns. Active or shared Routes still block cleanup. This description changes no response fields and adds no web controls.

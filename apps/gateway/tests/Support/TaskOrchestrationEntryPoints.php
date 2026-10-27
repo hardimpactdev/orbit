@@ -17,6 +17,7 @@ use App\Actions\Tasks\ListAgentWorkspacesAction;
 use App\Actions\Tasks\ListTaskGroupsAction;
 use App\Actions\Tasks\ListTaskQuestionsAction;
 use App\Actions\Tasks\ReadAgentThreadAction;
+use App\Actions\Tasks\ReadTaskSwampRunsAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\Tasks\RequestEndedPullRequestAssistanceAction;
 use App\Actions\Tasks\RequireTasksExtensionAction;
@@ -1012,6 +1013,9 @@ final class TaskOrchestrationEntryPoints
         ],
         ListTaskQuestionsAction::class => [
             'execute' => 'Reads questions.',
+        ],
+        ReadTaskSwampRunsAction::class => [
+            'execute' => 'Reads bounded Swamp history without changing task or orchestration state.',
         ],
         ReadAgentThreadAction::class => [
             'execute' => 'Reads saved or live transcripts.',

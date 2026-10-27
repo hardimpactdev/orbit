@@ -46,6 +46,11 @@ final class StreamWebSocketClient implements WebSocketClient
     /** Whether the peer ended the connection, so frames still buffered are read without a reply. */
     private bool $peerGone = false;
 
+    public function __construct(
+        private readonly int $maxMessageBytes = self::MaxMessageBytes,
+        private readonly int $maxFrameBytes = self::MaxFrameBytes,
+    ) {}
+
     #[\Override]
     public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
     {
@@ -127,26 +132,22 @@ final class StreamWebSocketClient implements WebSocketClient
             return [];
         }
 
-        while (is_resource($this->stream)) {
-            // A peer that resets the connection makes `fread()` warn and return false. That is a lost
-            // connection like any other, so it closes the client instead of raising the warning.
+        // Parse each chunk before reading more. Bound one batch even if the peer keeps writing.
+        $bytes = 0;
+        $messages = [];
+        while (is_resource($this->stream) && $bytes < $this->maxFrameBytes + 14) {
             $chunk = @fread($this->stream, 65_536);
-
             if ($chunk === false || ($chunk === '' && feof($this->stream))) {
                 $this->peerGone = true;
-
                 break;
             }
-
             if ($chunk === '') {
                 break;
             }
-
+            $bytes += strlen($chunk);
             $this->buffer .= $chunk;
+            array_push($messages, ...$this->drainFrames());
         }
-
-        // Whole frames that arrived before the connection ended are still delivered.
-        $messages = $this->drainFrames();
 
         if ($this->peerGone) {
             $this->close();
@@ -204,7 +205,7 @@ final class StreamWebSocketClient implements WebSocketClient
 
             if ($opcode === self::OPCODE_TEXT && ! $final) {
                 $this->fragments = $payload;
-                $this->discarding = strlen($payload) > self::MaxMessageBytes;
+                $this->discarding = strlen($payload) > $this->maxMessageBytes;
 
                 continue;
             }
@@ -215,7 +216,7 @@ final class StreamWebSocketClient implements WebSocketClient
                 }
 
                 // A message over the limit is dropped whole: nothing of it is parsed, up to its final frame.
-                $this->discarding = $this->discarding || strlen($this->fragments) + strlen($payload) > self::MaxMessageBytes;
+                $this->discarding = $this->discarding || strlen($this->fragments) + strlen($payload) > $this->maxMessageBytes;
                 $this->fragments = $this->discarding ? '' : $this->fragments.$payload;
 
                 if (! $final) {
@@ -228,7 +229,7 @@ final class StreamWebSocketClient implements WebSocketClient
                 $opcode = self::OPCODE_TEXT;
             }
 
-            if ($opcode !== self::OPCODE_TEXT || $payload === '' || strlen($payload) > self::MaxMessageBytes) {
+            if ($opcode !== self::OPCODE_TEXT || $payload === '' || strlen($payload) > $this->maxMessageBytes) {
                 continue;
             }
 
@@ -253,6 +254,7 @@ final class StreamWebSocketClient implements WebSocketClient
             'Connection: Upgrade',
             "Sec-WebSocket-Key: {$key}",
             'Sec-WebSocket-Version: 13',
+            ...($endpoint->bearerToken === null ? [] : ['Authorization: Bearer '.$endpoint->bearerToken]),
             "\r\n",
         ]);
 
@@ -322,7 +324,7 @@ final class StreamWebSocketClient implements WebSocketClient
             $offset = 10;
         }
 
-        if ($payloadLength < 0 || $payloadLength > self::MaxFrameBytes) {
+        if ($payloadLength < 0 || $payloadLength > $this->maxFrameBytes) {
             $this->close();
 
             return null;
