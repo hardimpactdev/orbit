@@ -1242,6 +1242,37 @@
             ]
         },
         {
+            "path": "docs/decisions/0238-trial-two-swamp-slices-before-a-wider-move.md",
+            "title": "ADR 0238: Trial two Swamp slices before a wider move",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Deployment",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Role",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0209",
+                "0218",
+                "0229",
+                "0238"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -1303,7 +1334,8 @@
                 "0223",
                 "0224",
                 "0226",
-                "0229"
+                "0229",
+                "0238"
             ]
         },
         {
