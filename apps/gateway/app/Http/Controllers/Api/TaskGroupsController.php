@@ -87,7 +87,7 @@ final class TaskGroupsController extends Controller
     }
 
     /** Starts tasks.provision and answers 202 with the queued operation. */
-    #[StartsOperation(OperationKinds::TasksProvision, secretInputs: ['worker.enrollment_token'])]
+    #[StartsOperation(OperationKinds::TasksProvision, secretInputs: ['worker.enrollment_token', 'worker.server_token'])]
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function provision(StartTaskProvisionRequest $request, Task $group, StartTaskProvisionAction $action): JsonResponse
     {
@@ -100,7 +100,7 @@ final class TaskGroupsController extends Controller
         ], 202);
     }
 
-    #[StartsOperation(OperationKinds::TasksWorker, requiresKey: true, secretInputs: ['worker.enrollment_token'])]
+    #[StartsOperation(OperationKinds::TasksWorker, requiresKey: true, secretInputs: ['worker.enrollment_token', 'worker.server_token'])]
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function worker(StartTaskWorkerRequest $request, Task $group, StartTaskWorkerAction $action): JsonResponse
     {

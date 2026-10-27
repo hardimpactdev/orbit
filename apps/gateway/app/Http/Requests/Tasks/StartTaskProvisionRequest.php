@@ -21,9 +21,10 @@ class StartTaskProvisionRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'worker' => [$this->workerPresence(), 'array:orchestrator_url,enrollment_token,labels', 'required_array_keys:orchestrator_url,enrollment_token'],
+            'worker' => [$this->workerPresence(), 'array:orchestrator_url,enrollment_token,server_token,labels', 'required_array_keys:orchestrator_url,enrollment_token'],
             'worker.orchestrator_url' => ['required_with:worker', 'string', 'max:2048', 'regex:#\Awss://[a-zA-Z0-9.-]+(?::[0-9]{1,5})?(?:/[a-zA-Z0-9._~!$&\x27()*+,;=:@/-]*)?\z#D'],
             'worker.enrollment_token' => ['required_with:worker', 'string', 'max:4096', 'regex:/\A[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{16,}\z/D'],
+            'worker.server_token' => ['sometimes', 'string', 'max:4096', 'regex:/\A[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{16,}\z/D'],
             'worker.labels' => ['sometimes', 'array', 'max:32'],
             'worker.labels.*' => ['string', 'max:128', 'regex:/\A[A-Za-z0-9_.-]+\z/D'],
         ];

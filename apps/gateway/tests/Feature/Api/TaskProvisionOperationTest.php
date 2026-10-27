@@ -606,9 +606,12 @@ describe('optional provision worker', function (): void {
         test_task_vm($group, $this->gatewayNode);
         provision_operation_fakes();
         $token = 'group-2074.'.str_repeat('a', 64);
-        $agents = (new FakeAgentCommandRunner)->answer('swamp.start-worker', function (array $input) use ($group, $token): array {
+        $serverToken = 'access-2074.'.str_repeat('c', 64);
+        $agents = (new FakeAgentCommandRunner)->answer('swamp.start-worker', function (array $input) use ($group, $token, $serverToken): array {
             expect($group->fresh()->taskable->status)->toBe(InstanceState::SourceResolved);
             expect($input['enrollment_token'])->toBe($token);
+            expect($input['server_token'])->toBe($serverToken);
+            expect($input['server_token_required'])->toBeTrue();
             expect((array) $input['labels'])->toBe(['group' => (string) $group->id]);
             expect($input['workspace'])->toBe($group->fresh()->taskable->checkout_path);
 
@@ -616,16 +619,20 @@ describe('optional provision worker', function (): void {
         });
         app()->instance(AgentCommandRunner::class, $agents);
         Log::spy();
-        $payload = ['worker' => ['orchestrator_url' => 'wss://swamp.orbit', 'enrollment_token' => $token, 'labels' => ['group' => (string) $group->id]]];
+        $payload = ['worker' => ['orchestrator_url' => 'wss://swamp.orbit', 'enrollment_token' => $token, 'server_token' => $serverToken, 'labels' => ['group' => (string) $group->id]]];
         $response = $this->postJson('/api/v1/task-groups/'.$group->id.'/provision', $payload, ['Idempotency-Key' => 'worker.start'])->assertAccepted();
         $operation = Operation::query()->findOrFail($response->json('data.id'));
         $reference = $operation->input['worker']['enrollment_reference'];
-        expect(app(TaskWorkerEnrollment::class)->read($reference))->toBe($token);
+        expect(app(TaskWorkerEnrollment::class)->read($reference)['enrollment_token'])->toBe($token);
+        expect(app(TaskWorkerEnrollment::class)->read($reference)['server_token'])->toBe($serverToken);
+        expect(Cache::get('tasks:worker-enrollment:'.$reference))->not->toContain($serverToken);
         expect(Cache::get('tasks:worker-enrollment:'.$reference))->not->toContain($token);
+        expect($response->getContent())->not->toContain($serverToken);
         expect($response->getContent())->not->toContain($token);
         app(OperationRunner::class)->run($operation->id);
         expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded);
         expect(app(TaskWorkerEnrollment::class)->read($reference))->toBeNull();
+        expect(json_encode([$operation->toArray(), $operation->steps()->get()->toArray(), DB::table('jobs')->get()->toArray(), DB::table('activity_log')->get()->toArray()]))->not->toContain($serverToken);
         expect(json_encode($operation->toArray()))->not->toContain($token);
         expect(json_encode($operation->steps()->get()->toArray()))->not->toContain($token);
         expect(json_encode(DB::table('jobs')->get()->toArray()))->not->toContain($token);
@@ -719,6 +726,7 @@ describe('optional provision worker', function (): void {
         'missing token' => [['orchestrator_url' => 'wss://swamp.orbit']],
         'plaintext connection' => [['orchestrator_url' => 'ws://swamp.orbit', 'enrollment_token' => 'group.'.str_repeat('a', 64)]],
         'url credential' => [['orchestrator_url' => 'wss://user:secret@swamp.orbit', 'enrollment_token' => 'group.'.str_repeat('a', 64)]],
+        'invalid server token' => [['orchestrator_url' => 'wss://swamp.orbit', 'enrollment_token' => 'group.'.str_repeat('a', 64), 'server_token' => 'bad']],
         'extra field' => [['orchestrator_url' => 'wss://swamp.orbit', 'enrollment_token' => 'group.'.str_repeat('a', 64), 'command' => 'arbitrary']],
         'label injection' => [['orchestrator_url' => 'wss://swamp.orbit', 'enrollment_token' => 'group.'.str_repeat('a', 64), 'labels' => ['group' => "bad\nlabel"]]],
     ]);
@@ -854,17 +862,19 @@ it('replays worker and provision keys with a new token without retaining token-d
         $group->save();
         Instance::query()->where('task_workspace_owner_id', $group->id)->delete();
     }
-    $payload = ['worker' => ['orchestrator_url' => 'wss://swamp.orbit', 'enrollment_token' => 'old.'.str_repeat('a', 64)]];
+    $payload = ['worker' => ['orchestrator_url' => 'wss://swamp.orbit', 'enrollment_token' => 'old.'.str_repeat('a', 64), 'server_token' => 'old-access.'.str_repeat('c', 64)]];
     $url = '/api/v1/task-groups/'.$group->id.'/'.$route;
     $response = $this->postJson($url, $payload, ['Idempotency-Key' => 'worker.retry'])->assertAccepted();
     $operation = Operation::query()->findOrFail($response->json('data.id'));
-    unset($payload['worker']['enrollment_token']);
+    unset($payload['worker']['enrollment_token'], $payload['worker']['server_token']);
     $expected = hash('sha256', json_encode(['target' => ['group' => $group->id], 'input' => json_encode($payload, JSON_PRESERVE_ZERO_FRACTION)], JSON_PRESERVE_ZERO_FRACTION));
     expect($operation->idempotency_fingerprint)->toBe($expected);
     $payload['worker']['enrollment_token'] = 'fresh.'.str_repeat('b', 64);
+    $payload['worker']['server_token'] = 'fresh-access.'.str_repeat('d', 64);
     $this->postJson($url, $payload, ['Idempotency-Key' => 'worker.retry'])->assertAccepted()->assertJsonPath('data.id', $operation->id);
     expect(Operation::query()->count())->toBe(1);
-    expect(app(TaskWorkerEnrollment::class)->read($operation->input['worker']['enrollment_reference']))->toBe('old.'.str_repeat('a', 64));
+    expect(app(TaskWorkerEnrollment::class)->read($operation->input['worker']['enrollment_reference'])['enrollment_token'])->toBe('old.'.str_repeat('a', 64));
+    expect(app(TaskWorkerEnrollment::class)->read($operation->input['worker']['enrollment_reference'])['server_token'])->toBe('old-access.'.str_repeat('c', 64));
     $payload['worker']['orchestrator_url'] = 'wss://other.orbit';
     $this->postJson($url, $payload, ['Idempotency-Key' => 'worker.retry'])->assertConflict()->assertJsonPath('error.code', 'operation.idempotency_conflict');
 })->with(['worker', 'provision']);
