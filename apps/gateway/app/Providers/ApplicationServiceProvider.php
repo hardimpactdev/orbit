@@ -13,15 +13,18 @@ use App\Actions\Instances\DestroyInstanceAction;
 use App\Actions\Instances\RunAutomaticDeploysAction;
 use App\Actions\Instances\SynchronizeInstanceEnvironmentAction;
 use App\Actions\Nodes\AssignRoleAction;
+use App\Actions\Tasks\InstallSwampReaderCredentialAction;
 use App\Console\Commands\AgentViewCommand;
 use App\Console\Commands\AgentViewPublishCommand;
 use App\Console\Commands\AutoDeployCommand;
 use App\Console\Commands\BootstrapGatewayCommand;
 use App\Console\Commands\CaddyBuildCommand;
 use App\Console\Commands\CheckNodeDnsCommand;
+use App\Console\Commands\CheckSwampReaderCredentialCommand;
 use App\Console\Commands\ConvergeGatewayWebCommand;
 use App\Console\Commands\ConvergeNodeRecipeCommand;
 use App\Console\Commands\FinalizeInterruptedActivitiesCommand;
+use App\Console\Commands\InstallSwampReaderCredentialCommand;
 use App\Console\Commands\MachineRecipeCommand;
 use App\Console\Commands\MigrateDockerCommand;
 use App\Console\Commands\ProvisionNodeCommand;
@@ -295,6 +298,7 @@ use App\Infrastructure\Gateway\NativeGatewayCertificatePublisher;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Infrastructure\Gateway\NativeGatewaySelfAccessConverger;
 use App\Infrastructure\Gateway\NativeGatewayWebConverger;
+use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GitHub\CachedGitHubApi;
 use App\Infrastructure\GitHub\GitHubBranchHeadReader;
 use App\Infrastructure\GitHub\GitHubGreenCommitResolver;
@@ -402,6 +406,7 @@ use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshHostKeyScanner;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Tasks\SwampReaderEnvironment;
 use App\Infrastructure\TaskVms\TaskVmCredentialGuard;
 use App\Infrastructure\Tools\AptToolManager;
 use App\Infrastructure\Tools\ComposerToolManager;
@@ -583,6 +588,12 @@ final class ApplicationServiceProvider extends ServiceProvider
 
     public function register(): void
     {
+        $this->app->bind(InstallSwampReaderCredentialAction::class, fn ($app): InstallSwampReaderCredentialAction => new InstallSwampReaderCredentialAction(
+            $app->make(GatewayReleaseLock::class),
+            $app->make(SwampReaderEnvironment::class),
+            new StreamWebSocketClient(2_097_152, 2_097_152),
+        ));
+
         $this->app->scoped(OperationIdempotency::class);
         $this->app->singleton(AgentContract::class, static fn (): AgentContract => new AgentContract(Config::string('orbit.agent.contract')));
         $this->app->singleton(AgentDelivery::class, static fn (): AgentDelivery => new AgentDelivery(Config::string('orbit.agent.delivery'), Config::string('orbit.home').'/agent-artifacts'));
@@ -982,6 +993,8 @@ final class ApplicationServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->commands([
+            CheckSwampReaderCredentialCommand::class,
+            InstallSwampReaderCredentialCommand::class,
             AgentViewCommand::class,
             AgentViewPublishCommand::class,
             AutoDeployCommand::class,

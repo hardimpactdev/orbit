@@ -8,11 +8,13 @@ use App\Actions\Tasks\ArchiveAgentTranscriptsAction;
 use App\Actions\Tasks\CancelRunningSubtaskAction;
 use App\Actions\Tasks\CancelTaskCheckAction;
 use App\Actions\Tasks\CancelTaskGroupAction;
+use App\Actions\Tasks\CheckSwampReaderCredentialAction;
 use App\Actions\Tasks\CloseTaskQuestionAction;
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\CreateTaskAction;
 use App\Actions\Tasks\CreateTaskGroupAction;
 use App\Actions\Tasks\DestroyTaskAction;
+use App\Actions\Tasks\InstallSwampReaderCredentialAction;
 use App\Actions\Tasks\ListAgentWorkspacesAction;
 use App\Actions\Tasks\ListTaskGroupsAction;
 use App\Actions\Tasks\ListTaskQuestionsAction;
@@ -66,6 +68,7 @@ use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\LeasedAgentDriver;
 use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
 use App\Domain\Tasks\PrunePendingTaskThreads;
+use App\Domain\Tasks\SwampReaderCredential;
 use App\Domain\Tasks\TaskableType;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskAnalysisBase;
@@ -1013,6 +1016,17 @@ final class TaskOrchestrationEntryPoints
         ],
         ListTaskQuestionsAction::class => [
             'execute' => 'Reads questions.',
+        ],
+        CheckSwampReaderCredentialAction::class => [
+            'execute' => 'Requests Gateway operator assistance for reader expiry without advancing a task or starting work.',
+        ],
+        InstallSwampReaderCredentialAction::class => [
+            'execute' => 'Verifies and installs the Gateway reader credential without executing task work or changing group orchestration.',
+        ],
+        SwampReaderCredential::class => [
+            'fromReveal' => 'Validates bounded reader reveal input without executing task work.',
+            'expiry' => 'Parses reader expiry metadata without changing task state.',
+            'token' => 'Supplies the reader credential to the Gateway connection without executing task work.',
         ],
         ReadTaskSwampRunsAction::class => [
             'execute' => 'Reads bounded Swamp history without changing task or orchestration state.',
