@@ -127,6 +127,8 @@ export interface Usage {
     calls: number;
     /** Largest single-call context: `input + cacheRead + cacheWrite`. Output is excluded. */
     peakContext: number;
+    /** US dollars at Pi's model prices. Null when a call with tokens has no positive cost. */
+    cost: number | null;
 }
 
 export interface Snapshot {
@@ -1099,6 +1101,7 @@ function usage(entries: TranscriptEntry[]): Usage {
         total: 0,
         calls: 0,
         peakContext: 0,
+        cost: 0,
     };
     for (const entry of entries) {
         const call = countedCall(entry.message);
@@ -1114,6 +1117,9 @@ function usage(entries: TranscriptEntry[]): Usage {
             call.input + call.cacheRead + call.cacheWrite,
         );
         totals.calls += 1;
+        // Pi prices a model it does not know at zero, so a zero cost on a real call is unknown.
+        const priced = call.cost !== undefined && (call.cost > 0 || callTokens(call) === 0);
+        totals.cost = totals.cost === null || !priced ? null : totals.cost + (call.cost ?? 0);
     }
     totals.total = totals.input + totals.output + totals.cacheRead + totals.cacheWrite;
 
@@ -1125,6 +1131,12 @@ interface CountedCall {
     output: number;
     cacheRead: number;
     cacheWrite: number;
+    /** `cost.total` in US dollars, when the message carries a finite one. */
+    cost: number | undefined;
+}
+
+function callTokens(call: CountedCall): number {
+    return call.input + call.output + call.cacheRead + call.cacheWrite;
 }
 
 /** A model call reports all four token counts. Anything else is not a call. */
@@ -1150,7 +1162,15 @@ function countedCall(message: unknown): CountedCall | undefined {
         return undefined;
     }
 
-    return { input, output, cacheRead, cacheWrite };
+    const cost = (usage.cost as { total?: unknown } | null | undefined)?.total;
+
+    return {
+        input,
+        output,
+        cacheRead,
+        cacheWrite,
+        cost: typeof cost === "number" && Number.isFinite(cost) ? cost : undefined,
+    };
 }
 
 function isTokenCount(value: unknown): value is number {

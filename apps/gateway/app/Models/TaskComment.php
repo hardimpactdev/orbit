@@ -13,6 +13,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
+ * @property int $task_group_id
+ * @property int $task_id
+ * @property TaskCommentType $type
  * @property Carbon $posted_at
  * @property array<string, string>|null $deliverables the confirmations of a turn receipt, by deliverable ID
  * @property QuestionCause|null $cause

@@ -117,7 +117,8 @@ it('labels a false negative from a pull request observed merged and records both
     app(TaskExtensionState::class)->enable();
     app(TaskScheduler::class)->tick();
 
-    expect($group->fresh()->status)->toBe(TaskGroupStatus::Completed);
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Completed)
+        ->and($group->fresh()->merged_at?->toIso8601ZuluString())->toBe('2026-10-01T10:00:00Z');
     $decision = JevDecision::query()->sole();
     $label = $decision->labels['questions']['subtask_'.$completed->id];
     expect($decision->approval_changes)->toBe(['Orders export as CSV.'])

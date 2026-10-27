@@ -14,6 +14,7 @@
             "output_tokens": null,
             "model_calls": null,
             "peak_context_tokens": null,
+            "cost_usd": null,
             "lines_added": null,
             "lines_deleted": null,
             "error": null,

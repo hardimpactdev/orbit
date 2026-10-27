@@ -24,6 +24,7 @@ use App\Actions\Tasks\ResumeDeliverableCorrectionAction;
 use App\Actions\Tasks\RetryTaskBaselineAction;
 use App\Actions\Tasks\ShowAgentThreadsAction;
 use App\Actions\Tasks\ShowTaskGroupAction;
+use App\Actions\Tasks\ShowTaskInsightsAction;
 use App\Actions\Tasks\ShowTasksStatusAction;
 use App\Actions\Tasks\StartTaskAnalysisAction;
 use App\Actions\Tasks\StartTaskCheckAction;
@@ -95,6 +96,7 @@ use App\Domain\Tasks\TaskGroupMetricsRefresher;
 use App\Domain\Tasks\TaskHandoffCi;
 use App\Domain\Tasks\TaskHandoffCiChecks;
 use App\Domain\Tasks\TaskHierarchyException;
+use App\Domain\Tasks\TaskInsights;
 use App\Domain\Tasks\TaskLevelStatusCast;
 use App\Domain\Tasks\TaskObservationAvailability;
 use App\Domain\Tasks\TaskOperations;
@@ -854,6 +856,9 @@ final class TaskOrchestrationEntryPoints
         TaskGroupMetricsRefresher::class => [
             'refresh' => 'Refreshes metrics only.',
         ],
+        TaskInsights::class => [
+            'report' => 'Reads ended tasks for insights.',
+        ],
         TaskObservationAvailability::class => [
             'clear' => 'Records observation availability only.',
             'unavailableDecision' => 'Records observation availability only.',
@@ -1039,6 +1044,9 @@ final class TaskOrchestrationEntryPoints
         ],
         ShowTaskGroupAction::class => [
             'execute' => 'Reads a group.',
+        ],
+        ShowTaskInsightsAction::class => [
+            'execute' => 'Reads task insights.',
         ],
         ShowTasksStatusAction::class => [
             'execute' => 'Reads Tasks status.',

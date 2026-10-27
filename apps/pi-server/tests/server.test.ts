@@ -505,6 +505,7 @@ describe("token usage", () => {
             total: 0,
             calls: 0,
             peakContext: 0,
+            cost: 0,
         });
         h.faux.setResponses([
             fauxAssistantMessage([fauxToolCall("bash", { command: "echo probe" })], {
@@ -621,7 +622,47 @@ describe("token usage", () => {
             total: before.total + 18,
             calls: before.calls + 1,
             peakContext: Math.max(before.peakContext, 14),
+            cost: null,
         });
+    });
+
+    it("sums priced calls and leaves the cost unknown after an unpriced call", async () => {
+        const h = await created();
+        const priced = (id: string, total: number) => ({
+            type: "message",
+            id,
+            timestamp: "2026-10-27T00:00:00.000Z",
+            message: {
+                role: "assistant",
+                content: [{ type: "text", text: id }],
+                api: "faux",
+                provider: "faux",
+                model: "model-a",
+                stopReason: "stop",
+                timestamp: 1,
+                usage: {
+                    input: 10,
+                    output: 20,
+                    cacheRead: 30,
+                    cacheWrite: 40,
+                    totalTokens: 100,
+                    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total },
+                },
+            },
+        });
+        await appendSessionEntries(h, [priced("pricedcall1", 0.25), priced("pricedcall2", 0.5)]);
+        const restarted = await h.restart();
+        harness = restarted;
+
+        expect((await restarted.request("GET", "/sessions/thread-1")).body.usage.cost).toBeCloseTo(
+            0.75,
+        );
+
+        await appendSessionEntries(restarted, [priced("unpricedcall", 0)]);
+        const again = await restarted.restart();
+        harness = again;
+
+        expect((await again.request("GET", "/sessions/thread-1")).body.usage.cost).toBeNull();
     });
 });
 
@@ -830,6 +871,8 @@ function aggregate(calls: CallUsage[]) {
         total: 0,
         calls: calls.length,
         peakContext: 0,
+        // Faux calls carry tokens at a zero price, which is an unknown cost.
+        cost: calls.length === 0 ? 0 : null,
     };
     for (const call of calls) {
         usage.input += call.input;

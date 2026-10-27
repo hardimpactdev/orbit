@@ -221,4 +221,5 @@ return [
     '0232' => ['0232-precreate-managed-postgresql-test-databases'],
     '0233' => ['0233-publish-node-processes-through-public-routes'],
     '0235' => ['0235-verify-release-provenance-on-the-gateway'],
+    '0236' => ['0236-measure-task-delivery-from-recorded-lifecycle-times'],
 ];

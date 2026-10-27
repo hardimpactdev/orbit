@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Support\Percentile;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -77,7 +78,7 @@ final class JevReportCommand extends Command
                 'false_negative_share_of_missing' => $missingAnswers === 0 ? null : $falseNegatives / $missingAnswers,
                 'false_negative_confidence' => $falseNegativeBuckets,
                 'call_correct' => $callCorrect,
-                'latency_ms' => ['p50' => self::percentile($latencies, .5), 'p95' => self::percentile($latencies, .95)],
+                'latency_ms' => ['p50' => Percentile::of($latencies, .5), 'p95' => Percentile::of($latencies, .95)],
             ];
         }
         ksort($report);
@@ -113,16 +114,5 @@ final class JevReportCommand extends Command
         $decoded = json_decode($json, true);
 
         return is_array($decoded) ? $decoded : [];
-    }
-
-    /** @param list<int> $values */
-    private static function percentile(array $values, float $percentile): ?int
-    {
-        if ($values === []) {
-            return null;
-        }
-        sort($values);
-
-        return $values[(int) ceil($percentile * count($values)) - 1];
     }
 }

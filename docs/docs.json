@@ -570,6 +570,7 @@
               "POST /api/v1/task-groups/{group}/tasks/{task}/comments",
               "POST /api/v1/task-groups/{group}/turn",
               "POST /api/v1/task-groups/{group}/worker",
+              "GET /api/v1/task-insights",
               "GET /api/v1/task-questions",
               "POST /api/v1/task-questions/{question}/close",
               "GET /api/v1/tasks/status"
@@ -1661,6 +1662,10 @@
     {
       "source": "/decisions/0235-verify-release-provenance-on-the-gateway",
       "destination": "/reference/gateway-recovery#release-provenance"
+    },
+    {
+      "source": "/decisions/0236-measure-task-delivery-from-recorded-lifecycle-times",
+      "destination": "/reference/tasks#insights-come-from-recorded-times"
     }
   ]
 }

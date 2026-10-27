@@ -373,9 +373,10 @@ describe('transcript and observation', function (): void {
         });
 
         $snapshot = pi_snapshot('done');
-        $snapshot['usage'] = ['input' => 30, 'output' => 20, 'cacheRead' => 70, 'cacheWrite' => 10, 'total' => 130, 'calls' => 2, 'peakContext' => 80];
+        $snapshot['usage'] = ['input' => 30, 'output' => 20, 'cacheRead' => 70, 'cacheWrite' => 10, 'total' => 130, 'calls' => 2, 'peakContext' => 80, 'cost' => 0.0125];
         $body = json_encode($snapshot, JSON_THROW_ON_ERROR);
         $observation = pi_driver()->read($thread, null);
+        expect($observation->costUsd)->toBe(0.0125);
 
         expect($observation->tokens)->toBe(130)
             ->and($observation->inputTokens)->toBe(40)
@@ -396,6 +397,7 @@ describe('transcript and observation', function (): void {
         $snapshot['usage'] = ['input' => 30, 'output' => 20, 'cacheRead' => 70, 'total' => 120, 'calls' => '2', 'peakContext' => null];
         $body = json_encode($snapshot, JSON_THROW_ON_ERROR);
         $partial = pi_driver()->read($thread, null);
+        expect($partial->costUsd)->toBeNull();
         expect($partial->tokens)->toBe(120)
             ->and($partial->inputTokens)->toBeNull()
             ->and($partial->cachedInputTokens)->toBe(70)

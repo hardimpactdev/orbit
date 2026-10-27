@@ -292,6 +292,8 @@ it('complete ended cancels open subtasks through the API and removes the workspa
         ->assertOk()->assertJsonPath('data.status', 'completed')->assertJsonPath('data.assistance_requested', false)->assertJsonPath('data.taskable_id', null);
 
     expect($group->fresh()->watched_pr_completion)->toBe($state)
+        ->and($group->fresh()->merged_at?->toIso8601ZuluString())->toBe($state === 'merged' ? '2026-10-08T10:00:00Z' : null)
+        ->and($group->fresh()->ended_at)->not->toBeNull()
         ->and($group->fresh()->pr_url)->toBe('https://github.com/hardimpactdev/orbit/pull/543')
         ->and($group->fresh()->assistance_requested)->toBeFalse()
         ->and($group->fresh()->settled_at)->not->toBeNull()

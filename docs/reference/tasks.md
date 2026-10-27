@@ -2,14 +2,14 @@
 title: "Tasks"
 description: "How the optional Gateway Tasks extension runs tasks. It covers the model, the lifecycle, typed deliverables, the task check, agent threads, review, the pull request, fixups, metrics, cleanup, and the outer loop that files recurring problems."
 covers:
-  - "apps/gateway/app/{Data/Tasks,Domain/{Tasks,Problems},Infrastructure/Tasks}/**"
+  - "apps/gateway/app/{Data/Tasks/**,Domain/{Tasks,Problems}/**,Infrastructure/Tasks/**,Support/Percentile.php}"
   - "apps/gateway/app/{Actions/Tasks/**,Jobs/{PublishTaskVmCommit.php,Problems/**}}"
-  - "apps/gateway/app/Http/{Requests/Tasks/**,Controllers/Api/{TasksController,TaskGroupsController,AgentThreadsController,TaskQuestionsController}.php}"
+  - "apps/gateway/app/Http/{Requests/Tasks/**,Controllers/Api/{TasksController,TaskGroupsController,TaskInsightsController,AgentThreadsController,TaskQuestionsController}.php}"
   - "apps/gateway/app/Console/Commands/{ReleaseTaskWorkspaceLeaseCommand,TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand,TaskGitHubReviewsCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskWorkspaceLeaseRecord,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "{apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py},bin/{task-analyze,task-group-check}}"
   - apps/docs/app/{Documentation/{TaskAnalysis,DocsImpact}.php,Console/Commands/{TaskAnalyzeCommand,DocsImpactCommand}.php}
-  - "apps/gateway/database/migrations/2026_12_{03_000000_allow_cold_recipe_image_rebuilds,31_000000_add_task_vm_publish_error_code}.php"
+  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields}.php"
 ---
 
 # Tasks
@@ -68,6 +68,7 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 | `ended_pr_notice_thread_id` | subtask | The implementer or reviewer thread that notice belongs to |
 | `ended_pr_notice_state` | subtask | `pending` or `delivered` |
 | `vm_power` | task | [VM power](/reference/compute-drivers#vm-power), separate from task status: `running`, `stopped`, `destroyed`, or `null` |
+| `ready_at`, `ended_at`, `merged_at` | task | [Lifecycle times](#lifecycle-times): when the task first entered `todo`, when it ended, and when GitHub merged its pull request |
 | `tokens`, `line_diff`, `lines_added`, `lines_deleted`, `duration_ms` | both | [Settle metrics](#settle-metrics). Settle stores task tokens as subtask tokens plus every started reviewer thread, and the task line diff as the whole branch against the default branch |
 
 Clearing the assistance flag can keep the last reason.
@@ -1792,6 +1793,20 @@ Settle stores the task's metrics. Showing an active task refreshes them.
 
 A failed read keeps the stored value. While a task is active, a missing value stays unknown, not zero. Settle stores an unknown task value as 0. Settle writes the task row from the table above: its tokens add every started reviewer thread to the subtask tokens, and its line diff is the whole branch against the Project default branch. Showing an active task refreshes those values. The board reads that row.
 
+### Lifecycle times
+
+The task row records three times for [task insights](#task-insights). Each is written once and never moves.
+
+| Field | Written when |
+| --- | --- |
+| `ready_at` | The task first enters `todo`, at create or when it leaves Backlog |
+| `ended_at` | The task first enters `completed`, `failed`, or `cancelled` |
+| `merged_at` | Orbit confirms that the pull request merged. The value is GitHub's merge time, so a pull request that a person merged counts the same as one Orbit merged |
+
+`started_at` and `settled_at` complete the timeline: the task starts work at `started_at` and enters settling at `settled_at`. Settling holds the pull request, its review, its fixups, and its merge.
+
+Tasks that ended before these fields existed were filled from records that hold the exact time. `ready_at` comes from the `tasks:update` or `tasks:create` Activity entry that set `todo`. `merged_at` comes from the [Jev decision records](#jev-decision-records), then from the `pull request merged` Activity entry. `ended_at` comes from the `tasks:complete` or `tasks:cancel` Activity entry, then from `merged_at`. A time with no such record stays null. A task that the tick failed has no such record, so periods before this release leave most failures out and show a higher yield than the work had.
+
 ### Tokens and line diff
 
 The task's line counts come from the Node agent's [task workspace](/reference/node-agent#task-workspaces) state while the Gateway's view of that Node is fresh. Otherwise, and when the agent's diff is truncated, they come from `git diff --shortstat origin/{default branch}...HEAD` over SSH. Both count against the fetched `origin/{default branch}`, so a merge of the default branch into the task branch adds no lines. When the agent reports a new commit or new counts, the Gateway stores the counts and broadcasts `task_group.updated`.
@@ -1800,7 +1815,7 @@ A thread's `tokens` is the Pi session usage `total`. Pi reports no per-thread li
 
 ### Thread token metrics
 
-Each agent thread also records five split fields. `tasks:agents` and the agents API show them. They stay on the thread and are not copied to the subtask, the task, or the board.
+Each agent thread also records five split fields and its cost. `tasks:agents` and the agents API show them. They stay on the thread and are not copied to the subtask, the task, or the board.
 
 | Field | Meaning |
 | --- | --- |
@@ -1809,10 +1824,11 @@ Each agent thread also records five split fields. `tasks:agents` and the agents 
 | `output_tokens` | Output summed over the calls, reasoning included |
 | `model_calls` | The number of model calls |
 | `peak_context_tokens` | The largest context of one call: its uncached plus its cached input |
+| `cost_usd` | The list price of the calls in US dollars, from Pi's model prices. A subscription does not change it |
 
 Null means the driver did not report the field, or the split is partial. A reported zero is zero. The average context per call is `(input_tokens + cached_input_tokens) / model_calls`, and the cached share of input is `cached_input_tokens / (input_tokens + cached_input_tokens)`.
 
-The Pi server's `usage` object holds `input`, `output`, `cacheRead`, `cacheWrite`, `total`, `calls`, and `peakContext`. `input_tokens` is `input + cacheWrite`, `cached_input_tokens` is `cacheRead`, `output_tokens` is `output`, `model_calls` is `calls`, and `peak_context_tokens` is `peakContext`. The Gateway does not run `tasks:collect-t3-metrics`.
+The Pi server's `usage` object holds `input`, `output`, `cacheRead`, `cacheWrite`, `total`, `calls`, `peakContext`, and `cost`. `input_tokens` is `input + cacheWrite`, `cached_input_tokens` is `cacheRead`, `output_tokens` is `output`, `model_calls` is `calls`, and `peak_context_tokens` is `peakContext`. `cost_usd` is `cost`. Pi reports `cost` as null when a call has no price, so one unpriced call leaves the thread cost unknown. The Gateway does not run `tasks:collect-t3-metrics`.
 
 ## Review and merge
 
@@ -1928,11 +1944,61 @@ Activity records `final review appended`, `final review approved`, `final review
 
 ## Web task board
 
-**Tasks** in the web navigation shows every task on a board with Backlog, Todo, In progress, and Done lanes. In progress holds `reserved`, `running`, `reviewing`, and `settling` tasks. Done holds `completed`, `failed`, and `cancelled` tasks with their outcome visible.
+**Tasks** in the web navigation shows every task on a board with Backlog, Todo, In progress, and Done lanes. The [insights strip](#on-the-board) sits above the lanes. In progress holds `reserved`, `running`, `reviewing`, and `settling` tasks. Done holds `completed`, `failed`, and `cancelled` tasks with their outcome visible.
 
 The task board and the subtasks board hide lanes with no cards. The remaining lanes share the width. An empty task board says "No tasks yet." An empty subtasks board says "No subtasks yet."
 
 Each card shows the Project code and the task id, such as `ORB-13`, its line counts, its status, and its duration. A card for a task that asks for direction says `Needs your direction`. A card for a task that asks because of a failure says `Needs attention`. A task page shows the brief, the metrics, a board of its subtasks, and an Agents section. When the task asks for direction, its page shows the question first. A subtask page shows that subtask's implementer and reviewer. The board is read-only. The [web app](/reference/web-app#live-tasks) keeps it current from task events.
+
+## Task insights
+
+The task board shows an insights strip above its lanes. It answers one question: does a change to the task pipeline make it better or worse? `GET /api/v1/task-insights` returns the numbers, with `period` set to `7d` or `30d` (default `30d`) and an optional `project_id`. Node access is the same as for `tasks:list`. The web app is the only client, so the route has no CLI command.
+
+A period holds the tasks whose `ended_at` falls inside it. The previous period is the same length just before it, so each number has a value to compare with. Tasks without `ended_at` are not counted.
+
+A task **merged** when its `watched_pr_completion` or its `merge_status` is `merged`. Every other ended task did not merge: it failed, was cancelled, or ended with its pull request closed.
+
+### Numbers
+
+Durations and token counts are medians. Shares are between 0 and 1. A number is null when nothing in the period has the data it needs.
+
+| Field | Meaning |
+| --- | --- |
+| `tasks`, `merged` | Ended tasks, and the merged ones among them |
+| `tokens` | The `tokens` of every agent thread of every ended task, replaced threads included |
+| `tokens_per_merged_pr` | `tokens` divided by `merged`. This is the headline number: it falls when the pipeline delivers more for less |
+| `cost_usd`, `cost_per_merged_pr` | The same with the thread `cost_usd`. Null when a thread with tokens has no cost |
+| `lead_time_ms` | `ready_at` to `merged_at` of each merged task |
+| `queue_ms` | `ready_at` to `started_at` |
+| `work_ms` | `started_at` to `settled_at`, the subtasks up to settling |
+| `merge_wait_ms` | `settled_at` to `merged_at`: review, fixups, and merge |
+| `excluded` | Merged tasks that lack a time that `lead_time_ms` needs |
+| `yield` | `merged` divided by `tasks` |
+| `pr_first_pass` | Merged tasks with no fixup subtask, from a [final review](#final-review) or from [settling](#fix-a-settling-pull-request), divided by `merged` |
+| `wasted_share` | The tokens of tasks that did not merge, plus the tokens of replaced implementer threads, divided by `tokens` |
+| `subtask_first_pass` | Reviewed subtasks whose first verdict was `approved`, divided by reviewed subtasks |
+| `review_rounds` | The mean count of `approved` and `changes_requested` verdicts per reviewed subtask |
+| `handoff_first_try` | Subtasks whose first finished handoff check passed, divided by subtasks with a finished handoff check |
+| `questions_per_task`, `questions_by_cause` | The mean count of [questions](#questions) per task, and the count for each cause, zeros included. A question without a cause counts as `unknown` |
+| `cache_hit` | `cached_input_tokens` divided by `input_tokens` plus `cached_input_tokens`, over every thread |
+| `tokens_per_hundred_lines` | The tokens of merged tasks divided by their added and deleted lines, times 100 |
+
+A replaced implementer thread is one whose subtask has a newer implementer thread. Its tokens bought nothing that shipped.
+
+### Trend and breakdown
+
+The response also holds:
+
+- `weekly`: `tokens_per_merged_pr`, `tasks`, and `merged` for each of the last 12 weeks, whatever the period.
+- `releases`: each verified [Gateway release](/reference/gateway-recovery) that began in those 12 weeks, with its commit and `started_at`. The chart marks each one on the trend.
+- `daily`: merged and not merged tasks for each day of the period.
+- `breakdowns`: `tasks`, `merged`, `tokens_per_merged_pr`, `lead_time_ms`, and `yield` for each implementer model, each Project, and each Gateway release. A task belongs to the last verified release that began before the task's `started_at`.
+
+### On the board
+
+The strip shows tokens per merged PR with its cost, lead time, yield, first-pass pull requests, and wasted tokens. Each shows its change against the previous period, green when better and red when worse. Fewer tokens, a shorter lead time, and less waste are better. A higher yield and first-pass share are better. The strip has a 7-day and 30-day switch and a Project filter.
+
+**More** opens the rest: the weekly trend with release marks, the daily outcomes, the lead time split into queue, work, and merge wait, the other numbers above, and the breakdown table. The browser remembers whether the strip is open. The strip shows on the Tasks board only, not on an Instance's board.
 
 ## Agent viewer
 
@@ -2391,6 +2457,18 @@ The retry reservation and its timeline comment commit before delivery. A stable 
 ### Resume a restarted turn
 
 The checkout still holds the work after an agent server restarts, and the same thread can finish it. So the tick resumes the turn instead of asking for assistance. Two resumes cover one upgrade and one retry. The resume is counted before it is sent, because the send can succeed while its response is lost.
+
+### Insights come from recorded times
+
+The insights are computed on each read from the task rows, their threads, comments, checks, and questions. There is no snapshot table to fill or repair, and a fixed definition applies to old and new tasks alike. The fleet holds a few hundred tasks a month, so a read stays small.
+
+A task stores its own lifecycle times. `updated_at` moves on any write, and the Activity log samples reads and keeps no record of a task that the tick moved. Without the times, lead time would be a guess.
+
+`merged_at` is GitHub's merge time, read when Orbit confirms the merge. `merge_status` is set only when Orbit merges, so it misses a pull request that a person merged. Counting merges from GitHub's answer covers both.
+
+A release is placed by the time its record was created. The record changes after verification, so `updated_at` would move a release mark.
+
+Tokens are summed from the threads, not from the task `tokens`. The task total leaves out an implementer thread that a later thread replaced, and those tokens are exactly the waste the insights must show.
 
 ### Metrics stay on the thread
 

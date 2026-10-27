@@ -309,6 +309,7 @@ final readonly class PiDriver implements AgentDriver
             outputTokens: $this->usageInt($data, 'output'),
             modelCalls: $this->usageInt($data, 'calls'),
             peakContextTokens: $this->usageInt($data, 'peakContext'),
+            costUsd: is_int(data_get($data, 'usage.cost')) || is_float(data_get($data, 'usage.cost')) ? (float) data_get($data, 'usage.cost') : null,
             error: $state === AgentThreadState::Failed ? ($error ?? 'Agent turn failed.') : ($state === AgentThreadState::Working ? $error : null),
             cursor: $this->cursor($data),
             turnId: is_string($turnId) && $turnId !== '' ? $turnId : null,

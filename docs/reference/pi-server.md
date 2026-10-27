@@ -151,6 +151,7 @@ The snapshot, the delta, and each stream `state` event include `usage`. The sums
 | `total` | `input + output + cacheRead + cacheWrite` |
 | `calls` | Assistant messages included in the sums |
 | `peakContext` | Largest prompt on one call: `input + cacheRead + cacheWrite`. That is uncached input plus cached input. Output is excluded |
+| `cost` | The sum of each call's `cost.total` in US dollars, from Pi's model prices. Null when a call has tokens but no positive cost: Pi prices an unknown model at zero |
 
 Orbit stores uncached input as `input + cacheWrite` and cached input as `cacheRead`. Per-call usage in the session file uses the same `input`, `cacheRead`, `cacheWrite`, and `output` fields. `totalTokens` on a call equals those four numbers added.
 

@@ -102,6 +102,7 @@ it('exposes the tasks routes with stable methods', function (): void {
         'tasks:agent:show' => ['api/v1/task-groups/{group}/agents/{session}', ['GET', 'HEAD']],
         'tasks:agent-stream' => ['api/v1/task-groups/{group}/agents/{session}/stream', ['GET', 'HEAD']],
         'tasks:list' => ['api/v1/task-groups', ['GET', 'HEAD']],
+        'tasks:insights' => ['api/v1/task-insights', ['GET', 'HEAD']],
         'tasks:question:list' => ['api/v1/task-questions', ['GET', 'HEAD']],
         'tasks:question:close' => ['api/v1/task-questions/{question}/close', ['POST']],
         'tasks:create' => ['api/v1/task-groups', ['POST']],
