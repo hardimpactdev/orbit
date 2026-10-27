@@ -73,7 +73,7 @@ fn fixture() -> Fixture {
     ] {
         fs::write(f.base.join("state").join(name), value).unwrap();
     }
-    write(
+    crate::test_support::executable(
         &f.host.systemctl,
         br#"#!/bin/sh
 state=$(dirname "$0")/../state
@@ -84,7 +84,6 @@ case "$2" in
 esac
 cat "$state/$property"
 "#,
-        0o755,
     );
     f
 }
@@ -451,7 +450,7 @@ fn makes_changing_process_identity_unavailable_and_accepts_confirmed_restart_gen
     assert_eq!(observe(&f).php, Some(false));
     confirm_generation(&f.host, &runtime, &pool).unwrap();
     let original = fs::read(&f.host.systemctl).unwrap();
-    write(&f.host.systemctl, br#"#!/bin/sh
+    crate::test_support::executable(&f.host.systemctl, br#"#!/bin/sh
 state=$(dirname "$0")/../state
 property=${2#--property=}
 if [ "$property" = MainPID ]; then
@@ -459,9 +458,9 @@ if [ "$property" = MainPID ]; then
 else
  cat "$state/$property"
 fi
-"#, 0o755);
+"#);
     assert_eq!(observe(&f).php, None);
-    write(&f.host.systemctl, original, 0o755);
+    crate::test_support::executable(&f.host.systemctl, original);
     fs::remove_dir_all(f.host.proc_root.join(master.to_string())).unwrap();
     assert_eq!(
         socket_matches(&f.host, master, &runtime.socket, identity::effective_uid()),

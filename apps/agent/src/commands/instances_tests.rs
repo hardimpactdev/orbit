@@ -949,8 +949,7 @@ fn fake_php() -> &'static Path {
             ("php9.5", "exec sleep 30"),
         ] {
             let path = directory.join(name);
-            fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+            crate::test_support::executable(&path, format!("#!/bin/sh\n{body}\n"));
         }
         let path = format!(
             "{}:{}",

@@ -63,12 +63,10 @@ impl Fixture {
             ("sysctl", SYSCTL),
         ] {
             let path = root.join("bin").join(name);
-            fs::write(
+            crate::test_support::executable(
                 &path,
                 format!("#!/bin/bash\nset -eu\nROOT='{}'\n{body}\n", root.display()),
-            )
-            .unwrap();
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+            );
         }
         fs::write(root.join("wireguard/orbit.conf"), OLD).unwrap();
         for (on, name) in [(active, "active"), (enabled, "enabled")] {

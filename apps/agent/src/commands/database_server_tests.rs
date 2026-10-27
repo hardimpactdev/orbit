@@ -319,19 +319,10 @@ fn invalid_requests_refuse_before_any_client_call() {
     refused(bash, "the client is mysql or psql");
 }
 
-/// A stand-in for `docker` that runs `body` with the arguments the command passes. `install` writes the executable,
-/// so this process never holds a writable descriptor that a parallel test's fork could keep open (`ETXTBSY`).
+/// A stand-in for `docker` that runs `body` with the command's arguments.
 fn program(work: &WorkDir, body: &str) -> Native {
-    let source = work.0.join("docker.sh");
     let path = work.0.join("docker");
-    fs::write(&source, format!("#!/bin/sh\n{body}\n")).unwrap();
-    let status = std::process::Command::new("install")
-        .args(["-m", "0755"])
-        .arg(&source)
-        .arg(&path)
-        .status()
-        .unwrap();
-    assert!(status.success());
+    crate::test_support::executable(&path, format!("#!/bin/sh\n{body}\n"));
     Native { program: path }
 }
 

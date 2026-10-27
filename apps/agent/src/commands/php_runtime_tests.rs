@@ -3,6 +3,7 @@
 //! settings of the `master.ini` it was given. A restart starts a new master: a new pid with its own `/proc` entry.
 
 use super::*;
+use crate::test_support::executable;
 use std::os::unix::{fs::symlink, net::UnixListener};
 use std::thread;
 
@@ -57,11 +58,6 @@ pub(super) struct Fixture {
     pub(super) home: PathBuf,
 }
 
-fn executable(path: &Path, content: &str) {
-    fs::write(path, content).unwrap();
-    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
-}
-
 impl Fixture {
     pub(super) fn new() -> Self {
         let base = fs::canonicalize(std::env::temp_dir())
@@ -88,8 +84,8 @@ impl Fixture {
             fs::read("/proc/sys/kernel/random/boot_id").unwrap(),
         )
         .unwrap();
-        executable(&base.join("bin/systemctl"), SYSTEMCTL);
-        executable(&base.join("sbin/php-fpm8.5"), FPM);
+        executable(base.join("bin/systemctl"), SYSTEMCTL);
+        executable(base.join("sbin/php-fpm8.5"), FPM);
         fs::write(base.join("state/pid"), "620").unwrap();
 
         let uid = rustix::process::geteuid().as_raw();

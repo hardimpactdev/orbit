@@ -639,19 +639,16 @@ mod deployment {
     use super::*;
     use crate::commands::deploy_step::{run, DeployStepError, RunDeployStepInput};
 
-    fn executable(path: &Path, content: &str) {
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, content).unwrap();
-        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
-    }
+    use crate::test_support::executable;
 
     fn deployment() -> (WorkDir, RunDeployStepInput) {
         let (work, account, mut env) = fixture();
         env.store = work.0.join("shared store");
         fs::create_dir(&env.store).unwrap();
         seed(&env);
+        fs::create_dir(env.store.join("bin")).unwrap();
         executable(
-            &env.store.join("bin/vp"),
+            env.store.join("bin/vp"),
             r#"#!/bin/sh
 set -eu
 test "$1" = env && test "$2" = exec
@@ -663,7 +660,7 @@ exec "$@"
 "#,
         );
         executable(
-            &env.store.join("bin/npm"),
+            env.store.join("bin/npm"),
             r#"#!/bin/sh
 set -eu
 printf '<%s>' "$@" >> build.log

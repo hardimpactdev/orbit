@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::executable;
 use std::os::unix::fs::symlink;
 
 pub(super) const ID: &str = "123e4567-e89b-42d3-a456-426614174000";
@@ -29,7 +30,7 @@ impl Fixture {
         let state = host.root.to_str().unwrap();
         executable(
             &host.systemctl,
-            &format!(
+            format!(
                 r#"#!/bin/sh
 state='{state}'
 case "$1" in
@@ -48,7 +49,7 @@ esac
         );
         executable(
             &host.analyze,
-            &format!(
+            format!(
                 r#"#!/bin/sh
 case "$1" in
   calendar) [ "$2" != invalid ] ;;
@@ -105,11 +106,6 @@ impl Drop for Fixture {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.host.root);
     }
-}
-
-fn executable(path: &Path, source: &str) {
-    fs::write(path, source).unwrap();
-    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
 }
 
 #[test]
