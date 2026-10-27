@@ -94,3 +94,49 @@ Deno.test("parked tick rejects mismatched or pre-reset preapprovals before facto
   assertEquals(valid.calls.map((c) => c.method), ["status", "approve", "assistance"]);
   assertEquals(valid.calls[2].arguments!.parked, false);
 });
+
+Deno.test("a group's failed status never aborts the remaining groups and is recorded for retry", async () => {
+  for (const failure of ["throw", "result"] as const) {
+    const items = ["tg-7", "tg-8", "tg-9", "tg-10"];
+    const visited: string[] = [];
+    const ticks: Record<string, unknown>[] = [];
+    let broken = true;
+    const status = { started: true, stage: { id: "completed", cycle: 1, terminal: true }, unresolvedBindings: [], transitions: [] };
+    const context = {
+      globalArgs: behavior.globalArguments.parse({ factory: "orbit-groups" }),
+      definition: { name: "orbit-driver-groups" },
+      queryData: (predicate: string) => Promise.resolve(predicate.includes('name == "status-') ? [status] : []),
+      runModel: (call: { method: string; arguments?: Record<string, unknown> }) => {
+        const item = String(call.arguments?.workItem);
+        visited.push(item);
+        if (broken && ["tg-7", "tg-9"].includes(item)) {
+          if (failure === "throw") throw new Error("group unavailable");
+          return Promise.resolve({ ok: false, error: { message: "group unavailable" } });
+        }
+        return Promise.resolve({ ok: true });
+      },
+      writeResource: (_spec: string, name: string, data: Record<string, unknown>) => {
+        ticks.push(data);
+        return Promise.resolve({ name });
+      },
+      logger: { info: () => {}, warning: () => {} },
+    };
+    await behavior.methods.tick.execute({ workItems: items, maxSteps: 3 }, context);
+    assertEquals(visited, items);
+    const results = ticks[0].items as { workItem: string; error?: string; stage: string | null; cycle: number | null }[];
+    assertEquals(results.map((r) => r.workItem), items);
+    for (const index of [0, 2]) {
+      assert(results[index].error?.includes("group unavailable"));
+      assertEquals(results[index].stage, null);
+      assertEquals(results[index].cycle, null);
+    }
+    assertEquals(results[1].stage, "completed");
+    assertEquals(results[3].stage, "completed");
+    // Failure is visible, not a terminal factory state. A later tick retries it.
+    broken = false;
+    visited.length = 0;
+    await behavior.methods.tick.execute({ workItems: items, maxSteps: 3 }, context);
+    assertEquals(visited, items);
+    assertEquals((ticks[1].items as { error?: string }[]).every((r) => !r.error), true);
+  }
+});

@@ -237,6 +237,10 @@ decides the next step. Swamp never merges.
 - Driver: `orbit-driver-groups` in method mode;
   `workflows/workflow-groups-driver.yaml` ticks every minute under swamp serve,
   three guarded steps per group.
+- A group's failed guarded step records an `error` in its tick entry and leaves
+  the other groups free to advance. Its next tick reconciles the same factory
+  entry and saved operation. If no step returned a status, the error entry's
+  `stage` and `cycle` are null.
 - Pre-approvals: a person can approve a gate before the run reaches it. The
   driver stores it for one exact work item, gate, stage and cycle, and the first
   tick that parks there applies it if it was created in the current run era.

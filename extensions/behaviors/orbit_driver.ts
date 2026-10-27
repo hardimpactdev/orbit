@@ -108,10 +108,11 @@ const TickSchema = z.object({
   nextOffset: z.number().int().default(0),
   items: z.array(z.object({
     workItem: z.string(),
-    stage: z.string(),
-    cycle: z.number(),
+    stage: z.string().nullable(),
+    cycle: z.number().nullable(),
     actions: z.array(z.string()),
     waiting: z.string().nullable(),
+    error: z.string().optional(),
   })),
 });
 
@@ -462,11 +463,23 @@ export const behavior = {
           }
           const actions: string[] = [];
           let last: Awaited<ReturnType<typeof step>> | null = null;
-          for (let i = 0; i < args.maxSteps; i++) {
-            if (i > 0 && !budgetLeft()) break;
-            last = await step(ctx, workItem, args.killAt);
-            if (last.action) actions.push(last.action);
-            if (last.waiting) break;
+          try {
+            for (let i = 0; i < args.maxSteps; i++) {
+              if (i > 0 && !budgetLeft()) break;
+              last = await step(ctx, workItem, args.killAt);
+              if (last.action) actions.push(last.action);
+              if (last.waiting) break;
+            }
+          } catch (e) {
+            // Leave this group's receipts and factory state intact. Its next
+            // invocation reconciles the same entry; siblings can still advance.
+            const error = String(e);
+            ctx.logger.warning("{wi}: guarded step failed: {err}", { wi: workItem, err: error });
+            out.push({
+              workItem, stage: last?.status.stage.id ?? null, cycle: last?.status.stage.cycle ?? null,
+              actions, waiting: null, error,
+            });
+            continue;
           }
           if (ctx.globalArgs.assistanceModel && last) {
             // Tell the target system whether this work item now waits for a person.
