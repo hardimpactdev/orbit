@@ -33,6 +33,17 @@ final readonly class GitHubRepository
         return new self($matches[1], $matches[2]);
     }
 
+    /** The repository a pull request web URL names, such as `https://github.com/owner/name/pull/12`. */
+    public static function fromPullRequestUrl(string $url): ?self
+    {
+        if (preg_match('#\Ahttps://github\.com/([A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?)/([A-Za-z0-9._-]{1,100})/pull/[1-9][0-9]{0,9}\z#D', $url, $matches) !== 1
+            || $matches[2] === '.' || $matches[2] === '..') {
+            return null;
+        }
+
+        return new self($matches[1], $matches[2]);
+    }
+
     /**
      * The number of a pull request in this repository, from its web URL.
      */

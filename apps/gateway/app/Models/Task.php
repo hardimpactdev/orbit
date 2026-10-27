@@ -376,7 +376,7 @@ final class Task extends Model
     /** Whether the task's pull request merged, by Orbit or by a person ([Task insights](/reference/tasks#task-insights)). */
     public function pullRequestMerged(): bool
     {
-        return $this->watched_pr_completion === 'merged' || $this->merge_status === TaskMergeStatus::Merged;
+        return $this->merged_at !== null;
     }
 
     /** @param  Builder<Task>  $query */
