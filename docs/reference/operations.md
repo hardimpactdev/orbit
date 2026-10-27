@@ -132,7 +132,7 @@ After checking the caller's access, the Gateway checks the key before further in
 
 Concurrent starts with one new key create one operation and queue one job. The operation stores the key, and a unique index on kind and key settles competing inserts. A request without a key starts a new operation under the usual target-hold rule.
 
-The CLI commands `instance:deploy`, `instance:deploy:automatic`, `instance:rollback`, `tasks:provision`, `tasks:check`, and `tasks:turn` pass the header with `--idempotency-key=KEY`. The PHP SDK requests accept `idempotencyKey`. Each MCP tool that starts an operation takes the `Idempotency-Key` argument (required where the API requires it), generated from the OpenAPI header.
+The CLI commands `instance:deploy`, `instance:rollback`, `tasks:provision`, `tasks:check`, and `tasks:turn` pass the header with `--idempotency-key=KEY`. The PHP SDK requests accept `idempotencyKey`. Each MCP tool that starts an operation takes the `Idempotency-Key` argument (required where the API requires it), generated from the OpenAPI header.
 
 Keyed operations are never pruned, so their keys never expire. Operations currently keep every record. When ADR 0218 adds retention for finished operations, it must exclude every operation that carries a key. The [WebSocket app routes](/reference/websocket-apps) keep their own Node-scoped idempotency rule until their changes become operations.
 

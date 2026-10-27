@@ -9,7 +9,6 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\Deployments\AutomaticDeployInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\DeployInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\RollbackInstanceRequest;
 use Orbit\Sdk\Requests\Operations\CancelOperationRequest;
@@ -600,27 +599,3 @@ describe('tasks:publish', function (): void {
         [['group' => '17', '--check' => '31', '--body' => 'Body'], 'tasks.pull_request_invalid'],
     ]);
 });
-
-it('follows a trusted automatic pinned deploy through the shared human and JSON output', function (bool $json, bool $fails): void {
-    $seen = [];
-    $sha = str_repeat('b', 40);
-    $final = cli_operation([
-        'status' => $fails ? 'failed' : 'succeeded', 'sequence' => 4,
-        'started_at' => '2026-10-15T10:00:01+00:00', 'poll_after_seconds' => null,
-        'input' => ['commit' => $sha, 'caller_node_id' => 3],
-        'triggered_by' => 'orbit:auto-deploy',
-        'error_code' => $fails ? 'deployment.paused' : null,
-        'result' => $fails ? null : ['deployment_id' => 5, 'release' => 'r2', 'selected_release' => 'r2', 'commit' => $sha],
-    ]);
-    $mock = cli_deploy_gateway([$final], $seen, AutomaticDeployInstanceRequest::class);
-    expect(Artisan::call('instance:deploy:automatic', ['instance' => '17', '--commit' => $sha, '--idempotency-key' => 'automatic.17', '--json' => $json, '--no-interaction' => true]))->toBe($fails ? 1 : 0);
-    $output = Artisan::output();
-    if ($json) {
-        $data = json_decode(trim($output), true, flags: JSON_THROW_ON_ERROR);
-        expect($data['status'])->toBe($fails ? 'failed' : 'succeeded');
-        expect($data['input'])->toBe(['commit' => $sha, 'caller_node_id' => 3]);
-    } else {
-        expect($output)->toContain('Deploy Instance [17]', $fails ? 'Deployment failed.' : 'Deployment succeeded.');
-    }
-    expect($seen)->not->toBeEmpty();
-})->with([false, true])->with([false, true]);

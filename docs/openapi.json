@@ -11321,8 +11321,7 @@
                 "properties": {
                   "commit": {
                     "type": "string",
-                    "pattern": "^[0-9a-f]{40}(?:[0-9a-f]{24})?$(?![\\s\\S])",
-                    "description": "Required full commit SHA on the deployment branch"
+                    "pattern": "^[0-9a-f]{40}(?:[0-9a-f]{24})?$(?![\\s\\S])"
                   }
                 },
                 "required": [

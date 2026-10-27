@@ -11428,7 +11428,6 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description Required full commit SHA on the deployment branch */
                     commit: string;
                 };
             };

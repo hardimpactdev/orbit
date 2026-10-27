@@ -7,7 +7,6 @@ use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\Deployments\AutomaticDeployInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\DeployInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\ListInstanceReleasesRequest;
 use Orbit\Sdk\Requests\Deployments\RollbackInstanceRequest;
@@ -85,7 +84,6 @@ describe('deploy and rollback requests', function (): void {
         expect($mock->getRecordedResponses())->toHaveCount(1);
     })->with([
         'deploy' => ['instance:deploy', DeployInstanceRequest::class, []],
-        'automatic' => ['instance:deploy:automatic', AutomaticDeployInstanceRequest::class, ['--commit' => str_repeat('b', 40)]],
         'rollback' => ['instance:rollback', RollbackInstanceRequest::class, ['--release' => 'initial']],
     ]);
 
@@ -458,15 +456,6 @@ it('passes an explicit commit through a manual deploy request', function (): voi
     expect(Artisan::call('instance:deploy', ['instance' => '17', '--commit' => str_repeat('b', 40), '--json' => true]))->toBe(1);
     expect($mock->getLastPendingRequest()->body()->all())->toBe(['commit' => str_repeat('b', 40)]);
 });
-
-it('refuses an automatic deploy without its commit or stable key before sending', function (array $options): void {
-    $mock = MockClient::global();
-    expect(Artisan::call('instance:deploy:automatic', ['instance' => '17', '--json' => true, ...$options]))->toBe(1);
-    expect($mock->getLastPendingRequest())->toBeNull();
-})->with([
-    'commit missing' => [['--idempotency-key' => 'automatic']],
-    'key missing' => [['--commit' => str_repeat('b', 40)]],
-]);
 
 it('never turns an explicitly empty commit option into an unpinned deploy', function (?string $commit): void {
     $mock = MockClient::global();
