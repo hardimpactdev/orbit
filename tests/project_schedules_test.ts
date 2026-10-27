@@ -214,6 +214,7 @@ Deno.test("uncertain pending creates and broken active rows are surfaced without
       started: true,
     };
     f.data.set(`orbit-gateway/schedule-${broken.key}`, broken);
+    f.groups.set(98, { id: 98, status: "running" });
     f.data.set("orbit-gateway/schedule-active-other", {
       ...good,
       key: "active-other",
@@ -372,5 +373,144 @@ Deno.test("a cancelled backlog group with no VM retires its active factory recei
     );
   } finally {
     await f.close();
+  }
+});
+
+Deno.test("cleaned cancellation retires an obsolete factory stage before status and preserves healthy work", async () => {
+  const f = fixture();
+  try {
+    const cancelled = {
+      ...scheduleReceipt(original, "detect", new Date("2026-10-27T03:00:00Z")),
+      workItem: "tg-1",
+      attempted: true,
+      started: true,
+    };
+    const healthy = {
+      ...scheduleReceipt(original, "routine", new Date("2026-10-26T02:00:00Z")),
+      workItem: "tg-2",
+      attempted: true,
+      started: true,
+    };
+    f.data.set(`orbit-gateway/schedule-${cancelled.key}`, cancelled);
+    f.data.set(`orbit-gateway/schedule-${healthy.key}`, healthy);
+    const obsolete = { workItem: "tg-1", stageId: "handoff", status: "active" };
+    f.data.set("dependency-detect/state-tg-1", obsolete);
+    f.data.set("dependency-routine/state-tg-2", {
+      workItem: "tg-2",
+      stageId: "provision",
+      status: "active",
+    });
+    f.groups.set(1, {
+      id: 1,
+      project_id: 20,
+      status: "cancelled",
+      taskable_id: null,
+      vm_power: "destroyed",
+      assistance_requested: false,
+      assistance_kind: null,
+      assistance_reason: null,
+      assistance_question: null,
+      tasks: [{ status: "cancelled" }],
+    });
+    f.groups.set(2, { id: 2, project_id: 20, status: "running" });
+    const runModel = f.ctx.runModel;
+    let cancelledStatusCalls = 0;
+    f.ctx.runModel = (args) => {
+      if (
+        args.definition === "dependency-detect" && args.method === "status" &&
+        args.arguments?.workItem === "tg-1"
+      ) {
+        cancelledStatusCalls++;
+        throw new Error(
+          "Current stage 'handoff' no longer exists in the definition",
+        );
+      }
+      return runModel(args);
+    };
+    await behavior.methods.project_work.execute({}, f.ctx);
+    assertEquals(cancelledStatusCalls, 0);
+    assertEquals(
+      (f.data.get(`orbit-gateway/schedule-${cancelled.key}`) as {
+        completed: boolean;
+      }).completed,
+      true,
+    );
+    assertEquals(f.data.get("dependency-detect/state-tg-1"), obsolete);
+    const work = f.data.get("orbit-gateway/project-work") as {
+      routine: string[];
+      detect: string[];
+      issues: unknown[];
+    };
+    assertEquals(work.routine, ["tg-2"]);
+    assertEquals(work.detect, []);
+    assertEquals(work.issues, []);
+    assertEquals(f.posts(), 0);
+    assertEquals(f.starts(), 0);
+  } finally {
+    await f.close();
+  }
+});
+
+Deno.test("cancellation with remaining VM, child, or assistance evidence stays held", async () => {
+  for (
+    const outstanding of [
+      { vm_power: "running", taskable_id: 77 },
+      { tasks: [{ status: "running" }] },
+      {
+        assistance_requested: true,
+        assistance_kind: "safety",
+        assistance_reason: "Keep this request",
+      },
+      {
+        assistance_requested: false,
+        assistance_reason: "Unreconciled direction",
+      },
+    ]
+  ) {
+    const f = fixture();
+    try {
+      const receipt = {
+        ...scheduleReceipt(
+          original,
+          "detect",
+          new Date("2026-10-27T03:00:00Z"),
+        ),
+        workItem: "tg-1",
+        attempted: true,
+        started: true,
+      };
+      f.data.set(`orbit-gateway/schedule-${receipt.key}`, receipt);
+      f.data.set("dependency-detect/state-tg-1", {
+        stageId: "assistance",
+        status: "active",
+      });
+      const group = {
+        id: 1,
+        project_id: 20,
+        status: "cancelled",
+        taskable_id: null,
+        vm_power: "destroyed",
+        tasks: [{ status: "cancelled" }],
+        ...outstanding,
+      };
+      f.groups.set(1, group);
+      await behavior.methods.project_work.execute({}, f.ctx);
+      assertEquals(
+        (f.data.get(`orbit-gateway/schedule-${receipt.key}`) as {
+          completed: boolean;
+        }).completed,
+        false,
+      );
+      assertEquals(f.groups.get(1), group);
+      assertEquals(
+        (f.data.get("orbit-gateway/project-work") as { detect: string[] })
+          .detect,
+        ["tg-1"],
+      );
+      assertEquals(f.posts(), 0);
+      assertEquals(f.starts(), 0);
+    } finally {
+      await f.close();
+    }
   }
 });

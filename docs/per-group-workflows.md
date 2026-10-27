@@ -64,7 +64,13 @@ factory start. `maintenance-projects` reconciles an interrupted create or start;
 once factory state exists, discovery includes it on the next native schedule
 fire. Discovery also includes active external groups without schedule receipts.
 It excludes groups whose schedule receipt already records completion or
-cancellation. It never calls `start` for an existing factory state.
+cancellation. The project reconciler checks Orbit cancellation and cleanup
+before requesting factory status. A cancelled group with no VM and no remaining
+assistance can retire its schedule receipt even if its old factory stage no
+longer exists. Factory state and effect receipts stay intact. Groups with
+remaining children, cleanup, or assistance keep their receipt and capacity
+claim until that evidence is settled. It never calls `start` for an existing
+factory state.
 
 Discovery first calls native `swamp run doctor --fix` to settle dead owners that
 still appear to be running. Interrupted group work uses Swamp's guarded

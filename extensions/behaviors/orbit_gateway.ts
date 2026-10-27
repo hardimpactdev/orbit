@@ -486,6 +486,20 @@ async function projectWork(context: StageContext) {
   );
   for (const receipt of batch) {
     await isolateScheduleRow(context, receipt, "active", async () => {
+      // Orbit cancellation is authoritative even when the old factory stage
+      // no longer exists. Retire only after its cleanup and assistance settle.
+      const response = await store.http(
+          "GET",
+          `/api/v1/task-groups/${receipt.workItem!.slice(3)}`,
+        ),
+        group = response.body?.data as Record<string, unknown> | undefined;
+      if (response.status !== 200 || !group) {
+        throw new Error("cannot read scheduled group cancellation state");
+      }
+      if (cleanedCancelledGroup(group)) {
+        await store.save({ ...receipt, completed: true });
+        return;
+      }
       const factory = receipt.mode === "detect"
         ? "dependency-detect"
         : receipt.mode === "package"
@@ -503,18 +517,6 @@ async function projectWork(context: StageContext) {
         ))[0] as { stageId: string; status: string } | undefined;
       if (!state) {
         throw new Error("scheduled factory state is missing");
-      }
-      const response = await store.http(
-          "GET",
-          `/api/v1/task-groups/${receipt.workItem!.slice(3)}`,
-        ),
-        group = response.body?.data as Record<string, unknown> | undefined;
-      if (response.status !== 200 || !group) {
-        throw new Error("cannot read scheduled group cancellation state");
-      }
-      if (cleanedCancelledGroup(group)) {
-        await store.save({ ...receipt, completed: true });
-        return;
       }
       if (state.status !== "terminal") {
         work[receipt.mode].push(receipt.workItem!);
