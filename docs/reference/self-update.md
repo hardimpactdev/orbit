@@ -27,7 +27,7 @@ The desired fleet state names what every machine should run for the Gateway's co
 | `cli` | The [CLI release](/reference/cli-binaries#release-contract-for-clients) of that commit: `status`, `reason`, `version`, `tag`, the `commit` CI built it from, `checksums_url`, and one asset per platform |
 | `agent` | The pinned [`orbit-agent`](/reference/node-agent#install-and-upgrade) `version`, the delivery `commit`, and one asset per Linux architecture. `self-update` does not read it. |
 
-Each asset has `platform` (`linux-x86_64`, `linux-aarch64`, or `macos-arm64`), the release asset `name`, the HTTPS download `url`, and its lowercase hex `sha256`.
+Each asset has `platform`, the release asset `name`, the HTTPS download `url`, and its lowercase hex `sha256`. CLI assets have the platform `linux-x86_64` or `macos-arm64`. Agent assets name the Linux architectures that the pinned delivery holds.
 
 ```json
 {

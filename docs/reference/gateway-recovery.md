@@ -158,6 +158,8 @@ The second command fills in the release's manifest and installs its agent before
 
 A Gateway whose current release predates [release provenance](#release-provenance) needs no hand step. Its prepare reads only `manifest.json` and `SHA256SUMS`, and its CLI release catalog ignores an asset it does not expect, so the new bundle changes nothing for it. It deploys the first commit with the verifier as before. From then on, the running code verifies each newer release.
 
+Orbit is dropping Linux ARM. Prepare accepts an agent delivery with or without a `linux-aarch64` artifact. It verifies that artifact against `SHA256SUMS` like the others. The Gateway installs only its own build, and the release manifest still lists the Linux ARM agent. Any other platform outside the expected set still refuses. The CLI release catalog reads only the `linux-x86_64` and `macos-arm64` binaries. A Gateway that runs this code can therefore prepare the first release that ships no Linux ARM agent or CLI. A later change removes the allowance.
+
 Prepare refuses before it fetches or writes when the releases directory has less free space than `ORBIT_GATEWAY_RELEASE_MIN_FREE_MB`, 1024 MiB by default. Each release has its own `vendor/` directories. Releases share the Git objects in `shared/orbit.git`, so a release costs about the size of its source and its two `vendor/` directories, about 115 MB without development packages.
 
 The command prints one JSON object. Success exits 0 with `release`, `sha`, `path`, `reused`, and `duration_ms`. A refused commit exits 2. Every other failure exits 1 with `error_code`, `step`, and `message`.

@@ -14,7 +14,7 @@ use InvalidArgumentException;
 final readonly class CliReleaseName
 {
     /** @var list<string> */
-    public const array Platforms = ['linux-x86_64', 'linux-aarch64', 'macos-arm64'];
+    public const array Platforms = ['linux-x86_64', 'macos-arm64'];
 
     public const string ChecksumsAsset = 'SHA256SUMS';
 
