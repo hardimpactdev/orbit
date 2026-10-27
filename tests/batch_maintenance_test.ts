@@ -7,7 +7,10 @@ import {
   batch as jsBatch,
   plan as jsPlan,
 } from "../extensions/behaviors/js-maintenance/_lib/batch.ts";
-import { type UpdateTarget } from "../extensions/behaviors/_lib/maintenance/batch.ts";
+import {
+  scratch,
+  type UpdateTarget,
+} from "../extensions/behaviors/_lib/maintenance/batch.ts";
 import { emptyExceptions } from "../extensions/behaviors/_lib/maintenance/exceptions.ts";
 async function fixture(fn: (root: string, log: string) => Promise<void>) {
   const temp = await Deno.makeTempDir({ prefix: "batch-ecosystem-" }),
@@ -96,6 +99,12 @@ fwrite(STDERR,'unexpected command');exit(64);
         },
       }),
     );
+    await Deno.writeTextFile(`${root}/AGENTS.md`, "project instructions\n");
+    await Deno.mkdir(`${root}/.agents/skills`, { recursive: true });
+    await Deno.writeTextFile(`${root}/.agents/skills/example.md`, "skill\n");
+    await Deno.mkdir(`${root}/.claude`);
+    await Deno.symlink("AGENTS.md", `${root}/CLAUDE.md`);
+    await Deno.symlink("../.agents/skills", `${root}/.claude/skills`);
     for (
       const args of [["init"], ["add", "."], [
         "-c",
@@ -123,6 +132,168 @@ fwrite(STDERR,'unexpected command');exit(64);
     await Deno.remove(temp, { recursive: true });
   }
 }
+
+Deno.test("planning copy preserves file and directory symlinks without copying untracked targets", async () => {
+  await fixture(async (root) => {
+    await Deno.writeTextFile(`${root}/untracked`, "not part of the plan\n");
+    await Deno.symlink("untracked", `${root}/local-link`);
+    assert(
+      (await new Deno.Command("git", {
+        cwd: root,
+        args: ["add", "local-link"],
+      }).output()).success,
+    );
+    const copy = await scratch(root);
+    try {
+      assert((await Deno.lstat(`${copy.root}/CLAUDE.md`)).isSymlink);
+      assert((await Deno.lstat(`${copy.root}/.claude/skills`)).isSymlink);
+      assertEquals(await Deno.readLink(`${copy.root}/local-link`), "untracked");
+      assertEquals(await Deno.readLink(`${copy.root}/CLAUDE.md`), "AGENTS.md");
+      assertEquals(
+        await Deno.readLink(`${copy.root}/.claude/skills`),
+        "../.agents/skills",
+      );
+      assertEquals(
+        await Deno.readTextFile(`${copy.root}/CLAUDE.md`),
+        "project instructions\n",
+      );
+      assertEquals(
+        await Deno.readTextFile(`${copy.root}/.claude/skills/example.md`),
+        "skill\n",
+      );
+      await Deno.writeTextFile(`${copy.root}/CLAUDE.md`, "copy only\n");
+      assertEquals(
+        await Deno.readTextFile(`${root}/AGENTS.md`),
+        "project instructions\n",
+      );
+      for (const excluded of [".git", "untracked", "node_modules", "vendor"]) {
+        await assertRejects(
+          () => Deno.lstat(`${copy.root}/${excluded}`),
+          Deno.errors.NotFound,
+        );
+      }
+    } finally {
+      await copy.close();
+    }
+    await assertRejects(() => Deno.lstat(copy.root), Deno.errors.NotFound);
+  });
+});
+
+Deno.test("planning copy relocates internal absolute symlinks and preserves dangling internal links", async () => {
+  await fixture(async (root) => {
+    await Deno.remove(`${root}/CLAUDE.md`);
+    await Deno.symlink(`${root}/AGENTS.md`, `${root}/CLAUDE.md`);
+    await Deno.remove(`${root}/.claude/skills`);
+    await Deno.symlink("../missing/skills", `${root}/.claude/skills`);
+    const copy = await scratch(root);
+    try {
+      assertEquals(
+        await Deno.readLink(`${copy.root}/CLAUDE.md`),
+        "./AGENTS.md",
+      );
+      assertEquals(
+        await Deno.realPath(`${copy.root}/CLAUDE.md`),
+        `${copy.root}/AGENTS.md`,
+      );
+      assertEquals(
+        await Deno.readLink(`${copy.root}/.claude/skills`),
+        "../missing/skills",
+      );
+    } finally {
+      await copy.close();
+    }
+  });
+});
+
+for (
+  const escape of [
+    "relative",
+    "absolute",
+    "chain",
+    "directory-parent",
+    "missing-target",
+  ] as const
+) {
+  Deno.test(`planning copy refuses ${escape} symlink escapes`, async () => {
+    await fixture(async (root) => {
+      const outside = `${root}-outside`;
+      await Deno.mkdir(outside);
+      try {
+        await Deno.writeTextFile(`${outside}/AGENTS.md`, "outside\n");
+        await Deno.remove(`${root}/CLAUDE.md`);
+        let target = `../repo-outside/AGENTS.md`;
+        if (escape === "absolute") target = `${outside}/AGENTS.md`;
+        if (escape === "chain") {
+          await Deno.symlink(`${root}/AGENTS.md`, `${outside}/return`);
+          await Deno.symlink(`${outside}/return`, `${root}/indirect`);
+          target = "indirect";
+        }
+        if (escape === "directory-parent") {
+          await Deno.symlink(outside, `${root}/indirect`);
+          target = "indirect/../repo/AGENTS.md";
+        }
+        if (escape === "missing-target") target = "../repo-outside/missing";
+        await Deno.symlink(target, `${root}/CLAUDE.md`);
+        await assertRejects(
+          () => scratch(root),
+          Error,
+          "symlink escapes checkout",
+        );
+      } finally {
+        await Deno.remove(outside, { recursive: true });
+      }
+    });
+  });
+}
+
+Deno.test("planning copy still refuses tracked directories and unresolved link cycles", async () => {
+  await fixture(async (root) => {
+    await Deno.remove(`${root}/CLAUDE.md`);
+    await Deno.symlink("CLAUDE.md", `${root}/CLAUDE.md`);
+    await assertRejects(() => scratch(root), Error, "cannot resolve symlink");
+    await Deno.remove(`${root}/CLAUDE.md`);
+    await Deno.mkdir(`${root}/CLAUDE.md`);
+    await assertRejects(
+      () => scratch(root),
+      Error,
+      "cannot copy tracked non-file",
+    );
+  });
+});
+
+Deno.test("planning copy refuses an untracked internal symlink replacing a tracked parent directory", async () => {
+  await fixture(async (root) => {
+    await Deno.rename(`${root}/.agents`, `${root}/untracked-agents`);
+    await Deno.symlink("untracked-agents", `${root}/.agents`);
+    await assertRejects(
+      () => scratch(root),
+      Error,
+      "cannot copy through symlink ancestor",
+    );
+  });
+});
+
+Deno.test("planning copy refuses a link that becomes an escape when an untracked target link is omitted", async () => {
+  await fixture(async (root) => {
+    await Deno.mkdir(`${root}/b/c`, { recursive: true });
+    await Deno.writeTextFile(`${root}/b/c/file`, "tracked\n");
+    await Deno.writeTextFile(`${root}/victim`, "inside\n");
+    await Deno.symlink("b/c", `${root}/a`);
+    await Deno.symlink("a/../../victim", `${root}/L`);
+    assert(
+      (await new Deno.Command("git", {
+        cwd: root,
+        args: ["add", "b/c/file", "victim", "L"],
+      }).output()).success,
+    );
+    assertEquals(await Deno.realPath(`${root}/L`), `${root}/victim`);
+    await assertRejects(
+      () => scratch(root),
+      Error,
+      "symlink escapes checkout: L",
+    );
+  });
+});
 for (const manager of ["composer", "js"] as const) {
   Deno.test(`${manager}: preflight leaves checkout unchanged; batch applies two targets in one resolver operation`, async () => {
     await fixture(async (root, log) => {

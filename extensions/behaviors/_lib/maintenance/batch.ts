@@ -1,4 +1,5 @@
 import { z } from "npm:zod@4";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import {
   command,
   type CommonArgs,
@@ -253,32 +254,98 @@ export async function assertChangedReleaseAge(
   }
 }
 
-/** Copy only tracked files; never dependency trees, credentials or the source Git directory. */
+/** Resolve each link hop inside root, including links with missing internal targets. */
+async function internalPath(root: string, path: string, file: string) {
+  let current = root, pending = path.slice(root.length).split(sep), links = 0;
+  while (pending.length) {
+    const part = pending.shift()!;
+    if (!part || part === ".") continue;
+    current = resolve(current, part);
+    const local = relative(root, current);
+    if (local === ".." || local.startsWith(`..${sep}`) || isAbsolute(local)) {
+      throw new MaintenanceFailure(
+        `Batch planning symlink escapes checkout: ${file}`,
+      );
+    }
+    let stat;
+    try {
+      stat = await Deno.lstat(current);
+    } catch (e) {
+      if (e instanceof Deno.errors.NotFound) continue;
+      throw e;
+    }
+    if (!stat.isSymlink) continue;
+    if (++links > 40) {
+      throw new MaintenanceFailure(
+        `Batch planning cannot resolve symlink: ${file}`,
+      );
+    }
+    const target = await Deno.readLink(current);
+    if (isAbsolute(target)) {
+      if (target !== root && !target.startsWith(`${root}${sep}`)) {
+        throw new MaintenanceFailure(
+          `Batch planning symlink escapes checkout: ${file}`,
+        );
+      }
+      current = root;
+      pending = [...target.slice(root.length).split(sep), ...pending];
+    } else {
+      current = dirname(current);
+      pending = [...target.split(sep), ...pending];
+    }
+  }
+}
+
+/** Copy only tracked files and safe symlinks, never untracked content or Git metadata. */
 export async function scratch(
   root: string,
   signal?: AbortSignal,
 ): Promise<{ root: string; close: () => Promise<void> }> {
   const temp = await Deno.makeTempDir({ prefix: "maintenance-plan-" });
   try {
+    root = await Deno.realPath(root);
     const result = await command(root, "git", ["ls-files", "-z"], signal);
     if (result.code !== 0) {
       throw new MaintenanceFailure(
         "Batch planning requires a tracked checkout",
       );
     }
+    const symlinks: string[] = [];
     for (const file of result.stdout.split("\0").filter(Boolean)) {
       if (file.split("/").includes("..") || file.startsWith("/")) {
         throw new MaintenanceFailure("Invalid tracked path");
       }
-      const stat = await Deno.lstat(`${root}/${file}`);
-      if (!stat.isFile) {
+      const from = `${root}/${file}`;
+      await internalPath(root, from, file);
+      // A tracked leaf may not import untracked content through a replaced parent.
+      if (await Deno.realPath(dirname(from)) !== dirname(from)) {
+        throw new MaintenanceFailure(
+          `Batch planning cannot copy through symlink ancestor: ${file}`,
+        );
+      }
+      const stat = await Deno.lstat(from);
+      if (!stat.isFile && !stat.isSymlink) {
         throw new MaintenanceFailure(
           `Batch planning cannot copy tracked non-file ${file}`,
         );
       }
       const to = `${temp}/${file}`;
       await Deno.mkdir(to.slice(0, to.lastIndexOf("/")), { recursive: true });
-      await Deno.copyFile(`${root}/${file}`, to);
+      if (stat.isSymlink) {
+        const target = await Deno.readLink(from);
+        // An internal absolute link must point into the copy, not the source tree.
+        const link = isAbsolute(target)
+          ? `${relative(dirname(from), root) || "."}/${
+            target.slice(root.length + 1)
+          }`
+          : target;
+        await Deno.symlink(link, to);
+        symlinks.push(file);
+      } else await Deno.copyFile(from, to);
+    }
+    // Omitted untracked links can change how a relative target traverses ../.
+    for (const file of symlinks) {
+      await internalPath(temp, `${temp}/${file}`, file);
     }
     return { root: temp, close: () => Deno.remove(temp, { recursive: true }) };
   } catch (e) {
