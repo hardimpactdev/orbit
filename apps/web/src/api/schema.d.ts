@@ -5328,7 +5328,6 @@ export interface components {
             previous?: components["schemas"]["TaskInsightsSummary"];
             weekly?: components["schemas"]["TaskInsightsWeek"][];
             daily?: components["schemas"]["TaskInsightsDay"][];
-            releases?: components["schemas"]["TaskInsightsRelease"][];
             breakdowns?: components["schemas"]["TaskInsightsBreakdowns"];
         };
         TaskInsightsSummary: {
@@ -5366,10 +5365,6 @@ export interface components {
             date?: string;
             merged?: number;
             not_merged?: number;
-        };
-        TaskInsightsRelease: {
-            sha?: string;
-            started_at?: string;
         };
         TaskInsightsBreakdowns: {
             model?: components["schemas"]["TaskInsightsBreakdownRow"][];

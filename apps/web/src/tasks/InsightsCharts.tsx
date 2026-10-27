@@ -1,26 +1,18 @@
-import type { InsightsDay, InsightsRelease, InsightsWeek } from "../api/insights";
+import type { InsightsDay, InsightsWeek } from "../api/insights";
 import { formatCount } from "./insights-format";
 
 const WIDTH = 600;
 const HEIGHT = 120;
 const PAD = 8;
 
-/** Tokens per merged PR for each of the 12 weeks, with a dashed mark at each verified Gateway release. */
-export function WeeklyTrend({
-    weeks,
-    releases,
-}: {
-    weeks: readonly InsightsWeek[];
-    releases: readonly InsightsRelease[];
-}) {
+/** Tokens per merged PR for each of the 12 weeks. */
+export function WeeklyTrend({ weeks }: { weeks: readonly InsightsWeek[] }) {
     const values = weeks.map((week) => week.tokens_per_merged_pr);
     const max = Math.max(1, ...values.filter((value): value is number => value !== null));
-    // Each week owns one slot; its point sits in the middle, and a release sits where its time falls.
+    // Each week owns one slot; its point sits in the middle.
     const slot = (WIDTH - PAD * 2) / Math.max(1, weeks.length);
     const x = (index: number) => PAD + (index + 0.5) * slot;
     const y = (value: number) => HEIGHT - PAD - (value / max) * (HEIGHT - PAD * 2);
-    const start = weeks.length > 0 ? Date.parse(`${weeks[0]?.week_start}T00:00:00Z`) : 0;
-    const span = 7 * 86_400_000;
     // Weeks without a merge break the line rather than dropping to zero.
     const segments: string[][] = [[]];
     values.forEach((value, index) => {
@@ -46,24 +38,6 @@ export function WeeklyTrend({
                     y2={HEIGHT - PAD}
                     stroke="var(--line)"
                 />
-                {releases.map((release) => {
-                    const at = PAD + ((Date.parse(release.started_at) - start) / span) * slot;
-                    if (!(at >= PAD && at <= WIDTH - PAD)) return null;
-                    return (
-                        <g key={release.sha} data-testid="insights-release">
-                            <title>{`Release ${release.sha.slice(0, 7)}`}</title>
-                            <line
-                                x1={at}
-                                x2={at}
-                                y1={PAD}
-                                y2={HEIGHT - PAD}
-                                stroke="var(--yellow)"
-                                strokeDasharray="3 3"
-                                opacity={0.7}
-                            />
-                        </g>
-                    );
-                })}
                 {segments
                     .filter((points) => points.length > 0)
                     .map((points) => (

@@ -16,7 +16,6 @@ final class TaskInsightsData extends Data
      * @param  '7d'|'30d'  $period
      * @param  list<TaskInsightsWeekData>  $weekly  The last 12 weeks, oldest first, whatever the period.
      * @param  list<TaskInsightsDayData>  $daily  Each day of the period, oldest first.
-     * @param  list<TaskInsightsReleaseData>  $releases  Verified Gateway releases in the 12 weeks, oldest first.
      */
     public function __construct(
         public string $period,
@@ -26,7 +25,6 @@ final class TaskInsightsData extends Data
         public TaskInsightsSummaryData $previous,
         public array $weekly,
         public array $daily,
-        public array $releases,
         public TaskInsightsBreakdownsData $breakdowns,
     ) {}
 }

@@ -38,7 +38,8 @@ it("opens the details, remembers the choice, and switches the breakdown", async 
         "3 merged with no lead time",
     );
     expect(page.getByTestId("insights-lead-time").element().textContent).toContain("merge wait 1h");
-    expect(page.getByTestId("insights-release").elements()).toHaveLength(2);
+    // Releases ship many times a day, so the trend marks none; the release breakdown compares them.
+    expect(page.getByTestId("insights-weekly").element().querySelectorAll("line")).toHaveLength(1);
     await expect
         .element(page.getByTestId("insights-breakdown"))
         .toMatchTextContent(/gpt-5\.6-luna/);

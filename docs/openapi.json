@@ -37836,12 +37836,6 @@
               "$ref": "#/components/schemas/TaskInsightsDay"
             }
           },
-          "releases": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TaskInsightsRelease"
-            }
-          },
           "breakdowns": {
             "$ref": "#/components/schemas/TaskInsightsBreakdowns"
           }
@@ -37995,17 +37989,6 @@
           },
           "not_merged": {
             "type": "integer"
-          }
-        }
-      },
-      "TaskInsightsRelease": {
-        "type": "object",
-        "properties": {
-          "sha": {
-            "type": "string"
-          },
-          "started_at": {
-            "type": "string"
           }
         }
       },
