@@ -102,6 +102,23 @@ it('removes a mac from the registry and hub without linux cleanup', function ():
         ->and($this->peers->removed)->toBe([$mac->id]);
 });
 
+it('removes an iPadOS peer from the registry and hub without touching the machine', function (): void {
+    $caller = mac_removal_node('gateway', '10.44.0.1');
+    $ipad = mac_removal_node('ipad', '10.44.0.41', 'ipados', 'ipad');
+    $ipad->update(['wireguard_public_key' => 'IPAD_KEY', 'ssh_host_fingerprint' => null]);
+
+    $result = app(RemoveNodeAction::class)->execute($ipad, $caller);
+
+    expect($result->removed)->toBeTrue()
+        ->and($result->wireguardPeerRemoved)->toBeTrue()
+        ->and($result->retainedOnNode)->toBe(['host-wireguard'])
+        ->and($result->followUp)->toBeNull()
+        ->and($ipad->fresh())->toBeNull()
+        ->and($this->agent->removedNodeIds)->toBe([])
+        ->and($this->firewall->calls)->toBe(0)
+        ->and($this->peers->removed)->toBe([$ipad->id]);
+});
+
 it('restores a mac when hub removal fails and still skips linux cleanup', function (): void {
     $caller = mac_removal_node('gateway', '10.44.0.1');
     $mac = mac_removal_node('mini', '10.44.0.40', 'macos', 'mini');
@@ -124,7 +141,7 @@ function mac_removal_node(string $name, string $address, string $platform = 'lin
         'name' => $name,
         'status' => LifecycleStatus::Active,
         'platform' => $platform,
-        'architecture' => $platform === 'macos' ? 'arm64' : 'x86_64',
+        'architecture' => $platform === 'linux' ? 'x86_64' : 'arm64',
         'public_ssh_host' => '192.0.2.'.$name,
         'user' => $user,
         'wireguard_ip' => $address,

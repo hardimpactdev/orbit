@@ -120,13 +120,14 @@ Some families have actions outside the pairs above. Each action belongs only to 
 
 ## Noun-ending commands
 
-Five commands end in a noun.
+Seven commands end in a noun.
 
 | Command | Result |
 | --- | --- |
 | `analytics:credentials` | The CLI shows whether a Plausible Stats API key is stored, stores one, or clears it. It never prints the key. |
 | `metrics:credentials` | The CLI shows or resets Metrics Grafana credentials. |
 | `node:metrics` | The CLI shows one Node metrics snapshot. |
+| `node:platform` | Set the platform of an unmanaged Node. |
 | `node:settings` | The CLI writes typed [Node settings](/reference/node-settings). |
 | `node:wireguard-key` | Set an unmanaged Node's public key and reconverge the WireGuard hub. |
 | `tasks:agents` | The CLI lists the agent threads of a [task](/reference/tasks). |
@@ -140,7 +141,7 @@ Some routes have no CLI command. `instance:deploy:automatic` is the [trusted aut
 `instance:dependencies:show` reads the stored dependency inventory for the API and SDK. The CLI has `instance:dependencies:scan` and `instance:dependencies:update`, as [Instance dependencies](/reference/instance-dependencies) describes. `tasks:agent-stream` is a server-sent event stream for the web task board. `tasks:insights` returns the [task insights](/reference/tasks#task-insights) that the web task board shows. Its JSON read, `tasks:agent:show`, has the [CLI command](/cli/tasks#orbit-tasksagentshow) of the same name. `instance:resolve` resolves a Route target for API clients; the CLI has no bare `instance:resolve` command. The `conn:` routes serve Conn devices and T3 servers, as [Conn layer](/reference/conn) describes, and have no CLI commands.
 
 
-[`node:wireguard-key`](/cli/node#orbit-nodewireguard-key) uses a noun-ending command, like `node:settings`, because it sets one specific Node property rather than performing a generic update or managing a child resource. Its endpoint is `PATCH /api/v1/nodes/{node}/wireguard-key`.
+[`node:wireguard-key`](/cli/node#orbit-nodewireguard-key) uses a noun-ending command, like `node:settings`, because it sets one specific Node property rather than performing a generic update or managing a child resource. Its endpoint is `PATCH /api/v1/nodes/{node}/wireguard-key`. [`node:platform`](/cli/node#orbit-nodeplatform) follows the same rule. Its endpoint is `PATCH /api/v1/nodes/{node}/platform`.
 
 ## Why it works this way
 

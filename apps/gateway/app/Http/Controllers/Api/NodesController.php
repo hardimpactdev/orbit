@@ -8,6 +8,7 @@ use App\Actions\Nodes\ListNodesAction;
 use App\Actions\Nodes\ProvisionNodeAction;
 use App\Actions\Nodes\RemoveNodeAction;
 use App\Actions\Nodes\RenameNodeAction;
+use App\Actions\Nodes\SetNodePlatformAction;
 use App\Actions\Nodes\SetNodeWireGuardKeyAction;
 use App\Actions\Nodes\ShowNodeAction;
 use App\Actions\Nodes\UpdateNodeSettingsAction;
@@ -23,6 +24,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Nodes\ProvisionNodeRequest;
 use App\Http\Requests\Nodes\RemoveNodeRequest;
 use App\Http\Requests\Nodes\RenameNodeRequest;
+use App\Http\Requests\Nodes\SetNodePlatformRequest;
 use App\Http\Requests\Nodes\SetNodeWireGuardKeyRequest;
 use App\Http\Requests\Nodes\UpdateNodeSettingsRequest;
 use App\Http\Requests\Operations\StartsOperation;
@@ -127,6 +129,20 @@ final class NodesController extends Controller
         SetNodeWireGuardKeyAction $action,
     ): JsonResponse {
         $node = $action->execute($node, $request->publicKey());
+
+        return response()->json([
+            'data' => NodeData::fromModel($node)->toArray(),
+            'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
+        ]);
+    }
+
+    #[RequiresNodeAccess(ServingNode::Target)]
+    public function platform(
+        SetNodePlatformRequest $request,
+        Node $node,
+        SetNodePlatformAction $action,
+    ): JsonResponse {
+        $node = $action->execute($node, $request->platform());
 
         return response()->json([
             'data' => NodeData::fromModel($node)->toArray(),

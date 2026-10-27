@@ -131,7 +131,8 @@ final readonly class RemoveNodeAction
         }
 
         $peerRemoved = false;
-        $macos = $node->platform === 'macos';
+        // The Node agent and the firewall run only on Linux. macOS and iPadOS removal touch the registry and the hub.
+        $linux = $node->platform === 'linux';
         $result = new RemoveNodeData(
             id: $node->id,
             name: $node->name,
@@ -140,15 +141,17 @@ final readonly class RemoveNodeAction
             dnsRecordsRemoved: true,
             degradation: $shed === null ? null : ExporterDegradationReason::Unreachable->value,
             rolesShed: $shed ?? [],
-            retainedOnNode: $macos
-                ? ['user', 'package-managers', 'host-wireguard']
-                : ($shed === null
+            retainedOnNode: match ($node->platform) {
+                'macos' => ['user', 'package-managers', 'host-wireguard'],
+                'ipados' => ['host-wireguard'],
+                default => $shed === null
                     ? []
                     : $this->residue->describe(
                         array_map(RoleName::from(...), $shed),
                         nodeLeavesFleet: true,
-                    )),
-            followUp: $macos || $shed === null ? null : $this->residue->followUp(nodeLeavesFleet: true),
+                    ),
+            },
+            followUp: ! $linux || $shed === null ? null : $this->residue->followUp(nodeLeavesFleet: true),
         );
         // A failed step returns the Node to this status, so a failed Node never becomes active by rollback.
         $priorStatus = $node->status;
@@ -187,7 +190,7 @@ final readonly class RemoveNodeAction
             );
         }
 
-        if ($shed === null && ! $macos) {
+        if ($shed === null && $linux) {
             try {
                 $this->agent->remove($node);
             } catch (Throwable $exception) {
@@ -203,7 +206,7 @@ final readonly class RemoveNodeAction
         // stays reachable for `node:add` or recovery after it leaves.
         // A node without a peer never had its public path closed, and an
         // offline removal cannot change the machine at all.
-        if (! $offline && ! $macos && $node->wireguard_public_key !== null) {
+        if (! $offline && $linux && $node->wireguard_public_key !== null) {
             try {
                 $this->firewall->restorePublicSsh($node, $node->user);
             } catch (Throwable $exception) {

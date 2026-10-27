@@ -1,0 +1,10 @@
+Setting Node platform...
+
+┌  Set Node platform
+│
+├  ● Set Node platform
+│
+└  Set Node platform.
+
+Platform set to ipados for Node #2 [ipad].
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

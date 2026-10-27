@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use App\Actions\Firewall\RemoveFirewallRuleAction;
 use App\Actions\Firewall\StoreFirewallRuleAction;
+use App\Actions\Fleet\ConvergeNodeFootprintAction;
 use App\Actions\Nodes\AddNodeRoleAction;
+use App\Actions\Nodes\RepairNodeDnsAction;
 use App\Actions\Processes\CreateProcessAction;
 use App\Actions\Schedules\CreateScheduleAction;
 use App\Data\Firewall\StoreFirewallRuleData;
@@ -16,6 +18,7 @@ use App\Domain\Metrics\ExporterPreferenceRepository;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeObservation;
+use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\RecoverableNodeConverger;
 use App\Domain\Nodes\RoleName;
@@ -33,13 +36,13 @@ use App\Models\Process;
 use App\Models\Schedule;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 
-it('refuses macOS role, Metrics, Process, Schedule, and firewall changes before Linux mutation', function (): void {
+it('refuses macOS and iPadOS role, Metrics, Process, Schedule, and firewall changes before Linux mutation', function (string $platform): void {
     app()->instance(NodeConverger::class, new MacOsBoundaryConverger);
     $fleet = Mockery::mock(MetricsFleetReconciler::class);
     $fleet->shouldNotReceive('reconcile');
     $fleet->shouldNotReceive('retire');
     app()->instance(MetricsFleetReconciler::class, $fleet);
-    $node = macos_boundary_node();
+    $node = $platform === 'macos' ? macos_boundary_node() : ipados_boundary_node();
 
     expect(fn () => app(AddNodeRoleAction::class)->execute($node, RoleName::AppDev))
         ->toThrow(function (ResourceOperationException $exception): void {
@@ -94,6 +97,16 @@ it('refuses macOS role, Metrics, Process, Schedule, and firewall changes before 
             ->and($exception->status)->toBe(422);
     });
 
+    expect(fn () => app(ConvergeNodeFootprintAction::class)->execute($node))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('node.converge_unsupported')
+                ->and($exception->status)->toBe(422);
+        });
+    expect(fn () => app(RepairNodeDnsAction::class)->execute($node->name))
+        ->toThrow(function (NodeProvisioningException $exception): void {
+            expect($exception->errorCode)->toBe('node.dns_repair_operator_owned');
+        });
+
     $accounts = new FakeScheduleRuntimeAccountResolver;
     $accounts->unavailable = true;
     expect(fn () => (new ScheduleTargetResolver($accounts))->resolve(ScheduleTargetType::Node, $node->id))
@@ -135,7 +148,7 @@ it('refuses macOS role, Metrics, Process, Schedule, and firewall changes before 
         ->and(FirewallRule::query()->count())->toBe(1)
         ->and($rule->fresh()?->status)->toBe(LifecycleStatus::Active)
         ->and(app(ExporterPreferenceRepository::class)->get($node->id))->toBeNull();
-});
+})->with(['macos', 'ipados']);
 
 function macos_boundary_node(): Node
 {
@@ -148,6 +161,20 @@ function macos_boundary_node(): Node
         'user' => 'mini',
         'wireguard_ip' => '10.44.0.40',
         'ssh_host_fingerprint' => 'SHA256:managed-mac',
+    ]);
+}
+
+/** An unmanaged iPadOS peer: a WireGuard address and no pinned SSH host key. */
+function ipados_boundary_node(): Node
+{
+    return Node::query()->create([
+        'name' => 'ipad',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'ipados',
+        'architecture' => 'arm64',
+        'public_ssh_host' => '10.44.0.41',
+        'user' => 'ipad',
+        'wireguard_ip' => '10.44.0.41',
     ]);
 }
 

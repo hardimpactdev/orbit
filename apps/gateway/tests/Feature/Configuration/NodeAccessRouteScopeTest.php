@@ -217,6 +217,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'node:excluded-project:remove' => ServingNode::Target,
         'node:list' => ServingNode::Collection,
         'node:metrics' => ServingNode::Target,
+        'node:platform' => ServingNode::Target,
         'node:remove' => ServingNode::Target,
         'node:rename' => ServingNode::Target,
         'node:role:add' => ServingNode::RoleMutation,

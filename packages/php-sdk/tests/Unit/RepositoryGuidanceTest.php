@@ -70,6 +70,7 @@ use Orbit\Sdk\Requests\Nodes\ListNodeExcludedProjectsRequest;
 use Orbit\Sdk\Requests\Nodes\RelocateNodeRoleRequest;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeExcludedProjectRequest;
 use Orbit\Sdk\Requests\Nodes\RenameNodeRequest;
+use Orbit\Sdk\Requests\Nodes\SetNodePlatformRequest;
 use Orbit\Sdk\Requests\Nodes\SetNodeWireGuardKeyRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeMetricsRequest;
 use Orbit\Sdk\Requests\Projects\AddProjectExcludedNodeRequest;
@@ -506,7 +507,8 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(ShowNodeMetricsRequest::class)
             ->toContain(RelocateNodeRoleRequest::class)
             ->toContain(RenameNodeRequest::class)
-            ->toContain(SetNodeWireGuardKeyRequest::class);
+            ->toContain(SetNodeWireGuardKeyRequest::class)
+            ->toContain(SetNodePlatformRequest::class);
 
         expect(array_values(array_filter(
             $requestClasses,
@@ -586,7 +588,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain('- ai-router: setup, teardown, status, provider list, provider show, account enable and disable, and model list.')
             ->toContain('- Vault: status, setup, sync, and teardown.')
             ->toContain(
-                '- Node: list, show, add, rename, settings update, WireGuard key set, remove, access add, access remove, role list, role add, role relocate, role remove, and metrics.',
+                '- Node: list, show, add, rename, settings update, WireGuard key set, platform set, remove, access add, access remove, role list, role add, role relocate, role remove, and metrics.',
             )
             ->toContain(
                 '- Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.',
