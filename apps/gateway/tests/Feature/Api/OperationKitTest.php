@@ -320,3 +320,18 @@ it('preserves empty strings and whitespace in nested executor inputs before exac
     $run['input']['environment']['ORBIT_SEED_PATH'] = null;
     $this->postJson($this->path.'/run', $run)->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
 });
+
+
+it('records and proves dotted descriptor step names', function (string $name): void {
+    $this->spec['completion_contract']['step'] = $name;
+    ($this->register)();
+    $input = $this->operation->input;
+    $input['descriptors'][0]['step'] = $name;
+    $this->operation->update(['input' => $input]);
+    $result = ['backend' => 'active', 'echo' => '[REDACTED]'];
+    $this->postJson($this->path.'/run', $this->run)->assertOk();
+    $this->postJson($this->path.'/step', ['worker' => 'worker', 'key' => 'finished', 'name' => $name,
+        'status' => 'succeeded', 'result' => $result])->assertOk();
+    $this->postJson($this->path.'/complete', ['worker' => 'worker', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    expect($this->operation->steps()->sole()->name)->toBe($name);
+})->with(['source_preparation.resolve', 'setup.install', 'before_activation.install']);
