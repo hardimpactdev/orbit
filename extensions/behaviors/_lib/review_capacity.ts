@@ -14,6 +14,8 @@ export const ParkingSchema = z.strictObject({
   operationId: z.number().int().positive().nullable(),
   nextReadAt: z.number().nullable(),
   confirmed: ParkResultSchema.nullable(),
+  failures: z.number().int().nonnegative().optional(),
+  assistance: z.string().optional(),
 });
 const safe = (g: Record<string, unknown>) =>
   ![
@@ -54,6 +56,65 @@ export async function parkForReview(key: string, a: Admission, deps: {
   if (read.status !== 200 || !g || g.id !== group) {
     throw new Error("Cannot read review parking group; slot retained");
   }
+  const now = deps.now ?? Date.now;
+  let parking = a.parking;
+  const save = async () => {
+    a = { ...a, parking };
+    await deps.save(a);
+  };
+  if (parking?.assistance) {
+    const path = `/api/v1/task-groups/${group}/comments`;
+    const history = await deps.http("GET", path);
+    if (history.status !== 200 || !Array.isArray(history.body?.data)) {
+      return {
+        ready: false,
+        reason: "Parking assistance history unreadable; slot retained",
+      };
+    }
+    const comments = history.body.data as Record<string, unknown>[];
+    const own = comments.filter((c) =>
+      c.task_group_id === group && c.task_id === group &&
+      c.type === "assistance_requested" && c.author === "swamp" &&
+      c.body === parking!.assistance &&
+      Number.isSafeInteger(c.id)
+    ).sort((x, y) =>
+      Number(y.id) - Number(x.id)
+    )[0];
+    const resolved = own && comments.some((c) =>
+      c.task_group_id === group && c.task_id === group &&
+      c.type === "resolution" && typeof c.body === "string" &&
+      c.body.trim() !== "" &&
+      Number.isSafeInteger(c.id) && Number(c.id) > Number(own.id)
+    );
+    if (safe(g) && resolved) {
+      parking = {
+        ...parking,
+        failures: 0,
+        assistance: undefined,
+        nextReadAt: null,
+      };
+      await save();
+    } else {
+      // Save intent before posting; history recovers a lost comment reply. Never replace another request.
+      if (!own && safe(g) && reviewIdle(g) && g.watched_pr_state === "open") {
+        const response = await deps.http("POST", path, {
+          type: "assistance_requested",
+          body: parking.assistance,
+          author: "swamp",
+        });
+        if (response.status !== 201) {
+          return {
+            ready: false,
+            reason: "Parking assistance post unconfirmed; slot retained",
+          };
+        }
+      }
+      return {
+        ready: false,
+        reason: "Review parking needs an operator resolution; slot retained",
+      };
+    }
+  }
   if (reviewReleased(a, g)) return { ready: true };
   if (
     reviewIdle(g) && ["merged", "closed"].includes(String(g.watched_pr_state))
@@ -64,17 +125,11 @@ export async function parkForReview(key: string, a: Admission, deps: {
       reason: "Review parking awaits an idle group and open PR; slot retained",
     };
   }
-  let parking = a.parking;
-  const now = deps.now ?? Date.now;
   if (parking?.confirmed) {
     a = { ...a, parkingEpoch: (a.parkingEpoch ?? 0) + 1 };
     parking = undefined;
   }
   const requestKey = `${key}.park.${a.parkingEpoch ?? 0}`;
-  const save = async () => {
-    a = { ...a, parking };
-    await deps.save(a);
-  };
   if (!parking) {
     parking = {
       key: requestKey,
@@ -121,15 +176,25 @@ export async function parkForReview(key: string, a: Admission, deps: {
   ) throw new Error("Invalid scoped parking evidence; slot retained");
   parking.nextReadAt = now() + Number(op.poll_after_seconds ?? 5) * 1000;
   if (["failed", "cancelled"].includes(String(op.status))) {
-    await deps.save({
-      ...a,
-      parkingEpoch: (a.parkingEpoch ?? 0) + 1,
-      parking: undefined,
-    });
+    const failures = (parking.failures ?? 0) + 1;
+    a = { ...a, parkingEpoch: (a.parkingEpoch ?? 0) + 1 };
+    parking = {
+      key: `${key}.park.${a.parkingEpoch}`,
+      operationId: null,
+      confirmed: null,
+      failures,
+      nextReadAt: now() + Math.min(120_000, 30_000 * 2 ** (failures - 1)),
+      ...(failures >= 3
+        ? {
+          assistance:
+            `Review parking failed ${failures} times for tg-${group}. The slot remains held. Resolve the provider or group eligibility problem, then post a resolution to retry. Parking operation ${op.id}; request ${parking.key}.`,
+        }
+        : {}),
+    };
+    await save();
     return {
       ready: false,
-      reason:
-        `Review parking ${op.status}; slot retained, retry on the next eligible tick`,
+      reason: `Review parking ${op.status}; slot retained, retry after backoff`,
     };
   }
   if (op.status !== "succeeded") {
@@ -139,7 +204,10 @@ export async function parkForReview(key: string, a: Admission, deps: {
   const result = ParkResultSchema.parse(op.result);
   const fresh = await deps.http("GET", `/api/v1/task-groups/${group}`);
   const current = fresh.body?.data as Record<string, unknown> | undefined;
-  const released = { ...a, parking: { ...parking, confirmed: result } };
+  const released = {
+    ...a,
+    parking: { ...parking, confirmed: result, failures: 0 },
+  };
   if (fresh.status !== 200 || !current || !reviewReleased(released, current)) {
     throw new Error(
       "Parking result differs from current review group; slot retained",

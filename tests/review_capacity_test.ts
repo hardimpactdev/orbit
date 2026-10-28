@@ -203,7 +203,11 @@ for (const status of ["failed", "cancelled"]) {
       http,
     });
     assertEquals(pending.ready, false);
-    assertEquals(f.read().parking, undefined);
+    assertEquals(f.read().parking!.operationId, null);
+    assertEquals(f.read().parking!.failures, 1);
+    const calls = f.calls.length;
+    await parkForReview("tg-1.publish.c1", f.read(), f.deps);
+    assertEquals(f.calls.length, calls + 1);
     assertEquals(f.read().parkingEpoch, 1);
     f.tick();
     await parkForReview("tg-1.publish.c1", f.read(), f.deps);
@@ -245,4 +249,68 @@ Deno.test("completed cleanup reservation retires an immutable prior receipt with
   assertEquals(result.admitted, false);
   assertEquals(a.released, false);
   assertEquals(f.admissions[0].released, true);
+});
+
+Deno.test("three failed parks retain backoff and ask once, and an operator resolution permits retry", async () => {
+  const f = fixture();
+  const comments: Record<string, unknown>[] = [];
+  let posts = 0;
+  const http: Http = (method, path, body, key) => {
+    if (path.endsWith("/comments")) {
+      if (method === "POST") {
+        const comment: Record<string, unknown> = {
+          ...(body as Record<string, unknown>),
+          id: comments.length + 1,
+          task_group_id: 1,
+          task_id: 1,
+        };
+        comments.push(comment);
+        posts++;
+        Object.assign(f.g, {
+          assistance_requested: true,
+          assistance_kind: "direction",
+          assistance_question: comment.body,
+          assistance_reason: comment.body,
+        });
+        return Promise.resolve({ status: 201, body: { data: comment } });
+      }
+      return Promise.resolve({ status: 200, body: { data: comments } });
+    }
+    if (path.startsWith("/api/v1/operations/")) {
+      return evidenceHttp(f, "failed")(method, path, body, key);
+    }
+    return f.deps.http(method, path, body, key);
+  };
+  const deps = { ...f.deps, http };
+  for (let failure = 1; failure <= 3; failure++) {
+    await parkForReview("tg-1.publish.c1", f.read(), deps);
+    f.tick();
+    await parkForReview("tg-1.publish.c1", f.read(), deps);
+    assertEquals(f.read().parking!.failures, failure);
+    const due = f.read().parking!.nextReadAt!;
+    assertEquals(due - deps.now(), [30_000, 60_000, 120_000][failure - 1]);
+    if (failure < 3) f.tick();
+  }
+  await parkForReview("tg-1.publish.c1", f.read(), deps);
+  await parkForReview("tg-1.publish.c1", structuredClone(f.read()), deps);
+  assertEquals(posts, 1);
+  assertEquals(reviewReleased(f.read(), f.g), false);
+  comments.push({
+    id: comments.length + 1,
+    task_group_id: 1,
+    task_id: 1,
+    type: "resolution",
+    body: "Provider recovered.",
+    author: "operator",
+  });
+  Object.assign(f.g, {
+    assistance_requested: false,
+    assistance_kind: null,
+    assistance_question: null,
+    assistance_reason: null,
+  });
+  await parkForReview("tg-1.publish.c1", f.read(), deps);
+  assertEquals(f.read().parking!.failures, 0);
+  assertEquals(f.read().parking!.assistance, undefined);
+  assertEquals(f.read().parking!.operationId !== null, true);
 });
