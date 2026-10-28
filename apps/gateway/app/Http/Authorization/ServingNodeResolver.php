@@ -8,6 +8,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\PublicProcessRouteIngress;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Http\Requests\Operations\StartsOperation;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
@@ -496,7 +497,7 @@ final readonly class ServingNodeResolver
             $route = Route::query()->find($id);
             if (! $route instanceof Route) {
                 $start = $request->route() instanceof \Illuminate\Routing\Route
-                    ? \App\Http\Requests\Operations\StartsOperation::forRoute($request->route()) : null;
+                    ? StartsOperation::forRoute($request->route()) : null;
                 $key = $request->header('Idempotency-Key');
                 $receipt = $start !== null && is_string($key)
                     ? Operation::query()->where('kind', $start->kind)->where('target_type', 'route')
@@ -505,13 +506,13 @@ final readonly class ServingNodeResolver
                     throw (new ModelNotFoundException)->setModel(Route::class, [$id]);
                 }
                 $request->attributes->set('orbit.route_public_process', ($receipt->input['public_process'] ?? false) === true);
-                $ids = ValidatedData::integerList($receipt->input['access_node_ids'] ?? array_values(array_filter([$receipt->node_id], is_int(...))));
+                $ids = ValidatedData::integerList($receipt->input['access_node_ids'] ?? ($receipt->node_id === null ? [] : [$receipt->node_id]));
                 $nodes = Node::query()->whereIn('id', $ids)->get();
                 if ($nodes->isEmpty() || $nodes->count() !== count($ids)) {
                     return $this->gateway();
                 }
 
-                return $nodes->all();
+                return array_values($nodes->all());
             }
             $request->attributes->set('orbit.route_public_process', $route->isCustomProxy() && $route->cluster_id !== null);
         }

@@ -160,7 +160,7 @@ final readonly class RouteProjectionPlan
         $stages = [];
         $routes = Route::query()->with(['targets.instance.node'])->where('cluster_id', $cluster->id)
             ->whereIn('status', [RouteStatus::Active, RouteStatus::Activating, RouteStatus::Pending, RouteStatus::Failed])->orderBy('id')->get();
-        $old = $assignments->filter(static fn (NodeRole $row): bool => $row->id !== $candidateId);
+        $old = $assignments->filter(static fn (NodeRole $row): bool => $row->id !== $candidateId)->values();
         $mode = $operation->kind === 'cluster.router_unset' ? 'router_unset' : 'router_set';
         if ($mode === 'router_set') {
             if ($candidate === null || $candidate->node_id !== $operation->node_id) {

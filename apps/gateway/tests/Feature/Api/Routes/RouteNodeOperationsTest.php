@@ -10,6 +10,7 @@ use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
+use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Node;
@@ -144,4 +145,59 @@ it('recovers private DNS publication through the keyed program receipt without r
     $this->getJson($this->path.'/receipts/private-dns-publish')->assertOk();
     expect(array_column($this->agents->calls, 'command'))->toBe(['agent.effect-reserve', 'agent.effect-complete', 'agent.effect-receipt'])
         ->and(json_encode($this->operation->fresh()->state))->not->toContain('diagnostic program log');
+});
+
+it('proves a render refusal stage without publishing or retaining render diagnostics', function (): void {
+    $source = new class implements NodeCaddySiteSource
+    {
+        public function order(): int
+        {
+            return 1;
+        }
+
+        public function sites(Node $node): array
+        {
+            throw new RuntimeException('private render diagnostic');
+        }
+    };
+    app()->instance(NodeCaddyfileRenderer::class, new NodeCaddyfileRenderer([$source]));
+    $this->postJson($this->path.'/run', $this->prepare)->assertOk()->assertJsonPath('data', ['stage' => 'render', 'error_code' => 'caddy.render_failed']);
+    $this->postJson($this->path.'/complete', ['worker' => 'worker', 'status' => 'failed', 'error_code' => 'caddy.render_failed',
+        'result' => ['error_code' => 'caddy.render_failed', 'stage' => 'validate']])->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
+    $this->postJson($this->path.'/complete', ['worker' => 'worker', 'status' => 'failed', 'error_code' => 'caddy.render_failed',
+        'result' => ['error_code' => 'caddy.render_failed', 'stage' => 'render']])->assertOk()->assertJsonPath('data.result.stage', 'render');
+    expect($this->agents->calls)->toBe([])->and(json_encode($this->operation->fresh()->state))->not->toContain('private render diagnostic');
+});
+
+it('keeps only proven validation refusal stages and refuses forged final stage evidence', function (string $stage, ?string $expected): void {
+    $run = ($this->publish)();
+    $this->agents->refuse('caddy.publish', 'caddy.publication_failed', ['stage' => $stage, 'message' => 'private target diagnostic']);
+    $expectedResult = [...($expected === null ? [] : ['stage' => $expected]), 'error_code' => 'caddy.publication_failed'];
+    $this->postJson($this->path.'/complete', ['worker' => 'worker', 'status' => 'failed', 'error_code' => 'caddy.publication_failed',
+        'result' => ['error_code' => 'caddy.publication_failed', 'stage' => 'validate']])->assertConflict();
+    $this->postJson($this->path.'/run', $run)->assertOk()->assertJsonPath('data', $expectedResult);
+    $this->postJson($this->path.'/complete', ['worker' => 'worker', 'status' => 'failed', 'error_code' => 'caddy.publication_failed',
+        'result' => ['error_code' => 'caddy.publication_failed', 'stage' => 'render']])->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
+    $this->postJson($this->path.'/complete', ['worker' => 'worker', 'status' => 'failed', 'error_code' => 'caddy.publication_failed',
+        'result' => $expectedResult])->assertOk()->assertJsonPath('data.result', $expectedResult);
+    expect(json_encode($this->operation->fresh()->state))->not->toContain('private target diagnostic');
+})->with(['validation' => ['validate', 'validate'], 'reload is a hard failure' => ['reload', null], 'unknown is a hard failure' => ['unknown', null]]);
+
+it('recovers a sanitized validation refusal stage once and preserves it in final child proof', function (): void {
+    $run = ($this->publish)();
+    $this->agents->answer('caddy.publish', static fn (): array => throw new RuntimeException('Lost reply after validation.'));
+    $this->postJson($this->path.'/run', $run)->assertStatus(502);
+    $effectKey = 'op-'.$this->operation->id.'.caddy-publish';
+    $receipt = ['command' => 'caddy.publish', 'effect_key' => $effectKey, 'state' => 'failed', 'result' => [
+        'ok' => false, 'error' => ['code' => 'caddy.publication_failed', 'message' => 'private recovery diagnostic', 'details' => ['stage' => 'validate']]],
+        'result_digest' => str_repeat('a', 64), 'sanitized' => true, 'exit_code' => 1, 'finished_at' => '2026-10-28T22:00:00Z'];
+    $this->agents->answer('agent.effect-receipt', [...$receipt, 'sanitized' => false]);
+    $this->getJson($this->path.'/receipts/caddy-publish')->assertStatus(502);
+    $this->agents->answer('agent.effect-receipt', $receipt);
+    $this->getJson($this->path.'/receipts/caddy-publish')->assertOk()->assertJsonPath('data.result', ['stage' => 'validate', 'error_code' => 'caddy.publication_failed']);
+    $this->getJson($this->path.'/receipts/caddy-publish')->assertOk()->assertJsonPath('data.result.stage', 'validate');
+    $this->postJson($this->path.'/complete', ['worker' => 'worker', 'status' => 'failed', 'error_code' => 'caddy.publication_failed',
+        'result' => ['error_code' => 'caddy.publication_failed', 'stage' => 'validate']])->assertOk()->assertJsonPath('data.result.stage', 'validate');
+    expect(array_column($this->agents->calls, 'command'))->toBe(['caddy.publish', 'agent.effect-receipt', 'agent.effect-receipt'])
+        ->and(json_encode($this->operation->fresh()->state))->not->toContain('private recovery diagnostic');
 });
