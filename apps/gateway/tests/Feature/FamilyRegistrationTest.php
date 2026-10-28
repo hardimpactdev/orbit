@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Foundation\Testing\CachedState;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 it('discovers a new family route file without changing the route loader', function (): void {
@@ -14,10 +16,12 @@ it('discovers a new family route file without changing the route loader', functi
         <?php
         Illuminate\Support\Facades\Route::get('family-probe', fn (): string => 'ready')->name('family-probe');
         ROUTE);
+        Route::setCompiledRoutes(CachedState::$cachedRoutes);
         require $root.'/api.php';
-        Route::getRoutes()->refreshNameLookups();
 
-        expect(Route::getRoutes()->getByName('family-probe')?->uri())->toBe('v1/family-probe');
+        $route = Route::getRoutes()->match(Request::create('/v1/family-probe'));
+        expect($route->uri())->toBe('v1/family-probe')
+            ->and($route->getName())->toBe('family-probe');
     } finally {
         new Filesystem()->deleteDirectory($root);
     }
