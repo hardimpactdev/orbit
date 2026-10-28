@@ -1,12 +1,19 @@
 import { z } from "npm:zod@4.4.3";
-import { GatewayClient, GatewayGap, gatewayHttp } from "./gateway.ts";
+import { GatewayClient, gatewayHttp } from "./gateway.ts";
 import {
-  DecisionSchema,
   type Gateway,
+  isPolicyRefusal,
+  type Observation,
   PolicyError,
+  type PolicyEvent,
+  type State,
   StateSchema,
   tick,
 } from "./policy.ts";
+
+const TickArguments = z.object({
+  instances: z.array(z.number().int().positive()).default([]),
+});
 
 interface Context {
   globalArgs: { gatewayUrl: string; caFile: string };
@@ -18,14 +25,29 @@ interface Context {
     value: Record<string, unknown>,
   ): Promise<{ name: string }>;
 }
-/** Injection is for official-kit tests. The registered behavior always uses the real Gateway adapter. */
+export interface LiveGateway extends Gateway {
+  discover(filter: number[]): Promise<number[]>;
+  guard(instance: number, observation: Observation): Promise<void>;
+  publish(
+    instance: number,
+    projection: NonNullable<Observation["publication"]>,
+    observation: Observation,
+  ): Promise<void>;
+  event(
+    instance: number,
+    body: PolicyEvent,
+    key: string,
+  ): ReturnType<Gateway["operation"]>;
+}
+
+/** One fleet behavior lock owns all state and effect ordering. */
 export function automaticDeploy(
-  gateway?: Gateway,
+  gateway?: LiveGateway,
   clock = () => new Date().toISOString(),
 ) {
   return {
     type: "@nckrtl/automatic-deploy",
-    version: "2026.10.28.1",
+    version: "2026.10.28.5",
     globalArguments: z.object({
       gatewayUrl: z.string().url().default("https://gateway.orbit"),
       caFile: z.string().default(
@@ -34,110 +56,99 @@ export function automaticDeploy(
     }),
     resources: {
       state: {
-        description: "Policy memory and admission intent; never deploy success",
+        description:
+          "Policy memory, admission intent and policy-event receipts; never deploy success",
         schema: StateSchema,
         lifetime: "infinite",
         garbageCollection: 10,
-      },
-      decision: {
-        description:
-          "Policy projection and undelivered alert/Activity intents, or Gateway gaps",
-        schema: DecisionSchema,
-        lifetime: "infinite",
-        garbageCollection: 50,
       },
     },
     methods: {
       tick: {
         description:
-          "One production policy tick. Stops on missing Gateway contracts; no schedule or live cutover.",
-        arguments: z.object({ instance: z.number().int().positive() }),
-        execute: async (input: { instance: number }, context: Context) => {
-          const { instance } = z.object({
-            instance: z.number().int().positive(),
-          }).parse(input);
-          const stored = await context.readResource(`state-${instance}`);
-          const previous = StateSchema.parse(stored ?? {});
-          const handles: { name: string }[] = [];
-          let decision;
-          try {
-            decision = await tick(
-              instance,
-              previous,
-              gateway ??
-                new GatewayClient(
-                  gatewayHttp(
-                    context.globalArgs.gatewayUrl,
-                    context.globalArgs.caFile,
-                    context.signal,
-                  ),
-                ),
-              async (state) => {
-                if (
-                  JSON.stringify(state) ===
-                    JSON.stringify(
-                      await context.readResource(`state-${instance}`),
-                    )
-                ) return;
-                handles.push(
-                  await context.writeResource(
-                    "state",
-                    `state-${instance}`,
-                    state,
-                  ),
-                );
-              },
-              clock(),
-            );
-          } catch (error) {
-            if (
-              !(error instanceof GatewayGap) && !(error instanceof PolicyError)
-            ) throw error;
-            handles.push(
-              await context.writeResource("decision", `decision-${instance}`, {
-                ready: false,
-                error_code: error instanceof GatewayGap
-                  ? "automatic.gateway_gap"
-                  : error.code,
-                gateway_gaps: error instanceof GatewayGap ? error.gaps : [],
-                projection: null,
-                alerts: [],
-                activity: null,
-              }),
-            );
-            throw error;
-          }
-          if (!decision) {
-            handles.push(
-              await context.writeResource(
-                "decision",
-                `decision-${instance}`,
-                {
-                  ready: true,
-                  error_code: null,
-                  gateway_gaps: [],
-                  projection: null,
-                  alerts: [],
-                  activity: null,
-                },
+          "Discover enabled production Instances and run one live tick per Instance, after Gateway ownership admission.",
+        arguments: TickArguments,
+        execute: async (input: { instances?: number[] }, context: Context) => {
+          const { instances } = TickArguments.parse(input);
+          const client = gateway ??
+            new GatewayClient(
+              gatewayHttp(
+                context.globalArgs.gatewayUrl,
+                context.globalArgs.caFile,
+                context.signal,
               ),
             );
-            return { dataHandles: handles };
+          const handles: { name: string }[] = [];
+          const failures: { instance: number; error: unknown }[] = [];
+          for (const instance of await client.discover(instances)) {
+            try {
+              const name = `state-${instance}`;
+              const previous = StateSchema.parse(
+                await context.readResource(name) ?? {},
+              );
+              let observed: Observation | undefined;
+              const save = async (state: State) => {
+                if (
+                  JSON.stringify(state) ===
+                    JSON.stringify(await context.readResource(name))
+                ) return;
+                handles.push(await context.writeResource("state", name, state));
+              };
+              const deliver = async (state: State) => {
+                for (const event of state.events) {
+                  if (
+                    event.receipt &&
+                    ["succeeded", "failed", "cancelled"].includes(
+                      String(event.receipt.status),
+                    )
+                  ) continue;
+                  const operation = event.operation_id
+                    ? await client.operation(event.operation_id)
+                    : await client.event(instance, event.body, event.key);
+                  event.operation_id = operation.id;
+                  event.receipt = { ...operation };
+                  await save(state);
+                }
+              };
+              const decision = await tick(
+                instance,
+                previous,
+                client,
+                save,
+                clock(),
+                async (observation, state) => {
+                  observed = observation;
+                  // Guard before saving state, delivering events, or admitting a deploy.
+                  await client.guard(instance, observation);
+                  await deliver(state);
+                },
+              );
+              if (!decision || !observed) continue;
+              await deliver(decision.state);
+              await client.publish(instance, decision.projection, observed);
+              if (decision.state.result === "failed") {
+                throw new PolicyError(
+                  decision.state.error_code ?? "deployment.automatic_failed",
+                  decision.state.message ?? "Automatic deployment failed.",
+                );
+              }
+            } catch (error) {
+              if (isPolicyRefusal(error)) continue;
+              failures.push({ instance, error });
+            }
           }
-          handles.push(
-            await context.writeResource("decision", `decision-${instance}`, {
-              ready: decision.state.result !== "failed",
-              error_code: decision.state.error_code,
-              gateway_gaps: [],
-              projection: decision.projection,
-              alerts: decision.alerts,
-              activity: decision.activity,
-            }),
-          );
-          if (decision?.state.result === "failed") {
-            throw new PolicyError(
-              decision.state.error_code ?? "deployment.automatic_failed",
-              decision.state.message ?? "The automatic deployment tick failed.",
+          if (failures.length) {
+            throw new AggregateError(
+              failures.map(({ error }) => error),
+              failures.map(({ instance, error }) =>
+                `Instance ${instance}: ${
+                  error instanceof PolicyError
+                    ? `${error.code}: ${error.message}`
+                    : error instanceof Error
+                    ? error.message
+                    : String(error)
+                }`
+              ).join("; "),
             );
           }
           return { dataHandles: handles };

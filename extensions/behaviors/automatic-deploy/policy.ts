@@ -1,7 +1,7 @@
 import { z } from "npm:zod@4.4.3";
 
 export const trigger = "orbit:auto-deploy";
-const sha = z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/);
+export const sha = z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/);
 const nullable = z.string().nullable();
 export const RowSchema = z.object({
   id: z.number().int().positive(),
@@ -19,9 +19,9 @@ export interface Operation {
   id: number;
   kind: string;
   status: string;
-  input: { commit?: string };
+  input: { commit?: string | null };
   triggered_by: string | null;
-  result?: { deployment_id?: number } | null;
+  result?: { deployment_id?: number; [key: string]: unknown } | null;
   attempts?: number;
   error_code?: string | null;
 }
@@ -37,6 +37,9 @@ export interface Observation {
   blocked: string[];
   history: Row[];
   holder: Operation | null;
+  historyVersion: string | null;
+  policyOwner?: "gateway" | "swamp";
+  publication?: Decision["projection"];
 }
 export interface Commit {
   sha: string;
@@ -45,13 +48,14 @@ export interface Commit {
 }
 export interface Check {
   name: string;
-  head_sha: string;
-  app: string;
-  status: string;
+  head_sha: string | null;
+  app: string | null;
+  status: string | null;
   conclusion: string | null;
 }
 export interface Gateway {
   observe(instance: number): Promise<Observation>;
+  history(instance: number): Promise<Row[]>;
   head(instance: number): Promise<string>;
   walk(
     instance: number,
@@ -60,6 +64,12 @@ export interface Gateway {
   checks(instance: number, commit: string, name: string): Promise<Check[]>;
   deploy(instance: number, commit: string, key: string): Promise<Operation>;
   operation(id: number): Promise<Operation>;
+  resolve(instance: number, commit: string, key: string): Promise<Operation>;
+  receipt(
+    instance: number,
+    commit: string,
+    key: string,
+  ): Promise<Operation | null>;
 }
 export class PolicyError extends Error {
   constructor(
@@ -70,6 +80,12 @@ export class PolicyError extends Error {
     super(message);
   }
 }
+export const isPolicyRefusal = (error: unknown): boolean =>
+  error instanceof PolicyError && [
+    "instance.auto_deploy_policy_owner",
+    "instance.auto_deploy_role_inactive",
+  ].includes(error.code);
+
 export const AlertSchema = z.object({
   kind: z.enum([
     "instance_deploy_failed",
@@ -85,7 +101,25 @@ export const AlertSchema = z.object({
   }),
   summary: z.string(),
 });
+export const PolicyEventSchema = z.object({
+  event: z.enum(["activity", "failed", "paused", "stalled"]),
+  deployment_id: z.number().int().positive().optional(),
+  commit: sha.nullable().optional(),
+  since: z.string().optional(),
+  result: z.string().optional(),
+  operation_id: z.number().nullable().optional(),
+  error_code: nullable.optional(),
+  message: nullable.optional(),
+});
+export type PolicyEvent = z.infer<typeof PolicyEventSchema>;
 export const StateSchema = z.object({
+  events: z.array(z.object({
+    key: z.string(),
+    body: PolicyEventSchema,
+    operation_id: z.number().nullable(),
+    receipt: z.record(z.string(), z.unknown()).nullable(),
+  })).default([]),
+  event_sequence: z.number().int().nonnegative().default(0),
   result: nullable.default(null),
   commit: nullable.default(null),
   head: nullable.default(null),
@@ -114,6 +148,7 @@ export const StateSchema = z.object({
     attempt: z.number().int().positive(),
     key: z.string(),
     manual_after: z.number().int().nonnegative(),
+    resolve_after: nullable.default(null),
     operation_id: z.number().nullable(),
   }).nullable().default(null),
 });
@@ -145,6 +180,7 @@ export const DecisionSchema = z.object({
   }).nullable(),
 });
 export interface Decision {
+  requestKey: string | null;
   state: State;
   projection: NonNullable<z.infer<typeof DecisionSchema>["projection"]>;
   alerts: Alert[];
@@ -185,16 +221,62 @@ export async function tick(
   gateway: Gateway,
   save: (state: State) => Promise<void>,
   now: string,
+  onObserve?: (observation: Observation, state: State) => Promise<void>,
 ): Promise<Decision | null> {
   const state = StateSchema.parse(structuredClone(previous));
   // Read the receipt first. A terminal receipt must be followed by fresh history;
   // history read before completion can still describe the previous live commit.
-  const receipt = state.intent?.operation_id
+  let receipt = state.intent?.operation_id
     ? await gateway.operation(state.intent.operation_id)
+    : state.intent
+    ? await gateway.receipt(instance, state.intent.commit, state.intent.key)
     : null;
-  const observation = await gateway.observe(instance);
+  let observation = await gateway.observe(instance);
   if (!observation.enabled || !observation.production || !observation.active) {
     return null;
+  }
+  await onObserve?.(observation, state);
+  if (state.intent && !receipt && !state.intent.operation_id) {
+    if (!state.intent.resolve_after) {
+      state.intent.resolve_after = new Date(milliseconds(now) + 600_000)
+        .toISOString();
+    } else if (milliseconds(now) >= milliseconds(state.intent.resolve_after)) {
+      receipt = await gateway.resolve(
+        instance,
+        state.intent.commit,
+        state.intent.key,
+      );
+      state.intent.operation_id = receipt.id;
+      await save(state);
+      // Resolve can find a just-completed real deployment. Read history AFTER it.
+      observation = await gateway.observe(instance);
+      if (
+        !observation.enabled || !observation.production || !observation.active
+      ) return null;
+      await onObserve?.(observation, state);
+    }
+  }
+  if (
+    state.intent && receipt?.status === "cancelled" &&
+    receipt.error_code === "operation.admission_fenced" &&
+    receipt.attempts === 0 &&
+    receipt.result?.admission_fenced === true && !receipt.result?.deployment_id
+  ) {
+    state.intent = null;
+    await save(state);
+    return null;
+  }
+  if (previous.result === null && observation.publication) {
+    const p = observation.publication;
+    Object.assign(state, {
+      result: p.result,
+      commit: p.commit,
+      head: p.head,
+      since: p.since,
+      pause: p.pause,
+      error_code: p.error_code,
+      message: p.message,
+    });
   }
   const history = observation.history.map((r) => RowSchema.parse(r)).sort((
     a,
@@ -301,6 +383,7 @@ export async function tick(
     errorCode: string | null = null,
     message: string | null = null;
   let result: string;
+  let requestKey: string | null = null;
   let holderKind = observation.holder?.kind;
   const pause = history.findLast((r) =>
     r.id > observation.resumedAfter && !automatic(r)
@@ -353,7 +436,9 @@ export async function tick(
             "The admission response was lost. Resolve its request key before starting another deployment.",
           );
         }
-        if (["queued", "running", "waiting"].includes(receipt.status)) {
+        if (
+          ["queued", "running", "waiting"].includes(receipt.status)
+        ) {
           commit = intent.commit;
           operationId = receipt.id;
           result = "deploying";
@@ -404,6 +489,10 @@ export async function tick(
                 );
               }
               const walk = await gateRead(() => gateway.walk(instance, live!));
+              if (walk.head !== head) {
+                result = "gate_pending";
+                return await finish();
+              }
               const commits = new Map(walk.commits.map((c) => [c.sha, c]));
               let candidate = commits.get(walk.head),
                 selected: string | null = null,
@@ -469,6 +558,10 @@ export async function tick(
     }
   } catch (error) {
     if (!(error instanceof PolicyError)) throw error;
+    if (isPolicyRefusal(error)) {
+      await save(state);
+      throw error;
+    }
     result = "failed";
     errorCode = error.code;
     message = error.message;
@@ -496,12 +589,14 @@ export async function tick(
       state.attempts[selected] ?? 0,
       history.filter((r) => automatic(r) && r.commit === selected).length,
     ) + 1;
+    requestKey = `auto.${instance}.${selected}.${attempt}`;
     state.attempts[selected] = attempt;
     state.intent = {
       commit: selected,
       attempt,
-      key: `auto.${instance}.${selected}.${attempt}`,
+      key: requestKey,
       manual_after: manual,
+      resolve_after: new Date(milliseconds(now) + 600_000).toISOString(),
       operation_id: null,
     };
     await save(state);
@@ -571,8 +666,64 @@ export async function tick(
         }.`,
       );
     }
+    const activity =
+      changed && !["up_to_date", "deploying", "gate_pending"].includes(result)
+        ? {
+          description: `auto_deploy.${result}`,
+          commit,
+          operation_id: operationId,
+          error_code: errorCode,
+          message,
+        }
+        : null;
+    // Rebuild pending alert admissions from durable notifications too: an intent
+    // save before deploy can precede this finish after a crash.
+    for (const alert of state.notifications) {
+      const event = alert.kind === "instance_deploy_failed"
+        ? "failed"
+        : alert.kind === "instance_deploy_paused"
+        ? "paused"
+        : "stalled";
+      const digest = new Uint8Array(
+        await crypto.subtle.digest(
+          "SHA-256",
+          new TextEncoder().encode(`${alert.kind}:${alert.key}`),
+        ),
+      );
+      const key = `policy.${instance}.${
+        Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("")
+      }`;
+      if (state.events.some((e) => e.key === key)) continue;
+      const body: PolicyEvent = { event, commit: alert.subject.sha };
+      if (alert.subject.release_id) {
+        body.deployment_id = Number(
+          alert.subject.release_id.slice("deployment-".length),
+        );
+      }
+      if (event === "stalled") {
+        body.since = alert.key.slice(alert.subject.sha.length + 1);
+        body.result = result;
+      }
+      state.events.push({ key, body, operation_id: null, receipt: null });
+    }
+    if (activity) {
+      state.events.push({
+        key: `policy.${instance}.activity.${++state.event_sequence}`,
+        body: {
+          event: "activity",
+          result,
+          commit,
+          operation_id: operationId,
+          error_code: errorCode,
+          message,
+        },
+        operation_id: null,
+        receipt: null,
+      });
+    }
     await save(state);
     return {
+      requestKey,
       state,
       projection: {
         enabled: observation.enabled,
@@ -589,16 +740,7 @@ export async function tick(
         pause: state.pause,
       },
       alerts,
-      activity:
-        changed && !["up_to_date", "deploying", "gate_pending"].includes(result)
-          ? {
-            description: `auto_deploy.${result}`,
-            commit,
-            operation_id: operationId,
-            error_code: errorCode,
-            message,
-          }
-          : null,
+      activity,
     };
   }
 }

@@ -35,9 +35,9 @@ jobs:
         run: |
           deno fmt --check extensions/behaviors/automatic-deploy tests/automatic_deploy_test.ts tests/_support/automatic_deploy.ts
           deno lint extensions/behaviors/automatic-deploy tests/automatic_deploy_test.ts tests/_support/automatic_deploy.ts
-          deno check extensions/behaviors/automatic-deploy/mod.ts extensions/behaviors/automatic-deploy/mod_test.ts tests/automatic_deploy_test.ts
-      - name: Test frozen policy cases and Gateway boundary (one worker)
-        run: deno test --allow-read=. extensions/behaviors/automatic-deploy/mod_test.ts tests/automatic_deploy_test.ts
+          deno check extensions/behaviors/automatic-deploy/mod.ts extensions/behaviors/automatic-deploy/mod_test.ts extensions/behaviors/automatic-deploy/gateway_test.ts tests/automatic_deploy_test.ts
+      - name: Test frozen policy cases and live Gateway contracts (one worker)
+        run: deno test --allow-read=. extensions/behaviors/automatic-deploy/mod_test.ts extensions/behaviors/automatic-deploy/gateway_test.ts tests/automatic_deploy_test.ts
       - name: Prepare isolated Swamp environment
         shell: bash
         run: |
@@ -58,6 +58,8 @@ jobs:
           printf '%s  %s\n' 940416b92781dad1d48aff0e4f42b48bbcb29fd92aca9bb8ed126aff0f6d135d "$RUNNER_TEMP/swamp-autodeploy" | sha256sum --check
           chmod +x "$RUNNER_TEMP/swamp-autodeploy"
           "$RUNNER_TEMP/swamp-autodeploy" workflow validate automatic-production-deploy --json
+          "$RUNNER_TEMP/swamp-autodeploy" workflow evaluate automatic-production-deploy --json
+          "$RUNNER_TEMP/swamp-autodeploy" workflow evaluate automatic-production-deploy --input 'instances=[7,8]' --json
       - name: Clean isolated Swamp environment
         if: always()
         shell: bash

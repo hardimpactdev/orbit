@@ -3,9 +3,8 @@ import {
   assertRejects,
   assertStringIncludes,
 } from "jsr:@std/assert@1.0.19";
-import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016.58";
-import { automaticDeploy, behavior } from "./mod.ts";
-import { gaps, GatewayClient, GatewayGap, type Http } from "./gateway.ts";
+
+import { GatewayClient } from "./gateway.ts";
 import { PolicyError, StateSchema, trigger } from "./policy.ts";
 import {
   A,
@@ -13,65 +12,6 @@ import {
   PolicyFixture,
 } from "../../../tests/_support/automatic_deploy.ts";
 
-Deno.test("existing Gateway responses expose gaps, never a guessed policy snapshot", async () => {
-  const requests: string[] = [];
-  const http: Http = (_method, path) => {
-    requests.push(path);
-    return Promise.resolve({
-      status: 200,
-      body: {
-        data: path.endsWith("/deployments")
-          ? [{
-            id: 1,
-            commit: A,
-            selected_release: null,
-            triggered_by: "laptop",
-          }]
-          : {
-            status: "active",
-            auto_deploy: { enabled: true, gate: "Required checks" },
-          },
-      },
-    });
-  };
-  const client = new GatewayClient(http);
-  const { context, getWrittenResources } = createModelTestContext({
-    globalArgs: {},
-  });
-  await assertRejects(() =>
-    automaticDeploy(client).methods.tick.execute(
-      { instance: 7 },
-      Object.assign(context, {
-        readResource: () => Promise.resolve(null),
-      }) as never,
-    ), GatewayGap);
-  const writes = getWrittenResources();
-  assertEquals(writes.length, 1);
-  assertEquals(writes[0].specName, "decision");
-  assertEquals(writes[0].data.ready, false);
-  assertEquals(writes[0].data.error_code, "automatic.gateway_gap");
-  assertEquals(writes[0].data.gateway_gaps, Object.values(gaps));
-  behavior.resources.decision.schema.parse(writes[0].data);
-  assertEquals(requests, [
-    "/api/v1/instances/7",
-    "/api/v1/instances/7/deployments",
-  ]);
-  await assertRejects(() => client.head(7), GatewayGap);
-});
-Deno.test("disabled Gateway record needs no history or source read", async () => {
-  const requests: string[] = [];
-  const client = new GatewayClient((_method, path) => {
-    requests.push(path);
-    return Promise.resolve({
-      status: 200,
-      body: {
-        data: { status: "active", auto_deploy: { enabled: false, gate: null } },
-      },
-    });
-  });
-  assertEquals((await client.observe(7)).enabled, false);
-  assertEquals(requests, ["/api/v1/instances/7"]);
-});
 Deno.test("E05 a restarted tick follows its recorded receipt without a new start", async () => {
   const f = new PolicyFixture();
   await f.tick();

@@ -1,10 +1,16 @@
 id: 78efdd30-08ce-4ffb-a8eb-c7259c96ad24
 name: automatic-production-deploy
-description: ADR 0238 production policy trial. Unscheduled. Gateway gaps block execution; the native runner remains active.
+description: Run production auto-deploy policy after the Gateway cutover. Discover all enabled production Instances.
+trigger:
+  schedule: 30 * * * * *
 inputs:
   properties:
-    instance: { type: integer, description: Production Instance ID }
-  required: [instance]
+    instances:
+      type: array
+      items: { type: integer, minimum: 1 }
+      uniqueItems: true
+      default: []
+      description: Optional narrower filter. Empty discovers every enabled production Instance from the Gateway.
 jobs:
   - name: policy
     steps:
@@ -12,7 +18,7 @@ jobs:
         task:
           type: model_method
           modelType: '@nckrtl/automatic-deploy'
-          modelName: '${{ "automatic-deploy-" + string(inputs.instance) }}'
+          modelName: automatic-production-deploy
           methodName: tick
           inputs:
-            instance: '${{ inputs.instance }}'
+            instances: '${{ inputs.instances }}'

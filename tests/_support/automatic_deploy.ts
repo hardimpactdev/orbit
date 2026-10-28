@@ -1,6 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016.58";
-import { automaticDeploy } from "../../extensions/behaviors/automatic-deploy/mod.ts";
 import {
   GatewayClient,
   type Response,
@@ -8,12 +7,14 @@ import {
 import {
   type Check,
   type Commit,
+  DecisionSchema,
   type Gateway,
   type Observation,
   type Operation,
   PolicyError,
   type Row,
   StateSchema,
+  tick,
   trigger,
 } from "../../extensions/behaviors/automatic-deploy/policy.ts";
 
@@ -33,6 +34,7 @@ export class FakeGateway implements Gateway {
     blocked: [],
     history: [],
     holder: null,
+    historyVersion: "f".repeat(64),
   };
   commits: Commit[] = [];
   branchHead = B;
@@ -132,6 +134,9 @@ export class FakeGateway implements Gateway {
     this.row({ commit: A });
     this.chain([A, B]);
   }
+  history(_instance: number) {
+    return Promise.resolve(structuredClone(this.observation.history));
+  }
   observe(_instance: number) {
     this.reads.push("observe");
     return Promise.resolve(structuredClone(this.observation));
@@ -143,8 +148,7 @@ export class FakeGateway implements Gateway {
   walk(_instance: number, _deployed: string) {
     this.reads.push("walk");
     if (this.gateResponse && this.gateFailureAt === "walk") {
-      // G01 has no route yet. Exercise the actual Gateway GET error decoder via
-      // an existing read, then supply that failure at the gate observation port.
+      // Exercise the actual Gateway GET error decoder at the observation port.
       return new GatewayClient(() => Promise.resolve(this.gateResponse!))
         .operation(900)
         .then(() => ({ head: this.walkHead, commits: this.commits }));
@@ -162,6 +166,22 @@ export class FakeGateway implements Gateway {
   }
   deploy(instance: number, commit: string, key: string) {
     return this.client.deploy(instance, commit, key);
+  }
+  receipt(_instance: number, _commit: string, _key: string) {
+    this.reads.push("receipt");
+    return Promise.resolve(null);
+  }
+  resolve(
+    _instance: number,
+    _commit: string,
+    _key: string,
+  ): Promise<Operation> {
+    return Promise.reject(
+      new PolicyError(
+        "automatic.outcome_unknown",
+        "Resolve unavailable in this fixture.",
+      ),
+    );
   }
   operation(id: number) {
     return this.client.operation(id);
@@ -264,7 +284,6 @@ export class PolicyFixture {
       .toISOString();
   }
   async tick() {
-    const behavior = automaticDeploy(this.gateway, () => this.gateway.now);
     const { context } = createModelTestContext({
       globalArgs: {
         gatewayUrl: "https://gateway.example.test",
@@ -280,7 +299,8 @@ export class PolicyFixture {
         name: string,
         data: Record<string, unknown>,
       ) => {
-        behavior.resources[spec].schema.parse(data);
+        (spec === "decision" ? DecisionSchema : StateSchema)
+          .parse(data);
         const handle = await write(spec, name, data);
         this.stored.set(name, structuredClone(data));
         if (spec === "decision") this.decisions.push(structuredClone(data));
@@ -289,7 +309,27 @@ export class PolicyFixture {
       },
     });
     try {
-      await behavior.methods.tick.execute({ instance: 7 }, ctx as never);
+      const decision = await tick(
+        7,
+        this.state,
+        this.gateway,
+        async (state) => {
+          if (
+            JSON.stringify(state) !== JSON.stringify(this.stored.get("state-7"))
+          ) await ctx.writeResource("state", "state-7", state);
+        },
+        this.gateway.now,
+      );
+      if (decision) {
+        await ctx.writeResource("decision", "decision-7", {
+          ready: decision.state.result !== "failed",
+          error_code: decision.state.error_code,
+          gateway_gaps: [],
+          projection: decision.projection,
+          alerts: decision.alerts,
+          activity: decision.activity,
+        });
+      }
     } catch (error) {
       if (
         !(error instanceof PolicyError) || this.decision?.ready !== false ||

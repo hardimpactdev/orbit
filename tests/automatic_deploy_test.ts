@@ -394,7 +394,7 @@ Deno.test("P36 no GitHub repository skips alert", async () => {
   await f.tick();
   assertEquals(f.alerts, []);
 });
-Deno.test("P37 notifier payload is durable; Gateway Activity delivery is a gap", async () => {
+Deno.test("P37 notifier payload is durable for Gateway policy-event delivery", async () => {
   const f = new PolicyFixture();
   f.gateway.failure(B, "before_activation", "deployment.step_failed");
   await f.tick();
