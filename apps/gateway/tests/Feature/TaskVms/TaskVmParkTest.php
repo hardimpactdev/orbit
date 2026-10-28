@@ -231,14 +231,28 @@ describe('park', function (): void {
         expect($this->provider->calls)->toBe(['observe', 'stop', 'observe']);
     });
 
-    it('keeps a VM parked with the error when it cannot be stopped', function (): void {
+    it('restores ready when an operation starts after idle parking was queued', function (): void {
+        Queue::fake();
+        [$group, $vm] = tvm_park_waiting();
+        app(ParkIdleTaskVmsAction::class)->execute();
+        expect($vm->fresh()->state)->toBe(TaskVmState::Parked);
+        $operation = Operation::query()->create(['kind' => OperationKinds::TasksPark, 'target_type' => 'task_group', 'target_id' => $group->id, 'status' => OperationStatus::Queued, 'input' => []]);
+        app()->call([new ParkTaskVm($vm->id), 'handle']);
+        expect($vm->fresh()->state)->toBe(TaskVmState::Ready)->and($this->provider->calls)->toBe([]);
+        $operation->update(['status' => OperationStatus::Succeeded]);
+        expect(app(ParkIdleTaskVmsAction::class)->execute())->toBe(1);
+        app()->call([new ParkTaskVm($vm->id), 'handle']);
+        expect($vm->fresh()->state)->toBe(TaskVmState::Parked)->and($this->provider->calls)->toBe(['observe']);
+    });
+
+    it('makes an unconfirmed stop retryable with its recorded error', function (): void {
         [$group, $vm] = tvm_park_waiting();
         $vm->update(['state' => TaskVmState::Parked]);
         Log::spy();
 
         (new ParkTaskVm($vm->id))->failed(new TaskVmException('task_vm.host_command_failed', 'incus stop failed', 502));
 
-        expect($vm->fresh())->state->toBe(TaskVmState::Parked)->error_code->toBe('task_vm.host_command_failed');
+        expect($vm->fresh())->state->toBe(TaskVmState::Ready)->error_code->toBe('task_vm.host_command_failed');
         expect($group->fresh())->assistance_requested->toBeFalse()->assistance_reason->toBeNull();
         Log::shouldHaveReceived('warning')->once()->with('A task VM could not park; later work can still resume it.', [
             'task_vm_id' => $vm->id, 'task_vm' => $vm->name, 'group_id' => $group->id,

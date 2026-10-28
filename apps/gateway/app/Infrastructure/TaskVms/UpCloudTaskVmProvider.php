@@ -58,11 +58,7 @@ final readonly class UpCloudTaskVmProvider implements TaskVmProvider
     {
         $server = $this->server($vm);
 
-        if ($server !== null && ! in_array($server->state, ['started', 'stopped'], true)) {
-            throw new TaskVmException(TaskVmError::NotSettled, 'The task VM power state is not settled.');
-        }
-
-        return $server === null ? null : new VmObservation($server->state === 'started', $server->address);
+        return $server === null ? null : new VmObservation($server->state === 'started', $server->address, settled: in_array($server->state, ['started', 'stopped'], true));
     }
 
     /** The key the Gateway generated and gave the server: the server proves it holds it on every SSH connection. */

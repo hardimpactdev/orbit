@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Infrastructure\Tasks\NativeTaskExecutionLock;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
@@ -35,6 +36,24 @@ it('serializes task work admission on independent lock handles and releases afte
             fclose($independent);
         }
         expect($lock->synchronized(1, static fn (): string => 'retry'))->toBe('retry');
+    } finally {
+        (new Filesystem)->deleteDirectory($directory);
+    }
+});
+
+it('bounds a waiting caller without admitting it and allows a retry after release', function (): void {
+    $directory = sys_get_temp_dir().'/orbit-task-execution-'.Str::uuid();
+    $owner = new NativeTaskExecutionLock($directory);
+    $waiting = new NativeTaskExecutionLock($directory, waitSeconds: 0.02);
+    $entered = false;
+    try {
+        $owner->synchronized(1, function () use ($waiting, &$entered): void {
+            expect(fn () => $waiting->synchronized(1, function () use (&$entered): void {
+                $entered = true;
+            }))
+                ->toThrow(TaskWorkspaceWaiting::class);
+        });
+        expect($entered)->toBeFalse()->and($waiting->synchronized(1, static fn (): string => 'retry'))->toBe('retry');
     } finally {
         (new Filesystem)->deleteDirectory($directory);
     }

@@ -4,21 +4,27 @@ declare(strict_types=1);
 
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\OperationRun;
+use App\Domain\Operations\OperationRunner;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStepStatus;
+use App\Domain\Operations\OperationStore;
+use App\Domain\Operations\OperationSweeper;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
+use App\Domain\Tasks\TaskParkOperation;
 use App\Domain\Tasks\TaskStatus;
-use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\VmObservation;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\OperationStep;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
@@ -83,7 +89,7 @@ it('retains failure when a lost stop reply cannot be confirmed by a settled obse
     $provider = Mockery::mock(TaskVmProvider::class);
     $provider->expects('observe')->once()->ordered()->andReturn(new VmObservation(true, null));
     $provider->expects('stop')->once()->ordered()->andThrow(new RuntimeException('lost stop reply'));
-    $provider->expects('observe')->once()->ordered()->andThrow(new TaskVmException('task_vm.not_settled', 'Power is not settled.'));
+    $provider->expects('observe')->once()->ordered()->andReturn(new VmObservation(false, null, settled: false));
     app()->instance(TaskVmProvider::class, $provider);
     $id = $this->withHeader('Idempotency-Key', 'review.transition')->postJson($this->url)->assertAccepted()->json('data.id');
     run_operation_jobs();
@@ -97,7 +103,10 @@ it('never reports parking success for missing or still running guests', function
     run_operation_jobs();
     $operation = Operation::query()->findOrFail($id);
     expect($operation->status)->toBe(OperationStatus::Failed)->and($operation->error_code)->toBe($missing ? 'task_vm.vm_missing' : 'task_vm.park_failed')
-        ->and($operation->result['power'] ?? null)->not->toBe('stopped');
+        ->and($operation->result['power'] ?? null)->not->toBe('stopped')
+        ->and($this->group->fresh()->status)->toBe(TaskGroupStatus::Running)
+        ->and($this->vm->fresh()->state)->toBe(TaskVmState::Ready)
+        ->and($this->vm->fresh()->error_code)->toBe($operation->error_code);
 })->with([true, false]);
 
 it('refuses unsafe review parking without changing status or touching the provider', function (string $reason): void {
@@ -139,4 +148,48 @@ it('records the parking contract Fixtures', function (): void {
     record_fixture($this->getJson('/api/v1/operations/'.$id)->assertOk(), 'tasks-park-succeeded', ShowOperationRequest::class, 'GET /api/v1/operations/{operation}');
     $this->child->update(['status' => TaskStatus::Running]);
     record_fixture($this->withHeader('Idempotency-Key', 'review.refused')->postJson($this->url)->assertConflict(), 'tasks-park-refused', ParkTaskGroupRequest::class, 'POST /api/v1/task-groups/{group}/park');
+});
+
+it('refuses eligibility that changes during provider stop and preserves the prior group status', function (string $race): void {
+    $provider = Mockery::mock(TaskVmProvider::class);
+    $provider->expects('observe')->once()->ordered()->andReturn(new VmObservation(true, null));
+    $provider->expects('stop')->once()->ordered()->andReturnUsing(function () use ($race): void {
+        if ($race === 'child') {
+            Task::query()->create(['parent_id' => $this->group->id, 'position' => 2, 'title' => 'New work', 'brief' => 'New work', 'status' => TaskStatus::Todo]);
+        } else {
+            TaskAssistance::apply($this->group, AssistanceKind::Direction, 'Review', 'Review');
+        }
+    });
+    $provider->expects('observe')->once()->ordered()->andReturn(new VmObservation(false, null));
+    app()->instance(TaskVmProvider::class, $provider);
+    $id = $this->withHeader('Idempotency-Key', 'review.race')->postJson($this->url)->assertAccepted()->json('data.id');
+    run_operation_jobs();
+    $operation = Operation::query()->findOrFail($id);
+    expect($operation->status)->toBe(OperationStatus::Failed)->and($operation->error_code)->toBe('tasks.park_refused')
+        ->and($operation->result)->toBeNull()->and($this->group->fresh()->status)->toBe(TaskGroupStatus::Running)
+        ->and($this->vm->fresh()->state)->toBe(TaskVmState::Parked)->and($this->vm->fresh()->error_code)->toBe('tasks.park_refused');
+})->with(['child', 'assistance']);
+
+it('recovers a lost worker before the resumable park checkpoint by observing power without another stop', function (): void {
+    $id = $this->withHeader('Idempotency-Key', 'review.worker-lost')->postJson($this->url)->assertAccepted()->json('data.id');
+    $operation = Operation::query()->findOrFail($id);
+    $crash = true;
+    OperationStep::updating(function (OperationStep $step) use (&$crash): void {
+        if ($crash && $step->name === 'park' && $step->status === OperationStepStatus::Succeeded) {
+            throw new RuntimeException('Lost park worker before checkpoint.');
+        }
+    });
+    $store = app(OperationStore::class);
+    $store->claim($operation, 'gone-host:4242:1');
+    expect(fn () => app(TaskParkOperation::class)->run($operation, new OperationRun($operation, $store)))
+        ->toThrow(RuntimeException::class, 'Lost park worker before checkpoint.');
+    $crash = false;
+    $this->provider->observation = new VmObservation(false, null);
+    expect($operation->fresh()->current_step)->toBe('park')
+        ->and($operation->steps()->sole()->status)->toBe(OperationStepStatus::Running);
+    expect(app(OperationSweeper::class)->sweep())->toBe(1);
+    app(OperationRunner::class)->run($id);
+    expect($operation->fresh()->status)->toBe(OperationStatus::Succeeded)
+        ->and($this->provider->calls)->toBe(['observe', 'stop', 'observe', 'observe']);
+    $this->postJson($this->url)->assertAccepted()->assertJsonPath('data.id', $id);
 });

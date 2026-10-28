@@ -18,6 +18,9 @@ final readonly class StopTaskVmAction
     public function execute(TaskVm $vm): void
     {
         $power = $this->provider->observe($vm);
+        if ($power !== null && ! $power->settled) {
+            throw new TaskVmException(TaskVmError::NotSettled, 'The task VM power state is not settled.');
+        }
         $failure = null;
         if ($power?->running) {
             try {
@@ -29,6 +32,9 @@ final readonly class StopTaskVmAction
         }
         if ($power === null) {
             throw new TaskVmException(TaskVmError::VmMissing, 'The task VM is missing; its workspace was not confirmed parked.');
+        }
+        if (! $power->settled) {
+            throw new TaskVmException(TaskVmError::NotSettled, 'The task VM power state is not settled.');
         }
         if ($power->running) {
             throw $failure ?? new TaskVmException(TaskVmError::ParkFailed, 'The task VM is still running after parking.');

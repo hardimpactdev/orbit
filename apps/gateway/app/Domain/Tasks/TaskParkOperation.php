@@ -16,6 +16,7 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use App\Models\TaskWorkspaceLeaseRecord;
 use LogicException;
+use Throwable;
 
 final readonly class TaskParkOperation implements OperationKind
 {
@@ -47,9 +48,19 @@ final readonly class TaskParkOperation implements OperationKind
             $group = Task::topLevel()->findOrFail($operation->target_id);
             $this->operations->requireOpenExternal($group);
             $vm = self::requireEligible($group);
-            $group->update(['status' => TaskGroupStatus::WaitingForReview, 'settled_at' => $group->settled_at ?? now()]);
             $vm->update(['state' => TaskVmState::Parked, ...TaskVm::ForgetTopology]);
-            $this->stop->execute($vm);
+            $stopped = false;
+            try {
+                $this->stop->execute($vm);
+                $stopped = true;
+                $group->refresh();
+                $this->operations->requireOpenExternal($group);
+                self::requireEligible($group);
+            } catch (Throwable $exception) {
+                $vm->update(['state' => $stopped ? TaskVmState::Parked : TaskVmState::Ready, ...TaskVm::errorFrom($exception)]);
+                throw $exception;
+            }
+            $group->update(['status' => TaskGroupStatus::WaitingForReview, 'settled_at' => $group->settled_at ?? now()]);
 
             return ['group_id' => $group->id, 'task_vm_id' => $vm->id, 'instance_id' => $group->taskable_id, 'status' => 'waiting_for_review', 'power' => 'stopped'];
         }));

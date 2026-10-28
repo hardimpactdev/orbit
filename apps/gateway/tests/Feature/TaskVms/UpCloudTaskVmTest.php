@@ -647,11 +647,11 @@ describe('placement', function (): void {
             ->and(file_get_contents(app(KnownHostsStore::class)->path()))->toContain('94.237.1.10 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHostKey');
     });
 
-    it('never observes a transitional cloud VM as confirmed stopped', function (string $state): void {
+    it('exposes transitional power without throwing for general observation', function (string $state): void {
         $vm = tvm_up_vm(TaskVmState::Parked);
         $this->upcloud->server($vm->name, [['key' => 'orbit-task-vm', 'value' => (string) $vm->id]], $state);
-        expect(fn () => app(UpCloudTaskVmProvider::class)->observe($vm))->toThrow(TaskVmException::class);
-    })->with(['starting', 'stopping', 'maintenance', 'error']);
+        expect(app(UpCloudTaskVmProvider::class)->observe($vm))->settled->toBeFalse();
+    })->with(['maintenance', 'error']);
 
     it('stops a server cleanly for a park and deletes it with its disk on destroy', function (): void {
         $vm = tvm_up_vm(TaskVmState::Ready);
