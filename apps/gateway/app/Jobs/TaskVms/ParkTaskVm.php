@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Jobs\TaskVms;
 
+use App\Actions\TaskVms\StopTaskVmAction;
+use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmState;
+use App\Models\Operation;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -16,7 +19,7 @@ use Throwable;
 /**
  * Stops a `parked` task VM and keeps its disk. The tick set the row to `parked` first, so no work is admitted
  * while the VM stops. A row that is no longer `parked` was woken meanwhile and stays running. A failure stays
- * on the row as its error, and the row stays `parked`. After the last try a warning names the VM and error.
+ * on the parked row as its error, and the next eligible idle tick retries it. A warning names the error.
  * Group assistance stays unchanged, so later work can resume the VM whatever its power.
  */
 final class ParkTaskVm implements ShouldBeUnique, ShouldQueue
@@ -39,8 +42,19 @@ final class ParkTaskVm implements ShouldBeUnique, ShouldQueue
             return;
         }
 
-        $provider->stop($vm);
-        $vm->update(['error_code' => null, 'error_message' => null]);
+        app(TaskExecutionLock::class)->synchronized((int) $vm->group_id, function () use ($vm, $provider): void {
+            $vm->refresh();
+            if ($vm->state !== TaskVmState::Parked) {
+                return;
+            }
+            if (Operation::query()->where('target_type', 'task_group')->where('target_id', $vm->group_id)
+                ->whereNotIn('status', ['succeeded', 'failed', 'cancelled'])->exists()) {
+                $this->release(5);
+
+                return;
+            }
+            new StopTaskVmAction($provider)->execute($vm);
+        });
     }
 
     public function failed(Throwable $exception): void

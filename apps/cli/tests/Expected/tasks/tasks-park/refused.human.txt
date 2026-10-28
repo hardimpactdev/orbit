@@ -1,0 +1,1 @@
+Review parking requires an idle external group with an open published PR and no assistance or workspace owner.

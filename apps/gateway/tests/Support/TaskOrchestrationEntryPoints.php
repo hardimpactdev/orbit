@@ -31,6 +31,7 @@ use App\Actions\Tasks\ShowTaskInsightsAction;
 use App\Actions\Tasks\ShowTasksStatusAction;
 use App\Actions\Tasks\StartTaskAnalysisAction;
 use App\Actions\Tasks\StartTaskCheckAction;
+use App\Actions\Tasks\StartTaskParkAction;
 use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Actions\Tasks\StartTaskPublishAction;
 use App\Actions\Tasks\StartTaskScriptAction;
@@ -55,6 +56,7 @@ use App\Actions\TaskVms\ParkIdleTaskVmsAction;
 use App\Actions\TaskVms\PrepareTaskVmRuntimeAction;
 use App\Actions\TaskVms\ReadPackageCacheUsageAction;
 use App\Actions\TaskVms\RecordTaskVmAction;
+use App\Actions\TaskVms\StopTaskVmAction;
 use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentDriverRegistry;
@@ -105,6 +107,7 @@ use App\Domain\Tasks\TaskInsights;
 use App\Domain\Tasks\TaskLevelStatusCast;
 use App\Domain\Tasks\TaskObservationAvailability;
 use App\Domain\Tasks\TaskOperations;
+use App\Domain\Tasks\TaskParkOperation;
 use App\Domain\Tasks\TaskPositions;
 use App\Domain\Tasks\TaskPromptRenderer;
 use App\Domain\Tasks\TaskProvisionOperation;
@@ -253,6 +256,7 @@ final class TaskOrchestrationEntryPoints
         TaskScriptOperation::class => ['read' => 'Dispatches only the tracked script under its group operation hold and workspace lease.'],
         StartTaskAnalysisAction::class => ['execute' => 'Explicit external analysis through shared TaskOperations admission; TaskAnalysisOperationTest exercises the boundary.'],
         TaskAnalysisOperation::class => ['read' => 'Dispatches only the fixed read-only analysis under its owning operation and workspace lease.'],
+        StartTaskParkAction::class => ['execute' => 'Explicit external review parking through shared operation admission; TaskParkOperationTest covers idle eligibility and stopped confirmation.'],
         StartTaskPublishAction::class => ['execute' => 'Explicit external publish through shared admission.'],
         StartTaskCheckAction::class => ['execute' => 'Explicit external operation admitted through shared TaskOperations rules.'],
         TaskCheckOperation::class => ['read' => 'External check starts only after shared admission and its own check lease.'],
@@ -376,6 +380,13 @@ final class TaskOrchestrationEntryPoints
         ],
 
         TaskClaimAdmission::class => ['provisionWorkspace' => 'Shared provisioning for tick claim and tasks.provision; the operation owns external admission.'],
+        StartTaskParkAction::class => ['execute' => 'tasks.park admits only idle external published groups through shared operation admission.'],
+        TaskParkOperation::class => [
+            'requireEligible' => 'Pure idle-review and workspace ownership validation; starts no work.',
+            'run' => 'Explicit external operation rechecks eligibility under its group execution lock before stopping its VM.',
+            'abandon' => 'Preserves failed parking without releasing workspace or reporting stopped power.',
+        ],
+        StopTaskVmAction::class => ['execute' => 'Shared stop and provider confirmation under the caller-owned group execution lock; TaskParkOperationTest covers lost replies and unsettled power.'],
         StartTaskProvisionAction::class => ['execute' => 'tasks.provision admits only open external todo groups through shared admission.'],
         StartTaskWorkerAction::class => ['execute' => 'tasks.worker admits only open external groups with an existing VM workspace; TaskProvisionOperationTest exercises the boundary.'],
         TaskOperations::class => [

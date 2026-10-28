@@ -87,6 +87,20 @@ For an external group, `tasks:tick` only parks an idle VM, records whether its p
 
 The tick never claims, starts, sends, advances, reviews, consults, reminds, settles, or raises assistance for an external group. Every existing Tasks entry point that sends a turn, starts a check, or changes a claim skips the group or refuses with HTTP 409 `tasks.orchestrated_externally`. This includes comment sends, direction answers, deliverable correction resumes, and operator baseline retries. Stale-reservation release skips the group, so a claim waiting for a VM keeps its reservation. Group cancel and complete remain available. Resolutions clear assistance without sending a turn, and subtask cancellation interrupts work without advancing the group.
 
+#### Park an external group for review
+
+`POST /api/v1/task-groups/{group}/park`, CLI `tasks:park GROUP --idempotency-key=KEY`, and MCP `tasks-park` start the keyed `tasks.park` operation. The request is bodyless and requires an idempotency key. It returns HTTP 202 with the operation. It accepts no VM identity or provider command.
+
+Parking requires an open external group with a published, open PR, an existing task VM and workspace, no open child, no preview, no assistance, and no other unfinished operation or workspace owner. It returns HTTP 409 `tasks.park_refused` when review parking is unsafe. Operation admission serializes with other group operations and returns `operation.target_busy` for a busy target. A group execution lock wait is bounded to five seconds; contention returns HTTP 409 `tasks.workspace_waiting` for a later retry.
+
+The operation checks eligibility under the group execution lock and stops its existing VM through the shared parking action. It checks eligibility again after the stop and moves the group to `waiting_for_review` only if that check still passes. A child or assistance change during shutdown refuses the operation and preserves the previous group status. It preserves the checkout and disk. It neither allocates another VM nor merges the PR.
+
+Success records `{group_id, task_vm_id, instance_id, status: "waiting_for_review", power: "stopped"}` only after the provider observes the existing VM stopped. A missing VM is `task_vm.vm_missing`; a VM still running after stop is `task_vm.park_failed`; a provider power state still in transition is `task_vm.not_settled`. A failed or interrupted stop supplies no successful parking evidence.
+
+A failed stop or a refused final eligibility check records the VM error and keeps its row `parked`; only a successful resume makes it ready for work. An eligible idle group with a parking error retries on a later tick. An idle parking job that finds an unfinished group operation requeues after five seconds without changing VM readiness. Replaying the key returns the same operation; recovery of an interrupted step observes provider power before stopping again. Group `vm_power: stopped` alone describes the parked row and cannot prove that the provider finished stopping it.
+
+An external orchestrator may release its execution reservation after scoped successful parking evidence and a fresh eligible group read. It must retain project ownership and reserve execution capacity before waking the VM for more work or merge cleanup. Orbit's host allocation continues counting parked VMs, so resuming the same VM retains its host slot.
+
 #### Provision an external group
 
 `tasks:provision <group>` starts the Gateway operation `tasks.provision` through `POST /api/v1/task-groups/{group}/provision`. Its target is `task_group` with the group ID. All task operations share one target hold: another open operation returns HTTP 409 `operation.target_busy`. A tick group returns HTTP 409 `tasks.not_orchestrated`, and an ended group returns HTTP 409 `tasks.group_closed`. The Gateway retries no effect for an external group; the orchestrator decides whether to try new work.

@@ -20,6 +20,7 @@ use Orbit\Sdk\Requests\Tasks\ListTaskCommentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupCommentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskQuestionsRequest;
+use Orbit\Sdk\Requests\Tasks\ParkTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ProvisionTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\PublishTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskAgentRequest;
@@ -59,6 +60,7 @@ describe('task transport', function (): void {
         'cancel' => [new CancelTaskGroupRequest(13), Method::POST, '/api/v1/task-groups/13/cancel'],
         'check' => [new CheckTaskGroupRequest(13, 21, 'baseline'), Method::POST, '/api/v1/task-groups/13/check'],
         'turn' => [new TurnTaskGroupRequest(13, 14, 'implementer', 'Prompt', 'new'), Method::POST, '/api/v1/task-groups/13/turn'],
+        'park' => [new ParkTaskGroupRequest(13, 'park.13'), Method::POST, '/api/v1/task-groups/13/park'],
         'provision' => [new ProvisionTaskGroupRequest(13), Method::POST, '/api/v1/task-groups/13/provision'],
         'complete' => [new CompleteTaskGroupRequest(13), Method::POST, '/api/v1/task-groups/13/complete'],
         'subtask create' => [new CreateSubtaskRequest(13, 'Title', 'Brief'), Method::POST, '/api/v1/task-groups/13/tasks'],

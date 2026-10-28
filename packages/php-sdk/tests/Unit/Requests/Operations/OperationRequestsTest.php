@@ -183,7 +183,7 @@ describe('operation requests', function (): void {
                 ->and($operation->toArray()['result'])->toBe($data['result']);
         }
         $mock->assertSentCount(2);
-    })->with(['tasks/tasks-analyze/failure-overflow', 'tasks/tasks-analyze/failure-unavailable', 'tasks/tasks-provision/pinned', 'tasks/tasks-provision/unavailable']);
+    })->with(['tasks/tasks-analyze/failure-overflow', 'tasks/tasks-analyze/failure-unavailable', 'tasks/tasks-provision/pinned', 'tasks/tasks-provision/unavailable', 'tasks-park-succeeded']);
 
     it('uses the exact Gateway methods, paths, and queries', function (): void {
         expect([

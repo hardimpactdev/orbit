@@ -15,7 +15,7 @@ final class NativeTaskExecutionLock implements TaskExecutionLock
     /** @var array<int, true> */
     private array $held = [];
 
-    public function __construct(private readonly string $directory) {}
+    public function __construct(private readonly string $directory, private readonly float $waitSeconds = 5.0) {}
 
     public function synchronized(int $groupId, Closure $operation, bool $wait = true): mixed
     {
@@ -31,11 +31,15 @@ final class NativeTaskExecutionLock implements TaskExecutionLock
             throw new RuntimeException('Could not open task execution lock.');
         }
         try {
-            if (! chmod($this->directory, 0o700) || ! chmod($path, 0o600) || ! flock($handle, LOCK_EX | ($wait ? 0 : LOCK_NB))) {
-                if (! $wait) {
+            if (! chmod($this->directory, 0o700) || ! chmod($path, 0o600)) {
+                throw new RuntimeException('Could not secure task execution lock.');
+            }
+            $deadline = hrtime(true) + $this->waitSeconds * 1_000_000_000;
+            while (! flock($handle, LOCK_EX | LOCK_NB)) {
+                if (! $wait || hrtime(true) >= $deadline) {
                     throw new TaskWorkspaceWaiting('Another admitted task operation is still recording its result.');
                 }
-                throw new RuntimeException('Could not acquire task execution lock.');
+                usleep(10_000);
             }
             $this->held[$groupId] = true;
 

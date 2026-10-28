@@ -17,6 +17,7 @@ use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Orbit\Sdk\Requests\Tasks\AnalyzeTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CheckTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\ParkTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ProvisionTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\PublishTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\TurnTaskGroupRequest;
@@ -598,6 +599,29 @@ describe('tasks:publish', function (): void {
         [['group' => '17', '--check' => '31', '--title' => 'Title'], 'tasks.pull_request_invalid'],
         [['group' => '17', '--check' => '31', '--body' => 'Body'], 'tasks.pull_request_invalid'],
     ]);
+});
+
+describe('tasks:park', function (): void {
+    beforeEach(function (): void {
+        MockClient::global(gateway_fixture_mock());
+        app(GatewayExtensionState::class)->discover();
+        MockClient::destroyGlobal();
+    });
+    it('follows confirmed review parking in human and machine modes', function (bool $json): void {
+        $seen = [];
+        $identity = ['kind' => 'tasks.park', 'target_type' => 'task_group'];
+        $result = ['group_id' => 17, 'task_vm_id' => 8, 'instance_id' => 12, 'status' => 'waiting_for_review', 'power' => 'stopped'];
+        $mock = cli_deploy_gateway([cli_operation([...$identity, 'status' => 'succeeded', 'sequence' => 4, 'poll_after_seconds' => null, 'result' => $result], [cli_step('park', 1, 'succeeded', 4)])], $seen, ParkTaskGroupRequest::class, $identity);
+        expect(Artisan::call('tasks:park', ['group' => '17', '--idempotency-key' => 'group.park.c1', '--json' => $json, '--no-interaction' => true]))->toBe(0);
+        $output = Artisan::output();
+        if ($json) {
+            expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['result'])->toBe($result);
+        } else {
+            expect($output)->toContain('Park task group [17]', 'Parked task VM', 'Park succeeded.');
+        }
+        $mock->assertSentCount(1, ParkTaskGroupRequest::class);
+        expect($mock->findResponseByRequest(ParkTaskGroupRequest::class)?->getPendingRequest()->headers()->get('Idempotency-Key'))->toBe('group.park.c1');
+    })->with([false, true]);
 });
 
 it('shows the caller Node name and retains a removed caller ID in human output', function (?string $name, string $label): void {

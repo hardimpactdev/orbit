@@ -15,6 +15,7 @@ use App\Actions\Tasks\ListTaskGroupsAction;
 use App\Actions\Tasks\ShowTaskGroupAction;
 use App\Actions\Tasks\StartTaskAnalysisAction;
 use App\Actions\Tasks\StartTaskCheckAction;
+use App\Actions\Tasks\StartTaskParkAction;
 use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Actions\Tasks\StartTaskPublishAction;
 use App\Actions\Tasks\StartTaskScriptAction;
@@ -106,6 +107,17 @@ final class TaskGroupsController extends Controller
     {
         $requestId = $request->attributes->getString('orbit.request_id');
         $operation = $action->execute($group, $request->worker(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
+
+        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
+    }
+
+    /** Park an external group's existing VM and confirm stopped power before succeeding. */
+    #[StartsOperation(OperationKinds::TasksPark, requiresKey: true)]
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function park(EmptyTasksRequest $request, Task $group, StartTaskParkAction $action): JsonResponse
+    {
+        $requestId = $request->attributes->getString('orbit.request_id');
+        $operation = $action->execute($group, CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
 
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }

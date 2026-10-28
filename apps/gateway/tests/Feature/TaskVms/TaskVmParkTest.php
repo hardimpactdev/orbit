@@ -221,16 +221,49 @@ describe('park', function (): void {
         [, $vm] = tvm_park_waiting();
         $vm->update(['state' => TaskVmState::Parked, 'error_code' => 'task_vm.host_command_failed', 'error_message' => 'earlier']);
 
+        $this->provider->observations = [new VmObservation(true, null), new VmObservation(false, null)];
         app()->call([new ParkTaskVm($vm->id), 'handle']);
-        expect($this->provider->calls)->toBe(['stop'])
+        expect($this->provider->calls)->toBe(['observe', 'stop', 'observe'])
             ->and($vm->fresh()?->error_code)->toBeNull();
 
         $vm->update(['state' => TaskVmState::Ready]);
         app()->call([new ParkTaskVm($vm->id), 'handle']);
-        expect($this->provider->calls)->toBe(['stop']);
+        expect($this->provider->calls)->toBe(['observe', 'stop', 'observe']);
     });
 
-    it('keeps a VM parked with the error when it cannot be stopped', function (): void {
+    it('requeues when an operation starts after idle parking was queued', function (): void {
+        Queue::fake();
+        [$group, $vm] = tvm_park_waiting();
+        app(ParkIdleTaskVmsAction::class)->execute();
+        expect($vm->fresh()->state)->toBe(TaskVmState::Parked);
+        $operation = Operation::query()->create(['kind' => OperationKinds::TasksPark, 'target_type' => 'task_group', 'target_id' => $group->id, 'status' => OperationStatus::Queued, 'input' => []]);
+        $job = (new ParkTaskVm($vm->id))->withFakeQueueInteractions();
+        app()->call([$job, 'handle']);
+        $job->assertReleased(5);
+        expect($vm->fresh()->state)->toBe(TaskVmState::Parked)->and($this->provider->calls)->toBe([]);
+        $operation->update(['status' => OperationStatus::Succeeded]);
+        $retry = unserialize(serialize($job))->withFakeQueueInteractions();
+        app()->call([$retry, 'handle']);
+        $retry->assertNotReleased();
+        expect($vm->fresh()->state)->toBe(TaskVmState::Parked)->and($this->provider->calls)->toBe(['observe']);
+    });
+
+    it('retries an errored parked row only while its group remains idle', function (): void {
+        Queue::fake();
+        [$group, $vm] = tvm_park_waiting();
+        $vm->update(['state' => TaskVmState::Parked]);
+        (new ParkTaskVm($vm->id))->failed(new RuntimeException('stop reply lost'));
+        expect(app(ParkIdleTaskVmsAction::class)->execute())->toBe(1);
+        Queue::assertPushed(ParkTaskVm::class);
+        app()->call([new ParkTaskVm($vm->id), 'handle']);
+        expect($vm->fresh())->state->toBe(TaskVmState::Parked)->error_code->toBeNull();
+        expect(app(ParkIdleTaskVmsAction::class)->execute())->toBe(0);
+        $vm->update(['error_code' => 'task_vm.job_failed']);
+        $group->update(['status' => TaskGroupStatus::Running]);
+        expect(app(ParkIdleTaskVmsAction::class)->execute())->toBe(0);
+    });
+
+    it('makes an unconfirmed stop retryable with its recorded error', function (): void {
         [$group, $vm] = tvm_park_waiting();
         $vm->update(['state' => TaskVmState::Parked]);
         Log::spy();

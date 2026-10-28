@@ -683,7 +683,9 @@ Each `tasks:tick` parks the `ready` task VM of a group when all of these are tru
 
 The last rule keeps a VM that Orbit started again, for example for a removal retry, running that long before it can park again. The row's `ready_at` records when the VM last became `ready`: at its first preparation, and at each resume.
 
-The tick sets the row to `parked` and queues `ParkTaskVm`, which stops the VM with `incus stop`. After three failed attempts, the row keeps its error and stays `parked`, and Orbit logs a warning with the VM and its error. Parking failure does not ask for group assistance or replace an existing request. New subtasks still wake the VM, and a reviewed, green pull request can still merge. A successful resume or park clears the row error. A late failure after the VM wakes changes nothing. A `parked` VM still takes its slot on the host, so a resume never needs a free slot.
+The tick sets the row to `parked` and queues `ParkTaskVm`, which stops the VM with `incus stop`. If an operation is unfinished, the job requeues after five seconds without stopping or marking the VM ready. After three failed attempts, the row keeps its error and stays `parked`, and Orbit logs a warning with the VM and its error. The next eligible idle tick retries that errored row.
+
+Parking failure does not ask for group assistance or replace an existing request. New subtasks still wake the VM, and a reviewed, green pull request can still merge. A successful resume or park clears the row error. A late failure after the VM wakes changes nothing. A `parked` VM still takes its slot on the host, so a resume never needs a free slot.
 
 Work for the group starts the VM again: a new subtask after a push, a review fix, a reviewer run, the workspace removal after a merge, a completion, and a destroy that must first remove the workspace. That work waits while the VM is `parked`. The group shows the reason `Task VM: resuming.`, and Orbit queues `ResumeTaskVm`. The job runs these steps:
 

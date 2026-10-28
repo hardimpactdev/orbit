@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\TaskVms;
 
+use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmUpCloud;
@@ -57,7 +58,7 @@ final readonly class UpCloudTaskVmProvider implements TaskVmProvider
     {
         $server = $this->server($vm);
 
-        return $server === null ? null : new VmObservation($server->state === 'started', $server->address);
+        return $server === null ? null : new VmObservation($server->state === 'started', $server->address, settled: in_array($server->state, ['started', 'stopped'], true));
     }
 
     /** The key the Gateway generated and gave the server: the server proves it holds it on every SSH connection. */
@@ -79,7 +80,7 @@ final readonly class UpCloudTaskVmProvider implements TaskVmProvider
 
     public function start(TaskVm $vm): void
     {
-        $this->startServer($vm, $this->server($vm) ?? throw new TaskVmException('task_vm.vm_missing', "Task VM [{$vm->name}] is gone from UpCloud.", 502));
+        $this->startServer($vm, $this->server($vm) ?? throw new TaskVmException(TaskVmError::VmMissing, "Task VM [{$vm->name}] is gone from UpCloud.", 502));
     }
 
     /** A clean shutdown first, then a hard stop once the guest has not stopped within 120 seconds. */

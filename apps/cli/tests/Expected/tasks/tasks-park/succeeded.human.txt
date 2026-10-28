@@ -1,0 +1,14 @@
+Waiting for a worker...
+Parking task VM...
+
+┌  Park task group [1]
+│
+├  ● Started on a worker
+│    Operation 1.
+│
+├  ● Parked task VM
+│
+└  Park succeeded.
+
+Operation: 1
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

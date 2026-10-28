@@ -1,0 +1,33 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\ParkTaskGroupRequest",
+    "route": "POST /api/v1/task-groups/{group}/park",
+    "status": 202,
+    "body": {
+        "data": {
+            "id": 1,
+            "kind": "tasks.park",
+            "target_type": "task_group",
+            "target_id": 1,
+            "input": [],
+            "status": "queued",
+            "sequence": 1,
+            "current_step": null,
+            "failed_step": null,
+            "error_code": null,
+            "result": null,
+            "cancel_requested": false,
+            "attempts": 0,
+            "triggered_by": "park-gateway",
+            "caller_node_id": null,
+            "caller_node_name": null,
+            "created_at": "2026-10-28T12:00:00+00:00",
+            "started_at": null,
+            "finished_at": null,
+            "poll_after_seconds": 2
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}
