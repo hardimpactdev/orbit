@@ -51,3 +51,10 @@ jobs:
           behavior: '${{ "production-smoke-" + string(inputs.projectId) }}'
           methodName: recover
           inputs: { apply: false }
+      - name: repair-plan
+        dependsOn: [{ step: recovery-plan, condition: { type: succeeded } }]
+        task:
+          type: behavior
+          behavior: '${{ "production-smoke-" + string(inputs.projectId) }}'
+          methodName: repair
+          inputs: { apply: false }

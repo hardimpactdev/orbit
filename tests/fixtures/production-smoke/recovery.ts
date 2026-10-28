@@ -13,6 +13,26 @@ export class RecoveryFixture extends FailureFixture {
     super();
     const base = this.http;
     this.http = async (method, path, body, key) => {
+      if (path.includes("/repair")) {
+        const request_key = key ??
+          new URL("https://fixture" + path).searchParams.get("request_key")!;
+        const repair = {
+          request_key,
+          instance_id: 7,
+          project_id: 20,
+          failure_key: request_key.replace(/\.repair$/, ""),
+          group_id: 91,
+          task_id: 92,
+        };
+        return {
+          status: method === "POST" ? 201 : 200,
+          body: {
+            data: method === "POST"
+              ? repair
+              : { request_key, found: false, repair: null },
+          },
+        };
+      }
       if (path.includes("/smoke/receipt?")) {
         this.requests.push({ method, path, body, key });
         const request_key = new URL("https://fixture" + path).searchParams.get(

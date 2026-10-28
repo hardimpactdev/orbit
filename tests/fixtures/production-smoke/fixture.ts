@@ -1,5 +1,8 @@
 import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016.58";
-import { productionSmoke } from "../../../extensions/behaviors/production-smoke/mod.ts";
+import {
+  type Context,
+  productionSmoke,
+} from "../../../extensions/behaviors/production-smoke/mod.ts";
 import { type Http } from "../../../extensions/behaviors/automatic-deploy/gateway.ts";
 export const config = {
   projectId: 20,
@@ -111,7 +114,7 @@ export class Fixture {
       this.onReceipt?.();
       return { status: 200, body: { data: structuredClone(this.receipt) } };
     });
-  context() {
+  context(): Context {
     const { context } = createModelTestContext();
     return {
       ...context,

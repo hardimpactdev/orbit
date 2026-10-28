@@ -70,7 +70,7 @@ export const RollbackReceipt = z.object({
     status: z.enum(["running", "succeeded", "failed"]),
   }).nullable(),
 }).strict();
-function execution(
+export function execution(
   receipt: z.infer<typeof Receipt>,
   request: z.infer<typeof Request>,
   key: string,

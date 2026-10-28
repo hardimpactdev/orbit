@@ -270,6 +270,10 @@ export function lifecycleMethod(
               apply: true,
               deploymentId: hold.expected.deployment_id,
             }, ctx);
+            await methods.repair.execute({
+              apply: true,
+              deploymentId: hold.expected.deployment_id,
+            }, ctx);
             const recovery = Recovery.parse(await ctx.readResource("recovery"));
             if (recovery.status !== "rolled_back") {
               if (
@@ -402,6 +406,10 @@ export function lifecycleMethod(
             await methods.failure.execute({
               apply: true,
               deploymentId: selected.deployment_id,
+            }, ctx);
+            await methods.repair.execute({
+              apply: true,
+              deploymentId: hold.expected.deployment_id,
             }, ctx);
             return await save("recovering");
           }

@@ -1,3 +1,4 @@
+import { repairMethod, RepairState } from "./repair.ts";
 import { Lifecycle, lifecycleMethod } from "./recovery.ts";
 import { failureMethod, Recovery } from "./failure.ts";
 import { z } from "npm:zod@4.4.3";
@@ -78,9 +79,16 @@ export function productionSmoke(
 ) {
   return {
     type: "@nckrtl/production-smoke",
-    version: "2026.10.28.3",
+    version: "2026.10.28.4",
     globalArguments: Globals,
     resources: {
+      repair: {
+        description:
+          "Permanent repair intent, Gateway receipt and factory handoff",
+        schema: RepairState,
+        lifetime: "infinite",
+        garbageCollection: 10,
+      },
       lifecycle: {
         description: "Owned hold, retry backoff and restored smoke",
         schema: Lifecycle,
@@ -107,6 +115,7 @@ export function productionSmoke(
       },
     },
     methods: {
+      repair: repairMethod(makeHttp, recoveryEffects, budgetMs),
       recover: lifecycleMethod(makeHttp, clock, budgetMs, recoveryEffects),
       failure: failureMethod(makeHttp, recoveryEffects, budgetMs),
       tick: {
