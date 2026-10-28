@@ -1110,26 +1110,34 @@ def managed_run_finished(data):
         # A completed command can leave servers behind. Drain only this owned unit, never a
         # live supervisor or a run whose result/checkout identity cannot be established.
         if (state is None or state.get('LoadState') != 'loaded' or state.get('Description') != description
-                or state.get('Job') != '' or state.get('MainPID') != '0'
-                or process_started(data['pid']) == data['started']):
+                or state.get('Job') != '' or state.get('MainPID') != '0'):
             return False
         try:
             with open(managed_result_path(data['run_id'])) as source:
                 result = json.load(source)
             if (not isinstance(result, dict) or result.get('head_before') != data['head']
                     or type(result.get('exit_code')) is not int
-                    or not isinstance(result.get('finished_at'), (int, float))
-                    or not isinstance(result.get('checkout'), str)):
+                    or any(not isinstance(result.get(field), str) or not result[field]
+                           for field in ('checkout', 'tree_before', 'head_after', 'tree_after'))):
+                return False
+            finished_at = result.get('finished_at')
+            if result.get('analysis') is True:
+                import datetime
+                if not isinstance(finished_at, str) or datetime.datetime.fromisoformat(finished_at).utcoffset() is None:
+                    return False
+            elif type(finished_at) not in (int, float):
                 return False
             administration = git(result['checkout'], 'rev-parse', '--absolute-git-dir')
             if os.path.realpath(os.path.join(administration, 'orbit')) != os.path.realpath(DIRECTORY):
                 return False
         except (OSError, ValueError, subprocess.CalledProcessError):
             return False
-        subprocess.run(['sudo', '-n', 'systemctl', 'kill', '--signal=KILL', unit],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        stopped = subprocess.run(['sudo', '-n', 'systemctl', 'kill', '--signal=KILL', unit],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         # Signal delivery is not completion proof. A later status read can finish this drain.
         if empty_terminal(unit, description) is None:
+            if stopped.returncode != 0:
+                raise RuntimeError('The completed check descendants could not be stopped.')
             return False
     lock, path, current = start_record(data['run_id'])
     current['state'] = 'finished'

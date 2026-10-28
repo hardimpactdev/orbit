@@ -95,7 +95,7 @@ it('keeps a completed result fenced without proof that its supervisor exited', f
     $fixture->write($receipt.'.json', ['run_id' => $fixture->operation, 'boot' => $fixture->boot,
         'state' => 'started', 'pid' => 999999999, 'started' => '123', 'head' => 'head', 'tree' => 'tree']);
     $fixture->write($receipt.'.result.json', ['head_before' => 'head', 'tree_before' => 'tree',
-        'exit_code' => 0, 'finished_at' => 123, 'checkout' => $checkout]);
+        'head_after' => 'head', 'tree_after' => 'tree', 'exit_code' => 0, 'finished_at' => 123, 'checkout' => $checkout]);
     file_put_contents($directory.'/check', TaskUnitProgram::read('tasks/check'));
     $process = $fixture->process(['python3', '-I', '-c', <<<'PYTHON'
         import importlib.machinery, importlib.util, sys

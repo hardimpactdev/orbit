@@ -62,7 +62,7 @@ it('recovers an exact managed run and never exposes a result before descendants 
     }
 });
 
-it('drains an orphaned server after the exact managed check has finished', function (int $exit, bool $setup): void {
+it('drains an orphaned server after the exact managed check has finished', function (int $exit, bool $setup, bool $cancel): void {
     $checkout = managed_check_seed()->checkout($this->directory);
     $instance = check_runner_instance($checkout);
     $runner = check_runner($setup ? new LocalShellSshExecutor : managed_check_seed()->transport($checkout));
@@ -75,7 +75,11 @@ it('drains an orphaned server after the exact managed check has finished', funct
         $child->awaitReady();
         check_runner_wait_for_exit($process);
 
-        $runner->read($instance, $process);
+        if ($cancel) {
+            $runner->cancel($instance, $process);
+        } else {
+            $runner->read($instance, $process);
+        }
         $child->waitForExit();
         $reading = $runner->read($instance, $process);
         expect($reading->state)->toBe('finished')
@@ -87,7 +91,12 @@ it('drains an orphaned server after the exact managed check has finished', funct
         (new Process(['sudo', '-n', 'systemctl', 'stop', 'orbit-task-check-'.$runId.'.service']))->run();
         (new Process(['sudo', '-n', 'systemctl', 'reset-failed', 'orbit-task-check-'.$runId.'.service']))->run();
     }
-})->with(['passed command' => [0, false], 'failed command' => [7, false], 'setup changes the baseline tree' => [0, true]]);
+})->with([
+    'passed command' => [0, false, false],
+    'failed command' => [7, false, false],
+    'setup changes the baseline tree' => [0, true, false],
+    'cancellation drains a completed command' => [0, false, true],
+]);
 
 it('does not drain descendants when the completed result identity is unavailable', function (string $damage): void {
     $checkout = managed_check_seed()->checkout($this->directory);
