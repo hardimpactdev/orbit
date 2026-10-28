@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Domain\Fleet\CliConvergeExecution;
+use App\Domain\Fleet\CliConvergeResult;
+use App\Domain\Fleet\FleetCliChildAdmission;
 use App\Domain\Fleet\FleetKitCapabilities;
 use App\Domain\Fleet\FleetOperationExecution;
 use App\Domain\Fleet\PeerDnsOperationCompletion;
@@ -75,6 +78,19 @@ return (static function (): array {
 
     if (! FleetKitCapabilities::visitsSupported()) {
         unset($kinds['fleet.recipe'], $kinds['fleet.rollout']);
+    }
+
+    if (FleetKitCapabilities::cliSupported()) {
+        $kinds['fleet.cli_converge'] = [
+            'executor' => 'swamp', 'admission' => FleetCliChildAdmission::class,
+            'completion' => CliConvergeResult::class, 'execution' => CliConvergeExecution::class,
+            'runs' => [
+                ['transport' => 'agent', 'name' => 'cli.install', 'resumable' => true, 'input_fields' => ['user', 'release', 'profile'], 'input_values' => []],
+                ['transport' => 'gateway', 'name' => 'fleet.cli-converge-result', 'resumable' => true, 'input_fields' => [], 'input_values' => []],
+            ],
+            'completion_contract' => ['step' => 'cli-converge', 'transport' => 'gateway', 'name' => 'fleet.cli-converge-result', 'result' => ['completed' => true]],
+            'result_fields' => ['completed', 'outcome', 'reason', 'version', 'configured', 'installed', 'error_code'],
+        ];
     }
 
     return $kinds;

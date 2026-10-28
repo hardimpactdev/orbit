@@ -12,6 +12,17 @@ final class FleetKitCapabilities
 {
     public static function visitsSupported(): bool
     {
+        return self::supported(['children', 'list_of', 'receipts']);
+    }
+
+    public static function cliSupported(): bool
+    {
+        return self::supported(['children', 'receipts']);
+    }
+
+    /** @param list<string> $capabilities */
+    private static function supported(array $capabilities): bool
+    {
         $loader = new ReflectionClass(OperationKinds::class);
         if (! $loader->hasMethod('supports')) {
             return false;
@@ -19,6 +30,6 @@ final class FleetKitCapabilities
         $supports = $loader->getMethod('supports');
 
         return $supports->isPublic() && $supports->isStatic()
-            && array_all(['children', 'list_of', 'receipts'], static fn (string $capability): bool => $supports->invoke(null, $capability) === true);
+            && array_all($capabilities, static fn (string $capability): bool => $supports->invoke(null, $capability) === true);
     }
 }
