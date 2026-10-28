@@ -76,7 +76,7 @@ final readonly class GitHubTokenCache
     {
         $this->cache()->forget($this->key('installation', $repository));
 
-        foreach (CachedGitHubApi::Permissions as $permission) {
+        foreach ([...CachedGitHubApi::Permissions, 'actions'] as $permission) {
             $this->cache()->forget($this->key('token:'.$permission, $repository));
         }
     }

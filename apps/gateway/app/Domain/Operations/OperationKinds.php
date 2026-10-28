@@ -7,6 +7,7 @@ namespace App\Domain\Operations;
 use App\Domain\Instances\Deployment\AutomaticDeployEventOperation;
 use App\Domain\Instances\Deployment\InstanceDeployOperation;
 use App\Domain\Instances\Deployment\InstanceRollbackOperation;
+use App\Domain\Instances\Smoke\InstanceSmokeOperation;
 use App\Domain\Tasks\TaskAnalysisOperation;
 use App\Domain\Tasks\TaskCheckOperation;
 use App\Domain\Tasks\TaskParkOperation;
@@ -26,6 +27,8 @@ final readonly class OperationKinds
 
     /** The form of every target type, one lower-case word, such as `instance`. */
     public const string TargetTypePattern = '/\A[a-z][a-z0-9_]*\z/D';
+
+    public const string InstanceSmoke = 'instance.smoke';
 
     public const string InstanceDeploy = 'instance.deploy';
 
@@ -57,6 +60,7 @@ final readonly class OperationKinds
 
     /** @var array<string, class-string<OperationKind>> */
     private const array Kinds = [
+        self::InstanceSmoke => InstanceSmokeOperation::class,
         self::InstanceDeploy => InstanceDeployOperation::class,
         self::InstancePolicyEvent => AutomaticDeployEventOperation::class,
         self::InstanceRollback => InstanceRollbackOperation::class,

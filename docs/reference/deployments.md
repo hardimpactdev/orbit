@@ -2,12 +2,12 @@
 title: "Instance releases"
 description: "How production Instances build releases and select current code, and how development defaults deploy in their checkout."
 covers:
-  - apps/gateway/app/Domain/{Instances/Deployment/**,Instances/ProductionWebRootManager.php,Projects/*DeployStep*.php}
-  - apps/gateway/app/Actions/Instances/{DeployInstanceAction,DeployDefaultInstanceAction,StartInstanceDeployAction,StartInstanceRollbackAction,RunAutomaticDeploysAction,RollbackInstanceAction,RestartInstanceProcessesAction,InstanceDeploymentConfigResolver,UpdateInstanceAction,ListInstanceReleasesAction,ListInstanceDeploymentsAction,*InstanceDeployStep*Action}.php
-  - apps/gateway/app/Infrastructure/Instances/{RemoteProductionDeployment,RemoteDevelopmentDeployment,DevelopmentCheckoutProgram,ProductionApplicationPaths,ProductionWebRootProgram,RemoteProductionWebRootManager}.php
+  - apps/gateway/app/Domain/{Instances/Deployment/**,Instances/Smoke/**,Instances/ProductionWebRootManager.php,Projects/*DeployStep*.php}
+  - apps/gateway/app/Actions/Instances/{DeployInstanceAction,DeployDefaultInstanceAction,StartInstanceDeployAction,StartInstanceRollbackAction,RunAutomaticDeploysAction,RollbackInstanceAction,RestartInstanceProcessesAction,InstanceDeploymentConfigResolver,UpdateInstanceAction,ListInstanceReleasesAction,ListInstanceDeploymentsAction,*InstanceSmoke*Action,*InstanceDeployStep*Action}.php
+  - apps/gateway/app/Infrastructure/Instances/{GitHubInstanceSmoke,SmokeArtifactEvidence,RemoteProductionDeployment,RemoteDevelopmentDeployment,DevelopmentCheckoutProgram,ProductionApplicationPaths,ProductionWebRootProgram,RemoteProductionWebRootManager}.php
   - apps/gateway/app/Console/Commands/AutoDeployCommand.php
   - apps/agent/src/commands/{production,production_tests,production_home,production_home_tests,deploy_step}.rs
-  - apps/gateway/app/Http/{Controllers/Api/{InstanceDeploymentsController,InstanceDeployStepsController,InstanceReleasesController,InstanceRollbacksController,ProjectDevelopmentDeployStepsController},Requests/Projects/*ProjectDevelopmentDeployStepRequest}.php
+  - apps/gateway/app/Http/{Controllers/Api/{InstanceSmokeController,InstanceDeploymentsController,InstanceDeployStepsController,InstanceReleasesController,InstanceRollbacksController,ProjectDevelopmentDeployStepsController},Requests/Projects/*ProjectDevelopmentDeployStepRequest}.php
   - apps/gateway/{app/{Models/{InstanceDeployment,InstanceDeployStep,ProjectDevelopmentDeployStep},Data/Instances/InstanceDeploymentData}.php,database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_01_05_000000_add_caller_node_id_to_instance_deployments}.php}
   - packages/php-sdk/src/{Requests/Projects/*DevelopmentDeployStep*,Responses/{Projects/*DevelopmentDeployStep*,Deployments/InstanceDeploymentResponse}}.php
 ---
@@ -551,8 +551,62 @@ The production home exists before the first release is selected. Deployment and 
 
 ## Production smoke
 
-Swamp can opt a Project into production smoke after a successful production deploy. The Gateway exposes the selected release and dispatches the repository's own GitHub Actions browser-test workflow against its public HTTPS origin. This feature adds no schedule or opt-in and does not block deploys, roll back, repair, resume or merge. Swamp owns baseline admission, deadlines and acceptance policy. The [wire contract for production smoke](https://github.com/hardimpactdev/orbit-swamp/blob/4b99af2784625af3756751d9c68120a88d975d5b/docs/production-smoke-contract.md) defines the paired service fields.
+Swamp can opt a Project into production smoke after a successful production deploy. The Gateway exposes the selected release and dispatches the repository's own GitHub Actions browser-test workflow against its public HTTPS origin. This feature adds no schedule or opt-in and does not block deploys, roll back, repair, resume or merge. Swamp owns baseline admission, deadlines and acceptance policy. This page owns the Gateway wire contract. The private [Swamp implementation reference](https://github.com/hardimpactdev/orbit-swamp/blob/main/docs/production-smoke-contract.md) is supporting material.
 
 `GET /api/v1/instances/{instance}/smoke/context` and MCP `instance-smoke-context` require Gateway Node access. They return `instance_id`, `project_id`, `repository_url`, `production`, `base_urls`, `selected` and `retained_releases`. Context reads the actual selected retained release on the Node and matches a successful deploy or rollback history row. `selected` is null without matching evidence; otherwise it contains `deployment_id`, the full 40-character `commit` and `release`. A production Instance must be active on an active Node with an active app-prod role and no active app-dev role. URLs are HTTPS origins of active public Project-owned Routes targeting that Instance. A development Instance cannot admit smoke.
 
 The complete feature ships as a pair with [orbit-swamp#52](https://github.com/hardimpactdev/orbit-swamp/pull/52). The context endpoint is read-only and works without dispatch permission. Before opt-in, the Gateway operator must complete the [GitHub App permission upgrade](/reference/github-app#production-smoke-permission). No live registration, installation or Project setting changes during release preparation.
+
+### Dispatch and receipt
+
+`POST /api/v1/instances/{instance}/smoke` and MCP `instance-smoke` require Gateway Node access and an `Idempotency-Key`. The JSON object has exactly `deployment_id`, `commit` (40 lowercase hex characters), `release`, `base_url` (an active Route HTTPS origin), `workflow` (`.github/workflows/<name>.yml` or `.yaml`) and `ref` (the workflow's Git ref). A missing repository or App installation is `422 instance.smoke_invalid`; GitHub outages are `503 instance.smoke_github_unavailable`. Invalid input, ownership, eligibility or missing Actions write returns `422 instance.smoke_invalid`. A changed selected deployment returns `409 instance.smoke_selection_changed`. Other access, queue and idempotency errors keep their existing codes. Admission binds the authenticated caller, Instance and full Request, plus the repository and Route. It returns `202` with an `instance.smoke` Operation targeting `instance_smoke`/Instance ID, separate from the deploy lock.
+
+The Gateway rechecks selection before its first send, resolves the workflow identity and workflow-ref SHA separately from the tested commit, then records send intent before the GitHub POST. It never retries a send with recorded intent, including after a lost reply or worker restart. GitHub receives only `commit`, `deployment_id` and `base_url`. Waiting releases the queue worker. Bounded reads reconcile exactly one workflow_dispatch run matching the workflow, resolved ref SHA, deployment/SHA run name and admission time. Missing or ambiguous matches stay unresolved.
+
+`GET /api/v1/instances/{instance}/smoke/receipt?request_key=...` and MCP `instance-smoke-receipt` look up the original caller/Instance/key. They never dispatch. The response has `request_key`, `found`, `operation` and `smoke`; a missing receipt has false, null and null. A result repeats every original Request field and adds `state`, nullable `run_id`, `run_attempt`, `workflow_sha`, `run_url` and `conclusion`, nonnegative `tests`, `failures`, `errors`, `skipped`, redacted UTF-8 `output` (at most 64 KiB), and `artifacts` with name and safe GitHub URL. All fields are present, including nulls. Keyed operations and evidence are retained.
+
+A pass requires a completed successful run and matching attempt-specific target JSON and JUnit from the repository's `production-smoke-<run_id>-<attempt>` artifact, with positive tests and zero failures, errors and skips. The JSON binds checkout commit, deployment ID, URL, run ID and attempt. Unknown, expired, corrupt or mismatched evidence, uncertain dispatch, and missing or ambiguous runs report pending or unknown, never failed. Only JUnit failures or errors report failed. Clean JUnit with a failure, timed_out or cancelled GitHub conclusion reports unknown with `instance.smoke_run_unsuccessful` on the Operation. Skipped-only or empty test evidence is unknown.
+
+The Gateway reports evidence. Swamp alone enforces its original deadline, missing-result policy and fresh selection check; new selection or configuration never rewrites recorded evidence.
+
+A new admission for another deployment requests cancellation of any older non-terminal smoke on that Instance and retains its receipt as unknown. A running read honours cancellation at its next boundary. Until that holder yields, admission returns `409 operation.target_busy`; Swamp retries the identical key and body on the follow-up observation, after the native ten-second wait. A busy refusal never means that tests failed. Preparing a send retries at most three times before intent exists and refreshes the workflow ref SHA on each attempt. A definite dispatch refusal reports unknown immediately with `instance.smoke_dispatch_refused`; an uncertain send is never repeated.
+
+Artifact transport outages remain pending until a later read or the observation deadline. Digest, archive and schema mismatches are terminal unknown with `instance.smoke_evidence_invalid`. The Gateway allows 60 seconds of clock skew when matching creation time.
+
+The repository workflow must name its run `Smoke <deployment_id> <commit>` and publish `production-smoke-<run_id>-<run_attempt>`. Its zip contains `storage/framework/testing/smoke-target.json` and `storage/framework/testing/smoke.xml`. Target JSON string fields are `commit`, `deployment_id`, `base_url`, `run_id` and `run_attempt`. JUnit must be UTF-8 without a document type or external entities. Output is stored once in the retained observation; step and Operation results contain only state metadata.
+
+### Wire contract and errors
+
+All three endpoints require Gateway Node access and use the normal `{data, meta}` envelope. POST requires `Idempotency-Key`. IDs and counts are integers, SHA values have 40 lowercase hex characters, and every field below is present, including nulls. `OperationData` is the [operation record](/reference/operations#the-record), including its bound input, target and error code.
+
+```typescript
+type Selection = { deployment_id: number; commit: string; release: string };
+type Context = {
+  instance_id: number; project_id: number; repository_url: string;
+  production: boolean; base_urls: string[];
+  selected: Selection | null; retained_releases: string[];
+};
+type Request = Selection & { base_url: string; workflow: string; ref: string };
+type Result = Request & {
+  state: "pending" | "passed" | "failed" | "unknown";
+  run_id: number | null; run_attempt: number | null; workflow_sha: string | null;
+  run_url: string | null; conclusion: string | null;
+  tests: number; failures: number; errors: number; skipped: number;
+  output: string; artifacts: { name: string; url: string }[];
+};
+type Receipt = {
+  request_key: string; found: boolean;
+  operation: OperationData | null; smoke: Result | null;
+};
+```
+
+Observation ends 720 seconds after admission: Swamp's 600-second budget plus 120 seconds of queue slack. GitHub rate-limit responses, including primary and secondary 403 limits, stay pending. Other 401/403 responses end unknown with `instance.smoke_github_auth`. The Gateway reuses the encrypted cached Actions-read credential across polls. Invalid JUnit reports expose zero counts. Inactive workflows, path mismatches and refs without a full SHA end immediately with `instance.smoke_invalid` and a safe reason.
+
+| Status or outcome | Code | Meaning |
+| --- | --- | --- |
+| 422 admission refusal | `instance.smoke_invalid` | Invalid target/configuration, missing repository/installation or Actions write |
+| 503 admission refusal | `instance.smoke_github_unavailable` | Retryable GitHub outage; no operation admitted |
+| 409 admission refusal | `operation.target_busy` | Prior holder has not yielded; retry the identical admission |
+| Unknown receipt | `instance.smoke_run_unsuccessful` | Clean JUnit with an unsuccessful GitHub conclusion |
+| Unknown receipt | `instance.smoke_github_auth` | GitHub denied a read without rate-limit evidence |
+| Unknown receipt | `instance.smoke_observation_expired` | The 720-second observation limit expired |

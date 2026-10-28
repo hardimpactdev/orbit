@@ -15,5 +15,7 @@ final class InstanceSmokeContextData extends Data
      * @param  list<string>  $baseUrls
      * @param  list<string>  $retainedReleases
      */
-    public function __construct(public int $instanceId, public int $projectId, public string $repositoryUrl, public bool $production, public array $baseUrls, public ?InstanceSmokeSelectionData $selected, public array $retainedReleases) {}
+    public function __construct(public int $instanceId, public int $projectId, public string $repositoryUrl,
+        public bool $production, public array $baseUrls, public ?InstanceSmokeSelectionData $selected,
+        public array $retainedReleases) {}
 }

@@ -665,6 +665,7 @@ DEFINITION_ROUTES = {
     'ProjectRuntimeDefinitionsController@scheduleDestroy': 'Remove a Schedule definition',
 }
 SUMMARIES = {
+    'instance:smoke:context': 'Read production smoke context', 'instance:smoke': 'Start production smoke', 'instance:smoke:receipt': 'Read a production smoke receipt',
     'instance:transfer': 'Transfer an Instance',
     'gateway:status': 'Show Gateway status', 'gateway:trust': 'Fetch the root CA certificate', 'gateway:desired-fleet-state': 'Show the desired fleet state',
     'node:list': 'List Nodes', 'node:show': 'Show a Node', 'node:add': 'Add a Node', 'node:remove': 'Remove a Node', 'node:settings': 'Update Node settings',
@@ -730,6 +731,9 @@ SUMMARIES = {
 }
 DESCRIPTIONS = {
     'tasks:park': 'Starts keyed tasks.park for an idle external group with an open published PR. Requires Gateway access, an empty body, and Idempotency-Key. Refuses preview, assistance, open children, workspace leases or mismatched workspace ownership with tasks.park_refused (409). Moves the group to waiting_for_review and preserves its workspace. Succeeds only after the provider confirms stopped power; missing, transitional or still-running guests fail. Result contains group_id, task_vm_id, instance_id, status and power. Retry a lost reply with the same key. See /reference/tasks#park-an-external-group-for-review.',
+    'instance:smoke:context': 'Reads actual retained release selection, successful deployment history and active Project Route origins. Requires Gateway access; never dispatches.',
+    'instance:smoke': 'Starts instance.smoke with a required caller-bound key, full Request and separate instance_smoke target. Requires an active production Instance and its Route, selected deployment and accepted Actions write permission. Records send intent before GitHub and never repeats an uncertain send. See /reference/deployments#production-smoke.',
+    'instance:smoke:receipt': 'Reads retained evidence for the original caller, Instance and key. Never dispatches. Missing, uncertain or ambiguous execution stays pending or unknown, never failed. Only JUnit failures or errors report failed; clean JUnit with an unsuccessful run is unknown. Swamp owns missing-result policy and baseline deadlines.',
     'instance:update': 'Update a production Instance deployment branch or shared paths. shared_paths replaces the list; null restores the Project-type default and an empty list disables sharing. Applies to the next deployment.',
     'gateway:trust': 'Returns the PEM-encoded Orbit root certificate and its SHA-256 fingerprint so a client can pin it before it trusts the Gateway. This endpoint needs no WireGuard identity.',
     'gateway:status': 'Returns the Gateway name, version, and status, and the release the Gateway runs from. This endpoint needs no WireGuard identity. For an active WireGuard peer it also returns `auto_release`, whether automatic releases are enabled or paused, and `desired_fleet_state`, the object `gateway:desired-fleet-state` returns, as last cached; it is null until the state is resolved and for any other caller. This endpoint never waits for Git or GitHub.',
@@ -1241,6 +1245,14 @@ def ref(cls):
         for key, prop in schema_fields(d):
             props[key] = prop_schema(prop)
         components[name] = {'type': 'object', 'properties': props}
+        if cls in ('InstanceSmokeContextData', 'InstanceSmokeSelectionData', 'InstanceSmokeReceiptData', 'InstanceSmokeResultData'):
+            components[name]['required'] = list(props)
+        if cls == 'InstanceSmokeResultData':
+            props['state']['enum'] = ['pending', 'passed', 'failed', 'unknown']
+            for field in ('tests', 'failures', 'errors', 'skipped'):
+                props[field]['minimum'] = 0
+            props['output']['description'] = 'Redacted UTF-8 output, at most 64 KiB.'
+            props['artifacts']['items'] = {'type': 'object', 'required': ['name', 'url'], 'properties': {'name': {'type': 'string'}, 'url': {'type': 'string'}}}
     return {'$ref': f'#/components/schemas/{name}'}
 
 
@@ -1692,6 +1704,7 @@ RESPONSE_OVERRIDES = {
     }}},
 }
 CTRL_DATA_OVERRIDES = {
+    'InstanceSmokeController@receipt': ('InstanceSmokeReceiptData', False),
     'InstanceSmokeController@context': ('InstanceSmokeContextData', False),
     'InstanceDeploymentSourceController@head': ('DeploymentSourceHeadData', False),
     'InstanceDeploymentSourceController@commits': ('DeploymentSourceCommitsData', False),

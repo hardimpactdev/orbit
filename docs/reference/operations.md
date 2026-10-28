@@ -348,3 +348,9 @@ MCP has an experimental Tasks primitive for long tool calls. An operation alread
 ### Tracked task scripts
 
 [Tasks scripts](/reference/tasks#run-a-tracked-repository-script) use `workspace_ready` and `script` steps. The key is required. Replaying the same key precedes admission checks and returns the original receipt and bounded result, including after workspace removal. The existing target hold, lease, delayed reads, cancellation, and uncertain-ownership fences apply. Script completion grants no factory approval, check eligibility, or next-step scheduling.
+
+### Production smoke operations
+
+The [production smoke API](/reference/deployments#dispatch-and-receipt) starts `instance.smoke` with the separate `instance_smoke` target and a required caller-bound key. It never takes the Instance deploy lock. The durable send step records intent before GitHub and is resumable only as a read after that intent. Delayed read steps release the worker. Observation ends 720 seconds after admission (Swamp’s 600-second budget plus 120 seconds for queue delay), after which unresolved evidence is retained as unknown; this transport limit does not replace Swamp's baseline deadline.
+
+Cancellation stops observation and reports unknown; it never resends or cancels the GitHub run. Operation failures describe control-plane errors, while the smoke result independently distinguishes verified failed tests from pending or unknown execution evidence.
