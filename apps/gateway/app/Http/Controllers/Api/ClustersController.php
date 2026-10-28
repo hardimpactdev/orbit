@@ -5,12 +5,10 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Actions\Clusters\AttachClusterNodeAction;
-use App\Actions\Clusters\ClearClusterRouterAction;
 use App\Actions\Clusters\CreateClusterAction;
 use App\Actions\Clusters\DestroyClusterAction;
 use App\Actions\Clusters\DetachClusterNodeAction;
 use App\Actions\Clusters\ListClustersAction;
-use App\Actions\Clusters\SetClusterRouterAction;
 use App\Actions\Clusters\ShowClusterAction;
 use App\Actions\Clusters\UpdateClusterAction;
 use App\Data\Clusters\ClusterData;
@@ -106,31 +104,6 @@ final class ClustersController extends Controller
     ): JsonResponse {
         return response()->json([
             'data' => ClusterData::fromModel($action->execute($cluster, $node))->toArray(),
-            'meta' => $this->meta($request),
-        ]);
-    }
-
-    #[RequiresNodeAccess(ServingNode::Target)]
-    public function setRouter(
-        Request $request,
-        Cluster $cluster,
-        Node $node,
-        SetClusterRouterAction $action,
-    ): JsonResponse {
-        return response()->json([
-            'data' => ClusterData::fromModel($action->execute($cluster, $node))->toArray(),
-            'meta' => $this->meta($request),
-        ]);
-    }
-
-    #[RequiresNodeAccess(ServingNode::ClusterOwning)]
-    public function clearRouter(
-        ClusterDestructiveRequest $request,
-        Cluster $cluster,
-        ClearClusterRouterAction $action,
-    ): JsonResponse {
-        return response()->json([
-            'data' => ClusterData::fromModel($action->execute($cluster))->toArray(),
             'meta' => $this->meta($request),
         ]);
     }

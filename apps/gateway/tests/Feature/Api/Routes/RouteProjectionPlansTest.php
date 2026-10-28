@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Routes\AdmitRouteOperationAction;
+use App\Actions\Routes\AwaitRouteOperationAction;
 use App\Actions\Routes\RouteChildAdmission;
 use App\Actions\Routes\RouteMutationState;
 use App\Actions\Routes\RouteTargetState;
@@ -25,6 +26,7 @@ use App\Domain\Routes\RouteParentCommand;
 use App\Domain\Routes\RouteParentExecution;
 use App\Domain\Routes\RouteProjectionPlan;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -305,4 +307,108 @@ it('refuses a forged successful parent result even with a genuine final proof re
     $execution->assertCompletion($this->operation, OperationOutcome::succeeded([
         'ready' => true, 'route_id' => $this->route->id, 'retained_on_nodes' => [],
     ]));
+});
+
+it('retained Gateway callers return only the exact successful Route Operation and preserve failure evidence', function (): void {
+    $operation = Operation::query()->create(['kind' => 'route.update', 'target_type' => 'route', 'target_id' => $this->route->id,
+        'node_id' => $this->node->id, 'input' => ['route_id' => $this->route->id], 'status' => 'succeeded', 'sequence' => 1,
+        'result' => ['ready' => true, 'route_id' => $this->route->id], 'finished_at' => now()]);
+    $await = app(AwaitRouteOperationAction::class);
+    expect($await->route($operation)->id)->toBe($this->route->id);
+    $operation->update(['status' => 'failed', 'error_code' => 'route.workload_failed']);
+    expect(fn () => $await->execute($operation))->toThrow(ResourceOperationException::class, 'did not succeed');
+    expect($operation->fresh()->error_code)->toBe('route.workload_failed')->and($this->agents->calls)->toBe([]);
+});
+
+it('recovers an already cut-over replacement from publication or cleanup without replaying database cutover', function (string $checkpoint, string $mode): void {
+    $this->route->update(['status' => RouteStatus::Active]);
+    $candidate = app(RouteMutationState::class)->reserve($this->route, 'continued.private.test');
+    app(RouteMutationState::class)->cutover($this->route, $candidate);
+    $candidate->update(['replacement_step' => RouteReplacementStep::from($checkpoint)]);
+    $operation = Operation::query()->create(['kind' => 'route.update', 'target_type' => 'route', 'target_id' => $this->route->id,
+        'node_id' => $this->node->id, 'input' => ['route_id' => $this->route->id, 'mode' => 'replace_domain', 'candidate_route_id' => $candidate->id],
+        'status' => 'queued', 'sequence' => 1]);
+    $prepared = app(RouteParentCommand::class)->run($operation, ['action' => 'prepare']);
+    expect($prepared['mode'])->toBe($mode)
+        ->and(app(RouteParentExecution::class)->sequence($operation))->not->toContain('database-cutover', 'workload-certificate')
+        ->and($this->route->fresh()->status)->toBe(RouteStatus::Retiring)
+        ->and($candidate->fresh()->status)->toBe(RouteStatus::Activating)->and($this->agents->calls)->toBe([]);
+})->with(['after cutover' => ['database-cutover', 'replacement_after_cutover'], 'during cleanup' => ['cleanup', 'replacement_cleanup']]);
+
+it('recovers a committed target pool from stored database evidence without repeating prospective preparation', function (): void {
+    $this->node->roles()->delete();
+    $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+    $this->instance->update(['environment' => 'production', 'production_user' => 'orbit-proof', 'production_home' => '/home/orbit-proof', 'checkout_path' => '/home/orbit-proof/releases/initial']);
+    $proposal = new SetRouteTargetsData([$this->instance->id], []);
+    $source = Operation::query()->create(['kind' => 'route.target_set', 'target_type' => 'route', 'target_id' => $this->route->id, 'node_id' => $this->node->id,
+        'input' => ['route_id' => $this->route->id, 'mode' => 'targets', 'targets' => [$this->instance->id], 'dispositions' => [],
+            'target_instance_ids' => [$this->instance->id], 'previous_target_instance_ids' => [$this->instance->id], 'removed_instance_ids' => []],
+        'status' => 'failed', 'error_code' => 'caddy.publish_failed', 'sequence' => 1]);
+    $plan = app(RouteProjectionPlan::class)->targets($source, $this->route, $proposal);
+    $source->update(['state' => ['route_plan' => $plan, 'executor_runs' => ['stage-commit.database-committed' => ['result' => ['ready' => true]]]]]);
+    $this->route->update(['target_set_intent' => [...$proposal->toIntent(), 'preparation_operation_id' => $source->id], 'target_set_step' => 'database-committed']);
+    $next = Operation::query()->create(['kind' => 'route.target_set', 'target_type' => 'route', 'target_id' => $this->route->id, 'node_id' => $this->node->id,
+        'input' => [...$source->input, 'mode' => 'targets_recover', 'recovery_operation_id' => $source->id], 'status' => 'queued', 'sequence' => 2]);
+    $command = app(RouteParentCommand::class);
+    expect($command->run($next, ['action' => 'prepare'])['mode'])->toBe('targets_recover')
+        ->and(app(RouteParentExecution::class)->sequence($next))->not->toContain('target-workload-certificates', 'target-runtime-prepared');
+    $command->run($next, ['action' => 'open', 'stage' => 'database-committed']);
+    $command->run($next, ['action' => 'commit', 'stage' => 'database-committed']);
+    expect($this->route->targets()->pluck('instance_id')->all())->toBe([$this->instance->id])
+        ->and($this->route->fresh()->target_set_step)->toBe('database-committed')->and($this->agents->calls)->toBe([]);
+});
+
+it('refuses successful completion after rollback and preserves failed creation phase on the Route', function (): void {
+    $operation = Operation::query()->create(['kind' => 'route.converge', 'target_type' => 'route', 'target_id' => $this->route->id,
+        'node_id' => $this->node->id, 'input' => ['route_id' => $this->route->id], 'status' => 'running', 'sequence' => 1,
+        'state' => ['route_plan' => ['mode' => 'converge', 'route_id' => $this->route->id], 'route_active_stage' => 'workload-caddy']]);
+    $execution = app(RouteParentExecution::class);
+    $execution->assertCompletion($operation, OperationOutcome::failed('caddy.publish_failed'));
+    expect($this->route->fresh()->status)->toBe(RouteStatus::Failed)
+        ->and($this->route->fresh()->failed_step)->toBe('workload-caddy')
+        ->and($this->route->fresh()->error_code)->toBe('caddy.publish_failed');
+
+    $proof = ['ready' => true, 'route_id' => $this->route->id, 'retained_on_nodes' => []];
+    $operation->update(['state' => [...$operation->state, 'route_branch' => 'rollback', 'executor_runs' => ['route-proof' => ['result' => $proof]]]]);
+    expect(fn () => $execution->assertCompletion($operation, OperationOutcome::succeeded($proof)))
+        ->toThrow(ResourceOperationException::class, 'final state proof');
+    expect($this->agents->calls)->toBe([]);
+});
+
+it('keeps the original database proof until a recovery attempt commits its own phase', function (): void {
+    $proposal = new SetRouteTargetsData([$this->instance->id], []);
+    $plan = ['route_id' => $this->route->id, 'publication' => 'private', 'placements' => [], 'stages' => [], 'vacated_route_ids' => []];
+    $source = Operation::query()->create(['kind' => 'route.target_set', 'target_type' => 'route', 'target_id' => $this->route->id,
+        'node_id' => $this->node->id, 'input' => ['route_id' => $this->route->id], 'status' => 'failed', 'sequence' => 1,
+        'state' => ['route_plan' => $plan, 'executor_runs' => ['stage-commit.database-committed' => ['result' => ['ready' => true]]]]]);
+    $this->route->update(['target_set_intent' => [...$proposal->toIntent(), 'preparation_operation_id' => $source->id], 'target_set_step' => 'database-committed']);
+    $retry = Operation::query()->create(['kind' => 'route.target_set', 'target_type' => 'route', 'target_id' => $this->route->id,
+        'node_id' => $this->node->id, 'status' => 'running', 'sequence' => 2,
+        'input' => ['route_id' => $this->route->id, 'mode' => 'targets_recover', 'recovery_operation_id' => $source->id,
+            'targets' => [$this->instance->id], 'dispositions' => []]]);
+
+    app(RouteParentCommand::class)->run($retry, ['action' => 'prepare']);
+    $retry->update(['status' => 'failed']);
+    expect(app(RouteTargetState::class)->recovery($this->route->fresh())->id)->toBe($source->id)
+        ->and($this->route->fresh()->target_set_intent['preparation_operation_id'])->toBe($source->id)
+        ->and($this->agents->calls)->toBe([]);
+});
+
+it('refuses Router cleanup until the recorded DNS grace period elapses', function (): void {
+    $this->freezeTime();
+    $operation = Operation::query()->create(['kind' => 'cluster.router_set', 'target_type' => 'cluster_router', 'target_id' => 42,
+        'node_id' => $this->node->id, 'input' => [], 'status' => 'running', 'sequence' => 1,
+        'state' => ['route_plan' => ['mode' => 'router_set', 'stages' => [], 'candidate_role_id' => null, 'old_role_ids' => []], 'router_dns_moved_at' => now()->toIso8601String(),
+            'route_completed_stages' => array_fill_keys(['baseline', 'router-certificate', 'firewall-policy', 'workload-verify', 'router-caddy', 'dns-publication', 'database', 'prune-dns'], true)]]);
+    $command = app(ClusterRouterParentCommand::class);
+    expect($command->run($operation, ['action' => 'open', 'stage' => 'await-old-dns-expiry'])['wait_seconds'])->toBe(31);
+    expect(fn () => $command->run($operation, ['action' => 'commit', 'stage' => 'await-old-dns-expiry']))
+        ->toThrow(ResourceOperationException::class, 'DNS grace period');
+    expect(fn () => $command->run($operation, ['action' => 'open', 'stage' => 'withdraw-old-sites']))
+        ->toThrow(ResourceOperationException::class, 'preceding Router phase');
+
+    $this->travel(31)->seconds();
+    expect($command->run($operation, ['action' => 'commit', 'stage' => 'await-old-dns-expiry']))->toBe(['ready' => true, 'stage' => 'await-old-dns-expiry']);
+    expect($command->run($operation, ['action' => 'open', 'stage' => 'withdraw-old-sites'])['opened'])->toBeTrue()
+        ->and($this->agents->calls)->toBe([]);
 });

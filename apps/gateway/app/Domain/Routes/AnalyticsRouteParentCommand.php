@@ -12,6 +12,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Models\Route;
 use App\Support\ValidatedData;
+use Illuminate\Support\Facades\DB;
 
 /** DB-only state transitions, checked against B's canonical child proof. */
 final readonly class AnalyticsRouteParentCommand implements OperationGatewayCommand
@@ -26,6 +27,14 @@ final readonly class AnalyticsRouteParentCommand implements OperationGatewayComm
     }
 
     public function run(Operation $operation, #[\SensitiveParameter] array $input): array
+    {
+        return DB::transaction(fn (): array => $this->runOwned($operation, $input));
+    }
+
+    /** @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    private function runOwned(Operation $operation, #[\SensitiveParameter] array $input): array
     {
         if (! in_array($operation->kind, AnalyticsRouteParentExecution::Kinds, true)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'This is not an analytics Route parent.', 422);
@@ -87,7 +96,9 @@ final readonly class AnalyticsRouteParentCommand implements OperationGatewayComm
                 if ($route->hasPlacementTransition() && $this->expiry->remainingAfter($route->transition_dns_moved_at) > 0) {
                     throw new ResourceOperationException('route.dns_answers_live', 'Keep the old host serving until its private DNS answers expire.', 409);
                 }
-                $route->update(['replacement_step' => RouteReplacementStep::Cleanup]);
+                if ($route->hasPlacementTransition()) {
+                    $route->update(['replacement_step' => RouteReplacementStep::Cleanup]);
+                }
             }
             if ($stage === 'public-activated' && $route !== null) {
                 $route->update(['status' => RouteStatus::Activating, 'replacement_step' => RouteReplacementStep::PublicActivated]);

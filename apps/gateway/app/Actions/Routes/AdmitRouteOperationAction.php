@@ -109,12 +109,24 @@ final readonly class AdmitRouteOperationAction
         return DB::transaction(function () use ($route, $proposal, $caller, $requestId): Operation {
             $route = Route::query()->with('targets')->lockForUpdate()->findOrFail($route->id);
             $this->targetGuard->assertCompatibleIntent($route, $proposal);
-            $this->targetGuard->assertProposal($route, $proposal);
+            $this->targetGuard->assertMutable($route);
+            $input = ['targets' => $proposal->targetIds, 'dispositions' => $proposal->toIntent()['dispositions']];
+            if ($this->targets->isCompletedNoop($route, $proposal)) {
+                return $this->start('route.target_set', $route, [...$input, 'mode' => 'state_only'], $caller, $requestId);
+            }
+            $recovery = null;
+            if ($this->targets->committed($route)) {
+                $this->targets->assertCommitted($route, $proposal);
+                $recovery = $this->targets->recovery($route);
+            } else {
+                $this->targetGuard->assertProposal($route, $proposal);
+            }
             WebSocketRouteSelection::assertMutable($route);
             $this->targets->reserve($route, $proposal);
 
-            return $this->start('route.target_set', $route, ['mode' => 'targets',
-                'targets' => $proposal->targetIds, 'dispositions' => $proposal->toIntent()['dispositions']], $caller, $requestId);
+            return $this->start('route.target_set', $route, [...$input, 'mode' => $recovery === null ? 'targets' : 'targets_recover',
+                ...($recovery === null ? [] : ['recovery_operation_id' => $recovery->id,
+                    'previous_target_instance_ids' => $recovery->input['previous_target_instance_ids']])], $caller, $requestId);
         });
     }
 

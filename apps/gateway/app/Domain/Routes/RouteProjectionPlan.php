@@ -6,8 +6,6 @@ namespace App\Domain\Routes;
 
 use App\Actions\Routes\RouteTargetState;
 use App\Data\Routes\SetRouteTargetsData;
-use App\Domain\Certificates\LeafCertificateSigner;
-use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -28,8 +26,7 @@ use Illuminate\Database\Eloquent\Builder;
 /** Exact child intent from stored placement. Swamp owns the stage order and recovery. */
 final readonly class RouteProjectionPlan
 {
-    public function __construct(private ManagedUserAccountResolver $accounts, private LeafCertificateSigner $signer,
-        private IngressSiteRepository $ingress, private DevelopmentSiteRepository $sites) {}
+    public function __construct(private IngressSiteRepository $ingress, private DevelopmentSiteRepository $sites) {}
 
     /** @return array<string, mixed> */
     public function converge(Operation $operation, Route $route, ?Instance $selected = null): array
@@ -52,7 +49,7 @@ final readonly class RouteProjectionPlan
             if (RouteCertificateStaging::workload($route)) {
                 $scope = "app-instance-{$instance->id}-hostname-change";
             }
-            $this->leaf($stages, 'workload-certificate', $operation, $instance->node, $scope, $route->domain);
+            $this->leaf($stages, 'workload-certificate', $instance->node, $scope, $route->domain);
             $production = $instance->placedOnAppProd();
             if ($production) {
                 $this->child($stages, 'workload-firewall', 'route.workload_firewall', $instance->node_id, ['route_id' => $route->id, 'instance_id' => $instance->id], (string) $instance->id);
@@ -74,13 +71,13 @@ final readonly class RouteProjectionPlan
                 $this->child($stages, 'workload-verified', 'route.workload_verify', $router->id,
                     ['route_id' => $route->id, 'instance_id' => $instance->id], "instance-{$instance->id}");
                 $scope = "route-{$route->id}-router".(RouteCertificateStaging::router($route) ? '-hostname-change' : '');
-                $this->leaf($stages, 'router-certificate', $operation, $router, $scope, $route->domain);
+                $this->leaf($stages, 'router-certificate', $router, $scope, $route->domain);
                 $this->caddy($stages, 'router-caddy', $router->id, $route->id);
             }
         }
         if ($route->isCustomProxy() && $route->node_id !== null) {
             $node = Node::query()->findOrFail($route->node_id);
-            $this->leaf($stages, 'workload-certificate', $operation, $node, "route-{$route->id}", $route->domain);
+            $this->leaf($stages, 'workload-certificate', $node, "route-{$route->id}", $route->domain);
             $this->caddy($stages, 'workload-caddy', $node->id, $route->id);
         }
         $this->dns($stages, 'dns-published', $route->id);
@@ -100,18 +97,18 @@ final readonly class RouteProjectionPlan
             $instance->loadMissing('node');
             $destination->loadMissing('cluster.routerAssignment.node');
             $relations[] = ['route_id' => $destination->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id];
-            $this->leaf($stages, 'target-workload-certificates', $operation, $instance->node, "app-instance-{$instance->id}-hostname-change", $destination->domain);
+            $this->leaf($stages, 'target-workload-certificates', $instance->node, "app-instance-{$instance->id}-hostname-change", $destination->domain);
             $this->child($stages, 'target-runtime-prepared', 'instance.prepare_php_runtime', $instance->node_id, ['instance_id' => $instance->id], (string) $instance->id);
             $this->caddy($stages, 'target-workload-caddy', $instance->node_id, $destination->id);
             $router = $destination->cluster?->routerAssignment?->node;
             if ($router instanceof Node && $router->id !== $instance->node_id) {
-                $this->leaf($stages, 'target-router-certificates', $operation, $router, "route-{$destination->id}-router", $destination->domain);
+                $this->leaf($stages, 'target-router-certificates', $router, "route-{$destination->id}-router", $destination->domain);
                 $this->child($stages, 'target-firewall-prepared', 'route.lan_converge', $instance->node_id,
                     ['route_id' => $destination->id, 'instance_id' => $instance->id, 'router_node_id' => $router->id], "route-{$destination->id}-instance-{$instance->id}");
                 $this->child($stages, 'target-workload-verified', 'route.workload_verify', $router->id,
                     ['route_id' => $destination->id, 'instance_id' => $instance->id], "route-{$destination->id}-instance-{$instance->id}");
             }
-            $this->leaf($stages, 'target-live-certificates', $operation, $instance->node, "app-instance-{$instance->id}", $destination->domain);
+            $this->leaf($stages, 'target-live-certificates', $instance->node, "app-instance-{$instance->id}", $destination->domain);
             $this->caddy($stages, 'target-live-caddy', $instance->node_id, $destination->id);
             $this->removeLeaf($stages, 'target-staging-cleanup', $instance->node, "app-instance-{$instance->id}-hostname-change");
             $this->caddy($stages, 'rollback-preparations-caddy', $instance->node_id, $destination->id);
@@ -194,7 +191,7 @@ final readonly class RouteProjectionPlan
                 }
                 if ($remote && $renders) {
                     $scope = "route-{$route->id}-router".(RouteCertificateStaging::router($route) ? '-hostname-change' : '');
-                    $this->leaf($stages, 'router-certificate', $operation, $candidate->node, $scope, $route->domain);
+                    $this->leaf($stages, 'router-certificate', $candidate->node, $scope, $route->domain);
                 }
                 $this->caddy($stages, 'router-caddy', $candidate->node_id, $route->id);
                 $this->caddy($stages, 'withdraw-candidate-sites', $candidate->node_id, $route->id);
@@ -349,7 +346,7 @@ final readonly class RouteProjectionPlan
             if ($operation->node_id !== $host->id) {
                 throw new ResourceOperationException('operation.execution_forbidden', 'The analytics Operation must use its stored serving Node.', 422);
             }
-            $this->leaf($stages, 'host-certificate', $operation, $host, "route-{$route->id}-router", $route->domain);
+            $this->leaf($stages, 'host-certificate', $host, "route-{$route->id}-router", $route->domain);
             if ($operation->kind === 'route.analytics_publish') {
                 $this->caddy($stages, 'host-caddy', $host->id, $route->id);
                 $this->dns($stages, 'dns-published', $route->id);
@@ -379,7 +376,7 @@ final readonly class RouteProjectionPlan
                 $this->child($cleanup, $stage, 'instance.sync_environment', $instance->node_id,
                     ['instance_id' => $instance->id, 'route_domain' => $domain], (string) $instance->id);
             }
-            $this->leaf($cleanup, 'prepare-cleanup', $operation, $instance->node, "app-instance-{$instance->id}", $candidate->domain);
+            $this->leaf($cleanup, 'prepare-cleanup', $instance->node, "app-instance-{$instance->id}", $candidate->domain);
             $this->caddy($cleanup, 'cleanup-caddy', $instance->node_id, $candidate->id);
             $this->removeLeaf($cleanup, 'cleanup-certificates', $instance->node, "app-instance-{$instance->id}-hostname-change");
             $this->caddy($cleanup, 'rollback-caddy', $instance->node_id, $candidate->id);
@@ -387,7 +384,7 @@ final readonly class RouteProjectionPlan
         }
         $router = $candidate->cluster?->routerAssignment?->node;
         if ($router instanceof Node) {
-            $this->leaf($cleanup, 'prepare-cleanup', $operation, $router, "route-{$candidate->id}-router", $candidate->domain);
+            $this->leaf($cleanup, 'prepare-cleanup', $router, "route-{$candidate->id}-router", $candidate->domain);
         }
         foreach ([$current, $candidate] as $placement) {
             $placement->loadMissing('cluster.routerAssignment.node');
@@ -565,12 +562,10 @@ final readonly class RouteProjectionPlan
     }
 
     /** @param array<string, array<string, array<string, mixed>>> $stages */
-    private function leaf(array &$stages, string $stage, Operation $operation, Node $node, string $scope, string $domain): void
+    private function leaf(array &$stages, string $stage, Node $node, string $scope, string $domain): void
     {
-        $account = $this->accounts->resolve($node);
-        $this->child($stages, $stage, 'certificate.converge', $node->id, ['scope' => $scope, 'domain' => $domain,
-            'version' => substr(hash('sha256', "{$operation->id}:{$stage}:{$node->id}:{$scope}"), 0, 16),
-            'root_hash' => hash('sha256', $this->signer->rootCertificate()), 'user' => $account->user, 'home' => $account->home], "node-{$node->id}-{$scope}");
+        $this->child($stages, $stage, 'certificate.converge', $node->id,
+            ['scope' => $scope, 'domain' => $domain], "node-{$node->id}-{$scope}");
     }
 
     /** @param array<string, array<string, array<string, mixed>>> $stages */
@@ -585,7 +580,7 @@ final readonly class RouteProjectionPlan
     private function removeLeaf(array &$stages, string $stage, Node $node, string $scope): void
     {
         $this->child($stages, $stage, 'certificate.remove', $node->id,
-            ['scope' => $scope, 'home' => $this->accounts->resolve($node)->home], "node-{$node->id}-{$scope}");
+            ['scope' => $scope], "node-{$node->id}-{$scope}");
     }
 
     /** @param array<string, array<string, array<string, mixed>>> $stages

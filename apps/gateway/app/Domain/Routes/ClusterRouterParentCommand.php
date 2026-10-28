@@ -13,6 +13,7 @@ use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 /** Cluster state and proof only. Baselines, sites, certificates and DNS are child Operations. */
 final readonly class ClusterRouterParentCommand implements OperationGatewayCommand
@@ -28,6 +29,14 @@ final readonly class ClusterRouterParentCommand implements OperationGatewayComma
     }
 
     public function run(Operation $operation, #[\SensitiveParameter] array $input): array
+    {
+        return DB::transaction(fn (): array => $this->runOwned($operation, $input));
+    }
+
+    /** @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    private function runOwned(Operation $operation, #[\SensitiveParameter] array $input): array
     {
         if (! in_array($operation->kind, ClusterRouterParentExecution::Kinds, true)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'This is not a Cluster Router parent.', 422);

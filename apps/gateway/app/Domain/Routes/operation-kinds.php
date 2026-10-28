@@ -139,7 +139,7 @@ if (OperationKinds::supports('children') && OperationKinds::supports('list_of'))
             'completion_contract' => ['step' => 'route-proof', 'transport' => 'gateway',
                 'name' => $router ? 'route.cluster-router' : 'route.parent', 'result' => ['ready' => true]],
             'result_fields' => ['prepared', 'mode', 'production', 'public', 'remote_router', 'web_root', 'targeted', 'opened', 'ready', 'stage',
-                'route_id', 'cluster_id', 'wait_seconds', 'activate_public', 'withdraw_public', 'changed', 'route_branch', 'failure_code', 'error_code',
+                'route_id', 'cluster_id', 'wait_seconds', 'activate_public', 'withdraw_public', 'changed', 'metrics', 'route_branch', 'failure_code', 'error_code',
                 ['name' => 'child_phases', 'max' => 10000, 'list_of' => ['stage' => 'string', 'key' => 'string']],
                 ['name' => 'retained_on_nodes', 'max' => 128, 'list_of' => ['node_id' => 'int', 'node' => 'string',
                     'steps' => ['type' => 'list', 'items' => 'string', 'max' => 32]]]],

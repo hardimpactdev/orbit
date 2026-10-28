@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Domain\Routes;
 
+use App\Domain\Operations\OperationOutcome;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
+use App\Models\Route;
 use App\Support\ValidatedData;
 
 final readonly class RouteParentExecution extends RoutePhaseExecution
@@ -40,6 +42,8 @@ final readonly class RouteParentExecution extends RoutePhaseExecution
         }
 
         $sequence = match ($plan['mode'] ?? null) {
+            'targets_recover' => ['database-committed', 'environment-synchronized', 'target-live-certificates', 'target-live-caddy',
+                'router-published', 'vacated-published', 'target-staging-cleanup', 'removal', 'completed'],
             'targets' => ['target-workload-certificates', 'target-runtime-prepared', 'target-workload-caddy', 'target-router-certificates',
                 'target-firewall-prepared', 'target-workload-verified', 'database-committed', 'environment-synchronized',
                 'target-live-certificates', 'target-live-caddy', 'router-published', 'vacated-published', 'target-staging-cleanup', 'removal', 'completed'],
@@ -54,6 +58,9 @@ final readonly class RouteParentExecution extends RoutePhaseExecution
                 'dns-published', ...($public ? ['ingress-certificate', 'public-edge-verified', 'public-activated', 'ingress-firewall'] : []),
                 ...(! $production && ($plan['web_root'] ?? false) ? ['synchronize-web-root-urls'] : []), 'activate-route'],
             'withdraw' => ['dns', 'caddy', ...(($plan['targeted'] ?? false) ? ['php'] : []), 'certificates', 'firewall', 'record'],
+            'replacement_after_cutover' => [...($public ? ['public-edge-verified', 'public-activated', 'ingress-firewall'] : []),
+                'prepare-cleanup', 'cleanup-caddy', 'cleanup-certificates', 'synchronize-current-environment', 'verify-current-workload', 'complete-replacement'],
+            'replacement_cleanup' => ['prepare-cleanup', 'cleanup-caddy', 'cleanup-certificates', 'synchronize-current-environment', 'verify-current-workload', 'complete-replacement'],
             'replacement' => ['workload-certificate', 'workload-caddy', 'router-certificate', 'firewall-policy', 'workload-verified', 'router-caddy',
                 ...($public ? ['ingress-certificate', 'public-edge-verified'] : []), $production ? 'environment-synchronized' : 'laravel-url',
                 'dns-published', 'database-cutover', ...($public ? ['public-activated', 'ingress-firewall'] : []),
@@ -65,7 +72,27 @@ final readonly class RouteParentExecution extends RoutePhaseExecution
             default => throw new ResourceOperationException('route.plan_invalid', 'The prepared Route mode is not supported.', 409),
         };
 
-        return [...$sequence, ...(in_array($operation->kind, ['route.update', 'route.destroy', 'route.target_set', 'route.target_unset'], true) ? ['metrics-reconciled'] : [])];
+        return [...$sequence, ...(($plan['metrics'] ?? false) ? ['metrics-reconciled'] : [])];
+    }
+
+    public function assertCompletion(Operation $operation, OperationOutcome $outcome): void
+    {
+        parent::assertCompletion($operation, $outcome);
+        if ($outcome->status->value !== 'failed') {
+            return;
+        }
+        $plan = ValidatedData::object($operation->state['route_plan'] ?? []);
+        $id = $plan['candidate_route_id'] ?? $plan['route_id'] ?? null;
+        $route = is_int($id) ? Route::query()->find($id) : null;
+        if ($route === null) {
+            return;
+        }
+        $attributes = ['failed_step' => $operation->state['route_active_stage'] ?? 'preparation',
+            'error_code' => $outcome->errorCode ?? 'route.child_failed'];
+        if (($plan['mode'] ?? null) === 'converge' && in_array($route->status, [RouteStatus::Pending, RouteStatus::Activating], true)) {
+            $attributes['status'] = RouteStatus::Failed;
+        }
+        $route->update($attributes);
     }
 
     /** @return list<string> */

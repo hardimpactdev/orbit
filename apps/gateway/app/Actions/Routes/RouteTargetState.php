@@ -6,11 +6,14 @@ namespace App\Actions\Routes;
 
 use App\Data\Routes\RouteTargetDispositionData;
 use App\Data\Routes\SetRouteTargetsData;
+use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteTargetSetGuard;
 use App\Domain\Routes\RouteTargetSetStep;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
 use App\Models\Instance;
+use App\Models\Operation;
 use App\Models\Route;
 use App\Models\RouteTarget;
 use Illuminate\Support\Facades\DB;
@@ -19,6 +22,49 @@ use Illuminate\Support\Facades\DB;
 final readonly class RouteTargetState
 {
     public function __construct(private RouteTargetSetGuard $guard) {}
+
+    public function committed(Route $route): bool
+    {
+        return in_array($route->target_set_step, ['database-committed', 'environment-synchronized', 'router-published', 'vacated-published', 'removal'], true);
+    }
+
+    public function recovery(Route $route): Operation
+    {
+        $id = $route->target_set_intent['preparation_operation_id'] ?? null;
+        $previous = is_int($id) ? Operation::query()->find($id) : null;
+        if ($previous === null || $previous->kind !== 'route.target_set' || $previous->target_type !== 'route' || $previous->target_id !== $route->id
+            || ! is_array($previous->state['route_plan'] ?? null)
+            || (RouteExecutionProof::result($previous, 'stage-commit.database-committed')['ready'] ?? false) !== true) {
+            throw new ResourceOperationException('route.target_set_conflict', 'The committed target set needs its recorded preparation and database proof.', 409);
+        }
+
+        return $previous;
+    }
+
+    public function assertCommitted(Route $route, SetRouteTargetsData $proposal): void
+    {
+        $current = $route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->all();
+        $expected = $proposal->targetIds;
+        foreach ($proposal->dispositions as $disposition) {
+            $instance = Instance::query()->find($disposition->instanceId);
+            if ($instance === null) {
+                if ($disposition->remove) {
+                    continue;
+                }
+                throw new ResourceOperationException('route.target_conflict', 'A retained target disappeared after commit.', 409);
+            }
+            if ($disposition->remove) {
+                $expected[] = $instance->id;
+            } elseif (! RouteTarget::query()->where('instance_id', $instance->id)->where('route_id', $disposition->routeId)->exists()) {
+                throw new ResourceOperationException('route.target_conflict', 'A committed target reassignment changed.', 409);
+            }
+        }
+        sort($current);
+        sort($expected);
+        if ($current !== $expected) {
+            throw new ResourceOperationException('route.target_conflict', 'The committed target associations changed.', 409);
+        }
+    }
 
     public function isCompletedNoop(Route $route, SetRouteTargetsData $proposal): bool
     {

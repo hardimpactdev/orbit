@@ -2,34 +2,24 @@
 
 declare(strict_types=1);
 
-use App\Actions\Clusters\SetClusterRouterAction;
 use App\Actions\Clusters\UpdateClusterAction;
 use App\Actions\Routes\ConvergeRouteAction;
-use App\Actions\Routes\ConvergeRouteTargetSetAction;
 use App\Actions\Routes\CreateRouteAction;
 use App\Actions\Routes\DestroyRouteAction;
 use App\Data\Clusters\UpdateClusterData;
 use App\Data\Routes\CreateRouteData;
-use App\Data\Routes\RouteTargetDispositionData;
-use App\Data\Routes\SetRouteTargetsData;
-use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\PrivateDnsAnswerExpiry;
-use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentSourceProfile;
 use App\Domain\Instances\Environment\InstanceEnvironmentResult;
 use App\Domain\Instances\Environment\InstanceEnvironmentRouteDomain;
 use App\Domain\Instances\Environment\InstanceRouteEnvironmentSynchronizer;
-use App\Domain\Instances\InstanceRemover;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Nodes\NodeReachabilityProbe;
-use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Routes\ClusterRouterReplacementProjector;
-use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RoutePlacement;
 use App\Domain\Routes\RoutePublication;
@@ -42,18 +32,14 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Cluster;
 use App\Models\Instance;
-use App\Models\InstanceRemoval;
 use App\Models\InstanceTransfer;
 use App\Models\Node;
-use App\Models\NodeRole;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\RouteRemovalResidue;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Sleep;
-use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
-use Tests\Support\FakeClusterRouterReplacementProjector;
 use Tests\Support\FakeRouteRemovalProjector;
 
 beforeEach(function (): void {
@@ -192,276 +178,6 @@ it('records Cluster TLD generated Route failure, restores the old Cluster TLD an
         ->toBe(RouteStatus::Active)
         ->and(Route::query()->find($route->id))
         ->toBeNull();
-});
-
-it('records Router replacement failure, restores the old Router, and retries the same candidate', function (
-    string $failure,
-): void {
-    [$cluster, $route, $member, $current, $replacement] = cluster_router_replacement_route();
-    $projector = bind_cluster_router_replacement_projection();
-    $projector->failures = [$failure => 1];
-    $routeBefore = $route->fresh(['targets'])->toArray();
-    $memberBefore = $member->fresh()->toArray();
-
-    expect(fn () => app(SetClusterRouterAction::class)->execute($cluster, $replacement))
-        ->toThrow(RuntimeConvergenceException::class, "Injected {$failure} failure.");
-
-    $candidate = NodeRole::query()
-        ->where('role', RoleName::Router)
-        ->where('node_id', $replacement->id)
-        ->sole();
-
-    expect($cluster->routerAssignment()->sole()->node_id)
-        ->toBe($current->id)
-        ->and($candidate->status)
-        ->toBe(LifecycleStatus::Failed)
-        ->and($candidate->failed_step)
-        ->toBe($failure)
-        ->and($route->fresh(['targets'])->toArray())
-        ->toBe($routeBefore)
-        ->and($member->fresh()->toArray())
-        ->toBe($memberBefore)
-        ->and($projector->events)
-        ->toContain('restore');
-
-    expect(fn () => app(SetClusterRouterAction::class)->execute($cluster, $current))
-        ->toThrow(function (ResourceOperationException $exception): void {
-            expect($exception->errorCode)->toBe('cluster.router_transition_conflict');
-        });
-
-    $projector->failures = [];
-    app(SetClusterRouterAction::class)->execute($cluster, $replacement);
-
-    expect($cluster->routerAssignment()->sole()->node_id)
-        ->toBe($replacement->id)
-        ->and($route->refresh()->only(['id', 'domain', 'cluster_id', 'status']))
-        ->toBe([
-            'id' => $route->id,
-            'domain' => $route->domain,
-            'cluster_id' => $cluster->id,
-            'status' => RouteStatus::Active,
-        ]);
-})->with([
-    'router-certificate',
-    'firewall-policy',
-    'workload-verify',
-    'router-caddy',
-    'dns-publication',
-]);
-
-it('stores which Routers serve the Router sites before each Router build, restore, and cleanup', function (): void {
-    [$cluster, , , $current, $replacement] = cluster_router_replacement_route();
-    $projector = bind_cluster_router_replacement_projection();
-    $projector->failures = ['dns-publication' => 1];
-    $both = [$current->id, $replacement->id];
-    sort($both);
-
-    expect(fn () => app(SetClusterRouterAction::class)->execute($cluster, $replacement))
-        ->toThrow(RuntimeConvergenceException::class, 'Injected dns-publication failure.');
-
-    $projector->failures = [];
-    app(SetClusterRouterAction::class)->execute($cluster, $replacement);
-
-    expect(array_map(
-        static fn (array $serving): string => $serving['step'].':'.implode(',', $serving['routers']),
-        $projector->serving,
-    ))->toBe([
-        'router-caddy:'.implode(',', $both),
-        "restore:{$current->id}",
-        'router-caddy:'.implode(',', $both),
-        "cleanup:{$replacement->id}",
-    ]);
-});
-
-it('moves private DNS before a Router replacement withdraws either Router', function (): void {
-    [$cluster, , , $current, $replacement] = cluster_router_replacement_route();
-    $projector = bind_cluster_router_replacement_projection();
-    $dns = app(ClusterRouterDnsSelectionReconciler::class);
-    assert($dns instanceof FakeClusterRouterDnsSelectionReconciler);
-    $sequence = [];
-    $projector->observe = static function (string $event) use (&$sequence): void {
-        if (in_array($event, ['restore', 'cleanup'], true)) {
-            $sequence[] = $event;
-        }
-    };
-    $dns->onExpand = static function () use (&$sequence): void {
-        $sequence[] = 'dns';
-    };
-    $dns->onPrune = static function () use (&$sequence): void {
-        $sequence[] = 'dns';
-    };
-    Sleep::whenFakingSleep(static function () use (&$sequence): void {
-        $sequence[] = 'wait';
-    });
-    $projector->failures = ['dns-publication' => 1];
-
-    expect(fn () => app(SetClusterRouterAction::class)->execute($cluster, $replacement))
-        ->toThrow(RuntimeConvergenceException::class, 'Injected dns-publication failure.');
-
-    // The restore moves DNS back and waits out cached answers before it withdraws the candidate.
-    expect(array_slice($sequence, -3))->toBe(['dns', 'wait', 'restore']);
-
-    $sequence = [];
-    $projector->failures = [];
-    app(SetClusterRouterAction::class)->execute($cluster, $replacement);
-
-    // Cleanup publishes DNS from stored state and waits before it withdraws the old Router.
-    $cleanup = array_search('cleanup', $sequence, true);
-    expect($cleanup)->toBeInt()
-        ->and(array_slice($sequence, $cleanup - 2, 3))->toBe(['dns', 'wait', 'cleanup']);
-});
-
-it('keeps the candidate Router serving when its restore cannot move private DNS back', function (): void {
-    [$cluster, , , $current, $replacement] = cluster_router_replacement_route();
-    $projector = bind_cluster_router_replacement_projection();
-    $dns = app(ClusterRouterDnsSelectionReconciler::class);
-    assert($dns instanceof FakeClusterRouterDnsSelectionReconciler);
-    $projector->failures = ['dns-publication' => 1];
-    $dns->onExpand = static function (array $nodeOverrides, array $clusterOverrides) use ($current): void {
-        if (($clusterOverrides[array_key_first($clusterOverrides)]['router_node_id'] ?? null) === $current->id) {
-            throw new RuntimeConvergenceException(step: 'dns', errorCode: 'app-dev.dns_config_failed', message: 'Injected DNS restore failure.');
-        }
-    };
-
-    expect(fn () => app(SetClusterRouterAction::class)->execute($cluster, $replacement))
-        ->toThrow(RuntimeConvergenceException::class, 'Injected DNS restore failure.');
-
-    $candidate = NodeRole::query()->where('node_id', $replacement->id)->where('role', RoleName::Router)->sole();
-
-    expect($candidate->status)->toBe(LifecycleStatus::Provisioning)
-        ->and($candidate->failed_step)->toBe('rollback:dns-publication')
-        ->and(ClusterRouterTransition::candidateServes($candidate))->toBeTrue()
-        ->and(ClusterRouterTransition::candidateAnswersDns($candidate))->toBeFalse()
-        ->and($projector->events)->not->toContain('restore');
-});
-
-it('records Router replacement database failure after publication and retries forward', function (): void {
-    [$cluster, $route, $member, $current, $replacement] = cluster_router_replacement_route();
-    $projector = bind_cluster_router_replacement_projection();
-    $routeBefore = $route->fresh(['targets'])->toArray();
-    $failCutover = true;
-    NodeRole::updating(function (NodeRole $role) use (&$failCutover): void {
-        if (
-            ! $failCutover
-            || $role->role !== RoleName::Router
-            || ! $role->isDirty('status')
-            || $role->status !== LifecycleStatus::Active
-        ) {
-            return;
-        }
-
-        $original = $role->getOriginal('status');
-
-        if ($original !== LifecycleStatus::Provisioning && $original !== LifecycleStatus::Provisioning->value) {
-            return;
-        }
-
-        $failCutover = false;
-
-        throw new RuntimeException('Injected database failure.');
-    });
-
-    expect(fn () => app(SetClusterRouterAction::class)->execute($cluster, $replacement))
-        ->toThrow(RuntimeException::class, 'Injected database failure.');
-
-    $candidate = NodeRole::query()
-        ->where('role', RoleName::Router)
-        ->where('node_id', $replacement->id)
-        ->sole();
-
-    expect($cluster->routerAssignment()->sole()->node_id)
-        ->toBe($current->id)
-        ->and($candidate->status)
-        ->toBe(LifecycleStatus::Failed)
-        ->and($candidate->failed_step)
-        ->toBe('database')
-        ->and($projector->events)
-        ->not->toContain('restore')
-        ->and($route->fresh(['targets'])->toArray())
-        ->toBe($routeBefore);
-
-    app(SetClusterRouterAction::class)->execute($cluster, $replacement);
-
-    expect($cluster->routerAssignment()->sole()->node_id)
-        ->toBe($replacement->id)
-        ->and($route->refresh()->id)
-        ->toBe($routeBefore['id']);
-});
-
-it('keeps the replacement Router authoritative when cleanup fails and retries cleanup', function (): void {
-    [$cluster, $route, $member, $current, $replacement] = cluster_router_replacement_route();
-    $projector = bind_cluster_router_replacement_projection();
-    $projector->failures = ['cleanup' => 1];
-
-    expect(fn () => app(SetClusterRouterAction::class)->execute($cluster, $replacement))
-        ->toThrow(RuntimeConvergenceException::class, 'Injected cleanup failure.');
-
-    $candidate = NodeRole::query()
-        ->where('role', RoleName::Router)
-        ->where('node_id', $replacement->id)
-        ->sole();
-
-    expect($cluster->routerAssignment()->sole()->node_id)
-        ->toBe($replacement->id)
-        ->and($candidate->status)
-        ->toBe(LifecycleStatus::Active)
-        ->and($candidate->failed_step)
-        ->toBe('cleanup')
-        ->and($candidate->error_code)
-        ->toBe('route.test_cleanup')
-        ->and($projector->events)
-        ->not->toContain('restore');
-
-    expect(fn () => app(SetClusterRouterAction::class)->execute($cluster, $current))
-        ->toThrow(function (ResourceOperationException $exception): void {
-            expect($exception->errorCode)->toBe('cluster.router_transition_conflict');
-        });
-
-    $projector->failures = [];
-    $projector->events = [];
-    app(SetClusterRouterAction::class)->execute($cluster, $replacement);
-
-    expect($cluster->routerAssignment()->sole()->node_id)
-        ->toBe($replacement->id)
-        ->and($candidate->refresh()->only(['status', 'failed_step', 'error_code']))
-        ->toBe([
-            'status' => LifecycleStatus::Active,
-            'failed_step' => null,
-            'error_code' => null,
-        ])
-        ->and($projector->events)
-        ->toBe(['cleanup'])
-        ->and($route->refresh()->status)
-        ->toBe(RouteStatus::Active);
-});
-
-it('records Router replacement rollback failure on the same candidate', function (): void {
-    [$cluster, $route, $member, $current, $replacement] = cluster_router_replacement_route();
-    $projector = bind_cluster_router_replacement_projection();
-    $projector->failures = ['dns-publication' => 1, 'restore' => 1];
-
-    expect(fn () => app(SetClusterRouterAction::class)->execute($cluster, $replacement))
-        ->toThrow(RuntimeConvergenceException::class, 'Injected restore failure.');
-
-    $candidate = NodeRole::query()
-        ->where('role', RoleName::Router)
-        ->where('node_id', $replacement->id)
-        ->sole();
-
-    expect($cluster->routerAssignment()->sole()->node_id)
-        ->toBe($current->id)
-        ->and($candidate->status)
-        ->toBe(LifecycleStatus::Failed)
-        ->and($candidate->failed_step)
-        ->toBe('rollback:dns-publication')
-        ->and($route->refresh()->id)
-        ->toBe($route->id);
-
-    $projector->failures = [];
-    app(SetClusterRouterAction::class)->execute($cluster, $replacement);
-
-    expect($cluster->routerAssignment()->sole()->node_id)
-        ->toBe($replacement->id);
 });
 
 it('records generated Route failure, restores the old URL, and refuses a conflicting mutation', function (): void {
@@ -1479,166 +1195,7 @@ it('refuses a conflicting publication request without changing recorded intent',
     expect($replacement->fresh()->getAttributes())->toBe($before);
 });
 
-it('prepares workloads before publishing a production target set and does not report a partial set', function (): void {
-    [$route, $first, $second] = route_target_set_expandable_pool();
-
-    $updated = app(ConvergeRouteTargetSetAction::class)->execute(
-        $route,
-        new SetRouteTargetsData([$first->id, $second->id], []),
-    );
-
-    expect($updated->targets()->orderBy('position')->pluck('instance_id')->all())
-        ->toBe([$first->id, $second->id])
-        ->and($updated->target_set_intent)
-        ->toBeNull()
-        ->and($this->events->values)
-        ->toContain('workload-certificate')
-        ->toContain('workload-caddy')
-        ->toContain('workload-verify')
-        ->toContain('environment:authoritative')
-        ->toContain('router-caddy');
-    expect(array_search('workload-verify', $this->events->values, true))
-        ->toBeLessThan(array_search('router-caddy', $this->events->values, true));
-});
-
-it('restores preparations when a target-set change fails before database commit', function (): void {
-    [$route, $first, $second] = route_target_set_expandable_pool();
-    $this->projector->failures['workload-verify'] = 1;
-    $before = $route->targets()->orderBy('position')->pluck('instance_id')->all();
-
-    expect(fn () => app(ConvergeRouteTargetSetAction::class)->execute(
-        $route,
-        new SetRouteTargetsData([$first->id, $second->id], []),
-    ))->toThrow(ResourceOperationException::class, 'Injected workload-verify failure.');
-
-    expect($route->refresh()->targets()->orderBy('position')->pluck('instance_id')->all())
-        ->toBe($before)
-        ->and($route->failed_step)
-        ->toBe('workload-prepared')
-        ->and($this->events->values)
-        ->toContain('rollback-caddy')
-        ->toContain('rollback-certificates');
-});
-
-it('retains committed target-set progress and resumes the recorded intent', function (): void {
-    [$route, $first, $second] = route_target_set_expandable_pool();
-    $this->projector->failures['router-caddy'] = 1;
-
-    expect(fn () => app(ConvergeRouteTargetSetAction::class)->execute(
-        $route,
-        new SetRouteTargetsData([$first->id, $second->id], []),
-    ))->toThrow(ResourceOperationException::class, 'Injected router-caddy failure.');
-
-    expect($route->refresh()->targets()->orderBy('position')->pluck('instance_id')->all())
-        ->toBe([$first->id, $second->id])
-        ->and($route->failed_step)
-        ->toBe('router-published')
-        ->and($route->target_set_intent['targets'] ?? null)
-        ->toBe([$first->id, $second->id]);
-
-    $this->projector->failures = [];
-    $this->events->values = [];
-    $updated = app(ConvergeRouteTargetSetAction::class)->execute(
-        $route,
-        new SetRouteTargetsData([$first->id, $second->id], []),
-    );
-
-    expect($updated->targets()->orderBy('position')->pluck('instance_id')->all())
-        ->toBe([$first->id, $second->id])
-        ->and($updated->target_set_intent)
-        ->toBeNull()
-        ->and($updated->failed_step)
-        ->toBeNull()
-        ->and($this->events->values)
-        ->toContain('router-caddy')
-        ->not->toContain('rollback-caddy')
-        ->not->toContain('workload-certificate');
-});
-
-it('refuses a competing target-set intent and treats an identical completed change as a no-op', function (): void {
-    [$route, $first, $second] = route_target_set_expandable_pool();
-    app(ConvergeRouteTargetSetAction::class)->execute(
-        $route,
-        new SetRouteTargetsData([$first->id, $second->id], []),
-    );
-    $this->events->values = [];
-
-    $again = app(ConvergeRouteTargetSetAction::class)->execute(
-        $route,
-        new SetRouteTargetsData([$first->id, $second->id], []),
-    );
-
-    expect($again->targets()->orderBy('position')->pluck('instance_id')->all())
-        ->toBe([$first->id, $second->id])
-        ->and($this->events->values)
-        ->toBe(['owner']);
-
-    $route->update([
-        'target_set_intent' => ['targets' => [$second->id], 'dispositions' => []],
-        'target_set_step' => 'reserved',
-    ]);
-    $before = $route->fresh()->targets()->orderBy('position')->pluck('instance_id')->all();
-
-    expect(fn () => app(ConvergeRouteTargetSetAction::class)->execute(
-        $route,
-        new SetRouteTargetsData([$first->id], [
-            new RouteTargetDispositionData($second->id, remove: true),
-        ]),
-    ))->toThrow(function (ResourceOperationException $exception): void {
-        expect($exception->errorCode)->toBe('route.target_set_conflict');
-    });
-
-    expect($route->refresh()->targets()->orderBy('position')->pluck('instance_id')->all())
-        ->toBe($before);
-});
-
-it('invokes authorized App instance removal after the replacement pool is recorded', function (): void {
-    [$route, $first, $second] = route_target_set_expandable_pool();
-    $removed = new class implements InstanceRemover
-    {
-        /** @var list<array{0: int, 1: bool}> */
-        public array $calls = [];
-
-        public function execute(Instance $instance, bool $force): InstanceRemoval
-        {
-            $this->calls[] = [$instance->id, $force];
-
-            return new InstanceRemoval;
-        }
-    };
-    app()->instance(InstanceRemover::class, $removed);
-
-    $updated = app(ConvergeRouteTargetSetAction::class)->execute(
-        $route,
-        new SetRouteTargetsData([$second->id], [
-            new RouteTargetDispositionData($first->id, remove: true),
-        ]),
-    );
-
-    expect($updated->targets()->orderBy('position')->pluck('instance_id')->all())
-        ->toContain($second->id)
-        ->and($removed->calls)
-        ->toBe([[$first->id, true]])
-        ->and($this->events->values)
-        ->toContain('router-caddy');
-});
-
 /** @return array{Cluster, Route, Node} */
-function bind_cluster_router_replacement_projection(): FakeClusterRouterReplacementProjector
-{
-    $projector = new FakeClusterRouterReplacementProjector;
-    app()->instance(ClusterRouterReplacementProjector::class, $projector);
-    app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
-    {
-        public function converge(Node $node, NodeRole $assignment): void {}
-
-        public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
-
-        public function removeUnreachable(Node $node, NodeRole $assignment): void {}
-    });
-
-    return $projector;
-}
 
 /**
  * @return array{0: Cluster, 1: Route, 2: Node, 3: Node, 4: Node}

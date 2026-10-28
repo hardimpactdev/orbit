@@ -19,6 +19,7 @@ use App\Models\Operation;
 use App\Models\Route;
 use App\Models\RouteRemovalResidue;
 use App\Support\ValidatedData;
+use Illuminate\Support\Facades\DB;
 
 /** Records a Route plan and projects only child-proven state. No Node execution. */
 final readonly class RouteParentCommand implements OperationGatewayCommand
@@ -33,6 +34,14 @@ final readonly class RouteParentCommand implements OperationGatewayCommand
     }
 
     public function run(Operation $operation, #[\SensitiveParameter] array $input): array
+    {
+        return DB::transaction(fn (): array => $this->runOwned($operation, $input));
+    }
+
+    /** @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    private function runOwned(Operation $operation, #[\SensitiveParameter] array $input): array
     {
         if (! in_array($operation->kind, RouteParentExecution::Kinds, true)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'This is not an owned Route parent.', 422);
@@ -108,7 +117,20 @@ final readonly class RouteParentCommand implements OperationGatewayCommand
                 $candidate = Route::query()->findOrFail(ValidatedData::integer($operation->input['candidate_route_id']));
                 $plan = $this->plans->replacement($operation, $route, $candidate);
                 $mode = $mode === 'replace_pending' ? 'replace_pending' : 'replacement';
+                if ($route->status === RouteStatus::Retiring && in_array($candidate->status, [RouteStatus::Activating, RouteStatus::Active], true)) {
+                    $mode = $candidate->replacement_step === RouteReplacementStep::Cleanup ? 'replacement_cleanup' : 'replacement_after_cutover';
+                }
                 $plan['result_route_id'] = $candidate->id;
+            } elseif ($mode === 'targets_recover') {
+                $source = app(RouteTargetState::class)->recovery($route);
+                if ($source->id !== ($operation->input['recovery_operation_id'] ?? null)) {
+                    throw new ResourceOperationException('route.target_set_conflict', 'The recovery Operation changed.', 409);
+                }
+                app(RouteTargetState::class)->assertCommitted($route, $this->proposal($operation));
+                $plan = ValidatedData::object($source->state['route_plan'] ?? []);
+                $stages = ValidatedData::object($plan['stages']);
+                $stages['removal'] = array_values(array_filter(RouteExecutionProof::objects($stages['removal'] ?? []), static fn (array $child): bool => Instance::query()->whereKey(ValidatedData::integer(ValidatedData::object($child['input'])['instance_id']))->exists()));
+                $plan['stages'] = $stages;
             } elseif ($mode === 'targets') {
                 $plan = $this->plans->targets($operation, $route, $this->proposal($operation));
                 $route->update(['target_set_intent' => [...($route->target_set_intent ?? []), 'preparation_operation_id' => $operation->id]]);
@@ -129,7 +151,9 @@ final readonly class RouteParentCommand implements OperationGatewayCommand
             if (($operation->input['offline'] ?? false) === true && in_array($mode, ['withdraw', 'withdraw_replacement'], true)) {
                 $plan = $this->offline->apply($plan);
             }
-            if (in_array($operation->kind, ['route.update', 'route.destroy', 'route.target_set', 'route.target_unset'], true)) {
+            $plan['metrics'] = in_array($operation->kind, ['route.update', 'route.destroy', 'route.target_unset'], true)
+                || ($operation->kind === 'route.target_set' && ($operation->input['mode'] ?? null) === 'target');
+            if ($plan['metrics']) {
                 $plan = $this->plans->withMetrics($plan);
             }
             $placements = RouteExecutionProof::objects($plan['placements'] ?? []);
@@ -157,7 +181,7 @@ final readonly class RouteParentCommand implements OperationGatewayCommand
 
         return ['prepared' => true, 'mode' => $plan['mode'], 'production' => $plan['production'], 'public' => $plan['publication'] === 'public',
             'remote_router' => $plan['remote_router'], 'web_root' => $plan['web_root'], 'targeted' => $plan['targeted'], 'child_phases' => $phases, 'activate_public' => $plan['activate_public'] ?? false, 'withdraw_public' => $plan['withdraw_public'] ?? false,
-            'changed' => $plan['changed'] ?? true];
+            'changed' => $plan['changed'] ?? true, 'metrics' => $plan['metrics'] ?? false];
     }
 
     /** @param array<string, mixed> $plan */
@@ -197,10 +221,14 @@ final readonly class RouteParentCommand implements OperationGatewayCommand
         } elseif ($stage === 'publication-completed' && $route !== null && ($plan['activate_public'] ?? false)) {
             $route->update(['status' => RouteStatus::Active, 'replacement_step' => RouteReplacementStep::IngressFirewall]);
         } elseif ($stage === 'database-committed' && $route !== null) {
-            app(RouteTargetState::class)->commitAssociations($route, $this->proposal($operation));
+            if ($plan['mode'] === 'targets_recover') {
+                app(RouteTargetState::class)->assertCommitted($route, $this->proposal($operation));
+            } else {
+                app(RouteTargetState::class)->commitAssociations($route, $this->proposal($operation));
+            }
             $route->refresh();
-            $route->update(['target_set_intent' => [...($route->target_set_intent ?? []), 'vacated_route_ids' => $plan['vacated_route_ids']]]);
-        } elseif ($stage === 'completed' && $plan['mode'] === 'targets' && $route !== null) {
+            $route->update(['target_set_intent' => [...($route->target_set_intent ?? []), 'vacated_route_ids' => $plan['vacated_route_ids'], 'preparation_operation_id' => $operation->id]]);
+        } elseif ($stage === 'completed' && in_array($plan['mode'], ['targets', 'targets_recover'], true) && $route !== null) {
             app(RouteTargetState::class)->complete($route);
         } elseif ($stage === 'database-cutover' && $route !== null && $candidate !== null) {
             $this->mutations->cutover($route, $candidate);
@@ -224,10 +252,16 @@ final readonly class RouteParentCommand implements OperationGatewayCommand
                 $route?->delete();
             }
             $this->recordResidue($plan);
-        } elseif ($plan['mode'] === 'replacement' && $current !== null && ! str_starts_with($stage, 'rollback-')) {
+        } elseif (in_array($plan['mode'], ['replacement', 'replacement_after_cutover', 'replacement_cleanup'], true) && $current !== null && ! str_starts_with($stage, 'rollback-')) {
             $step = RouteReplacementStep::tryFrom($stage);
             if ($step !== null) {
                 $this->mutations->checkpoint($current, $step);
+            }
+        }
+        if (in_array($plan['mode'], ['targets', 'targets_recover'], true) && $route !== null && $stage !== 'completed') {
+            $step = $stage === 'target-workload-verified' ? RouteTargetSetStep::WorkloadPrepared : RouteTargetSetStep::tryFrom($stage);
+            if ($step !== null) {
+                app(RouteTargetState::class)->advance($route, $step);
             }
         }
     }
@@ -266,8 +300,8 @@ final readonly class RouteParentCommand implements OperationGatewayCommand
                 $failureCode = $child->error_code ?? 'route.child_failed';
             }
         }
-        $cutover = ($completed['database-cutover'] ?? false) === true;
-        if (! in_array($plan['mode'], ['replacement', 'web_root', 'publication', 'targets'], true) || ! $failed || ($cutover && $stage !== 'rollback-public-edge')) {
+        $cutover = ($completed['database-cutover'] ?? false) === true || in_array($plan['mode'], ['replacement_after_cutover', 'replacement_cleanup'], true);
+        if (! in_array($plan['mode'], ['replacement', 'replacement_after_cutover', 'replacement_cleanup', 'web_root', 'publication', 'targets'], true) || ! $failed || ($cutover && $stage !== 'rollback-public-edge')) {
             throw new ResourceOperationException('operation.completion_unproven', 'A Route rollback requires its own proven failed child before cutover.', 409);
         }
         if ($plan['mode'] === 'targets') {

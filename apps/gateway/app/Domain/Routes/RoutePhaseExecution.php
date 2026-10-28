@@ -84,7 +84,7 @@ abstract readonly class RoutePhaseExecution implements OperationFamilyChildren, 
     public function assertCompletion(Operation $operation, OperationOutcome $outcome): void
     {
         $proof = RouteExecutionProof::result($operation, 'route-proof');
-        if ($outcome->status->value === 'succeeded' && (($proof['ready'] ?? false) !== true
+        if ($outcome->status->value === 'succeeded' && (isset($operation->state['route_branch']) || ($proof['ready'] ?? false) !== true
             || ! OperationChildIntent::same($outcome->result ?? [], $proof))) {
             throw new ResourceOperationException('operation.completion_unproven', 'The Route needs its final state proof.', 409);
         }
