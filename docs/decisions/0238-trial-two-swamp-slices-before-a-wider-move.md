@@ -14,11 +14,11 @@ In progress.
 
 Principle: [Lean](/mission#principles). Move work only when measured savings justify its cost. The trial proposes a narrow exception to [One way, one name](/mission#principles): Swamp owns these two slices while the Gateway operation engine and agent runner keep their other users. Each migrated behavior has one active owner. There is no runtime fallback or duplicate writer.
 
-The project owner accepted these thresholds on 2026-10-27. Slice 1 (automatic production deploys) may start. This record authorizes no live rollout. The current [deployment](/reference/deployments), [Tool](/reference/tools), and [Node command](/reference/node-agent#commands) contracts remain in force until a slice ships.
+The project owner accepted the thresholds on 2026-10-27 and amended the code gate and cutover requirements on 2026-10-28. Slice 1 (automatic production deploys) may continue. This record authorizes no live rollout. The current [deployment](/reference/deployments), [Tool](/reference/tools), and [Node command](/reference/node-agent#commands) contracts remain in force until a slice ships.
 
 ## Context
 
-The goal is less Orbit code and less Orbit CI time, with the same features. A hard dependency on Swamp is accepted. Use Swamp's defaults: Deno, the official `@swamp-club/swamp-testing` kit, and `@swamp/software-factory` without a fork. Do not build an Orbit workflow wrapper or a second test framework.
+The goal is a smaller Gateway and less Orbit CI time, with the same features. Moving logic, state handling, and workflow steps into orbit-swamp is intended. Its code growth is reported but does not gate the trial. A hard dependency on Swamp is accepted. Use Swamp's defaults: Deno, the official `@swamp-club/swamp-testing` kit, and `@swamp/software-factory` without a fork. Do not build an Orbit workflow wrapper or a second test framework.
 
 A read-only study at Orbit commit `46afd964c4557140c9dae18ae6949eb349a46b70` found the move viable in part. These are estimates from that study, not measurements of the trials:
 
@@ -51,6 +51,25 @@ Two public contracts are prerequisites:
 Keep the current policy cases: newest eligible green first-parent commit; no record for an unchanged commit; pending and failed check rechecks; busy versus deploying; retries after 10 and 20 minutes with three attempts at most; immediate blocking of lasting failures; explicit resume; rolled-away commit blocks after history pruning; and one alert per failure, stall, or pause. [Automatic deployments](/reference/deployments#automatic-deployments) owns the detailed rules.
 
 Before coding, name eight policy flows for effort and case accounting: selection, unchanged/busy handling, gate recheck, backoff/blocking, manual pause, rollback/resume, alerts, and state/history projection. This denominator stays fixed even if one flow needs several functions.
+
+### Slice 1 progress as of 2026-10-28
+
+Three prerequisite PRs are merged. [Orbit #1546](https://github.com/hardimpactdev/orbit/pull/1546) adds pinned-commit deploys, the trusted automatic trigger, and frozen parity cases. [orbit-swamp #46](https://github.com/hardimpactdev/orbit-swamp/pull/46) adds the policy workflow with 73 passing tests. It remains inert. [Orbit #1548](https://github.com/hardimpactdev/orbit/pull/1548) adds Gateway contracts G01–G06 for source evidence, resume and block state, deployment kind, event delivery, publication, and receipt lookup. The Orbit policy writer remains active. Cutover and live acceptance are pending.
+
+The measurements below come from the PR bodies and the implementation report for Orbit #1546. Its final line counts come from the merged diff. Line counts are physical lines, including comments and blanks. Each pair below is added/removed. Correction rows are commit deltas, not final PR totals.
+
+| PR and scope | Agent wall-clock | Source | Tests and support | Fixtures | Docs | CI config | Generated |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Orbit #1546, first PR head | 24m 39s | 286/37 | 355/3 | 0/0 | 154/8 | 0/0 | 240/19 |
+| Orbit #1546, final merged diff `6291bb03..f9059e10` | See timing below | 227/37 | 340/9 | 0/0 | 140/9 | 0/0 | 353/29 |
+| orbit-swamp #46, initial implementation | 24m 14s | 1,016/0 | 1,310/0 | 0/0 | 86/0 | 72/0 | 0/0 |
+| orbit-swamp #46, first correction | 8m 36s | 87/35 | 237/24 | 0/0 | 7/3 | 6/0 | 0/0 |
+| orbit-swamp #46, delta correction | 4m 43s | 36/44 | 97/30 | 0/0 | 7/3 | 0/0 | 0/0 |
+| Orbit #1548, final PR diff against `6c71412e` | 44m 54s | 974/135 | 489/9 | Included in tests | 38/1 | Not reported separately | 1,953/167 |
+
+Orbit #1546 reports 24m 39s on 2026-10-27, from 21:42:00 to 22:06:39 UTC, or about 29m 42s including review runs. The first-head figures precede two fix commits: web schema regeneration, then contract-test fixes and removal of the automatic-deploy CLI command. The final line counts include both fixes. They come from `git diff --shortstat 6291bb03..f9059e10` scoped by area. Generated files cover OpenAPI, MCP, web types, navigation, and documentation context. Source includes the generator. Tests include Rust test files. Docs include the CLI reference and SDK guidance. The complete diff has 1,060 additions and 84 removals across 38 files. No separate timing for the fix commits was reported.
+
+The total for orbit-swamp #46 is 37 minutes and 33 seconds across its three measured intervals. Orbit #1548 reports 23m 13s for implementation and 21m 41s for review fixes. Both totals exclude external review gaps. Owner time was not measured. These are implementation measurements, not proof that the slice passes its gates. Slice 1 alone offers little Orbit CI saving. Savings are expected as more slices reuse the Gateway contracts.
 
 ### Slice 2: the tool command group
 
@@ -106,7 +125,7 @@ Use the same scope, cases, hardware class, runner labels, cache state, and concu
 
 | Measure | Method | Proposed gate for the project owner |
 | --- | --- | --- |
-| 1. Net code | Count source and tests in both repos using the census below; include new glue | Positive Orbit net source and test removal per slice; combined net change across Orbit and orbit-swamp ≤ 0; no credit for retained shared files |
+| 1. Net code | Count source and tests in both repos using the census below; include new glue and report reusable Gateway contracts separately | Positive Orbit net source and test removal per slice after cutover; report orbit-swamp growth without a code gate; no credit for retained shared files |
 | 2. Test cost per behavior | Freeze equivalent cases; run old Rust/Pest and new official-kit Deno cases ten times each in CI | New median time at most 80% of old time per slice; no omitted cases |
 | 3. Orbit CI | Compare ten successful full-main runs per side; split setup, checks, tests, and builds; charge new orbit-swamp CI | No net CI increase per slice; report measured agent build and size changes for Tools |
 | 4. Features | Record expected and actual results for every frozen parity case | Every case passes; any loss fails |
@@ -114,17 +133,19 @@ Use the same scope, cases, hardware class, runner labels, cache state, and concu
 | 6. Friction | Log paired PRs, extra wait for the second CI, deploy-order mistakes, and manual coordination | At most two paired PRs, five minutes median extra CI wait, and one hour of coordination per slice; zero deploy-order incidents |
 | 7. Effort | Record agent wall-clock time and owner review/coordination time separately; divide by eight policy flows and 45 Tool commands | Owner time at most three hours for automatic deploys and eight hours for Tools; agent wall-clock time is recorded and projected, without a gate |
 
-For net code, report Orbit removed and added lines and orbit-swamp removed and added lines separately. Orbit net removal is removed lines minus added lines and must be positive for both source and tests. Combined net change is additions minus removals across Orbit and orbit-swamp and must be ≤ 0 for each slice. Report source, tests, and fixtures separately. For matched-case tests, report median seconds and runner-minutes per case set, with setup separate. Preserve negative, crash, cancel, and lock cases.
+For net code, report Orbit removed and added lines and orbit-swamp removed and added lines separately. Orbit covers the Gateway, agent, and their tests. Orbit net removal is removed lines minus added lines and must be positive for both source and tests after each slice's cutover. orbit-swamp additions need no offset. Count Gateway contracts added for Swamp separately as reusable infrastructure: its "eyes and hands" for reads, receipts, event delivery, and publication. Report how much each following slice reuses them. Count each shared addition once. Report source, tests, and fixtures separately. For matched-case tests, report median seconds and runner-minutes per case set, with setup separate. Preserve negative, crash, cancel, and lock cases.
 
 For CI, sum affected job durations for runner-minutes. Report their elapsed span and the whole workflow's wall-clock. For Tools, report release binary bytes per target, compressed delivery bytes, build-step time, removed dependencies, and remaining build users. Report zero build saving if none is measured.
 
-For reliability, measure before and after for 14 consecutive live days and at least 30 production deploy attempts across at least three Instances. Also measure 100 Tool installs, 25 updates, and 25 removals across apt, Composer, formulae, casks, and Vite+. Extend a quiet window until the counts are met. A run is stuck beyond its existing deadline plus five minutes. Prove worker-loss and cancel cases in a disposable environment too.
+Before every slice's cutover, run Swamp against real data in read-only shadow mode for a set window. Record each decision it would take without effects. The active Orbit writer keeps ownership. Compare the shadow decisions with that writer's real decisions. Explain or fix every mismatch before cutover. For slice 1, propose at least three days and at least ten policy decisions across at least two production Instances. Extend a quiet window until the counts are met.
+
+For reliability, measure before and after for 14 consecutive live days and at least 30 production deploy attempts across at least three Instances. The 14-day live window after the change starts at cutover, after shadow mode ends. Also measure 100 Tool installs, 25 updates, and 25 removals across apt, Composer, formulae, casks, and Vite+. Extend a quiet window until the counts are met. A run is stuck beyond its existing deadline plus five minutes. Prove worker-loss and cancel cases in a disposable environment too.
 
 Most work is done by agents. Agent wall-clock time is the sum of agent run time across threads and task groups, including runs that overlap. Record the project owner's review and coordination time separately. Both measures cover design, implementation, tests, docs, deployment, and repairs in both repos. Report shared setup separately and include it in the full projection. Agent wall-clock time is recorded and projected but has no gate.
 
-The proposed rule for a full move combines measures 1, 2, and 7. Use observed Orbit net removal and combined net change per flow or command, matched-case test cost, and agent wall-clock and owner time per unit. Inventory the remaining eligible behaviors and classify their complexity before projecting. Do not multiply 321 by the Tool average without accounting for database, deploy, bootstrap, and recovery differences. Include retained machinery, new integration code, shared setup, CI setup, and both repos' CI. Publish a conservative range; use its least favorable end for the decision.
+The proposed rule for a full move combines measures 1, 2, and 7. Use observed Orbit net removal per flow or command, reported orbit-swamp growth, matched-case test cost, and agent wall-clock and owner time per unit. Report reusable Gateway infrastructure and its reuse by other slices separately in the projection too. Inventory the remaining eligible behaviors and classify their complexity before projecting. Do not multiply 321 by the Tool average without accounting for database, deploy, bootstrap, and recovery differences. Include retained machinery, new integration code, shared setup, CI setup, and both repos' CI. Publish a conservative range; use its least favorable end for the decision.
 
-For a broad move, propose that the conservative projection removes at least 75,000 Orbit source lines and 80,000 Orbit test lines, and saves at least 15 Orbit runner-minutes and five minutes of Orbit CI wall-clock per full run. The combined total across Orbit and orbit-swamp must not grow. Added orbit-swamp CI must stay below removed Orbit CI. Matched-case tests must meet the 80% gate. Report projected agent wall-clock time and owner review/coordination time, and gate owner time at 60 hours total, including the trials. For a Gateway-only expansion, propose at least 8,500 Orbit source lines and 14,000 Orbit test lines removed, and a saving of one Orbit runner-minute in each full run, with the same combined-total and 80% test-cost rules. These gates use Orbit-side savings at the middle of the study's ranges. These are approval thresholds, not forecasts.
+For a broad move, propose that the conservative projection removes at least 75,000 Orbit source lines and 80,000 Orbit test lines, and saves at least 15 Orbit runner-minutes and five minutes of Orbit CI wall-clock per full run. orbit-swamp growth is reported without an offset requirement. Added orbit-swamp CI must stay below removed Orbit CI. Matched-case tests must meet the 80% gate. Report projected agent wall-clock time and owner review/coordination time, and gate owner time at 60 hours total, including the trials. For a Gateway-only expansion, propose at least 8,500 Orbit source lines and 14,000 Orbit test lines removed, and a saving of one Orbit runner-minute in each full run, with the same Orbit net-removal, reported orbit-swamp growth, and 80% test-cost rules. These gates use Orbit-side savings at the middle of the study's ranges. These are approval thresholds, not forecasts.
 
 Continue beyond the slices only if the applicable projection clears those gates, parity and reliability show no loss or unresolved unknown writes, and friction stays within its limits. If a slice fails a safety or parity gate, do not ship it. If the slices work but the projection is weak, keep the working slices and stop. Delete any replaced writer at cutover; do not retain a selectable fallback. Restoring a failed slice to Orbit requires a reviewed change that restores one owner.
 
@@ -222,7 +243,7 @@ The first command selects newer runs as main advances. Use the fixed IDs in the 
 ## Consequences
 
 - Two measured slices can remain useful even if no wider move is justified.
-- The trial adds Node workers and cross-repository contracts. Their code, CI, rollout order, and repair cost count against the saving.
+- The trial adds Node workers and cross-repository contracts. Report their code, CI, rollout order, and repair cost. Gate code on Orbit net removal; report orbit-swamp growth without a code gate. The CI and effort gates still apply.
 - A working port may fail the proposed payoff gate. Correctness and parity are required, but do not prove that a wider move is worth its cost.
 - A successful trial cannot remove dispatch, transport, the operation engine, or the Rust build while another user needs them.
 - If approved and built, absorb the shipped ownership rules and lasting reasons into the owning reference pages. Keep trial results with those rules and retire this ADR through the normal lifecycle.
