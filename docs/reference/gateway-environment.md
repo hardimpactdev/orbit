@@ -15,6 +15,16 @@ covers:
 
 The Gateway is a Laravel application, so it reads its own settings from a `.env` file. This page covers that file. [Instance environment variables](/reference/environment-variables) covers the `.env` files that the Gateway manages for Instances.
 
+## Services dependency detection
+
+The orchestrator enables read-token requests for one Services peer during deployment.
+
+| Variable | Meaning |
+| --- | --- |
+| `ORBIT_DEPENDENCY_DETECTION_SERVICES_NODE_ID` | Gateway-owned Services Node ID, exposed as `dependency_detection.services_node_id`. Unset or invalid disables the dependency read-token route. The route ships disabled until the orchestrator follows the activation steps below. |
+
+Deploy Gateway first. Verify Services with `orbit node:show 17 --json`. On Gateway as `orbit`, back up `/home/orbit/shared/gateway.env` with mode `0600`, then set its single `ORBIT_DEPENDENCY_DETECTION_SERVICES_NODE_ID=17` entry without changing other settings. Run `php /home/orbit/orbit/apps/gateway/artisan gateway:release:configure`; never run `config:cache` in a release. From Services, verify `POST /api/v1/projects/20/dependency-read-token` succeeds without printing its token, then deploy Services. Follow the [release-safe env procedure](/reference/gateway-recovery#apply-an-env-change) and the exact backup/route-check commands in the [GitHub App](/reference/github-app#services-dependency-credentials) page. The orchestrator applies this setting during deployment; a merge does not enable it.
+
 ## Swamp task output
 
 The Gateway reads [Swamp run output](/reference/tasks#swamp-run-output) with these optional deployment settings. Without a reader token, the task panel shows unavailable.

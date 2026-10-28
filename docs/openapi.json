@@ -20826,6 +20826,134 @@
         ]
       }
     },
+    "/api/v1/projects/{project}/dependency-read-token": {
+      "post": {
+        "operationId": "project-dependency-read-token",
+        "summary": "Mint a short-lived, one-repository GitHub App read token for the configured Services peer only. Never persist the reply. Disabled until ORBIT_DEPENDENCY_DETECTION_SERVICES_NODE_ID is configured.",
+        "tags": [
+          "Node callbacks"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Project ID."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ephemeral credential. Cache-Control: no-store. No Activity or Operation is created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "project_id",
+                        "repository",
+                        "clone_url",
+                        "token",
+                        "expires_at"
+                      ],
+                      "properties": {
+                        "project_id": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "repository": {
+                          "type": "string"
+                        },
+                        "clone_url": {
+                          "type": "string",
+                          "format": "uri"
+                        },
+                        "token": {
+                          "type": "string",
+                          "description": "Ephemeral credential; never persist or log."
+                        },
+                        "expires_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found (`project.not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Token minting unavailable or unsafe reply (`dependency_token.unavailable`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Services-only authorization or GitHub installation/token refusal (`dependency_token.forbidden`, `dependency_token.refused`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/projects/4/dependency-read-token\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
+          }
+        ]
+      }
+    },
     "/api/v1/projects/{project}/dev-deploy-steps": {
       "get": {
         "operationId": "project-dev-deploy-step-list",

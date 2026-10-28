@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\GitHub;
 
+use App\Domain\GitHub\DependencyReadToken;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppCredentials;
@@ -23,7 +24,9 @@ use App\Domain\GitHub\GitHubPullRequestState;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitHubReview;
 use App\Domain\GitHub\GitHubReviewEvent;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskBranchUpdate;
+use DateTimeImmutable;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
@@ -146,6 +149,67 @@ final readonly class HttpGitHubApi implements GitHubApi
         }
 
         return $id;
+    }
+
+    /** Fresh, read-only credential for the Services peer; never enters the shared token cache. */
+    public function dependencyReadToken(GitHubAppCredentials $credentials, GitHubRepository $repository): DependencyReadToken
+    {
+        $deadline = microtime(true) + 5;
+        try {
+            $installation = $this->asApp($credentials)->withoutRedirecting()->timeout(5)->connectTimeout(5)
+                ->get($this->repositoryPath($repository).'/installation');
+            $id = $installation->json('id');
+            $this->assertDependencyTokenResponse($installation);
+            if (! $installation->successful() || ! is_int($id) || $id <= 0 || microtime(true) >= $deadline) {
+                throw new \UnexpectedValueException;
+            }
+            $remaining = max(0.001, $deadline - microtime(true));
+            $response = $this->asApp($credentials)->withoutRedirecting()->timeout($remaining)->connectTimeout($remaining)
+                ->post("/app/installations/{$id}/access_tokens", [
+                    'repositories' => [$repository->name],
+                    'permissions' => ['contents' => 'read', 'pull_requests' => 'read'],
+                ]);
+            $this->assertDependencyTokenResponse($response);
+            $token = $response->json('token');
+            $expires = $response->json('expires_at');
+            $permissions = $response->json('permissions');
+            $repos = $response->json('repositories');
+            if (! $response->successful() || ! is_string($token) || $token === '' || ! is_string($expires)
+                || ! is_array($permissions) || ($permissions['contents'] ?? null) !== 'read'
+                || ($permissions['pull_requests'] ?? null) !== 'read'
+                || array_diff_key($permissions, array_flip(['contents', 'pull_requests', 'metadata'])) !== []
+                || (isset($permissions['metadata']) && $permissions['metadata'] !== 'read')
+                || ! is_array($repos) || count($repos) !== 1 || ! is_array($repos[0] ?? null)
+                || ! is_string($repos[0]['full_name'] ?? null)
+                || strtolower($repos[0]['full_name']) !== strtolower($repository->owner.'/'.$repository->name)
+                || preg_match('/\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\z/D', $expires) !== 1) {
+                throw new \UnexpectedValueException;
+            }
+            $expiry = new DateTimeImmutable($expires);
+            if ($expiry->getTimestamp() <= now()->getTimestamp() || $expiry->getTimestamp() > now()->getTimestamp() + 3605) {
+                throw new \UnexpectedValueException;
+            }
+
+            return new DependencyReadToken($token, $expires);
+        } catch (ResourceOperationException $exception) {
+            throw $exception;
+        } catch (Throwable) {
+            throw new ResourceOperationException('dependency_token.unavailable', 'Repository credential unavailable.', 503);
+        }
+    }
+
+    private function assertDependencyTokenResponse(Response $response): void
+    {
+        $message = $response->json('message');
+        if (in_array($response->status(), [401, 429], true)
+            || ($response->status() === 403 && ($response->header('Retry-After') !== ''
+                || $response->header('X-RateLimit-Remaining') === '0'
+                || (is_string($message) && preg_match('/secondary rate limit|rate limit exceeded/i', $message) === 1)))) {
+            throw new ResourceOperationException('dependency_token.unavailable', 'Repository credential unavailable.', 503);
+        }
+        if ($response->clientError()) {
+            throw new ResourceOperationException('dependency_token.refused', 'Repository credential refused.', 403);
+        }
     }
 
     public function repositoryReadToken(

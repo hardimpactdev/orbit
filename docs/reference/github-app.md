@@ -22,6 +22,45 @@ The App is public on GitHub, so any GitHub account can install it. An installati
 
 The Gateway stores the App ID, slug, name, owner, and URL as one plain Gateway setting, and the private key as an encrypted one. No API response, Activity, or Doctor result contains the key or a token.
 
+## Services dependency credentials
+
+Only the configured Services peer can call `POST /api/v1/projects/{project}/dependency-read-token` with `{}`. It also needs Gateway access. The Gateway resolves the Project repository and its existing GitHub App installation, then returns one fresh repository-scoped installation token with `contents: read` and `pull_requests: read`, plus GitHub's implicit metadata read. Other source-access modes and hosts are refused. There is no CLI-login or anonymous fallback.
+
+The response is `{data: {project_id, repository, clone_url, token, expires_at}}`. Repository identity is canonical lowercase `github.com/owner/repo`; the clone URL is HTTPS. The Gateway validates the returned scope and expiry, at most one hour plus five seconds of clock skew, and bounds installation lookup plus minting to five seconds. This one synchronous reply uses `Cache-Control: no-store`; it creates no Activity or Operation and never puts the token in Project data, logs or exception context.
+
+### Enable during deployment
+
+The route ships disabled. The orchestrator applies this setting after deploying Gateway and before deploying Services:
+
+1. Run `orbit node:show 17 --json` and verify that it is the active Services Node with the expected WireGuard identity.
+2. On Gateway as `orbit`, disable shell tracing and back up `/home/orbit/shared/gateway.env` with mode `0600`. Keep its contents out of logs and Git:
+
+   ```bash
+   set +x
+   umask 077
+   gateway_env_backup="/home/orbit/shared/gateway.env.before-dependency-read-token.$(date -u +%Y%m%dT%H%M%SZ)"
+   install -m 0600 /home/orbit/shared/gateway.env "$gateway_env_backup"
+   ```
+
+3. Set or replace the single `ORBIT_DEPENDENCY_DETECTION_SERVICES_NODE_ID=17` entry in `/home/orbit/shared/gateway.env`. Preserve its owner and mode `0600` and every other setting.
+4. As `orbit`, run `php /home/orbit/orbit/apps/gateway/artisan gateway:release:configure`. Follow [Apply an env change](/reference/gateway-recovery#apply-an-env-change); never run `config:cache` in a release.
+5. From Services through the orchestrator's existing access path, check the live route without printing or saving the token:
+
+   ```bash
+   set +x
+   set -o pipefail
+   curl --fail --silent --show-error --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \
+     -H 'Content-Type: application/json' -d '{}' \
+     https://gateway.orbit/api/v1/projects/20/dependency-read-token | \
+     python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["project_id"]==20 and d["token"]; print("Dependency token route live:",d["repository"],d["expires_at"])'
+   ```
+
+This supplies `dependency_detection.services_node_id`; absent, empty or invalid configuration refuses every caller. Peer identity uses the actual WireGuard remote address, not a caller-supplied Node ID or forwarded header. It trusts processes on Services, not one Unix user. Merging the feature changes no live setting.
+
+Deploy the Gateway first, configure its Services identity, then deploy Swamp. Swamp keeps each token in memory for one scan or PR refresh. It passes the token only to trusted Git/GIT_ASKPASS and gh child processes, never package tools or repository scripts, and discards it afterward. Services needs no standing GitHub secret. The deployment proof scans Project 20/main and reads back exact Swamp index/report versions; sources must succeed and `batch_pr` must be `open` or `absent` before the dependency reader cutover.
+
+Fixed error codes are `dependency_token.forbidden` (403), `project.not_found` (404), `dependency_token.repository_unavailable` (422), `dependency_token.refused` (403), and `dependency_token.unavailable` (503). Upstream bodies never become API error text.
+
 ## Read CI artifacts
 
 The [web build of a Gateway release](/reference/gateway-recovery#web-build) reads CI artifacts. It uses a separate token for one repository with only `Actions: read`. The token and signed download URL stay on the Gateway. Artifact storage receives no GitHub Authorization header. Existing Apps must add the Actions read permission in GitHub App settings, and each installation must accept the update before artifact downloads work. Changing Orbit’s manifest affects new registrations only.
