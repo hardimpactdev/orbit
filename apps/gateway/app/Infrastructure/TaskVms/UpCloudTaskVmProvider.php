@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\TaskVms;
 
+use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmUpCloud;
@@ -58,7 +59,7 @@ final readonly class UpCloudTaskVmProvider implements TaskVmProvider
         $server = $this->server($vm);
 
         if ($server !== null && ! in_array($server->state, ['started', 'stopped'], true)) {
-            throw new TaskVmException('task_vm.not_settled', 'The task VM power state is not settled.');
+            throw new TaskVmException(TaskVmError::NotSettled, 'The task VM power state is not settled.');
         }
 
         return $server === null ? null : new VmObservation($server->state === 'started', $server->address);
@@ -83,7 +84,7 @@ final readonly class UpCloudTaskVmProvider implements TaskVmProvider
 
     public function start(TaskVm $vm): void
     {
-        $this->startServer($vm, $this->server($vm) ?? throw new TaskVmException('task_vm.vm_missing', "Task VM [{$vm->name}] is gone from UpCloud.", 502));
+        $this->startServer($vm, $this->server($vm) ?? throw new TaskVmException(TaskVmError::VmMissing, "Task VM [{$vm->name}] is gone from UpCloud.", 502));
     }
 
     /** A clean shutdown first, then a hard stop once the guest has not stopped within 120 seconds. */

@@ -830,6 +830,7 @@ it('starts a worker again on the same group after parking and resuming its VM', 
     $workspaceId = $group->taskable_id;
     Queue::fake([ParkTaskVm::class, ResumeTaskVm::class]);
 
+    $provider->observations = [new VmObservation(true, null), new VmObservation(false, null)];
     expect(app(ParkIdleTaskVmsAction::class)->execute())->toBe(1);
     app()->call([new ParkTaskVm($vm->id), 'handle']);
     expect($vm->refresh()->state)->toBe(TaskVmState::Parked);
@@ -844,7 +845,7 @@ it('starts a worker again on the same group after parking and resuming its VM', 
 
     expect($second->refresh()->status)->toBe(OperationStatus::Succeeded);
     expect($vm->refresh()->state)->toBe(TaskVmState::Ready);
-    expect($provider->vmCalls)->toBe(['stop '.$vm->name, 'start '.$vm->name]);
+    expect($provider->vmCalls)->toBe(['observe '.$vm->name, 'stop '.$vm->name, 'observe '.$vm->name, 'start '.$vm->name]);
     $starts = array_values(array_filter($agents->calls, fn (array $call): bool => $call['command'] === 'swamp.start-worker'));
     expect($starts)->toHaveCount(2);
     expect($starts[1]['input']['enrollment_id'])->not->toBe($starts[0]['input']['enrollment_id']);

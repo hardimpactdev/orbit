@@ -3849,8 +3849,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Starts keyed tasks.park for an idle external group with an open published PR. Requires Gateway access, an empty body, and Idempotency-Key. Refuses preview, assistance, open children, workspace leases or mismatched workspace ownership with tasks.park_refused (409). Moves the group to waiting_for_review and preserves its workspace. Succeeds only after the provider confirms stopped power; missing, transitional or still-running guests fail. Result contains group_id, task_vm_id, instance_id, status and power. Retry a lost reply with the same key. See /reference/tasks#park-an-external-group-for-review.
-         * @description Park an external task group VM while its PR waits for review.
+         * Park a Task group VM for review
+         * @description Starts keyed tasks.park for an idle external group with an open published PR. Requires Gateway access, an empty body, and Idempotency-Key. Refuses preview, assistance, open children, workspace leases or mismatched workspace ownership with tasks.park_refused (409). Moves the group to waiting_for_review and preserves its workspace. Succeeds only after the provider confirms stopped power; missing, transitional or still-running guests fail. Result contains group_id, task_vm_id, instance_id, status and power. Retry a lost reply with the same key. See /reference/tasks#park-an-external-group-for-review.
          */
         post: operations["tasks-park"];
         delete?: never;

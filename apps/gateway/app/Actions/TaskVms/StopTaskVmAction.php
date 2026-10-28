@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\TaskVms;
 
+use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Models\TaskVm;
@@ -27,10 +28,10 @@ final readonly class StopTaskVmAction
             $power = $this->provider->observe($vm);
         }
         if ($power === null) {
-            throw new TaskVmException('task_vm.vm_missing', 'The task VM is missing; its workspace was not confirmed parked.');
+            throw new TaskVmException(TaskVmError::VmMissing, 'The task VM is missing; its workspace was not confirmed parked.');
         }
         if ($power->running) {
-            throw $failure ?? new TaskVmException('task_vm.park_failed', 'The task VM is still running after parking.');
+            throw $failure ?? new TaskVmException(TaskVmError::ParkFailed, 'The task VM is still running after parking.');
         }
         $vm->update(['error_code' => null, 'error_message' => null]);
     }
