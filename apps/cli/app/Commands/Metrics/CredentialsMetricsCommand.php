@@ -14,7 +14,7 @@ use Orbit\Sdk\Responses\Metrics\MetricsCredentialsResponse;
 final class CredentialsMetricsCommand extends MetricsCommand
 {
     #[\Override]
-    protected $signature = 'metrics:credentials {--reset : Reset the password} {--json : Return machine-readable JSON}';
+    protected $signature = 'metrics:credentials {--reset : Reset the password} {--idempotency-key= : Reuse a key to retry the credential reset} {--json : Return machine-readable JSON}';
 
     #[\Override]
     protected $description = 'Show Metrics credentials.';
@@ -27,12 +27,10 @@ final class CredentialsMetricsCommand extends MetricsCommand
         }
 
         $reset = $this->option('reset') === true;
-        $request = $reset ? new ResetMetricsCredentialsRequest : new ShowMetricsCredentialsRequest;
-        $labels = $reset
-            ? ['Reset Metrics credentials', 'Resetting Metrics credentials', 'Reset Metrics credentials']
-            : ['Show Metrics credentials', 'Loading Metrics credentials', 'Loaded Metrics credentials'];
-
-        $response = $this->sendWithProgress($connector, $request, MetricsCredentialsResponse::class, $labels);
+        if ($reset) {
+            return $this->integrationOperation($connector, $repository, new ResetMetricsCredentialsRequest(is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null), 'Reset Metrics credentials');
+        }
+        $response = $this->sendWithProgress($connector, new ShowMetricsCredentialsRequest, MetricsCredentialsResponse::class, ['Show Metrics credentials', 'Loading Metrics credentials', 'Loaded Metrics credentials']);
         if (! $response instanceof MetricsCredentialsResponse) {
             return self::FAILURE;
         }

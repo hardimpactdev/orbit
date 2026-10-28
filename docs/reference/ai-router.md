@@ -277,3 +277,13 @@ A window the provider did not return is unknown. Showing it as zero use would te
 - [`extension`](/cli/extension)
 - [Database role](/reference/database-role)
 - [Private DNS](/reference/private-dns)
+
+## Operation execution
+
+Setup, teardown, the release tick, and collector reconciliation record Operations. Swamp owns publication, Process changes, health checks, and cutover order. The collector keeps the existing matching-specification skip, source pin, pending activation retry, and one-time rename intent. The Gateway stores state and validates the Node, cache connection, hostname owner, extension dependencies, and outstanding model keys before admission.
+
+The collector uses Process children and the Route family's `route.caddy_converge` and `route.private_dns_publish` children. Node convergence composes `ai_router.collector_converge` on the collector Node. Certificate keys are encrypted admission snapshots and travel as Gateway-resolved references. A successful completion requires every admitted effect and child receipt.
+
+A refused takeover before collector publication restores the recorded Route intent through `ai_router.restore-takeover`, then waits for a `route.caddy_converge` child to republish it before reporting failure. A lost effect reply does not start restoration. After collector publication succeeds, a later failure leaves the live collector in place for recovery. Route removal uses the Route family's admission action through the child boundary, with `{route_id, offline:false}`.
+
+The Gateway exposes the takeover removal child only after the collector's saved health receipt proves `healthy:true`. Planning never admits that child. Each parent verifies its exact child admission snapshot before using the result as proof.

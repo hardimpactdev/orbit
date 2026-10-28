@@ -10,14 +10,12 @@ use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Process;
 use Orbit\Extensions\AiRouter\Domain\AiRouterCollectorEnvironment;
-use Orbit\Extensions\AiRouter\Domain\AiRouterHostnameRoute;
 use Orbit\Extensions\AiRouter\Domain\AiRouterLifecycleLock;
 use Orbit\Extensions\AiRouter\Domain\AiRouterPlacement;
 use Orbit\Extensions\AiRouter\Domain\AiRouterProcess;
-use Orbit\Extensions\AiRouter\Domain\AiRouterPublicationManager;
-use Orbit\Extensions\AiRouter\Domain\AiRouterRuntimeLifecycle;
 use Orbit\Extensions\AiRouter\Domain\AiRouterState;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterRenameCutover;
 use Orbit\Extensions\AiRouter\Models\AiRouterProcessSource;
@@ -32,32 +30,35 @@ final readonly class ConvergeAiRouterAction
         private AiRouterState $state,
         private AiRouterPlacement $placement,
         private AiRouterCollectorEnvironment $environment,
-        private AiRouterRuntimeLifecycle $runtime,
-        private AiRouterPublicationManager $publication,
+        private AdmitAiRouterOperationAction $operations,
         private AiRouterRenameCutover $cutover,
         private ProcessSpecification $specifications,
         private ProcessTargetResolver $targets,
-        private AiRouterHostnameRoute $routes,
     ) {}
 
-    public function execute(bool $force = false, bool $deferCutover = false): bool
+    public function execute(bool $force = false, bool $deferCutover = false): ?Operation
     {
-        return $this->lifecycle->run(function () use ($force, $deferCutover): bool {
+        return $this->lifecycle->run(function () use ($force, $deferCutover): ?Operation {
             if (! $this->state->enabled()) {
-                return false;
+                return null;
             }
             $nodeId = $this->state->nodeId();
             $slug = $this->state->cacheConnection();
             if ($nodeId === null || $slug === null) {
-                return false;
+                return null;
+            }
+            $existing = Operation::query()->where('node_id', $nodeId)->whereIn('kind', ['ai_router.setup', 'ai_router.collector_converge'])
+                ->whereIn('status', ['queued', 'running', 'waiting'])->first();
+            if ($existing !== null) {
+                return $existing;
             }
             $process = Process::query()->where('owner_type', Node::class)->where('owner_id', $nodeId)->where('name', AiRouterProcess::NAME)->first();
             $pending = $this->cutover->pending($nodeId);
             if ($deferCutover && $pending) {
-                return false;
+                return null;
             }
             if (! $force && ! $pending && ! $this->extensions->enabled('ai-router')) {
-                return false;
+                return null;
             }
             $node = $this->placement->node($nodeId);
             $connection = $this->placement->connection($slug);
@@ -69,19 +70,10 @@ final readonly class ConvergeAiRouterAction
                 && $process->status !== LifecycleStatus::Failed
                 && $source?->activation_pending === false
                 && $source->source_revision === $this->delivery->pin($node)) {
-                return false;
-            }
-            $takeover = $this->routes->takeoverCandidate($node);
-            if ($pending) {
-                $this->cutover->retire($node);
-            }
-            $this->publication->converge($node, $takeover);
-            $this->runtime->converge($node, $environment);
-            if ($pending) {
-                $this->cutover->complete($node);
+                return null;
             }
 
-            return true;
+            return $this->operations->execute('ai_router.collector_converge', $force ? 'integration' : 'schedule');
         });
     }
 }

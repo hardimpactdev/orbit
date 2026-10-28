@@ -6,6 +6,7 @@ namespace App\Domain\Metrics;
 
 use App\Data\Metrics\MetricsCredentialsData;
 use App\Models\Node;
+use App\Models\Operation;
 
 interface MetricsCredentialManager
 {
@@ -25,5 +26,5 @@ interface MetricsCredentialManager
      */
     public function storedCredentials(): MetricsCredentialsData;
 
-    public function reset(): MetricsCredentialsData;
+    public function reset(): Operation;
 }

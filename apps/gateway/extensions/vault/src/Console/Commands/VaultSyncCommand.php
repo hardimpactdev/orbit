@@ -17,14 +17,8 @@ final class VaultSyncCommand extends Command
 
     public function handle(SyncVaultAction $action): int
     {
-        $error = $action->scheduled();
+        $action->scheduled();
 
-        if ($error === null) {
-            return self::SUCCESS;
-        }
-
-        $this->components->error("{$error['code']}: {$error['message']}");
-
-        return self::FAILURE;
+        return self::SUCCESS;
     }
 }

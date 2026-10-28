@@ -4,17 +4,13 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\AiRouter\Actions;
 
+use App\Models\Operation;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
-use Orbit\Extensions\AiRouter\Data\AiRouterStatusData;
 use Orbit\Extensions\AiRouter\Data\EnableAiRouterData;
-use Orbit\Extensions\AiRouter\Domain\AiRouterCollectorEnvironment;
-use Orbit\Extensions\AiRouter\Domain\AiRouterHostname;
 use Orbit\Extensions\AiRouter\Domain\AiRouterHostnameRoute;
 use Orbit\Extensions\AiRouter\Domain\AiRouterLifecycleLock;
 use Orbit\Extensions\AiRouter\Domain\AiRouterPlacement;
-use Orbit\Extensions\AiRouter\Domain\AiRouterPublicationManager;
-use Orbit\Extensions\AiRouter\Domain\AiRouterRuntimeLifecycle;
-use Orbit\Extensions\AiRouter\Domain\AiRouterSnapshotStore;
 use Orbit\Extensions\AiRouter\Domain\AiRouterState;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterRenameCutover;
 use SensitiveParameter;
@@ -26,19 +22,16 @@ final readonly class EnableAiRouterAction
         private AiRouterRenameCutover $cutover,
         private AiRouterPlacement $placement,
         private AiRouterState $state,
-        private AiRouterRuntimeLifecycle $runtime,
-        private AiRouterPublicationManager $publication,
-        private AiRouterSnapshotStore $snapshots,
-        private AiRouterCollectorEnvironment $environment,
+        private AdmitAiRouterOperationAction $operations,
         private AiRouterHostnameRoute $hostnameRoute = new AiRouterHostnameRoute,
     ) {}
 
-    public function execute(#[SensitiveParameter] EnableAiRouterData $data): AiRouterStatusData
+    public function execute(#[SensitiveParameter] EnableAiRouterData $data): Operation
     {
-        return $this->lifecycle->run(fn (): AiRouterStatusData => $this->setup($data));
+        return $this->lifecycle->run(fn (): Operation => DB::transaction(fn (): Operation => $this->setup($data)));
     }
 
-    private function setup(#[SensitiveParameter] EnableAiRouterData $data): AiRouterStatusData
+    private function setup(#[SensitiveParameter] EnableAiRouterData $data): Operation
     {
         $this->cutover->assertComplete();
         if (config('task_vms.enabled') === true) {
@@ -63,17 +56,7 @@ final readonly class EnableAiRouterAction
             $readToken,
             $controlToken,
         );
-        // Publish first: a takeover moves the name onto the collector site, which waits for the collector while
-        // the runtime converge restarts it. The Route's site would fail those requests instead.
-        $this->publication->converge($node, takeover: $takeover);
-        $this->runtime->converge($node, $this->environment->build($connection));
 
-        return new AiRouterStatusData(
-            true,
-            $node->id,
-            $data->cacheConnection,
-            $this->snapshots->snapshot()?->collectedAt,
-            AiRouterHostname::Value,
-        );
+        return $this->operations->execute('ai_router.setup');
     }
 }

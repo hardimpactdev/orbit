@@ -8,7 +8,6 @@ use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketRegistry;
-use App\Domain\WebSocket\WebSocketRuntimeLifecycle;
 use App\Models\Node;
 use App\Models\WebSocketApp;
 use App\Models\WebSocketRuntime;
@@ -60,7 +59,6 @@ it('keeps failed-DNS app creation recoverable without changing roles or Gateway 
     [$server, $gatewayApp] = activate_websocket_role($this->server);
     $server->roles()->update(['status' => LifecycleStatus::Failed, 'failed_step' => 'converge:private-dns', 'error_code' => 'app-dev.dns_config_failed']);
     $this->mock(PrivateDnsManager::class)->shouldNotReceive('converge');
-    $this->mock(WebSocketRuntimeLifecycle::class)->shouldNotReceive('converge');
     Http::fake(fn () => Http::failedConnection());
 
     $response = $this->withHeader('Idempotency-Key', 'hauzer-retry')->postJson('/api/v1/websocket-apps', ['name' => 'hauzer-prod'])

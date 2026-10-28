@@ -4,25 +4,20 @@ declare(strict_types=1);
 
 namespace App\Actions\Analytics;
 
-use App\Actions\Routes\PublishPublicRouteAction;
-use App\Data\Analytics\InstanceAnalyticsData;
 use App\Data\Routes\RouteData;
 use App\Domain\Analytics\AnalyticsTrackingHosts;
-use App\Domain\Analytics\AnalyticsTrackingRouteProjector;
 use App\Domain\Analytics\AnalyticsTrackingUpstream;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
-use App\Domain\Metrics\MetricsFleetReconciler;
-use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteProvenance;
-use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Route;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -32,30 +27,25 @@ final readonly class EnableInstanceAnalyticsAction
 {
     public function __construct(
         private ShowInstanceAnalyticsAction $show,
-        private DisableInstanceAnalyticsAction $disable,
-        private AnalyticsTrackingRouteProjector $projection,
-        private PublishPublicRouteAction $publication,
+        private StartInstanceAnalyticsOperationAction $intents,
         private RouteStateResolver $state,
         private InstanceEnvironmentOperationLock $operations,
         private RecordEventBroadcaster $broadcaster,
-        private ?MetricsFleetReconciler $metrics = null,
     ) {}
 
     /** @param list<string> $hosts The exact host set; empty means the default host. */
-    public function execute(Instance $instance, array $hosts): InstanceAnalyticsData
+    public function execute(Instance $instance, array $hosts): Operation
     {
         $result = $this->operations->run(
             [$instance->id],
-            fn (): InstanceAnalyticsData => $this->executeOwned($instance, $hosts),
+            fn (): Operation => DB::transaction(fn (): Operation => $this->executeOwned($instance, $hosts)),
         );
-
-        $this->metrics?->reconcile();
 
         return $result;
     }
 
     /** @param list<string> $hosts */
-    private function executeOwned(Instance $instance, array $hosts): InstanceAnalyticsData
+    private function executeOwned(Instance $instance, array $hosts): Operation
     {
         if (! AnalyticsTrackingUpstream::node() instanceof Node) {
             throw new ResourceOperationException(
@@ -80,16 +70,16 @@ final readonly class EnableInstanceAnalyticsAction
             }
         }
 
+        $desired = [];
         foreach ($hosts as $host) {
             $route = $current->get($host) ?? $this->create($instance, $owner, $host);
-            $this->converge($route);
+            $desired[] = $route;
         }
 
-        foreach ($current->reject(static fn (Route $route): bool => in_array($route->domain, $hosts, true)) as $route) {
-            $this->disable->removeRoute($route);
-        }
+        $retired = array_values($current->reject(static fn (Route $route): bool => in_array($route->domain, $hosts, true))->all());
 
-        return $this->show->execute($instance);
+        return $this->intents->execute($instance, $desired, $retired);
+
     }
 
     /**
@@ -145,44 +135,6 @@ final readonly class EnableInstanceAnalyticsAction
         );
 
         return $route;
-    }
-
-    /** Runs again for a host that an earlier request left pending, failed, or off the public edge. */
-    private function converge(Route $route): void
-    {
-        if (! $route->isAuthoritative()) {
-            try {
-                $this->projection->converge($route);
-                $route->update(['status' => RouteStatus::Active, 'failed_step' => null, 'error_code' => null]);
-            } catch (Throwable $exception) {
-                $route->update([
-                    'status' => RouteStatus::Failed,
-                    'sites_published' => false,
-                    'failed_step' => 'projection',
-                    'error_code' => property_exists($exception, 'errorCode') && is_string($exception->errorCode)
-                        ? $exception->errorCode
-                        : 'route.projection_failed',
-                ]);
-
-                throw $exception;
-            }
-        }
-
-        // Only a cluster-scoped Route reaches the public edge; a node-scoped one is served by its
-        // own Node, exactly like the instance domain it follows.
-        if (
-            $route->publication !== RoutePublication::Public
-            || new PublicRouteEligibility()->publicEdgeIsLive($route)
-        ) {
-            return;
-        }
-
-        $published = $this->publication->execute($route, RoutePublication::Public);
-        $this->broadcaster->broadcast(
-            RecordEventType::RouteUpdated,
-            $published->id,
-            RouteData::fromModel($published)->toArray(),
-        );
     }
 
     private function hostTaken(string $host, ?Throwable $previous = null): ResourceOperationException

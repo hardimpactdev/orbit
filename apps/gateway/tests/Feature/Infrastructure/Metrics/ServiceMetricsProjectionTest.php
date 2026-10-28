@@ -5,11 +5,7 @@ declare(strict_types=1);
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Metrics\ExporterPreference;
 use App\Domain\Metrics\ExporterPreferenceRepository;
-use App\Domain\Metrics\MetricsCredentialManager;
-use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsFirewallExpectationProvider;
-use App\Domain\Metrics\MetricsRuntimeLifecycle;
-use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Doctor\ProductionInstanceInspectionExpectationFactory;
 use App\Infrastructure\Metrics\PrometheusConfigRenderer;
 use App\Infrastructure\Metrics\ServiceMetricsConfigRenderer;
@@ -21,7 +17,6 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
 use Symfony\Component\Yaml\Yaml;
-use Tests\Support\FakeAgentCommandRunner;
 
 it('combines metrics preferences with applicable roles', function (): void {
     $metrics = service_metrics_node('metrics');
@@ -115,23 +110,6 @@ it('wires selected service monitoring into container-resolved publication and in
     ]);
     $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['publication' => 'public', 'status' => 'active']);
-    $agents = new FakeAgentCommandRunner()->answer('metrics.runtime', function (array $input) use ($node): array {
-        $jobs = Yaml::parse($input['action']['configuration']['/etc/orbit/metrics/prometheus.yml'])['scrape_configs'];
-        expect(array_column($jobs, 'job_name'))->toContain('orbit-caddy-'.$node->id, 'orbit-fpm-'.$node->id);
-
-        return ['changed' => true];
-    });
-    app()->instance(AgentCommandRunner::class, $agents);
-    $credentials = Mockery::mock(MetricsCredentialManager::class);
-    $credentials->shouldReceive('passwordForConvergence')->once()->andReturn('test-password');
-    $credentials->shouldReceive('verifyActive')->once();
-    app()->instance(MetricsCredentialManager::class, $credentials);
-    $exporters = Mockery::mock(MetricsExporterLifecycle::class);
-    $exporters->shouldReceive('targets')->once()->andReturn([]);
-    app()->instance(MetricsExporterLifecycle::class, $exporters);
-
-    app(MetricsRuntimeLifecycle::class)->converge($metrics, $assignment);
-
     $inspection = app(ProductionInstanceInspectionExpectationFactory::class)->make($instance->refresh());
     expect($inspection->runtimeConfiguration->pool)->toContain('pm.status_path = /orbit-fpm-status');
     expect(array_column(app(MetricsFirewallExpectationProvider::class)->for($node), 'resourceId'))->toContain(

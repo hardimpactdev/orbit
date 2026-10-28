@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Commands\Metrics;
 
 use App\Commands\GatewayCommand;
+use App\Commands\Integrations\FollowsIntegrationOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
@@ -13,6 +14,8 @@ use Orbit\Sdk\Responses\Metrics\MetricsMutationResponse;
 
 abstract class MetricsCommand extends GatewayCommand
 {
+    use FollowsIntegrationOperations;
+
     protected function connector(
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $factory,

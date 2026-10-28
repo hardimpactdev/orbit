@@ -7,7 +7,6 @@ namespace App\Commands\Vault;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Vault\TeardownVaultRequest;
-use Orbit\Sdk\Responses\Vault\VaultStatusResponse;
 
 final class TeardownVaultCommand extends VaultCommand
 {
@@ -15,6 +14,7 @@ final class TeardownVaultCommand extends VaultCommand
     protected $signature = 'vault:teardown
         {--keep-items : Leave the published items in Vaultwarden}
         {--yes : Confirm the teardown without a prompt}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -41,15 +41,6 @@ final class TeardownVaultCommand extends VaultCommand
             return self::FAILURE;
         }
 
-        $response = $this->sendWithProgress(
-            $connector,
-            new TeardownVaultRequest($keepItems),
-            VaultStatusResponse::class,
-            ['Tear down vault', $keepItems ? 'Deleting the stored account' : 'Deleting the published items', 'Tore down vault'],
-        );
-
-        return $response instanceof VaultStatusResponse
-            ? $this->renderStatus($response, 'Vaultwarden publishing is torn down.')
-            : self::FAILURE;
+        return $this->integrationOperation($connector, $repository, new TeardownVaultRequest($keepItems, is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null), 'Tear down vault');
     }
 }

@@ -11,10 +11,8 @@ use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Metrics\ExporterDegradationReason;
-use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Metrics\MetricsFleetReconciler;
-use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\NodeProvisioningLock;
 use App\Domain\Nodes\NodeProvisioningLockException;
@@ -30,12 +28,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
-use App\Domain\WebSocket\WebSocketPublicationManager;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
-use App\Infrastructure\Metrics\MetricsCadvisorRuntime;
-use App\Infrastructure\Metrics\MetricsExporterRuntime;
-use App\Infrastructure\Metrics\MetricsExporterState;
-use App\Infrastructure\Metrics\ServiceMetricsRuntime;
 use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
 use App\Models\Activity;
 use App\Models\Cluster;
@@ -59,11 +52,6 @@ use Tests\Support\FakeRouterLanIngressReconciler;
 use Tests\Support\TaskVmSettingsBuilder;
 
 beforeEach(function (): void {
-    $services = Mockery::mock(ServiceMetricsRuntime::class);
-    $services->shouldReceive('snapshot')->andReturn('{}');
-    $services->shouldReceive('converge');
-    $services->shouldReceive('restore');
-    app()->instance(ServiceMetricsRuntime::class, $services);
     $this->dns = new RemoveNodeFakeDnsManager;
     $this->peers = new RemoveNodeFakePeerProjection;
     $this->metricsAccess = new RemoveNodeFakeMetricsAccessRevoker;
@@ -528,78 +516,6 @@ it('restores active Metrics selection when exporter retirement fails', function 
         ->toBe(0);
 });
 
-it('removes an unreachable node while Metrics is enabled', function (): void {
-    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
-    $target = remove_node_record(name: 'unreachable', wireguardIp: '10.44.0.3');
-    $metricsNode = remove_node_record(name: 'metrics', wireguardIp: '10.44.0.4');
-    NodeRole::query()->create([
-        'node_id' => $metricsNode->id,
-        'role' => RoleName::Metrics->value,
-        'status' => LifecycleStatus::Active->value,
-    ]);
-    $caller->accessibleNodes()->attach($target);
-    $target->update(['wireguard_public_key' => 'TARGET_PUBLIC_KEY']);
-    // Every SSH call to the removed node fails, exactly as it would while the
-    // node is powered off.
-    $exporters = new RemoveNodeUnreachableExporterRuntime('unreachable');
-    app()->instance(MetricsExporterRuntime::class, $exporters);
-    app()->instance(MetricsCadvisorRuntime::class, $exporters);
-    app()->instance(MetricsRuntimeLifecycle::class, new RemoveNodeFakeMetricsRuntime);
-
-    $this
-        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
-        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false])
-        ->assertOk();
-
-    // The retire of the dead node is attempted and fails, and the remaining
-    // fleet still converges afterwards rather than the removal aborting.
-    expect($target->fresh())
-        ->toBeNull()
-        ->and($this->peers->removed)
-        ->toBe([$target->id])
-        ->and($exporters->events)
-        ->toContain('remove:unreachable')
-        ->toContain('converge:metrics')
-        ->toContain('snapshot:operator')
-        ->and(array_filter(
-            $exporters->events,
-            static fn (string $event): bool => str_ends_with($event, ':unreachable') && $event !== 'remove:unreachable',
-        ))
-        ->toBeEmpty();
-});
-
-it('reconciles a fleet peer that is unreachable without failing the removal', function (): void {
-    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
-    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
-    $metricsNode = remove_node_record(name: 'metrics', wireguardIp: '10.44.0.4');
-    $peer = remove_node_record(name: 'dead-peer', wireguardIp: '10.44.0.5');
-    NodeRole::query()->create([
-        'node_id' => $metricsNode->id,
-        'role' => RoleName::Metrics->value,
-        'status' => LifecycleStatus::Active->value,
-    ]);
-    NodeRole::query()->create([
-        'node_id' => $peer->id,
-        'role' => RoleName::AppProd->value,
-        'status' => LifecycleStatus::Active->value,
-    ]);
-    $caller->accessibleNodes()->attach($target);
-    $exporters = new RemoveNodeUnreachableExporterRuntime('dead-peer');
-    app()->instance(MetricsExporterRuntime::class, $exporters);
-    app()->instance(MetricsCadvisorRuntime::class, $exporters);
-    app()->instance(MetricsRuntimeLifecycle::class, new RemoveNodeFakeMetricsRuntime);
-
-    $this
-        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
-        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false])
-        ->assertOk();
-
-    expect($target->fresh())
-        ->toBeNull()
-        ->and(app(ExporterDegradationRepository::class)->get($peer->id))
-        ->toBe(ExporterDegradationReason::Unreachable);
-});
-
 it('removes only the target WireGuard peer before reconciling DNS', function (): void {
     $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
     $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
@@ -976,9 +892,7 @@ it('releases every runtime on a confirmed dead websocket Node and completes pend
     remove_node_offline_probe($target);
     if ($hasRole) {
         remove_node_role_fixture($target, RoleName::WebSocket);
-        $publication = Mockery::mock(WebSocketPublicationManager::class);
-        $publication->shouldReceive('removeUnreachable')->once()->withArgs(fn (Node $node): bool => $node->is($target));
-        app()->instance(WebSocketPublicationManager::class, $publication);
+
     }
     foreach (['default', 'second'] as $slot) {
         WebSocketRuntime::query()->create([
@@ -1336,72 +1250,6 @@ final class RemoveNodeFakePeerProjection implements GatewayPeerProjectionManager
         if ($this->restoreFailure instanceof Throwable) {
             throw $this->restoreFailure;
         }
-    }
-}
-
-final class RemoveNodeFakeMetricsRuntime implements MetricsRuntimeLifecycle
-{
-    public function converge(Node $node, NodeRole $assignment): void {}
-
-    public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
-
-    public function health(Node $node, string $service): bool
-    {
-        return true;
-    }
-}
-
-final class RemoveNodeUnreachableExporterRuntime implements MetricsCadvisorRuntime, MetricsExporterRuntime
-{
-    /** @var list<string> */
-    public array $events = [];
-
-    public function __construct(
-        private readonly string $unreachableNode,
-    ) {}
-
-    public function snapshot(Node $node, Node $metricsNode): MetricsExporterState
-    {
-        $this->events[] = "snapshot:{$node->name}";
-        $this->guard($node);
-
-        return new MetricsExporterState(null, false, null);
-    }
-
-    public function converge(Node $node, Node $metricsNode): void
-    {
-        $this->events[] = "converge:{$node->name}";
-        $this->guard($node);
-    }
-
-    public function remove(Node $node, Node $metricsNode): void
-    {
-        $this->events[] = "remove:{$node->name}";
-        $this->guard($node);
-    }
-
-    public function restore(Node $node, Node $metricsNode, MetricsExporterState $state): void
-    {
-        $this->events[] = "restore:{$node->name}";
-        $this->guard($node);
-    }
-
-    public function actual(Node $node, Node $metricsNode): string
-    {
-        return $node->name === $this->unreachableNode ? 'unknown' : 'active';
-    }
-
-    private function guard(Node $node): void
-    {
-        if ($node->name !== $this->unreachableNode) {
-            return;
-        }
-
-        throw new ResourceOperationException(
-            'metrics.exporter_configuration_inspection_failed',
-            'The Metrics exporter configuration could not be inspected.',
-            502,
-        );
     }
 }
 

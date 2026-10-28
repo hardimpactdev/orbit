@@ -216,3 +216,13 @@ Volumes and the password survive a removal, so re-enabling is safe. Data deletio
 ### Node metrics through Grafana
 
 Prometheus stays unpublished. Grafana's datasource proxy reuses the publication and the password that already exist. A new Prometheus host name is a rejected alternative. A Gateway endpoint that reads Prometheus over SSH is also rejected, because it adds an SSH round trip to each refresh.
+
+## Operation execution
+
+Swamp applies exporter changes through the existing named `metrics.node-exporter` and `metrics.cadvisor` agent commands. Each Node effect has its own Operation and holds its recorded Node target. The Gateway binds the two WireGuard addresses and the exact converge or remove action before Swamp can run it. A successful completion requires the agent's successful change receipt. Replaying a lost reply keeps the same effect key; a resumed successful step does no new Node work. Exporter and cAdvisor ownership checks and rollback stay in the Node commands.
+
+Retiring a Node records `metrics.retire` with separate exporter, cAdvisor, and service cleanup children. Swamp tries every cleanup even when another fails. Retirement does not await that Operation; the remaining fleet projection still drops the retiring Node. PHP monitoring reads each pool after convergence and includes its fingerprint in the exporter configuration, so a changed pool reloads the exporter.
+
+Node role changes use `metrics.role_converge {}` and `metrics.role_remove {purge_data, offline}` children. They read `parent.state.role_intent` through the stamped parent relation and use the source or target's recorded Settings scope. Removal keeps working after the assignment claim moves to another Node. The Node parent owns assignment and Settings finalization after cleanup proof.
+
+Other families preserve the fleet reconciliation hook with a `metrics.reconcile {}` child on the active Metrics serving Node. The owning admission validates that assignment and captures the fleet, service targets and publication Nodes itself. A parent with no active Metrics assignment omits this child. It never supplies a fleet or runs a PHP executor.

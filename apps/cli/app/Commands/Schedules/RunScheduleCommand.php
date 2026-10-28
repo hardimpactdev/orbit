@@ -12,6 +12,7 @@ final class RunScheduleCommand extends ScheduleItemCommand
     #[\Override]
     protected $signature = 'schedule:run
         {schedule : Schedule UUID}
+        {--idempotency-key= : Reuse a key to retry this Operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -19,7 +20,7 @@ final class RunScheduleCommand extends ScheduleItemCommand
 
     protected function request(string $scheduleId): GatewayRequest
     {
-        return new RunScheduleRequest($scheduleId);
+        return new RunScheduleRequest($scheduleId, is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null);
     }
 
     protected function progressLabels(): array

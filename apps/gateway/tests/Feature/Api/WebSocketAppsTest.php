@@ -19,9 +19,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\WebSocket\WebSocketCredentialManager;
-use App\Domain\WebSocket\WebSocketPublicationManager;
 use App\Domain\WebSocket\WebSocketRegistry;
-use App\Domain\WebSocket\WebSocketRuntimeLifecycle;
 use App\Domain\WebSocket\WebSocketServerCredentials;
 use App\Infrastructure\Nodes\Roles\WebSocketRoleBaseline;
 use App\Models\Instance;
@@ -51,14 +49,6 @@ beforeEach(function (): void {
     {
         public function converge(?Node $pendingNode = null): void {}
     });
-    $this->runtime = new WebSocketAppsRuntimeFake;
-    $converger = new WebSocketAppsRoleConverger(new WebSocketRoleBaseline(
-        $this->runtime,
-        new WebSocketAppsPublicationFake,
-        app(WebSocketCredentialManager::class),
-    ));
-    app()->instance(RoleBaselineConverger::class, $converger);
-    app()->instance(NodeRoleDependentCleaner::class, $converger);
     app()->instance(InstanceOperationPreflight::class, new WebSocketAppsEnvironmentAccess);
     app()->instance(InstanceEnvironmentReader::class, new WebSocketAppsEnvironmentAccess);
     app()->instance(InstanceEnvironmentWriter::class, new WebSocketAppsEnvironmentAccess);
@@ -75,7 +65,7 @@ describe('websocket:app:create', function (): void {
 
         $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])
             ->assertStatus(202)
-            ->assertJsonPath('operation.state', 'pending');
+            ->assertJsonPath('data.status', 'queued');
 
         Sleep::assertNeverSlept();
     });
@@ -87,7 +77,7 @@ describe('websocket:app:create', function (): void {
 
         $app = WebSocketApp::query()->where('name', 'hauzer')->sole();
         $response
-            ->assertJsonPath('data', [
+            ->assertJsonPath('data.input.app', [
                 'id' => $app->id,
                 'name' => 'hauzer',
                 'app_id' => $app->app_id,
@@ -97,28 +87,24 @@ describe('websocket:app:create', function (): void {
 
         expect($response->getContent())->not->toContain($app->secret)
             ->and(DB::table('websocket_apps')->where('name', 'hauzer')->value('secret'))->not->toBe($app->secret)
-            ->and(strlen($app->secret))->toBe(40)
-            ->and($this->runtime->converged)->toBe([]);
+            ->and(strlen($app->secret))->toBe(40);
     });
 
     it('keeps the app for the next converge when no websocket role is active', function (): void {
         $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])->assertStatus(202);
 
-        expect(WebSocketApp::query()->pluck('name')->all())->toBe(['hauzer'])
-            ->and($this->runtime->converged)->toBe([]);
+        expect(WebSocketApp::query()->pluck('name')->all())->toBe(['hauzer']);
     });
 
-    it('keeps the created app pending when runtime notification fails', function (): void {
+    it('keeps the created app queued while runtime reports are pending', function (): void {
         websocket_apps_activate_role($this->caller);
-        $this->runtime->failConverge = true;
 
         $response = $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])
             ->assertStatus(202)
-            ->assertJsonPath('operation.state', 'pending');
+            ->assertJsonPath('data.status', 'queued');
 
         $app = WebSocketApp::query()->where('name', 'hauzer')->sole();
-        expect($response->getContent())->not->toContain($app->secret)
-            ->and($this->runtime->converged)->toBe([]);
+        expect($response->getContent())->not->toContain($app->secret);
     });
 
     it('refuses the Gateway name, a taken name, and a name that is not a slug', function (string $name): void {
@@ -164,10 +150,9 @@ describe('websocket:app:destroy', function (): void {
 
         $this->deleteJson('/api/v1/websocket-apps/hauzer')
             ->assertStatus(202)
-            ->assertJsonPath('data.name', 'hauzer');
+            ->assertJsonPath('data.input.app.name', 'hauzer');
 
-        expect(WebSocketApp::query()->pluck('name')->all())->toBe(['gateway'])
-            ->and($this->runtime->converged)->toBe([]);
+        expect(WebSocketApp::query()->pluck('name')->all())->toBe(['gateway']);
     });
 
     it('refuses the Gateway app', function (): void {
@@ -180,19 +165,17 @@ describe('websocket:app:destroy', function (): void {
         expect(WebSocketApp::query()->count())->toBe(1);
     });
 
-    it('keeps deletion pending when runtime notification fails', function (): void {
+    it('keeps deletion queued while runtime reports are pending', function (): void {
         websocket_apps_activate_role($this->caller);
         $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])->assertStatus(202);
         $app = WebSocketApp::query()->where('name', 'hauzer')->sole();
-        $this->runtime->failConverge = true;
 
         $this->deleteJson('/api/v1/websocket-apps/hauzer')
             ->assertStatus(202)
-            ->assertJsonPath('operation.state', 'pending');
+            ->assertJsonPath('data.status', 'queued');
 
         expect(WebSocketApp::query()->whereKey($app->id)->exists())->toBeFalse()
-            ->and(WebSocketApp::query()->pluck('name')->all())->toBe(['gateway'])
-            ->and($this->runtime->converged)->toBe([]);
+            ->and(WebSocketApp::query()->pluck('name')->all())->toBe(['gateway']);
     });
 
     it('refuses an app that is still on an Instance', function (): void {
@@ -216,7 +199,7 @@ describe('instance:websocket:add and instance:websocket:remove', function (): vo
 
         $response = $this->putJson("/api/v1/instances/{$instance->id}/websocket-apps/hauzer")
             ->assertOk()
-            ->assertJsonPath('data', [
+            ->assertJsonPath('data.input.app', [
                 'instance_id' => $instance->id,
                 'name' => 'hauzer',
                 'keys' => [
@@ -352,76 +335,6 @@ function websocket_apps_stored_env(Instance $instance): array
         ->all();
 }
 
-/** Converges the `websocket` role through its real baseline, and only that role. */
-final readonly class WebSocketAppsRoleConverger implements NodeRoleDependentCleaner, RoleBaselineConverger
-{
-    public function __construct(private WebSocketRoleBaseline $websocket) {}
-
-    public function converge(Node $node, NodeRole $assignment): void
-    {
-        if ($assignment->role !== RoleName::WebSocket) {
-            throw new LogicException("Unexpected role [{$assignment->role->value}].");
-        }
-
-        $this->websocket->converge($node, $assignment);
-    }
-
-    public function remove(Node $node, NodeRole $assignment, bool $purgeData): void
-    {
-        throw new LogicException('Not used.');
-    }
-
-    public function removeUnreachable(Node $node, NodeRole $assignment): void
-    {
-        throw new LogicException('Not used.');
-    }
-
-    public function clean(NodeRoleDependencySet $dependencies): void {}
-}
-
-/** Records what each converge would render into the Reverb server's `.env`. */
-final class WebSocketAppsRuntimeFake implements WebSocketRuntimeLifecycle
-{
-    /** @var list<WebSocketServerCredentials> */
-    public array $converged = [];
-
-    public bool $failConverge = false;
-
-    public function converge(Node $node, NodeRole $assignment, WebSocketServerCredentials $credentials): void
-    {
-        $this->converged[] = $credentials;
-
-        if ($this->failConverge) {
-            throw new NodeRoleOperationException(
-                step: 'websocket-runtime',
-                errorCode: 'node_role.convergence_failed',
-                underlyingErrorCode: 'websocket.runtime_convergence_failed',
-                message: 'WebSocket runtime convergence failed.',
-            );
-        }
-    }
-
-    public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
-
-    public function health(Node $node): bool
-    {
-        return true;
-    }
-}
-
-final class WebSocketAppsPublicationFake implements WebSocketPublicationManager
-{
-    public function converge(Node $node): void {}
-
-    public function checkListenAddresses(Node $node): void {}
-
-    public function remove(Node $node): void {}
-
-    public function retire(Node $node): void {}
-
-    public function removeUnreachable(Node $node): void {}
-}
-
 final class WebSocketAppsEnvironmentAccess implements InstanceEnvironmentReader, InstanceEnvironmentWriter, InstanceOperationPreflight
 {
     use FakesEnvironmentSyncInspection;
@@ -455,12 +368,12 @@ it('rotates credentials and all attached stored environments once even when the 
     $before = $app->secret;
     $instance->node->update(['status' => LifecycleStatus::Failed]);
     $response = $this->withHeader('Idempotency-Key', 'rotate')->postJson('/api/v1/websocket-apps/hauzer/rotate')->assertStatus(202)
-        ->assertJsonPath('data.instance_rollout.instance_ids', [$instance->id]);
+        ->assertJsonPath('data.input.app.instance_rollout.instance_ids', [$instance->id]);
     $newSecret = $app->refresh()->secret;
     expect($newSecret)->not->toBe($before)->and($app->credential_generation)->toBe(2)
         ->and(websocket_apps_stored_env($instance)['REVERB_APP_SECRET'])->toBe($newSecret)
         ->and($response->getContent())->not->toContain($newSecret)->not->toContain($before);
-    $this->postJson('/api/v1/websocket-apps/hauzer/rotate')->assertStatus(202)->assertJsonPath('operation.id', $response->json('operation.id'));
+    $this->postJson('/api/v1/websocket-apps/hauzer/rotate')->assertStatus(202)->assertJsonPath('data.id', $response->json('data.id'));
     expect($app->refresh()->secret)->toBe($newSecret)->and($app->credential_generation)->toBe(2);
 });
 

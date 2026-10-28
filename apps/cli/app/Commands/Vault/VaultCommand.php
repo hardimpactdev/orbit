@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Commands\Vault;
 
 use App\Commands\GatewayCommand;
+use App\Commands\Integrations\FollowsIntegrationOperations;
 use App\Support\Console\ConsoleWriter;
 use App\Support\GatedExtensionCommand;
 use Orbit\Sdk\Responses\Vault\VaultStatusResponse;
@@ -12,6 +13,8 @@ use Orbit\Sdk\Responses\Vault\VaultStatusResponse;
 /** The `vault:*` commands belong to the vault extension and follow its Gateway switch. */
 abstract class VaultCommand extends GatewayCommand implements GatedExtensionCommand
 {
+    use FollowsIntegrationOperations;
+
     public function extensionSlug(): ?string
     {
         return 'vault';

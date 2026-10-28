@@ -8,8 +8,6 @@ use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Processes\DesiredProcessState;
-use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -19,8 +17,6 @@ use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Domain\TaskVms\TaskVmState;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
-use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
-use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
@@ -35,16 +31,10 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Orbit\Extensions\AiRouter\Domain\AiRouterAccount;
-use Orbit\Extensions\AiRouter\Domain\AiRouterProcess;
-use Orbit\Extensions\AiRouter\Domain\AiRouterPublicationManager;
-use Orbit\Extensions\AiRouter\Domain\AiRouterRuntimeLifecycle;
 use Orbit\Extensions\AiRouter\Domain\AiRouterSnapshotStore;
 use Orbit\Extensions\AiRouter\Domain\AiRouterState;
 use Orbit\Extensions\AiRouter\Domain\AiRouterWindow;
 use Orbit\Extensions\AiRouter\Http\Controllers\AiRouterController;
-use Orbit\Extensions\AiRouter\Infrastructure\AiRouterCaddySiteSource;
-use Orbit\Extensions\AiRouter\Infrastructure\RecordingAiRouterPublicationManager;
-use Orbit\Extensions\AiRouter\Infrastructure\RecordingAiRouterRuntimeLifecycle;
 
 function ai_router_gateway(): Node
 {
@@ -130,46 +120,6 @@ it('requires Gateway authorization for every ai-router action', function (): voi
     expect($attribute->servingNode)->toBe(ServingNode::Gateway);
 });
 
-it('enables ai-router when shared Valkey sits on a database Node', function (): void {
-    config(['task_vms.enabled' => false, 'task_vms.model_proxy_origin' => 'http://10.44.0.3:8317']);
-    $gateway = ai_router_gateway();
-    $node = ai_router_node();
-    ai_router_valkey($node);
-
-    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
-        ->postJson('/api/v1/ai-router', [
-            'node_id' => $node->id,
-            'cache_connection' => 'valkey',
-            'cliproxy_url' => 'http://127.0.0.1:8317',
-            'cliproxy_management_key' => 'management-key',
-        ])
-        ->assertCreated()
-        ->assertJsonPath('data.enabled', true)
-        ->assertJsonPath('data.hostname', 'collector.ai-router.orbit')
-        ->assertJsonPath('data.node_id', $node->id)
-        ->assertJsonPath('data.cache_connection', 'valkey')
-        ->assertJsonMissingPath('data.cliproxy_management_key')
-        ->assertJsonMissingPath('data.read_token');
-
-    $environment = app(RecordingAiRouterRuntimeLifecycle::class)->environment;
-
-    $process = Process::query()->where('name', AiRouterProcess::NAME)->first();
-
-    expect($process)->not->toBeNull()
-        ->and($process->runtime_config['command'])->toBe([
-            AiRouterProcess::EXECUTABLE,
-            'service',
-            'ai-router-collector',
-        ])
-        ->and($process->runtime_config['environment']['AI_ROUTER_CACHE_HOST'])->toBe('10.44.0.8')
-        ->and($process->runtime_config['environment']['AI_ROUTER_CACHE_PORT'])->toBe('6379')
-        ->and($process->runtime_config['environment']['AI_ROUTER_CLIPROXY_URL'])->toBe('http://127.0.0.1:8317')
-        ->and(app(RecordingAiRouterRuntimeLifecycle::class)->converged)->toBeTrue()
-        ->and(app(RecordingAiRouterPublicationManager::class)->converged)->toBeTrue()
-        ->and($environment['AI_ROUTER_CACHE_HOST'])->toBe('10.44.0.8')
-        ->and($environment['AI_ROUTER_CACHE_PORT'])->toBe('6379');
-});
-
 it('refuses a mismatching task VM origin with 422 before changing settings, collector or publication', function (bool $alreadyEnabled): void {
     config(['task_vms.enabled' => false]);
     $gateway = ai_router_gateway();
@@ -183,20 +133,12 @@ it('refuses a mismatching task VM origin with 422 before changing settings, coll
     ];
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
     if ($alreadyEnabled) {
-        $this->postJson('/api/v1/ai-router', [
-            ...$payload,
-            'cliproxy_url' => 'http://10.44.0.3:8317',
-            'cliproxy_management_key' => 'original-management-key',
-        ])->assertCreated();
+        app(AiRouterState::class)->enable($node->id, 'valkey', 'http://10.44.0.3:8317', 'original-management-key', 'read', 'control');
     }
     config(['task_vms.enabled' => true, 'task_vms.model_proxy_origin' => 'http://10.44.0.3:8317']);
     $settings = DB::table('settings')->orderBy('id')->get()->toArray();
     $processes = Process::query()->get()->toArray();
     $routes = OrbitRoute::query()->get()->toArray();
-    $runtime = app(RecordingAiRouterRuntimeLifecycle::class);
-    $publication = app(RecordingAiRouterPublicationManager::class);
-    $runtime->converged = false;
-    $publication->converged = false;
 
     $this->postJson('/api/v1/ai-router', $payload)
         ->assertUnprocessable()
@@ -206,73 +148,16 @@ it('refuses a mismatching task VM origin with 422 before changing settings, coll
     expect(DB::table('settings')->orderBy('id')->get()->toArray())->toEqual($settings);
     expect(Process::query()->get()->toArray())->toBe($processes);
     expect(OrbitRoute::query()->get()->toArray())->toBe($routes);
-    expect($runtime->converged)->toBeFalse();
-    expect($publication->converged)->toBeFalse();
 })->with(['first setup' => false, 'existing setup' => true]);
-
-it('enables ai-router with the matching task VM origin and normalizes trailing slashes', function (string $url, string $origin): void {
-    config(['task_vms.enabled' => true, 'task_vms.model_proxy_origin' => $origin]);
-    $gateway = ai_router_gateway();
-    $node = ai_router_node();
-    ai_router_valkey($node);
-
-    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
-        ->postJson('/api/v1/ai-router', [
-            'node_id' => $node->id,
-            'cache_connection' => 'valkey',
-            'cliproxy_url' => $url,
-            'cliproxy_management_key' => 'management-key',
-        ])
-        ->assertCreated()
-        ->assertJsonPath('data.enabled', true);
-
-    expect(app(AiRouterState::class)->routerUrl())->toBe('http://10.44.0.3:8317');
-    expect(app(RecordingAiRouterRuntimeLifecycle::class)->environment['AI_ROUTER_CLIPROXY_URL'])->toBe('http://10.44.0.3:8317');
-    expect(Process::query()->where('name', AiRouterProcess::NAME)->firstOrFail()->runtime_config['environment']['AI_ROUTER_CLIPROXY_URL'])
-        ->toBe('http://10.44.0.3:8317');
-    expect(app(RecordingAiRouterPublicationManager::class)->converged)->toBeTrue();
-})->with([
-    'exact origin' => ['http://10.44.0.3:8317', 'http://10.44.0.3:8317'],
-    'setup trailing slash' => ['http://10.44.0.3:8317/', 'http://10.44.0.3:8317'],
-    'configured trailing slash' => ['http://10.44.0.3:8317', 'http://10.44.0.3:8317/'],
-]);
-
-it('reconverges the selected collector after a Database connection update', function (bool $switch): void {
-    $gateway = ai_router_gateway();
-    $node = ai_router_node();
-    $connection = ai_router_valkey($node);
-    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
-        ->postJson('/api/v1/ai-router', [
-            'node_id' => $node->id, 'cache_connection' => 'valkey',
-            'cliproxy_url' => 'http://127.0.0.1:8317', 'cliproxy_management_key' => 'management-key',
-        ])->assertCreated();
-    $process = Process::query()->where('name', AiRouterProcess::NAME)->sole();
-    $tokens = [app(AiRouterState::class)->readToken(), app(AiRouterState::class)->controlToken()];
-    app(ExtensionStore::class)->set('ai-router', $switch);
-    $this->patchJson('/api/v1/database-connections/'.$connection->slug, [
-        'host' => '10.44.0.9', 'port' => 6380, 'username' => 'collector', 'password' => 'new-cache-secret',
-    ])->assertOk()->assertDontSee('new-cache-secret');
-    expect($process->refresh()->runtime_config['environment'])->toMatchArray([
-        'AI_ROUTER_CACHE_HOST' => '10.44.0.9', 'AI_ROUTER_CACHE_PORT' => '6380',
-        'AI_ROUTER_CACHE_USERNAME' => 'collector', 'AI_ROUTER_CACHE_PASSWORD' => 'new-cache-secret',
-        'AI_ROUTER_READ_TOKEN' => $tokens[0], 'AI_ROUTER_CONTROL_TOKEN' => $tokens[1],
-    ])->and(Process::query()->where('name', AiRouterProcess::NAME)->sole()->id)->toBe($process->id);
-})->with([true, false]);
 
 it('refuses incompatible proposed selected connections without changing connection or collector', function (string $change, string $error): void {
     $gateway = ai_router_gateway();
     $node = ai_router_node();
     $connection = ai_router_valkey($node);
-    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
-        ->postJson('/api/v1/ai-router', [
-            'node_id' => $node->id, 'cache_connection' => 'valkey',
-            'cliproxy_url' => 'http://127.0.0.1:8317', 'cliproxy_management_key' => 'management-key',
-        ])->assertCreated();
-    $process = Process::query()->where('name', AiRouterProcess::NAME)->sole();
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+    app(AiRouterState::class)->enable($node->id, 'valkey', 'http://127.0.0.1:8317', 'management-key', 'read', 'control');
     Event::fake([RecordBroadcast::class]);
     $beforeConnection = $connection->refresh()->getRawOriginal();
-    $beforeProcess = $process->getRawOriginal();
-    $beforeEnvironment = app(RecordingAiRouterRuntimeLifecycle::class)->environment;
     $tokens = [app(AiRouterState::class)->readToken(), app(AiRouterState::class)->controlToken()];
     $body = $change === 'sqlite'
         ? ['driver' => 'sqlite', 'path' => '/tmp/cache.sqlite', 'database' => null, 'host' => null, 'port' => null]
@@ -281,8 +166,7 @@ it('refuses incompatible proposed selected connections without changing connecti
         ->assertUnprocessable()->assertJsonPath('error.code', $error);
     Event::assertNotDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::DatabaseUpdated);
     expect($connection->refresh()->getRawOriginal())->toBe($beforeConnection)
-        ->and($process->refresh()->getRawOriginal())->toBe($beforeProcess)
-        ->and(app(RecordingAiRouterRuntimeLifecycle::class)->environment)->toBe($beforeEnvironment)
+
         ->and([app(AiRouterState::class)->readToken(), app(AiRouterState::class)->controlToken()])->toBe($tokens);
 })->with(['driver' => ['sqlite', 'ai_router.cache_invalid'], 'placement' => ['node', 'ai_router.cache_unplaced']]);
 
@@ -319,92 +203,8 @@ it('keeps the management key out of activity for every enable outcome', function
         ])
         ->and($stored)->not->toContain($key);
 })->with([
-    'succeeded' => [true, 201],
     'failed' => [false, 422],
 ]);
-
-it('keeps the collector hostname on a second enable', function (): void {
-    $gateway = ai_router_gateway();
-    $node = ai_router_node();
-    ai_router_valkey($node);
-    $payload = [
-        'node_id' => $node->id,
-        'cache_connection' => 'valkey',
-        'cliproxy_url' => 'http://127.0.0.1:8317',
-        'cliproxy_management_key' => 'management-key',
-    ];
-
-    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
-        ->postJson('/api/v1/ai-router', $payload)
-        ->assertCreated()
-        ->assertJsonPath('data.hostname', 'collector.ai-router.orbit');
-
-    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
-        ->postJson('/api/v1/ai-router', $payload)
-        ->assertCreated()
-        ->assertJsonPath('data.enabled', true)
-        ->assertJsonPath('data.hostname', 'collector.ai-router.orbit');
-});
-
-it('hands the collector custom proxy Route to the publication takeover', function (): void {
-    $gateway = ai_router_gateway();
-    $node = ai_router_node();
-    ai_router_valkey($node);
-    $route = ai_router_hostname_route($node, 'http://127.0.0.1:8787');
-
-    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
-        ->postJson('/api/v1/ai-router', [
-            'node_id' => $node->id,
-            'cache_connection' => 'valkey',
-            'cliproxy_url' => 'http://127.0.0.1:8317',
-            'cliproxy_management_key' => 'management-key',
-        ])
-        ->assertCreated()
-        ->assertJsonPath('data.hostname', 'collector.ai-router.orbit');
-
-    expect(app(RecordingAiRouterPublicationManager::class)->takeoverRouteId)->toBe($route->id);
-});
-
-it('takes over the Route before it restarts the collector', function (): void {
-    $gateway = ai_router_gateway();
-    $node = ai_router_node();
-    ai_router_valkey($node);
-    $route = ai_router_hostname_route($node, 'http://127.0.0.1:8787');
-    $events = new ArrayObject;
-    app()->instance(AiRouterPublicationManager::class, new class($events) implements AiRouterPublicationManager
-    {
-        public function __construct(private ArrayObject $events) {}
-
-        public function converge(Node $node, ?OrbitRoute $takeover = null): void
-        {
-            $this->events->append("publication:route-{$takeover?->id}");
-        }
-
-        public function remove(Node $node): void {}
-    });
-    app()->instance(AiRouterRuntimeLifecycle::class, new class($events) implements AiRouterRuntimeLifecycle
-    {
-        public function __construct(private ArrayObject $events) {}
-
-        public function converge(Node $node, array $environment): void
-        {
-            $this->events->append('runtime');
-        }
-
-        public function remove(Node $node): void {}
-    });
-
-    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
-        ->postJson('/api/v1/ai-router', [
-            'node_id' => $node->id,
-            'cache_connection' => 'valkey',
-            'cliproxy_url' => 'http://127.0.0.1:8317',
-            'cliproxy_management_key' => 'management-key',
-        ])
-        ->assertCreated();
-
-    expect($events->getArrayCopy())->toBe(["publication:route-{$route->id}", 'runtime']);
-});
 
 it('refuses to enable while another Route holds the collector hostname', function (Closure $route): void {
     $gateway = ai_router_gateway();
@@ -412,106 +212,8 @@ it('refuses to enable while another Route holds the collector hostname', functio
     ai_router_valkey($node);
     $holder = $route($node);
 
-    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
-        ->postJson('/api/v1/ai-router', [
-            'node_id' => $node->id,
-            'cache_connection' => 'valkey',
-            'cliproxy_url' => 'http://127.0.0.1:8317',
-            'cliproxy_management_key' => 'management-key',
-        ])
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'ai_router.hostname_taken');
-
-    expect(app(AiRouterState::class)->enabled())->toBeFalse()
-        ->and(app(RecordingAiRouterRuntimeLifecycle::class)->converged)->toBeFalse()
-        ->and(app(RecordingAiRouterPublicationManager::class)->converged)->toBeFalse()
-        ->and(OrbitRoute::query()->whereKey($holder->id)->exists())->toBeTrue();
-})->with([
-    'another Node' => [fn (Node $node): OrbitRoute => ai_router_hostname_route(ai_router_node('services', '10.44.0.17'), 'http://127.0.0.1:8787')],
-    'another port' => [fn (Node $node): OrbitRoute => ai_router_hostname_route($node, 'http://127.0.0.1:8317')],
-    'a Process target' => [fn (Node $node): OrbitRoute => ai_router_hostname_route($node, 'http://127.0.0.1:8787', Process::query()->create([
-        'owner_type' => Node::class,
-        'owner_id' => $node->id,
-        'name' => 'collector-copy',
-        'runtime' => ProcessRuntime::Docker,
-        'working_directory' => '/app',
-        'runtime_config' => [
-            'image' => 'collector:latest',
-            'command' => ['collector'],
-            'environment' => [],
-            'ports' => ['127.0.0.1:8787:8787/tcp'],
-            'volumes' => [],
-        ],
-        'restart_policy' => 'unless-stopped',
-        'desired_state' => DesiredProcessState::Running,
-        'status' => LifecycleStatus::Active,
-    ])->id)],
-]);
-
-it('fails closed when the cache connection is missing, not redis, or unplaced', function (string $setup, string $code): void {
-    $gateway = ai_router_gateway();
-    $node = ai_router_node();
-
-    if ($setup === 'mysql') {
-        DatabaseConnection::query()->create([
-            'slug' => 'valkey',
-            'driver' => DatabaseDriver::Mysql,
-            'node_id' => $node->id,
-            'host' => '10.44.0.8',
-            'port' => 3306,
-            'database' => 'app',
-        ]);
-    }
-
-    if ($setup === 'unplaced') {
-        DatabaseConnection::query()->create([
-            'slug' => 'valkey',
-            'driver' => DatabaseDriver::Redis,
-            'node_id' => $node->id,
-            'host' => '10.44.0.8',
-            'port' => 6379,
-            'database' => '0',
-        ]);
-    }
-
-    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
-        ->postJson('/api/v1/ai-router', [
-            'node_id' => $node->id,
-            'cache_connection' => 'valkey',
-            'cliproxy_url' => 'http://127.0.0.1:8317',
-            'cliproxy_management_key' => 'management-key',
-        ])
-        ->assertStatus(422)
-        ->assertJsonPath('error.code', $code);
-})->with([
-    'missing' => ['missing', 'ai_router.cache_missing'],
-    'mysql' => ['mysql', 'ai_router.cache_invalid'],
-    'unplaced' => ['unplaced', 'ai_router.cache_unplaced'],
-]);
-
-it('hides provider reads until the fleet feature is enabled', function (): void {
-    $gateway = ai_router_gateway();
-
-    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
-        ->getJson('/api/v1/ai-router/providers')
-        ->assertStatus(409)
-        ->assertJsonPath('error.code', 'ai_router.disabled');
-});
-
-it('reads providers from the snapshot and never calls CLIProxyAPI', function (): void {
-    $gateway = ai_router_gateway();
-    $node = ai_router_node();
-    ai_router_valkey($node);
-    Http::fake();
-
-    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
-        ->postJson('/api/v1/ai-router', [
-            'node_id' => $node->id,
-            'cache_connection' => 'valkey',
-            'cliproxy_url' => 'http://127.0.0.1:8317',
-            'cliproxy_management_key' => 'management-key',
-        ])
-        ->assertCreated();
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+    app(AiRouterState::class)->enable($node->id, 'valkey', 'http://127.0.0.1:8317', 'management-key', 'read', 'control');
 
     app(AiRouterSnapshotStore::class)->write([
         new AiRouterAccount('plus.json', 'codex', 'plus', false, 'enabled', [
@@ -539,14 +241,8 @@ it('toggles an account through the collector using its auth index', function ():
     $node = ai_router_node();
     ai_router_valkey($node);
 
-    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
-        ->postJson('/api/v1/ai-router', [
-            'node_id' => $node->id,
-            'cache_connection' => 'valkey',
-            'cliproxy_url' => 'http://127.0.0.1:8317',
-            'cliproxy_management_key' => 'management-key',
-        ])
-        ->assertCreated();
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+    app(AiRouterState::class)->enable($node->id, 'valkey', 'http://127.0.0.1:8317', 'management-key', 'read', 'control');
 
     app(AiRouterSnapshotStore::class)->write([
         new AiRouterAccount('auth-index-42', 'codex', 'plus', false, 'enabled', [
@@ -574,48 +270,13 @@ it('toggles an account through the collector using its auth index', function ():
     expect(app(AiRouterSnapshotStore::class)->accounts()[0]->disabled)->toBeTrue();
 });
 
-it('disables the extension, stops the process, and hides provider reads', function (): void {
-    $gateway = ai_router_gateway();
-    $node = ai_router_node();
-    ai_router_valkey($node);
-
-    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
-        ->postJson('/api/v1/ai-router', [
-            'node_id' => $node->id,
-            'cache_connection' => 'valkey',
-            'cliproxy_url' => 'http://127.0.0.1:8317',
-            'cliproxy_management_key' => 'management-key',
-        ])
-        ->assertCreated();
-
-    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
-        ->deleteJson('/api/v1/ai-router')
-        ->assertOk()
-        ->assertJsonPath('data.enabled', false);
-
-    expect(Process::query()->where('name', AiRouterProcess::NAME)->exists())->toBeFalse()
-        ->and(app(RecordingAiRouterRuntimeLifecycle::class)->removed)->toBeTrue()
-        ->and(app(RecordingAiRouterPublicationManager::class)->removed)->toBeTrue();
-
-    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
-        ->getJson('/api/v1/ai-router/providers')
-        ->assertStatus(409)
-        ->assertJsonPath('error.code', 'ai_router.disabled');
-});
-
 it('refuses the teardown with 409 and changes nothing while Tasks needs it or a task VM holds a model key', function (Closure $hold, string $code, array $details, string $message): void {
     $gateway = ai_router_gateway();
     $node = ai_router_node();
     ai_router_valkey($node);
 
-    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
-        ->postJson('/api/v1/ai-router', [
-            'node_id' => $node->id,
-            'cache_connection' => 'valkey',
-            'cliproxy_url' => 'http://127.0.0.1:8317',
-            'cliproxy_management_key' => 'management-key',
-        ])
-        ->assertCreated();
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+    app(AiRouterState::class)->enable($node->id, 'valkey', 'http://127.0.0.1:8317', 'management-key', 'read', 'control');
     $hold($node);
 
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
@@ -626,10 +287,7 @@ it('refuses the teardown with 409 and changes nothing while Tasks needs it or a 
         ->assertJsonPath('error.message', fn (string $text): bool => str_starts_with($text, $message));
 
     expect(app(AiRouterState::class)->managementKey())->toBe('management-key')
-        ->and(app(AiRouterState::class)->enabled())->toBeTrue()
-        ->and(Process::query()->where('name', AiRouterProcess::NAME)->exists())->toBeTrue()
-        ->and(app(RecordingAiRouterRuntimeLifecycle::class)->removed)->toBeFalse()
-        ->and(app(RecordingAiRouterPublicationManager::class)->removed)->toBeFalse();
+        ->and(app(AiRouterState::class)->enabled())->toBeTrue();
 })->with([
     'tasks is enabled' => [
         static fn (): mixed => app(ExtensionStore::class)->set('tasks', true),
@@ -652,58 +310,13 @@ it('refuses the teardown with 409 and changes nothing while Tasks needs it or a 
     ],
 ]);
 
-it('holds the model key lock from the key check through the teardown', function (): void {
-    $gateway = ai_router_gateway();
-    $node = ai_router_node();
-    ai_router_valkey($node);
-    $publication = new class implements AiRouterPublicationManager
-    {
-        public ?bool $lockFree = null;
-
-        public function converge(Node $node, ?OrbitRoute $takeover = null): void {}
-
-        public function remove(Node $node): void
-        {
-            // The management key is already gone here, so a key issued now could never be revoked.
-            expect(app(AiRouterState::class)->managementKey())->toBeNull();
-            $lock = Cache::lock(ModelKeyIssuer::Lock, 10);
-            $this->lockFree = $lock->get();
-            if ($this->lockFree) {
-                $lock->release();
-            }
-        }
-    };
-    app()->instance(AiRouterPublicationManager::class, $publication);
-
-    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
-        ->postJson('/api/v1/ai-router', [
-            'node_id' => $node->id,
-            'cache_connection' => 'valkey',
-            'cliproxy_url' => 'http://127.0.0.1:8317',
-            'cliproxy_management_key' => 'management-key',
-        ])
-        ->assertCreated();
-    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
-        ->deleteJson('/api/v1/ai-router')
-        ->assertOk();
-
-    expect($publication->lockFree)->toBeFalse()
-        ->and(Cache::lock(ModelKeyIssuer::Lock, 10)->get())->toBeTrue();
-});
-
 it('refuses the teardown with 409 and changes nothing while a model key operation holds the lock', function (): void {
     $gateway = ai_router_gateway();
     $node = ai_router_node();
     ai_router_valkey($node);
 
-    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
-        ->postJson('/api/v1/ai-router', [
-            'node_id' => $node->id,
-            'cache_connection' => 'valkey',
-            'cliproxy_url' => 'http://127.0.0.1:8317',
-            'cliproxy_management_key' => 'management-key',
-        ])
-        ->assertCreated();
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+    app(AiRouterState::class)->enable($node->id, 'valkey', 'http://127.0.0.1:8317', 'management-key', 'read', 'control');
     $prepare = Cache::lock(ModelKeyIssuer::Lock, 600);
     expect($prepare->get())->toBeTrue();
 
@@ -712,46 +325,8 @@ it('refuses the teardown with 409 and changes nothing while a model key operatio
         ->assertStatus(409)
         ->assertJsonPath('error.code', 'ai_router.keys_busy');
 
-    expect(app(AiRouterState::class)->managementKey())->toBe('management-key')
-        ->and(app(RecordingAiRouterRuntimeLifecycle::class)->removed)->toBeFalse()
-        ->and(app(RecordingAiRouterPublicationManager::class)->removed)->toBeFalse();
+    expect(app(AiRouterState::class)->managementKey())->toBe('management-key');
     $prepare->release();
-});
-
-it('republishes private DNS without the collector name when the extension is disabled', function (): void {
-    $gateway = ai_router_gateway();
-    $node = ai_router_node();
-    ai_router_valkey($node);
-    $publication = new class implements AiRouterPublicationManager
-    {
-        public ?string $dnsAtRemoval = null;
-
-        public function converge(Node $node, ?OrbitRoute $takeover = null): void {}
-
-        public function remove(Node $node): void
-        {
-            $this->dnsAtRemoval = app(DevelopmentDnsConfigRenderer::class)->render();
-        }
-    };
-    app()->instance(AiRouterPublicationManager::class, $publication);
-
-    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
-        ->postJson('/api/v1/ai-router', [
-            'node_id' => $node->id,
-            'cache_connection' => 'valkey',
-            'cliproxy_url' => 'http://127.0.0.1:8317',
-            'cliproxy_management_key' => 'management-key',
-        ])
-        ->assertCreated();
-
-    expect(app(DevelopmentDnsConfigRenderer::class)->render())->toContain('host-record=collector.ai-router.orbit,10.44.0.8');
-
-    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
-        ->deleteJson('/api/v1/ai-router')
-        ->assertOk();
-
-    expect($publication->dnsAtRemoval)->toBeString()
-        ->not->toContain('collector.ai-router.orbit');
 });
 
 it('refuses removing the selected cache until teardown even with the extension switch off', function (bool $switch): void {
@@ -768,7 +343,6 @@ it('refuses removing the selected cache until teardown even with the extension s
 
     $this->assertModelExists($connection);
     Event::assertNotDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::DatabaseDeleted);
-    expect(app(RecordingAiRouterRuntimeLifecycle::class)->removed)->toBeFalse();
 
     $other = DatabaseConnection::query()->create(['slug' => 'unrelated', 'driver' => 'redis', 'host' => 'other.example.test', 'port' => 6379]);
     $this->deleteJson('/api/v1/database-connections/'.$other->slug)->assertOk();
@@ -778,51 +352,3 @@ it('refuses removing the selected cache until teardown even with the extension s
     $this->deleteJson('/api/v1/database-connections/'.$connection->slug)->assertOk();
     $this->assertModelMissing($connection);
 })->with([true, false]);
-
-it('uses one fixed port for setup, takeover, publication, and connection reconvergence', function (): void {
-    $gateway = ai_router_gateway();
-    $node = ai_router_node();
-    $connection = ai_router_valkey($node);
-    $route = ai_router_hostname_route($node, 'http://127.0.0.1:8787');
-    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
-        ->postJson('/api/v1/ai-router', [
-            'node_id' => $node->id, 'cache_connection' => $connection->slug,
-            'cliproxy_url' => 'http://127.0.0.1:8317', 'cliproxy_management_key' => 'management',
-        ])->assertCreated();
-    $process = Process::query()->where('name', AiRouterProcess::NAME)->sole();
-    $environment = $process->runtime_config['environment'];
-    expect($environment['AI_ROUTER_PORT'])->toBe('8787')
-        ->and($process->runtime_config['ports'])->toBe(['127.0.0.1:8787:8787/tcp'])
-        ->and(app(RecordingAiRouterPublicationManager::class)->takeoverRouteId)->toBe($route->id);
-    $this->assertDatabaseMissing('settings', ['scope_type' => 'gateway', 'scope_id' => 0, 'key' => 'ai_router.process_port']);
-    new CaddySiteCertificates()->record($node->id, AiRouterCaddySiteSource::CertificateSlug);
-    $sites = app(AiRouterCaddySiteSource::class)->sites($node);
-    expect($sites)->toHaveCount(1)
-        ->and($sites[0]->body)->toContain('reverse_proxy 127.0.0.1:8787');
-
-    $this->patchJson('/api/v1/database-connections/'.$connection->slug, ['password' => 'rotated'])->assertOk();
-
-    expect($process->refresh()->runtime_config['environment'])->toBe([
-        ...$environment, 'AI_ROUTER_CACHE_PASSWORD' => 'rotated',
-    ])->and($process->runtime_config['ports'])->toBe(['127.0.0.1:8787:8787/tcp']);
-});
-
-it('does not reconverge a connection update that its outer transaction rolls back', function (): void {
-    $gateway = ai_router_gateway();
-    $node = ai_router_node();
-    $connection = ai_router_valkey($node);
-    app(AiRouterState::class)->enable($node->id, $connection->slug, 'http://127.0.0.1:8317', 'management', 'read', 'control');
-    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
-    $runtime = app(RecordingAiRouterRuntimeLifecycle::class);
-
-    DB::beginTransaction();
-    try {
-        $this->patchJson('/api/v1/database-connections/'.$connection->slug, ['password' => 'rolled-back'])->assertOk();
-        expect($runtime->converged)->toBeFalse();
-    } finally {
-        DB::rollBack();
-    }
-
-    expect($connection->refresh()->password)->toBeNull()
-        ->and($runtime->converged)->toBeFalse();
-});

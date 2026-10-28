@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace App\Commands\AiRouter;
 
 use App\Commands\GatewayCommand;
+use App\Commands\Integrations\FollowsIntegrationOperations;
 use App\Support\Console\ConsoleWriter;
 use App\Support\GatedExtensionCommand;
 use Orbit\Sdk\Responses\AiRouter\AiRouterStatusResponse;
 
 abstract class AiRouterCommand extends GatewayCommand implements GatedExtensionCommand
 {
+    use FollowsIntegrationOperations;
+
     public function extensionSlug(): ?string
     {
         return 'ai-router';

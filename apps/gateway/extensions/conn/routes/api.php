@@ -32,6 +32,7 @@ Route::middleware([
     Route::get('environments', [ConnEnvironmentsController::class, 'index'])->name('conn:environment:list');
     Route::post('environments', [ConnEnvironmentsController::class, 'store'])->name('conn:environment:register');
     Route::get('environments/{environment}/pairings', [ConnPairingsController::class, 'index'])->name('conn:pairing:list');
+    Route::get('environments/{environment}/pairings/{pairing}', [ConnPairingsController::class, 'show'])->whereNumber('pairing')->name('conn:pairing:show');
     Route::post('environments/{environment}/pairings', [ConnPairingsController::class, 'store'])->name('conn:pairing:create');
     Route::post('environments/{environment}/pairings/revoke', [ConnPairingsController::class, 'revoke'])->name('conn:pairing:revoke');
 });

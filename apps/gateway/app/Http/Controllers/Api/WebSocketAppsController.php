@@ -6,10 +6,13 @@ namespace App\Http\Controllers\Api;
 
 use App\Actions\WebSocket\ChangeWebSocketRegistryAction;
 use App\Actions\WebSocket\ReadWebSocketApplyStatusAction;
+use App\Actions\WebSocket\StartWebSocketOperationAction;
+use App\Data\Operations\OperationData;
 use App\Data\WebSocket\WebSocketAppData;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Operations\StartsOperation;
 use App\Http\Requests\WebSocket\StoreWebSocketAppRequest;
 use App\Http\Requests\WebSocket\WebSocketChangeRequest;
 use App\Models\Node;
@@ -17,6 +20,7 @@ use App\Models\WebSocketApp;
 use App\Models\WebSocketRegistryOperation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 #[RequiresNodeAccess(ServingNode::Gateway)]
 final class WebSocketAppsController extends Controller
@@ -34,6 +38,7 @@ final class WebSocketAppsController extends Controller
         ]);
     }
 
+    #[StartsOperation('websocket.app_create')]
     public function store(StoreWebSocketAppRequest $request, ChangeWebSocketRegistryAction $action, ReadWebSocketApplyStatusAction $status): JsonResponse
     {
         return $this->change($request, $action, $status, 'create', $request->name());
@@ -47,16 +52,19 @@ final class WebSocketAppsController extends Controller
         ]);
     }
 
+    #[StartsOperation('websocket.app_destroy')]
     public function destroy(WebSocketChangeRequest $request, string $websocketApp, ChangeWebSocketRegistryAction $action, ReadWebSocketApplyStatusAction $status): JsonResponse
     {
         return $this->change($request, $action, $status, 'destroy', $websocketApp);
     }
 
+    #[StartsOperation('websocket.app_rotate')]
     public function rotate(WebSocketChangeRequest $request, string $websocketApp, ChangeWebSocketRegistryAction $action, ReadWebSocketApplyStatusAction $status): JsonResponse
     {
         return $this->change($request, $action, $status, 'rotate', $websocketApp);
     }
 
+    #[StartsOperation('websocket.sync')]
     public function sync(WebSocketChangeRequest $request, ChangeWebSocketRegistryAction $action, ReadWebSocketApplyStatusAction $status): JsonResponse
     {
         return $this->change($request, $action, $status, 'sync', null);
@@ -69,14 +77,13 @@ final class WebSocketAppsController extends Controller
 
     private function change(WebSocketChangeRequest $request, ChangeWebSocketRegistryAction $action, ReadWebSocketApplyStatusAction $status, string $kind, ?string $name): JsonResponse
     {
-        $actor = $this->actor($request);
-        $operation = $action->execute($kind, $name, $actor->id, $request->operationKey());
-        $applied = $status->notifyAndRead($operation);
+        $operation = DB::transaction(function () use ($request, $action, $kind, $name) {
+            $registry = $action->execute($kind, $name, $this->actor($request)->id, $request->operationKey());
 
-        return response()->json([
-            'data' => $operation->result, 'operation' => $applied,
-            'meta' => $this->meta($request),
-        ], $applied['state'] === 'pending' ? 202 : ($applied['state'] === 'applied' && $kind === 'create' ? 201 : 200));
+            return app(StartWebSocketOperationAction::class)->execute($registry);
+        });
+
+        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
     private function actor(Request $request): Node

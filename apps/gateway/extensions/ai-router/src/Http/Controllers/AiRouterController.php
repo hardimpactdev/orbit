@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\AiRouter\Http\Controllers;
 
+use App\Data\Operations\OperationData;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Operations\StartsOperation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Orbit\Extensions\AiRouter\Actions\DisableAiRouterAction;
@@ -24,14 +26,16 @@ use Orbit\Extensions\AiRouter\Http\Requests\EnableAiRouterRequest;
 #[RequiresNodeAccess(ServingNode::Gateway)]
 final class AiRouterController extends Controller
 {
+    #[StartsOperation('ai_router.setup', secretInputs: ['management_key'])]
     public function store(EnableAiRouterRequest $request, EnableAiRouterAction $action): JsonResponse
     {
-        return $this->statusResponse($request, $action->execute($request->payload()), 201);
+        return $this->payload($request, OperationData::fromModel($action->execute($request->payload()))->toArray(), 202);
     }
 
+    #[StartsOperation('ai_router.teardown')]
     public function destroy(Request $request, DisableAiRouterAction $action): JsonResponse
     {
-        return $this->statusResponse($request, $action->execute());
+        return $this->payload($request, OperationData::fromModel($action->execute())->toArray(), 202);
     }
 
     public function status(Request $request, ShowAiRouterStatusAction $action): JsonResponse

@@ -5,15 +5,12 @@ declare(strict_types=1);
 namespace Orbit\Extensions\Vault;
 
 use App\Console\Scheduling\GatewaySchedule;
-use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Extensions\ExtensionStore;
+use App\Domain\Operations\OperationSecretSource;
 use App\Providers\ExtensionServiceProvider;
 use Illuminate\Console\Scheduling\Schedule;
-use Illuminate\Support\Facades\Config;
 use Orbit\Extensions\Vault\Console\Commands\VaultSyncCommand;
-use Orbit\Extensions\Vault\Domain\VaultClient;
-use Orbit\Extensions\Vault\Infrastructure\BitwardenCrypto;
-use Orbit\Extensions\Vault\Infrastructure\HttpVaultClient;
+use Orbit\Extensions\Vault\Domain\VaultOperationSecrets;
 
 /** The vault extension: database credentials published to Vaultwarden ([Vaultwarden](/reference/vaultwarden)). */
 final class VaultServiceProvider extends ExtensionServiceProvider
@@ -30,14 +27,7 @@ final class VaultServiceProvider extends ExtensionServiceProvider
 
     public function register(): void
     {
-        $this->app->bind(
-            VaultClient::class,
-            static fn (): VaultClient => new HttpVaultClient(
-                crypto: app(BitwardenCrypto::class),
-                certificates: app(LeafCertificateSigner::class),
-                rootCertificatePath: rtrim(string: Config::string('orbit.home'), characters: '/').'/ca/root.pem',
-            ),
-        );
+        $this->contribute(OperationSecretSource::class, VaultOperationSecrets::class);
     }
 
     public function boot(): void

@@ -16,9 +16,11 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property int $node_id
  * @property int $conn_environment_id
- * @property string $pairing_link_id
+ * @property string|null $pairing_link_id
  * @property string $client_label
- * @property Carbon $expires_at
+ * @property Carbon|null $expires_at
+ * @property string|null $credential
+ * @property Carbon|null $issue_started_at
  * @property Carbon|null $revoked_at
  * @property Carbon $created_at
  * @property Carbon $updated_at
@@ -29,7 +31,10 @@ final class ConnPairing extends Model
 {
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['node_id', 'conn_environment_id', 'pairing_link_id', 'client_label', 'expires_at', 'revoked_at'];
+    protected $fillable = ['node_id', 'conn_environment_id', 'pairing_link_id', 'client_label', 'expires_at', 'revoked_at', 'credential', 'issue_started_at'];
+
+    #[\Override]
+    protected $hidden = ['credential'];
 
     /** @return BelongsTo<Node, $this> */
     public function node(): BelongsTo
@@ -51,6 +56,8 @@ final class ConnPairing extends Model
             'conn_environment_id' => 'integer',
             'expires_at' => 'datetime',
             'revoked_at' => 'datetime',
+            'issue_started_at' => 'datetime',
+            'credential' => 'encrypted',
         ];
     }
 }

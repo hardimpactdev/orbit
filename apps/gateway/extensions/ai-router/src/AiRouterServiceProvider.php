@@ -23,8 +23,6 @@ use Orbit\Extensions\AiRouter\Domain\AiRouterAccountControlClient;
 use Orbit\Extensions\AiRouter\Domain\AiRouterCache;
 use Orbit\Extensions\AiRouter\Domain\AiRouterConnectionOwnership;
 use Orbit\Extensions\AiRouter\Domain\AiRouterProcessOwnership;
-use Orbit\Extensions\AiRouter\Domain\AiRouterPublicationManager;
-use Orbit\Extensions\AiRouter\Domain\AiRouterRuntimeLifecycle;
 use Orbit\Extensions\AiRouter\Domain\AiRouterSnapshotStore;
 use Orbit\Extensions\AiRouter\Domain\AiRouterState;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterCaddySiteSource;
@@ -33,10 +31,6 @@ use Orbit\Extensions\AiRouter\Infrastructure\AiRouterModelKeyIssuer;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterPrivateHostnames;
 use Orbit\Extensions\AiRouter\Infrastructure\ArrayAiRouterCache;
 use Orbit\Extensions\AiRouter\Infrastructure\HttpAiRouterAccountControlClient;
-use Orbit\Extensions\AiRouter\Infrastructure\NativeAiRouterPublicationManager;
-use Orbit\Extensions\AiRouter\Infrastructure\NativeAiRouterRuntimeLifecycle;
-use Orbit\Extensions\AiRouter\Infrastructure\RecordingAiRouterPublicationManager;
-use Orbit\Extensions\AiRouter\Infrastructure\RecordingAiRouterRuntimeLifecycle;
 use Orbit\Extensions\AiRouter\Infrastructure\ValkeyAiRouterCache;
 
 /** The ai-router extension. See [Extensions](/reference/extensions#the-extensions). */
@@ -78,15 +72,6 @@ final class AiRouterServiceProvider extends ExtensionServiceProvider
                 : $app->make(ArrayAiRouterCache::class);
         });
         $this->app->singleton(AiRouterSnapshotStore::class);
-        if ($this->app->environment('testing')) {
-            $this->app->singleton(RecordingAiRouterRuntimeLifecycle::class);
-            $this->app->singleton(RecordingAiRouterPublicationManager::class);
-            $this->app->singleton(AiRouterRuntimeLifecycle::class, static fn ($app): AiRouterRuntimeLifecycle => $app->make(RecordingAiRouterRuntimeLifecycle::class));
-            $this->app->singleton(AiRouterPublicationManager::class, static fn ($app): AiRouterPublicationManager => $app->make(RecordingAiRouterPublicationManager::class));
-        } else {
-            $this->app->bind(AiRouterRuntimeLifecycle::class, NativeAiRouterRuntimeLifecycle::class);
-            $this->app->bind(AiRouterPublicationManager::class, NativeAiRouterPublicationManager::class);
-        }
         $this->contribute(DatabaseConnectionUpdateHook::class, ReconvergeAiRouterConnectionAction::class);
         $this->contribute(DatabaseConnectionRemovalGuard::class, AiRouterConnectionOwnership::class);
         $this->contribute(ProcessRemovalGuard::class, AiRouterProcessOwnership::class);

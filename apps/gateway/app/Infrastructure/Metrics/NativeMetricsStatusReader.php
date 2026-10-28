@@ -9,10 +9,8 @@ use App\Data\Metrics\MetricsExporterData;
 use App\Data\Metrics\MetricsStatusData;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\ExporterDegradationRepository;
-use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsExporterProjection;
 use App\Domain\Metrics\MetricsReconcileDegradationRepository;
-use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Metrics\MetricsStatusReader;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
@@ -22,8 +20,8 @@ final readonly class NativeMetricsStatusReader implements MetricsStatusReader
 {
     public function __construct(
         private MetricsExporterProjection $projection,
-        private MetricsRuntimeLifecycle $runtime,
-        private MetricsExporterLifecycle $exporters,
+        private MetricsReadCommands $runtime,
+        private MetricsReadCommands $exporters,
         private ExporterDegradationRepository $degradations,
         private MetricsReconcileDegradationRepository $reconcileDegradation = new MetricsReconcileDegradationRepository,
     ) {}

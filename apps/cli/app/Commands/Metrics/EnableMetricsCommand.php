@@ -9,14 +9,14 @@ use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Metrics\EnableMetricsRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
-use Orbit\Sdk\Responses\Metrics\MetricsMutationResponse;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodesResponse;
 
 final class EnableMetricsCommand extends MetricsCommand
 {
     #[\Override]
-    protected $signature = 'metrics:enable {node? : Node ID or name} {--json : Return machine-readable JSON}';
+    protected $signature = 'metrics:enable {node? : Node ID or name} {--idempotency-key= : Reuse a key to retry this operation start}
+        {--json : Return machine-readable JSON}';
 
     #[\Override]
     protected $description = 'Enable Metrics on one node.';
@@ -40,14 +40,7 @@ final class EnableMetricsCommand extends MetricsCommand
             return self::FAILURE;
         }
 
-        $response = $this->sendWithProgress(
-            $connector,
-            new EnableMetricsRequest($nodeId),
-            MetricsMutationResponse::class,
-            ['Enable Metrics', 'Enabling Metrics', 'Enabled Metrics'],
-        );
-
-        return $response instanceof MetricsMutationResponse ? $this->mutationOutput($response) : self::FAILURE;
+        return $this->integrationOperation($connector, $repository, new EnableMetricsRequest($nodeId, is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null), 'Enable Metrics');
     }
 
     private function promptForNode(GatewayConnector $connector): ?int

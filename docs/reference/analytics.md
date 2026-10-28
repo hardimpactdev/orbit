@@ -188,3 +188,11 @@ Orbit publishes the tracking endpoint, but the operator creates the site in Plau
 ### Stats read on the Gateway
 
 The browser never holds the Stats API key, and it cannot ask for another Instance's site. One Gateway-scoped key serves every Instance, because Plausible scopes each read by site domain. A failed read never shows zeros, because a missing key must not look like an empty site.
+
+## Operation execution
+
+Analytics enable, update and removal record Operations. Swamp configures ClickHouse on its own Node, converges the managed Processes, proves Plausible health, and publishes the dashboard. Caddy and private DNS changes use child Operations owned by Routes. The Gateway retains storage validation, Process intent, encrypted credentials and version settings. A failed update restores the previous version setting. Removal keeps both storage Processes and their data.
+
+Instance tracking-host writes return normal Operations. They compose `route.analytics_publish` or `route.analytics_remove` with `{route_id}` on the Route's stored serving Node. Host transitions use `route.analytics_host_prepare` and `route.analytics_host_withdraw` with that same input. The Route family owns certificate, site, Caddy, and private DNS child Operations.
+
+Node role changes use `analytics.role_converge {}` and `analytics.role_remove {purge_data, offline}` children. They read `parent.state.role_intent` through the stamped parent relation and use the source or target's recorded Settings scope. Removal keeps working after the assignment claim moves to another Node. The Node parent owns assignment and Settings finalization after cleanup proof.

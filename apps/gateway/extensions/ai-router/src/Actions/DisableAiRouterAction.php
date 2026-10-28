@@ -7,16 +7,11 @@ namespace Orbit\Extensions\AiRouter\Actions;
 use App\Domain\Extensions\ExtensionDependencies;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\ModelKeyIssuer;
-use App\Models\Node;
+use App\Models\Operation;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
-use Orbit\Extensions\AiRouter\Data\AiRouterStatusData;
-use Orbit\Extensions\AiRouter\Domain\AiRouterHostname;
 use Orbit\Extensions\AiRouter\Domain\AiRouterLifecycleLock;
-use Orbit\Extensions\AiRouter\Domain\AiRouterPublicationManager;
-use Orbit\Extensions\AiRouter\Domain\AiRouterRuntimeLifecycle;
-use Orbit\Extensions\AiRouter\Domain\AiRouterState;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterRenameCutover;
 
 /**
@@ -29,13 +24,11 @@ final readonly class DisableAiRouterAction
     public function __construct(
         private AiRouterLifecycleLock $lifecycle,
         private AiRouterRenameCutover $cutover,
-        private AiRouterState $state,
-        private AiRouterRuntimeLifecycle $runtime,
-        private AiRouterPublicationManager $publication,
+        private AdmitAiRouterOperationAction $operations,
         private ExtensionDependencies $extensions,
     ) {}
 
-    public function execute(): AiRouterStatusData
+    public function execute(): Operation
     {
         $lock = Cache::lock(ModelKeyIssuer::Lock, 600);
         try {
@@ -50,13 +43,13 @@ final readonly class DisableAiRouterAction
         }
 
         try {
-            return $this->lifecycle->run(fn (): AiRouterStatusData => $this->teardown());
+            return $this->lifecycle->run(fn (): Operation => $this->teardown());
         } finally {
             $lock->release();
         }
     }
 
-    private function teardown(): AiRouterStatusData
+    private function teardown(): Operation
     {
         $this->extensions->assertNotRequired('ai-router');
         $held = TaskVm::query()->whereNotNull('model_key')->count();
@@ -72,21 +65,6 @@ final readonly class DisableAiRouterAction
 
         $this->cutover->assertComplete();
 
-        $nodeId = $this->state->nodeId();
-        $node = $nodeId === null ? null : Node::query()->find($nodeId);
-
-        if ($node instanceof Node) {
-            $this->runtime->remove($node);
-        }
-
-        // Disable before the publication removal: it republishes private DNS, which keeps the collector name
-        // while the extension is still enabled.
-        $this->state->disable();
-
-        if ($node instanceof Node) {
-            $this->publication->remove($node);
-        }
-
-        return new AiRouterStatusData(false, $nodeId, $this->state->cacheConnection(), null, AiRouterHostname::Value);
+        return $this->operations->execute('ai_router.teardown');
     }
 }

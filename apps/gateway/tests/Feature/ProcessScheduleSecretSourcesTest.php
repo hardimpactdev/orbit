@@ -1,0 +1,69 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Domain\Operations\OperationSecrets;
+use App\Domain\Processes\ProcessTargetResolver;
+use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Processes\DockerProcessRenderer;
+use App\Models\Node;
+use App\Models\Operation;
+use App\Models\Process;
+use App\Models\Schedule;
+
+beforeEach(function (): void {
+    $this->node = Node::query()->create(['name' => 'runtime-secrets', 'platform' => 'linux', 'status' => 'active',
+        'user' => 'orbit', 'wireguard_ip' => '10.44.0.9', 'public_ssh_host' => '192.0.2.9']);
+    $this->process = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $this->node->id,
+        'name' => 'secret-proof', 'runtime' => 'docker', 'restart_policy' => 'never', 'desired_state' => 'stopped', 'status' => 'active',
+        'runtime_config' => ['image' => 'example:1', 'command' => ['sleep', '300'], 'environment' => ['PASSWORD' => 'owned-runtime-value']]]);
+    $target = app(ProcessTargetResolver::class)->forInstallation($this->process);
+    $this->operation = new Operation(['kind' => 'process.create', 'target_type' => 'process', 'target_id' => $this->process->id,
+        'node_id' => $this->node->id, 'input' => ['process_id' => $this->process->id,
+            'spec' => app(DockerProcessRenderer::class)->specHash($this->process, $target)]]);
+    $this->secrets = app(OperationSecrets::class);
+});
+
+it('hydrates only a recorded Process reference with masks for individual values', function (): void {
+    $input = ['environment' => ['$secret' => 'process.environment', 'id' => $this->process->id]];
+    $hydrated = $this->secrets->hydrate($this->operation, 'install', $input, ['environment' => 'process.environment']);
+    expect($hydrated['input']['environment'])->toBe(['PASSWORD' => 'owned-runtime-value']);
+    expect($hydrated['values'])->toContain('owned-runtime-value');
+    expect($this->secrets->redact(['echo' => 'owned-runtime-value'], $hydrated['values']))->toBe(['echo' => '[REDACTED]']);
+    expect($input['environment'])->toBe(['$secret' => 'process.environment', 'id' => $this->process->id]);
+});
+
+it('refuses another target type and a Process changed after admission', function (): void {
+    $input = ['environment' => ['$secret' => 'process.environment', 'id' => $this->process->id]];
+    $this->operation->target_type = 'node';
+    expect(fn () => $this->secrets->hydrate($this->operation, 'install', $input, ['environment' => 'process.environment']))->toThrow(ResourceOperationException::class);
+    $this->operation->target_type = 'process';
+    $this->process->update(['runtime_config' => [...$this->process->runtime_config, 'environment' => ['PASSWORD' => 'changed-runtime-value']]]);
+    expect(fn () => $this->secrets->hydrate($this->operation, 'install', $input, ['environment' => 'process.environment']))->toThrow(ResourceOperationException::class);
+});
+
+it('preserves an empty environment as an object through protected hydration', function (): void {
+    $this->process->update(['runtime_config' => [...$this->process->runtime_config, 'environment' => []]]);
+    $this->operation->input = ['process_id' => $this->process->id,
+        'spec' => app(DockerProcessRenderer::class)->specHash($this->process, app(ProcessTargetResolver::class)->forInstallation($this->process))];
+    $hydrated = $this->secrets->hydrate($this->operation, 'install', ['environment' => ['$secret' => 'process.environment', 'id' => $this->process->id]], ['environment' => 'process.environment']);
+    expect($hydrated['input']['environment'])->toBeObject();
+});
+
+it('binds a Schedule UUID to its actual numeric owner and recorded Node', function (): void {
+    $schedule = Schedule::query()->create(['target_type' => Node::class, 'target_id' => $this->node->id, 'host_node_id' => $this->node->id,
+        'name' => 'schedule-proof', 'command' => 'printf schedule-private-value', 'calendar' => 'daily', 'timeout_seconds' => 60,
+        'desired_timer_state' => 'enabled', 'status' => 'active']);
+    $operation = new Operation(['kind' => 'schedule.create', 'target_type' => 'node_schedules', 'target_id' => $this->node->id,
+        'node_id' => $this->node->id, 'input' => ['id' => $schedule->id, 'command_hash' => hash('sha256', $schedule->command)]]);
+    $input = ['command' => ['$secret' => 'schedule.command', 'id' => $this->node->id]];
+    expect($this->secrets->hydrate($operation, 'install', $input, ['command' => 'schedule.command'])['input']['command'])->toBe($schedule->command);
+    $operation->target_type = 'instance_schedules';
+    expect(fn () => $this->secrets->hydrate($operation, 'install', $input, ['command' => 'schedule.command']))->toThrow(ResourceOperationException::class);
+    $operation->target_type = 'node_schedules';
+    $operation->node_id = $this->node->id + 1;
+    expect(fn () => $this->secrets->hydrate($operation, 'install', $input, ['command' => 'schedule.command']))->toThrow(ResourceOperationException::class);
+    $operation->node_id = $this->node->id;
+    $schedule->update(['command' => 'printf changed-command']);
+    expect(fn () => $this->secrets->hydrate($operation, 'install', $input, ['command' => 'schedule.command']))->toThrow(ResourceOperationException::class);
+});

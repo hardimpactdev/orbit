@@ -7,7 +7,6 @@ namespace App\Commands\Vault;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Vault\SetupVaultRequest;
-use Orbit\Sdk\Responses\Vault\VaultStatusResponse;
 
 final class SetupVaultCommand extends VaultCommand
 {
@@ -19,6 +18,7 @@ final class SetupVaultCommand extends VaultCommand
         {--master-password-file= : File that contains only the account master password}
         {--organization= : Organization name or ID}
         {--collection= : Collection name or ID in that organization}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -57,16 +57,7 @@ final class SetupVaultCommand extends VaultCommand
             return self::FAILURE;
         }
 
-        $response = $this->sendWithProgress(
-            $connector,
-            new SetupVaultRequest($url, $clientId, $clientSecret, $masterPassword, $organization, $collection),
-            VaultStatusResponse::class,
-            ['Set up vault', 'Checking the Vaultwarden account', 'Set up vault'],
-        );
-
-        return $response instanceof VaultStatusResponse
-            ? $this->renderStatus($response, 'Vaultwarden publishing is set up.')
-            : self::FAILURE;
+        return $this->integrationOperation($connector, $repository, new SetupVaultRequest($url, $clientId, $clientSecret, $masterPassword, $organization, $collection, is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null), 'Set up vault');
     }
 
     private function requiredOption(string $option, string $message): ?string
