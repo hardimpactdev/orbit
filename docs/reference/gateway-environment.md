@@ -21,9 +21,9 @@ The orchestrator enables read-token requests for one Services peer during deploy
 
 | Variable | Meaning |
 | --- | --- |
-| `ORBIT_DEPENDENCY_DETECTION_SERVICES_NODE_ID` | Gateway-owned Services Node ID, exposed as `dependency_detection.services_node_id`. Unset or invalid disables the dependency read-token route. Set `ORBIT_DEPENDENCY_DETECTION_SERVICES_NODE_ID=17` only after verifying Services' identity, then rebuild the config cache with `php artisan config:cache` as the Gateway account. |
+| `ORBIT_DEPENDENCY_DETECTION_SERVICES_NODE_ID` | Gateway-owned Services Node ID, exposed as `dependency_detection.services_node_id`. Unset or invalid disables the dependency read-token route. The route ships disabled until the orchestrator follows the activation steps below. |
 
-Deploy Gateway before Services. The [GitHub App](/reference/github-app#services-dependency-credentials) page defines this peer-only contract and its credential boundary. The orchestrator applies this setting during deployment; a merge does not enable it.
+Deploy Gateway first. Verify Services with `orbit node:show 17 --json`. On Gateway as `orbit`, back up `/home/orbit/shared/gateway.env` with mode `0600`, then set its single `ORBIT_DEPENDENCY_DETECTION_SERVICES_NODE_ID=17` entry without changing other settings. Run `php /home/orbit/orbit/apps/gateway/artisan gateway:release:configure`; never run `config:cache` in a release. From Services, verify `POST /api/v1/projects/20/dependency-read-token` succeeds without printing its token, then deploy Services. Follow the [release-safe env procedure](/reference/gateway-recovery#apply-an-env-change) and the exact backup/route-check commands in the [GitHub App](/reference/github-app#services-dependency-credentials) page. The orchestrator applies this setting during deployment; a merge does not enable it.
 
 ## Swamp task output
 

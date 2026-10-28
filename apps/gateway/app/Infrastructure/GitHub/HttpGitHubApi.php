@@ -159,9 +159,7 @@ final readonly class HttpGitHubApi implements GitHubApi
             $installation = $this->asApp($credentials)->withoutRedirecting()->timeout(5)->connectTimeout(5)
                 ->get($this->repositoryPath($repository).'/installation');
             $id = $installation->json('id');
-            if ($installation->clientError()) {
-                throw new ResourceOperationException('dependency_token.refused', 'Repository installation unavailable.', 403);
-            }
+            $this->assertDependencyTokenResponse($installation);
             if (! $installation->successful() || ! is_int($id) || $id <= 0 || microtime(true) >= $deadline) {
                 throw new \UnexpectedValueException;
             }
@@ -171,9 +169,7 @@ final readonly class HttpGitHubApi implements GitHubApi
                     'repositories' => [$repository->name],
                     'permissions' => ['contents' => 'read', 'pull_requests' => 'read'],
                 ]);
-            if ($response->clientError()) {
-                throw new ResourceOperationException('dependency_token.refused', 'Repository token refused.', 403);
-            }
+            $this->assertDependencyTokenResponse($response);
             $token = $response->json('token');
             $expires = $response->json('expires_at');
             $permissions = $response->json('permissions');
@@ -199,6 +195,20 @@ final readonly class HttpGitHubApi implements GitHubApi
             throw $exception;
         } catch (Throwable) {
             throw new ResourceOperationException('dependency_token.unavailable', 'Repository credential unavailable.', 503);
+        }
+    }
+
+    private function assertDependencyTokenResponse(Response $response): void
+    {
+        $message = $response->json('message');
+        if (in_array($response->status(), [401, 429], true)
+            || ($response->status() === 403 && ($response->header('Retry-After') !== ''
+                || $response->header('X-RateLimit-Remaining') === '0'
+                || (is_string($message) && preg_match('/secondary rate limit|rate limit exceeded/i', $message) === 1)))) {
+            throw new ResourceOperationException('dependency_token.unavailable', 'Repository credential unavailable.', 503);
+        }
+        if ($response->clientError()) {
+            throw new ResourceOperationException('dependency_token.refused', 'Repository credential refused.', 403);
         }
     }
 
