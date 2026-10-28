@@ -1,0 +1,10 @@
+{
+  "kinds": [
+    "tool.install",
+    "tool.update",
+    "tool.remove",
+    "tool.adopt",
+    "tool.manager_converge"
+  ],
+  "workflow": "operation-tools"
+}

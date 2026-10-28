@@ -1,0 +1,22 @@
+id: 774d24db-4bb9-4a5c-811d-ef19d16a3888
+name: operation-tools
+description: Execute an admitted Tool package or manager Operation.
+autoResume: true
+inputs:
+  type: object
+  properties:
+    operationId: { type: integer }
+    worker: { type: string }
+  required: [operationId, worker]
+jobs:
+  - name: tools
+    steps:
+      - name: execute
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/operation-tools"
+          behaviorName: '${{ "operation-tools-" + string(inputs.operationId) }}'
+          methodName: execute
+          inputs:
+            operationId: "${{ inputs.operationId }}"
+            worker: "${{ inputs.worker }}"
