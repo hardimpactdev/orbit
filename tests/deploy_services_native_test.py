@@ -69,7 +69,7 @@ class NativeDeploymentTest(unittest.TestCase):
                 self.fail(reason)
 
             def health():
-                with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=2) as response:
+                with urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{port}/api/v1/health", headers={"Authorization": "Bearer " + revealed["token"]}), timeout=2) as response:
                     return json.load(response)
 
             def remote(script, *args, timeout=None):
@@ -123,21 +123,21 @@ class NativeDeploymentTest(unittest.TestCase):
                                                  "paused ordinary cron fire started during the deployment drain")
                                 runs = command("workflow", "history", "search", "--workflow", "maintenance-projects", "--server", url)
                                 self.assertEqual(runs["results"], [], "a paused workflow started a native run")
-                                # The guard denies the scheduler, not the operator.
+                                # A native schedule pause does not block an explicit operator run.
                                 command("workflow", "run", "maintenance-projects", "--server", url)
                                 self.assertTrue((root / "unexpected-start").exists())
                                 (root / "unexpected-start").unlink()
                                 serve.terminate()
                                 serve.wait(timeout=10)
                                 stopped = True
-                            # Restoration while stopped must revoke the stored grant too.
+                            # Restore the saved enabled schedules directly while serve is stopped.
                         self.assertFalse((root / "deploy-marker.json").exists())
                     serve = subprocess.Popen(["swamp", "serve", "--port", str(port), "--host", "127.0.0.1",
                                               "--auth-mode", "token", "--admins", "user:fixture"],
                                              cwd=root, env=env, stdout=log, stderr=log)
                     until(ready, "isolated serve did not restart")
                     until(lambda: (root / "unexpected-start").exists(),
-                          "restored schedule or revoked scheduler guard did not survive restart")
+                          "restored schedule did not survive restart")
                 finally:
                     (root / "release").touch()
                     serve.terminate()

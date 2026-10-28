@@ -57,8 +57,8 @@ snapshot before applying compaction. Keep other Swamp CLI writers stopped too.
 From the Services checkout, using its installed Deno runtime:
 
 ```sh
-~/.swamp/deno/deno run --allow-read --allow-write bin/compact-services.ts > /tmp/services-compaction-preview.json
-~/.swamp/deno/deno run --allow-read --allow-write bin/compact-services.ts --apply > /tmp/services-compaction-result.json
+~/.swamp/deno/deno run --allow-read=/proc,. --allow-write=. bin/compact-services.ts > /tmp/services-compaction-preview.json
+~/.swamp/deno/deno run --allow-read=/proc,. --allow-write=. bin/compact-services.ts --apply > /tmp/services-compaction-result.json
 swamp data query 'modelName == "orbit-gateway"' --select name --json > /tmp/services-compaction-query.json
 ```
 

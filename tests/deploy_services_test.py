@@ -14,6 +14,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 SCRIPT = Path(__file__).resolve().parents[1] / "bin/deploy-services"
 loader = importlib.machinery.SourceFileLoader("deploy_services", str(SCRIPT))
@@ -64,13 +65,7 @@ class DeployTest(unittest.TestCase):
         self.second_run_on_active = False
         self.second_run_error = None
         self.fail_pause_before_apply = False
-        self.guard_grant = None
-        self.guard_policy = False
-        self.guard_events = []
-        self.fail_guard_create = False
-        self.guard_create_unapplied = False
-        self.fail_guard_revoke = False
-        self.fail_policy = False
+        self.pause_error = None
         self.clock = 0
         self.named_temporary_file = tempfile.NamedTemporaryFile
         self.git("init", "-q", "-b", "main", str(self.origin))
@@ -120,37 +115,10 @@ class DeployTest(unittest.TestCase):
                 return ""
             if source == deploy.STATE:
                 return "ActiveState=active\nMainPID=123\n" if self.running else "ActiveState=inactive\nMainPID=0\n"
-            if source == deploy.GUARD_CREATE:
-                self.guard_events.append("create")
-                if not self.guard_create_unapplied:
-                    self.guard_grant = {"id": "fixture-guard", "subject": {"kind": "service", "name": "scheduler"},
-                                        "effect": "deny", "actions": ["run"],
-                                        "resource": {"kind": "workflow", "pattern": "*"}, "state": "active"}
-                if self.fail_guard_create:
-                    raise RuntimeError("Guard create reply lost")
-                return "{}"
-            if source in (deploy.GUARD_READ, deploy.GUARD_READ_STOPPED):
-                return json.dumps({"results": [self.guard_grant] if self.guard_grant else []})
-            if source in (deploy.GUARD_REVOKE, deploy.GUARD_REVOKE_STOPPED):
-                self.guard_events.append("revoke-offline" if source == deploy.GUARD_REVOKE_STOPPED else "revoke")
-                if self.fail_guard_revoke:
-                    raise RuntimeError("Guard revoke failed")
-                self.guard_grant["state"] = "revoked"
-                return "{}"
-            if source == deploy.POLICY_RELOAD:
-                self.guard_events.append("reload")
-                if not self.fail_policy:
-                    self.guard_policy = bool(self.guard_grant and self.guard_grant["state"] == "active")
-                return "{}"
-            if source == deploy.GUARD_CHECK:
-                self.guard_events.append("check")
-                return json.dumps({"effect": "deny" if self.guard_policy else "allow",
-                                   "matchingGrants": [{"grantId": "fixture-guard"}] if self.guard_policy else []})
             if source in (deploy.SCHEDULES, deploy.LIST_STOPPED):
                 self.events.append("snapshot")
                 return json.dumps({"schedules": self.schedules})
             if source in (deploy.PAUSE, deploy.RESUME, deploy.RESUME_STOPPED):
-                self.assertTrue(self.guard_policy, "scheduler must stay denied through pause and restoration")
                 workflow = shlex.split(argv[-1])[-1]
                 pause = source == deploy.PAUSE
                 self.events.append(("pause-" if pause else "resume-") + workflow)
@@ -168,10 +136,9 @@ class DeployTest(unittest.TestCase):
                 if not pause and self.signal_on_resume:
                     os.kill(os.getpid(), self.signal_on_resume)
                 if workflow in (self.fail_pause if pause else self.fail_resume):
-                    raise RuntimeError("Schedule transport failed")
+                    raise self.pause_error or RuntimeError("Schedule transport failed")
                 return "{}"
             if source == deploy.ACTIVE:
-                self.assertTrue(self.guard_policy, "scheduler must be denied during the drain")
                 self.events.append("active")
                 if self.second_run_on_active:
                     self.second_run_on_active = False
@@ -238,8 +205,7 @@ class DeployTest(unittest.TestCase):
                 patch.object(deploy, "orbit", self.orbit), \
                 patch.object(deploy, "run", self.transport), \
                 patch.object(deploy.tempfile, "NamedTemporaryFile", snapshot_file), \
-                patch.object(deploy.time, "monotonic", lambda: self.clock), \
-                patch.object(deploy.time, "sleep", sleep), \
+                patch.object(deploy, "time", SimpleNamespace(monotonic=lambda: self.clock, sleep=sleep)), \
                 patch.object(deploy, "DRAIN_TIMEOUT", 3):
             return deploy.deploy()
 
@@ -264,52 +230,10 @@ class DeployTest(unittest.TestCase):
         self.assertIn(winner["snapshot"], loser.stderr)
         self.assertIn(winner["host"], loser.stderr)
 
-    def test_scheduler_guard_is_verified_before_pauses_and_revoked_after_restore(self):
-        self.change_main()
-        self.execute()
-        self.assertEqual(self.guard_events, ["create", "reload", "check", "revoke", "reload", "check"])
-        self.assertEqual(self.guard_grant["state"], "revoked")
-        self.assertFalse(self.guard_policy)
-        self.assertFalse(self.marker.exists())
 
-    def test_lost_guard_create_reply_is_reconciled_and_revoked_without_pausing(self):
-        self.change_main()
-        self.fail_guard_create = True
-        with self.assertRaisesRegex(RuntimeError, "Guard create reply lost"):
-            self.execute()
-        self.assertEqual(self.guard_grant["state"], "revoked")
-        self.assertFalse(self.marker.exists())
-        self.assertFalse(any(e.startswith("pause-") for e in self.events))
 
-    def test_unresolved_guard_create_keeps_its_identity_and_marker(self):
-        self.change_main()
-        self.fail_guard_create = True
-        self.guard_create_unapplied = True
-        with self.assertRaisesRegex(RuntimeError, "Scheduler guard cleanup failed"):
-            self.execute()
-        marker = json.loads(self.marker.read_text())
-        snapshot = json.loads(Path(marker["snapshot"]).read_text())
-        self.assertEqual(marker["schedulerGuard"], snapshot["schedulerGuard"])
-        self.assertFalse(any(e.startswith("pause-") for e in self.events))
-        self.assertNotIn("process:stop", self.calls)
 
-    def test_guard_revoke_failure_restores_schedules_but_keeps_marker(self):
-        self.change_main()
-        self.fail_guard_revoke = True
-        with self.assertRaisesRegex(RuntimeError, "Guard revoke failed"):
-            self.execute()
-        self.assertEqual(self.schedules, self.initial_schedules)
-        self.assertTrue(self.marker.exists())
-        self.assertTrue(self.guard_policy)
 
-    def test_unverified_policy_aborts_before_any_pause_or_stop(self):
-        self.change_main()
-        self.fail_policy = True
-        with self.assertRaisesRegex(RuntimeError, "Live scheduler policy"):
-            self.execute()
-        self.assertFalse(any(e.startswith("pause-") for e in self.events))
-        self.assertNotIn("process:stop", self.calls)
-        self.assertFalse(self.marker.exists())
 
     def test_second_full_deployment_is_refused_while_the_first_has_paused_schedules(self):
         self.change_main()
@@ -367,7 +291,7 @@ with d.deployment_lock(remote) as progress:
     def test_resume_failure_keeps_the_marker_and_refuses_a_no_change_retry(self):
         self.change_main()
         self.fail_resume.add("groups")
-        with self.assertRaisesRegex(RuntimeError, "Schedule resume failed"):
+        with self.assertRaisesRegex(RuntimeError, "SCHEDULES MAY STILL BE PAUSED"):
             self.execute()
         marker = self.marker.read_bytes()
         prior = json.loads(marker)["snapshot"]
@@ -412,7 +336,7 @@ with d.deployment_lock(remote) as progress:
         self.restart_reply_lost = True
         with self.assertRaisesRegex(RuntimeError, "Restart reply lost"):
             self.execute()
-        self.assertNotIn("resume-offline", self.events)
+        self.assertEqual(self.events.count("resume-offline"), 2)
         self.assertEqual(self.schedules, self.initial_schedules)
         self.assertFalse(self.marker.exists())
 
@@ -425,15 +349,31 @@ with d.deployment_lock(remote) as progress:
         self.assertEqual((self.target / "version").read_text(), "one")
         self.assertEqual(self.schedules, self.initial_schedules)
 
-    def test_unconfirmed_pause_never_resumes_untouched_schedules_or_discards_recovery(self):
+    def test_unconfirmed_pause_restores_attempted_id_without_touching_others(self):
         self.change_main()
         self.fail_pause.add("groups")
         self.fail_pause_before_apply = True
-        with self.assertRaisesRegex(RuntimeError, "Pause outcome is uncertain"):
+        with self.assertRaisesRegex(RuntimeError, "Pause outcome uncertain for groups"):
             self.execute()
-        self.assertFalse(any(e.startswith("resume-") for e in self.events))
         self.assertEqual(self.schedules, self.initial_schedules)
+        self.assertIn("resume-groups", self.events)
+        self.assertNotIn("resume-projects", self.events)
         self.assertTrue(self.marker.exists())
+
+    def test_timed_out_pause_can_land_after_resume_and_keeps_recovery_marker(self):
+        self.change_main()
+        self.fail_pause.add("groups")
+        self.fail_pause_before_apply = True
+        self.pause_error = subprocess.TimeoutExpired("ssh", deploy.REMOTE_TIMEOUT)
+        with self.assertRaisesRegex(RuntimeError, "SCHEDULES MAY STILL BE PAUSED.*Pause outcome uncertain") as raised:
+            self.execute()
+        self.assertFalse(self.schedules[0]["paused"], "cleanup must try its resume")
+        # The remote pause finally commits after cleanup's successful list.
+        self.schedules[0]["paused"] = True
+        self.assertTrue(self.marker.exists(), "late write must not unlock another deploy")
+        self.assertEqual(json.loads(self.snapshot_paths[-1].read_text())["schedules"], self.initial_schedules)
+        self.assertIn("confirm the remote pause command has ended", str(raised.exception))
+        self.assertNotIn("process:stop", self.calls)
 
     def test_bundle_temporary_name_is_unique_with_the_bsd_mktemp_template_rules(self):
         self.assertRegex(deploy.INCOMING.rstrip(), r"X{6,}$")
@@ -463,7 +403,7 @@ with d.deployment_lock(remote) as progress:
                 self.assertLess(self.events.index("scp"), self.events.index("preflight"))
                 self.assertEqual(self.events[self.events.index("process:stop") - 1], "active")
                 self.assertLess(self.events.index("pause-projects"), self.events.index("active"))
-                self.assertEqual(self.events[-2:], ["resume-groups", "resume-projects"])
+                self.assertEqual([e for e in self.events if e in ["resume-groups", "resume-projects"]], ["resume-groups", "resume-projects"])
                 self.assertEqual(result["scheduleSnapshot"], str(self.snapshot_paths[-1]))
             else:
                 self.assertNotIn("process:stop", self.calls)
@@ -492,9 +432,9 @@ with d.deployment_lock(remote) as progress:
         # This executable stands in for Swamp, which owns token-file handling.
         cli = self.root / "swamp"
         cli.write_text("#!/usr/bin/env python3\nimport json, sys\n"
-                       "assert '--server' in sys.argv\n"
-                       "assert sys.argv[sys.argv.index('--token-file')+1] == '/private/token'\n"
-                       "print(json.dumps({'runs': []}))\n")
+                       "assert ('--server' in sys.argv) if 'schedule' in sys.argv else ('--repo-dir' in sys.argv)\n"
+                       "if 'schedule' in sys.argv: assert sys.argv[sys.argv.index('--token-file')+1] == '/private/token'\n"
+                       "print(json.dumps({'schedules': []} if 'schedule' in sys.argv else {'runs': []}))\n")
         cli.chmod(0o755)
         result = self.original_run(["bash", "-s", "--", str(cli), "/private/token"],
                                    source=deploy.HEALTH)
@@ -511,7 +451,7 @@ with d.deployment_lock(remote) as progress:
                     subprocess.TimeoutExpired("swamp", 10),
                     subprocess.CompletedProcess([], 0, "not JSON"),
                     subprocess.CompletedProcess([], 1, ""),
-                    subprocess.CompletedProcess([], 0, '{"runs": []}'),
+                    subprocess.CompletedProcess([], 0, '{"schedules": []}'),
                 ]) as command, patch("time.sleep") as sleep, contextlib.redirect_stdout(output):
             exec(compile(program, "readiness", "exec"), {})
         self.assertEqual(json.loads(output.getvalue()), {"authenticated": True})
@@ -524,7 +464,7 @@ with d.deployment_lock(remote) as progress:
                        "print(json.dumps({'args': sys.argv[1:], 'remoteEnv': "
                        "bool(os.getenv('SWAMP_SERVER_URL') or os.getenv('SWAMP_SERVE_URL'))}))\n")
         cli.chmod(0o755)
-        for script in (deploy.SCHEDULES, deploy.PAUSE, deploy.RESUME):
+        for script in (deploy.SCHEDULES, deploy.RESUME):
             result = self.original_run(["bash", "-s", "--", str(cli), "/private/token", "original-id"],
                                        source=script)
             args = json.loads(result)["args"]
@@ -533,12 +473,16 @@ with d.deployment_lock(remote) as progress:
             self.assertEqual(args[args.index("--token-file") + 1], "/private/token")
             if script != deploy.SCHEDULES:
                 self.assertEqual(args[3], "original-id")
-        with patch.dict(os.environ, {"SWAMP_SERVER_URL": "ws://must-not-connect",
-                                     "SWAMP_SERVE_URL": "ws://must-not-connect"}):
-            result = json.loads(self.original_run(
-                ["bash", "-s", "--", str(cli), "/repo", "original-id"], source=deploy.RESUME_STOPPED))
-        self.assertEqual(result["args"], ["workflow", "schedule", "resume", "original-id", "--repo-dir", "/repo", "--json"])
-        self.assertFalse(result["remoteEnv"])
+        for script, verb in ((deploy.PAUSE, "pause"), (deploy.RESUME_STOPPED, "resume")):
+            with patch.dict(os.environ, {"SWAMP_SERVER_URL": "ws://must-not-connect",
+                                         "SWAMP_SERVE_URL": "ws://must-not-connect"}):
+                result = json.loads(self.original_run(
+                    ["bash", "-s", "--", str(cli), "/repo", "original-id"], source=script))
+            args = result["args"]
+            self.assertEqual(args[:4], ["workflow", "schedule", verb, "original-id"])
+            self.assertEqual(args[args.index("--repo-dir") + 1], "/repo")
+            self.assertNotIn("--server", args)
+            self.assertFalse(result["remoteEnv"])
 
     def test_active_run_prevents_stop_or_update(self):
         self.change_main()
@@ -556,7 +500,7 @@ with d.deployment_lock(remote) as progress:
         self.fail_pause.add("groups")
         with self.assertRaisesRegex(RuntimeError, "Schedule transport failed"):
             self.execute()
-        self.assertEqual([e for e in self.events if e.startswith(("pause-", "resume-"))],
+        self.assertEqual([e for e in self.events if e.startswith(("pause-", "resume-")) and e != "resume-offline"],
                          ["pause-groups", "resume-groups"])
         self.assertEqual(self.schedules, self.initial_schedules)
         self.assertNotIn("process:stop", self.calls)
@@ -600,11 +544,11 @@ with d.deployment_lock(remote) as progress:
     def test_resume_failures_attempt_every_saved_id_and_fail_a_successful_update(self):
         self.change_main()
         self.fail_resume.update({"groups", "projects"})
-        with self.assertRaisesRegex(RuntimeError, "Schedule resume failed") as raised:
+        with self.assertRaisesRegex(RuntimeError, "SCHEDULES MAY STILL BE PAUSED") as raised:
             self.execute()
         for text in ("groups-driver (groups)", "maintenance-projects (projects)", str(self.snapshot_paths[-1])):
             self.assertIn(text, str(raised.exception))
-        self.assertEqual(self.events[-2:], ["resume-groups", "resume-projects"])
+        self.assertEqual([e for e in self.events if e in ["resume-groups", "resume-projects"]], ["resume-groups", "resume-projects"])
         self.assertIn("process:restart", self.calls)
         self.assertEqual((self.target / "version").read_text(), "next 0")
 
@@ -612,21 +556,21 @@ with d.deployment_lock(remote) as progress:
         self.change_main()
         self.fail_update = True
         self.fail_resume.add("groups")
-        with self.assertRaisesRegex(RuntimeError, "Checkout update failed.*Schedule resume failed") as raised:
+        with self.assertRaisesRegex(RuntimeError, "Checkout update failed.*SCHEDULES MAY STILL BE PAUSED") as raised:
             self.execute()
         self.assertIn(str(self.snapshot_paths[-1]), str(raised.exception))
         self.assertEqual(self.events.count("resume-offline"), 2)
         self.assertIn("resume-projects", self.events)
         self.assertNotIn("process:restart", self.calls)
 
-    def test_readiness_failure_restores_schedules_through_the_restarted_server(self):
+    def test_readiness_failure_restores_schedules_without_the_restarted_server(self):
         self.change_main()
         self.fail_health = True
         with self.assertRaisesRegex(RuntimeError, "Readiness failed"):
             self.execute()
         self.assertEqual(self.schedules, self.initial_schedules)
         self.assertIn("process:restart", self.calls)
-        self.assertNotIn("resume-offline", self.events)
+        self.assertEqual(self.events.count("resume-offline"), 2)
 
     def test_restart_failure_restores_persisted_schedules_while_serve_is_stopped(self):
         self.change_main()
@@ -648,7 +592,7 @@ with d.deployment_lock(remote) as progress:
         self.change_main()
         self.add_schedule_on_update = True
         self.execute()
-        self.assertEqual(self.events[-2:], ["resume-groups", "resume-projects"])
+        self.assertEqual([e for e in self.events if e in ["resume-groups", "resume-projects"]], ["resume-groups", "resume-projects"])
         self.assertNotIn("resume-new", self.events)
         self.assertTrue(next(s for s in self.schedules if s["workflowId"] == "historical")["paused"])
 

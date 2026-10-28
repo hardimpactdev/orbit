@@ -26,7 +26,7 @@ and `authenticated: true` in its JSON result, with the expected main SHA. The
 `scheduleSnapshot` field names the retained local snapshot, created with mode
 `0600` before any pause. Keep that file until acceptance ends. A no-change
 deployment checks readiness without pausing schedules and returns a null
-snapshot. See [deployment](services.md#deploy-main) for the 180-second idle
+snapshot. See [deployment](services.md#deploy-main) for the 600-second idle
 limit, restoration behavior, and stop/restart failures.
 
 The helper restores schedules before reporting success. If a staged cutover must
@@ -61,12 +61,10 @@ Require the expected SHA and original schedule states. `groups-driver` uses
 Worker cleanup fires at second 35 and project reconciliation at second 40.
 Check `/health` for each coordinator's `queued`, `oldestQueuedAt`, and
 `lastQueueDelayMs`; a growing queue needs investigation before deployment.
-Pausing must suppress queued fires as well as new ones. On Swamp `983e2929`,
-ordinary queued fires bypass the pause
-([Swamp #4048](https://swamp-club.com/lab/4048)). The helper installs and verifies a
-temporary native deny grant for `service:scheduler` before pausing, so those
-queued fires cannot start runs during the drain. Updating cron alone cannot
-fix that deployment barrier.
+The pinned `1602a617` runtime rechecks pauses before starting queued fires.
+No temporary scheduler deny grant is needed. Use the
+[runtime upgrade procedure](services-runtime-upgrade.md) before deploying with
+this helper.
 `maintenance-projects` calls only `project_work`, without routine, detect, or
 package tick steps. The three coordinator workflows must succeed.
 
@@ -113,18 +111,27 @@ blocks later deployments, including no-change runs. The marker names the owner
 host/PID and that host's protected snapshot. Use that snapshot, not a new list
 of already-paused schedules.
 
-After serve is healthy, rerun only the saved enabled resumes from the deploying
+Whether serve is healthy or stopped, rerun only the saved enabled resumes from the deploying
 host. Set the snapshot path to the file printed by the failed deployment:
 
 ```sh
 python3 - /path/to/swamp-deploy-schedules-SNAPSHOT.json <<'PY'
 import json, shlex, subprocess, sys
+failures = []
 for s in json.load(open(sys.argv[1]))['schedules']:
     if not s['paused'] and not s['orphaned']:
         command = ['/home/orbit/.local/bin/swamp', 'workflow', 'schedule',
-                   'resume', s['workflowId'], '--server', 'ws://127.0.0.1:9417',
-                   '--token-file', '/home/orbit/.config/swamp/serve-driver-token', '--json']
-        subprocess.run(['ssh', 'orbit@10.44.0.3', shlex.join(command)], check=True)
+                   'resume', s['workflowId'], '--repo-dir',
+                   '/home/orbit/apps/orbit-swamp/default', '--json']
+        try:
+            subprocess.run(['ssh', 'orbit@10.44.0.3',
+                            'env -u SWAMP_SERVER_URL -u SWAMP_SERVE_URL ' + shlex.join(command)],
+                           check=True, timeout=180)
+        except (OSError, subprocess.SubprocessError) as error:
+            failures.append(s['workflowId'])
+            print(f'Resume failed: {error}; retry {shlex.join(command)}', file=sys.stderr)
+if failures:
+    raise SystemExit('SCHEDULES MAY STILL BE PAUSED: ' + ', '.join(failures))
 PY
 ```
 
@@ -134,21 +141,15 @@ Unset `SWAMP_SERVER_URL` and `SWAMP_SERVE_URL` first, so the local command does
 not connect to serve. Use only IDs whose snapshot has `paused: false` and
 `orphaned: false`. This restores persisted state for the next start without
 starting serve. Then inspect the schedule list and retain historical pauses.
+For an uncertain pause reply, confirm the remote pause command has ended, then
+repeat the saved resumes; an earlier verification cannot exclude a late pause.
 After verifying restoration and confirming that the recorded deployer is no
-longer running, inspect `schedulerGuard` in the snapshot or marker. If present,
-read its ID with
-`swamp data query 'modelName == "GUARD_NAME" && name == "grant-main"' --select attributes --server "$SWAMP_SERVER_URL" --json`.
-Revoke that exact `@swamp/grant` definition with
-`swamp behavior run GUARD_NAME revoke --server "$SWAMP_SERVER_URL" --json`,
-then run `swamp access reload --server "$SWAMP_SERVER_URL" --json` and verify
-with `swamp access check --subject service:scheduler --action run --on 'workflow:*' --server "$SWAMP_SERVER_URL" --json`.
-The guard's ID must no longer appear among `matchingGrants`; existing policy
-may still deny scheduling for another reason. If serve stays stopped, revoke
-with `--repo-dir "$SWAMP_REPO_DIR"` after unsetting the server URL variables;
-policy reload occurs on its next start. A lost create reply may leave no grant
-yet: reconcile its native run history before releasing the marker, rather than
-assuming it cannot arrive. Finally, remove
+longer running, remove
 `/home/orbit/.local/state/orbit-swamp/services-deploy-in-progress.json` on
 Services. Its mode is `0600`; do not delete it merely to bypass a busy deployment.
+For a snapshot created by the old guard-based helper, first use its recorded
+`schedulerGuard` name to revoke that exact grant and reload access policy;
+never assume upgrading the binary removes an existing deny grant. See the
+[runtime upgrade](services-runtime-upgrade.md) for the commands.
 A force-killed deployment needs this recovery because cleanup cannot run after
 SIGKILL or host loss.

@@ -45,7 +45,8 @@ orbit process:create swamp-serve --node=17 --runtime=systemd --user=orbit \
 The command creates a stopped Process with `restart_policy: always` and
 `keep_alive: true`. After checking the restored state, start it with
 `orbit process:restart <returned-process-id>`. Normal deployments require the
-authenticated server to be reachable for their active-run checks.
+local filesystem datastore for active-run and schedule checks. Authenticated
+serve readiness is checked after restart.
 
 Serve listens on `127.0.0.1:9417`, with token authentication and admin
 `user:nckrtl`. The private Route `https://swamp.orbit` proxies that listener
@@ -102,36 +103,17 @@ available after success or failure. Only enabled, non-orphaned schedules enter
 the pause and restore set. Existing pauses, including `subtasks-driver`, are
 never changed. Schedule IDs identify the restoration set.
 
-With those schedules paused, the command waits at most 180 seconds for
-`swamp run history --active` to become empty. Each read has its own deadline.
-A pause must also suppress ordinary cron fires that queued before the pause;
-checking only new fires and restart replays does not make a deployment idle.
-The native deployment regression fills that queue before pausing, then requires
-zero new starts while draining it. Swamp `983e2929` fails this check: its
-ordinary queued fires do not recheck the pause before execution.
+With those schedules paused, the command waits at most 600 seconds for
+`swamp run history --active --repo-dir` to become empty. Schedule controls and
+active-run reads use native local commands, with remote URL variables cleared.
+The filesystem control-plane store supports these commands while serve holds
+the writer lease. They do not wait on serve's busy websocket event loop.
 
-Until [Swamp #4048](https://swamp-club.com/lab/4048) fixes that path,
-deployment installs a native `@swamp/grant`
-denying `service:scheduler` the `run` action on workflows. It explicitly reloads
-and verifies that policy before pausing schedules. Native dispatch authorizes
-every queued entry before starting its run, so the grant blocks stale fires
-without cancelling work already running. Manual and webhook principals retain
-their existing policy. The unique guard name is saved in the protected snapshot
-and in-progress marker before creation, so a lost response cannot hide it.
-After schedule restoration, deployment revokes that exact grant and verifies
-the live policy again. If serve is stopped, it revokes through the native local
-command instead. Uncertain creation or failed cleanup retains the marker and
-reports the guard name for recovery. A no-change deployment creates no grant.
-Once #4048 ships, pin its official release in a separate PR and remove the
-guard. Keep the native paused-queue regression passing without it.
-
-The 180-second limit covers the successful runs observed since the independent
-group cutover on 2026-10-27: the longest workflow took 105.024 seconds and the
-longest `group-run` took 75.941 seconds. This is an operational limit, not a
-wall-clock bound on every workflow. Older `stage-handoff` runs reached 647.187
-seconds; long work can still abort deployment safely and needs its own idle
-window. A queue of paused fires must be skipped, not worked through by raising
-the deployment timeout.
+Swamp `20261028.205235.0-sha.1602a617` fixes queued cron fires bypassing a
+pause ([#4048](https://swamp-club.com/lab/4048)). The helper requires that
+release, matching `.swamp.yaml`. It creates no scheduler deny grant. The native
+regression queues fires before pausing and proves none start during the drain.
+See the [runtime upgrade](services-runtime-upgrade.md) before the first deploy.
 
 A timeout or unreadable response aborts before stopping serve and restores the
 saved enabled schedules. Do not start manual or webhook work during deployment:
@@ -142,22 +124,27 @@ The command stops the Process, advances the checkout with
 `git merge --ff-only <validated-sha>`, and restarts through Orbit. The update
 uses the commit SHA even if another deploy changes the bundle ref. Readiness
 uses an authenticated loopback Swamp command, retrying timeouts and invalid JSON
-during startup. The JSON result includes the commit, Process ID, whether the
+during startup for up to 360 seconds. Remote commands have 180-second deadlines
+and `SWAMP_SERVE_TIMEOUT_MS=120000`; readiness has a 400-second outer deadline.
+The JSON result includes the commit, Process ID, whether the
 checkout changed, and the protected `scheduleSnapshot` path.
 
 SIGTERM and SIGHUP raise a deployment error so cleanup runs. SIGHUP is ignored
 during schedule restoration and marker release. Normal exits and handled errors
 restore the schedules whose pauses were attempted, including an uncertain pause
 reply. Untouched schedules are excluded. Restoration attempts continue after an
-individual failure. Live schedule state determines which attempted pauses still
-need a resume. If that evidence is unreadable, the marker stays in place.
+individual failure. Every attempted pause receives a native local resume, even if serve is
+unreachable or an earlier restore failed. A final local list verifies the result.
+If that evidence is unreadable, the marker stays in place. A failed pause reply
+also retains it: the remote write might complete after the cleanup resumes.
+Confirm that command has ended, then repeat the saved resumes before removing
+the marker.
 
-The helper observes systemd state before changing the checkout and again when
-restoring schedules; a lost Orbit reply does not determine whether serve is
-stopped. When systemd confirms serve is stopped, native local Swamp commands
-restore the saved state on disk without starting serve. Otherwise restoration
-uses the authenticated server. Unknown or transitional runtime state fails
-closed. A failed restart or readiness check still needs Process inspection.
+The helper observes systemd state before changing the checkout; a lost Orbit
+reply does not determine whether serve is stopped. Restoration always uses
+native local schedule commands, including after a failed stop, restart or
+readiness check. It restores persisted state without starting serve. Inspect
+the Process separately after those failures.
 
 A schedule restoration failure makes the deployment fail, even if the code
 update succeeded. The error names each failed schedule and the retained snapshot;
@@ -165,8 +152,8 @@ when deployment also failed, its original error remains in the message. Inspect
 serve before retrying those resumes. Never resume schedules whose snapshot says
 `paused: true`. See the [cutover runbook](services-group-cutover.md) for recovery
 commands. The marker is removed only after all attempted pauses have been
-reconciled and resumed successfully and the scheduler guard is cleared, or when
-deployment exits before creating a guard or pausing anything.
+reconciled and resumed successfully, or when deployment exits before pausing
+anything.
 It remains after a crash or restoration failure and blocks every later deploy.
 Failure to remove the temporary bundle is logged to stderr without
 replacing the deployment result or its original error.
@@ -176,8 +163,7 @@ normal host configuration; `SWAMP_SSH_IDENTITY` can select an existing identity
 file. It never copies an SSH key. The binary and runtime state are provisioned
 separately; a normal deployment never copies or replaces them.
 
-The Services deploy CI job runs the deployment tests on the shared
-`hardimpactdev` runners with labels `self-hosted` and `hardimpact`.
+Run the focused Python deployment tests locally. CI does not run test suites.
 
 ## Initial move or manual restore
 
