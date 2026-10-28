@@ -30,7 +30,7 @@ afterEach(function (): void {
     File::deleteDirectory($this->directory);
 });
 
-it('retains exact owned analysis bytes once and fences a detached descendant before terminal proof', function (bool $cancel): void {
+it('retains exact owned analysis bytes once while draining completed-run descendants', function (bool $cancel): void {
     $checkout = managed_analysis_seed()->checkout($this->directory);
     $child = new TaskCheckChild($this->directory);
     $childCommand = $child->readyCommand().'; '.$child->waitCommand();
@@ -74,25 +74,18 @@ it('retains exact owned analysis bytes once and fences a detached descendant bef
         $process = $runner->startAnalysis($instance, $input, $runId);
         $child->awaitReady();
         check_runner_wait_for_exit($process);
-        expect($runner->readAnalysis($instance, $process)['state'])->toBe('running')
-            ->and($runner->recoverStart($instance, $runId)?->pid)->toBe($process->pid);
+        expect($runner->recoverStart($instance, $runId)?->pid)->toBe($process->pid);
         $same = $runner->startAnalysis($instance, $input, $runId);
         expect($same->pid)->toBe($process->pid)->and(file_get_contents($checkout.'/.git/analysis-invocations'))->toBe("once\n");
         if ($cancel) {
             $runner->cancel($instance, $process);
         } else {
-            $child->release();
+            $runner->readAnalysis($instance, $process);
         }
         $child->waitForExit();
-        $reading = null;
-        for ($attempt = 0; $attempt < 100; $attempt++) {
-            $reading = $runner->readAnalysis($instance, $process);
-            if (in_array($reading['state'], ['finished', 'interrupted'], true)) {
-                break;
-            }
-            usleep(10_000);
-        }
-        expect($reading['state'])->toBe('finished');
+        $reading = $runner->readAnalysis($instance, $process);
+        expect($reading['state'])->toBe('finished')->and($reading['result']['exit_code'])->toBe(0)
+            ->and($reading['result']['causality_uncertain'] ?? false)->toBeFalse();
         $bytes = base64_decode($reading['result']['report_base64'], true);
         $envelope = json_decode($bytes, true, flags: JSON_THROW_ON_ERROR);
         expect(strlen($bytes))->toBeGreaterThan(8192)->and($reading['result']['report_bytes'])->toBe(strlen($bytes))
@@ -109,4 +102,4 @@ it('retains exact owned analysis bytes once and fences a detached descendant bef
         new Process(['sudo', '-n', 'systemctl', 'stop', 'orbit-task-check-'.$runId.'.service'])->run();
         new Process(['sudo', '-n', 'systemctl', 'reset-failed', 'orbit-task-check-'.$runId.'.service'])->run();
     }
-})->with([false, true]);
+})->with(['status drains completed analysis' => false, 'cancel drains completed analysis' => true]);

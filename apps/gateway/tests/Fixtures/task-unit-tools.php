@@ -14,6 +14,14 @@ if (basename($argv[0]) === 'sudo') {
         exit(0);
     }
     file_put_contents($home.'/stops', implode(' ', array_slice($argv, 1))."\n", FILE_APPEND);
+    if (array_slice($argv, 2, 2) === ['systemctl', 'kill']) {
+        if (is_file($home.'/after-kill.json')) {
+            copy($home.'/after-kill.json', $home.'/unit.json');
+        }
+        if (is_file($home.'/kill-exit')) {
+            exit((int) file_get_contents($home.'/kill-exit'));
+        }
+    }
     if (file_exists($home.'/finish')) {
         file_put_contents($home.'/finish', "done\n");
     }
