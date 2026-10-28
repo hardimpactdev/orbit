@@ -155,3 +155,13 @@ it('refuses a failed child whose admission snapshot was never stamped', function
 
     expect(fn () => app(NodeFootprintEvidence::class)->derive($operation, [$child]))->toThrow(ResourceOperationException::class);
 });
+
+it('keeps the canonical Caddy child publication outcome in its artifact result', function (string $publication): void {
+    $operation = footprintEvidenceOperation([footprintEvidenceArtifact('caddy')], ['caddy' => ['kind' => 'route.caddy_converge', 'node_id' => 2, 'input' => []]]);
+    $child = footprintEvidenceChild('caddy', 'route.caddy_converge', result: ['ready' => true, 'result' => $publication]);
+
+    $derived = app(NodeFootprintEvidence::class)->derive($operation, [$child]);
+
+    expect($derived['result']['artifacts'])->toBe([['name' => 'caddy', 'status' => $publication === 'unchanged' ? 'unchanged' : 'applied', 'reason' => null]]);
+    expect($derived['result']['changed'])->toBe($publication === 'published');
+})->with(['published', 'unchanged']);

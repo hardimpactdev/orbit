@@ -30,6 +30,7 @@ final readonly class NodeBootstrapSshIdentitySource implements OperationConnecti
     public function ownerId(Operation $operation): ?int
     {
         return in_array($operation->kind, ['node.add', 'node.bootstrap_install'], true)
+            && $operation->target_id === $operation->node_id
             && Node::query()->whereKey($operation->node_id)->exists() ? $operation->node_id : null;
     }
 

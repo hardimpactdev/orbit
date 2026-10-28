@@ -9,6 +9,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationOutcome;
+use App\Domain\Routes\RouteProjectionPlan;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Cluster;
 use App\Models\NodeRole;
@@ -24,7 +25,7 @@ function routerParentFixture(): array
     $source->update(['cluster_id' => $cluster->id]);
     $assignment = NodeRole::query()->create(['node_id' => $candidate->id, 'cluster_id' => $cluster->id, 'role' => RoleName::Router, 'status' => 'provisioning']);
     $old = NodeRole::query()->create(['node_id' => $source->id, 'cluster_id' => $cluster->id, 'role' => RoleName::Router, 'status' => 'removing']);
-    $parent = Operation::query()->create(['kind' => 'cluster_router.set', 'target_type' => 'cluster_router', 'target_id' => $cluster->id,
+    $parent = Operation::query()->create(['kind' => 'cluster.router_set', 'target_type' => 'cluster_router', 'target_id' => $cluster->id,
         'node_id' => $candidate->id, 'input' => ['cluster_id' => $cluster->id, 'candidate_role_id' => $assignment->id, 'node_id' => $candidate->id,
             'old_role_id' => $old->id, 'old_node_id' => $source->id, 'route_ids' => [], 'node_ids' => [$candidate->id, $source->id]],
         'state' => ['route_plan' => ['assignment_ids' => [$assignment->id, $old->id], 'old_role_ids' => [$old->id],
@@ -89,3 +90,20 @@ it('refuses Router role admission outside its exact recorded Cluster ownership',
     expect(Operation::query()->where('parent_operation_id', $parent->id)->count())->toBe(0);
     expect($assignment->refresh()->status->value)->toBe('provisioning');
 })->with(['missing-candidate', 'cluster', 'target', 'parent']);
+
+it('accepts the candidate and removal intents produced by the owning Route planner', function (): void {
+    [$parent, $candidate, $old] = routerParentFixture();
+    $plan = app(RouteProjectionPlan::class)->clusterRouter($parent);
+    $parent->update(['state' => ['route_plan' => $plan]]);
+    $candidateIntent = $plan['stages']['baseline'][0];
+    $oldIntent = $plan['stages']['remove-old-baseline'][0];
+    $candidateChild = app(OperationIdempotency::class)->duringChild($parent, $candidateIntent,
+        fn (): Operation => app(AdmitNodeRoleOperationAction::class)->routerChild($parent, $candidateIntent));
+    $oldChild = app(OperationIdempotency::class)->duringChild($parent, $oldIntent,
+        fn (): Operation => app(AdmitNodeRoleOperationAction::class)->routerChild($parent, $oldIntent));
+
+    expect($candidateChild->input)->toBe(['assignment_id' => $candidate->id]);
+    expect($oldChild->input)->toBe(['role' => 'router', 'purge_data' => false, 'offline' => false]);
+    expect($candidate->refresh()->status->value)->toBe('provisioning');
+    expect($old->refresh()->status->value)->toBe('removing');
+});

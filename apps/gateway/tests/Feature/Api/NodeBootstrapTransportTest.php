@@ -149,3 +149,14 @@ it('recovers a lost bootstrap installer reply using only the existing connection
     $this->getJson("/api/v1/operation-executor/{$operation->id}/receipts/install")->assertOk();
     expect(json_encode($operation->fresh()->state))->not->toContain('/fake/existing-identity');
 });
+
+it('refuses connection credentials when the Operation resource is another Node', function (): void {
+    [, $operation, $body] = bootstrapOperation($this);
+    $operation->update(['target_id' => $operation->target_id + 1]);
+    $keys = Mockery::mock(SshKeyProvider::class);
+    $keys->shouldNotReceive('privateKeyPath');
+    app()->instance(SshKeyProvider::class, $keys);
+
+    $this->postJson("/api/v1/operation-executor/{$operation->id}/run", $body)
+        ->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
+});

@@ -267,6 +267,7 @@ final readonly class AdmitNodeRoleOperationAction
             return $existing;
         }
         if ($this->idempotency->parent?->id !== $parent->id || $parent->target_type !== 'cluster_router'
+            || ! in_array($parent->kind, ['cluster.router_set', 'cluster.router_unset'], true)
             || ! in_array($intent['kind'], ['node.role_converge', 'node.role_remove'], true)
             || $this->idempotency->childKey !== $intent['key']) {
             throw new ResourceOperationException('operation.child_forbidden', 'Router role work requires its owning Cluster parent.', 422);

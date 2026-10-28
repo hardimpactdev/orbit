@@ -86,8 +86,9 @@ final readonly class NodeFootprintEvidence
                     }
                     throw new ResourceOperationException('operation.children_pending', 'The footprint child has not settled.', 409);
                 }
+                $intent = ValidatedData::object(ValidatedData::object($child->child_admission ?? [])['intent'] ?? []);
                 if ($child->kind !== ($spec['kind'] ?? null) || $child->node_id !== ($spec['node_id'] ?? null)
-                    || ($child->child_admission['intent']['input'] ?? null) !== ($spec['input'] ?? null)) {
+                    || ($intent['input'] ?? null) !== ($spec['input'] ?? null)) {
                     throw $this->unproven();
                 }
                 if ($child->status !== OperationStatus::Succeeded) {
@@ -111,7 +112,8 @@ final readonly class NodeFootprintEvidence
                         $artifacts[] = ['name' => $name, 'status' => 'skipped', 'reason' => $error];
                     }
                 }
-                $changed = $child->result['changed'] ?? true;
+                $changed = $child->kind === 'route.caddy_converge' && ($child->result['result'] ?? null) === 'unchanged'
+                    ? false : ($child->result['changed'] ?? true);
             } else {
                 [$transport, $command] = match ($name) {
                     'agent' => ['agent', 'agent.configure'],
