@@ -63,7 +63,7 @@ final readonly class FleetOperationExecution implements OperationFamilyChildren,
             }
         }
 
-        return ['descriptors' => $descriptors];
+        return ['descriptors' => $descriptors, 'result' => ['wait_resume' => $this->children->waitResume($operation)]];
     }
 
     public function childContext(Operation $parent): array

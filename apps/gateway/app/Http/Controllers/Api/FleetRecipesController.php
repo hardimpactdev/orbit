@@ -28,7 +28,7 @@ final class FleetRecipesController extends Controller
             throw new ResourceOperationException('node.recipe_changed', 'The requested recipe does not match the serving recipe.', 409);
         }
         $caller = $request->getUserResolver()();
-        $operation = $action->execute($node, $recipe, $request->boolean('automatic'),
+        $operation = $action->execute($node, $recipe, true,
             $request->validated('build_id') === null ? null : ValidatedData::integer($request->validated('build_id')),
             $caller instanceof Node ? $caller->name : null, $request->attributes->getString('orbit.request_id'));
 

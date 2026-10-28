@@ -42,7 +42,7 @@ return (static function (): array {
         ],
         'children' => [['kind' => 'node.converge', 'node_from' => 'operation.node_id']],
         'completion_contract' => ['step' => 'recipe-delivery', 'transport' => 'agent', 'name' => 'recipe.verify-delivery', 'result' => []],
-        'result_fields' => ['started', 'ready', 'healthy', 'identity', 'agent_sha256', 'cli_version', 'outcome', 'passed', 'agent_version', 'presence', 'error_code',
+        'result_fields' => ['wait_resume', 'started', 'ready', 'healthy', 'identity', 'agent_sha256', 'cli_version', 'outcome', 'passed', 'agent_version', 'presence', 'error_code',
             ['name' => 'changed_packages', 'type' => 'list', 'items' => 'string', 'max' => 512],
             ['name' => 'changed_tools', 'type' => 'list', 'items' => 'string', 'max' => 512],
             ['name' => 'restarted_services', 'type' => 'list', 'items' => 'string', 'max' => 512]],
@@ -72,7 +72,7 @@ return (static function (): array {
         ],
         'children' => [['kind' => 'node.converge', 'node_from' => 'operation.node_id']],
         'completion_contract' => ['step' => 'verify', 'transport' => 'gateway', 'name' => 'fleet.verify', 'result' => ['passed' => true], 'children_succeeded' => ['node.converge']],
-        'result_fields' => ['reachable', 'installed', 'configured', 'outcome', 'cli_version', 'exit_code', 'passed', 'agent_version', 'presence', 'changed', 'caddy_skipped', 'error_code',
+        'result_fields' => ['wait_resume', 'reachable', 'installed', 'configured', 'outcome', 'cli_version', 'exit_code', 'passed', 'agent_version', 'presence', 'changed', 'caddy_skipped', 'error_code',
             'report_present', 'report.status', 'report.code'],
     ];
 

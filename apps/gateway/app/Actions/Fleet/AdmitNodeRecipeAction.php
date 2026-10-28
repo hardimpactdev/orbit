@@ -69,7 +69,7 @@ final readonly class AdmitNodeRecipeAction
                 $fingerprint = hash('sha256', json_encode($pins, JSON_THROW_ON_ERROR));
                 if ((ValidatedData::object($settings['machine_recipe_incus_hold'] ?? [])['fingerprint'] ?? null) !== $fingerprint) {
                     $settings['machine_recipe_incus_hold'] = ['fingerprint' => $fingerprint, 'pins' => $pins, 'held_at' => now()->toIso8601String()];
-                    $this->alerts->halted("Node [{$node->id}: {$node->name}] holds Incus ".implode(', ', $pins).'. Drain all task VMs, builders and CI runners, then run explicit node:converge-recipe. Other recipe changes continue automatically.',
+                    $this->alerts->halted("Node [{$node->id}: {$node->name}] holds Incus ".implode(', ', $pins).'. Until kit B, C, I and node.converge are installed, nightly recipe maintenance, fleet rollout and manual node:converge-recipe have no executor. After installation, drain task VMs, builders and CI runners before manual Incus convergence. Automatic visits keep Incus pinned.',
                         target: 'machine-recipe-incus-'.$node->id.'-'.substr($fingerprint, 0, 24), incident: new ReleaseIncident('recipe-incus:'.$node->id, $fingerprint, 'upgrade_held'));
                 }
             }

@@ -967,6 +967,10 @@ Swamp schedules and runs fleet visits. The Gateway validates the release and tar
 
 Only app-dev-only Nodes start at any hour. App-prod and shared roles start from 03:00 inclusive to 06:00 exclusive Europe/Amsterdam. Mixed-role Nodes use the restricted window. An effect that started before 06:00 may finish. The Gateway checks its clock and current Node roles before every later run and refuses effects outside the window. A restricted visit that re-enters after an interruption with steps but no saved completion fails with `fleet.visit_interrupted` and halts the rollout. It runs no further effect.
 
+A durable wait on its own Gateway-verified footprint child may resume after that child settles. Later effects still require the current window. If the window closed during the wait, the parent fails with `fleet.visit_interrupted`.
+
+Interruption cleanup reads every active effect receipt first and retains the Node hold while any effect is running or unreadable. The admission lock closes visits with missing or terminal Operations. Open visits raise one stalled alert after 30 minutes; an alert does not release their holds.
+
 Automatic recipe and rollout admissions record the `fleet.window` run constraint. Kit B retains it on children and checks current target roles before hydration and dispatch, so a queued footprint child cannot perform daytime effects on a shared or production Node.
 
 ### Desired state

@@ -50,6 +50,7 @@ final readonly class FleetRolloutPlanAction
     /** @return array{status: string, error_code?: string, rollout?: int, commit?: string, allow_downgrade?: bool, targets?: list<array{node_id: int, row_id: int, window: bool, attempts: int, finished_at: ?string, running: bool}>} */
     private function locked(): array
     {
+        $this->visits->reconcile();
         if ($this->visits->busy()) {
             return ['status' => 'busy'];
         }

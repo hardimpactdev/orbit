@@ -78,7 +78,7 @@ final readonly class NodeUpdates
 
     /**
      * The visits in progress, oldest first. A catch-up visits Nodes of a completed rollout, so a completed rollout
-     * counts as well as a running one. A visit counts while its queued or running fleet Operation owns it.
+     * counts as well as a running one. A visit counts while its queued, running or waiting fleet Operation owns it.
      *
      * @return iterable<FleetRolloutNode>
      */
@@ -87,7 +87,7 @@ final readonly class NodeUpdates
         $visits = FleetRolloutNode::query()
             ->whereExists(static function ($query): void {
                 $query->selectRaw('1')->from('operations')->whereColumn('operations.node_id', 'fleet_rollout_nodes.node_id')
-                    ->where('kind', 'fleet.rollout')->whereIn('status', ['queued', 'running']);
+                    ->where('kind', 'fleet.rollout')->whereIn('status', ['queued', 'running', 'waiting']);
             })
             ->whereNotNull('started_at')
             ->whereNull('finished_at')

@@ -214,3 +214,11 @@ it('returns kind unavailable to Services without holding a Node when the visit k
         ->assertConflict()->assertJsonPath('error.code', 'operation.kind_unavailable');
     expect(Operation::query()->count())->toBe(0)->and($agents->calls)->toBe([]);
 });
+
+it('requires explicit automatic true on the executor recipe route', function (array $payload): void {
+    [, $node] = fleetPeerDnsNodes($this);
+    $agents = new FakeAgentCommandRunner;
+    app()->instance(AgentCommandRunner::class, $agents);
+    $this->postJson('/api/v1/fleet/nodes/'.$node->id.'/recipe', $payload)->assertUnprocessable();
+    expect(Operation::query()->count())->toBe(0)->and($agents->calls)->toBe([]);
+})->with([[[]], [['automatic' => false]], [['automatic' => 1]], [['automatic' => '1']], [['automatic' => 'true']]]);

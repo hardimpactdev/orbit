@@ -33,9 +33,11 @@ final readonly class AdmitFleetRolloutNodeAction
 
     public function execute(Node $node, int $rolloutId): Operation
     {
-        $this->visits->assertIdle();
-        $this->prerequisites->assertAvailable();
         $plan = $this->plan->execute();
+        if ($plan['status'] === 'busy') {
+            $this->visits->assertIdle();
+        }
+        $this->prerequisites->assertAvailable();
         $target = array_find($plan['targets'] ?? [], static fn (array $row): bool => $row['node_id'] === $node->id);
         if (($plan['rollout'] ?? null) !== $rolloutId || $target === null || ! $target['window']) {
             throw new ResourceOperationException('fleet.rollout_not_ready', 'The rollout, target or maintenance window changed.', 409);
@@ -57,6 +59,8 @@ final readonly class AdmitFleetRolloutNodeAction
         $lock = Cache::lock(FleetRolloutVisits::AdmissionLock, 60);
         $lock->block(30);
         try {
+            $this->visits->reconcile();
+
             return DB::transaction(function () use ($node, $plan, $target, $state, $baseline, $release, $gateway, $rolloutId, $reachable): Operation {
                 FleetRollout::query()->whereKey($rolloutId)->lockForUpdate()->firstOrFail();
                 $this->visits->assertIdle();

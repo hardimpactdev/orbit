@@ -180,7 +180,7 @@ final readonly class CommandActivityInputSanitizer
                     subject: $redacted,
                 ) ?? $this->redactionFailed();
             $redacted = preg_replace(
-                '/\b(?:gh[pousr]_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]{20,})\b/',
+                '/(?<![A-Za-z0-9])(?:gh[pousr]_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]{20,})(?![A-Za-z0-9])/',
                 self::REDACTED,
                 $redacted,
             ) ?? $this->redactionFailed();

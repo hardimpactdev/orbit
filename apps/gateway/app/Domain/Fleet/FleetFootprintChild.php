@@ -24,6 +24,30 @@ final readonly class FleetFootprintChild
         return $child;
     }
 
+    /** Only the shared Gateway-stamped wait can permit restricted re-entry. */
+    public function waitResume(Operation $parent): bool
+    {
+        $reentry = $parent->state['executor_reentry'] ?? null;
+        $wait = is_array($reentry) ? ($reentry['children'] ?? null) : null;
+        if ($parent->started_at === null || $parent->started_at->copy()->setTimezone('Europe/Amsterdam')->toDateString() !== now()->setTimezone('Europe/Amsterdam')->toDateString()
+            || ! is_array($wait) || count($wait) !== 1 || ! is_array($wait[0] ?? null) || ($wait[0]['key'] ?? null) !== 'footprint'
+            || $parent->steps()->where('status', 'running')->exists()) {
+            return false;
+        }
+        $runs = ValidatedData::object($parent->state['executor_runs'] ?? []);
+        if (isset($runs['verify']) || isset($runs['recipe-delivery']) || $parent->steps()->whereIn('name', ['verify', 'recipe-delivery'])->exists()) {
+            return false;
+        }
+        try {
+            $child = $this->children->child($parent, 'footprint');
+        } catch (ResourceOperationException) {
+            return false;
+        }
+
+        return $child->kind === 'node.converge' && $child->node_id === $parent->node_id && $child->status->terminal()
+            && $child->id === ($wait[0]['id'] ?? null) && $child->child_fingerprint === ($wait[0]['fingerprint'] ?? null);
+    }
+
     public function cliReady(Operation $operation): bool
     {
         $steps = ValidatedData::object($operation->state['steps'] ?? []);

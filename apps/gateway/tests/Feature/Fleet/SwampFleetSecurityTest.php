@@ -6,6 +6,7 @@ use App\Actions\Fleet\AdmitFleetRolloutNodeAction;
 use App\Actions\Fleet\AdmitNodeRecipeAction;
 use App\Actions\Fleet\FleetRolloutPlanAction;
 use App\Actions\Fleet\RecipeFleetPlanAction;
+use App\Domain\Fleet\FleetFootprintChild;
 use App\Domain\Fleet\FleetKitCapabilities;
 use App\Domain\Fleet\FleetNodeOutcome;
 use App\Domain\Fleet\FleetOperationExecution;
@@ -14,11 +15,15 @@ use App\Domain\Fleet\FleetRolloutVisits;
 use App\Domain\Fleet\FleetVisitPrerequisites;
 use App\Domain\Fleet\FleetWindow;
 use App\Domain\Fleet\RecipeOperationCompletion;
+use App\Domain\Fleet\RolloutOperationCompletion;
+use App\Domain\Nodes\NodeUpdates;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationChildIntent;
 use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationRunConstraint;
+use App\Domain\Operations\SwampOperationExecutor;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
@@ -87,8 +92,11 @@ it('blocks a new rollout generation while any older visit or fleet Operation rem
     $next = FleetFixtures::node('next-visit', [RoleName::AppDev]);
     $rollout = FleetRollout::query()->create(['commit' => str_repeat('f', 40), 'status' => FleetRolloutStatus::Superseded, 'desired_state' => [], 'order' => []]);
     if ($open === 'visit') {
-        FleetRolloutNode::query()->create(['fleet_rollout_id' => $rollout->id, 'node_id' => $old->id, 'node_name' => $old->name, 'position' => 1,
-            'outcome' => FleetNodeOutcome::Pending, 'started_at' => now()->subHours(3)]);
+        $row = FleetRolloutNode::query()->create(['fleet_rollout_id' => $rollout->id, 'node_id' => $old->id, 'node_name' => $old->name, 'position' => 1,
+            'outcome' => FleetNodeOutcome::Pending, 'started_at' => now()]);
+        $operation = Operation::query()->create(['kind' => 'fleet.rollout', 'target_type' => 'node', 'target_id' => $old->id, 'node_id' => $old->id,
+            'input' => ['row_id' => $row->id], 'status' => 'running']);
+        $row->update(['evidence' => ['operation_id' => $operation->id]]);
     } else {
         Operation::query()->create(['kind' => 'fleet.rollout', 'target_type' => 'node', 'target_id' => $old->id, 'node_id' => $old->id,
             'input' => [], 'status' => $open]);
@@ -97,7 +105,7 @@ it('blocks a new rollout generation while any older visit or fleet Operation rem
         ->and(app(FleetRolloutPlanAction::class)->execute())->toBe(['status' => 'busy']);
     expect(fn () => app(AdmitFleetRolloutNodeAction::class)->execute($next, 999))->toThrow(ResourceOperationException::class, 'A fleet Node visit is still open');
     expect(FleetRollout::query()->count())->toBe(1)
-        ->and(Operation::query()->count())->toBe($open === 'visit' ? 0 : 1);
+        ->and(Operation::query()->count())->toBe(1);
 })->with(['visit', 'queued', 'running', 'waiting']);
 
 it('halts recipe progress when an interrupted restricted visit completes', function (): void {
@@ -113,7 +121,7 @@ it('halts recipe progress when an interrupted restricted visit completes', funct
 
 it('redacts a GitHub token followed by an underscore suffix', function (): void {
     $secret = 'ghs_'.str_repeat('a', 36);
-    expect(app(CommandActivityInputSanitizer::class)->redactText($secret.'_suffix'))->not->toContain($secret);
+    expect(app(CommandActivityInputSanitizer::class)->redactText('_'.$secret.'_suffix'))->not->toContain($secret);
 });
 
 it('bounds CLI retry descriptors and keeps their inputs bound to the admitted Operation', function (): void {
@@ -184,3 +192,91 @@ it('registers the inherited fleet constraint and checks the child target roles a
     expect(fn () => $window->assertAllowed($child, ['roles' => 'admission']))->toThrow(ResourceOperationException::class);
     expect(collect(app()->tagged(OperationRunConstraint::class))->contains(fn ($constraint): bool => $constraint->name() === 'fleet.window'))->toBeTrue();
 });
+
+it('closes orphaned and finished visits under the planner lock', function (string $owner): void {
+    $fixtures = FleetFixtures::bind();
+    $node = FleetFixtures::node('dead-visit', [RoleName::AppDev]);
+    $rollout = FleetRollout::query()->create(['commit' => FleetFixtures::Commit, 'status' => FleetRolloutStatus::Running, 'desired_state' => [], 'order' => []]);
+    $row = FleetRolloutNode::query()->create(['fleet_rollout_id' => $rollout->id, 'node_id' => $node->id, 'node_name' => $node->name, 'position' => 1,
+        'outcome' => FleetNodeOutcome::Pending, 'started_at' => now()->subHour()]);
+    if ($owner === 'terminal') {
+        $operation = Operation::query()->create(['kind' => 'fleet.rollout', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id,
+            'input' => ['row_id' => $row->id], 'status' => 'failed', 'error_code' => 'fleet.visit_interrupted', 'finished_at' => now()]);
+        $row->update(['evidence' => ['operation_id' => $operation->id]]);
+    } elseif ($owner === 'missing') {
+        $row->update(['evidence' => ['operation_id' => 999999]]);
+    }
+    app(FleetRolloutPlanAction::class)->execute();
+    expect($row->refresh()->finished_at)->not->toBeNull()
+        ->and($row->outcome)->toBe(FleetNodeOutcome::Failed)
+        ->and($rollout->refresh()->status)->toBe(FleetRolloutStatus::Halted)
+        ->and(app(FleetRolloutVisits::class)->busy())->toBeFalse()
+        ->and($fixtures['alerts']->alerts)->toHaveCount(1);
+    app(FleetRolloutPlanAction::class)->execute();
+    expect($fixtures['alerts']->alerts)->toHaveCount(1);
+})->with(['absent', 'missing', 'terminal']);
+
+it('alerts once for an overdue child wait while keeping the visit busy and visibly updating', function (): void {
+    $fixtures = FleetFixtures::bind();
+    $node = FleetFixtures::node('stalled-child', [RoleName::AppProd]);
+    $rollout = FleetRollout::query()->create(['commit' => FleetFixtures::Commit, 'status' => FleetRolloutStatus::Running, 'desired_state' => [], 'order' => []]);
+    $row = FleetRolloutNode::query()->create(['fleet_rollout_id' => $rollout->id, 'node_id' => $node->id, 'node_name' => $node->name, 'position' => 1,
+        'outcome' => FleetNodeOutcome::Pending, 'started_at' => now()->subMinutes(FleetRolloutVisits::StalledMinutes)]);
+    $operation = Operation::query()->create(['kind' => 'fleet.rollout', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id,
+        'input' => ['row_id' => $row->id], 'status' => 'waiting']);
+    $row->update(['evidence' => ['operation_id' => $operation->id]]);
+    foreach (range(1, 2) as $_) {
+        expect(app(FleetRolloutPlanAction::class)->execute())->toBe(['status' => 'busy']);
+    }
+    expect($fixtures['alerts']->alerts)->toHaveCount(1)
+        ->and($row->refresh()->finished_at)->toBeNull()
+        ->and($operation->refresh()->status->value)->toBe('waiting')
+        ->and(app(NodeUpdates::class)->forNode($node))->not->toBeNull();
+});
+
+it('accepts only its own settled footprint from a Gateway wait before later effects', function (string $fault): void {
+    $node = FleetFixtures::node('wait-proof', [RoleName::AppProd]);
+    $parent = Operation::query()->create(['kind' => 'fleet.rollout', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id, 'input' => [], 'status' => 'running', 'started_at' => now()]);
+    $child = Operation::query()->create(['kind' => 'node.converge', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id,
+        'input' => ['force_artifacts' => false, 'first_visit' => true], 'status' => 'succeeded']);
+    $child->forceFill(['parent_operation_id' => $parent->id, 'child_key' => 'footprint', 'run_constraints' => FleetWindow::Constraints])->save();
+    $snapshot = ['admitted' => ['parent_operation_id' => $parent->id, 'key' => 'footprint', 'kind' => $child->kind, 'node_id' => $node->id,
+        'target_type' => 'node', 'target_id' => $node->id, 'input' => $child->input, 'run_constraints' => FleetWindow::Constraints]];
+    $child->forceFill(['child_admission' => $snapshot, 'child_fingerprint' => OperationChildIntent::fingerprint($snapshot)])->save();
+    $state = ['executor_reentry' => ['children' => [['key' => 'footprint', 'id' => $child->id, 'fingerprint' => $child->child_fingerprint]]]];
+    if ($fault === 'missing') {
+        $state = [];
+    } elseif ($fault === 'foreign') {
+        $child->forceFill(['parent_operation_id' => null])->save();
+    } elseif ($fault === 'pending') {
+        $child->update(['status' => 'running']);
+    } elseif ($fault === 'changed') {
+        $child->update(['input' => ['force_artifacts' => true, 'first_visit' => true]]);
+    } elseif ($fault === 'fingerprint') {
+        $state['executor_reentry']['children'][0]['fingerprint'] = 'forged';
+    } elseif ($fault === 'later_run') {
+        $state['executor_runs'] = ['verify' => ['started' => true]];
+    } elseif ($fault === 'next_window') {
+        $parent->update(['started_at' => now()->subDay()]);
+    } elseif ($fault === 'active_step') {
+        $parent->steps()->create(['position' => 1, 'name' => 'self-update', 'status' => 'running', 'resumable' => true, 'sequence' => 1]);
+    }
+    $parent->update(['state' => $state]);
+    expect(app(FleetFootprintChild::class)->waitResume($parent))->toBe($fault === 'valid');
+    if ($fault === 'valid') {
+        app()->instance(OperationKinds::class, new OperationKinds(app(), ['fleet.rollout' => [
+            'executor' => 'swamp', 'execution' => FleetOperationExecution::class, 'completion' => RolloutOperationCompletion::class,
+            'runs' => [['transport' => 'gateway', 'name' => 'fleet.verify', 'input_fields' => [], 'input_values' => ['mode' => 'rollout']]],
+            'completion_contract' => ['step' => 'verify', 'transport' => 'gateway', 'name' => 'fleet.verify', 'result' => ['passed' => true]],
+            'result_fields' => ['wait_resume', 'passed'],
+        ]]));
+        $parent->update(['status' => 'queued', 'state' => []]);
+        $executor = app(SwampOperationExecutor::class);
+        $executor->claim('fleet.rollout', 'before-wait', $node->id);
+        $executor->wait($parent, 'before-wait', ['footprint'], $node->id);
+        expect($parent->refresh()->status->value)->toBe('waiting');
+        $resumed = $executor->claim('fleet.rollout', 'after-wait', $node->id);
+        expect($resumed?->id)->toBe($parent->id)
+            ->and(app(OperationExecutionContract::class)->context($parent->refresh())['result'])->toBe(['wait_resume' => true]);
+    }
+})->with(['valid', 'missing', 'foreign', 'pending', 'changed', 'fingerprint', 'later_run', 'active_step', 'next_window']);
