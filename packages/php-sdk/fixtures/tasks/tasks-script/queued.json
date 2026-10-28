@@ -25,11 +25,12 @@
             "cancel_requested": false,
             "attempts": 0,
             "triggered_by": "tick-node",
+            "caller_node_id": null,
+            "caller_node_name": null,
             "created_at": "2026-10-25T12:00:00+00:00",
             "started_at": null,
             "finished_at": null,
-            "poll_after_seconds": 2,
-            "caller_node_id": null
+            "poll_after_seconds": 2
         },
         "meta": {
             "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"

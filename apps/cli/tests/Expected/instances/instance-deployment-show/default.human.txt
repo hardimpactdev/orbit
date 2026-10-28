@@ -33,7 +33,7 @@ Loading deployment...
 │
 ├  Triggered by       swamp:auto-deploy
 │
-├  Caller Node ID     1
+├  Caller Node        gateway
 │
 └  Request ID         0198e15c-bf97-7c23-8f1f-61b8fe67a844
 

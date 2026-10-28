@@ -35542,6 +35542,12 @@
               "integer",
               "null"
             ]
+          },
+          "caller_node_name": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -36922,6 +36928,12 @@
           "caller_node_id": {
             "type": [
               "integer",
+              "null"
+            ]
+          },
+          "caller_node_name": {
+            "type": [
+              "string",
               "null"
             ]
           },

@@ -25,7 +25,7 @@ final class OperationOutput
             'Cancel requested' => $operation->cancelRequested ? 'yes' : null,
             'Attempts' => $operation->attempts,
             'By' => $operation->triggeredBy,
-            'Caller Node ID' => $operation->callerNodeId,
+            'Caller Node' => $operation->callerNodeName ?? ($operation->callerNodeId === null ? null : "Removed Node ($operation->callerNodeId)"),
             'Created' => $operation->createdAt,
             'Started' => $operation->startedAt,
             'Finished' => $operation->finishedAt,

@@ -58,9 +58,9 @@ it("shows returned table names and distinguishes a successful empty read", async
     await expect.element(pane("Tables")).toMatchTextContent("No tables.");
 });
 
-it("shows the Swamp origin and caller Node ID in deployment history", async () => {
+it("shows the Swamp origin and caller Node name in deployment history", async () => {
     await openApp("/instances/1/deployments/1");
 
     await expect.element(pane("Properties")).toMatchTextContent("Triggered byswamp:auto-deploy");
-    await expect.element(pane("Properties")).toMatchTextContent("Caller Node ID1");
+    await expect.element(pane("Properties")).toMatchTextContent("Caller Nodebeast");
 });

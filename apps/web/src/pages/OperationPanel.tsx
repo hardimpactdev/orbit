@@ -83,7 +83,10 @@ export function OperationPanel({ instance }: { instance: Instance }) {
                 topRight={[
                     headline(operation),
                     operation.triggered_by,
-                    operation.caller_node_id == null ? null : `Node ${operation.caller_node_id}`,
+                    operation.caller_node_name ??
+                        (operation.caller_node_id == null
+                            ? null
+                            : `Removed Node (${operation.caller_node_id})`),
                 ]
                     .filter(Boolean)
                     .join(" · ")}

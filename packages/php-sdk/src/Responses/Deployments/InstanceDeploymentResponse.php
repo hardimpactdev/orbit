@@ -24,6 +24,7 @@ final readonly class InstanceDeploymentResponse
         public ?array $events,
         public string $requestId,
         public ?int $callerNodeId = null,
+        public ?string $callerNodeName = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -58,6 +59,7 @@ final readonly class InstanceDeploymentResponse
             events: $events,
             requestId: $requestId,
             callerNodeId: is_int($data['caller_node_id'] ?? null) ? $data['caller_node_id'] : null,
+            callerNodeName: is_string($data['caller_node_name'] ?? null) ? $data['caller_node_name'] : null,
         );
     }
 
@@ -96,6 +98,7 @@ final readonly class InstanceDeploymentResponse
             'selected_release' => $this->selectedRelease,
             'triggered_by' => $this->triggeredBy,
             'caller_node_id' => $this->callerNodeId,
+            'caller_node_name' => $this->callerNodeName,
             'events' => $this->events === null ? null : array_map(
                 static fn (InstanceDeploymentEvent $event): array => $event->toArray(),
                 $this->events,

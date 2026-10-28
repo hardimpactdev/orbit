@@ -252,23 +252,32 @@ it('shows the authorized Swamp caller in deployment and operation reads without 
     $this->fixture->caller->update(['name' => 'renamed-gateway-peer']);
 
     foreach (['/api/v1/deployments/'.$row->id, '/api/v1/operations/'.$id] as $url) {
-        $this->getJson($url)->assertOk()->assertJsonPath('data.triggered_by', 'swamp:auto-deploy')->assertJsonPath('data.caller_node_id', $callerId);
+        $this->getJson($url)->assertOk()->assertJsonPath('data.triggered_by', 'swamp:auto-deploy')->assertJsonPath('data.caller_node_id', $callerId)->assertJsonPath('data.caller_node_name', 'renamed-gateway-peer');
     }
     $this->getJson('/api/v1/instances/'.$this->fixture->instance->id.'/deployments')->assertOk()
-        ->assertJsonPath('data.0.triggered_by', 'swamp:auto-deploy')->assertJsonPath('data.0.caller_node_id', $callerId);
-    $this->getJson('/api/v1/operations')->assertOk()->assertJsonPath('data.0.caller_node_id', $callerId);
+        ->assertJsonPath('data.0.triggered_by', 'swamp:auto-deploy')->assertJsonPath('data.0.caller_node_id', $callerId)->assertJsonPath('data.0.caller_node_name', 'renamed-gateway-peer');
+    $this->getJson('/api/v1/operations')->assertOk()->assertJsonPath('data.0.caller_node_id', $callerId)->assertJsonPath('data.0.caller_node_name', 'renamed-gateway-peer');
     expect(new AutomaticDeployHistory($this->fixture->instance)->pausedBy())->toBeNull();
 
     $this->sha = str_repeat('c', 40);
     pinned_deploy_start($this, true, key: 'next-swamp-deploy')->assertAccepted();
     run_operation_jobs();
     expect($this->fixture->deployment->preparedCommits)->toBe([str_repeat('b', 40), str_repeat('c', 40)]);
+
+    $missingCaller = $callerId + 1000;
+    $row->update(['caller_node_id' => $missingCaller]);
+    Operation::query()->findOrFail($id)->update(['input' => ['caller_node_id' => $missingCaller]]);
+    foreach (['/api/v1/deployments/'.$row->id, '/api/v1/operations/'.$id] as $url) {
+        $this->getJson($url)->assertOk()
+            ->assertJsonPath('data.caller_node_id', $missingCaller)
+            ->assertJsonPath('data.caller_node_name', null);
+    }
 });
 
 it('keeps historical automatic labels and missing caller IDs unchanged', function (): void {
     $row = app(InstanceDeploymentRecorder::class)->start($this->fixture->instance, 'orbit:auto-deploy');
 
     $this->getJson('/api/v1/deployments/'.$row->id)->assertOk()
-        ->assertJsonPath('data.triggered_by', 'orbit:auto-deploy')->assertJsonPath('data.caller_node_id', null);
+        ->assertJsonPath('data.triggered_by', 'orbit:auto-deploy')->assertJsonPath('data.caller_node_id', null)->assertJsonPath('data.caller_node_name', null);
     expect(new AutomaticDeployHistory($this->fixture->instance)->pausedBy())->toBeNull();
 });

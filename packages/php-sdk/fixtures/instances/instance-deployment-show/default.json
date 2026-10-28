@@ -20,6 +20,7 @@
             "selected_release": "20260101000000",
             "triggered_by": "swamp:auto-deploy",
             "caller_node_id": 1,
+            "caller_node_name": "gateway",
             "events": [
                 {
                     "type": "phase",

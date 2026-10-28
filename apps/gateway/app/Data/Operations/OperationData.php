@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Data\Operations;
 
 use App\Domain\Operations\OperationPoll;
+use App\Models\Node;
 use App\Models\Operation;
 use DateTimeInterface;
 use Spatie\LaravelData\Attributes\MapOutputName;
@@ -33,6 +34,7 @@ final class OperationData extends Data
         public int $attempts,
         public ?string $triggeredBy,
         public ?int $callerNodeId,
+        public ?string $callerNodeName,
         public ?string $createdAt,
         public ?string $startedAt,
         public ?string $finishedAt,
@@ -57,6 +59,7 @@ final class OperationData extends Data
             attempts: $operation->attempts,
             triggeredBy: $operation->triggered_by,
             callerNodeId: $operation->callerNodeId(),
+            callerNodeName: $operation->callerNodeId() === null ? null : Node::query()->find($operation->callerNodeId())?->name,
             createdAt: $operation->created_at?->format(DateTimeInterface::ATOM),
             startedAt: $operation->started_at?->format(DateTimeInterface::ATOM),
             finishedAt: $operation->finished_at?->format(DateTimeInterface::ATOM),

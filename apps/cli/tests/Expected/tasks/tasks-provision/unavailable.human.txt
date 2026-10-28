@@ -30,7 +30,7 @@ Loading operation...
 │
 ├  By                 provision-gateway
 │
-├  Caller Node ID     —
+├  Caller Node        —
 │
 ├  Created            2026-11-01T10:00:00+00:00
 │

@@ -38,6 +38,7 @@ Every operation has the same fields, whatever its kind.
 | `attempts` | How many times a worker started the operation |
 | `triggered_by` | The manual caller's Node name, or an [automatic-deploy origin](/reference/deployments#history) |
 | `caller_node_id` | The bound automatic caller's Node ID, or null. Also retained in `input.caller_node_id` |
+| `caller_node_name` | Current name of the caller Node, or null if there is no caller or the Node has been removed |
 | `created_at`, `started_at`, `finished_at` | ISO 8601 times. `started_at` is the first start |
 | `poll_after_seconds` | How long a polling client waits before its next read, or null once terminal. [Follow an operation by polling](#follow-an-operation-by-polling) gives the values |
 

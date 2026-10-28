@@ -4677,6 +4677,7 @@ export interface components {
             selected_release?: string | null;
             triggered_by?: string | null;
             caller_node_id?: number | null;
+            caller_node_name?: string | null;
         };
         DoctorReport: {
             healthy?: boolean;
@@ -5014,6 +5015,7 @@ export interface components {
             attempts?: number;
             triggered_by?: string | null;
             caller_node_id?: number | null;
+            caller_node_name?: string | null;
             created_at?: string | null;
             started_at?: string | null;
             finished_at?: string | null;

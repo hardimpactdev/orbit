@@ -43,6 +43,7 @@ final readonly class OperationResponse
         public array $steps,
         public string $requestId,
         public ?int $callerNodeId = null,
+        public ?string $callerNodeName = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -92,6 +93,7 @@ final readonly class OperationResponse
             steps: $steps,
             requestId: $requestId,
             callerNodeId: is_int($data['caller_node_id'] ?? null) ? $data['caller_node_id'] : null,
+            callerNodeName: is_string($data['caller_node_name'] ?? null) ? $data['caller_node_name'] : null,
         );
     }
 
@@ -124,6 +126,7 @@ final readonly class OperationResponse
             'attempts' => $this->attempts,
             'triggered_by' => $this->triggeredBy,
             'caller_node_id' => $this->callerNodeId,
+            'caller_node_name' => $this->callerNodeName,
             'created_at' => $this->createdAt,
             'started_at' => $this->startedAt,
             'finished_at' => $this->finishedAt,
