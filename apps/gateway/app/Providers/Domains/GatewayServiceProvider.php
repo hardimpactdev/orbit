@@ -11,7 +11,6 @@ use App\Actions\Nodes\AssignRoleAction;
 use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Certificates\GatewayCertificateIssuer;
-use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
@@ -80,7 +79,6 @@ final class GatewayServiceProvider extends ServiceProvider
                 hibernator: app(RuntimeHibernatorConverger::class),
                 agentView: app(AgentViewConverger::class),
                 releaseUnits: app(GatewayReleaseUnitConverger::class),
-                fleet: app(FleetConvergeUnits::class),
             ),
         );
         $this->app->singleton(

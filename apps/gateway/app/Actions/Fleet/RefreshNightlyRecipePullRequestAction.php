@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Actions\Fleet;
 
-use App\Domain\Fleet\FleetRolloutAlerts;
 use App\Domain\Fleet\RecipeMaintenanceAlerts;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubAppStore;
@@ -20,24 +19,23 @@ use Throwable;
 /** Rebuild only an untouched, failed App snapshot commit whose parent main has superseded. */
 final readonly class RefreshNightlyRecipePullRequestAction
 {
-    public function __construct(private GitHubAppStore $store, private GitHubApi $github, private RepositoryPullRequestAccess $access, private RecipeLoader $loader, private NightlyRecipeContents $contents, private RecipeMaintenanceAlerts $alerts, private RetireNightlyRecipePullRequestsAction $retire) {}
+    public function __construct(private GitHubAppStore $store, private GitHubApi $github, private RepositoryPullRequestAccess $access, private RecipeLoader $loader, private NightlyRecipeContents $contents, private RecipeMaintenanceAlerts $alerts) {}
 
-    public function execute(string $main, string $content): void
+    public function execute(string $main, string $content, int $number, #[\SensitiveParameter] string $token, string $expectedHead): void
     {
         try {
-            $repository = GitHubRepository::fromOrigin('https://github.com/'.FleetRolloutAlerts::repository());
+            $repository = GitHubRepository::fromOrigin('https://github.com/hardimpactdev/orbit');
             $credentials = $this->store->credentials();
             if ($repository === null || $credentials === null) {
                 return;
             }
-            $token = $this->access->token($repository);
             $pulls = $this->github->openPullRequests($token, $repository);
             if ($pulls === []) {
                 return;
             }
             $http = Http::baseUrl('https://api.github.com/repos/'.$repository->owner.'/'.$repository->name)
                 ->withToken($token)->acceptJson()->timeout(15)->connectTimeout(5);
-            $pulls = $this->retire->execute($http, $repository, $pulls, $credentials->slug.'[bot]', $content);
+            $pulls = array_values(array_filter($pulls, static fn ($pull): bool => $pull->number === $number && $pull->headSha === $expectedHead));
             foreach ($pulls as $pull) {
                 if ($this->contents->nightlySnapshot($pull->headRef) === null || $pull->authorLogin !== $credentials->slug.'[bot]') {
                     continue;

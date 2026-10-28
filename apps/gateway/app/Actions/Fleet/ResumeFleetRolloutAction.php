@@ -6,7 +6,6 @@ namespace App\Actions\Fleet;
 
 use App\Data\Fleet\FleetRolloutStatusData;
 use App\Domain\Fleet\DesiredFleetState;
-use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\Fleet\FleetNodeOutcome;
 use App\Domain\Fleet\FleetRolloutPlanner;
 use App\Domain\Fleet\FleetRolloutStatus;
@@ -19,15 +18,13 @@ use Illuminate\Support\Facades\DB;
  * Resumes the halted fleet rollout (ADR 0202). The failed Node is visited again first, unless
  * `--skip` names it; a skipped Node stays `skipped` in this rollout. When the Gateway moved to a newer
  * commit since the halt, the halted rollout is superseded and a rollout of the newest desired state
- * opens, with the skipped Node carried over. The rollout then runs in `orbit-fleet-converge.service`,
- * never in this request.
+ * opens, with the skipped Node carried over. Swamp picks up the resumed rollout on its next maintenance pass.
  */
 final readonly class ResumeFleetRolloutAction
 {
     public function __construct(
         private DesiredFleetState $desired,
         private FleetRolloutPlanner $planner,
-        private FleetConvergeUnits $units,
         private ShowFleetRolloutAction $show,
     ) {}
 
@@ -69,8 +66,6 @@ final readonly class ResumeFleetRolloutAction
                 'finished_at' => null,
             ])->save();
         });
-
-        $this->units->start();
 
         return $this->show->execute();
     }

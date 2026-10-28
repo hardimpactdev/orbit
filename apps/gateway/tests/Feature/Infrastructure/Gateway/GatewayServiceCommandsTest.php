@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\AgentView\AgentViewConverger;
-use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
@@ -12,7 +11,6 @@ use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\Gateway\GatewayServiceCommands;
 use App\Models\Node;
-use Illuminate\Support\Facades\Log;
 use Tests\Support\FakeAgentCommandRunner;
 
 beforeEach(function (): void {
@@ -27,13 +25,11 @@ beforeEach(function (): void {
     config(['orbit.gateway_checkout' => '/home/orbit/orbit/apps/gateway', 'orbit.home' => '/home/orbit/.orbit', 'orbit.hibernation.sweep_seconds' => 73]);
 });
 
-it('wires all three service managers through native commands with Gateway intent', function (): void {
-    app(FleetConvergeUnits::class)->converge();
+it('wires the service managers through native commands with Gateway intent', function (): void {
     app(AgentViewConverger::class)->converge();
     app(RuntimeHibernatorConverger::class)->converge();
     $identity = ['application' => base_path(), 'orbit_home' => '/home/orbit/.orbit', 'user' => 'orbit'];
     expect($this->agents->calls)->toBe([
-        ['node' => 'gateway', 'command' => 'gateway.converge-fleet-units', 'input' => $identity],
         ['node' => 'gateway', 'command' => 'gateway.converge-agent-view', 'input' => $identity],
         ['node' => 'gateway', 'command' => 'gateway.converge-hibernator', 'input' => [...$identity, 'sweep_seconds' => 73]],
     ]);
@@ -45,7 +41,6 @@ it('preserves the family error and native failure stage', function (string $meth
     expect(fn () => $method === 'hibernator' ? $commands->hibernator(73) : $commands->$method())
         ->toThrow(fn (NodeProvisioningException $e) => expect($e->step)->toBe($stage)->and($e->errorCode)->toBe($code));
 })->with([
-    ['fleet', 'gateway.converge-fleet-units', 'gateway.fleet_units_install_failed', 'gateway-fleet-timer'],
     ['agentView', 'gateway.converge-agent-view', 'gateway.agent_view_install_failed', 'gateway-agent-view-enable'],
     ['hibernator', 'gateway.converge-hibernator', 'gateway.hibernator_install_failed', 'gateway-hibernator-reload'],
 ]);
@@ -60,36 +55,16 @@ it('keeps malformed and lost results as convergence failures', function (bool $l
 
 it('does not send a service command without an active Gateway Node', function (): void {
     $this->node->roles()->delete();
-    expect(fn () => app(FleetConvergeUnits::class)->converge())->toThrow(NodeProvisioningException::class);
+    expect(fn () => app(AgentViewConverger::class)->converge())->toThrow(NodeProvisioningException::class);
     expect($this->agents->calls)->toBe([]);
 });
-
-it('sends immediate and delayed start intent without waiting for fleet work', function (): void {
-    $units = app(FleetConvergeUnits::class);
-    expect($units->start())->toBeTrue()->and($units->startLater())->toBeTrue()
-        ->and(array_column($this->agents->calls, 'input'))->toBe([['deferred' => false], ['deferred' => true]]);
-});
-
-it('logs a refused or malformed start and lets the timer retry later', function (bool $deferred, bool $malformed): void {
-    Log::spy();
-    if ($malformed) {
-        $this->agents->answerMalformed('gateway.start-fleet-run', ['accepted' => 'yes']);
-    } else {
-        $this->agents->refuse('gateway.start-fleet-run', 'gateway.fleet_start_failed');
-    }
-    $units = app(FleetConvergeUnits::class);
-    expect($deferred ? $units->startLater() : $units->start())->toBeFalse();
-    Log::shouldHaveReceived('warning')->once();
-})->with([[false, false], [true, false], [false, true], [true, true]]);
 
 it('installs service units during bootstrap but does not start rollout work before activation', function (): void {
     $this->node->update(['status' => LifecycleStatus::Provisioning]);
     $this->node->roles()->update(['status' => LifecycleStatus::Provisioning]);
-    app(FleetConvergeUnits::class)->converge();
     app(AgentViewConverger::class)->converge();
     app(RuntimeHibernatorConverger::class)->converge();
-    expect(app(FleetConvergeUnits::class)->start())->toBeFalse()
-        ->and($this->agents->commands())->toBe(['gateway.converge-fleet-units', 'gateway.converge-agent-view', 'gateway.converge-hibernator']);
+    expect($this->agents->commands())->toBe(['gateway.converge-agent-view', 'gateway.converge-hibernator']);
 });
 
 it('refuses unit changes for a failed or removing Gateway', function (LifecycleStatus $status): void {

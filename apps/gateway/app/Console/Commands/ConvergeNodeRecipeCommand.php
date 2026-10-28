@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Actions\Fleet\ConvergeNodeRecipeAction;
+use App\Actions\Fleet\AdmitNodeRecipeAction;
+use App\Actions\Fleet\PlanNodeRecipeAction;
+use App\Data\Operations\OperationData;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Models\Node;
 use Illuminate\Console\Command;
@@ -22,7 +24,7 @@ final class ConvergeNodeRecipeCommand extends Command
     #[\Override]
     protected $description = 'Converge one Node to the repository recipe and stop on any failed check';
 
-    public function handle(RecipeLoader $loader, ConvergeNodeRecipeAction $converge): int
+    public function handle(RecipeLoader $loader, AdmitNodeRecipeAction $converge, PlanNodeRecipeAction $plan): int
     {
         try {
             if ($this->option('status')) {
@@ -43,7 +45,8 @@ final class ConvergeNodeRecipeCommand extends Command
             }
             $target = $this->stringArgument('node');
             $node = ctype_digit($target) ? Node::query()->findOrFail((int) $target) : Node::query()->where('name', $target)->firstOrFail();
-            $result = $converge->execute($node, $recipe, (bool) $this->option('dry-run'));
+            $result = $this->option('dry-run') ? ['plan' => $plan->read($node, $recipe), 'applied' => false, 'changes' => []]
+                : OperationData::fromModel($converge->execute($node, $recipe))->toArray();
             $this->output->writeln(json_encode($result, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
 
             return self::SUCCESS;

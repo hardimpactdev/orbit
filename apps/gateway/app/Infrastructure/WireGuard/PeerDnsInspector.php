@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\WireGuard;
 
+use App\Domain\Fleet\PeerDnsResult;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
@@ -35,14 +36,8 @@ final readonly class PeerDnsInspector
         if (! is_bool($observed['uplink'] ?? null)) {
             throw new \RuntimeException('Peer DNS inspection returned invalid uplink state.');
         }
-        $liveDomains = explode(' ', $this->setting($values['domains']) ?? '');
-        sort($liveDomains, SORT_STRING);
-        $expectedDomains = array_map(static fn (string $domain): string => '~'.$domain, $domains);
-        $hook = 'PostUp = resolvectl dns %i '.$address.'; resolvectl domain %i '.implode(' ', array_map(static fn (string $domain): string => '\\~'.$domain, $domains));
 
-        return ['policy' => $values['state'] === implode("\n", ['orbit', $address, ...$domains])
-            && $this->setting($values['dns']) === $address && $liveDomains === $expectedDomains
-            && $values['hooks'] === $hook && $this->setting($values['default_route']) === 'no', 'uplink' => $observed['uplink']];
+        return ['policy' => PeerDnsResult::matches($address, $domains, $values), 'uplink' => $observed['uplink']];
     }
 
     /** @return array{private: ?string, public: ?string, private_valid: bool, public_valid: bool, valid: bool} */
@@ -66,11 +61,6 @@ final readonly class PeerDnsInspector
         $publicValid = $public !== null && $public !== '' && ($publicLink[1] ?? '') !== 'orbit';
 
         return ['private' => $private, 'public' => $public, 'private_valid' => $privateValid, 'public_valid' => $publicValid, 'valid' => $privateValid && $publicValid];
-    }
-
-    private function setting(string $output): ?string
-    {
-        return str_contains($output, ':') ? trim(explode(':', $output, 2)[1]) : null;
     }
 
     /**

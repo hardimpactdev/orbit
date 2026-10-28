@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Fleet\Footprint;
 
-use App\Domain\Fleet\FleetNodeConverger;
 use App\Domain\Fleet\FootprintArtifactSkipped;
 use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Nodes\CaddyRelease;
@@ -73,7 +72,7 @@ final readonly class CaddyFootprintArtifact implements NodeFootprintArtifact
         } catch (NodeCaddyBuildException $exception) {
             // A render problem names a site that cannot be built, which is a user's data: skip, keep the live
             // Caddyfile, and let Doctor report the drift. A validation failure can also be Orbit's own template
-            // or Caddy pin, so the rollout fails it on the first Node it visits ({@see FleetNodeConverger}).
+            // or Caddy pin, so the rollout fails it on the first Node it visits (the fleet child carries first_visit).
             if ($exception->stage === 'render') {
                 throw new FootprintArtifactSkipped(self::RenderRefused, 'The Caddyfile was not published: '.$exception->getMessage());
             }

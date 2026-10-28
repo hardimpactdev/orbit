@@ -916,29 +916,20 @@ After each verified Gateway release, the Gateway brings every managed workload N
 
 ### Turn it on
 
-The rollout is off until you set `ORBIT_FLEET_ROLLOUT=true` in the Gateway's environment. While it is off, `orbit-fleet-converge.service` exits at once, and Doctor reports no `node.release_lag`. `fleet:rollout:status` shows `Rollout off`.
+The rollout is off until you set `ORBIT_FLEET_ROLLOUT=true` in the Gateway's environment. While it is off, Swamp admits no rollout, and Doctor reports no `node.release_lag`. `fleet:rollout:status` shows `Rollout off`.
 
 | Variable | Default | Effect |
 | --- | --- | --- |
 | `ORBIT_FLEET_ROLLOUT` | `false` | Run rollouts and the catch-up |
 | `ORBIT_FLEET_ROLLOUT_ORDER` | empty | Node names, comma-separated, that go first, in this order. The other Nodes follow in the default order. It never adds or removes a Node |
 
-### Units
+### Execution
 
-`php artisan orbit:gateway-web` and the [runtime handoff](#runtime-handoff) of each release call `gateway.converge-fleet-units` through the agent runner to install two units. The root command owns their rendering, files and systemd activation. PHP sends the stable Gateway path, Orbit home and service account. Unit installation accepts a provisioning Gateway during bootstrap; release execution and fleet starts require an active Gateway. A failed install in the handoff only logs a warning; it never fails the release.
+Swamp's fleet maintenance workflow reads the current Gateway plan each minute and admits one ordered Node visit. The Gateway validates the release and maintenance window before it records the Operation. The release command and runtime handoff do not install or start a fleet service or timer.
 
-| Unit | Work |
-| --- | --- |
-| `orbit-fleet-converge.service` | A oneshot that runs `php artisan orbit:fleet-converge` as `orbit` from the current release. It never runs inside PHP-FPM or the scheduler |
-| `orbit-fleet-converge.timer` | Starts the service 5 minutes after its last run ends, for the catch-up |
+During this conversion's deployment, stop and disable `orbit-fleet-converge.timer` and remove its service and timer files. Swamp's maintenance workflow owns further visits and catch-ups.
 
-After a release is recorded `verified`, the release command calls `gateway.start-fleet-run` and returns after systemd accepts the nonblocking start. The service runs the new release's code, so it resolves the desired state of the commit that now serves. A refused start only logs a warning; the timer starts the service within 5 minutes.
-
-The release command starts the service only for a release with a desired fleet state: verify saw the Gateway serve the release's exact commit, and the release ships `orbit:fleet-converge`. Phase 1 of [adopt](#adopt-the-release-layout) never starts it. Its `verified` record only shows that the Gateway serves, often as `dev`, so a rollout never follows that record alone. The rollout follows the phase 2 deploy.
-
-A run that is still busy when a newer release goes current does not take the start; systemd joins it to the running job. So before the run plans and before each Node, it compares the release directory that the current path links to with the directory it runs from. When they differ, the run stops, visits no further Node, and asks systemd for a fresh run 15 seconds later through `gateway.start-fleet-run` with deferred start intent. The agent owns the fixed delay and transient timer name.
-
-A run never applies an older desired state than the current one. It compares directories, not versions, so a leftover `APP_VERSION` never makes it restart over and over.
+A plan from an older release admits no further Node after a newer release becomes current. The Gateway compares release directories rather than versions, so a leftover `APP_VERSION` does not reopen the old rollout.
 
 ### Rollout set and order
 
@@ -970,6 +961,10 @@ The order goes lowest risk first. Each role has a group. A Node with several rol
 
 Orbit has no `agent` or `s3` role yet. The order already places `agent` in group 1 and `s3` in group 2.
 
+Swamp schedules and runs fleet visits. The Gateway validates the release and target, records a `fleet.rollout` Operation, and projects its proven receipt onto the rollout row. Swamp installs and updates the CLI, starts a `node.converge` child for the footprint, and calls Gateway read primitives for Doctor and inventory checks. The child carries the owned-drift repair and first-Node Caddy policy. Each kind has a closed command allowlist, declared result fields and a completion contract. Unlisted commands, changed input and completion without evidence are refused.
+
+Only app-dev-only Nodes start at any hour. App-prod and shared roles start from 03:00 inclusive to 06:00 exclusive Europe/Amsterdam. Mixed-role Nodes use the restricted window. A visit already applying changes may finish after 06:00.
+
 ### Desired state
 
 One run resolves the desired state of the commit the Gateway serves: the CLI release `cli-v0.N.0` with the SHA-256 of each binary, the agent pin with the SHA-256 of each binary, and the footprint digest of each Node. A footprint digest covers only what Orbit renders from its own code and pins, never a user's sites, Routes, or DNS records. It stores the state on a rollout record for that commit. The record belongs to the commit's `verified` release record, and [`gateway:release:show`](#deploy-a-release) shows it under `fleet_rollout`, with each Node's result.
@@ -986,7 +981,7 @@ A rollout that waits longer than 2 hours raises `rollout_stalled` once. It means
 
 ### One Node
 
-For each Node, the run takes the Node's role lock, the lock every role converge takes, and runs these steps. The `cli` and `footprint` steps also hold the Node's update lock, `/run/lock/orbit-self-update.lock`; `self-update` takes that lock itself, in between. So a Gateway step and a self-update never run on one Node at the same time. A self-update that keeps the lock longer than 5 minutes leaves the Node `deferred` with `node.update_busy`.
+Each visit is one Node-bound Operation. The footprint runs as a child Operation owned by the Nodes family. Swamp records and resumes each of these steps. The `cli` and `footprint` steps also hold the Node's update lock, `/run/lock/orbit-self-update.lock`; `self-update` takes that lock itself, in between. So a Gateway step and a self-update never run on one Node at the same time. A self-update that keeps the lock longer than 5 minutes leaves the Node `deferred` with `node.update_busy`.
 
 | Step | Work |
 | --- | --- |
@@ -1040,7 +1035,7 @@ orbit fleet:rollout:resume                 # visit the failed Node again first
 orbit fleet:rollout:resume --skip=<node>   # leave that Node for later
 ```
 
-`fleet:rollout:resume` sets the failed Node back to `pending`, starts the service, and returns. A skipped Node stays `skipped` in this rollout; the next desired state visits it again. When the Gateway moved to a newer commit since the halt, the halted rollout becomes `superseded`, and a rollout of the newest desired state opens with the skip carried over.
+`fleet:rollout:resume` sets the failed Node back to `pending` and returns. Swamp admits the next visit. A skipped Node stays `skipped` in this rollout; the next desired state visits it again. When the Gateway moved to a newer commit since the halt, the halted rollout becomes `superseded`, and a rollout of the newest desired state opens with the skip carried over.
 
 | Code | HTTP | Meaning |
 | --- | --- | --- |
@@ -1073,9 +1068,9 @@ Each Node in `GET /api/v1/nodes` and `GET /api/v1/nodes/{node}` has an `updating
 
 The other id field is null. A visit clears its `finished_at` when it starts, so a catch-up visit of a converged Node counts too. The rollout visits one Node at a time, so at most one Node is `fleet_rollout`. The Gateway Node is never in the [rollout set](#rollout-set-and-order), so one Node is never both. A `queued` release record does not count, because nothing changed yet.
 
-A visit counts only while a run holds the fleet lock, so a long visit stays `updating` for as long as it runs. A run that dies leaves its visit open. Nothing renews the lock then, so it runs out within 20 minutes and the Node stops reading as updating. The next run ends every open visit before it visits a Node, and broadcasts each of those Nodes. A dead `running` release record ends as `interrupted`, as [Release records](#release-records) describes.
+A visit counts while its queued or running fleet Operation owns it. An expired worker lease keeps the same visit active while Swamp recovers its receipts. A terminal completion ends the visit. A dead `running` release record ends as `interrupted`, as [Release records](#release-records) describes.
 
-The list reads every Node's state with two queries, one for the visits in progress and one for a running release. It reads the fleet lock only when a visit is open.
+The list reads Operation-backed visits and the running release from Gateway records.
 
 The Gateway broadcasts [`node.updated`](/reference/events#node) with the new value when a visit starts and ends, and when a release record starts running and ends. The [web app](/reference/web-app#live-node-and-process-state) shows the Node as `updating`.
 

@@ -14,7 +14,7 @@ final class FleetRolloutStatusData extends Data
 {
     /** @param list<FleetRolloutExclusionData> $excluded */
     public function __construct(
-        /** Whether `orbit-fleet-converge.service` runs rollouts: `ORBIT_FLEET_ROLLOUT`. */
+        /** Whether Swamp admits fleet rollouts: `ORBIT_FLEET_ROLLOUT`. */
         public bool $enabled,
         /** The newest rollout's status, or `none` before the first rollout. */
         public string $status,

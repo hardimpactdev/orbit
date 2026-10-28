@@ -52,7 +52,6 @@ The scheduler dispatches each of these as a unique job. While the job waits or r
 | `gateway:swamp-reader:check` | hour | `problems` | 300 seconds |
 | `orbit:auto-deploy` | minute | `tasks` | 600 seconds |
 | `orbit:vault-sync` | minute | `tasks` | 900 seconds |
-| `orbit:desired-fleet-state` | 5 minutes | `tasks` | 600 seconds |
 
 The job runs the command in its own PHP process, as the scheduler did, so a command keeps no state from an earlier run. A command that exits nonzero is logged as an error. The "unique for" time only matters when a worker is lost: the lock then frees itself after that time.
 

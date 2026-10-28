@@ -6,8 +6,6 @@ namespace Tests\Support\Fleet;
 
 use App\Domain\Fleet\CliReleaseCatalog;
 use App\Domain\Fleet\DesiredFleetState;
-use App\Domain\Fleet\FleetConvergeUnits;
-use App\Domain\Fleet\FleetNodeVisitor;
 use App\Domain\Fleet\FleetServingRelease;
 use App\Domain\Fleet\NodeFootprint;
 use App\Domain\Fleet\NodeFootprintArtifact;
@@ -135,29 +133,25 @@ final class FleetFixtures
     }
 
     /**
-     * Binds a published CLI release, a fake Node visitor, the alert recorder, and units, with the rollout on.
+     * Binds a published CLI release, the alert recorder, and units, with the rollout on.
      *
      * @param  array<int, NodeFootprintArtifact>  $artifacts
-     * @return array{visitor: FakeFleetNodeVisitor, catalog: FakeCliReleaseCatalog, alerts: RecordingReleaseAlertNotifier, units: FakeFleetConvergeUnits}
+     * @return array{catalog: FakeCliReleaseCatalog, alerts: RecordingReleaseAlertNotifier}
      */
     public static function bind(array $artifacts = [], bool $published = true): array
     {
         Config::set('app.version', self::Commit);
         Config::set('fleet.rollout', true);
         self::inPlace();
-        $visitor = new FakeFleetNodeVisitor;
         $catalog = new FakeCliReleaseCatalog($published);
         $alerts = new RecordingReleaseAlertNotifier;
-        $units = new FakeFleetConvergeUnits;
         app()->instance(ReleaseHistory::class, new FakeReleaseHistory);
         app()->instance(CliReleaseCatalog::class, $catalog);
-        app()->instance(FleetNodeVisitor::class, $visitor);
         app()->instance(ReleaseAlertNotifier::class, $alerts);
-        app()->instance(FleetConvergeUnits::class, $units);
         app()->instance(NodeFootprint::class, new NodeFootprint(app(AgentDelivery::class), $artifacts));
         // Keep agent versions out of the shared file store.
         app()->instance(AgentReportedVersions::class, new AgentReportedVersions(new Repository(new ArrayStore)));
 
-        return ['visitor' => $visitor, 'catalog' => $catalog, 'alerts' => $alerts, 'units' => $units];
+        return ['catalog' => $catalog, 'alerts' => $alerts];
     }
 }

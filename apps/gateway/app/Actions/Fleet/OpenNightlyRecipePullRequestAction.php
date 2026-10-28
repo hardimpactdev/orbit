@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace App\Actions\Fleet;
 
-use App\Domain\Fleet\FleetRolloutAlerts;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubPullRequestDraft;
 use App\Domain\GitHub\GitHubRepository;
-use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
@@ -18,13 +16,12 @@ final readonly class OpenNightlyRecipePullRequestAction
 {
     public const string Path = 'apps/gateway/resources/machine-software/recipe.json';
 
-    public function __construct(private RepositoryPullRequestAccess $access, private GitHubApi $github, private RecipeLoader $loader, private RefreshNightlyRecipePullRequestAction $refresh, private NightlyRecipeContents $contents) {}
+    public function __construct(private GitHubApi $github, private RecipeLoader $loader, private NightlyRecipeContents $contents) {}
 
-    public function execute(): ?string
+    public function execute(#[\SensitiveParameter] string $token): ?string
     {
-        $repository = GitHubRepository::fromOrigin('https://github.com/'.FleetRolloutAlerts::repository())
+        $repository = GitHubRepository::fromOrigin('https://github.com/hardimpactdev/orbit')
             ?? throw new RuntimeException('The Orbit repository is invalid.');
-        $token = $this->access->token($repository);
         $http = Http::baseUrl('https://api.github.com/repos/'.$repository->owner.'/'.$repository->name)
             ->withToken($token)->acceptJson()->timeout(15)->connectTimeout(5);
         $head = $http->get('/git/ref/heads/main')->throw()->json('object.sha');
@@ -37,7 +34,6 @@ final readonly class OpenNightlyRecipePullRequestAction
             throw new RuntimeException('GitHub did not return the recipe file.');
         }
         $this->contents->requireDeployed($content);
-        $this->refresh->execute($head, $content);
         $recipe = $this->loader->decode($content);
         $snapshot = now('Europe/Amsterdam')->format('Ymd').'T000000Z';
         if ($recipe->snapshot >= $snapshot) {

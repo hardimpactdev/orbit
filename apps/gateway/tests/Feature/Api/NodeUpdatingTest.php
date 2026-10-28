@@ -3,16 +3,15 @@
 declare(strict_types=1);
 
 use App\Domain\Fleet\FleetNodeOutcome;
-use App\Domain\Fleet\FleetRolloutRunner;
 use App\Domain\Fleet\FleetRolloutStatus;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\Nodes\NodeLocks;
 use App\Models\FleetRollout;
 use App\Models\FleetRolloutNode;
 use App\Models\GatewayRelease;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Operation;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -26,6 +25,10 @@ function nodeUpdatingVisit(Node $node, FleetRolloutStatus $status, ?Carbon $star
         'order' => [$node->id],
         'started_at' => now()->subHour(),
     ]);
+
+    if ($startedAt !== null && $finishedAt === null) {
+        Operation::query()->create(['kind' => 'fleet.rollout', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id, 'status' => 'running', 'input' => []]);
+    }
 
     return FleetRolloutNode::query()->create([
         'fleet_rollout_id' => $rollout->id,
@@ -68,13 +71,9 @@ describe('Node updating state', function (): void {
         ]);
         NodeRole::query()->create(['node_id' => $this->worker->id, 'role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
         $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
-        // A rollout run holds the fleet lock while it visits a Node.
-        $this->fleetLock = app(NodeLocks::class)->lock(FleetRolloutRunner::LockName, 60);
-        expect($this->fleetLock->get())->toBeTrue();
     });
 
     afterEach(function (): void {
-        $this->fleetLock->release();
         Carbon::setTestNow();
     });
 
@@ -105,7 +104,7 @@ describe('Node updating state', function (): void {
             ->assertJsonPath('data.updating.kind', 'fleet_rollout');
     });
 
-    it('reads a long visit as updating while the run holds the fleet lock', function (): void {
+    it('reads a long visit as updating while the Swamp Operation is active', function (): void {
         nodeUpdatingVisit($this->worker, FleetRolloutStatus::Running, now()->subHours(2));
 
         $this->getJson("/api/v1/nodes/{$this->worker->id}")
@@ -122,7 +121,7 @@ describe('Node updating state', function (): void {
         };
 
         if ($case === 'dead run') {
-            $this->fleetLock->release();
+            Operation::query()->where('kind', 'fleet.rollout')->update(['status' => 'failed']);
         }
 
         $this->getJson("/api/v1/nodes/{$this->worker->id}")

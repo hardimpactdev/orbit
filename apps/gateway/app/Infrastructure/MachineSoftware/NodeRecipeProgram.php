@@ -4,14 +4,12 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\MachineSoftware;
 
-use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Models\Node;
 use RuntimeException;
 
@@ -21,7 +19,7 @@ final readonly class NodeRecipeProgram
     /** The tools `recipe.install-javascript` installs. */
     public const array JavascriptTools = ['bun', 'node', 'pnpm', 'vp', 'vp-cli'];
 
-    public function __construct(private AgentCommandRunner $agents, private PhpBuildInstaller $php, private PrivateDnsManager $dns, private RemotePhpPackageManager $runtimes) {}
+    public function __construct(private AgentCommandRunner $agents, private PhpBuildInstaller $php) {}
 
     /** The recipe architecture of a Node; another architecture is refused. */
     public static function architecture(Node $node): string
@@ -94,14 +92,6 @@ final readonly class NodeRecipeProgram
         return ['tools' => $assessment, 'actions' => $actions];
     }
 
-    /** @param array<string, ToolPin> $tools */
-    public function incusPreflight(Node $node, MachineRecipe $recipe, array $tools): void
-    {
-        if (isset($tools['incus'])) {
-            $this->run($node, $recipe, $tools, 'incus-preflight');
-        }
-    }
-
     /**
      * Checks the PHP build before any change: another PHP apt source, or PHP packages outside the recipe that this
      * profile does not purge, refuse the convergence before a download. Dry runs call it too.
@@ -124,47 +114,6 @@ final readonly class NodeRecipeProgram
     }
 
     /**
-     * @param  array<string, ToolPin>  $tools
-     * @return array<string, mixed>
-     */
-    public function apply(Node $node, MachineRecipe $recipe, array $tools): array
-    {
-        $this->phpPreflight($node, $recipe, $tools);
-        $versions = self::phpVersions($recipe, $tools);
-        // The PHP build has one installer, php.install-build (ADR 0216); the recipe program installs the rest.
-        $others = array_diff_key($tools, array_flip(self::phpPackages($recipe, $versions)));
-        $report = $this->run($node, $recipe, $others, 'apply');
-        if (($report['healthy'] ?? false) !== true) {
-            throw new ResourceOperationException('node.recipe_health_failed', 'Recipe convergence did not return a successful health check. No automatic rollback was attempted.', 502);
-        }
-        if ($versions === []) {
-            return $report;
-        }
-        $result = $this->php->run($node, $recipe, $versions, 'apply', $this->pcov($node, $recipe), 'refuse', $this->fpm($node), $this->opentelemetry($node, $recipe));
-        if (! in_array($result->outcome, PhpBuildInstaller::Succeeded, true)) {
-            // Only the installer's own check of the old versions proves a restore (ADR 0216).
-            $restored = match (true) {
-                ($result->data['restored'] ?? false) === true => 'The installer restored the previous PHP build and checked it.',
-                $result->outcome === 'rollback_failed' => 'The rollback of the previous PHP build failed too. The Node may run a mixed PHP build; inspect its PHP packages and PHP-FPM now.',
-                default => 'The PHP packages were not changed.',
-            };
-            throw new ResourceOperationException('node.recipe_php_failed', 'Recipe convergence stopped at the PHP build: '.PhpBuildInstaller::describe($result).' '.$restored, 502);
-        }
-        if ($node->roles()->whereIn('role', [RoleName::AppDev, RoleName::AppProd])->where('status', LifecycleStatus::Active)->exists()) {
-            $this->runtimes->configureForAppNode($node, $versions);
-        }
-        $names = static fn (mixed $list): array => is_array($list) ? array_values(array_filter($list, is_string(...))) : [];
-        $report['changed_packages'] = array_values(array_unique([...$names($report['changed_packages'] ?? null), ...$names($result->data['changed'] ?? null)]));
-        $report['php'] = $result->data;
-
-        if ($result->outcome === 'applied' && $node->roles()->where('role', RoleName::Vpn)->where('status', LifecycleStatus::Active)->exists()) {
-            $this->dns->converge();
-        }
-
-        return $report;
-    }
-
-    /**
      * The PHP versions whose whole set the tools hold.
      *
      * @param  array<string, ToolPin>  $tools
@@ -173,20 +122,6 @@ final readonly class NodeRecipeProgram
     public static function phpVersions(MachineRecipe $recipe, array $tools): array
     {
         return array_map(strval(...), array_keys($recipe->phpExtensions(array_keys($tools))));
-    }
-
-    /**
-     * @param  list<string>  $versions
-     * @return list<string>
-     */
-    private static function phpPackages(MachineRecipe $recipe, array $versions): array
-    {
-        $names = [];
-        foreach ($versions as $version) {
-            $names = [...$names, ...$recipe->php($version)->packages];
-        }
-
-        return array_values(array_unique($names));
     }
 
     /** @return 'disabled'|'all' */

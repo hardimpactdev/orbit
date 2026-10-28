@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\GatewayCertificatePaths;
-use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
@@ -47,21 +46,11 @@ describe('production wiring', function (): void {
 
             public function checkListenAddresses(Node $node): void {}
         });
-        $units = new class implements AgentViewConverger, FleetConvergeUnits, GatewayReleaseUnitConverger, RuntimeHibernatorConverger
+        $units = new class implements AgentViewConverger, GatewayReleaseUnitConverger, RuntimeHibernatorConverger
         {
             public function converge(): void {}
-
-            public function start(): bool
-            {
-                return true;
-            }
-
-            public function startLater(): bool
-            {
-                return true;
-            }
         };
-        foreach ([AgentViewConverger::class, FleetConvergeUnits::class, GatewayReleaseUnitConverger::class, RuntimeHibernatorConverger::class] as $unit) {
+        foreach ([AgentViewConverger::class, GatewayReleaseUnitConverger::class, RuntimeHibernatorConverger::class] as $unit) {
             $this->app->instance($unit, $units);
         }
         $this->app->forgetInstance(GatewayWebConverger::class);

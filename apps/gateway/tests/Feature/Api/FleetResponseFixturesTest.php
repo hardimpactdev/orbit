@@ -2,8 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Actions\Fleet\FleetRolloutPlanAction;
 use App\Domain\Fleet\FleetNodeOutcome;
-use App\Domain\Fleet\FleetRolloutRunner;
+use App\Domain\Fleet\FleetRolloutStatus;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\FleetRollout;
@@ -45,11 +46,13 @@ describe('fleet response fixtures', function (): void {
     });
 
     it('records a halted rollout, its resume past the failed Node, and a refused resume', function (): void {
-        ['visitor' => $visitor, 'units' => $units] = FleetFixtures::bind([new FakeFootprintArtifact('caddy', 'caddy-digest')]);
+        ['units' => $units] = FleetFixtures::bind([new FakeFootprintArtifact('caddy', 'caddy-digest')]);
         FleetFixtures::node('app-dev', [RoleName::AppDev]);
         FleetFixtures::node('app-prod', [RoleName::AppProd]);
-        $visitor->outcomes['app-dev'] = FleetNodeOutcome::Failed;
-        app(FleetRolloutRunner::class)->run();
+        app(FleetRolloutPlanAction::class)->execute();
+        $rollout = FleetRollout::query()->sole();
+        $rollout->nodes()->where('node_name', 'app-dev')->update(['outcome' => FleetNodeOutcome::Failed, 'finished_at' => now()]);
+        $rollout->update(['status' => FleetRolloutStatus::Halted, 'halted_node_id' => $rollout->nodes()->where('node_name', 'app-dev')->value('node_id')]);
 
         record_fixture($this->getJson('/api/v1/fleet/rollout')->assertOk(), 'fleet/fleet-rollout-status/halted', ShowFleetRolloutRequest::class, 'GET /api/v1/fleet/rollout');
         record_fixture(
@@ -60,7 +63,8 @@ describe('fleet response fixtures', function (): void {
         );
         expect($units->started)->toBe(1);
 
-        app(FleetRolloutRunner::class)->run();
+        $rollout->nodes()->where('node_name', 'app-prod')->update(['outcome' => FleetNodeOutcome::Converged, 'finished_at' => now()]);
+        $rollout->update(['status' => FleetRolloutStatus::Completed, 'finished_at' => now()]);
 
         record_fixture($this->getJson('/api/v1/fleet/rollout')->assertOk()->assertJsonPath('data.status', 'completed'), 'fleet/fleet-rollout-status/completed', ShowFleetRolloutRequest::class, 'GET /api/v1/fleet/rollout');
         record_fixture(

@@ -1,0 +1,13 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Domain\Fleet\FleetVerificationCommand;
+use App\Domain\Fleet\RecipeBeginCommand;
+use App\Domain\Fleet\RecipePrCommand;
+
+return [
+    'fleet.recipe-begin' => RecipeBeginCommand::class,
+    'fleet.verify' => FleetVerificationCommand::class,
+    'github.recipe-pr' => RecipePrCommand::class,
+];
