@@ -8,6 +8,7 @@ use App\Domain\GitHub\GitHubPullRequestDraft;
 use App\Domain\GitHub\GitHubRepository;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Tests\Feature\GitHub\GitHubTestSupport;
 
 describe('HttpGitHubApi requested reviewers', function (): void {
     beforeEach(function (): void {
@@ -144,4 +145,13 @@ describe('merged pull request context for production repair', function (): void 
         Http::fake(['https://api.github.com/repos/acme/shop/commits/'.$sha.'/pulls*' => Http::response($kind === 'foreign' ? [$row] : array_fill(0, 100, $row))]);
         expect(fn () => app(GitHubApi::class)->mergedPullRequestUrls('fixture-read', GitHubRepository::fromOrigin('https://github.com/acme/shop'), $sha))->toThrow(GitHubApiException::class);
     })->with(['foreign', 'overflow']);
+});
+
+it('mints a repository squash token without workflow write authority', function (): void {
+    Http::preventStrayRequests();
+    Http::fake(['https://api.github.com/app/installations/123/access_tokens' => Http::response(['token' => 'fixture-squash'])]);
+    $repo = GitHubRepository::fromOrigin('https://github.com/acme/widgets');
+    expect(app(GitHubApi::class)->repositorySquashToken(GitHubTestSupport::credentials(), 123, $repo))->toBe('fixture-squash');
+    Http::assertSent(static fn (Request $request): bool => $request->method() === 'POST'
+        && $request->data() === ['repositories' => ['widgets'], 'permissions' => ['contents' => 'write', 'pull_requests' => 'write']]);
 });

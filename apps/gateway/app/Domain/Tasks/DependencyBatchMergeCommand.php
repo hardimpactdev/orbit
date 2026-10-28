@@ -19,7 +19,7 @@ final readonly class DependencyBatchMergeCommand implements OperationGatewayComm
 
     public function schema(): array
     {
-        $properties = ['token' => ['type' => 'string', 'minLength' => 1], 'repository' => ['type' => 'string'], 'default_branch' => ['type' => 'string'], 'head_sha' => ['type' => 'string', 'pattern' => '^[0-9a-f]{40}$']];
+        $properties = ['token' => ['type' => 'string', 'minLength' => 1], 'repository' => ['type' => 'string'], 'default_branch' => ['type' => 'string'], 'smoke_workflow' => ['type' => 'string'], 'head_sha' => ['type' => 'string', 'pattern' => '^[0-9a-f]{40}$']];
         foreach (['group_id', 'project_id', 'publish_operation_id', 'pr_number'] as $name) {
             $properties[$name] = ['type' => 'integer', 'minimum' => 1];
         }
@@ -27,7 +27,7 @@ final readonly class DependencyBatchMergeCommand implements OperationGatewayComm
         return ['type' => 'object', 'properties' => $properties, 'required' => array_keys($properties), 'additionalProperties' => false];
     }
 
-    public function run(Operation $operation, array $input): array
+    public function run(Operation $operation, #[\SensitiveParameter] array $input): array
     {
         try {
             return $this->merge($operation, $input);
@@ -38,7 +38,7 @@ final readonly class DependencyBatchMergeCommand implements OperationGatewayComm
 
     /** @param array<string, mixed> $input
      * @return array<string, mixed> */
-    private function merge(Operation $operation, array $input): array
+    private function merge(Operation $operation, #[\SensitiveParameter] array $input): array
     {
         $group = Task::topLevel()->findOrFail($operation->target_id);
         $intent = $this->guard->lineage($group, ValidatedData::integer($input['publish_operation_id']), ValidatedData::string($input['head_sha']));

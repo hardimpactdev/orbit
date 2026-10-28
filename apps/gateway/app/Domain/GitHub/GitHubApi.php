@@ -54,6 +54,8 @@ interface GitHubApi
 
     public function protectionRequiresUpToDate(#[SensitiveParameter] string $token, GitHubRepository $repository, string $branch): bool;
 
+    public function repositorySquashToken(GitHubAppCredentials $credentials, int $installationId, GitHubRepository $repository): string;
+
     public function repositoryPullRequestToken(
         GitHubAppCredentials $credentials,
         int $installationId,

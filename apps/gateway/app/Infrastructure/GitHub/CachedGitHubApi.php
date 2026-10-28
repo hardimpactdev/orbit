@@ -69,6 +69,11 @@ final readonly class CachedGitHubApi implements GitHubApi
         return $this->github->protectionRequiresUpToDate($token, $repository, $branch);
     }
 
+    public function repositorySquashToken(GitHubAppCredentials $credentials, int $installationId, GitHubRepository $repository): string
+    {
+        return $this->github->repositorySquashToken($credentials, $installationId, $repository);
+    }
+
     public function repositoryPullRequestToken(GitHubAppCredentials $credentials, int $installationId, GitHubRepository $repository): string
     {
         return $this->github->repositoryPullRequestToken($credentials, $installationId, $repository);

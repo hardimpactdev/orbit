@@ -40,6 +40,7 @@ use LogicException;
  * @property TaskType $type
  * @property string|null $completion_summary
  * @property int $id
+ * @property int|null $created_by_node_id
  * @property int|null $parent_id
  * @property int $position
  * @property int|null $continuation_of_task_id
@@ -140,6 +141,7 @@ final class Task extends Model
 {
     /** @var list<string> */
     private const array TOP_LEVEL_COLUMNS = [
+        'created_by_node_id',
         'orchestration',
         'watched_pr_completion',
         'watched_pr_url',
@@ -221,6 +223,7 @@ final class Task extends Model
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
+        'created_by_node_id',
         'orchestration',
         'watched_pr_completion',
         'watched_pr_url',
@@ -578,6 +581,7 @@ final class Task extends Model
     protected function casts(): array
     {
         return [
+            'created_by_node_id' => 'integer',
             'orchestration' => TaskOrchestration::class,
             'type' => TaskType::class,
             'position' => 'integer',

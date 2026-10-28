@@ -26,6 +26,14 @@ final readonly class RepositoryPullRequestAccess
         return $this->github->repositoryPullRequestToken($credentials, $installation, $repository);
     }
 
+    /** Merge authority never includes permission to change workflows. */
+    public function squashToken(GitHubRepository $repository): string
+    {
+        [$credentials, $installation] = $this->installation($repository);
+
+        return $this->github->repositorySquashToken($credentials, $installation, $repository);
+    }
+
     /** Disposable VMs never borrow a shared GitHub CLI login or fall back anonymously. */
     public function readToken(GitHubRepository $repository): string
     {

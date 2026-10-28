@@ -15,6 +15,7 @@ use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTopology;
+use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 
@@ -25,7 +26,7 @@ final readonly class CreateTaskGroupAction
         private AgentDriverRegistry $drivers,
     ) {}
 
-    public function execute(CreateTaskGroupData $data): Task
+    public function execute(CreateTaskGroupData $data, ?Node $creator = null): Task
     {
         $this->requireExtension->execute();
 
@@ -58,6 +59,7 @@ final readonly class CreateTaskGroupAction
 
         $group = Task::topLevel()->create([
             'orchestration' => $data->orchestration,
+            'created_by_node_id' => $creator?->id,
             'project_id' => $data->projectId,
             'implementer_agent_driver' => $implementerDriver,
             'reviewer_agent_driver' => $reviewerDriver,

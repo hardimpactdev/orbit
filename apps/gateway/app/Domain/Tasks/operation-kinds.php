@@ -18,7 +18,7 @@ return [
         'executor' => 'swamp', 'completion' => DependencyMergeCompletion::class,
         'runs' => [[
             'transport' => 'gateway', 'name' => 'github.dependency-squash',
-            'input_fields' => ['project_id', 'group_id', 'publish_operation_id', 'repository', 'default_branch', 'pr_number', 'head_sha', 'token'],
+            'input_fields' => ['project_id', 'group_id', 'publish_operation_id', 'repository', 'default_branch', 'smoke_workflow', 'pr_number', 'head_sha', 'token'],
             'input_values' => [], 'secrets' => ['token' => 'github.dependency_merge'],
         ]],
         'completion_contract' => ['step' => 'squash', 'transport' => 'gateway', 'name' => 'github.dependency-squash', 'result' => ['merged' => true]],

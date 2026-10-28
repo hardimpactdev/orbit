@@ -24,7 +24,7 @@ use Illuminate\Support\Arr;
 /**
  * Fresh admission and pre-effect evidence. No cached verdict grants write authority.
  *
- * @phpstan-type Intent array{project_id:int,group_id:int,publish_operation_id:int,repository:string,default_branch:string,pr_number:int,head_sha:string,token:array{'$secret':string,id:int}}
+ * @phpstan-type Intent array{project_id:int,group_id:int,publish_operation_id:int,repository:string,default_branch:string,smoke_workflow:string,pr_number:int,head_sha:string,token:array{'$secret':string,id:int}}
  */
 final readonly class DependencyBatchMergeGuard
 {
@@ -38,6 +38,8 @@ final readonly class DependencyBatchMergeGuard
         $project = $group->project;
         $policy = config('dependency_merge.projects.'.$project->id);
         $this->check(is_array($policy) && ($policy['enabled'] ?? false) === true, 'dependency_merge.disabled');
+        $workflow = $policy['smoke_workflow'] ?? null;
+        $this->check(is_string($workflow) && preg_match('/\A\.github\/workflows\/[A-Za-z0-9_-]+\.ya?ml\z/D', $workflow) === 1, 'dependency_merge.smoke_missing');
         $this->check(is_string($project->default_branch) && $project->default_branch !== '', 'dependency_merge.default_branch_changed');
         $this->check(in_array($project->type->value, ['laravel-app', 'symfony-app'], true), 'dependency_merge.app_required');
         $instance = Instance::query()->where('project_id', $project->id)->whereKey($policy['instance_id'] ?? 0)->first();
@@ -47,7 +49,9 @@ final readonly class DependencyBatchMergeGuard
             && ! in_array($group->status, [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled, TaskGroupStatus::Failed], true)
             && ! $group->assistance_requested && $group->tasks->count() === 1, 'dependency_merge.lineage_invalid');
         $child = $group->tasks->sole();
-        $this->check(! $child->assistance_requested && ! in_array($child->status, [TaskStatus::Failed, TaskStatus::Cancelled], true)
+        $services = config('dependency_detection.services_node_id');
+        $this->check((is_int($services) || is_string($services)) && $group->created_by_node_id !== null && (string) $group->created_by_node_id === (string) $services
+            && ! $child->assistance_requested && ! in_array($child->status, [TaskStatus::Failed, TaskStatus::Cancelled], true)
             && array_any($child->deliverables ?? [], static fn (array $item): bool => ($item['id'] ?? null) === 'package' && ($item['type'] ?? null) === 'review')
             && preg_match('/^Swamp schedule: batch-[a-f0-9]{64}$/m', $group->brief ?? '') === 1, 'dependency_merge.batch_required');
         $publish = Operation::query()->where('kind', OperationKinds::TasksPublish)->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)->find($publishId);
@@ -65,7 +69,7 @@ final readonly class DependencyBatchMergeGuard
 
         return ['project_id' => $project->id, 'group_id' => $group->id, 'publish_operation_id' => $publishId,
             'repository' => $repository->owner.'/'.$repository->name, 'default_branch' => $project->default_branch,
-            'pr_number' => $number, 'head_sha' => $head, 'token' => ['$secret' => 'github.dependency_merge', 'id' => $project->id]];
+            'smoke_workflow' => $workflow, 'pr_number' => $number, 'head_sha' => $head, 'token' => ['$secret' => 'github.dependency_merge', 'id' => $project->id]];
     }
 
     /** @param Intent $intent
@@ -103,16 +107,18 @@ final readonly class DependencyBatchMergeGuard
         }
         $this->check(($pr['state'] ?? null) === 'open' && ($pr['draft'] ?? null) === false && ($pr['mergeable'] ?? null) === true
             && in_array($pr['mergeable_state'] ?? null, ['clean', 'has_hooks'], true), 'dependency_merge.pr_not_ready');
+        $this->files($pr, $path.'/pulls/'.$intent['pr_number'].'/files', $read);
         $actionsToken = $this->reader->token($repository);
         $workflows = $this->reader->json($path.'/actions/workflows?per_page=100', $actionsToken);
         $workflowRows = $this->rows($workflows, 'workflows');
         $smokeIds = [];
         foreach ($workflowRows as $workflow) {
             $this->check(is_int($workflow['id'] ?? null), 'dependency_merge.checks_unreadable');
-            if (($workflow['name'] ?? null) === 'Production smoke' || in_array($workflow['path'] ?? null, ['.github/workflows/production-smoke.yml', '.github/workflows/production-smoke.yaml'], true)) {
+            if (($workflow['path'] ?? null) === $intent['smoke_workflow'] && ($workflow['state'] ?? null) === 'active') {
                 $smokeIds[] = $workflow['id'];
             }
         }
+        $this->check(count($smokeIds) === 1, 'dependency_merge.smoke_missing');
         $runs = $this->rows($this->reader->json($path.'/actions/runs?'.http_build_query(['head_sha' => $intent['head_sha'], 'event' => 'pull_request', 'per_page' => 100]), $actionsToken), 'workflow_runs');
         $latest = [];
         foreach ($runs as $run) {
@@ -139,11 +145,40 @@ final readonly class DependencyBatchMergeGuard
                 || RequiredCheckState::of($smoke, $intent['head_sha'], 'Production smoke / smoke') === RequiredCheckState::Passed, 'dependency_merge.smoke_not_passed');
         }
         $fresh = $this->reader->json($path.'/pulls/'.$intent['pr_number'], $read);
-        foreach (['head.sha', 'head.ref', 'head.repo.full_name', 'base.sha', 'base.ref', 'base.repo.full_name', 'state', 'draft', 'merged', 'mergeable', 'mergeable_state'] as $field) {
+        foreach (['head.sha', 'head.ref', 'head.repo.full_name', 'base.sha', 'base.ref', 'base.repo.full_name', 'state', 'draft', 'merged', 'mergeable', 'mergeable_state', 'changed_files'] as $field) {
             $this->check(Arr::get($fresh, $field) === Arr::get($pr, $field), 'dependency_merge.pr_changed');
         }
 
         return $pr;
+    }
+
+    /** @param array<string, mixed> $pr */
+    private function files(array $pr, string $path, #[\SensitiveParameter] string $token): void
+    {
+        $count = $pr['changed_files'] ?? null;
+        // GitHub returns at most 3,000 files. Never accept that ambiguous boundary.
+        $this->check(is_int($count) && $count > 0 && $count < 3000, 'dependency_merge.files_unreadable');
+        $allowed = ['composer.json', 'composer.lock', 'package.json', 'package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lock', 'bun.lockb'];
+        $seen = [];
+        for ($page = 1; ; $page++) {
+            $rows = $this->reader->json($path.'?per_page=100&page='.$page, $token);
+            $expected = min(100, max(0, $count - count($seen)));
+            $this->check(array_is_list($rows) && count($rows) === $expected, 'dependency_merge.files_unreadable');
+            if ($expected === 0) {
+                return;
+            }
+            foreach ($rows as $file) {
+                $this->check(is_array($file) && is_string($file['filename'] ?? null)
+                    && ! isset($seen[$file['filename']]), 'dependency_merge.files_unreadable');
+                $this->check(in_array($file['filename'], $allowed, true), 'dependency_merge.files_forbidden');
+                $this->check(in_array($file['status'] ?? null, ['added', 'modified', 'removed', 'renamed', 'copied', 'changed', 'unchanged'], true), 'dependency_merge.files_unreadable');
+                if (in_array($file['status'], ['renamed', 'copied'], true) || array_key_exists('previous_filename', $file)) {
+                    $this->check(is_string($file['previous_filename'] ?? null), 'dependency_merge.files_unreadable');
+                    $this->check(in_array($file['previous_filename'], $allowed, true), 'dependency_merge.files_forbidden');
+                }
+                $seen[$file['filename']] = true;
+            }
+        }
     }
 
     /** @param array<array-key, mixed> $data
