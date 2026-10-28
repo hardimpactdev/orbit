@@ -70,6 +70,7 @@ mod tests {
                 code: 0,
                 stdout: String::new(),
                 stderr: String::new(),
+                signal: None,
                 truncated: false,
             })
         }

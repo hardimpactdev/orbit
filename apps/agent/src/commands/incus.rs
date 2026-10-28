@@ -125,14 +125,23 @@ fn capture_stdin(command: &mut Process, stdin: Stdio, input: Option<&str>) -> io
         .stderr(Stdio::piped())
         .spawn()?;
     let (status, stdout, stderr) = exchange(child, input.map(str::as_bytes))?;
-    Ok(Output {
-        code: status.code().unwrap_or(-1),
-        truncated: stdout.len() > MAX_OUTPUT
-            || stderr.len() > MAX_OUTPUT
-            || std::str::from_utf8(&stdout).is_err(),
-        stdout: String::from_utf8_lossy(&stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&stderr).into_owned(),
-    })
+    Ok(Output::captured(status, stdout, stderr))
+}
+impl Output {
+    pub(super) fn captured(
+        status: std::process::ExitStatus,
+        stdout: Vec<u8>,
+        stderr: Vec<u8>,
+    ) -> Self {
+        Self {
+            code: status.code().unwrap_or(-1),
+            truncated: stdout.len() > MAX_OUTPUT
+                || stderr.len() > MAX_OUTPUT
+                || std::str::from_utf8(&stdout).is_err(),
+            stdout: String::from_utf8_lossy(&stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&stderr).into_owned(),
+        }
+    }
 }
 fn invalid_output(operation: &str, reason: &str) -> Error {
     Error::Output {

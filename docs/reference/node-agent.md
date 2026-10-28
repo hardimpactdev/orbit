@@ -569,6 +569,14 @@ Run the [agent checks](/reference/bun-and-rust-projects#node-agent) as a normal 
 
 Tests that create executable tools use the shared `tests/support/executable.rs` helper. It writes a source file, then waits for a separate `install` process to copy it to the executable path. Only that child opens the executable inode for writing. Parallel test forks can inherit a writable descriptor for the source, but the source is never executed. Closing, syncing, or renaming a file written by the test process would leave an inherited descriptor open until the other child executes or exits, which can cause Linux `ETXTBSY` errors.
 
+### Recipe interruption
+
+The native recipe runner waits directly for its command and treats SIGHUP, SIGINT, and SIGTERM in the child wait status as interruption, even when the agent handler has not run yet on another thread. It owns the command process group and enforces its deadline with TERM, then KILL after one second. Deadline expiry remains exit code 124. An external timeout program cannot preserve this evidence reliably: it can turn a child signal into a numeric exit code.
+
+Required and optional commands both stop the recipe on interruption. The handler flag still detects signals before execution and after a command exits normally. A numeric exit code such as 143 is a command failure, not proof of a signal.
+
+Recipe interruption tests run on a non-main thread in an isolated process. A socket barrier delays the agent handler while the test signals both process groups, so child exit precedes the handler flag update. The supervised fixture sends a Unix datagram after execution, including its process group. The test receives that event before it signals the worker and supervisor groups. Readiness has its own timeout and fails before any termination assertion. Separate cases check each supported signal before execution, after normal execution, and during required and optional commands.
+
 ## Releases
 
 The agent ships in the one public release that each green `main` commit gets, beside the CLI ([CLI binaries: Published releases](/reference/cli-binaries#published-releases)). A push to `main` builds the [delivery](#delivery) in CI from that exact source and uploads it as the `agent-delivery` artifact. After main's required checks pass, the Orbit CLI Release workflow downloads that artifact from the CI run, checks each binary against its tested digest, and publishes it with the CLI binaries. It never rebuilds the agent. It publishes with the workflow's own token; there is no other credential.

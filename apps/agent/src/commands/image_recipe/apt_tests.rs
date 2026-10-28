@@ -160,6 +160,7 @@ impl Resolver {
             code: output.status.code().unwrap_or(-1),
             stdout: String::from_utf8(output.stdout).unwrap(),
             stderr: String::from_utf8(output.stderr).unwrap(),
+            signal: None,
             truncated: false,
         }
     }

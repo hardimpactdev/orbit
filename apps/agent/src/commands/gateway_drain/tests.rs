@@ -136,6 +136,7 @@ impl recipe::Host for Fake {
                 stdout
             },
             stderr: "password=never-return-this".into(),
+            signal: None,
             truncated: self.fault == "truncated",
         })
     }

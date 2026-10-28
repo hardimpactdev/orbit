@@ -34,6 +34,7 @@ impl Host for Fake {
             code,
             stdout: "sensitive diagnostic".into(),
             stderr: "sensitive diagnostic".into(),
+            signal: None,
             truncated: false,
         })
     }

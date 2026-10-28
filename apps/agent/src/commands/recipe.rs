@@ -4,6 +4,7 @@ pub mod artifacts;
 pub mod assessment;
 pub(crate) mod interruption;
 pub mod javascript;
+mod native;
 pub mod operations;
 pub mod ownership;
 pub mod services;
@@ -89,6 +90,7 @@ pub fn diagnostic(text: &str) -> String {
 #[derive(Debug, Clone, Default)]
 pub struct Output {
     pub code: i32,
+    pub signal: Option<i32>,
     pub stdout: String,
     pub stderr: String,
     pub truncated: bool,
@@ -119,26 +121,7 @@ pub trait Host {
 pub struct Native<'a>(pub &'a Context);
 impl Host for Native<'_> {
     fn execute(&mut self, invocation: &Invocation) -> Result<Output, Failure> {
-        let deadline = self.0.deadline().min(Instant::now() + invocation.timeout);
-        let context = Context::new(self.0.platform, deadline);
-        let mut args: Vec<String> = invocation
-            .environment
-            .iter()
-            .map(|(k, v)| format!("{k}={v}"))
-            .collect();
-        args.extend(invocation.argv.iter().cloned());
-        let output = super::incus::bounded(
-            &context,
-            "/usr/bin/env",
-            &args.iter().map(String::as_str).collect::<Vec<_>>(),
-            None,
-        );
-        Ok(Output {
-            code: output.code,
-            stdout: output.stdout,
-            stderr: output.stderr,
-            truncated: output.truncated,
-        })
+        native::execute(self.0, invocation)
     }
     fn wait(&mut self, delay: Duration) -> Result<(), Failure> {
         if self.0.remaining() <= delay {
@@ -167,7 +150,7 @@ pub fn run(
 ) -> Result<Output, Failure> {
     interruption::check()?;
     let output = host.execute(invocation)?;
-    interruption::check()?;
+    interruption::command_exited(output.signal)?;
     if output.truncated || (required && output.code != 0) {
         return Err(Failure::command(invocation, &output));
     }
