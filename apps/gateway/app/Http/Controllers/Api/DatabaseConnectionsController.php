@@ -17,6 +17,7 @@ use App\Actions\DatabaseConnections\ShowDatabaseSchemaAction;
 use App\Actions\DatabaseConnections\UpdateDatabaseConnectionAction;
 use App\Data\DatabaseConnections\DatabaseConnectionData;
 use App\Data\DatabaseConnections\DatabaseUserData;
+use App\Data\Operations\OperationData;
 use App\Domain\DatabaseConnections\DatabaseSchemaTable;
 use App\Domain\DatabaseConnections\DatabaseTableColumn;
 use App\Http\Authorization\CallerName;
@@ -28,10 +29,13 @@ use App\Http\Requests\DatabaseConnections\QueryDatabaseConnectionRequest;
 use App\Http\Requests\DatabaseConnections\StoreDatabaseConnectionRequest;
 use App\Http\Requests\DatabaseConnections\StoreDatabaseUserRequest;
 use App\Http\Requests\DatabaseConnections\UpdateDatabaseConnectionRequest;
+use App\Http\Requests\Operations\StartsOperation;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseUser;
+use App\Models\Operation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 #[RequiresNodeAccess(ServingNode::Gateway)]
 final class DatabaseConnectionsController extends Controller
@@ -48,14 +52,18 @@ final class DatabaseConnectionsController extends Controller
         ]);
     }
 
+    #[StartsOperation('database.create')]
     public function store(
         StoreDatabaseConnectionRequest $request,
         CreateDatabaseConnectionAction $register,
         CreateServerDatabaseAction $create,
     ): JsonResponse {
-        $connection = $request->createsOnServer()
+        $connection = DB::transaction(fn () => $request->createsOnServer()
             ? $create->execute($request->serverPayload(), CallerName::fromRequest($request))
-            : $register->execute($request->payload());
+            : $register->execute($request->payload()));
+        if ($connection instanceof Operation) {
+            return response()->json(['data' => OperationData::fromModel($connection)->toArray(), 'meta' => $this->meta($request)], 202);
+        }
 
         return response()->json([
             'data' => DatabaseConnectionData::fromModel($connection)->toArray(),
@@ -88,6 +96,7 @@ final class DatabaseConnectionsController extends Controller
         ]);
     }
 
+    #[StartsOperation('database_user.create', secretInputs: ['password'])]
     public function storeUser(
         StoreDatabaseUserRequest $request,
         DatabaseConnection $databaseConnection,
@@ -96,9 +105,9 @@ final class DatabaseConnectionsController extends Controller
         $user = $action->execute($databaseConnection, $request->payload(), CallerName::fromRequest($request));
 
         return response()->json([
-            'data' => DatabaseUserData::fromModel($user)->toArray(),
+            'data' => OperationData::fromModel($user)->toArray(),
             'meta' => $this->meta($request),
-        ], $user->wasRecentlyCreated ? 201 : 200);
+        ], 202);
     }
 
     public function update(
@@ -114,13 +123,18 @@ final class DatabaseConnectionsController extends Controller
         ]);
     }
 
+    #[StartsOperation('database.destroy')]
     public function destroy(
         Request $request,
-        DatabaseConnection $databaseConnection,
+        string $databaseConnection,
         DestroyDatabaseConnectionAction $action,
     ): JsonResponse {
-        $data = DatabaseConnectionData::fromModel($databaseConnection)->toArray();
-        $action->execute($databaseConnection);
+        $connection = DatabaseConnection::query()->where('slug', $databaseConnection)->firstOrFail();
+        $data = DatabaseConnectionData::fromModel($connection)->toArray();
+        $operation = $action->execute($connection);
+        if ($operation !== null) {
+            return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
+        }
 
         return response()->json([
             'data' => $data,
@@ -128,12 +142,16 @@ final class DatabaseConnectionsController extends Controller
         ]);
     }
 
+    #[StartsOperation('database.write', secretInputs: ['sql'])]
     public function query(
         QueryDatabaseConnectionRequest $request,
         DatabaseConnection $databaseConnection,
         QueryDatabaseConnectionAction $action,
     ): JsonResponse {
         $result = $action->execute($databaseConnection, $request->sql(), $request->write());
+        if ($result instanceof Operation) {
+            return response()->json(['data' => OperationData::fromModel($result)->toArray(), 'meta' => $this->meta($request)], 202);
+        }
 
         return response()->json([
             'data' => [

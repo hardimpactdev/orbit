@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace App\Commands\Database;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\DatabaseServers\CreateDatabaseServerRequest;
-use Orbit\Sdk\Responses\DatabaseServers\DatabaseServerResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class CreateDatabaseServerCommand extends DatabaseCommand
 {
+    use FollowsOperations;
+
     public const string TAG_PATTERN = '/\A[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}\z/D';
 
     #[\Override]
@@ -22,6 +25,7 @@ final class CreateDatabaseServerCommand extends DatabaseCommand
         {--connection= : Existing redis connection for adoption}
         {--tag= : Image tag. Defaults to 8.4 for mysql or 8.1 for redis or 18 for pgsql}
         {--port= : Port to publish on the Node private addresses. Defaults to 3306 for mysql or 6379 for redis or 5432 for pgsql}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -78,25 +82,23 @@ final class CreateDatabaseServerCommand extends DatabaseCommand
             return self::FAILURE;
         }
 
-        $server = $this->sendWithProgress(
-            $connector,
-            new CreateDatabaseServerRequest(
-                slug: $slug,
-                nodeId: $nodeId,
-                tag: $tag,
-                port: $parsedPort,
-                driver: $driver,
-                processId: $processId,
-                connection: $this->stringOption('connection'),
-            ),
-            DatabaseServerResponse::class,
-            ['Create Database server', 'Creating Database server', 'Created Database server'],
-        );
-
-        if (! $server instanceof DatabaseServerResponse) {
+        $profile = $this->activeGatewayProfile($repository);
+        if ($profile === null) {
             return self::FAILURE;
         }
+        $operation = $this->send($connector, new CreateDatabaseServerRequest(
+            slug: $slug,
+            nodeId: $nodeId,
+            tag: $tag,
+            port: $parsedPort,
+            driver: $driver,
+            processId: $processId,
+            connection: $this->stringOption('connection'),
+            idempotencyKey: is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null,
+        ), OperationResponse::class);
 
-        return $this->renderServer($server, "Database server [{$server->slug}] is running.");
+        return $operation instanceof OperationResponse
+            ? $this->followOperation($connector, $profile, $operation, "Create Database server [{$slug}]", 'Database server')
+            : self::FAILURE;
     }
 }

@@ -29,6 +29,9 @@ final readonly class PdoDatabaseInspector
 
     public function query(DatabaseConnection $connection, string $sql, bool $write): DatabaseQueryResult
     {
+        if ($write) {
+            throw new ResourceOperationException('database.operation_required', 'SQL writes run as database.write Operations.', 409);
+        }
         $pdo = $this->pdo($connection);
 
         try {
@@ -41,7 +44,7 @@ final readonly class PdoDatabaseInspector
             $this->fail($connection);
         }
 
-        if (! $write && $statement->columnCount() === 0) {
+        if ($statement->columnCount() === 0) {
             return $this->redactor->query($connection, new DatabaseQueryResult([], [], 0, false));
         }
 
@@ -68,7 +71,7 @@ final readonly class PdoDatabaseInspector
 
         return $this->redactor->query(
             $connection,
-            new DatabaseQueryResult($columns, $rows, $write ? max($statement->rowCount(), 0) : count($rows), $truncated),
+            new DatabaseQueryResult($columns, $rows, count($rows), $truncated),
         );
     }
 

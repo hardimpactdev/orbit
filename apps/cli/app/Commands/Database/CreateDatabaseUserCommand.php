@@ -4,14 +4,16 @@ declare(strict_types=1);
 
 namespace App\Commands\Database;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\DatabaseConnections\CreateDatabaseUserRequest;
-use Orbit\Sdk\Responses\DatabaseConnections\CreatedDatabaseUserResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class CreateDatabaseUserCommand extends DatabaseCommand
 {
+    use FollowsOperations;
+
     public const string USERNAME_PATTERN = '/\A[A-Za-z_][A-Za-z0-9_]{0,31}\z/D';
 
     #[\Override]
@@ -21,6 +23,7 @@ final class CreateDatabaseUserCommand extends DatabaseCommand
         {--password= : Password for the new user}
         {--read-only : Grant only SELECT on the database}
         {--replication : PostgreSQL LOGIN REPLICATION with read-only grants; requires wal_level=logical}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -55,38 +58,21 @@ final class CreateDatabaseUserCommand extends DatabaseCommand
             return self::FAILURE;
         }
 
-        $created = $this->sendWithProgress(
-            $connector,
-            new CreateDatabaseUserRequest(
-                slug: $slug,
-                username: $username,
-                password: $password,
-                readOnly: $this->option('read-only') === true,
-                replication: $this->option('replication') === true,
-            ),
-            CreatedDatabaseUserResponse::class,
-            ['Create Database user', 'Creating Database user', 'Created Database user'],
-        );
-
-        if (! $created instanceof CreatedDatabaseUserResponse) {
+        $profile = $this->activeGatewayProfile($repository);
+        if ($profile === null) {
             return self::FAILURE;
         }
+        $operation = $this->send($connector, new CreateDatabaseUserRequest(
+            slug: $slug,
+            username: $username,
+            password: $password,
+            readOnly: $this->option('read-only') === true,
+            replication: $this->option('replication') === true,
+            idempotencyKey: is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null,
+        ), OperationResponse::class);
 
-        if ($this->option('json') === true) {
-            $this->writeJson($created->toArray());
-
-            return self::SUCCESS;
-        }
-
-        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Database user [{$created->user->username}] on [{$slug}].", [
-            'Username' => $created->user->username,
-            'Privileges' => $created->user->privileges,
-            'Replication' => $created->user->replication ? 'yes' : 'no',
-            'Created by' => $created->user->createdBy,
-            'Created' => $created->user->createdAt,
-            'Request ID' => $created->requestId,
-        ]));
-
-        return self::SUCCESS;
+        return $operation instanceof OperationResponse
+            ? $this->followOperation($connector, $profile, $operation, "Create Database user [{$slug}]", 'Database user')
+            : self::FAILURE;
     }
 }

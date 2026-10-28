@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Actions\DatabaseConnections;
 
+use App\Actions\DatabaseServers\RecordDatabaseOperationAction;
 use App\Data\DatabaseConnections\CreateDatabaseUserData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\DatabaseServers\DatabaseCommands;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\MysqlStatements;
 use App\Domain\DatabaseServers\PostgresStatements;
@@ -13,6 +15,8 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
+use App\Models\Operation;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Adds or updates a SQL login and replaces its grants. Replication users get reader grants.
@@ -24,13 +28,14 @@ final readonly class CreateDatabaseUserAction
     public function __construct(
         private DatabaseServerAdmin $admin,
         private MysqlStatements $statements,
+        private RecordDatabaseOperationAction $operations,
     ) {}
 
     public function execute(
         DatabaseConnection $connection,
         CreateDatabaseUserData $data,
         string $createdBy,
-    ): DatabaseUser {
+    ): Operation {
         $server = $connection->server;
 
         if ($data->replication && ($connection->driver !== DatabaseDriver::Pgsql || ($server instanceof DatabaseServer && $server->driver !== DatabaseDriver::Pgsql))) {
@@ -80,22 +85,15 @@ final readonly class CreateDatabaseUserAction
         $ensureUser = $statements instanceof PostgresStatements
             ? $statements->ensureUser($data->username, $data->password, replication: $data->replication)
             : $statements->ensureUser($data->username, $data->password);
-        $this->admin->execute(
-            $server,
-            $ensureUser.$statements->replaceGrant($connection->database, $data->username, $readOnly, $connection->username),
-        );
 
-        return DatabaseUser::query()->updateOrCreate(
-            [
-                'database_connection_id' => $connection->id,
-                'username' => $data->username,
-            ],
-            [
-                'password' => $data->password,
-                'privileges' => $statements->privilegeText($connection->database, $readOnly),
-                'replication' => $data->replication,
-                'created_by' => $createdBy,
-            ],
-        );
+        return DB::transaction(function () use ($connection, $data, $createdBy, $statements, $readOnly, $server, $ensureUser): Operation {
+            return $this->operations->execute('database_user.create', 'database_server', $server->id, $server->node_id,
+                ['connection_id' => $connection->id, 'driver' => $server->driver->value],
+                ['database-apply' => DatabaseCommands::sql($server, $ensureUser.$statements->replaceGrant($connection->database, $data->username, $readOnly, $connection->username), redactions: [$data->password])], ['upsert_user' => [
+                    'database_connection_id' => $connection->id, 'username' => $data->username, 'password' => $data->password,
+                    'privileges' => $statements->privilegeText($connection->database, $readOnly), 'replication' => $data->replication,
+                    'created_by' => $createdBy,
+                ]]);
+        });
     }
 }

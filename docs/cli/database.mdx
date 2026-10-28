@@ -9,6 +9,9 @@ A Database connection is a Gateway record with an encrypted password. The `datab
 
 [Database connections](/reference/database-connections) describes the driver fields, the API, inspection, and the keys that an attachment writes. Attach a connection to an Instance with [`instance:database:add`](/cli/instance#orbit-instancedatabaseadd). Attachment commands require `--instance=SELECTOR`. An omitted or empty selector returns `database.instance_required` before the CLI sends a request.
 
+Server create, close and destroy, managed database create and destroy, user create, and SQL writes start Operations. Their CLI commands follow the steps to completion. Use `--idempotency-key=KEY` to repeat the same start after a lost response. Registry create, update and destroy, and all reads, keep their record responses.
+
+
 ## Commands
 
 | Command | Result |
@@ -80,7 +83,7 @@ orbit database:create app-dev --server=services-postgres --instance=60 --test-pr
 orbit database:create gateway-queue --server=services-valkey --database=1 --pattern='orbit-gateway:*' --allow=@list --allow=eval
 ```
 
-The Gateway answers `validation.failed` when a mysql, pgsql, or redis record includes `--path`, when a sqlite record includes `--host`, `--port`, or `--database`, when a redis record omits `--host`, or when the request includes an unsupported field. An identical Instance-owned PostgreSQL create retry [restores missing test pool members](/reference/database-servers#repair-a-postgresql-test-pool) and returns the recorded connection. Other duplicate slugs return `database.slug_conflict` and leave the existing record unchanged.
+The Gateway answers `validation.failed` when a mysql, pgsql, or redis record includes `--path`, when a sqlite record includes `--host`, `--port`, or `--database`, when a redis record omits `--host`, or when the request includes an unsupported field. An identical Instance-owned PostgreSQL create retry [restores missing test pool members](/reference/database-servers#repair-a-postgresql-test-pool) and returns a repair Operation. Other duplicate slugs return `database.slug_conflict` and leave the existing record unchanged.
 
 Query, tables, schema, and describe refuse a redis connection with `database.driver_unsupported`. An Instance gets the stored `--host` and `--port` unchanged, also on the `--node` Node. Use an address that every Instance can reach, such as the database Node's WireGuard address.
 
@@ -198,7 +201,7 @@ Give the user `default` the admin password on an [adopted Valkey server](/refere
 orbit database:server:close <slug> [--json]
 ```
 
-The Gateway refuses with `database.server_in_use` while a connection on the server has no password, or while a client other than the Gateway is logged in as `default`. A server that is already closed returns at once. The command exists only for the adopted Valkey Processes.
+The Gateway refuses with `database.server_in_use` while a connection on the server has no password, or while a client other than the Gateway is logged in as `default`. A server that is already closed runs a readiness check. The command exists only for the adopted Valkey Processes.
 
 ## orbit database:user:create
 
@@ -280,7 +283,7 @@ orbit database:query <slug> <sql> [--write] [--json]
 | --- | --- |
 | `--write` | Allow a write statement. Omission returns `database.write_required` for write SQL. |
 
-A stacked statement returns `database.sql_multiple_statements`. SQLite runs on the linked Node and returns `database.sqlite_node_required` without one. The Gateway returns at most 500 rows and sets `truncated` when more exist. `--write` is permission, not proof that rows changed.
+A stacked statement returns `database.sql_multiple_statements`. SQLite runs on the linked Node and returns `database.sqlite_node_required` without one. Read queries return at most 500 rows and set `truncated` when more exist. With `--write`, the command follows an Operation and returns its affected row count; it does not return result rows. `--write` is permission, not proof that rows changed.
 
 Human output shows the write permission, the reported row count, and a truncation warning after the rows. It shows SQL null as `NULL` and an empty string as `""`. JSON keeps `write`, `row_count`, `truncated`, and the exact cell values.
 

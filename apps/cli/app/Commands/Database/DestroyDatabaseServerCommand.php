@@ -4,17 +4,21 @@ declare(strict_types=1);
 
 namespace App\Commands\Database;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\DatabaseServers\DestroyDatabaseServerRequest;
-use Orbit\Sdk\Responses\DatabaseServers\DatabaseServerResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class DestroyDatabaseServerCommand extends DatabaseCommand
 {
+    use FollowsOperations;
+
     #[\Override]
     protected $signature = 'database:server:destroy
         {slug : Database server slug}
         {--force : Skip the destructive confirmation prompt}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -44,17 +48,14 @@ final class DestroyDatabaseServerCommand extends DatabaseCommand
             return self::FAILURE;
         }
 
-        $server = $this->sendWithProgress(
-            $connector,
-            new DestroyDatabaseServerRequest($slug),
-            DatabaseServerResponse::class,
-            ['Destroy Database server', 'Destroying Database server', 'Destroyed Database server'],
-        );
-
-        if (! $server instanceof DatabaseServerResponse) {
+        $profile = $this->activeGatewayProfile($repository);
+        if ($profile === null) {
             return self::FAILURE;
         }
+        $operation = $this->send($connector, new DestroyDatabaseServerRequest($slug, is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null), OperationResponse::class);
 
-        return $this->renderServer($server, "Database server [{$server->slug}] destroyed.");
+        return $operation instanceof OperationResponse
+            ? $this->followOperation($connector, $profile, $operation, "Destroy Database server [{$slug}]", 'Database server')
+            : self::FAILURE;
     }
 }
