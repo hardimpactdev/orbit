@@ -212,8 +212,8 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
             'command',
             $spec->name,
         ];
-        [$input, $credential] = AgentInvocation::wire($input);
-        $envelope = AgentInvocation::envelope($pin, $budget, $input, $binaryInput?->bytes);
+        [$input, $credential, $effect] = AgentInvocation::wire($input);
+        $envelope = AgentInvocation::envelope($pin, $budget, $input, $binaryInput?->bytes, $effect);
         $decoder = $output === null ? null : new AgentOutputDecoder($spec->name, $output, $spec->outputMaxBytes);
         $consume = null;
         if ($decoder !== null) {

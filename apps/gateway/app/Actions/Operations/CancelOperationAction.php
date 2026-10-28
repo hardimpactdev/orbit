@@ -35,7 +35,9 @@ final readonly class CancelOperationAction
                 app(OperationExecutors::class)->completion($operation->kind)?->complete($operation, OperationOutcome::cancelled());
             }
         });
-        $this->runner->cancelWaiting($operation, $targetEnding);
+        if (! app(OperationExecutors::class)->swamp($operation->kind)) {
+            $this->runner->cancelWaiting($operation, $targetEnding);
+        }
 
         return $operation->refresh();
     }

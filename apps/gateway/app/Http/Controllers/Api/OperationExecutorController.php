@@ -17,6 +17,7 @@ use App\Http\Requests\Operations\CompleteExecutorRequest;
 use App\Http\Requests\Operations\ExecutorRequest;
 use App\Http\Requests\Operations\HeartbeatExecutorRequest;
 use App\Http\Requests\Operations\ReadChildrenExecutorRequest;
+use App\Http\Requests\Operations\ReceiptExecutorRequest;
 use App\Http\Requests\Operations\RunExecutorRequest;
 use App\Http\Requests\Operations\StepExecutorRequest;
 use App\Http\Requests\Operations\WaitExecutorRequest;
@@ -71,7 +72,13 @@ final class OperationExecutorController extends Controller
         return $this->respond($request, $this->receipt($executor->wait($operation, $request->worker(), ValidatedData::stringList($request->validated('keys')), $request->peerNodeId())));
     }
 
+    public function effectReceipt(ReceiptExecutorRequest $request, Operation $operation, string $step, SwampOperationExecutor $executor): JsonResponse
+    {
+        return $this->respond($request, $executor->receipt($operation, $step, $request->peerNodeId()));
+    }
+
     /** @param array<string, mixed>|list<array<string,mixed>>|null $data */
+
     private function respond(ExecutorRequest $request, ?array $data): JsonResponse
     {
         return response()->json(['data' => $data, 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]]);

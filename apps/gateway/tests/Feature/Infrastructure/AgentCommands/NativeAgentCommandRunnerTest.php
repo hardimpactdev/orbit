@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\GitHub\GitReadEnvironment;
+use App\Domain\Operations\EffectReceiptMetadata;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentBinaryInput;
 use App\Infrastructure\AgentCommands\AgentBinaryOutput;
@@ -688,4 +689,17 @@ it('rejects binary input missing from a binary command or supplied to a JSON com
     expect(fn () => $runner->run($node, 'agent.status', binaryInput: $binary))->toThrow(LogicException::class)
         ->and($transport->calls)->toBe([]);
     fclose($source);
+});
+
+it('sends receipt masks only as protected transient envelope metadata', function (): void {
+    $metadata = new EffectReceiptMetadata(['receipt-private-original']);
+    $input = ['operation' => 'restart', 'process_id' => 42, 'runtime' => 'systemd', 'name' => 'orbit-process-42.service', 'on_demand' => false, 'effect_key' => 'op-42.restart'];
+    $transport = new ScriptedAgentTransport([agentResult(['ok' => true, 'data' => new stdClass])]);
+    $node = agentRunnerNode();
+    expect(agentRunner($transport)->run($node, 'process.control', $metadata->attach($input)))->toBe([]);
+    expect($transport->calls[0]['envelope']['input'])->toBe($input);
+    expect($transport->calls[0]['envelope']['effect_receipt'])->toBe(['redactions' => ['receipt-private-original']]);
+    expect(json_encode($metadata))->not->toContain('receipt-private-original');
+    expect(json_encode($transport->calls[0]['arguments']))->not->toContain('receipt-private-original');
+    expect(json_encode($node->refresh()->toArray()))->not->toContain('receipt-private-original');
 });

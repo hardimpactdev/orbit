@@ -165,7 +165,7 @@ final readonly class OperationKinds
      */
     public static function supports(string $capability): bool
     {
-        return $capability === 'children';
+        return in_array($capability, ['children', 'receipts'], true);
     }
 
     public static function executor(string $kind): string

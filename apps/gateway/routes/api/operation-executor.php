@@ -12,6 +12,8 @@ Route::get('operation-executor/{operation}/children', [OperationExecutorControll
 
 Route::middleware([RequireActiveWireGuardPeer::class, RequireNodeAccess::class])->group(function (): void {
     Route::post('operation-executor/claim', [OperationExecutorController::class, 'claim'])->name('operation:executor:claim');
+    Route::get('operation-executor/{operation}/receipts/{step}', [OperationExecutorController::class, 'effectReceipt'])
+        ->whereNumber('operation')->where('step', '[a-z0-9_.:-]{1,128}')->name('operation:executor:receipt');
     foreach (['heartbeat', 'step', 'complete', 'run', 'children', 'wait'] as $primitive) {
         Route::post('operation-executor/{operation}/'.$primitive, [OperationExecutorController::class, $primitive])
             ->whereNumber('operation')->name('operation:executor:'.$primitive);

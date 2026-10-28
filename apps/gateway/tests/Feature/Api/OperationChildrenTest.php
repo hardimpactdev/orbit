@@ -279,3 +279,15 @@ it('does not accept bare missing-child success or admit after cancellation', fun
     $this->postJson($this->path.'/children', ['worker' => 'parent', 'key' => 'apply'])->assertConflict()->assertJsonPath('error.code', 'operation.cancelled');
     expect($this->adapter->calls)->toBe(0);
 });
+
+it('keeps a cancelled Swamp waiting parent held until its children settle', function (): void {
+    $child = childKitAdmit($this);
+    $this->postJson($this->path.'/wait', ['worker' => 'parent', 'keys' => ['apply']])->assertOk();
+    app(\App\Actions\Operations\CancelOperationAction::class)->execute($this->parent->refresh());
+    expect($this->parent->refresh()->status)->toBe(OperationStatus::Waiting)
+        ->and($this->parent->cancel_requested_at)->not->toBeNull()
+        ->and($this->parent->lock_key)->not->toBeNull();
+    childKitFinish($this, $child);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'test.parent', 'worker' => 'resume'])->assertOk();
+    $this->postJson($this->path.'/complete', ['worker' => 'resume', 'status' => 'cancelled'])->assertOk();
+});
