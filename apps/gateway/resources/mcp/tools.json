@@ -5008,6 +5008,33 @@
       }
     },
     {
+      "name": "instance-smoke-context",
+      "extension": null,
+      "title": "instance:smoke:context",
+      "description": "instance:smoke:context",
+      "method": "GET",
+      "path": "/api/v1/instances/{instance}/smoke/context",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Instance ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance"
+        ]
+      }
+    },
+    {
       "name": "instance-teardown-step-create",
       "extension": null,
       "title": "instance:teardown-step:create",

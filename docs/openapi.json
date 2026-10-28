@@ -13967,6 +13967,78 @@
         ]
       }
     },
+    "/api/v1/instances/{instance}/smoke/context": {
+      "get": {
+        "operationId": "instance-smoke-context",
+        "summary": "instance:smoke:context",
+        "tags": [
+          "Instances"
+        ],
+        "parameters": [
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Instance ID."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/InstanceSmokeContext"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/instances/12/smoke/context\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      }
+    },
     "/api/v1/instances/{instance}/transfer": {
       "post": {
         "operationId": "instance-transfer",
@@ -37143,6 +37215,59 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "InstanceSmokeContext": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "integer"
+          },
+          "project_id": {
+            "type": "integer"
+          },
+          "repository_url": {
+            "type": "string"
+          },
+          "production": {
+            "type": "boolean"
+          },
+          "base_urls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "selected": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/InstanceSmokeSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "retained_releases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "InstanceSmokeSelection": {
+        "type": "object",
+        "properties": {
+          "deployment_id": {
+            "type": "integer"
+          },
+          "commit": {
+            "type": "string"
+          },
+          "release": {
+            "type": "string"
           }
         }
       },

@@ -447,6 +447,7 @@
               "POST /api/v1/instances/{instance}/rename",
               "POST /api/v1/instances/{instance}/rollback",
               "POST /api/v1/instances/{instance}/setup",
+              "GET /api/v1/instances/{instance}/smoke/context",
               "POST /api/v1/instances/{instance}/transfer",
               "DELETE /api/v1/instances/{instance}/websocket-apps/{websocket_app}",
               "PUT /api/v1/instances/{instance}/websocket-apps/{websocket_app}",

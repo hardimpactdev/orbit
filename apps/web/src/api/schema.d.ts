@@ -2013,6 +2013,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/instances/{instance}/smoke/context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** instance:smoke:context */
+        get: operations["instance-smoke-context"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/instances/{instance}/transfer": {
         parameters: {
             query?: never;
@@ -5066,6 +5083,20 @@ export interface components {
         DeploymentReleaseState: {
             releases?: string[];
             selected_release?: string | null;
+        };
+        InstanceSmokeContext: {
+            instance_id?: number;
+            project_id?: number;
+            repository_url?: string;
+            production?: boolean;
+            base_urls?: string[];
+            selected?: components["schemas"]["InstanceSmokeSelection"] | null;
+            retained_releases?: string[];
+        };
+        InstanceSmokeSelection: {
+            deployment_id?: number;
+            commit?: string;
+            release?: string;
         };
         WebSocketAppAttachment: {
             instance_id?: number;
@@ -12976,6 +13007,50 @@ export interface operations {
             };
             /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "instance-smoke-context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Instance ID. */
+                instance: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["InstanceSmokeContext"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
