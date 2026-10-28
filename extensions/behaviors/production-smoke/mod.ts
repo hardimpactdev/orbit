@@ -1,3 +1,4 @@
+import { failureMethod, Recovery } from "./failure.ts";
 import { z } from "npm:zod@4.4.3";
 import { gatewayHttp, type Http } from "../automatic-deploy/gateway.ts";
 import {
@@ -25,7 +26,7 @@ const Globals = z.object({
     "/usr/local/share/ca-certificates/orbit-managed-root-ca.crt",
   ),
 });
-interface Context extends ProjectConfigContext {
+export interface Context extends ProjectConfigContext {
   globalArgs: z.infer<typeof Globals>;
   signal?: AbortSignal;
   readResource(name: string): Promise<Record<string, unknown> | null>;
@@ -40,7 +41,7 @@ class GatewayError extends Error {
     super(`${code}: ${message}`);
   }
 }
-async function withinBudget<T>(
+export async function withinBudget<T>(
   ctx: Context,
   ms: number,
   run: (ctx: Context) => Promise<T>,
@@ -67,17 +68,24 @@ async function withinBudget<T>(
     signal.removeEventListener("abort", onAbort);
   }
 }
-/** No deploy, rollback, GitHub, task or merge effect belongs to this observer. */
+/** Recovery effects stay disabled in the shipped behavior. */
 export function productionSmoke(
   makeHttp?: (ctx: Context) => Http,
   clock = () => Date.now(),
   budgetMs = 120_000,
+  recoveryEffects = false,
 ) {
   return {
     type: "@nckrtl/production-smoke",
-    version: "2026.10.28.1",
+    version: "2026.10.28.2",
     globalArguments: Globals,
     resources: {
+      recovery: {
+        description: "Failure recovery intent and receipts",
+        schema: Recovery,
+        lifetime: "infinite",
+        garbageCollection: 10,
+      },
       state: {
         description: "Current observation and last proven baseline",
         schema: State,
@@ -92,6 +100,7 @@ export function productionSmoke(
       },
     },
     methods: {
+      failure: failureMethod(makeHttp, recoveryEffects, budgetMs),
       tick: {
         description:
           "Observe production; dispatch only an explicitly requested baseline",
@@ -416,6 +425,7 @@ export function productionSmoke(
               started_at: new Date(clock()).toISOString(),
               operation_id: null,
               result: null,
+              previous_good: state.known_good,
               resend_used: false,
               refusal_retry_used: false,
               refusal: null,

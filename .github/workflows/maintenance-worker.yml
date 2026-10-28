@@ -75,10 +75,10 @@ jobs:
           deno lint extensions/behaviors/_lib/review_capacity.ts tests/review_capacity_test.ts extensions/behaviors/_lib/maintenance_worker.ts extensions/behaviors/_lib/swamp_maintenance.ts tests/maintenance_worker_test.ts tests/maintenance_resources_test.ts tests/worker_enrollment_entry_test.ts extensions/behaviors/_lib/group_runs.ts extensions/behaviors/orbit_group_run.ts extensions/behaviors/orbit_group_runs.ts tests/group_runs_test.ts extensions/behaviors/_lib/stage_launch.ts tests/stage_launch_test.ts
       - name: Check smoke contracts
         run: |
-          deno fmt --check extensions/behaviors/production-smoke tests/production_smoke_test.ts tests/fixtures/production-smoke
-          deno lint extensions/behaviors/production-smoke tests/production_smoke_test.ts tests/fixtures/production-smoke
-          deno check extensions/behaviors/production-smoke/mod.ts tests/production_smoke_test.ts
-          deno test --allow-read=. tests/production_smoke_test.ts
+          deno fmt --check extensions/behaviors/production-smoke tests/production_smoke_test.ts tests/production_smoke_failure_test.ts tests/fixtures/production-smoke
+          deno lint extensions/behaviors/production-smoke tests/production_smoke_test.ts tests/production_smoke_failure_test.ts tests/fixtures/production-smoke
+          deno check extensions/behaviors/production-smoke/mod.ts tests/production_smoke_test.ts tests/production_smoke_failure_test.ts
+          deno test --allow-read=. tests/production_smoke_test.ts tests/production_smoke_failure_test.ts
       - name: Test affected driver contracts (one worker)
         run: >-
           deno test --allow-all

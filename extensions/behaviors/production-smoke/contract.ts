@@ -67,6 +67,7 @@ export const Job = z.object({
   started_at: z.string().datetime(),
   operation_id: id.nullable(),
   result: Result.nullable(),
+  previous_good: Selection.nullable().default(null),
   resend_used: z.boolean().default(false),
   refusal_retry_used: z.boolean().default(false),
   refusal: z.object({ status: z.number().int(), code: z.string() }).nullable()

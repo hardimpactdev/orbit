@@ -37,3 +37,10 @@ jobs:
           behavior: '${{ "production-smoke-" + string(inputs.projectId) }}'
           methodName: tick
           inputs: { mode: observe }
+      - name: failure-plan
+        dependsOn: [{ step: result, condition: { type: succeeded } }]
+        task:
+          type: behavior
+          behavior: '${{ "production-smoke-" + string(inputs.projectId) }}'
+          methodName: failure
+          inputs: { apply: false }

@@ -317,3 +317,5 @@ the worktree prep does not do yet; Project 46's setup steps do.
 Swamp runs the production automatic-deploy policy after the ADR 0238 Gateway cutover. Its schedule runs every minute at second 30 UTC and discovers every enabled production Instance and waits for Gateway ownership before admitting work. See [running the policy and resolving holds](docs/automatic-deploy.md).
 
 [Production smoke opt-in and the paired Gateway contract](docs/production-smoke-contract.md) cover the unscheduled read-only observer and explicit baseline admission.
+
+[Smoke failure recovery](docs/production-smoke-failure-contract.md) plans verified-failure blocks and guarded rollback; live recovery stays disabled.
