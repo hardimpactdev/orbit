@@ -17,6 +17,9 @@ use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleFollowUpReport;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
+use App\Domain\Operations\OperationSecretSource;
+use App\Infrastructure\AgentCommands\OperationAgentTransport;
+use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Nodes\AgentManagedUserAccountResolver;
 use App\Infrastructure\Nodes\AgentNodeStorageRootPreparer;
 use App\Infrastructure\Nodes\EloquentNodeRoleDependencyInspector;
@@ -24,13 +27,19 @@ use App\Infrastructure\Nodes\Metrics\GrafanaPrometheusNodeMetricsReader;
 use App\Infrastructure\Nodes\NativeNodeConverger;
 use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
 use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
+use App\Infrastructure\Nodes\NodeAgentHashSource;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
+use App\Infrastructure\Nodes\NodeBootstrapSshIdentitySource;
 use App\Infrastructure\Nodes\NodeLocks;
+use App\Infrastructure\Nodes\NodeVpnConfigurationSource;
+use App\Infrastructure\Nodes\NodeWireGuardOperationTransport;
+use App\Infrastructure\Nodes\NodeWireGuardProjectionLock;
 use App\Infrastructure\Nodes\Roles\GatewayRoleBaseline;
 use App\Infrastructure\Nodes\Roles\NativeNodeRoleFirewallManager;
 use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
 use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Infrastructure\Nodes\SshNodeReachabilityProbe;
+use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
 use Illuminate\Cache\CacheManager;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
@@ -53,6 +62,7 @@ final class NodesServiceProvider extends ServiceProvider
 
     public function register(): void
     {
+        $this->app->tag([NodeBootstrapSshIdentitySource::class, NodeAgentHashSource::class, NodeVpnConfigurationSource::class], OperationSecretSource::class);
         $this->app->singleton(
             NodeLocks::class,
             static fn ($app): NodeLocks => new NodeLocks(
@@ -60,6 +70,11 @@ final class NodesServiceProvider extends ServiceProvider
                 console: $app->runningInConsole(),
             ),
         );
+        $this->app->singleton(NodeWireGuardProjectionLock::class, static fn (): NodeWireGuardProjectionLock => new NodeWireGuardProjectionLock(Config::string('orbit.home')));
+        $this->app->bind(NodeWireGuardOperationTransport::class, static fn (): NodeWireGuardOperationTransport => new NodeWireGuardOperationTransport(
+            app(OperationAgentTransport::class), app(NodeWireGuardProjectionLock::class), app(WireGuardServerConfigRenderer::class),
+            app(ProtectedFileWriter::class), Config::string('orbit.home'),
+        ));
         $this->app->singleton(NodeRoleConvergeLock::class);
         $this->app->singleton(ManagedUserAccountResolver::class, AgentManagedUserAccountResolver::class);
         $this->app->scoped(NodeProvisioningLock::class, NativeNodeProvisioningLock::class);

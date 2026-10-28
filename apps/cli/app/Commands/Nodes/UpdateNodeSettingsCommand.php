@@ -4,18 +4,23 @@ declare(strict_types=1);
 
 namespace App\Commands\Nodes;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\NodeSettingOptions;
 use Orbit\Sdk\Requests\Nodes\UpdateNodeSettingsRequest;
-use Orbit\Sdk\Responses\Nodes\NodeResponse;
+use Orbit\Sdk\Responses\Nodes\NodeSettingsMutationResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class UpdateNodeSettingsCommand extends NodeCommand
 {
+    use FollowsOperations;
+
     #[\Override]
     protected $signature = 'node:settings
         {node : Node ID or name}
         {--setting=* : Repeatable node setting as setting-path:value}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -58,13 +63,21 @@ final class UpdateNodeSettingsCommand extends NodeCommand
                 apps: NodeSettingOptions::apps($settings['body']['apps'] ?? null),
                 hasTaskVms: array_key_exists('task_vms', $settings['body']),
                 taskVms: NodeSettingOptions::taskVms($settings['body']['task_vms'] ?? null),
+                idempotencyKey: is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null,
             ),
-            NodeResponse::class,
+            NodeSettingsMutationResponse::class,
             ['Update Node settings', 'Updating Node settings', 'Updated Node settings'],
         );
 
-        if (! $node instanceof NodeResponse) {
+        if (! $node instanceof NodeSettingsMutationResponse) {
             return self::FAILURE;
+        }
+        $node = $node->result;
+        if ($node instanceof OperationResponse) {
+            $profile = $this->activeGatewayProfile($repository);
+
+            return $profile === null ? self::FAILURE
+                : $this->followOperation($connector, $profile, $node, 'Update Node settings', 'Node settings');
         }
 
         if ($this->option('json') === true) {

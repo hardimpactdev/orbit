@@ -11,6 +11,7 @@ use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\AgentCommands\AgentStep;
 use App\Infrastructure\Files\ProtectedFileWriter;
+use App\Infrastructure\Nodes\NodeWireGuardProjectionLock;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
 use SensitiveParameter;
@@ -18,8 +19,6 @@ use SensitiveParameter;
 final readonly class NativeGatewayPeerProjectionManager implements GatewayPeerProjectionManager
 {
     private const string GENERATED_CONFIG_PATH = '/generated/wireguard/orbit.conf';
-
-    private const string LOCK_PATH = '/locks/wireguard-server.lock';
 
     public function __construct(
         private VpnConfigurationRepository $configuration,
@@ -46,7 +45,7 @@ final readonly class NativeGatewayPeerProjectionManager implements GatewayPeerPr
 
     private function project(Node $context, ?int $excludedNodeId): void
     {
-        $this->withLock(function () use ($context, $excludedNodeId): void {
+        new NodeWireGuardProjectionLock($this->orbitHome)->run(function () use ($context, $excludedNodeId): void {
             $vpn = $this->configuration->forPeer($context);
             $nodes = Node::query()->whereNotNull('wireguard_public_key');
 
@@ -85,47 +84,6 @@ final readonly class NativeGatewayPeerProjectionManager implements GatewayPeerPr
                 $failure,
             );
         }
-    }
-
-    private function withLock(callable $operation): void
-    {
-        $lockPath = $this->path(self::LOCK_PATH);
-        $directory = dirname($lockPath);
-
-        if (
-            ! is_dir($directory)
-            && ! mkdir(directory: $directory, permissions: 0o700, recursive: true)
-            && ! is_dir($directory)
-        ) {
-            throw $this->lockFailure();
-        }
-
-        chmod(filename: $directory, permissions: 0o700);
-        $lock = fopen(filename: $lockPath, mode: 'c+');
-
-        if ($lock === false) {
-            throw $this->lockFailure();
-        }
-
-        try {
-            if (! flock($lock, LOCK_EX)) {
-                throw $this->lockFailure();
-            }
-
-            $operation();
-        } finally {
-            flock($lock, LOCK_UN);
-            fclose($lock);
-        }
-    }
-
-    private function lockFailure(): NodeProvisioningException
-    {
-        return new NodeProvisioningException(
-            step: 'wireguard-server-lock',
-            errorCode: 'vpn.server_lock_failed',
-            message: 'Could not converge the gateway WireGuard service.',
-        );
     }
 
     private function failure(string $step, string $errorCode, Node $hub, CommandResult $result, \Throwable $previous): NodeProvisioningException

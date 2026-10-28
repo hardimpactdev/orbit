@@ -38,7 +38,7 @@ it('sends a partial settings patch and preserves omitted members', function (): 
         apps: new AppsSettings('/srv/orbit/apps'),
     );
 
-    $response = $connector->send($request)->dto();
+    $response = $connector->send($request)->dto()->result;
 
     expect($request->getMethod())
         ->toBe(Method::PATCH)

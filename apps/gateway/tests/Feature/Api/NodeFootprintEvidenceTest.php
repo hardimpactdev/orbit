@@ -1,0 +1,141 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Domain\Nodes\NodeFootprintEvidence;
+use App\Domain\Shared\ResourceOperationException;
+use App\Models\Operation;
+
+function footprintEvidenceOperation(array $plan, array $children = [], array $recorded = []): Operation
+{
+    return (new Operation)->forceFill(['id' => 7, 'kind' => 'node.converge', 'node_id' => 2,
+        'input' => ['first_visit' => false, 'force_artifacts' => false, '_footprint' => [
+            'artifacts' => $plan, 'children' => $children, 'recorded' => $recorded,
+        ]], 'state' => ['node_footprint_prepared' => true, 'executor_runs' => []]]);
+}
+function footprintEvidenceArtifact(string $name, bool $required = true, bool $repair = false): array
+{
+    return ['name' => $name, 'digest' => 'digest-'.$name, 'required' => $required, 'repair' => $repair];
+}
+function footprintEvidenceChild(string $artifact, string $kind, string $status = 'succeeded', array $result = [], ?string $error = null): Operation
+{
+    return (new Operation)->forceFill(['id' => 20, 'parent_operation_id' => 7, 'child_key' => 'footprint-'.$artifact,
+        'kind' => $kind, 'node_id' => 2, 'input' => [], 'status' => $status, 'result' => $result, 'error_code' => $error]);
+}
+
+it('converts artifact maps to the exact list shape and retires an absent artifact', function (): void {
+    $operation = footprintEvidenceOperation([footprintEvidenceArtifact('agent', false)], recorded: ['agent' => 'digest-agent', 'retired' => 'old']);
+    $derived = app(NodeFootprintEvidence::class)->derive($operation, []);
+
+    expect($derived['result']['artifacts'])->toBe([['name' => 'agent', 'status' => 'unchanged', 'reason' => null]])
+        ->and($derived['result']['skipped'])->toBe([])
+        ->and($derived['result']['changed'])->toBeFalse()
+        ->and($derived['recorded'])->toBe(['agent' => 'digest-agent']);
+});
+
+it('proves direct effects from run receipts instead of caller-posted steps', function (bool $forged): void {
+    $operation = footprintEvidenceOperation([footprintEvidenceArtifact('tmpfiles')]);
+    $state = $forged ? ['steps' => ['footprint-tmpfiles' => ['changed' => true]]]
+        : ['executor_runs' => ['footprint-tmpfiles' => ['transport' => 'agent', 'name' => 'node.publish-tmpfiles', 'result' => ['changed' => false]]]];
+    $operation->state = $state;
+    if ($forged) {
+        expect(fn () => app(NodeFootprintEvidence::class)->derive($operation, []))->toThrow(ResourceOperationException::class);
+    } else {
+        $derived = app(NodeFootprintEvidence::class)->derive($operation, []);
+        expect($derived['result']['artifacts'])->toBe([['name' => 'tmpfiles', 'status' => 'unchanged', 'reason' => null]]);
+    }
+})->with([true, false]);
+
+it('reports only a verified failed child in the skipped list', function (): void {
+    $operation = footprintEvidenceOperation([footprintEvidenceArtifact('caddy')], ['caddy' => ['kind' => 'route.caddy_converge', 'node_id' => 2, 'input' => []]]);
+    $child = footprintEvidenceChild('caddy', 'route.caddy_converge', 'failed', ['stage' => 'render'], 'caddy.render_failed');
+    $derived = app(NodeFootprintEvidence::class)->derive($operation, [$child]);
+
+    expect($derived['result']['artifacts'])->toBe([['name' => 'caddy', 'status' => 'skipped', 'reason' => 'caddy_render_refused']])
+        ->and($derived['result']['skipped'])->toBe([['child_id' => 20, 'key' => 'footprint-caddy', 'kind' => 'route.caddy_converge', 'reason' => 'caddy_render_refused']])
+        ->and($derived['error_code'])->toBeNull();
+});
+
+it('fails first-Node Caddy validation for changed code while preserving live repair skips', function (bool $first, bool $repair): void {
+    $operation = footprintEvidenceOperation([footprintEvidenceArtifact('caddy', repair: $repair)], ['caddy' => ['kind' => 'route.caddy_converge', 'node_id' => 2, 'input' => []]]);
+    $input = $operation->input;
+    $input['first_visit'] = $first;
+    $operation->input = $input;
+    $child = footprintEvidenceChild('caddy', 'route.caddy_converge', 'failed', ['stage' => 'validate'], 'caddy.validate_failed');
+    $derived = app(NodeFootprintEvidence::class)->derive($operation, [$child]);
+
+    expect($derived['error_code'])->toBe($first && ! $repair ? 'node.footprint_caddy_failed' : null)
+        ->and($derived['recorded'])->toBe(['caddy' => 'digest-caddy'])
+        ->and($derived['result']['skipped'][0]['child_id'])->toBe(20);
+})->with([[true, false], [true, true], [false, false]]);
+
+it('refuses an unrelated, moved or unsettled child', function (string $variant): void {
+    $operation = footprintEvidenceOperation([footprintEvidenceArtifact('caddy')], ['caddy' => ['kind' => 'route.caddy_converge', 'node_id' => 2, 'input' => []]]);
+    $child = footprintEvidenceChild('caddy', 'route.caddy_converge');
+    $child->forceFill(match ($variant) {
+        'parent' => ['parent_operation_id' => 8], 'node' => ['node_id' => 3], 'kind' => ['kind' => 'route.private_dns_publish'],
+        'key' => ['child_key' => 'another-key'], 'input' => ['input' => ['reason' => 'unadmitted']], 'pending' => ['status' => 'running'],
+    });
+
+    expect(fn () => app(NodeFootprintEvidence::class)->derive($operation, [$child]))->toThrow(ResourceOperationException::class);
+})->with(['parent', 'node', 'kind', 'key', 'input', 'pending']);
+
+it('retains unreached digests and forgets the failed artifact', function (): void {
+    $operation = footprintEvidenceOperation([footprintEvidenceArtifact('tmpfiles'), footprintEvidenceArtifact('caddy')], recorded: ['tmpfiles' => 'old-tmp', 'caddy' => 'old-caddy']);
+    $operation->state = ['executor_runs' => ['footprint-tmpfiles' => ['transport' => 'agent', 'name' => 'node.publish-tmpfiles', 'result' => ['error_code' => 'node.tmpfiles_failed']]]];
+    $derived = app(NodeFootprintEvidence::class)->derive($operation, []);
+
+    expect($derived['recorded'])->toBe(['caddy' => 'old-caddy'])
+        ->and($derived['error_code'])->toBe('node.tmpfiles_failed');
+});
+
+it('forgets the agent digest after a failed install before configuration', function (): void {
+    $operation = footprintEvidenceOperation([footprintEvidenceArtifact('agent')], recorded: ['agent' => 'old-agent']);
+    $operation->state = ['executor_runs' => ['footprint-agent-install' => ['transport' => 'node-agent', 'name' => 'agent.install', 'result' => ['error_code' => 'agent.install_failed']]]];
+    $derived = app(NodeFootprintEvidence::class)->derive($operation, []);
+
+    expect($derived['recorded'])->toBe([])->and($derived['error_code'])->toBe('agent.install_failed');
+});
+
+it('skips failed residue cleanup but stops on private DNS failure', function (bool $residue): void {
+    $artifact = $residue ? 'route-residue' : 'private-dns';
+    $kind = $residue ? 'route.offline_residue_clean' : 'route.private_dns_publish';
+    $operation = footprintEvidenceOperation([footprintEvidenceArtifact($artifact)], [$artifact => ['kind' => $kind, 'node_id' => 2, 'input' => []]]);
+    $child = footprintEvidenceChild($artifact, $kind, 'failed', [], 'route.cleanup_failed');
+    if (! $residue) {
+        $operation->state = ['executor_runs' => ['footprint-private-dns-listener' => ['transport' => 'agent', 'name' => 'node.install-private-dns-listener', 'result' => ['installed' => true]]]];
+    }
+    $derived = app(NodeFootprintEvidence::class)->derive($operation, [$child]);
+
+    expect($derived['error_code'])->toBe($residue ? null : 'route.cleanup_failed')
+        ->and($derived['result']['skipped'])->toHaveCount(1);
+})->with([true, false]);
+
+it('requires proven listener setup before accepting private DNS publication', function (string $variant): void {
+    $operation = footprintEvidenceOperation([footprintEvidenceArtifact('private-dns')], ['private-dns' => ['kind' => 'route.private_dns_publish', 'node_id' => 2, 'input' => []]]);
+    $child = footprintEvidenceChild('private-dns', 'route.private_dns_publish');
+    $run = ['transport' => 'agent', 'name' => 'node.install-private-dns-listener', 'result' => ['installed' => true]];
+    if ($variant === 'transport') {
+        $run['transport'] = 'remote_program';
+    }
+    if ($variant === 'command') {
+        $run['name'] = 'node.publish-tmpfiles';
+    }
+    if ($variant === 'result') {
+        $run['result'] = ['changed' => true];
+    }
+    $operation->state = ['executor_runs' => $variant === 'missing' ? [] : ['footprint-private-dns-listener' => $run]];
+    if ($variant === 'proven') {
+        expect(app(NodeFootprintEvidence::class)->derive($operation, [$child])['error_code'])->toBeNull();
+    } else {
+        expect(fn () => app(NodeFootprintEvidence::class)->derive($operation, [$child]))->toThrow(ResourceOperationException::class);
+    }
+})->with(['missing', 'transport', 'command', 'result', 'proven']);
+
+it('drops the private DNS digest when listener setup fails before child admission', function (): void {
+    $operation = footprintEvidenceOperation([footprintEvidenceArtifact('private-dns')], ['private-dns' => ['kind' => 'route.private_dns_publish', 'node_id' => 2, 'input' => []]], ['private-dns' => 'old']);
+    $operation->state = ['executor_runs' => ['footprint-private-dns-listener' => ['transport' => 'agent', 'name' => 'node.install-private-dns-listener', 'result' => ['error_code' => 'node.private_dns_listener_failed']]]];
+    $derived = app(NodeFootprintEvidence::class)->derive($operation, []);
+    expect($derived['error_code'])->toBe('node.private_dns_listener_failed')
+        ->and($derived['recorded'])->toBe([])->and($derived['result']['skipped'])->toBe([]);
+});

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Commands\Nodes;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
@@ -12,15 +13,18 @@ use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeAccessRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
-use Orbit\Sdk\Responses\Nodes\RemovedNodeAccessResponse;
+use Orbit\Sdk\Responses\Nodes\NodeAccessMutationResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class RemoveNodeAccessCommand extends NodeCommand
 {
+    use FollowsOperations;
     #[\Override]
     protected $signature = 'node:access:remove
         {consumer : Numeric consumer node ID}
         {serving : Numeric serving node ID}
         {--force : Skip the destructive confirmation prompt}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -62,13 +66,33 @@ final class RemoveNodeAccessCommand extends NodeCommand
 
         $access = $this->sendWithProgress(
             $connector,
-            new RemoveNodeAccessRequest($consumerId, $servingId),
-            RemovedNodeAccessResponse::class,
+            new RemoveNodeAccessRequest($consumerId, $servingId,
+                is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null),
+            NodeAccessMutationResponse::class,
             ['Remove Node access', 'Removing Node access', 'Removed Node access'],
         );
 
-        if (! $access instanceof RemovedNodeAccessResponse) {
+        if (! $access instanceof NodeAccessMutationResponse) {
             return self::FAILURE;
+        }
+        $access = $access->result;
+        if ($access instanceof OperationResponse) {
+            $intent = $access->input['access'] ?? null;
+            if (is_array($intent) && ($intent['self_lockout'] ?? false) === true) {
+                if ($this->option('json') === true) {
+                    $this->writeJson($access->toArray());
+                } else {
+                    $this->writeHumanMessage("Gateway access removal queued as Operation #{$access->id}.");
+                    $this->writeHumanMessage('This Node will lose Gateway access. Check stream revocation from another authorized Node.');
+                    $this->writeHumanMessage("Request ID: {$access->requestId}");
+                }
+
+                return self::SUCCESS;
+            }
+            $profile = $this->activeGatewayProfile($repository);
+
+            return $profile === null ? self::FAILURE
+                : $this->followOperation($connector, $profile, $access, 'Remove Node access', 'Node access');
         }
 
         if ($this->option('json') === true) {

@@ -61,6 +61,7 @@ final readonly class PrivateDnsFootprintArtifact implements NodeFootprintArtifac
             'app/Infrastructure/AppDev/DnsmasqPrivateDnsManager.php',
             'app/Infrastructure/AppDev/DevelopmentDnsConfigRenderer.php',
             'app/Infrastructure/AppDev/PrivateDnsListenerUnitRenderer.php',
+            'app/Infrastructure/Nodes/NodePrivateDnsListenerFootprint.php',
             ...SourceClosure::of([], array_map(
                 static fn (ContributedPrivateHostnames $records): string => $records::class,
                 array_values([...$this->contributions]),

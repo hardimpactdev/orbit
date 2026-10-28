@@ -55,7 +55,7 @@ it('keeps constructor order as consumer then serving while the remove endpoint s
     $connector = node_access_gateway_connector($mockClient);
     $request = new RemoveNodeAccessRequest(consumerNodeId: 2, servingNodeId: 3);
 
-    $response = $connector->send($request)->dto();
+    $response = $connector->send($request)->dto()->result;
     $pendingRequest = $mockClient->getLastPendingRequest();
 
     expect($request->getMethod())

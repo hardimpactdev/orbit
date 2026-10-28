@@ -136,14 +136,14 @@ Human output shows bytes and durations in readable units. JSON keeps the raw num
 Re-apply the Gateway-rendered Orbit footprint of a Node: its agent files, Caddyfile, private-DNS listener on the `vpn` Node, and AI router collector. The fleet rollout runs the same step on each Node. It never changes an Instance or a role, so it works on a Node that owns Instances, unlike `node:add`.
 
 ```bash
-orbit node:converge <node> [--force] [--json]
+orbit node:converge <node> [--force] [--idempotency-key=KEY] [--json]
 ```
 
 | Option | Meaning |
 | --- | --- |
 | `--force` | Re-apply every artifact, not only the ones whose digest changed. Each artifact still leaves a matching live copy alone |
 
-The table lists each artifact as `applied` or `unchanged`, then the Node's footprint digest. When every digest matches the one the Node last received, the Gateway sends the Node no command. A Node that is not an active, managed Linux Node fails with `node.converge_unsupported`. [Converge the Orbit footprint](/reference/node-provisioning#converge-the-orbit-footprint) lists the artifacts and error codes.
+The Gateway returns an Operation with status 202. The CLI follows its steps. JSON output contains its final receipt, including `artifacts` and `skipped` as declared lists. Each artifact has `name`, `status` (`applied`, `unchanged`, or `skipped`), and nullable `reason`. Each skipped child has `child_id`, `key`, `kind`, and `reason`. When the digests match and the baseline finds no owned drift, Swamp applies no Node artifact. A Node that is not an active, managed Linux Node fails with `node.converge_unsupported`. [Converge the Orbit footprint](/reference/node-provisioning#converge-the-orbit-footprint) lists the artifacts and error codes.
 
 ```bash
 orbit node:converge beast
@@ -170,12 +170,14 @@ After a rename, callers must use the new name or the numeric ID. The WireGuard h
 Set the apps root of a Node, the directory under which the Gateway creates development Instance checkouts.
 
 ```bash
-orbit node:settings <node> --setting=apps.path:/mnt/apps [--json]
+orbit node:settings <node> --setting=apps.path:/mnt/apps [--idempotency-key=KEY] [--json]
 ```
 
 Configure a task VM host with `--setting='task_vms:{"cidr":"10.251.77.0/24","max_vms":4,"pool":"orbit-tasks","image_alias":"orbit-task-base"}'`. The JSON object supports the [typed host fields](/reference/node-settings#configure-a-task-vm-host); it has no `node_id` because the selected Node supplies its identity. This example is not the live configuration of any host. Preserve the host's current values when changing it. Use `--setting=task_vms:null` to remove host intent after destroying its task VMs. An `app-dev` role alone never makes a Node a task VM host.
 
 The command needs at least one `--setting`. It sends `{"apps":{"path":"/mnt/apps"}}` to the settings API, without a `settings` wrapper. An empty value unsets the path: `--setting=apps.path:` sends `{"apps":{"path":null}}`. The [API reference](/api/overview) and [MCP](/reference/mcp) publish the same nullable path inside a closed `apps` object. A change never moves an existing checkout. [Node settings](/reference/node-settings#validation) lists the validation rules and failure codes.
+
+Apps-root checks return an Operation. The CLI follows it and JSON returns the final Operation. A state-only patch returns the updated Node immediately. Use `--idempotency-key` to retry an apps-root change after a lost admission reply.
 
 ## orbit node:wireguard-key
 

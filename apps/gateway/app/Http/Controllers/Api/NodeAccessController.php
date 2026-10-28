@@ -6,10 +6,13 @@ namespace App\Http\Controllers\Api;
 
 use App\Actions\Nodes\AddNodeAccessAction;
 use App\Actions\Nodes\RemoveNodeAccessAction;
+use App\Data\Operations\OperationData;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Operations\StartsOperation;
 use App\Models\Node;
+use App\Models\Operation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -28,6 +31,7 @@ final class NodeAccessController extends Controller
         ]);
     }
 
+    #[StartsOperation('node.access_remove')]
     public function destroy(
         Request $request,
         Node $servingNode,
@@ -37,10 +41,12 @@ final class NodeAccessController extends Controller
         $caller = $request->user();
         assert($caller instanceof Node, description: 'Authenticated peer must be a Node.');
 
+        $result = $action->start($consumerNode, $servingNode, $caller, $request->attributes->getString('orbit.request_id'));
+
         return response()->json([
-            'data' => $action->execute($consumerNode, $servingNode, $caller)->toArray(),
+            'data' => $result instanceof Operation ? OperationData::fromModel($result)->toArray() : $result->toArray(),
             'meta' => $this->meta($request),
-        ]);
+        ], $result instanceof Operation ? 202 : 200);
     }
 
     /** @return array{request_id: string} */

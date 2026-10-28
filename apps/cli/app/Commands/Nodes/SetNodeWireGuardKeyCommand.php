@@ -4,20 +4,23 @@ declare(strict_types=1);
 
 namespace App\Commands\Nodes;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Laravel\Prompts\TextPrompt;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Requests\Nodes\SetNodeWireGuardKeyRequest;
-use Orbit\Sdk\Responses\Nodes\NodeResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Orbit\Sdk\Responses\Nodes\NodesResponse;
 
 final class SetNodeWireGuardKeyCommand extends NodeCommand
 {
+    use FollowsOperations;
     #[\Override]
     protected $signature = 'node:wireguard-key
         {node? : Node ID or name}
         {public-key? : Canonical WireGuard public key}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -88,23 +91,17 @@ final class SetNodeWireGuardKeyCommand extends NodeCommand
             return self::FAILURE;
         }
 
-        $node = $this->sendWithProgress($connector, new SetNodeWireGuardKeyRequest($nodeId, $publicKey), NodeResponse::class,
-            ['Set Node WireGuard key', 'Setting Node WireGuard key', 'Set Node WireGuard key']);
-
-        if (! $node instanceof NodeResponse) {
+        $operation = $this->sendWithProgress($connector,
+            new SetNodeWireGuardKeyRequest($nodeId, $publicKey,
+                is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null),
+            OperationResponse::class, ['Set Node WireGuard key', 'Setting Node WireGuard key', 'Set Node WireGuard key']);
+        if (! $operation instanceof OperationResponse) {
             return self::FAILURE;
         }
+        $profile = $this->activeGatewayProfile($repository);
 
-        if ($this->option('json') === true) {
-            $this->writeJson($node->toArray());
-
-            return self::SUCCESS;
-        }
-
-        $this->writeHumanMessage("WireGuard public key set for Node #{$node->id} [{$node->name}].");
-        $this->writeHumanMessage("Request ID: {$node->requestId}");
-
-        return self::SUCCESS;
+        return $profile === null ? self::FAILURE
+            : $this->followOperation($connector, $profile, $operation, 'Set Node WireGuard key', 'Node WireGuard key');
     }
 
     private function validKey(string $value): bool

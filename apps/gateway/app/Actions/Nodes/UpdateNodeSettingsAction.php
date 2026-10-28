@@ -4,22 +4,23 @@ declare(strict_types=1);
 
 namespace App\Actions\Nodes;
 
+use App\Actions\Operations\StartOperationAction;
 use App\Data\Nodes\NodeData;
 use App\Data\Nodes\NodeSettingsData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
-use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ConfiguredStoragePathValidator;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\NodeSettingsPatch;
-use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
-use App\Domain\Nodes\Storage\StoragePath;
+use App\Domain\Operations\AwaitOperation;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Models\Node;
+use App\Models\Operation;
+use Illuminate\Support\Facades\DB;
 
 final readonly class UpdateNodeSettingsAction
 {
@@ -27,37 +28,52 @@ final readonly class UpdateNodeSettingsAction
         private NodeSettingsNormalizer $normalizer,
         private ConfiguredStoragePathValidator $validator,
         private ManagedUserAccountResolver $accounts,
-        private NodeStorageRootPreparer $preparer,
+        private StartOperationAction $operations,
         private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
+    public function start(Node $node, NodeSettingsPatch $patch, ?Node $caller = null, ?string $requestId = null): Node|Operation
+    {
+        return DB::transaction(function () use ($node, $patch, $caller, $requestId): Node|Operation {
+            $node->refresh();
+            $merged = $patch->merge($this->normalizer->fromStored($node->settings));
+            $normalized = $this->normalizer->normalize($merged);
+            $this->validateHostBridge($node, $normalized);
+            $this->validator->validateGrammar($normalized);
+            $create = $this->hasActiveAppDevRole($node);
+            if (! $patch->hasApps || (! $create && $normalized?->appsPath() === null)) {
+                $this->persist($node, $normalized);
+                ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+                    RecordEventType::NodeUpdated, $node->id, NodeData::fromModel($node)->toArray(),
+                );
+
+                return $node;
+            }
+
+            $account = $this->accounts->resolve($node);
+            $root = $this->validator->validateEffective($normalized, $node, $account);
+
+            return $this->operations->execute('node.settings', 'node', $node->id, $node->id, [
+                'node_id' => $node->id, 'caller_node_id' => $caller?->id,
+                'root' => $root->value, 'user' => $account->user, 'group' => $account->group,
+                'create_missing' => $create, 'settings' => $this->normalizer->stored($normalized),
+            ], 'operator', $requestId);
+        });
+    }
+
     public function execute(Node $node, NodeSettingsPatch $patch): Node
     {
-        $merged = $patch->merge($this->normalizer->fromStored($node->settings));
-        $normalized = $this->normalizer->normalize($merged);
-        $this->validateHostBridge($node, $normalized);
-        if ($patch->hasApps) {
-            $this->apply($node, $normalized);
-        } else {
-            $this->persist($node, $normalized);
+        $result = $this->start($node, $patch);
+        if ($result instanceof Operation) {
+            app(AwaitOperation::class)->execute($result);
         }
 
-        $result = $node->refresh();
-
-        ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
-            RecordEventType::NodeUpdated,
-            $result->id,
-            NodeData::fromModel($result)->toArray(),
-        );
-
-        return $result;
+        return $node->refresh();
     }
 
     public function persistDuringProvisioning(Node $node, ?NodeSettingsData $settings): void
     {
-        $normalized = $this->normalizer->normalize($settings);
-        $this->validateHostBridge($node, $normalized);
-        $this->apply($node, $normalized);
+        $this->execute($node, new NodeSettingsPatch(true, $settings?->apps, true, $settings?->task_vms));
     }
 
     private function validateHostBridge(Node $node, ?NodeSettingsData $settings): void
@@ -79,51 +95,10 @@ final readonly class UpdateNodeSettingsAction
         }
     }
 
-    private function apply(Node $node, ?NodeSettingsData $normalized): void
-    {
-        $this->validator->validateGrammar($normalized);
-
-        if ($this->hasActiveAppDevRole($node)) {
-            $this->prepareEffectiveRoots($node, $normalized);
-            $this->persist($node, $normalized);
-
-            return;
-        }
-
-        if ($normalized instanceof NodeSettingsData) {
-            $this->inspectConfiguredRoots($node, $normalized);
-        }
-
-        $this->persist($node, $normalized);
-    }
-
-    private function prepareEffectiveRoots(Node $node, ?NodeSettingsData $normalized): void
-    {
-        $account = $this->accounts->resolve($node);
-        $roots = $this->validator->validateEffective($normalized, $node, $account);
-        $this->preparer->prepare($node, $account, $roots);
-    }
-
-    private function inspectConfiguredRoots(Node $node, NodeSettingsData $settings): void
-    {
-        $account = $this->accounts->resolve($node);
-        $this->validator->validateEffective($settings, $node, $account);
-        $this->inspectExplicitRoots($node, $account, $settings);
-    }
-
     private function persist(Node $node, ?NodeSettingsData $normalized): void
     {
         $node->settings = $this->normalizer->storedOver($node->settings, $normalized);
         $node->save();
-    }
-
-    private function inspectExplicitRoots(Node $node, ManagedUserAccount $account, NodeSettingsData $settings): void
-    {
-        $path = $settings->appsPath();
-
-        if (is_string($path) && $path !== '') {
-            $this->preparer->inspect($node, $account, StoragePath::parse($path));
-        }
     }
 
     private function hasActiveAppDevRole(Node $node): bool

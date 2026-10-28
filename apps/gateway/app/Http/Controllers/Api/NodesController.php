@@ -13,6 +13,7 @@ use App\Actions\Nodes\ShowNodeAction;
 use App\Actions\Nodes\UpdateNodeSettingsAction;
 use App\Data\Nodes\NodeAccessData;
 use App\Data\Nodes\NodeData;
+use App\Data\Operations\OperationData;
 use App\Data\Projects\DevelopmentNodeExclusionData;
 use App\Domain\Nodes\NodeUpdates;
 use App\Domain\Projects\DevelopmentNodeExclusion;
@@ -24,7 +25,9 @@ use App\Http\Requests\Nodes\RemoveNodeRequest;
 use App\Http\Requests\Nodes\RenameNodeRequest;
 use App\Http\Requests\Nodes\SetNodeWireGuardKeyRequest;
 use App\Http\Requests\Nodes\UpdateNodeSettingsRequest;
+use App\Http\Requests\Operations\StartsOperation;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\ProjectNodeExclusion;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -118,29 +121,39 @@ final class NodesController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::Target)]
+    #[StartsOperation('node.wireguard_key')]
     public function wireguardKey(
         SetNodeWireGuardKeyRequest $request,
         Node $node,
         SetNodeWireGuardKeyAction $action,
     ): JsonResponse {
-        $node = $action->execute($node, $request->publicKey());
+        $operation = $action->start($node, $request->publicKey(), $request->attributes->getString('orbit.request_id'));
 
         return response()->json([
-            'data' => NodeData::fromModel($node)->toArray(),
+            'data' => OperationData::fromModel($operation)->toArray(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
-        ]);
+        ], 202);
     }
 
     #[RequiresNodeAccess(ServingNode::Target)]
+    #[StartsOperation('node.settings')]
     public function settings(
         UpdateNodeSettingsRequest $request,
         Node $node,
         UpdateNodeSettingsAction $action,
     ): JsonResponse {
-        $node = $action->execute($node, $request->payload());
+        $caller = $request->user();
+        $result = $action->start($node, $request->payload(), $caller instanceof Node ? $caller : null,
+            $request->attributes->getString('orbit.request_id'));
+        if ($result instanceof Operation) {
+            return response()->json([
+                'data' => OperationData::fromModel($result)->toArray(),
+                'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
+            ], 202);
+        }
 
         return response()->json([
-            'data' => NodeData::fromModel($node)->toArray(),
+            'data' => NodeData::fromModel($result)->toArray(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
         ]);
     }

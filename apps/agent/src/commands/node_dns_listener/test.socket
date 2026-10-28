@@ -1,0 +1,11 @@
+[Unit]
+Description=Orbit private DNS sockets
+
+[Socket]
+ListenDatagram=10.0.0.1:53
+ListenStream=10.0.0.1:53
+FreeBind=yes
+Service=orbit-private-dns.service
+
+[Install]
+WantedBy=sockets.target

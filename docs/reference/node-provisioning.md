@@ -14,7 +14,7 @@ covers:
 
 # Node provisioning
 
-`orbit node:add <name> [host]` adds a machine to the fleet. For a Node that already exists, the same command converges it again after you change its TLD, roles, or settings. `orbit node:remove <node>` removes the Node from Orbit and leaves the machine reachable over public SSH. [`node`](/cli/node) lists the options.
+`orbit node:add <name> [host]` adds a machine to the fleet. For a Node that already exists, the same command converges it again after you change its TLD, roles, or settings. `orbit node:remove <node>` removes the Node from Orbit and leaves the machine reachable over public SSH. [`node`](/cli/node) lists the options. [Node Operations in Swamp](/reference/node-swamp-operations) defines the execution contracts and cleanup evidence for the conversion.
 
 ## Add a Node
 
