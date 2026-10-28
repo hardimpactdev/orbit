@@ -25,6 +25,22 @@ final readonly class OperationSecretValue implements JsonSerializable
         return new self($contents, [$contents]);
     }
 
+    /** Known values with no protected bytes keep their native schema type without a mask. */
+    public function requiresRedaction(): bool
+    {
+        if ($this->value === null || $this->value === '' || $this->value === []) {
+            return false;
+        }
+        if ($this->value instanceof GitReadEnvironment) {
+            return ! $this->value->isEmpty() || $this->value->githubToken() !== null;
+        }
+        if (is_object($this->value) && $this->value::class === \stdClass::class) {
+            return get_object_vars($this->value) !== [];
+        }
+
+        return true;
+    }
+
     /** @return list<string> */
     public function strings(): array
     {
