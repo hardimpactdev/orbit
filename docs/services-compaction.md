@@ -66,13 +66,15 @@ Unset server URL variables for the local query. On restart, run local
 `swamp run doctor --fix --json` once before resuming schedules, then restore
 only the schedules in the saved snapshot. Check the active/queued run counts,
 Gateway receipts and one existing group's owner before resuming normal work.
-A shipped `runtime-retention` workflow runs every five minutes at second 20,
-under its own model lock. Each pass removes at most 5,000 paths through native
+A shipped `runtime-retention` workflow runs hourly at minute 17, second 20,
+under its own model lock. Serve dispatches a separate native CLI process; it
+does not import the planner or parse history. The executor has a two-minute
+deadline and its own native model lock. Every run uses local repository APIs,
+with remote URL environment variables cleared. Each pass removes at most 5,000 paths through native
 data deletion and preserves the shared catalog. It excludes active model writers,
 keeps at least one hour of fresh versions, and rechecks each producer's latest
-version before deleting. New writes defer that name until the next pass. That
-budget exceeds the bounded four-drive write rate; the offline initial pass
-clears the existing backlog before schedules resume. Terminal histories and
+version before deleting. New writes defer that name until the next pass. Use the offline initial pass to clear an existing backlog before schedules resume;
+the online pass has a fixed budget and does not promise to drain a backlog. Terminal histories and
 unused auto-definitions age out after seven days. This thread changes no live
 schedule or service; the workflow takes effect when Nick deploys it.
 
@@ -82,3 +84,14 @@ live receipts reference. Do not substitute a broad `data gc`, `run gc`,
 `data prune`, `behavior delete` or a recursive directory deletion. None can
 express this receipt-protection rule. `swamp datastore compact` only vacuums
 its SQLite catalog; it does not reclaim these version/history files.
+
+## Saturation correction (2026-10-28)
+
+The first online pruner loaded all workflow snapshots into serve and filtered
+the full snapshot array once per referenced run. The observed pass took
+531 seconds; it starved the event loop even though deletions were capped.
+The corrected executor indexes snapshots, run IDs, model names and output
+provenance once. Planning runs outside serve with a fixed deadline. A child
+failure preserves the remaining history for the next run; no receipt clearing
+or broad GC is part of recovery. A deployment restart stops the old in-process
+pass; updating code alone cannot move that already-running JavaScript frame.

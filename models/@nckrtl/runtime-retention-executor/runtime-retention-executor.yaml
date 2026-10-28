@@ -1,0 +1,8 @@
+type: '@nckrtl/runtime-retention-executor'
+typeVersion: 2026.10.28.2
+id: dbfdbfae-6654-42dc-9079-079eb6e0c086
+name: runtime-retention-executor
+version: 1
+tags: {}
+globalArguments: {}
+methods: {}

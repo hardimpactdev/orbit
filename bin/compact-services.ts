@@ -1,4 +1,4 @@
-#!/usr/bin/env -S deno run --allow-read --allow-write
+#!/usr/bin/env -S deno run -A
 /** Receipt-aware initial compaction and bounded native runtime pruning. */
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { dirname, join, resolve, relative } from "jsr:@std/path@1.1.4";
@@ -114,6 +114,12 @@ async function compactUnlocked(repo: string, apply = false, now = Date.now(), na
   }
   const evaluated = await records(join(repo, ".swamp/workflows-evaluated"));
   const snapshots = evaluated.filter((r)=>r.path.includes("/runs/"));
+  const runsById = new Map(runs.map((r)=>[String(r.value.id),r]));
+  const snapshotsByRun = new Map<string,RecordFile[]>();
+  for(const snapshot of snapshots){
+    const id=snapshot.path.split("/runs/")[1]?.split("/")[0];
+    if(id){const bucket=snapshotsByRun.get(id)??[];bucket.push(snapshot);snapshotsByRun.set(id,bucket);}
+  }
   const live = runs.filter((r) => !terminal.has(String(r.value.status)));
   for (const r of live) refs(r.value, pins, versions);
   // A receipt can name a completed child; preserve its own outputs and children.
@@ -131,16 +137,18 @@ async function compactUnlocked(repo: string, apply = false, now = Date.now(), na
       const id = String(r.value.id);
       if (pins.has(id) && !seen.has(id)) {
         seen.add(id); refs(r.value, pins, versions);
-        for (const snapshot of snapshots.filter((s) => s.path.includes(`/runs/${id}/`))) refs(snapshot.value,pins,versions);
+        for (const snapshot of snapshotsByRun.get(id) ?? []) refs(snapshot.value,pins,versions);
         changed = true;
       }
     }
   }
   const outputs = await records(join(repo,".swamp/outputs"));
   const activeModels = new Set(outputs.filter((r)=>!terminal.has(String(r.value.status))).map((r)=>String(r.value.definitionId)));
+  const idsByModelName = new Map<string,Set<string>>();
+  for(const row of latest){const name=decode(row.tags).modelName;const bucket=idsByModelName.get(name)??new Set<string>();bucket.add(row.model_id);idsByModelName.set(name,bucket);}
   for (const run of live) {
     const definition = (run.value.inputs as Record<string,unknown> | undefined)?.definition;
-    for (const row of latest) if (definition && decode(row.tags).modelName === definition) activeModels.add(row.model_id);
+    if (typeof definition === "string") for(const id of idsByModelName.get(definition) ?? []) activeModels.add(id);
   }
   const latestVersions = new Map(latest.map((r)=>[`${r.model_id}/${r.data_name}`,r.version]));
   const remove: string[] = [];
@@ -165,11 +173,13 @@ async function compactUnlocked(repo: string, apply = false, now = Date.now(), na
   }
   for (const r of evaluated) {
     const runId = String(r.value.runId ?? r.value.workflowRunId ?? r.path.split("/runs/")[1]?.split("/")[0] ?? "");
-    const orphan = runId && !runs.some((run) => run.value.id === runId) && (await Deno.stat(r.path)).mtime!.getTime() < now - 7 * DAY;
+    const orphan = runId && !runsById.has(runId) && (await Deno.stat(r.path)).mtime!.getTime() < now - 7 * DAY;
     if (deletedRuns.has(runId) || orphan) remove.push(r.path);
   }
   for (const r of outputs) {
-    if (terminal.has(String(r.value.status)) && !pins.has(String(r.value.id)) && Date.parse(String(r.value.completedAt ?? r.value.startedAt)) < now - 7 * DAY && ![...pins].some((id) => JSON.stringify(r.value.provenance ?? {}).includes(id))) {
+    const outputPins = new Set<string>();
+    refs(r.value.provenance,outputPins,new Set());
+    if (terminal.has(String(r.value.status)) && !pins.has(String(r.value.id)) && Date.parse(String(r.value.completedAt ?? r.value.startedAt)) < now - 7 * DAY && ![...outputPins].some((id) => pins.has(id))) {
       remove.push(r.path);
       const recorded = typeof r.value.logFile === "string" ? resolve(repo,r.value.logFile) : r.path.replace(/\.yaml$/, ".log");
       if (dirname(recorded) === dirname(r.path) && recorded.endsWith(".log")) {
@@ -177,11 +187,13 @@ async function compactUnlocked(repo: string, apply = false, now = Date.now(), na
       }
     }
   }
+  const liveDefinitions=new Set<string>();
+  for(const run of live){const values=new Set<string>();refs(run.value,values,new Set());for(const value of values)liveDefinitions.add(value);const inputs=run.value.inputs as Record<string,unknown>|undefined;if(typeof inputs?.definition==="string")liveDefinitions.add(inputs.definition);}
   const retire = (await records(join(repo, ".swamp/auto-definitions"))).filter((r) => {
     const name = String(r.value.name);
     const workItem = /^orbit-group-(?:recovery-)?(tg-[1-9]\d*)$/.exec(name)?.[1];
     return normalized(String(r.value.type)) === "nckrtl/orbit-group-run" && workItem && finished.has(workItem) &&
-      !pins.has(String(r.value.id)) && !live.some((run) => JSON.stringify(run.value).includes(name));
+      !pins.has(String(r.value.id)) && !liveDefinitions.has(name);
   });
   // Refuse unsafe or unexpected paths before any mutation.
   for (const path of [...remove, ...retire.map((r) => r.path)]) {

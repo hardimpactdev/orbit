@@ -29,7 +29,7 @@ export const behavior={type:"@nckrtl/orbit-group-run",version:"2026.10.28.1",glo
     db.close();
     const runDir=join(root,".swamp/workflow-runs/fixture");
     await Deno.mkdir(runDir,{recursive:true});
-    const run=(id:string,status:string,extra:Record<string,unknown>={})=>Deno.writeTextFile(join(runDir,`workflow-run-${id}.yaml`),JSON.stringify({id,status,startedAt:"2020-01-01T00:00:00Z",completedAt:"2020-01-01T00:01:00Z",...extra}));
+    const run=(id:string,status:string,extra:Record<string,unknown>={})=>Deno.writeTextFile(join(runDir,`workflow-run-${id}.yaml`),JSON.stringify({id,workflowId:"44444444-4444-4444-8444-444444444444",workflowName:"fixture",jobs:[],status,startedAt:"2020-01-01T00:00:00Z",completedAt:"2020-01-01T00:01:00Z",...extra}));
     await run("22222222-2222-4222-8222-222222222222","suspended",{dataArtifacts:[{dataId:row.id,name:"tick",version:2}]});
     await run("11111111-1111-4111-8111-111111111111","succeeded");
     await run("33333333-3333-4333-8333-333333333333","succeeded");
@@ -56,8 +56,10 @@ export const behavior={type:"@nckrtl/orbit-group-run",version:"2026.10.28.1",glo
     await command("behavior","run","orbit-group-tg-7","seed");
     await Deno.mkdir(join(root,"bin"),{recursive:true});
     await Deno.copyFile("bin/compact-services.ts",join(root,"bin/compact-services.ts"));
-    await Deno.writeTextFile(join(root,"extensions/behaviors/runtime_retention.ts"),
-      (await Deno.readTextFile("extensions/behaviors/runtime_retention.ts")).replace("Date.now()","Date.now()+2*3600000"));
+    await Deno.writeTextFile(join(root,"extensions/behaviors/runtime_retention_executor.ts"),
+      (await Deno.readTextFile("extensions/behaviors/runtime_retention_executor.ts")).replace("Date.now()","Date.now()+2*3600000"));
+    await Deno.copyFile("extensions/behaviors/runtime_retention.ts",join(root,"extensions/behaviors/runtime_retention.ts"));
+    await command("behavior","create","@nckrtl/runtime-retention-executor","runtime-retention-executor");
     await command("behavior","create","@nckrtl/runtime-retention","runtime-retention");
     const writer = join(root,".swamp/outputs/active-writer.yaml");
     await Deno.mkdir(join(root,".swamp/outputs"),{recursive:true});
@@ -70,6 +72,24 @@ export const behavior={type:"@nckrtl/orbit-group-run",version:"2026.10.28.1",glo
     assert(await exists(join(tick,"2/raw")),"live exact version must survive native pruning");
     assert(!await exists(join(tick,"5/raw")),"superseded unreferenced version must be pruned natively");
     assert(await exists(join(tick,"10/raw")),"latest version must survive native pruning");
+    // Serve dispatches the same real executor without sharing its JS heap.
+    const socket=Deno.listen({hostname:"127.0.0.1",port:0});
+    const port=(socket.addr as Deno.NetAddr).port;socket.close();
+    const server=new Deno.Command("swamp",{args:["serve","--repo-dir",root,"--host","127.0.0.1","--port",String(port),"--auth-mode","none","--no-schedule"],cwd:root,env:{SWAMP_SERVER_URL:"",SWAMP_SERVE_URL:""},stdout:"piped",stderr:"piped"}).spawn();
+    try {
+      let ready=false;
+      for(let attempt=0;attempt<100;attempt++){
+        try{const response=await fetch(`http://127.0.0.1:${port}/ready`);ready=response.ok;await response.body?.cancel();if(ready)break;}catch{/* server starting */}
+        await new Promise(r=>setTimeout(r,30));
+      }
+      assert(ready,"isolated native serve must become ready");
+      await command("behavior","run","runtime-retention","prune","--server",`ws://127.0.0.1:${port}`);
+      const health=await fetch(`http://127.0.0.1:${port}/ready`);assert(health.ok);await health.body?.cancel();
+    } finally {
+      try{server.kill("SIGTERM");}catch{/* already stopped */}
+      const out=await server.output();
+      if(out.code!==0 && out.signal!=="SIGTERM")console.error(new TextDecoder().decode(out.stderr));
+    }
     // Fail closed on a redirected datastore; never follow it to another tree.
     await Deno.writeTextFile(join(root,".swamp.yaml"),'datastore: remote\n');
     await assertRejects(()=>compact(root,true),Error,"custom_datastore_refused");

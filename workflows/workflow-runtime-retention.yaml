@@ -1,8 +1,8 @@
 id: 59d37c5a-413f-43d6-9140-723c4de44894
 name: runtime-retention
-description: Keep current runtime state and live receipt evidence; remove superseded history.
+description: Hourly separate-process retention; preserve current state and live receipt evidence.
 trigger:
-  schedule: "20 */5 * * * *"
+  schedule: "20 17 * * * *"
 jobs:
   - name: retention
     steps:
