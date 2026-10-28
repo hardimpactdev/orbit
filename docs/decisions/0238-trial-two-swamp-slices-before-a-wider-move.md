@@ -56,15 +56,18 @@ Before coding, name eight policy flows for effort and case accounting: selection
 
 Three prerequisite PRs are merged. [Orbit #1546](https://github.com/hardimpactdev/orbit/pull/1546) adds pinned-commit deploys, the trusted automatic trigger, and frozen parity cases. [orbit-swamp #46](https://github.com/hardimpactdev/orbit-swamp/pull/46) adds the policy workflow with 73 passing tests. It remains inert. [Orbit #1548](https://github.com/hardimpactdev/orbit/pull/1548) adds Gateway contracts G01–G06 for source evidence, resume and block state, deployment kind, event delivery, publication, and receipt lookup. The Orbit policy writer remains active. Cutover and live acceptance are pending.
 
-The PR bodies report these measurements. Line counts are physical lines, including comments and blanks. Each pair below is added/removed. Correction rows are commit deltas, not final PR totals.
+The measurements below come from the PR bodies and the implementation report for Orbit #1546. Its final line counts come from the merged diff. Line counts are physical lines, including comments and blanks. Each pair below is added/removed. Correction rows are commit deltas, not final PR totals.
 
 | PR and scope | Agent wall-clock | Source | Tests and support | Fixtures | Docs | CI config | Generated |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Orbit #1546 | Not reported | Not reported | Not reported | Not reported | Not reported | Not reported | Not reported |
+| Orbit #1546, first PR head | 24m 39s | 286/37 | 355/3 | 0/0 | 154/8 | 0/0 | 240/19 |
+| Orbit #1546, final merged diff `6291bb03..f9059e10` | See timing below | 227/37 | 340/9 | 0/0 | 140/9 | 0/0 | 353/29 |
 | orbit-swamp #46, initial implementation | 24m 14s | 1,016/0 | 1,310/0 | 0/0 | 86/0 | 72/0 | 0/0 |
 | orbit-swamp #46, first correction | 8m 36s | 87/35 | 237/24 | 0/0 | 7/3 | 6/0 | 0/0 |
 | orbit-swamp #46, delta correction | 4m 43s | 36/44 | 97/30 | 0/0 | 7/3 | 0/0 | 0/0 |
 | Orbit #1548, final PR diff against `6c71412e` | 44m 54s | 974/135 | 489/9 | Included in tests | 38/1 | Not reported separately | 1,953/167 |
+
+Orbit #1546 reports 24m 39s on 2026-10-27, from 21:42:00 to 22:06:39 UTC, or about 29m 42s including review runs. The first-head figures precede two fix commits: web schema regeneration, then contract-test fixes and removal of the automatic-deploy CLI command. The final line counts include both fixes. They come from `git diff --shortstat 6291bb03..f9059e10` scoped by area. Generated files cover OpenAPI, MCP, web types, navigation, and documentation context. Source includes the generator. Tests include Rust test files. Docs include the CLI reference and SDK guidance. The complete diff has 1,060 additions and 84 removals across 38 files. No separate timing for the fix commits was reported.
 
 The total for orbit-swamp #46 is 37 minutes and 33 seconds across its three measured intervals. Orbit #1548 reports 23m 13s for implementation and 21m 41s for review fixes. Both totals exclude external review gaps. Owner time was not measured. These are implementation measurements, not proof that the slice passes its gates. Slice 1 alone offers little Orbit CI saving. Savings are expected as more slices reuse the Gateway contracts.
 
