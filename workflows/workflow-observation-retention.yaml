@@ -1,0 +1,18 @@
+id: db4c37e8-7194-4dc9-846c-d17f15597526
+name: observation-retention
+description: Run the bounded Orbit observation retention pass.
+autoResume: true
+concurrency: 1
+trigger:
+  schedule: '10 17 2 * * *'
+jobs:
+  - name: observation
+    steps:
+      - name: retain
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/observation'
+          behaviorName: observation-retention
+          methodName: retain
+          inputs:
+            runId: '${{ run.id }}'

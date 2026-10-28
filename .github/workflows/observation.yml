@@ -1,0 +1,28 @@
+name: Observation schedules
+on:
+  pull_request:
+    paths:
+      - 'extensions/behaviors/observation/**'
+      - 'workflows/workflow-observation-*.yaml'
+      - '.github/workflows/observation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'extensions/behaviors/observation/**'
+      - 'workflows/workflow-observation-*.yaml'
+      - '.github/workflows/observation.yml'
+permissions:
+  contents: read
+jobs:
+  observation:
+    runs-on: [self-hosted, hardimpact]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.8
+      - name: Check observation types and formatting
+        run: |
+          deno fmt --check extensions/behaviors/observation
+          deno lint extensions/behaviors/observation
+          deno check extensions/behaviors/observation/*.ts

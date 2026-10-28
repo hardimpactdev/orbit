@@ -1,0 +1,18 @@
+id: fb550568-ab07-4eb4-b5f4-db92e5780dc0
+name: observation-collection
+description: Run the bounded Orbit observation collection pass.
+autoResume: true
+concurrency: 1
+trigger:
+  schedule: '15 */10 * * * *'
+jobs:
+  - name: observation
+    steps:
+      - name: collect
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/observation'
+          behaviorName: observation-collection
+          methodName: collect
+          inputs:
+            runId: '${{ run.id }}'
