@@ -12,6 +12,7 @@ use App\Actions\Fleet\RecipeFleetPlanAction;
 use App\Actions\Fleet\RecipePrPlanAction;
 use App\Actions\Fleet\RecordRecipeFleetStateAction;
 use App\Data\Operations\OperationData;
+use App\Domain\Fleet\FleetWindow;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
@@ -27,6 +28,14 @@ use Illuminate\Http\JsonResponse;
 #[RequiresNodeAccess(ServingNode::Gateway)]
 final class FleetMaintenanceController extends Controller
 {
+    #[RequiresNodeAccess(ServingNode::Target)]
+    public function visitPolicy(FleetMaintenanceRequest $request, Node $node, FleetWindow $window): JsonResponse
+    {
+        $node->load('roles');
+
+        return response()->json(['data' => ['daytime' => $window->daytime($node), 'window_open' => $window->allows($node)]]);
+    }
+
     public function rolloutPlan(FleetMaintenanceRequest $request, FleetRolloutPlanAction $action): JsonResponse
     {
         return response()->json(['data' => $action->execute(), 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]]);

@@ -23,6 +23,12 @@ final readonly class RecipeGithubSecretSource implements OperationSecretSource
         return 'github.app';
     }
 
+    /** @return list<string> */
+    public function targetTypes(): array
+    {
+        return ['recipe_pr', 'recipe_snapshot', 'recipe_artifacts'];
+    }
+
     public function ownerId(Operation $operation): ?int
     {
         $node = Node::query()->find($operation->node_id);

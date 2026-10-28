@@ -961,9 +961,13 @@ The order goes lowest risk first. Each role has a group. A Node with several rol
 
 Orbit has no `agent` or `s3` role yet. The order already places `agent` in group 1 and `s3` in group 2.
 
+The Gateway refuses recipe and rollout admission with `operation.kind_unavailable` until the kit loader advertises `children`, `list_of` and `receipts`, and the shared APIs, Operation child columns and `node.converge` kind are installed. Unsupported kinds are not registered. The plans return `unavailable` with the same error code. This check creates no Operation or Node hold. Fleet admission serializes all generations under one lock and refuses while any fleet visit remains open or a fleet Operation is queued, running or waiting.
+
 Swamp schedules and runs fleet visits. The Gateway validates the release and target, records a `fleet.rollout` Operation, and projects its proven receipt onto the rollout row. Swamp installs and updates the CLI, starts a `node.converge` child for the footprint, and calls Gateway read primitives for Doctor and inventory checks. The child carries the owned-drift repair and first-Node Caddy policy. Each kind has a closed command allowlist, declared result fields and a completion contract. Unlisted commands, changed input and completion without evidence are refused.
 
-Only app-dev-only Nodes start at any hour. App-prod and shared roles start from 03:00 inclusive to 06:00 exclusive Europe/Amsterdam. Mixed-role Nodes use the restricted window. A visit already applying changes may finish after 06:00.
+Only app-dev-only Nodes start at any hour. App-prod and shared roles start from 03:00 inclusive to 06:00 exclusive Europe/Amsterdam. Mixed-role Nodes use the restricted window. An effect that started before 06:00 may finish. The Gateway checks its clock and current Node roles before every later run and refuses effects outside the window. A restricted visit that re-enters after an interruption with steps but no saved completion fails with `fleet.visit_interrupted` and halts the rollout. It runs no further effect.
+
+Automatic recipe and rollout admissions record the `fleet.window` run constraint. Kit B retains it on children and checks current target roles before hydration and dispatch, so a queued footprint child cannot perform daytime effects on a shared or production Node.
 
 ### Desired state
 

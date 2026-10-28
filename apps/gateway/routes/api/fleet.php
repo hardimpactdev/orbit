@@ -14,6 +14,7 @@ Route::middleware([
     RequireActiveWireGuardPeer::class,
     RequireNodeAccess::class,
 ])->group(function (): void {
+    Route::get('fleet/nodes/{node}/visit-policy', [FleetMaintenanceController::class, 'visitPolicy'])->name('fleet:visit:policy');
     Route::get('fleet/rollout/plan', [FleetMaintenanceController::class, 'rolloutPlan'])->name('fleet:rollout:plan');
     Route::post('fleet/nodes/{node}/rollout', [FleetMaintenanceController::class, 'rolloutNode'])->name('fleet:rollout:node');
     Route::post('fleet/recipe/state', [FleetMaintenanceController::class, 'recipeState'])->name('fleet:recipe:state');

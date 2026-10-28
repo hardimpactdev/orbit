@@ -2,7 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Actions\Operations\StartOperationAction;
+use App\Domain\Fleet\FleetKitCapabilities;
+use App\Domain\Fleet\FleetOperationExecution;
+use App\Domain\Fleet\RecipeOperationCompletion;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\VpnSettings;
@@ -10,6 +15,7 @@ use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\FakeAgentCommandRunner;
 
@@ -157,4 +163,54 @@ it('redacts secret-bearing run step output and completion values before persiste
         'error_code' => 'vpn.peer_dns_reconcile_failed', 'result' => ['state' => $exposed, 'credential' => $secret]])->assertOk();
     expect(json_encode($operation->refresh()->toArray()))->not->toContain($secret)
         ->and($operation->steps()->sole()->output)->not->toContain($secret);
+});
+
+it('refuses both fleet admission routes to an access-authorized peer that is not an executor', function (string $effect): void {
+    [, $node] = fleetPeerDnsNodes($this);
+    NodeRole::query()->create(['node_id' => $node->id, 'role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+    $agents = new FakeAgentCommandRunner;
+    app()->instance(AgentCommandRunner::class, $agents);
+    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
+        ->postJson('/api/v1/fleet/nodes/'.$node->id.'/'.$effect, ['automatic' => false])
+        ->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
+    expect(Operation::query()->count())->toBe(0)->and($agents->calls)->toBe([]);
+})->with(['recipe', 'peer-dns']);
+
+it('refuses an actual automatic recipe run after the window closes or roles become restrictive', function (): void {
+    [, $node] = fleetPeerDnsNodes($this);
+    $kinds = OperationKinds::definitions();
+    // Exercise the live run guard independently of child capability registration.
+    $kinds['fleet.recipe'] = [
+        'executor' => 'swamp', 'completion' => RecipeOperationCompletion::class,
+        'execution' => FleetOperationExecution::class,
+        'runs' => [['transport' => 'gateway', 'name' => 'fleet.recipe-begin', 'input_fields' => [], 'input_values' => []]],
+        'completion_contract' => ['step' => 'recipe-begin', 'transport' => 'gateway', 'name' => 'fleet.recipe-begin', 'result' => ['started' => true]],
+        'result_fields' => ['started', 'error_code'],
+    ];
+    app()->instance(OperationKinds::class, new OperationKinds(app(), $kinds));
+    $node->update(['settings' => ['machine_recipe' => ['version' => 'previous']]]);
+    NodeRole::query()->create(['node_id' => $node->id, 'role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+    $operation = app(StartOperationAction::class)->execute('fleet.recipe', 'node', $node->id, $node->id,
+        ['node_id' => $node->id, 'automatic' => true, 'daytime' => true, 'has_php' => false], null, null);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'fleet.recipe', 'worker' => 'window-proof'])->assertOk();
+    $this->travelTo(CarbonImmutable::parse('2026-10-28T08:30:00Z'));
+    // Renew the test lease on the Gateway clock used for the refusal.
+    $operation->forceFill(['updated_at' => now()])->save();
+    $this->postJson('/api/v1/operation-executor/'.$operation->id.'/run', ['worker' => 'window-proof', 'key' => 'recipe-begin',
+        'transport' => 'gateway', 'name' => 'fleet.recipe-begin', 'input' => []])
+        ->assertConflict()->assertJsonPath('error.code', 'fleet.window_closed');
+    expect($node->refresh()->settings['machine_recipe']['version'])->toBe('previous');
+    $this->getJson('/api/v1/fleet/nodes/'.$node->id.'/visit-policy')->assertOk()->assertJsonPath('data.daytime', false)->assertJsonPath('data.window_open', false);
+});
+
+it('returns kind unavailable to Services without holding a Node when the visit kit is missing', function (): void {
+    if (FleetKitCapabilities::visitsSupported()) {
+        test()->markTestSkipped('This base supports the complete visit contract.');
+    }
+    [, $node] = fleetPeerDnsNodes($this);
+    $agents = new FakeAgentCommandRunner;
+    app()->instance(AgentCommandRunner::class, $agents);
+    $this->postJson('/api/v1/fleet/nodes/'.$node->id.'/recipe', ['automatic' => true])
+        ->assertConflict()->assertJsonPath('error.code', 'operation.kind_unavailable');
+    expect(Operation::query()->count())->toBe(0)->and($agents->calls)->toBe([]);
 });

@@ -5,7 +5,8 @@ declare(strict_types=1);
 use App\Actions\Fleet\AdmitNodeRecipeAction;
 use App\Actions\Fleet\FleetRolloutPlanAction;
 use App\Actions\Fleet\PlanNodeRecipeAction;
-use App\Actions\Operations\StartOperationAction;
+use App\Domain\Fleet\DesiredFleetState;
+use App\Domain\Fleet\FleetRolloutPlanner;
 use App\Domain\Fleet\FleetRolloutStatus;
 use App\Domain\Fleet\FleetWindow;
 use App\Domain\Fleet\RecipeOperationCompletion;
@@ -22,6 +23,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\Fleet\FleetFixtures;
+use Tests\Support\Fleet\InstalledFleetPrimitives;
 use Tests\Support\Fleet\RecordingReleaseAlertNotifier;
 use Tests\Support\PhpBuildAnswers;
 
@@ -60,6 +62,8 @@ it('uses Amsterdam windows for shared roles and allows app-dev all day across DS
 ]);
 
 it('records recipe intent with only reads and leaves the success marker until application begins', function (): void {
+    InstalledFleetPrimitives::requireSupportedKit();
+    InstalledFleetPrimitives::simulate();
     Queue::fake();
     $agents = fleetRecipeReads();
     $node = FleetFixtures::node('recipe-intent', [RoleName::AppProd]);
@@ -77,6 +81,8 @@ it('records recipe intent with only reads and leaves the success marker until ap
 });
 
 it('excludes Incus from every automatic recipe payload and records the held intent once', function (): void {
+    InstalledFleetPrimitives::requireSupportedKit();
+    InstalledFleetPrimitives::simulate();
     fleetRecipeReads(incusChange: true);
     $node = FleetFixtures::node('recipe-incus', [RoleName::AppDev]);
     $node->update(['settings' => ['task_vms' => [], 'machine_recipe' => ['version' => 'previous']]]);
@@ -85,12 +91,15 @@ it('excludes Incus from every automatic recipe payload and records the held inte
     $operation = app(AdmitNodeRecipeAction::class)->execute($node, $recipe, automatic: true);
 
     expect(array_intersect(array_keys($operation->input['tools']), RecipeLoader::IncusPackages))->toBe([])
+        ->and($operation->getAttribute('run_constraints'))->toBe(FleetWindow::Constraints)
         ->and(array_keys($operation->input['incus_hold']))->toBe(RecipeLoader::IncusPackages)
         ->and($node->refresh()->settings['machine_recipe_incus_hold']['pins'])->toBe($operation->input['incus_hold'])
         ->and($node->settings['machine_recipe']['version'])->toBe('previous');
 });
 
 it('rejects an automatic production visit outside the window before probing or recording', function (): void {
+    InstalledFleetPrimitives::requireSupportedKit();
+    InstalledFleetPrimitives::simulate();
     $this->travelTo(CarbonImmutable::parse('2026-10-28T12:00:00Z'));
     $agents = fleetRecipeReads();
     $node = FleetFixtures::node('recipe-prod', [RoleName::AppProd]);
@@ -133,6 +142,8 @@ it('projects recipe identity only after application Doctor and exact delivery re
 })->with([false, true]);
 
 it('keeps a rollout waiting without admitting any Node until its release exists', function (): void {
+    InstalledFleetPrimitives::requireSupportedKit();
+    InstalledFleetPrimitives::simulate();
     FleetFixtures::bind(published: false);
     FleetFixtures::node('waiting-dev', [RoleName::AppDev]);
 
@@ -144,10 +155,10 @@ it('keeps a rollout waiting without admitting any Node until its release exists'
 it('projects deferred waiting and unreachable visit results without halting the rollout', function (string $code, string $expected): void {
     FleetFixtures::bind();
     $node = FleetFixtures::node('rollout-projection', [RoleName::AppDev]);
-    $plan = app(FleetRolloutPlanAction::class)->execute();
-    $row = FleetRolloutNode::query()->where('fleet_rollout_id', $plan['rollout'])->where('node_id', $node->id)->sole();
+    $rollout = app(FleetRolloutPlanner::class)->open(app(DesiredFleetState::class)->current(), null);
+    $row = FleetRolloutNode::query()->where('fleet_rollout_id', $rollout->id)->where('node_id', $node->id)->sole();
     $row->forceFill(['evidence' => ['incomplete_visits' => 5], 'started_at' => now()])->save();
-    $operation = app(StartOperationAction::class)->execute('fleet.rollout', 'node', $node->id, $node->id, ['row_id' => $row->id], null, null);
+    $operation = Operation::query()->create(['kind' => 'fleet.rollout', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id, 'input' => ['row_id' => $row->id], 'status' => 'running']);
 
     app(RolloutOperationCompletion::class)->complete($operation, OperationOutcome::failed($code));
 

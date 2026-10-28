@@ -11,11 +11,14 @@ use App\Domain\Fleet\FleetRolloutAlerts;
 use App\Domain\Fleet\FleetRolloutMembership;
 use App\Domain\Fleet\FleetRolloutPlanner;
 use App\Domain\Fleet\FleetRolloutStatus;
+use App\Domain\Fleet\FleetRolloutVisits;
 use App\Domain\Fleet\FleetServingRelease;
+use App\Domain\Fleet\FleetVisitPrerequisites;
 use App\Domain\Fleet\FleetWindow;
 use App\Domain\Fleet\NodeCliState;
 use App\Domain\Nodes\NodeCliInstaller;
 use App\Domain\Nodes\NodeReachabilityProbe;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\FleetRollout;
 use App\Models\FleetRolloutNode;
 use App\Models\Node;
@@ -26,16 +29,16 @@ use Illuminate\Support\Facades\Cache;
 final readonly class FleetRolloutPlanAction
 {
     public function __construct(private DesiredFleetState $desired, private FleetRolloutPlanner $planner, private FleetRolloutMembership $membership,
-        private FleetReleaseLag $lag, private FleetServingRelease $serving, private FleetRolloutAlerts $alerts, private FleetWindow $window, private NodeCliInstaller $cli, private NodeReachabilityProbe $reachability) {}
+        private FleetReleaseLag $lag, private FleetServingRelease $serving, private FleetRolloutAlerts $alerts, private FleetWindow $window, private NodeCliInstaller $cli, private NodeReachabilityProbe $reachability, private FleetRolloutVisits $visits, private FleetVisitPrerequisites $prerequisites) {}
 
-    /** @return array{status: string, rollout?: int, commit?: string, allow_downgrade?: bool, targets?: list<array{node_id: int, row_id: int, window: bool, attempts: int, finished_at: ?string, running: bool}>} */
+    /** @return array{status: string, error_code?: string, rollout?: int, commit?: string, allow_downgrade?: bool, targets?: list<array{node_id: int, row_id: int, window: bool, attempts: int, finished_at: ?string, running: bool}>} */
     public function execute(): array
     {
         if (! config('fleet.rollout')) {
             return ['status' => 'disabled'];
         }
 
-        $lock = Cache::lock('fleet-rollout-admission', 60);
+        $lock = Cache::lock(FleetRolloutVisits::AdmissionLock, 60);
         $lock->block(30);
         try {
             return $this->locked();
@@ -44,9 +47,17 @@ final readonly class FleetRolloutPlanAction
         }
     }
 
-    /** @return array{status: string, rollout?: int, commit?: string, allow_downgrade?: bool, targets?: list<array{node_id: int, row_id: int, window: bool, attempts: int, finished_at: ?string, running: bool}>} */
+    /** @return array{status: string, error_code?: string, rollout?: int, commit?: string, allow_downgrade?: bool, targets?: list<array{node_id: int, row_id: int, window: bool, attempts: int, finished_at: ?string, running: bool}>} */
     private function locked(): array
     {
+        if ($this->visits->busy()) {
+            return ['status' => 'busy'];
+        }
+        try {
+            $this->prerequisites->assertAvailable();
+        } catch (ResourceOperationException $error) {
+            return ['status' => 'unavailable', 'error_code' => $error->errorCode];
+        }
         $halted = FleetRollout::query()->where('status', FleetRolloutStatus::Halted)->latest('id')->first();
         if ($halted !== null) {
             return ['status' => 'halted', 'rollout' => $halted->id];
@@ -92,10 +103,8 @@ final readonly class FleetRolloutPlanAction
             $rollout->forceFill(['notices' => [...($rollout->notices ?? []), 'cli_fallback' => $this->alerts->cliFallback($rollout, $state)]])->save();
         }
         $positions = array_flip(array_map(static fn (Node $node): int => $node->id, $this->membership->members()));
-        $rows = $rollout->nodes()->with('node.roles')->get()->filter(function (FleetRolloutNode $row) use ($state): bool {
-            return $row->node !== null && $this->membership->includes($row->node)
-                && ($row->outcome->awaitsCatchUp() || ($row->outcome->isConverged() && $this->lag->drifted($row, $row->node, $state)));
-        })->sortBy(static fn (FleetRolloutNode $row): array => [$row->node_id === null ? PHP_INT_MAX : ($positions[$row->node_id] ?? PHP_INT_MAX), $row->position]);
+        $rows = $rollout->nodes()->with('node.roles')->get()->filter(fn (FleetRolloutNode $row): bool => $row->node !== null && $this->membership->includes($row->node)
+            && ($row->outcome->awaitsCatchUp() || ($row->outcome->isConverged() && $this->lag->drifted($row, $row->node, $state))))->sortBy(static fn (FleetRolloutNode $row): array => [$row->node_id === null ? PHP_INT_MAX : ($positions[$row->node_id] ?? PHP_INT_MAX), $row->position]);
         $targets = [];
         foreach ($rows as $row) {
             $node = $row->node;
@@ -105,8 +114,7 @@ final readonly class FleetRolloutPlanAction
             $targets[] = ['node_id' => $node->id, 'row_id' => $row->id, 'window' => $this->window->allows($node), 'attempts' => $row->attempts,
                 'finished_at' => $row->finished_at?->toIso8601String(), 'running' => $row->started_at !== null && $row->finished_at === null];
         }
-        if ($rollout->status === FleetRolloutStatus::Running && ! $rollout->nodes()->where('outcome', FleetNodeOutcome::Pending)->exists()
-            && ! $rollout->nodes()->whereNotNull('started_at')->whereNull('finished_at')->exists()) {
+        if ($rollout->status === FleetRolloutStatus::Running && ! $rollout->nodes()->where('outcome', FleetNodeOutcome::Pending)->exists()) {
             $rollout->forceFill(['status' => FleetRolloutStatus::Completed, 'finished_at' => now()])->save();
         }
 

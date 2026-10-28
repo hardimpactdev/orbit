@@ -1164,13 +1164,13 @@ The two image-build workers check `builds` before `builds-optional`, so a waitin
 
 On the next available minute, Swamp admits one Node recipe Operation. Later ticks visit the next Node only after its predecessor passes. Order is app-dev, services, app-prod, vpn, Gateway last, with Node ID inside a tier and the latest tier for a multi-role Node.
 
-Only Nodes whose roles are all app-dev start as soon as every configured host promotes, at any hour. Shared services, app-prod, vpn, and Gateway start only from 03:00 inclusive to 06:00 exclusive Europe/Amsterdam, in strict tier order after every app-dev-only Node is done. Outside the window, the sequence stays ready until the next night. A running visit may finish past 06:00. The serving Gateway also goes last.
+Only Nodes whose roles are all app-dev start as soon as every configured host promotes, at any hour. Shared services, app-prod, vpn, and Gateway start only from 03:00 inclusive to 06:00 exclusive Europe/Amsterdam, in strict tier order after every app-dev-only Node is done. Outside the window, the sequence stays ready until the next night. An effect already running may finish past 06:00. The Gateway refuses each later run after the window closes, using current roles and its own clock. The serving Gateway also goes last.
 
 Only active managed Linux Nodes with roles participate. The `ci-runner` role joins the overnight service tier. Task VMs, macOS, and roleless Nodes are excluded. Each visit uses [Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe), including inventory, health, and Doctor checks. Nodes already verified on that identity need no repeat installation.
 
 The first build row for the current recipe carries `fleet_convergence`, shown by `task-vms:image-builds`: generation, progress, stopping point, per-Node changes, and the alert receipt. This adds no ledger table.
 
-A terminal failed or cancelled Node Operation halts the sequence. An expired worker lease resumes the same Operation and its keyed receipts; a lost transport reply does not prove that an effect failed.
+A terminal failed or cancelled Node Operation halts the sequence. An interrupted visit on a restricted Node fails with `fleet.visit_interrupted` instead of resuming effects. Swamp closes its running steps and the Gateway halts the recipe build. App-dev-only visits may recover their keyed receipts. A lost transport reply does not prove that an effect failed.
 
 Release alerts record Activity, file an assistance problem, and send the configured signed webhook. Nodes after the failure stay untouched; earlier changes remain. There is no automatic retry or rollback. Investigate with Doctor and the report, then converge manually or merge a recipe correction. Pinning the previous snapshot through a PR is manual recovery; retained images can be reused. A new desired generation starts a new sequence. Each admission checks the deployed identity so an older release cannot advance it.
 

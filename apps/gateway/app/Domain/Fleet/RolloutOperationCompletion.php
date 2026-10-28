@@ -26,19 +26,8 @@ final readonly class RolloutOperationCompletion implements OperationCompletion
         $result = $outcome->result ?? [];
         if ($outcome->status === OperationStatus::Succeeded) {
             $this->children->succeeded($operation);
-            $steps = ValidatedData::object($operation->state['steps'] ?? []);
-            foreach (['cli-install' => 'cli.install', 'self-update' => 'cli.self-update'] as $step => $command) {
-                $proof = $steps[$step] ?? null;
-                $proven = false;
-                foreach (ValidatedData::object($operation->state['executor_runs'] ?? []) as $run) {
-                    if (is_array($run) && ($run['transport'] ?? null) === 'agent' && ($run['name'] ?? null) === $command
-                        && isset($run['result']) && $run['result'] === $proof && is_array($proof) && ! isset($proof['error_code'])) {
-                        $proven = true;
-                    }
-                }
-                if (! $proven || ($step === 'self-update' && ! in_array(is_array($proof) ? ($proof['outcome'] ?? null) : null, ['updated', 'unchanged'], true))) {
-                    throw new ResourceOperationException('operation.completion_unproven', 'The CLI installation and update need proven receipts.', 409);
-                }
+            if (! $this->children->cliReady($operation)) {
+                throw new ResourceOperationException('operation.completion_unproven', 'The CLI installation and update need proven receipts.', 409);
             }
         }
         $status = $outcome->status === OperationStatus::Succeeded ? (($result['changed'] ?? false) ? FleetNodeOutcome::Converged : FleetNodeOutcome::Unchanged) : match ($code) {

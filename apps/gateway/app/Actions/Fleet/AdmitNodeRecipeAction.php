@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Fleet;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Fleet\FleetVisitPrerequisites;
 use App\Domain\Fleet\FleetWindow;
 use App\Domain\Fleet\RecipeMaintenanceAlerts;
 use App\Domain\Releases\ReleaseIncident;
@@ -18,10 +19,11 @@ use Illuminate\Support\Facades\DB;
 
 final readonly class AdmitNodeRecipeAction
 {
-    public function __construct(private PlanNodeRecipeAction $plan, private StartOperationAction $start, private FleetWindow $window, private RecipeMaintenanceAlerts $alerts) {}
+    public function __construct(private PlanNodeRecipeAction $plan, private StartOperationAction $start, private FleetWindow $window, private RecipeMaintenanceAlerts $alerts, private FleetVisitPrerequisites $prerequisites) {}
 
     public function execute(Node $node, MachineRecipe $recipe, bool $automatic = false, ?int $buildId = null, ?string $triggeredBy = null, ?string $requestId = null): Operation
     {
+        $this->prerequisites->assertAvailable();
         $node->load('roles');
         if ($automatic && ! $this->window->allows($node)) {
             throw new ResourceOperationException('fleet.window_closed', 'Automatic fleet changes wait for 03:00–06:00 Europe/Amsterdam on this Node.', 409);
@@ -57,6 +59,9 @@ final readonly class AdmitNodeRecipeAction
             $operation = $this->start->execute('fleet.recipe', 'node', $node->id, $node->id, $input, $triggeredBy, $requestId);
             if (! $operation->wasRecentlyCreated) {
                 return $operation;
+            }
+            if ($input['automatic']) {
+                $operation->forceFill(['run_constraints' => FleetWindow::Constraints])->save();
             }
             $settings = $node->settings ?? [];
             $pins = ValidatedData::stringMap($input['incus_hold']);

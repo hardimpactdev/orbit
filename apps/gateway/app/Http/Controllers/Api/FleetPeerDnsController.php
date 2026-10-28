@@ -9,16 +9,16 @@ use App\Data\Operations\OperationData;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Fleet\FleetMaintenanceRequest;
 use App\Http\Requests\Operations\StartsOperation;
 use App\Models\Node;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 
 #[RequiresNodeAccess(ServingNode::Target)]
 final class FleetPeerDnsController extends Controller
 {
     #[StartsOperation('fleet.peer_dns')]
-    public function store(Request $request, Node $node, AdmitPeerDnsAction $action): JsonResponse
+    public function store(FleetMaintenanceRequest $request, Node $node, AdmitPeerDnsAction $action): JsonResponse
     {
         $caller = $request->getUserResolver()();
         $operation = $action->execute($node, $caller instanceof Node ? $caller->name : null, $request->attributes->getString('orbit.request_id'));
