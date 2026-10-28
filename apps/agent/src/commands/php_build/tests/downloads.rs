@@ -149,6 +149,7 @@ fn real_apt_archive_is_checked_against_installed_dpkg_checksums_before_rollback(
                     code: result.status.code().unwrap_or(-1),
                     stdout: String::from_utf8_lossy(&result.stdout).into(),
                     stderr: String::from_utf8_lossy(&result.stderr).into(),
+                    signal: None,
                     truncated: false,
                 });
             }

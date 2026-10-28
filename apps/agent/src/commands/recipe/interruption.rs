@@ -12,6 +12,13 @@ pub(crate) fn check() -> Result<(), Failure> {
         Ok(())
     }
 }
+/// A child can exit before another thread runs the agent's signal handler.
+pub(crate) fn command_exited(signal: Option<i32>) -> Result<(), Failure> {
+    if matches!(signal, Some(libc::SIGHUP | libc::SIGINT | libc::SIGTERM)) {
+        INTERRUPTED.store(true, Ordering::Relaxed);
+    }
+    check()
+}
 pub(crate) struct Guard {
     old: Vec<(libc::c_int, libc::sigaction)>,
 }
