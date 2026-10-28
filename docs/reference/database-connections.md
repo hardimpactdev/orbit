@@ -16,6 +16,33 @@ covers:
 
 A Database connection is a Gateway record that describes one database: its driver, where it is, and how to log in. The Gateway stores the password encrypted. You can register an existing database, create one on a [Database server](/reference/database-servers), inspect it, and attach it to an Instance. The registry never starts or stops a database. [`database`](/cli/database) lists the commands.
 
+## Execution
+
+Database writes that change a Node return an [Operation](/reference/operations) with HTTP 202. The Gateway validates the request and records intent. Swamp runs the steps and reports proven results. The CLI follows the Operation; use `--idempotency-key` to retry the same start after a lost response. List, show, tables, schema, describe, and read-only queries stay in the Gateway.
+
+The Gateway resolves stored database credentials only when it invokes an authorized named command. Operations and Swamp receipts contain references, never passwords. Removal deletes the managed record only after the Node confirms the effect.
+
+## Instance lifecycle children
+
+The database family owns `PrepareDatabaseChildAction` in `apps/gateway/app/Actions/DatabaseConnections/`. Lifecycle calls this Gateway admission action inside its transaction. It records protected intent and returns `{key, kind, node_id, input}`. Preparation performs no Node writes. After activation, lifecycle submits the returned descriptor through Kit v2 child admission with a stable `key`, then waits for the child to succeed.
+
+| Gateway admission signature | Child kind | Execution Node |
+| --- | --- | --- |
+| `create(Instance $target, DatabaseServer $server): array` | `database.create` | The explicit server's Node. |
+| `clone(Instance $target, Instance $source): array` | `database.clone` | The source MySQL server's Node, or the target SQLite Instance's Node. |
+| `destroyOwned(Instance $target): array` | `database.destroy_owned` | The Instance's Node; managed drops run as children on their servers. |
+| `sqliteSeed(SqliteSeedPlacement $source, SqliteSeedPlacement $target, string $sourcePath): array` | `database.sqlite_seed` | The seed target's Node. |
+
+Every lifecycle database child requires `target_type: instance` and `target_id` equal to its owning Instance, including nested source export and cleanup children. A multi-Instance destroy prepares one descriptor per member; child admission must preserve each descriptor's recorded target. Its execution Node can differ. Public database commands keep their own database resource target. The generated `input` includes `intent_id` and `owner_instance_id`; callers preserve the complete input instead of constructing it from Instance IDs. Passwords and rendered SQL remain encrypted Gateway intent. Kit v2 records `parent_operation_id` and `child_key` through its children endpoint; neither is a caller input field.
+
+Create requires an active MySQL server and records an Instance-owned database, owner user, and test database. Clone selects the source Instance's `DB` attachment and supports managed MySQL or SQLite inside its checkout. Successful create and clone attach the result under `DB` in Gateway state. Lifecycle synchronizes the resulting environment through its own workflow after the child succeeds.
+
+Removal selects only connections whose `owner_instance_id` matches the Instance. It preflights the full managed set before preparing drops, preserves shared users and foreign connections, and removes local owned SQLite files before completing. An Instance with no owned connections still completes through a proven `database.owned-ready` command. Lifecycle waits for removal before deleting the Instance row or its checkout.
+
+Cross-node SQLite clone and seed use database-owned `database.sqlite_export` and `database.sqlite_cleanup` children. Lifecycle admits only the top-level descriptor. Snapshot bytes stay out of Operations and Swamp. The seed placements record Instance ID, environment, base path, execution user, Node, and optional transfer Operation ID; a development transfer keeps one Instance ID with different source and target placements.
+
+Kind contracts, including runs, child Node relations, completion proof, and redacted results, live in `apps/gateway/app/Domain/DatabaseServers/operation-kinds.php`. Database workflow execution lives under `extensions/behaviors/operations/database/` in orbit-swamp.
+
 ## Drivers and fields
 
 Each record has a unique slug: lowercase words joined by hyphens, at most 63 characters. Each driver takes its own fields.
@@ -53,7 +80,7 @@ The registry routes need an access grant to the Gateway Node. A duplicate slug r
 | `GET` | `/api/v1/database-connections/{slug}/schema` | List the columns of every table. |
 | `GET` | `/api/v1/database-connections/{slug}/describe/{table}` | List the columns of one table. |
 
-User creation takes `username`, `password`, optional `read_only`, and optional `replication` (strict booleans, default false). Create and list return the recorded `replication` attribute without passwords. [Logical replication users](/reference/database-servers#logical-replication-users) defines PostgreSQL grants, WAL requirements, and publication ownership.
+User creation takes `username`, `password`, optional `read_only`, and optional `replication` (strict booleans, default false). List returns the recorded `replication` attribute without passwords. Create returns an Operation and updates the recorded user after its command succeeds. [Logical replication users](/reference/database-servers#logical-replication-users) defines PostgreSQL grants, WAL requirements, and publication ownership.
 
 Deletion returns `database_connection.required_by_ai_router` (409) while [AI router setup](/reference/ai-router#follow-the-cache-connection) uses the connection. This guard stays active when the extension switch is off; teardown releases it.
 
@@ -69,11 +96,11 @@ A query takes `sql`, at most 16,384 characters, and `write`. It runs one stateme
 
 Without `write: true`, the Gateway refuses a statement whose leading verb writes, such as `INSERT`, `UPDATE`, `DELETE`, `CREATE`, or `DROP`, with `database.write_required`. That check reads only the leading verb. For mysql and pgsql the statement then runs in a normal session, so a statement with side effects that does not start with a write verb, such as `SET` or a `SELECT` that calls a function, runs without `write`. Only SQLite opens the file read-only.
 
-`write` is permission, not proof that rows changed. The result holds `columns`, at most 500 `rows`, `row_count`, and `truncated` when more rows exist. For a read, `row_count` is the number of returned rows. For a write, it is the count that the driver reports. The Gateway replaces the stored password with `[REDACTED]` wherever it appears in a result. See [text-redaction failures](/cli/activity#text-redaction-failures) for the shared failure rule.
+`write: true` starts an Operation whose result holds the affected `row_count` and `truncated: false`, without result rows. It does not replay uncertain SQL until the target receipt proves the outcome. Read queries return `columns`, at most 500 `rows`, `row_count`, and `truncated` when more rows exist. For a read, `row_count` is the number of returned rows. The Gateway replaces the stored password with `[REDACTED]` wherever it appears in a result. See [text-redaction failures](/cli/activity#text-redaction-failures) for the shared failure rule.
 
 | Driver | Where it runs |
 | --- | --- |
-| `mysql`, `pgsql` | On the Gateway, through PDO, with the stored host, port, database, user, and password. |
+| `mysql`, `pgsql` | Reads use PDO on the Gateway. Swamp invokes the named PDO write program on the Gateway Node for writes. Credentials resolve inside the Gateway before dispatch. |
 | `sqlite` | On the linked Node, through the native `database.query-sqlite` or `database.write-sqlite` agent command. |
 | `redis` | Not supported. `database.driver_unsupported` (422). |
 

@@ -52,21 +52,19 @@ final readonly class PdoDatabaseInspector
         $columns = [];
         $truncated = false;
 
-        if ($statement->columnCount() > 0) {
-            for ($index = 0; $index < $statement->columnCount(); $index++) {
-                $meta = $statement->getColumnMeta($index);
-                $columns[] = is_array($meta) ? $meta['name'] : (string) $index;
+        for ($index = 0; $index < $statement->columnCount(); $index++) {
+            $meta = $statement->getColumnMeta($index);
+            $columns[] = is_array($meta) ? $meta['name'] : (string) $index;
+        }
+
+        while ($row = $statement->fetch(PDO::FETCH_ASSOC)) {
+            if (count($rows) >= self::ROW_LIMIT) {
+                $truncated = true;
+
+                break;
             }
 
-            while ($row = $statement->fetch(PDO::FETCH_ASSOC)) {
-                if (count($rows) >= self::ROW_LIMIT) {
-                    $truncated = true;
-
-                    break;
-                }
-
-                $rows[] = $this->normalizeRow($row);
-            }
+            $rows[] = $this->normalizeRow($row);
         }
 
         return $this->redactor->query(

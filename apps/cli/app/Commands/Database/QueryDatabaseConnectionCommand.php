@@ -57,7 +57,7 @@ final class QueryDatabaseConnectionCommand extends DatabaseCommand
 
         $result = $this->sendWithProgress(
             $connector,
-            new QueryDatabaseConnectionRequest($slug, $sql, $this->option('write') === true),
+            new QueryDatabaseConnectionRequest($slug, $sql, false),
             DatabaseQueryResponse::class,
             ['Run Database query', 'Running Database query', 'Ran Database query'],
         );
