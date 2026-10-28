@@ -19,10 +19,9 @@ function test_temporary_directory_probe(string $tmpdir): Process
 it('gives a test process its own directory, removes it at exit, and removes those of ended processes', function (): void {
     $base = TestOrbitHome::scratch('temporary-base');
     mkdir($base, 0o755, true);
-    $finished = new Process(['sleep', '0.1']);
-    $finished->start();
-    $finishedPid = $finished->getPid();
-    $finished->wait();
+    $finished = new Process([PHP_BINARY, '-r', 'fwrite(STDOUT, (string) getmypid());']);
+    $finished->mustRun();
+    $finishedPid = trim($finished->getOutput());
     $abandoned = $base.'/'.TestTemporaryDirectory::Prefix.$finishedPid.'-0badc0de';
     $running = $base.'/'.TestTemporaryDirectory::Prefix.getmypid().'-0badc0de';
     mkdir($abandoned.'/fixture', 0o755, true);
