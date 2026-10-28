@@ -80,6 +80,10 @@ A same-target child inherits the ancestor's target hold, including chains such a
 
 Owning admission may add a server-only `run_constraints` map. Children retain inherited constraints unchanged. The named `time_window` constraint takes `{timezone,start,end}`, with an IANA timezone and distinct `HH:mm` times; start is inclusive and end is exclusive. Midnight crossing is supported. The Gateway checks constraints before hydration and immediately before dispatch. Families contribute other constraints through tagged `OperationRunConstraint` implementations.
 
+### Await from a Gateway caller
+
+A retained internal caller can use `AwaitOperation::execute($operation, $timeoutSeconds = 30)` after admission commits. It refreshes only that Operation and sleeps between reads. The bound must be 1–120 seconds. It returns any terminal Operation, including failed or cancelled; the caller must check its outcome before dependent teardown. At the deadline it throws `operation.await_timeout` with `operation_id` and leaves the pending work unchanged. Prefer returning the Operation with HTTP 202 when the caller can follow it. Never wait inside the transaction that admits or holds the Operation.
+
 ### Kinds and targets
 
 Use the kind and target type to start or find the work of a command.
