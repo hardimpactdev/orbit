@@ -1,0 +1,24 @@
+id: 3223de4f-62f3-4b27-a070-0488a1229801
+name: operation-dispatch
+description: Fan out claimed Operations to their registered family workflows.
+autoResume: true
+inputs:
+  type: object
+  properties:
+    claims:
+      type: array
+      items: { type: object }
+  required: [claims]
+jobs:
+  - name: operations
+    steps:
+      - name: execute-${{ self.operationId }}
+        forEach:
+          item: operationId
+          in: '${{ inputs.claims.map(claim, claim.operation_id) }}'
+        task:
+          type: workflow
+          workflowIdOrName: '${{ inputs.claims.filter(claim, claim.operation_id == self.operationId)[0].workflow }}'
+          inputs:
+            operationId: '${{ self.operationId }}'
+            worker: '${{ inputs.claims.filter(claim, claim.operation_id == self.operationId)[0].worker }}'

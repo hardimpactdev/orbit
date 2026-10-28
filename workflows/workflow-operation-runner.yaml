@@ -1,0 +1,24 @@
+id: fbef909e-eb12-4dbc-b854-7e896aa6f594
+name: operation-runner
+description: Claim one Operation per registered kind and dispatch its family workflow.
+autoResume: true
+trigger:
+  schedule: '*/10 * * * * *'
+jobs:
+  - name: operations
+    steps:
+      - name: claim
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/operation-runner'
+          behaviorName: operation-runner
+          methodName: claim
+          inputs:
+            worker: '${{ run.id }}'
+      - name: dispatch
+        dependsOn: [{ step: claim, condition: { type: succeeded } }]
+        task:
+          type: workflow
+          workflowIdOrName: operation-dispatch
+          inputs:
+            claims: '${{ steps.claim.outputs.claims }}'

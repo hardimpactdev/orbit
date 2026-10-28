@@ -516,6 +516,7 @@ export function gatewayHttp(
   url: string,
   caFile: string,
   signal?: AbortSignal,
+  timeoutMs = 60_000,
 ): Http {
   return async (method, path, body, key) => {
     const client = Deno.createHttpClient({
@@ -527,8 +528,8 @@ export function gatewayHttp(
         client,
         redirect: "error",
         signal: signal
-          ? AbortSignal.any([signal, AbortSignal.timeout(60_000)])
-          : AbortSignal.timeout(60_000),
+          ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
+          : AbortSignal.timeout(timeoutMs),
         headers: {
           Accept: "application/json",
           ...(body === undefined ? {} : { "Content-Type": "application/json" }),

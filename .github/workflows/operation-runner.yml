@@ -1,0 +1,62 @@
+name: Operation runner and firewall
+on:
+  pull_request:
+    paths:
+      - 'extensions/behaviors/operation-runner/**'
+      - 'extensions/behaviors/operations/**'
+      - 'workflows/workflow-operation-*.yaml'
+      - 'docs/conversion-kit.md'
+      - 'tests/operation_runner_native_test.py'
+      - 'tests/fixtures/operation-executor.ts'
+      - '.github/workflows/operation-runner.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'extensions/behaviors/operation-runner/**'
+      - 'extensions/behaviors/operations/**'
+      - 'workflows/workflow-operation-*.yaml'
+      - 'tests/operation_runner_native_test.py'
+      - 'tests/fixtures/operation-executor.ts'
+      - '.github/workflows/operation-runner.yml'
+permissions:
+  contents: read
+jobs:
+  reference-family:
+    runs-on: [self-hosted, hardimpact]
+    env:
+      SWAMP_NO_UPDATE_CHECK: '1'
+      SWAMP_NO_TELEMETRY: '1'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.8
+      - name: Format, lint, type and recovery tests
+        run: |
+          deno fmt --check extensions/behaviors/operation-runner extensions/behaviors/operations
+          deno lint extensions/behaviors/operation-runner extensions/behaviors/operations
+          deno fmt --check tests/fixtures/operation-executor.ts
+          deno lint tests/fixtures/operation-executor.ts
+          deno test --allow-read=. extensions/behaviors/operations/firewall/mod_test.ts
+      - name: Prepare isolated Swamp environment
+        shell: bash
+        run: |
+          printf 'SWAMP_HOME=%s\nSWAMP_CONFIG_DIR=%s\n' \
+            "$RUNNER_TEMP/operation-runner-swamp" \
+            "$RUNNER_TEMP/operation-runner-config" >> "$GITHUB_ENV"
+      - name: Install pinned Swamp and test the native DAG and recovery
+        shell: bash
+        env:
+          SWAMP_API_KEY: ${{ secrets.SWAMP_API_KEY }}
+          SWAMP_SIGNIN_TOKEN: ${{ secrets.SWAMP_SIGNIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            https://github.com/swamp-club/swamp/releases/download/v20261022.021804.0-sha.983e2929/swamp-linux-x86_64 \
+            --output "$RUNNER_TEMP/swamp-operation-runner"
+          printf '%s  %s\n' 940416b92781dad1d48aff0e4f42b48bbcb29fd92aca9bb8ed126aff0f6d135d "$RUNNER_TEMP/swamp-operation-runner" | sha256sum --check
+          chmod +x "$RUNNER_TEMP/swamp-operation-runner"
+          SWAMP_BIN="$RUNNER_TEMP/swamp-operation-runner" python3 -B -m unittest discover -s tests -p operation_runner_native_test.py -v
+      - name: Clean isolated Swamp environment
+        if: always()
+        run: rm -rf -- "$SWAMP_HOME" "$SWAMP_CONFIG_DIR" "$RUNNER_TEMP/swamp-operation-runner"

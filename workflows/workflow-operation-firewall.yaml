@@ -1,0 +1,22 @@
+id: 9249dbc7-f61a-4288-9e51-a10a3c0bfa1d
+name: operation-firewall
+description: Execute an admitted firewall allow, deny or remove Operation.
+autoResume: true
+inputs:
+  type: object
+  properties:
+    operationId: { type: integer }
+    worker: { type: string }
+  required: [operationId, worker]
+jobs:
+  - name: firewall
+    steps:
+      - name: execute
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/operation-firewall'
+          behaviorName: '${{ "operation-firewall-" + string(inputs.operationId) }}'
+          methodName: execute
+          inputs:
+            operationId: '${{ inputs.operationId }}'
+            worker: '${{ inputs.worker }}'
