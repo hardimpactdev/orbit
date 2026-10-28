@@ -105,7 +105,7 @@ it('never reports parking success for missing or still running guests', function
     expect($operation->status)->toBe(OperationStatus::Failed)->and($operation->error_code)->toBe($missing ? 'task_vm.vm_missing' : 'task_vm.park_failed')
         ->and($operation->result['power'] ?? null)->not->toBe('stopped')
         ->and($this->group->fresh()->status)->toBe(TaskGroupStatus::Running)
-        ->and($this->vm->fresh()->state)->toBe(TaskVmState::Ready)
+        ->and($this->vm->fresh()->state)->toBe(TaskVmState::Parked)
         ->and($this->vm->fresh()->error_code)->toBe($operation->error_code);
 })->with([true, false]);
 

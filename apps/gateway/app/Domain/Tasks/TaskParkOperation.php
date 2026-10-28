@@ -49,15 +49,13 @@ final readonly class TaskParkOperation implements OperationKind
             $this->operations->requireOpenExternal($group);
             $vm = self::requireEligible($group);
             $vm->update(['state' => TaskVmState::Parked, ...TaskVm::ForgetTopology]);
-            $stopped = false;
             try {
                 $this->stop->execute($vm);
-                $stopped = true;
                 $group->refresh();
                 $this->operations->requireOpenExternal($group);
                 self::requireEligible($group);
             } catch (Throwable $exception) {
-                $vm->update(['state' => $stopped ? TaskVmState::Parked : TaskVmState::Ready, ...TaskVm::errorFrom($exception)]);
+                $vm->update(TaskVm::errorFrom($exception));
                 throw $exception;
             }
             $group->update(['status' => TaskGroupStatus::WaitingForReview, 'settled_at' => $group->settled_at ?? now()]);

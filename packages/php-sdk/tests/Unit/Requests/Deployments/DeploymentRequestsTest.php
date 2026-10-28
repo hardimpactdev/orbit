@@ -231,6 +231,7 @@ it('transports automatic resolution identity and maps the fenced receipt', funct
             'id' => 51, 'kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => 17,
             'status' => 'cancelled', 'sequence' => 1, 'error_code' => 'operation.admission_fenced',
             'attempts' => 0, 'input' => ['commit' => $sha, 'caller_node_id' => 8],
+            'triggered_by' => 'swamp:auto-deploy', 'caller_node_id' => 8, 'caller_node_name' => 'services',
         ]], 'meta' => ['request_id' => deployment_request_id()],
     ])]);
 
@@ -241,6 +242,11 @@ it('transports automatic resolution identity and maps the fenced receipt', funct
         ->and($mock->getLastPendingRequest()->body()->all())->toBe(['request_key' => 'lost.key', 'commit' => $sha, 'caller_node_id' => 8])
         ->and($receipt->operation->errorCode)->toBe('operation.admission_fenced')
         ->and($receipt->operation->attempts)->toBe(0)
+        ->and($receipt->operation->triggeredBy)->toBe('swamp:auto-deploy')
+        ->and($receipt->operation->callerNodeId)->toBe(8)
+        ->and($receipt->operation->callerNodeName)->toBe('services')
+        ->and($receipt->toArray()['operation']['caller_node_name'])->toBe('services')
+        ->and($receipt->toArray()['operation']['caller_node_id'])->toBe(8)
         ->and($receipt->requestId)->toBe(deployment_request_id());
     expect(new $class(17, 'lost.key', $sha)->body()->all())->not->toHaveKey('caller_node_id');
 });

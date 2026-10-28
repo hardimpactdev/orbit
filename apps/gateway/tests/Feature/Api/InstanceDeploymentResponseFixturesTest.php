@@ -63,7 +63,8 @@ it('records the deployment list and show responses', function (): void {
         'failed_step' => null,
         'error_code' => null,
         'selected_release' => '20260101000000',
-        'triggered_by' => 'gateway',
+        'triggered_by' => 'swamp:auto-deploy',
+        'caller_node_id' => $caller->id,
         'events' => [
             ['type' => 'phase', 'phase' => 'source_preparation', 'step_name' => null],
             ['type' => 'phase', 'phase' => 'before_activation', 'step_name' => 'prepare'],

@@ -24,7 +24,7 @@ final readonly class ReadAutomaticDeployReceiptAction
 
     public function execute(Instance $instance, Node $caller, string $key, string $commit): AutomaticDeployReceiptData
     {
-        $operation = Operation::query()->where('kind', OperationKinds::InstanceDeploy)->where('idempotency_key', $key)->first();
+        $operation = Operation::query()->withCallerNodeName()->where('kind', OperationKinds::InstanceDeploy)->where('idempotency_key', $key)->first();
         if ($operation === null) {
             return new AutomaticDeployReceiptData($key, false, null, null);
         }
@@ -35,7 +35,7 @@ final readonly class ReadAutomaticDeployReceiptAction
         $id = $operation->result['deployment_id'] ?? null;
         $deployment = is_int($id) ? InstanceDeployment::query()->where('instance_id', $instance->id)->find($id) : null;
 
-        return new AutomaticDeployReceiptData($key, true, OperationData::fromModel($operation), $deployment === null ? null : InstanceDeploymentData::fromModel($deployment));
+        return new AutomaticDeployReceiptData($key, true, OperationData::fromModel($operation, $operation->caller_node_name), $deployment === null ? null : InstanceDeploymentData::fromModel($deployment));
     }
 
     /** The same identity is used by admission, lookup, and the no-effect fence. */

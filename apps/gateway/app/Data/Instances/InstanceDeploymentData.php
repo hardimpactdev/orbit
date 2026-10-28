@@ -28,6 +28,8 @@ final class InstanceDeploymentData extends Data
         public ?string $errorCode,
         public ?string $selectedRelease,
         public ?string $triggeredBy,
+        public ?int $callerNodeId,
+        public ?string $callerNodeName,
     ) {}
 
     public static function fromModel(InstanceDeployment $deployment): self
@@ -47,6 +49,8 @@ final class InstanceDeploymentData extends Data
             errorCode: $deployment->error_code,
             selectedRelease: $deployment->selected_release,
             triggeredBy: $deployment->triggered_by,
+            callerNodeId: $deployment->caller_node_id,
+            callerNodeName: $deployment->callerNode?->name,
         );
     }
 }

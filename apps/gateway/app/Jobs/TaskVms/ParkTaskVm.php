@@ -19,7 +19,7 @@ use Throwable;
 /**
  * Stops a `parked` task VM and keeps its disk. The tick set the row to `parked` first, so no work is admitted
  * while the VM stops. A row that is no longer `parked` was woken meanwhile and stays running. A failure stays
- * on the row as its error. After the last try the row returns to `ready` for the next idle tick and a warning names the error.
+ * on the parked row as its error, and the next eligible idle tick retries it. A warning names the error.
  * Group assistance stays unchanged, so later work can resume the VM whatever its power.
  */
 final class ParkTaskVm implements ShouldBeUnique, ShouldQueue
@@ -42,14 +42,14 @@ final class ParkTaskVm implements ShouldBeUnique, ShouldQueue
             return;
         }
 
-        app(TaskExecutionLock::class)->synchronized((int) $vm->group_id, static function () use ($vm, $provider): void {
+        app(TaskExecutionLock::class)->synchronized((int) $vm->group_id, function () use ($vm, $provider): void {
             $vm->refresh();
             if ($vm->state !== TaskVmState::Parked) {
                 return;
             }
             if (Operation::query()->where('target_type', 'task_group')->where('target_id', $vm->group_id)
                 ->whereNotIn('status', ['succeeded', 'failed', 'cancelled'])->exists()) {
-                $vm->update(['state' => TaskVmState::Ready]);
+                $this->release(5);
 
                 return;
             }
@@ -65,7 +65,7 @@ final class ParkTaskVm implements ShouldBeUnique, ShouldQueue
                 return;
             }
             $error = TaskVm::errorFrom($exception);
-            $vm->update(['state' => TaskVmState::Ready, ...$error]);
+            $vm->update($error);
             Log::warning('A task VM could not park; later work can still resume it.', [
                 'task_vm_id' => $vm->id, 'task_vm' => $vm->name, 'group_id' => $vm->group_id, ...$error,
             ]);

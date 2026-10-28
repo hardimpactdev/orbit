@@ -24,6 +24,8 @@ The Node.js artifact pin is `24.22.1`, including the [October 21, 2026 security 
 
 The repository's machine software recipe is [`apps/gateway/resources/machine-software/recipe.json`](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/resources/machine-software/recipe.json). It declares one Ubuntu snapshot, tool version pins, the [PHP build](#php-build), and the tool sets for `gateway`, `app-dev`, `app-prod`, `operator`, and the task VM base image. Project dependencies, workspace setup, credentials, Node identity, and service configuration are not recipe inputs.
 
+The recipe pins both the Vite+ runtime (`vp`) and CLI (`vp-cli`) to `1.4.0`. Project lockfiles stay independent: [deployment admission](/reference/tools#project-environments-in-the-vite-store) accepts a manager at least as new as the Project's locked Vite+ release, including Projects on `1.2.x`. A recipe update does not update those lockfiles.
+
 The loader and validator define the recipe contract. [Recipe image builds](#build-the-base-image) use that document for a host-local base image. [Node convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) applies its role tools to production Nodes. Claims require the [current recipe](#claims-require-the-current-recipe), and topologies [copy their Nodes from its topology seed](#prepare-the-topology).
 
 ### Recipe schema
@@ -681,7 +683,9 @@ Each `tasks:tick` parks the `ready` task VM of a group when all of these are tru
 
 The last rule keeps a VM that Orbit started again, for example for a removal retry, running that long before it can park again. The row's `ready_at` records when the VM last became `ready`: at its first preparation, and at each resume.
 
-The tick sets the row to `parked` and queues `ParkTaskVm`, which stops the VM with `incus stop`. After three failed attempts, the row keeps its error and stays `parked`, and Orbit logs a warning with the VM and its error. Parking failure does not ask for group assistance or replace an existing request. New subtasks still wake the VM, and a reviewed, green pull request can still merge. A successful resume or park clears the row error. A late failure after the VM wakes changes nothing. A `parked` VM still takes its slot on the host, so a resume never needs a free slot.
+The tick sets the row to `parked` and queues `ParkTaskVm`, which stops the VM with `incus stop`. If an operation is unfinished, the job requeues after five seconds without stopping or marking the VM ready. After three failed attempts, the row keeps its error and stays `parked`, and Orbit logs a warning with the VM and its error. The next eligible idle tick retries that errored row.
+
+Parking failure does not ask for group assistance or replace an existing request. New subtasks still wake the VM, and a reviewed, green pull request can still merge. A successful resume or park clears the row error. A late failure after the VM wakes changes nothing. A `parked` VM still takes its slot on the host, so a resume never needs a free slot.
 
 Work for the group starts the VM again: a new subtask after a push, a review fix, a reviewer run, the workspace removal after a merge, a completion, and a destroy that must first remove the workspace. That work waits while the VM is `parked`. The group shows the reason `Task VM: resuming.`, and Orbit queues `ResumeTaskVm`. The job runs these steps:
 

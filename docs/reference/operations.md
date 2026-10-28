@@ -30,7 +30,7 @@ Every operation has the same fields, whatever its kind.
 | `id` | The operation ID |
 | `kind` | What runs, `<family>.<verb>`, such as `instance.deploy` |
 | `target_type`, `target_id` | The record the operation changes, such as `instance` and `15` |
-| `input` | The validated request body. `instance.deploy` takes `{}`, and `instance.rollback` takes `{ release }` |
+| `input` | Validated operation input. Deploys may include `commit`; automatic admission also binds `caller_node_id`. Rollbacks include `release` |
 | `status` | `queued`, `running`, `waiting`, `succeeded`, `failed`, or `cancelled`. The last three are terminal and never change again |
 | `sequence` | A number that grows with every change of the operation or one of its steps |
 | `current_step` | The name of the running or waiting step, or null |
@@ -38,7 +38,9 @@ Every operation has the same fields, whatever its kind.
 | `result` | What the operation produced, or null until it ends. A terminal failure can have a typed result; non-null does not mean success |
 | `cancel_requested` | Whether someone asked the operation to stop |
 | `attempts` | How many times a worker started the operation |
-| `triggered_by` | The name of the Node that started it |
+| `triggered_by` | The manual caller's Node name, or an [automatic-deploy origin](/reference/deployments#history) |
+| `caller_node_id` | The bound automatic caller's Node ID, or null. Also retained in `input.caller_node_id` |
+| `caller_node_name` | Current name of the caller Node, or null if there is no caller or the Node has been removed |
 | `created_at`, `started_at`, `finished_at` | ISO 8601 times. `started_at` is the first start |
 | `poll_after_seconds` | How long a polling client waits before its next read, or null once terminal. [Follow an operation by polling](#follow-an-operation-by-polling) gives the values |
 
@@ -150,7 +152,7 @@ Four requests read and stop operations.
 | `GET /api/v1/operations` | The 50 newest records, without steps. [Filter the list](#filter-the-list) with `status`, `kind`, `target_type`, and `target_id` |
 | `POST /api/v1/operations/{operation}/cancel` | Asks the operation to stop and returns the record |
 
-Each read is one database query and never waits for the operation. A read needs access to the Node that serves the target, such as the Instance's Node. The list returns only operations on Nodes that the caller can access; the Gateway Node and a Node with an access grant to the Gateway see all of them.
+The list selects operations and caller Node names in one query. Show uses the bound operation and reads its steps in one query. Neither waits for the operation. A read needs access to the Node that serves the target, such as the Instance's Node. The list returns only operations on Nodes that the caller can access; the Gateway Node and a Node with an access grant to the Gateway see all of them.
 
 The CLI reads with `operation:show`, `operation:list`, and `operation:cancel` ([operation](/cli/operation)). MCP has the tools `operation-show`, `operation-list`, and `operation-cancel` ([MCP: Operations](/reference/mcp#operations)).
 

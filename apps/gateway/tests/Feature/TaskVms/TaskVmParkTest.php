@@ -231,18 +231,36 @@ describe('park', function (): void {
         expect($this->provider->calls)->toBe(['observe', 'stop', 'observe']);
     });
 
-    it('restores ready when an operation starts after idle parking was queued', function (): void {
+    it('requeues when an operation starts after idle parking was queued', function (): void {
         Queue::fake();
         [$group, $vm] = tvm_park_waiting();
         app(ParkIdleTaskVmsAction::class)->execute();
         expect($vm->fresh()->state)->toBe(TaskVmState::Parked);
         $operation = Operation::query()->create(['kind' => OperationKinds::TasksPark, 'target_type' => 'task_group', 'target_id' => $group->id, 'status' => OperationStatus::Queued, 'input' => []]);
-        app()->call([new ParkTaskVm($vm->id), 'handle']);
-        expect($vm->fresh()->state)->toBe(TaskVmState::Ready)->and($this->provider->calls)->toBe([]);
+        $job = (new ParkTaskVm($vm->id))->withFakeQueueInteractions();
+        app()->call([$job, 'handle']);
+        $job->assertReleased(5);
+        expect($vm->fresh()->state)->toBe(TaskVmState::Parked)->and($this->provider->calls)->toBe([]);
         $operation->update(['status' => OperationStatus::Succeeded]);
-        expect(app(ParkIdleTaskVmsAction::class)->execute())->toBe(1);
-        app()->call([new ParkTaskVm($vm->id), 'handle']);
+        $retry = unserialize(serialize($job))->withFakeQueueInteractions();
+        app()->call([$retry, 'handle']);
+        $retry->assertNotReleased();
         expect($vm->fresh()->state)->toBe(TaskVmState::Parked)->and($this->provider->calls)->toBe(['observe']);
+    });
+
+    it('retries an errored parked row only while its group remains idle', function (): void {
+        Queue::fake();
+        [$group, $vm] = tvm_park_waiting();
+        $vm->update(['state' => TaskVmState::Parked]);
+        (new ParkTaskVm($vm->id))->failed(new RuntimeException('stop reply lost'));
+        expect(app(ParkIdleTaskVmsAction::class)->execute())->toBe(1);
+        Queue::assertPushed(ParkTaskVm::class);
+        app()->call([new ParkTaskVm($vm->id), 'handle']);
+        expect($vm->fresh())->state->toBe(TaskVmState::Parked)->error_code->toBeNull();
+        expect(app(ParkIdleTaskVmsAction::class)->execute())->toBe(0);
+        $vm->update(['error_code' => 'task_vm.job_failed']);
+        $group->update(['status' => TaskGroupStatus::Running]);
+        expect(app(ParkIdleTaskVmsAction::class)->execute())->toBe(0);
     });
 
     it('makes an unconfirmed stop retryable with its recorded error', function (): void {
@@ -252,7 +270,7 @@ describe('park', function (): void {
 
         (new ParkTaskVm($vm->id))->failed(new TaskVmException('task_vm.host_command_failed', 'incus stop failed', 502));
 
-        expect($vm->fresh())->state->toBe(TaskVmState::Ready)->error_code->toBe('task_vm.host_command_failed');
+        expect($vm->fresh())->state->toBe(TaskVmState::Parked)->error_code->toBe('task_vm.host_command_failed');
         expect($group->fresh())->assistance_requested->toBeFalse()->assistance_reason->toBeNull();
         Log::shouldHaveReceived('warning')->once()->with('A task VM could not park; later work can still resume it.', [
             'task_vm_id' => $vm->id, 'task_vm' => $vm->name, 'group_id' => $group->id,

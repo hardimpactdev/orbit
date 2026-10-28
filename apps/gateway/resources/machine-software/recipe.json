@@ -3,7 +3,7 @@
     "agent": null,
     "ubuntu": {
         "release": "26.04",
-        "snapshot": "20261026T000000Z"
+        "snapshot": "20261028T000000Z"
     },
     "architectures": [
         "amd64",
@@ -843,30 +843,30 @@
         },
         "vp": {
             "source": "artifact",
-            "version": "1.2.0",
-            "lock_sha256": "77a0fcddbc77d4532e03b98ba1f7601108cbb215aee5b1f2bbc37275dfd5412b",
+            "version": "1.4.0",
+            "lock_sha256": "e7f3f6faaf20a62d2860fe195d3a6fac894f53038b1d096fb45824b0656a054a",
             "artifacts": {
                 "amd64": {
-                    "url": "https://registry.npmjs.org/vite-plus/-/vite-plus-1.2.0.tgz",
-                    "sha512": "bb820dc67aeaf4bc70c80de7af7dd083a565b4988acfe20b4a566e66740979ca3352f8f5feb55cb64c3a22087f5e4774127dabb2dee6d3113db06eeecf3652ec"
+                    "url": "https://registry.npmjs.org/vite-plus/-/vite-plus-1.4.0.tgz",
+                    "sha512": "6cbc9428d165d178db1dedb41690cce8eba49ce6f6138b9ea162825b89fec0c3b6fa542d03db660235be5ecd177bdae0dbeb42818dd6d7718e803876c23c2301"
                 },
                 "arm64": {
-                    "url": "https://registry.npmjs.org/vite-plus/-/vite-plus-1.2.0.tgz",
-                    "sha512": "bb820dc67aeaf4bc70c80de7af7dd083a565b4988acfe20b4a566e66740979ca3352f8f5feb55cb64c3a22087f5e4774127dabb2dee6d3113db06eeecf3652ec"
+                    "url": "https://registry.npmjs.org/vite-plus/-/vite-plus-1.4.0.tgz",
+                    "sha512": "6cbc9428d165d178db1dedb41690cce8eba49ce6f6138b9ea162825b89fec0c3b6fa542d03db660235be5ecd177bdae0dbeb42818dd6d7718e803876c23c2301"
                 }
             }
         },
         "vp-cli": {
             "source": "artifact",
-            "version": "1.2.0",
+            "version": "1.4.0",
             "artifacts": {
                 "amd64": {
-                    "url": "https://github.com/voidzero-dev/vite-plus/releases/download/v1.2.0/vp-x86_64-unknown-linux-gnu.tar.gz",
-                    "sha256": "489e2493d10499d1e0f19f0c7938b1baa5cd488be1f2e3abd3fbf820131452bf"
+                    "url": "https://github.com/voidzero-dev/vite-plus/releases/download/v1.4.0/vp-x86_64-unknown-linux-gnu.tar.gz",
+                    "sha256": "992558abc9621384434a22d80e06e117615680f14a3e17a58eb287fd30a07694"
                 },
                 "arm64": {
-                    "url": "https://github.com/voidzero-dev/vite-plus/releases/download/v1.2.0/vp-aarch64-unknown-linux-gnu.tar.gz",
-                    "sha256": "42d25a6676c28d0749da7edc97003a7a34c5e31ea1ea479f3d8239ad16d09d2d"
+                    "url": "https://github.com/voidzero-dev/vite-plus/releases/download/v1.4.0/vp-aarch64-unknown-linux-gnu.tar.gz",
+                    "sha256": "8eee2d3e9a5bf8654f5150048f5a82b86d4f546c34c530f052545f5058db60de"
                 }
             }
         },

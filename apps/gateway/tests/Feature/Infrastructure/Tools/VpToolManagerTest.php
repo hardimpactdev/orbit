@@ -288,6 +288,18 @@ describe(VpToolManager::class, function (): void {
         expect($agent->calls[1]['input'])->toBe([]);
     });
 
+    it('admits older project locks with a newer recipe manager without upgrading', function (): void {
+        [$manager, $agent] = vp_tool_manager();
+        $agent->answer('tool.vp-version', ['version' => 'vp v1.4.0']);
+
+        $manager->ensureVersion(vp_tool_node(), '1.2.0');
+        $manager->ensureVersion(vp_tool_node(), '1.2.9');
+        $manager->ensureVersion(vp_tool_node(), '1.4.0');
+        expect(fn () => $manager->ensureVersion(vp_tool_node(), '1.4.1'))->toThrow(ToolManagerException::class);
+
+        expect($agent->commands())->toBe(['tool.vp-version', 'tool.vp-version', 'tool.vp-version', 'tool.vp-version']);
+    });
+
     it('gates project requirements against the observed recipe manager without upgrading', function (): void {
         [$manager, $agent] = vp_tool_manager();
         $agent->answer('tool.vp-version', ['version' => 'vp v0.3.3']);

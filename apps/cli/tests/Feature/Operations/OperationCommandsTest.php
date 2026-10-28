@@ -623,3 +623,17 @@ describe('tasks:park', function (): void {
         expect($mock->findResponseByRequest(ParkTaskGroupRequest::class)?->getPendingRequest()->headers()->get('Idempotency-Key'))->toBe('group.park.c1');
     })->with([false, true]);
 });
+
+it('shows the caller Node name and retains a removed caller ID in human output', function (?string $name, string $label): void {
+    MockClient::global([
+        ShowOperationRequest::class => cli_operation_response(cli_operation([
+            'status' => 'succeeded',
+            'caller_node_id' => 8,
+            'caller_node_name' => $name,
+        ])),
+    ]);
+
+    Artisan::call('operation:show', ['operation' => '42']);
+
+    expect(Artisan::output())->toContain('Caller Node')->toContain($label);
+})->with(['named' => ['services', 'services'], 'removed' => [null, 'Removed Node (8)']]);

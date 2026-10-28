@@ -22,8 +22,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * Reads and cancels operations (docs/reference/operations.md#read-an-operation). Each read is one database query and
- * never waits for the operation.
+ * Reads and cancels operations (docs/reference/operations.md#read-an-operation). After route binding, each read is
+ * one database query and never waits for the operation.
  */
 final class OperationsController extends Controller
 {
@@ -37,7 +37,7 @@ final class OperationsController extends Controller
         }
 
         return $this->respond($request, $action->execute($consumer, $request->filters())
-            ->map(static fn (Operation $operation): array => OperationData::fromModel($operation)->toArray())
+            ->map(static fn (Operation $operation): array => OperationData::fromModel($operation, $operation->caller_node_name)->toArray())
             ->values()
             ->all());
     }
@@ -45,24 +45,26 @@ final class OperationsController extends Controller
     #[RequiresNodeAccess(ServingNode::OperationOwning)]
     public function show(ShowOperationRequest $request, Operation $operation): JsonResponse
     {
-        return $this->respond($request, self::withSteps($operation, $request->afterSequence()));
+        return $this->respond($request, self::withSteps($operation, $request->afterSequence(), $operation->caller_node_name));
     }
 
     #[RequiresNodeAccess(ServingNode::OperationOwning)]
     public function cancel(CancelOperationRequest $request, Operation $operation, CancelOperationAction $action): JsonResponse
     {
-        return $this->respond($request, self::withSteps($action->execute($operation), null));
+        $callerNodeName = $operation->caller_node_name;
+
+        return $this->respond($request, self::withSteps($action->execute($operation), null, $callerNodeName));
     }
 
     /** @return array<string, mixed> */
-    public static function withSteps(Operation $operation, ?int $afterSequence): array
+    public static function withSteps(Operation $operation, ?int $afterSequence, ?string $callerNodeName): array
     {
         $steps = $operation->steps()
             ->when($afterSequence !== null, static fn ($query) => $query->where('sequence', '>', $afterSequence))
             ->get();
 
         return [
-            ...OperationData::fromModel($operation)->toArray(),
+            ...OperationData::fromModel($operation, $callerNodeName)->toArray(),
             'steps' => $steps->map(static fn (OperationStep $step): array => OperationStepData::fromModel($step)->toArray())->values()->all(),
         ];
     }

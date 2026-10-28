@@ -9,6 +9,7 @@ use App\Actions\Instances\StartAutomaticDeployEventAction;
 use App\Data\Instances\InstanceData;
 use App\Data\Operations\OperationData;
 use App\Domain\Operations\OperationKinds;
+use App\Http\Authorization\CallerName;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
@@ -34,6 +35,6 @@ final class InstanceAutomaticDeployPolicyController extends Controller
         assert($caller instanceof Node);
         $id = $request->attributes->getString('orbit.request_id');
 
-        return response()->json(['data' => OperationData::fromModel($action->execute($instance, $caller, $request->payload(), $id))->toArray(), 'meta' => ['request_id' => $id]], 202);
+        return response()->json(['data' => OperationData::fromModel($action->execute($instance, $caller, $request->payload(), $id), CallerName::fromRequest($request))->toArray(), 'meta' => ['request_id' => $id]], 202);
     }
 }

@@ -27,7 +27,7 @@ final readonly class OperationDeploymentHistory
     /** The row of this operation: created on the first attempt and kept in the operation's state. */
     public function row(Operation $operation, OperationRun $run, Instance $instance, string $kind): InstanceDeployment
     {
-        $deploymentId = $run->remember('deployment_id', fn (): int => $this->recorder->start($instance, $operation->triggered_by ?? 'operation', $kind)->id);
+        $deploymentId = $run->remember('deployment_id', fn (): int => $this->recorder->start($instance, $operation->triggered_by ?? 'operation', $kind, $operation->callerNodeId())->id);
         $deployment = is_int($deploymentId) ? InstanceDeployment::query()->find($deploymentId) : null;
 
         return $deployment instanceof InstanceDeployment

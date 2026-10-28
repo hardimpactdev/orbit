@@ -86,7 +86,7 @@ final class InstanceDeploymentsController extends Controller
         $operation = $action->automatic($instance, $caller, $requestId === '' ? null : $requestId, $request->commit());
 
         return response()->json([
-            'data' => OperationData::fromModel($operation)->toArray(),
+            'data' => OperationData::fromModel($operation, CallerName::fromRequest($request))->toArray(),
             'meta' => $this->meta($request),
         ], 202);
     }

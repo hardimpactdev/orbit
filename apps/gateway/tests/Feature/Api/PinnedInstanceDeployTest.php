@@ -54,6 +54,8 @@ describe('public pinned deploy starts', function (): void {
         'wrong length' => '{"commit":"'.str_repeat('a', 41).'"}',
         'duplicate' => '{"commit":"'.str_repeat('a', 40).'","commit":"'.str_repeat('b', 40).'"}',
         'trigger' => '{"triggered_by":"orbit:auto-deploy"}', 'automatic' => '{"automatic":true}', 'caller' => '{"caller_node_id":1}',
+        'Swamp trigger with valid commit' => '{"commit":"'.str_repeat('b', 40).'","triggered_by":"swamp:auto-deploy"}',
+        'caller with valid commit' => '{"commit":"'.str_repeat('b', 40).'","caller_node_id":17}',
     ])->with([false, true]);
 
     it('accepts a full SHA-256 commit', function (): void {
@@ -75,16 +77,16 @@ describe('public pinned deploy starts', function (): void {
 
 describe('trusted automatic deploy starts', function (): void {
     it('stores caller commit and key on one automatic receipt and replays it after completion', function (): void {
-        $id = pinned_deploy_start($this, true)->assertAccepted()->json('data.id');
+        $id = pinned_deploy_start($this, true)->assertAccepted()->assertJsonPath('data.triggered_by', 'swamp:auto-deploy')->assertJsonPath('data.caller_node_id', $this->fixture->caller->id)->json('data.id');
         $operation = Operation::query()->findOrFail($id);
         expect($operation->input)->toBe(['commit' => $this->sha, 'caller_node_id' => $this->fixture->caller->id])
-            ->and($operation->triggered_by)->toBe(AutomaticDeployHistory::Trigger)->and($operation->idempotency_key)->toBe('deploy.17.b');
+            ->and($operation->triggered_by)->toBe(AutomaticDeployHistory::SwampTrigger)->and($operation->idempotency_key)->toBe('deploy.17.b');
         run_operation_jobs();
         $this->fixture->instance->update(['auto_deploy' => false]);
         pinned_deploy_start($this, true)->assertAccepted()->assertJsonPath('data.id', $id)->assertJsonPath('data.status', 'succeeded');
         $this->assertDatabaseCount('operations', 1);
         expect($this->fixture->deployment->preparedCommits)->toBe([$this->sha]);
-        expect(InstanceDeployment::query()->sole()->triggered_by)->toBe(AutomaticDeployHistory::Trigger);
+        expect(InstanceDeployment::query()->sole()->triggered_by)->toBe(AutomaticDeployHistory::SwampTrigger);
     });
 
     it('requires a stable key and a commit', function (bool $missingKey): void {
@@ -175,14 +177,26 @@ it('executes generated MCP pinned starts with the same receipt and caller contra
         'jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call', 'params' => ['name' => $tool, 'arguments' => $input],
     ])->assertOk();
     $response = $call($arguments)->assertJsonPath('result.isError', false);
-    $id = json_decode($response->json('result.content.0.text'), true, flags: JSON_THROW_ON_ERROR)['operation']['id'];
+    $started = json_decode($response->json('result.content.0.text'), true, flags: JSON_THROW_ON_ERROR)['operation'];
+    $id = $started['id'];
+    expect($started['caller_node_id'])->toBe($automatic ? $this->fixture->caller->id : null);
+    expect($started['triggered_by'])->toBe($automatic ? 'swamp:auto-deploy' : $this->fixture->caller->name);
     $again = $call($arguments)->assertJsonPath('result.isError', false);
     expect(json_decode($again->json('result.content.0.text'), true, flags: JSON_THROW_ON_ERROR)['operation']['id'])->toBe($id);
     $bad = $call([...$arguments, 'commit' => str_repeat('c', 40)])->assertJsonPath('result.isError', true);
     expect(json_decode($bad->json('result.content.0.text'), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('operation.idempotency_conflict');
-    expect(Operation::query()->sole()->triggered_by)->toBe($automatic ? AutomaticDeployHistory::Trigger : $this->fixture->caller->name);
+    expect(Operation::query()->sole()->triggered_by)->toBe($automatic ? AutomaticDeployHistory::SwampTrigger : $this->fixture->caller->name);
     run_operation_jobs();
     expect($this->fixture->deployment->preparedCommits)->toBe([$this->sha]);
+    $deploymentId = InstanceDeployment::query()->sole()->id;
+    foreach (['operation-show' => ['operation' => $id], 'instance-deployment-show' => ['deployment' => $deploymentId]] as $name => $input) {
+        $read = $this->postJson('/mcp', [
+            'jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/call', 'params' => ['name' => $name, 'arguments' => $input],
+        ])->assertOk()->assertJsonPath('result.isError', false);
+        $data = json_decode($read->json('result.content.0.text'), true, flags: JSON_THROW_ON_ERROR)['data'];
+        expect($data['triggered_by'])->toBe($started['triggered_by']);
+        expect($data['caller_node_id'])->toBe($started['caller_node_id']);
+    }
 })->with([false, true]);
 
 it('rechecks enablement before starting a queued automatic effect', function (): void {
@@ -228,4 +242,136 @@ it('does not permanently block a commit when rollback retains that same commit',
     run_operation_jobs();
     expect(Operation::query()->sole()->status->value)->toBe('succeeded');
     expect($this->fixture->deployment->preparedCommits)->toBe([$this->sha]);
+});
+
+it('shows the authorized Swamp caller in deployment and operation reads without pausing the next deploy', function (): void {
+    $id = pinned_deploy_start($this, true)->assertAccepted()->json('data.id');
+    run_operation_jobs();
+    $row = InstanceDeployment::query()->sole();
+    $callerId = $this->fixture->caller->id;
+    $this->fixture->caller->update(['name' => 'renamed-gateway-peer']);
+
+    foreach (['/api/v1/deployments/'.$row->id, '/api/v1/operations/'.$id] as $url) {
+        $this->getJson($url)->assertOk()->assertJsonPath('data.triggered_by', 'swamp:auto-deploy')->assertJsonPath('data.caller_node_id', $callerId)->assertJsonPath('data.caller_node_name', 'renamed-gateway-peer');
+    }
+    $this->getJson('/api/v1/instances/'.$this->fixture->instance->id.'/deployments')->assertOk()
+        ->assertJsonPath('data.0.triggered_by', 'swamp:auto-deploy')->assertJsonPath('data.0.caller_node_id', $callerId)->assertJsonPath('data.0.caller_node_name', 'renamed-gateway-peer');
+    $this->getJson('/api/v1/operations')->assertOk()->assertJsonPath('data.0.caller_node_id', $callerId)->assertJsonPath('data.0.caller_node_name', 'renamed-gateway-peer');
+    expect(new AutomaticDeployHistory($this->fixture->instance)->pausedBy())->toBeNull();
+
+    $this->sha = str_repeat('c', 40);
+    pinned_deploy_start($this, true, key: 'next-swamp-deploy')->assertAccepted();
+    run_operation_jobs();
+    expect($this->fixture->deployment->preparedCommits)->toBe([str_repeat('b', 40), str_repeat('c', 40)]);
+
+    $missingCaller = $callerId + 1000;
+    $row->update(['caller_node_id' => $missingCaller]);
+    Operation::query()->findOrFail($id)->update(['input' => ['caller_node_id' => $missingCaller]]);
+    foreach (['/api/v1/deployments/'.$row->id, '/api/v1/operations/'.$id] as $url) {
+        $this->getJson($url)->assertOk()
+            ->assertJsonPath('data.caller_node_id', $missingCaller)
+            ->assertJsonPath('data.caller_node_name', null);
+    }
+});
+
+it('keeps historical automatic labels and missing caller IDs unchanged', function (): void {
+    $row = app(InstanceDeploymentRecorder::class)->start($this->fixture->instance, 'orbit:auto-deploy');
+
+    $this->getJson('/api/v1/deployments/'.$row->id)->assertOk()
+        ->assertJsonPath('data.triggered_by', 'orbit:auto-deploy')->assertJsonPath('data.caller_node_id', null)->assertJsonPath('data.caller_node_name', null);
+    expect(new AutomaticDeployHistory($this->fixture->instance)->pausedBy())->toBeNull();
+});
+
+it('keeps the current caller name on automatic admission, replay, receipt and cancellation', function (): void {
+    $id = pinned_deploy_start($this, true)->assertAccepted()
+        ->assertJsonPath('data.caller_node_name', $this->fixture->caller->name)->json('data.id');
+    $this->fixture->caller->update(['name' => 'renamed-policy-peer']);
+
+    pinned_deploy_start($this, true)->assertAccepted()->assertJsonPath('data.id', $id)
+        ->assertJsonPath('data.caller_node_name', 'renamed-policy-peer');
+    $this->getJson('/api/v1/instances/'.$this->fixture->instance->id.'/deploy/automatic/receipt?request_key=deploy.17.b&commit='.$this->sha)
+        ->assertOk()->assertJsonPath('data.operation.caller_node_name', 'renamed-policy-peer');
+    $this->call('POST', '/api/v1/operations/'.$id.'/cancel', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')->assertOk()
+        ->assertJsonPath('data.status', 'cancelled')->assertJsonPath('data.caller_node_name', 'renamed-policy-peer');
+});
+
+it('loads deployment caller names in one batch for the list', function (): void {
+    for ($index = 0; $index < 5; $index++) {
+        InstanceDeployment::query()->create([
+            'instance_id' => $this->fixture->instance->id, 'kind' => 'deploy',
+            'status' => 'succeeded', 'started_at' => now(), 'triggered_by' => 'swamp:auto-deploy',
+        ]);
+    }
+    $url = '/api/v1/instances/'.$this->fixture->instance->id.'/deployments';
+    $this->getJson($url)->assertOk();
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    $this->getJson($url)->assertOk()->assertJsonCount(5, 'data');
+    $withoutCallers = count(DB::getQueryLog());
+    InstanceDeployment::query()->update(['caller_node_id' => $this->fixture->caller->id]);
+    DB::flushQueryLog();
+
+    $this->getJson($url)->assertOk()->assertJsonCount(5, 'data')
+        ->assertJsonPath('data.0.caller_node_name', $this->fixture->caller->name);
+    $withCallers = count(DB::getQueryLog());
+    DB::disableQueryLog();
+
+    expect($withCallers)->toBe($withoutCallers + 1);
+});
+
+it('reads operation caller names within the existing query budget', function (bool $list): void {
+    for ($index = 0; $index < 5; $index++) {
+        $operation = Operation::query()->create([
+            'kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $this->fixture->instance->id,
+            'node_id' => $this->fixture->owner->id, 'input' => [], 'status' => 'succeeded',
+            'sequence' => 1, 'attempts' => 1, 'triggered_by' => 'swamp:auto-deploy',
+        ]);
+    }
+    $url = '/api/v1/operations'.($list ? '' : '/'.$operation->id);
+    $this->getJson($url)->assertOk();
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    $this->getJson($url)->assertOk();
+    $withoutCallers = count(DB::getQueryLog());
+    Operation::query()->update(['input' => ['caller_node_id' => $this->fixture->caller->id]]);
+    DB::flushQueryLog();
+
+    $this->getJson($url)->assertOk()
+        ->assertJsonPath($list ? 'data.0.caller_node_name' : 'data.caller_node_name', $this->fixture->caller->name);
+    $queries = DB::getQueryLog();
+    DB::disableQueryLog();
+
+    expect(count($queries))->toBe($withoutCallers);
+    $operationReads = array_filter($queries, static fn (array $query): bool => str_contains($query['query'], 'from "operations"') || str_contains($query['query'], 'from "operation_steps"'));
+    expect(count($operationReads))->toBe($list ? 1 : 2);
+})->with(['list' => true, 'show' => false]);
+
+it('does not look up caller names for automatic history on the instance list', function (): void {
+    $project = $this->fixture->instance->project->replicate()->fill(['name' => 'Second Project', 'slug' => 'second-project', 'code' => null, 'repository_url' => 'https://example.test/second-project.git']);
+    $project->save();
+    $second = $this->fixture->instance->replicate()->fill(['name' => 'second-production', 'project_id' => $project->id, 'checkout_path' => '/home/second-project/releases/initial', 'production_user' => 'second-project', 'production_home' => '/home/second-project']);
+    $second->save();
+    foreach ([$this->fixture->instance, $second] as $instance) {
+        for ($index = 0; $index < 5; $index++) {
+            InstanceDeployment::query()->create([
+                'instance_id' => $instance->id, 'kind' => 'deploy', 'status' => 'succeeded',
+                'started_at' => now(), 'triggered_by' => 'swamp:auto-deploy',
+            ]);
+        }
+    }
+    $this->getJson('/api/v1/instances')->assertOk();
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    $this->getJson('/api/v1/instances')->assertOk()->assertJsonCount(2, 'data');
+    $withoutCallers = count(DB::getQueryLog());
+    InstanceDeployment::query()->update(['caller_node_id' => $this->fixture->caller->id]);
+    DB::flushQueryLog();
+
+    $response = $this->getJson('/api/v1/instances')->assertOk()->assertJsonCount(2, 'data');
+    $withCallers = count(DB::getQueryLog());
+    DB::disableQueryLog();
+
+    expect($response->json('data.0.auto_deploy.history_version'))->toBeString();
+    expect($response->json('data.1.auto_deploy.history_version'))->toBeString();
+    expect($withCallers)->toBe($withoutCallers);
 });

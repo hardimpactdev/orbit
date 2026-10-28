@@ -21,6 +21,6 @@ final readonly class StartAutomaticDeployEventAction
     {
         $this->writer->assertSwamp($instance);
 
-        return $this->operations->execute(OperationKinds::InstancePolicyEvent, 'instance_policy', $instance->id, $caller->id, [...$data->toArray(), 'caller_node_id' => $caller->id], AutomaticDeployHistory::Trigger, $requestId);
+        return $this->operations->execute(OperationKinds::InstancePolicyEvent, 'instance_policy', $instance->id, $caller->id, [...$data->toArray(), 'caller_node_id' => $caller->id], AutomaticDeployHistory::SwampTrigger, $requestId);
     }
 }

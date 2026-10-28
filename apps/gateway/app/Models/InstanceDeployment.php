@@ -21,10 +21,12 @@ use Illuminate\Support\Carbon;
  * @property string|null $failed_step
  * @property string|null $error_code
  * @property string|null $selected_release
+ * @property int|null $caller_node_id
  * @property string|null $triggered_by
  * @property string $kind `deploy` or `rollback`
  * @property list<array<string, mixed>>|null $events
  * @property-read Instance $instance
+ * @property-read Node|null $callerNode
  */
 final class InstanceDeployment extends Model
 {
@@ -46,6 +48,7 @@ final class InstanceDeployment extends Model
         'error_code',
         'selected_release',
         'triggered_by',
+        'caller_node_id',
         'kind',
         'events',
     ];
@@ -58,6 +61,12 @@ final class InstanceDeployment extends Model
         return $this->belongsTo(Instance::class, 'instance_id');
     }
 
+    /** @return BelongsTo<Node, $this> */
+    public function callerNode(): BelongsTo
+    {
+        return $this->belongsTo(Node::class, 'caller_node_id');
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {
@@ -65,6 +74,7 @@ final class InstanceDeployment extends Model
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
             'duration_seconds' => 'integer',
+            'caller_node_id' => 'integer',
             'events' => 'array',
         ];
     }
