@@ -170,3 +170,6 @@ resource with `exitCode` and `message`. It writes no success resource. The
 caller must inspect that receipt before advancing. The default still throws.
 Abort and infrastructure errors always throw, so a lost worker never looks like
 a command that completed and can be repaired.
+
+Batch range rules and lock synchronization follow the shared
+[manifest range policy](../../../docs/website-packages.md#manifest-range-styles).

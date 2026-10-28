@@ -8,7 +8,10 @@ import {
   key,
   planBatch,
   scratch,
+  targetRange,
+  UnwritableTarget,
   type UpdateTarget,
+  writableReleases,
 } from "../../_lib/maintenance/batch.ts";
 import {
   audit,
@@ -72,7 +75,7 @@ function select(
     (result[sections[0]] as Record<string, unknown>)[t.package] =
       choices?.find((o) => key(o[0]) === key(t))?.map((t) => t.version).join(
         " || ",
-      ) ?? t.version;
+      ) ?? targetRange(range, t);
   }
   return result;
 }
@@ -181,9 +184,24 @@ export async function plan(
     const result = await planBatch(valid, args.policy, async (c) => {
       const range = direct(manifests.get(c.path)!)[c.package];
       if (/(?:git|https?:|file:|\bas\b)/.test(range)) {
-        throw new Error("Unsupported non-registry dependency constraint");
+        throw new UnwritableTarget(
+          "Unsupported non-registry dependency constraint",
+        );
       }
-      return await releases(c, signal);
+      return await writableReleases(
+        c,
+        args.policy,
+        await releases(c, signal),
+        (version) => {
+          if (range !== undefined) {
+            targetRange(range, {
+              version,
+              manager: c.manager,
+              purpose: c.reasons.includes("security") ? "security" : "major",
+            });
+          }
+        },
+      );
     }, async (choices) => {
       for (const [f, text] of files) {
         if (text !== null) {
@@ -201,6 +219,7 @@ export async function plan(
         );
         return { targets };
       } catch (e) {
+        signal?.throwIfAborted();
         return {
           targets: [],
           error: e instanceof Error ? e.message : String(e),

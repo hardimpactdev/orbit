@@ -195,3 +195,6 @@ a command that completed and can be repaired.
 of all tracked and untracked, non-ignored files. It uses a temporary index and
 leaves HEAD and the real index intact. Composer-only checkouts are supported.
 Gateway handoff still owns commits.
+
+Batch range rules and lock synchronization follow the shared
+[manifest range policy](../../../docs/website-packages.md#manifest-range-styles).

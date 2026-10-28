@@ -11,14 +11,19 @@ import {
   key,
   planBatch,
   scratch,
+  targetRange,
+  UnwritableTarget,
   type UpdateTarget,
+  writableReleases,
 } from "../../_lib/maintenance/batch.ts";
 import {
   command,
+  type CommandResult,
   type CommonArgs,
   decode,
   MaintenanceFailure,
   optionalText,
+  type Place,
   places,
   writeJson,
 } from "../../_lib/maintenance/io.ts";
@@ -31,6 +36,21 @@ import {
   sections,
   workspace,
 } from "./workspace.ts";
+/** npm reports deterministic misses on either JSON stdout or its diagnostic stream. */
+function registryFailure(result: CommandResult, message: string): never {
+  let code: unknown;
+  try {
+    code = JSON.parse(result.stdout)?.error?.code;
+  } catch { /* npm may report only stderr. */ }
+  if (
+    code === "E404" || (code == null &&
+      /\bnpm (?:ERR!|error)\s+code\s+E404\b|\bis not in (?:this|the(?: npm)?) registry\b/i
+        .test(`${result.stdout}\n${result.stderr}`))
+  ) {
+    throw new UnwritableTarget(`${message}: package not found in registry`);
+  }
+  throw new MaintenanceFailure(message);
+}
 export async function releases(
   c: Pick<Candidate, "package">,
   dir: string,
@@ -43,7 +63,7 @@ export async function releases(
     signal,
   );
   if (result.code !== 0) {
-    throw new MaintenanceFailure("Cannot read registry target metadata");
+    registryFailure(result, "Cannot read registry target metadata");
   }
   const data = decode(result.stdout, "npm registry metadata");
   if (
@@ -83,7 +103,7 @@ function select(
     (result[found[0]] as Record<string, unknown>)[t.package] =
       choices?.find((o) => key(o[0]) === key(t))?.map((t) => t.version).join(
         " || ",
-      ) ?? t.version;
+      ) ?? targetRange(range, t);
   }
   return result;
 }
@@ -122,9 +142,7 @@ async function sdk(
       temp,
     ], signal);
     if (result.code !== 0) {
-      throw new MaintenanceFailure(
-        "Cannot read the Expo SDK dependency catalog",
-      );
+      registryFailure(result, "Cannot read the Expo SDK dependency catalog");
     }
     const rows = JSON.parse(result.stdout);
     const filename = rows[0]?.filename;
@@ -148,15 +166,43 @@ async function sdk(
     await Deno.remove(temp, { recursive: true });
   }
 }
+/** One registry snapshot per plan/batch, isolated by configured path and never shared across runs. */
+function metadata(signal?: AbortSignal) {
+  const catalogs = new Map<string, Promise<Record<string, string>>>();
+  const packages = new Map<string, ReturnType<typeof releases>>();
+  const memo = <T>(
+    cache: Map<string, Promise<T>>,
+    key: string,
+    read: () => Promise<T>,
+  ) => {
+    if (!cache.has(key)) cache.set(key, read());
+    return cache.get(key)!;
+  };
+  return {
+    sdk: (version: string, place: Place) =>
+      memo(
+        catalogs,
+        `${place.path}\0${version}`,
+        () => sdk(version, place.dir, signal),
+      ),
+    releases: (c: Pick<Candidate, "package">, place: Place) =>
+      memo(
+        packages,
+        `${place.path}\0${c.package}`,
+        () => releases(c, place.dir, signal),
+      ),
+  };
+}
+type Metadata = ReturnType<typeof metadata>;
 async function align(
   args: CommonArgs,
   targets: UpdateTarget[],
-  signal?: AbortSignal,
+  registry: Metadata,
 ) {
   const result = [...targets];
   for (const t of targets.filter((t) => t.package === "expo")) {
     const js = await workspace({ path: t.path, dir: `${args.cwd}/${t.path}` }),
-      catalog = await sdk(t.version, js.dir, signal);
+      catalog = await registry.sdk(t.version, js);
     for (const [name, range] of Object.entries(catalog)) {
       if (!(name in js.direct) || !coupled(name)) continue;
       const selected = result.find((r) =>
@@ -164,23 +210,23 @@ async function align(
       );
       if (selected) {
         if (!satisfies(selected.version, range)) {
-          throw new MaintenanceFailure(
+          throw new UnwritableTarget(
             `Selected ${name} conflicts with Expo SDK ${t.version}`,
           );
         }
         continue;
       }
       const available = eligible(
-        await releases({ package: name }, js.dir, signal),
+        await registry.releases({ package: name }, js),
         undefined,
         args.policy[t.path]?.minimumReleaseAgeDays ?? 0,
       ).filter((r) => satisfies(r.version, range));
       if (!available.length) {
-        throw new MaintenanceFailure(
+        throw new UnwritableTarget(
           `No release-age eligible ${name} aligns with Expo SDK ${t.version}`,
         );
       }
-      result.push({
+      const aligned: UpdateTarget = {
         path: t.path,
         manager: "js",
         package: name,
@@ -188,7 +234,9 @@ async function align(
         purpose: "major",
         advisories: [],
         advisoryUrls: [],
-      });
+      };
+      targetRange(js.direct[name], aligned);
+      result.push(aligned);
     }
   }
   return result;
@@ -197,6 +245,7 @@ async function apply(
   root: string,
   args: CommonArgs,
   targets: UpdateTarget[],
+  registry: Metadata,
   signal?: AbortSignal,
   planning = false,
   choices?: UpdateTarget[][],
@@ -211,10 +260,9 @@ async function apply(
       chosen.some((t) => coupled(t.package))
     ) throw new MaintenanceFailure("Expo coupled target requires an SDK batch");
     if (js.expo && chosen.some((t) => t.package === "expo")) {
-      const catalog = await sdk(
+      const catalog = await registry.sdk(
         chosen.find((t) => t.package === "expo")!.version,
-        place.dir,
-        signal,
+        place,
       );
       for (const t of chosen) {
         if (
@@ -227,9 +275,10 @@ async function apply(
         }
       }
     }
+    const declarations = planning ? js.manifest : select(js.manifest, chosen);
     await writeJson(
       `${place.dir}/package.json`,
-      select(js.manifest, chosen, choices),
+      select(js.manifest, chosen, choices ?? chosen.map((t) => [t])),
     );
     await run(js, js.manager, [
       "install",
@@ -262,20 +311,41 @@ async function apply(
         );
       }
     }
+    if (!planning) {
+      if (JSON.stringify(declarations) !== JSON.stringify(installed.manifest)) {
+        const solved = await versions(installed);
+        await writeJson(`${place.dir}/package.json`, declarations);
+        await run(js, js.manager, [
+          "install",
+          js.manager === "npm" ? "--package-lock-only" : "--lockfile-only",
+          "--ignore-scripts",
+        ], signal);
+        const synchronized = await versions(await workspace(place));
+        if (
+          Object.keys(solved).length !== Object.keys(synchronized).length ||
+          Object.entries(solved).some(([name, version]) =>
+            synchronized[name] !== version
+          )
+        ) {
+          throw new MaintenanceFailure(
+            "Lockfile synchronization changed resolved versions",
+          );
+        }
+      }
+    }
     const after = await versions(installed);
     await assertChangedReleaseAge(
       before,
       after,
       args.policy[place.path]?.minimumReleaseAgeDays ?? 0,
       (name) =>
-        releases(
+        registry.releases(
           {
             package: installed.manager === "bun"
               ? descriptor((locked[name] as unknown[])[0] as string)[0]
               : (locked[name] as { name?: string })?.name ?? registryName(name),
           },
-          place.dir,
-          signal,
+          place,
         ),
     );
     const resolved = chosen.filter((t) =>
@@ -311,7 +381,7 @@ export async function plan(
   candidates: Candidate[],
   signal?: AbortSignal,
 ) {
-  const p = await places(args, "package.json");
+  const p = await places(args, "package.json"), registry = metadata(signal);
   if (!candidates.length) {
     return { schema: 1 as const, targets: [], blocked: [] };
   }
@@ -341,19 +411,44 @@ export async function plan(
             js.direct[c.package],
           )
         ) {
-          throw new Error(
+          throw new UnwritableTarget(
             "No direct registry target; transitive/aliased finding remains recorded",
           );
         }
-        return await releases(c, place.dir, signal);
+        return await writableReleases(
+          c,
+          args.policy,
+          await registry.releases(c, place),
+          async (version) => {
+            const target: UpdateTarget = {
+              path: c.path,
+              manager: c.manager,
+              package: c.package,
+              version,
+              purpose: c.reasons.includes("security") ? "security" : "major",
+              advisories: c.advisories.map((a) => a.id),
+              advisoryUrls: c.advisories.map((a) => a.url!),
+            };
+            targetRange(js.direct[c.package], target);
+            if (js.expo && c.package === "expo") {
+              await align(args, [target], registry);
+            }
+          },
+        );
       }, async (choices) => {
         for (const [f, text] of files) {
           if (text !== null) {
             await Deno.writeTextFile(`${temp.root}/${f}`, text);
           }
         }
+        let expanded: UpdateTarget[];
         try {
-          const expanded = await align(args, choices.map((o) => o[0]), signal);
+          expanded = await align(args, choices.map((o) => o[0]), registry);
+        } catch (error) {
+          if (!(error instanceof UnwritableTarget)) throw error;
+          return { targets: [], error: error.message };
+        }
+        try {
           const matrix = expanded.map((t) =>
             choices.find((o) => key(o[0]) === key(t)) ?? [t]
           );
@@ -361,12 +456,14 @@ export async function plan(
             temp.root,
             args,
             expanded,
+            registry,
             signal,
             true,
             matrix,
           );
           return { targets };
         } catch (e) {
+          signal?.throwIfAborted();
           return {
             targets: [],
             error: e instanceof Error ? e.message : String(e),
@@ -383,11 +480,11 @@ export async function batch(
   targets: UpdateTarget[],
   signal?: AbortSignal,
 ) {
-  const p = await places(args, "package.json");
+  const p = await places(args, "package.json"), registry = metadata(signal);
   for (const t of targets) {
     const place = p.places.find((p) => p.path === t.path);
     if (!place) throw new MaintenanceFailure("Unknown batch path");
-    const r = (await releases(t, place.dir, signal)).find((r) =>
+    const r = (await registry.releases(t, place)).find((r) =>
       r.version === t.version
     );
     const time = Date.parse(r?.publishedAt ?? "");
@@ -414,5 +511,5 @@ export async function batch(
       );
     }
   }
-  await apply(args.cwd, args, targets, signal);
+  await apply(args.cwd, args, targets, registry, signal);
 }

@@ -1,3 +1,5 @@
+// @deno-types="npm:@types/semver@7.7.1"
+import { satisfies, validRange } from "npm:semver@7.7.2";
 import { z } from "npm:zod@4";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import {
@@ -11,7 +13,7 @@ export const UpdateTargetSchema = z.strictObject({
   path: z.string().min(1),
   manager: z.enum(["composer", "js"]),
   package: z.string().regex(
-    /^(?:@[a-z0-9][a-z0-9_.-]*\/)?[a-z0-9][a-z0-9_.-]*(?:\/[a-z0-9][a-z0-9_.-]*)?$/,
+    /^(?:@[a-z0-9][a-z0-9_.-]*\/)?[a-z0-9][a-z0-9_.-]*(?:\/[a-z0-9][a-z0-9_.-]*)?$/i,
   ),
   version: z.string().regex(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/),
   purpose: z.enum(["major", "security"]),
@@ -36,6 +38,78 @@ export const UpdateTargetSchema = z.strictObject({
   ) c.addIssue({ code: "custom", message: "invalid JS package" });
 });
 export type UpdateTarget = z.infer<typeof UpdateTargetSchema>;
+/** Composer partial pins and two-segment tildes differ from npm's ranges. */
+function constraint(range: string, manager: UpdateTarget["manager"]): string {
+  if (manager === "js") return range;
+  return range.split("||").map((part) => {
+    if (/\s-\s/.test(part)) return part;
+    return part.replace(
+      /(~\s*|\^\s*)?(v?\d+(?:\.\d+){0,2})(?![\w.*])/g,
+      (_match, tilde: string | undefined, raw: string) => {
+        if (tilde?.startsWith("^")) return `${tilde}${raw}`;
+        const digits = raw.replace(/^v/, "").split(".");
+        const padded = [...digits, ...Array(3 - digits.length).fill("0")].join(
+          ".",
+        );
+        return tilde && digits.length < 3
+          ? `>=${padded} <${Number(digits[0]) + 1}.0.0`
+          : `${tilde ?? ""}${padded}`;
+      },
+    );
+  }).join("||");
+}
+export class UnwritableTarget extends MaintenanceFailure {
+  constructor(message: string) {
+    super(message, 64);
+    this.name = "UnwritableTarget";
+  }
+}
+/** Lock targets stay exact; declarations keep their operator and precision. */
+export function targetRange(
+  range: string,
+  target: Pick<UpdateTarget, "version" | "purpose" | "manager">,
+): string {
+  const fail = () => {
+    throw new UnwritableTarget(
+      `Cannot preserve range style for ${range} (${target.purpose})`,
+    );
+  };
+  // Semver accepts metadata and uppercase V; these forms have no batch transformation.
+  if (
+    !/^[\d.vxX*^~<>=| \t-]+$/.test(range) || /\d-[\da-zA-Z]/.test(range) ||
+    !validRange(constraint(range, target.manager))
+  ) return fail();
+  if (
+    target.purpose === "major" &&
+    satisfies(target.version, constraint(range, target.manager))
+  ) return range;
+  const precise = /^(\s*)(>=|[~^=]?)(v?)(\d+(?:\.\d+){0,2})(\s*)$/.exec(range);
+  if (precise) {
+    const count = precise[4].split(".").length;
+    // A shortened security floor must still denote the complete fixed version.
+    if (
+      target.purpose === "security" &&
+      target.version.split(".").slice(count).some((p) => p !== "0")
+    ) return fail();
+    const result = `${precise[1]}${precise[2]}${precise[3]}${
+      target.version.split(".").slice(0, count).join(".")
+    }${precise[5]}`;
+    if (satisfies(target.version, constraint(result, target.manager))) {
+      return result;
+    }
+  }
+  if (
+    target.purpose === "major" && /^\d+(?:\.(?:\d+|[xX*])){1,2}$/.test(range)
+  ) {
+    const result = range.split(".").map((p, i) =>
+      /^[xX*]$/.test(p) ? p : target.version.split(".")[i]
+    ).join(".");
+    if (satisfies(target.version, constraint(result, target.manager))) {
+      return result;
+    }
+  }
+  return fail();
+}
 export const TargetsSchema = z.array(UpdateTargetSchema).min(1).refine(
   (t) => new Set(t.map(key)).size === t.length,
   "one target per package/path/ecosystem",
@@ -84,6 +158,47 @@ export function eligible(
   ).sort((a, b) => compare(b.version, a.version));
 }
 
+function candidateReleases(
+  c: Candidate,
+  policy: CommonArgs["policy"],
+  rows: { version: string; publishedAt: string }[],
+) {
+  return eligible(rows, c.current, policy[c.path]?.minimumReleaseAgeDays ?? 0)
+    .filter((r) =>
+      c.reasons.includes("security") || !c.current ||
+      Number(r.version.split(".")[0]) >
+        Number(c.current.replace(/^v/, "").split(".")[0])
+    );
+}
+/** Validate each eligible option before the resolver can select it. */
+export async function writableReleases(
+  c: Candidate,
+  policy: CommonArgs["policy"],
+  rows: { version: string; publishedAt: string }[],
+  validate: (version: string) => void | Promise<void>,
+) {
+  const options = candidateReleases(c, policy, rows), writable = [];
+  const failures = new Map<string, string>();
+  for (const row of options) {
+    try {
+      await validate(row.version);
+      writable.push(row);
+    } catch (error) {
+      if (!(error instanceof UnwritableTarget)) throw error;
+      if (failures.size < 3 && !failures.has(error.message)) {
+        failures.set(
+          error.message,
+          `${c.package} ${row.version}: ${error.message}`,
+        );
+      }
+    }
+  }
+  if (options.length && !writable.length) {
+    throw new UnwritableTarget([...failures.values()].join("; "));
+  }
+  return writable;
+}
+
 /** Pure selection; a successful solver/audit covers the entire selected set. */
 export async function planBatch(
   candidates: Candidate[],
@@ -108,18 +223,10 @@ export async function planBatch(
         c.reasons.includes("security") &&
         (!c.advisories.length ||
           c.advisories.some((a) => !a.url?.startsWith("https://")))
-      ) throw new Error("Advisory has no verified source URL");
-      const rows = eligible(
-        await releases(c),
-        c.current,
-        policy[c.path]?.minimumReleaseAgeDays ?? 0,
-      ).filter((r) =>
-        c.reasons.includes("security") || !c.current ||
-        Number(r.version.split(".")[0]) >
-          Number(c.current.replace(/^v/, "").split(".")[0])
-      );
-      const targets = rows.map((r) =>
-        UpdateTargetSchema.parse({
+      ) throw new UnwritableTarget("Advisory has no verified source URL");
+      const rows = candidateReleases(c, policy, await releases(c));
+      const targets = rows.map((r) => {
+        const parsed = UpdateTargetSchema.safeParse({
           path: c.path,
           manager: c.manager,
           package: c.package,
@@ -127,13 +234,23 @@ export async function planBatch(
           purpose: c.reasons.includes("security") ? "security" : "major",
           advisories: c.advisories.map((a) => a.id),
           advisoryUrls: c.advisories.map((a) => a.url),
-        })
-      );
+        });
+        if (!parsed.success) {
+          throw new UnwritableTarget(
+            parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`)
+              .join("; "),
+          );
+        }
+        return parsed.data;
+      });
       if (!targets.length) {
-        throw new Error("No stable target satisfies the release-age policy");
+        throw new UnwritableTarget(
+          "No stable target satisfies the release-age policy",
+        );
       }
       options.push({ candidate: c, targets });
     } catch (e) {
+      if (!(e instanceof UnwritableTarget)) throw e;
       blocked.push({
         path: c.path,
         manager: c.manager,

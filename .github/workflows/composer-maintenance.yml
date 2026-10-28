@@ -36,6 +36,9 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.9.8
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
       - name: Check formatting
         run: deno fmt --check extensions/behaviors/composer-maintenance extensions/behaviors/_lib/maintenance
       - name: Lint extension
