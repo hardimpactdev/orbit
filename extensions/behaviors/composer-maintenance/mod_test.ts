@@ -271,13 +271,27 @@ function summaryText(
 ) {
   const parts = [title, intro];
   if (actions.length) parts.push("Action needed\n\n" + actions.join("\n"));
-  if (fixes.length) parts.push("Security fixes\n\n" + fixes.join("\n"));
   parts.push(
     [
-      "| Package | From | To | note |",
+      "| Package | From | To | Change |",
       "| --- | --- | --- | --- |",
       ...rows.map((r) => `| ${r.join(" | ")} |`),
     ].join("\n"),
+  );
+  if (fixes.length) parts.push("Security fixes\n\n" + fixes.join("\n"));
+  parts.push(
+    "## What changes in the package\n\n" +
+      rows.map((r) => {
+        const [name, path] = r[0].split(" (");
+        const version = r[2] === "—"
+          ? "(removed)"
+          : r[3].includes("major")
+          ? r[2].split(".").slice(0, r[2].startsWith("0.") ? 2 : 1).join(".")
+          : r[2];
+        return `- **${name} ${version}${
+          path ? ", " + path.slice(0, -1) : ""
+        }.** No code changes needed.`;
+      }).join("\n"),
   );
   return parts.join("\n\n") + "\n";
 }
@@ -289,8 +303,7 @@ const monthlyTitle = () =>
       timeZone: "UTC",
     })
   }`;
-const routineIntro =
-  "This is a routine maintenance update. The packages below were updated to their newest safe versions.";
+const routineIntro = "Updates the dependencies listed below.";
 
 test("routine updates configured paths sequentially", async (r) => {
   await r.json("composer.json", manifest, "server/web");
@@ -735,7 +748,10 @@ test("summary describes a routine update and omits transitive version changes", 
       "symfony/polyfill-php80": "1.28.0",
     }, { "dev/tool": "1.0.0" }),
   );
-  const result = await r.execute("summary", { base });
+  const result = await r.execute("summary", {
+    projectType: "laravel-package",
+    base,
+  });
   assertEquals(
     result.text,
     summaryText(monthlyTitle(), routineIntro, [[
@@ -758,14 +774,17 @@ test("summary describes one major upgrade with upstream text", async (r) => {
     "composer.lock",
     lock({ "livewire/livewire": "4.2.0", "other/pkg": "2.0.0" }),
   );
-  const result = await r.execute("summary", { base });
+  const result = await r.execute("summary", {
+    projectType: "laravel-package",
+    base,
+  });
   assertEquals(
     result.text,
     summaryText(
       "Update other/pkg to 2.0.0",
       "This updates other/pkg from 1.2.3 to 2.0.0.",
       [["other/pkg", "1.2.3", "2.0.0", "major"]],
-      ["other/pkg 1.2.3 → 2.0.0 is a major update. Check its upgrade notes before you deploy."],
+      ["other/pkg 1.2.3 → 2.0.0 is a major update. Check its upgrade notes for downstream breaking changes."],
     ),
   );
 });
@@ -782,14 +801,14 @@ test("summary retains the monthly title when one of several updates is major", a
     lock({ "laravel/framework": "14.0.0", "livewire/livewire": "4.2.1" }),
   );
   assertEquals(
-    (await r.execute("summary", { base })).text,
+    (await r.execute("summary", { projectType: "laravel-package", base })).text,
     summaryText(monthlyTitle(), routineIntro, [[
       "laravel/framework",
       "13.38.0",
       "14.0.0",
       "major",
     ], ["livewire/livewire", "4.2.0", "4.2.1", ""]], [
-      "laravel/framework 13.38.0 → 14.0.0 is a major update. Check its upgrade notes before you deploy.",
+      "laravel/framework 13.38.0 → 14.0.0 is a major update. Check its upgrade notes for downstream breaking changes.",
     ]),
   );
 });
@@ -797,12 +816,12 @@ test("summary treats a newer 0.x minor as major", async (r) => {
   const base = await r.base({ "other/pkg": "0.1.4" });
   await r.json("composer.lock", lock({ "other/pkg": "0.2.0" }));
   assertEquals(
-    (await r.execute("summary", { base })).text,
+    (await r.execute("summary", { projectType: "laravel-package", base })).text,
     summaryText(
       "Update other/pkg to 0.2.0",
       "This updates other/pkg from 0.1.4 to 0.2.0.",
       [["other/pkg", "0.1.4", "0.2.0", "major"]],
-      ["other/pkg 0.1.4 → 0.2.0 is a major update. Check its upgrade notes before you deploy."],
+      ["other/pkg 0.1.4 → 0.2.0 is a major update. Check its upgrade notes for downstream breaking changes."],
     ),
   );
 });
@@ -815,7 +834,10 @@ test("summary links only cleared advisories with exact upstream text", async (r)
     "composer.lock",
     lock({ "livewire/livewire": "4.5.0", "other/pkg": "1.0.0" }),
   );
-  const result = await r.execute("summary", { base }, {
+  const result = await r.execute("summary", {
+    projectType: "laravel-package",
+    base,
+  }, {
     [audit]: [emptyAudit, { code: 1, data: finding }],
   });
   const links =
@@ -825,7 +847,7 @@ test("summary links only cleared advisories with exact upstream text", async (r)
     summaryText(
       "Update livewire/livewire to 4.5.0 (security fix)",
       "This updates livewire/livewire from 4.2.0 to 4.5.0.",
-      [["livewire/livewire", "4.2.0", "4.5.0", `security fix ${links}`]],
+      [["livewire/livewire", "4.2.0", "4.5.0", "security fix"]],
       [],
       [`livewire/livewire: ${links}`],
     ),
@@ -837,7 +859,10 @@ test("summary links only cleared advisories with exact upstream text", async (r)
 test("summary does not call an open advisory a fix", async (r) => {
   const base = await r.base({ "livewire/livewire": "4.2.0" });
   await r.json("composer.lock", lock({ "livewire/livewire": "4.5.0" }));
-  const result = await r.execute("summary", { base }, {
+  const result = await r.execute("summary", {
+    projectType: "laravel-package",
+    base,
+  }, {
     [audit]: [{ code: 1, data: finding }],
   });
   assertEquals(
@@ -856,14 +881,18 @@ test("summary names changed paths in its table and sections", async (r) => {
   await r.json("composer.lock", lock({ "other/pkg": "1.1.0" }));
   await r.json("composer.lock", lock({ "other/pkg": "2.0.0" }), "mobile");
   assertEquals(
-    (await r.execute("summary", { base, paths: [".", "mobile"] })).text,
+    (await r.execute("summary", {
+      projectType: "laravel-package",
+      base,
+      paths: [".", "mobile"],
+    })).text,
     summaryText(monthlyTitle(), routineIntro, [[
       "other/pkg",
       "1.0.0",
       "1.1.0",
       "",
     ], ["other/pkg (mobile)", "1.0.0", "2.0.0", "major"]], [
-      "other/pkg (mobile) 1.0.0 → 2.0.0 is a major update. Check its upgrade notes before you deploy.",
+      "other/pkg (mobile) 1.0.0 → 2.0.0 is a major update. Check its upgrade notes for downstream breaking changes.",
     ]),
   );
 });
@@ -888,7 +917,7 @@ test("summary resolves origin/HEAD when base is omitted", async (r) => {
   );
   await r.json("composer.lock", lock({ "livewire/livewire": "4.2.2" }));
   assertEquals(
-    (await r.execute("summary")).text,
+    (await r.execute("summary", { projectType: "laravel-package" })).text,
     summaryText(
       "Update livewire/livewire to 4.2.2",
       "This updates livewire/livewire from 4.2.0 to 4.2.2.",
@@ -936,7 +965,8 @@ for (const mode of ["added", "removed"]) {
       lock(mode === "removed" ? {} : { "other/pkg": "1.0.0" }),
     );
     assertEquals(
-      (await r.execute("summary", { base })).text,
+      (await r.execute("summary", { projectType: "laravel-package", base }))
+        .text,
       mode === "removed"
         ? summaryText("Remove other/pkg", "This removes other/pkg 1.0.0.", [[
           "other/pkg",
@@ -956,7 +986,10 @@ for (const mode of ["added", "removed"]) {
 test("summary does not mark a removed direct declaration fixed while it stays installed", async (r) => {
   const base = await r.base({ "livewire/livewire": "4.2.0" });
   await r.json("composer.json", { require: {} });
-  const result = await r.execute("summary", { base }, {
+  const result = await r.execute("summary", {
+    projectType: "laravel-package",
+    base,
+  }, {
     [audit]: [{ code: 1, data: finding }],
   });
   assertEquals(
@@ -980,6 +1013,7 @@ for (const path of [".", "server"]) {
     await r.json("composer.json", { require: [], "require-dev": [] }, path);
     await r.json("composer.lock", lock({}), path);
     const result = await r.execute("summary", {
+      projectType: "laravel-package",
       base,
       paths: path === "." ? ["."] : [".", "server"],
     }, { [audit]: [{ raw: "" }, emptyAudit] });
@@ -1033,7 +1067,7 @@ test("summary preserves the original Composer-only patch case", async (r) => {
     }, { "dev/tool": "1.0.0" }),
   );
   assertEquals(
-    (await r.execute("summary", { base })).text,
+    (await r.execute("summary", { projectType: "laravel-package", base })).text,
     summaryText(
       "Update livewire/livewire to 4.2.1",
       "This updates livewire/livewire from 4.2.0 to 4.2.1.",
@@ -1204,4 +1238,45 @@ test("a failed security command still returns its exception receipt", async (r) 
     "livewire/livewire",
   );
   assertEquals(await r.exists("maintainer-exceptions.json"), false);
+});
+
+test("summary includes the checked repair effect without changing the repository", async (r) => {
+  const base = await r.base({
+    "livewire/livewire": "4.2.0",
+    "other/pkg": "1.0.0",
+  });
+  await r.json(
+    "composer.lock",
+    lock({ "livewire/livewire": "4.2.0", "other/pkg": "2.0.0" }),
+  );
+  await Deno.writeTextFile(`${r.cwd}/component.ts`, "typed component");
+  await r.git("add", ".");
+  await r.git("commit", "-m", "repair");
+  const tree = await r.git("rev-parse", "HEAD^{tree}");
+  const report = JSON.stringify({
+    updates: [{
+      manager: "composer",
+      path: ".",
+      package: "other/pkg",
+      codeChanged: true,
+      effect: "The component now has explicit types; pages render the same.",
+      files: ["component.ts"],
+    }],
+  });
+  const result = await r.execute("summary", {
+    base,
+    impact: {
+      report,
+      inventory: [{ manager: "composer", path: ".", package: "other/pkg" }],
+      scriptTree: tree,
+      repairTree: tree,
+      checkedTree: tree,
+    },
+  });
+  assertStringIncludes(result.body, "What changes on the site");
+  assertStringIncludes(
+    result.body,
+    "The component now has explicit types; pages render the same.",
+  );
+  assertEquals(await r.git("status", "--porcelain"), "");
 });

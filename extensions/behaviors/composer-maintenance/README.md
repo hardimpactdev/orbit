@@ -86,9 +86,8 @@ in the private project extension. These resources have an infinite lifetime.
   dependencies can move with the selected package.
 - `summary`: compares direct manifest declarations and locked versions with
   `base`, or the merge base with `origin/HEAD` when omitted. It returns `title`,
-  `body`, the complete `text`, and structured `changes`. Text matches maintainer
-  PR #5: monthly routine title for multiple rows, optional Action needed and
-  Security fixes sections, and a Package / From / To / note table. It audits
+  `body`, the complete `text`, and structured `changes`. The table has Package,
+  From, To and Change columns, followed by site or package effects. It audits
   current and base lockfiles; only cleared advisories count as fixes. The base
   audit uses a temporary directory removed after the command. No changes is a
   failure with `No dependency changes to summarize.`
@@ -170,6 +169,12 @@ resource with `exitCode` and `message`. It writes no success resource. The
 caller must inspect that receipt before advancing. The default still throws.
 Abort and infrastructure errors always throw, so a lost worker never looks like
 a command that completed and can be repaired.
+
+Summary accepts optional `impact` with the repair receipt's JSON `report`,
+`repairTree` and `checkedTree`. The
+[batch PR text contract](../../../docs/website-packages.md#pull-request-text)
+defines entries, coverage and publication failures. Without a repair, only
+manifest and lock changes may say `No code changes needed.`
 
 Batch range rules and lock synchronization follow the shared
 [manifest range policy](../../../docs/website-packages.md#manifest-range-styles).

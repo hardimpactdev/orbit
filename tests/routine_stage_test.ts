@@ -1,4 +1,4 @@
-import { maintenanceFixture } from "./_support/maintenance_fixture.ts";
+import { impactRows, maintenanceFixture } from "./_support/maintenance_fixture.ts";
 import { WEBSITE_PROJECT } from "./_support/dependency_projects.ts";
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import {
@@ -15,6 +15,7 @@ const rec = (payload: Record<string, unknown>) => ({
   recordedAt: "2026-10-25T20:00:00Z",
 });
 const script = rec({
+  impactRows,
   subtask: 701,
   outcome: "passed",
   changed: false,
@@ -175,6 +176,7 @@ Deno.test("repair uses one ordinary turn with failing output and no analysis ref
         script: rec({
           subtask: 701,
           outcome: "failed",
+          impactRows,
           output: "npm update failed",
         }),
       }),
@@ -295,7 +297,9 @@ Deno.test("repair accepts Gateway-defaulted null input after restart and reaches
     const failedScript = rec({
       subtask: 701,
       outcome: "failed",
+          impactRows,
       output: "npm update failed",
+      tree: TREE,
     });
     const args = f.args("repair", { script: failedScript });
     await runStage(args, f.deps);
@@ -311,6 +315,8 @@ Deno.test("repair accepts Gateway-defaulted null input after restart and reaches
     const repaired = await runStage(args, f.deps);
     assertEquals(repaired.state, "succeeded");
     assertEquals(repaired.artifacts.change.outcome, "ready_for_review");
+    assertEquals(repaired.artifacts.change.scriptTree, TREE);
+    assertEquals(repaired.artifacts.change.impactRows, impactRows);
     await runStage(args, f.deps);
     f.set(null); // The next stage has its own keyed persisted job.
     const checkArgs = f.args("handoff", {
@@ -349,6 +355,7 @@ Deno.test("repair still refuses changed supplied fields and non-null Gateway def
         script: rec({
           subtask: 701,
           outcome: "failed",
+          impactRows,
           output: "npm update failed",
         }),
       });
@@ -379,7 +386,7 @@ Deno.test("routine publish uses the summary title and body", async () => {
     const args = f.args("publish", { handoff, workspace: rec({ startingCommit: base }) });
     const started = await runStage(args, f.deps);
     assertEquals(started.state, "running");
-    assertEquals(f.worker.calls[0].request, { cwd: "/vm/repo", mode: "summary", base });
+    assertEquals(f.worker.calls[0].request, { cwd: "/vm/repo", mode: "summary", base, projectType: "laravel-app" });
     f.tick();
     const publishing = await runStage(args, f.deps);
     assertEquals(publishing.state, "running");
@@ -387,8 +394,9 @@ Deno.test("routine publish uses the summary title and body", async () => {
     assertEquals(publish.key, "tg-7.publish.c1");
     const pull = publish.body!.pull_request as { title: string; body: string };
     assertEquals(pull.title, "Update dependencies for October 2026");
-    assert(pull.body.includes("| Package | From | To | note |"));
-    assert(pull.body.includes("Tested: compared the lockfiles with the base commit."));
+    assert(pull.body.includes("| Package | From | To | Change |"));
+    assert(pull.body.includes("No code changes needed."));
+    assert(!/Tested:|Gateway check|Validation|group \d/.test(pull.body));
     assert(!pull.body.includes("Driven by Swamp"));
     assert(!pull.body.includes("ADR"));
     assertEquals(publish.body!.check, 3);
@@ -659,5 +667,135 @@ Deno.test("a pre-retirement publish job reuses its checked summary after the chi
     assertEquals(started.request!.body.pull_request, stored.request!.body.pull_request);
     assertEquals(f.worker.calls, []);
     assertEquals(f.fake.startsOf(7, "publish"), 1);
+  } finally { await f.fake.close(); }
+});
+
+Deno.test("publish carries the scoped repair report to the worker and preserves its checked body on replay", async () => {
+  const f = await fixture();
+  try {
+    f.fake.groups.get(7)!.tasks[0].status = "running";
+    const report = JSON.stringify({ updates: [{ manager: "composer", path: ".", package: "livewire/livewire", codeChanged: false, effect: "", files: [] }] });
+    const change = rec({ subtask: 701, outcome: "ready_for_review", summary: report, impactRows, scriptTree: TREE, candidate: { tree: TREE } });
+    const args = f.args("publish", { handoff, change, workspace: rec({ startingCommit: "b".repeat(40) }) });
+    await runStage(args, f.deps);
+    assertEquals(f.worker.calls[0].request.impact, { report, inventory: impactRows, scriptTree: TREE, repairTree: TREE, checkedTree: TREE });
+    assertEquals(f.get()!.inputIdentity!.includes(report.replaceAll('"', '\\"')), true);
+    f.tick();
+    await runStage(args, f.deps);
+    const published = f.calls.find((c) => c.path.endsWith("/publish"))!;
+    assertEquals(published.body!.check, 3);
+    assertEquals((published.body!.pull_request as { body: string }).body.includes("Tested:"), false);
+    f.tick();
+    await runStage(args, f.deps);
+    assertEquals(f.calls.filter((c) => c.path.endsWith("/publish")).length, 1);
+    assertEquals(f.worker.calls.filter((c) => c.request.mode === "summary").length, 2);
+    assertEquals(f.calls.some((c) => c.path.endsWith("/turn")), false);
+  } finally { await f.fake.close(); }
+});
+
+Deno.test("an in-flight pre-deploy publish without a change key resumes after a lost start reply", async () => {
+  const stored: Job = JSON.parse(await Deno.readTextFile(new URL("./fixtures/project-extensions/publish-job-v1.json", import.meta.url)));
+  const identity = JSON.parse(stored.inputIdentity!);
+  assertEquals(Object.hasOwn(identity, "change"), false);
+  const f = await fixture();
+  const deps = { ...f.deps, projects: [{ ...WEBSITE_PROJECT, worker: identity.dependencyProject.worker }] };
+  try {
+    f.fake.groups.get(7)!.tasks[0].status = "completed";
+    f.set({ ...stored, state: "running", operationId: null });
+    const args = f.args("publish", { handoff: identity.handoff, change: null });
+    const lost = await runStage(args, { ...deps, http: async (...input) => {
+      const response = await f.deps.http(...input);
+      return input[0] === "POST" ? { status: 0, body: null } : response;
+    } });
+    assertEquals(lost.state, "running");
+    assertEquals(lost.operationId, null);
+    f.set(structuredClone(f.get())); f.tick();
+    await runStage(args, deps);
+    f.tick();
+    assertEquals((await runStage(args, deps)).state, "succeeded");
+    assertEquals(f.fake.operations.size, 1);
+    assertEquals(f.worker.calls, []);
+    assertEquals(f.calls.filter((c) => c.path.endsWith("/publish")).map((c) => c.body), [stored.request!.body, stored.request!.body]);
+  } finally { await f.fake.close(); }
+});
+
+import { render } from "../extensions/behaviors/_lib/maintenance/summary.ts";
+import { repairReport } from "../extensions/behaviors/_lib/maintenance/impact.ts";
+import { type AssistanceRecord, syncAssistance } from "../extensions/behaviors/_lib/gateway_stage.ts";
+
+Deno.test("the checked golden body reaches publish exactly; an unsafe report routes to human assistance", async () => {
+  const data = JSON.parse(await Deno.readTextFile(new URL("./fixtures/pr-text/website.json", import.meta.url)));
+  const expected = await Deno.readTextFile(new URL("./fixtures/pr-text/website.md", import.meta.url));
+  for (const invalid of [false, true]) {
+    const f = await fixture();
+    try {
+      f.fake.groups.get(7)!.tasks[0].status = "running";
+      const updates = structuredClone(data.updates);
+      if (invalid) updates[0].effect = "<!-- cc @nckrtl fixes #12";
+      const report = JSON.stringify({ updates });
+      const change = rec({ subtask: 701, outcome: "ready_for_review", summary: report, impactRows, scriptTree: TREE, candidate: { tree: TREE } });
+      const args = f.args("publish", { handoff, change });
+      const job = await runStage(args, { ...f.deps, maintenance: async (_args, _group, request) => {
+        assertEquals(request.impact, { report, inventory: impactRows, scriptTree: TREE, repairTree: TREE, checkedTree: TREE });
+        try {
+          const parsed = repairReport((request.impact as { report: string }).report);
+          const effects = new Map(parsed.updates.map((u) => [`${u.manager}\0${u.path}\0${u.package}`, u]));
+          const summary = render(data.changes, "laravel-app", effects);
+          return { state: "succeeded", result: { outcome: "passed", changed: false, head: "a".repeat(40), tree: TREE, output: summary.text } };
+        } catch (error) { return { state: "failed", lastError: String(error) }; }
+      } });
+      if (invalid) {
+        assertEquals(job.state, "failed");
+        assertEquals(f.calls.some((c) => c.path.endsWith("/publish")), false);
+        let record: AssistanceRecord | null = null;
+        await syncAssistance({ workItem: "tg-7", parked: true, stage: "publish", cycle: 1, reason: "awaiting human approval 'publish-retry'" }, {
+          http: f.deps.http, readJob: () => Promise.resolve(f.get()),
+          readRecord: () => Promise.resolve(record), writeRecord: (r) => { record = r; return Promise.resolve(); },
+        });
+        assertEquals(f.fake.groups.get(7)!.assistance_requested, true);
+        assertEquals(f.fake.groups.get(7)!.tasks[0].status, "running");
+        assert(f.fake.comments[0].body.includes("Invalid repair impact report"));
+      } else {
+        const publish = f.calls.find((c) => c.path.endsWith("/publish"))!;
+        assertEquals((publish.body!.pull_request as { body: string }).body, expected.trimEnd());
+        assertEquals(f.fake.startsOf(7, "publish"), 1);
+      }
+    } finally { await f.fake.close(); }
+  }
+});
+
+Deno.test("repair receives the exact inventory rows for Composer transitive and JS direct advisory owners", async () => {
+  const f = await fixture();
+  try {
+    const rows = [
+      { ...impactRows[0], package: "laravel/framework" },
+      { ...impactRows[0], package: "symfony/http-foundation" },
+      { ...impactRows[0], manager: "js", path: "web", package: "shadcn" },
+    ];
+    await runStage(f.args("repair", { script: rec({ subtask: 701, outcome: "failed", output: "failed", impactRows: rows }) }), f.deps);
+    const prompt = String(f.calls.find(c => c.path.endsWith("/turn"))!.body!.prompt);
+    assert(prompt.includes(`Exact update rows: ${JSON.stringify(rows.map(({manager, path, package: name}) => ({manager, path, package: name})))}`));
+    assert(!prompt.includes("controlling direct dependency"));
+  } finally { await f.fake.close(); }
+});
+
+Deno.test("a repair without exact inventory stops before launching the agent", async () => {
+  const f = await fixture();
+  try {
+    await assertRejects(() => runStage(f.args("repair", { script: rec({ subtask: 701, outcome: "failed", output: "old worker" }) }), f.deps), Error, "exact update inventory");
+    assertEquals(f.calls.filter(c => c.method === "POST"), []);
+  } finally { await f.fake.close(); }
+});
+
+Deno.test("a pre-deploy publish cannot adopt an unbound old repair receipt or rewrite its PR", async () => {
+  const stored: Job = JSON.parse(await Deno.readTextFile(new URL("./fixtures/project-extensions/publish-job-v1.json", import.meta.url)));
+  const identity = JSON.parse(stored.inputIdentity!);
+  const f = await fixture();
+  try {
+    f.set({ ...stored, state: "running", operationId: null });
+    await assertRejects(() => runStage(f.args("publish", { handoff: identity.handoff, change: rec({ subtask: 701, summary: "Pre-deploy prose", scriptTree: TREE, candidate: { tree: TREE } }) }), { ...f.deps, projects: [{ ...WEBSITE_PROJECT, worker: identity.dependencyProject.worker }] }), Error, "input conflict");
+    assertEquals(f.calls.filter(c => c.method === "POST"), []);
+    assertEquals(f.worker.calls, []);
+    assertEquals(f.get()!.request, stored.request);
   } finally { await f.fake.close(); }
 });

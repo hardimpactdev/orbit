@@ -1,3 +1,4 @@
+import type { Change } from "../_lib/maintenance/summary.ts";
 import {
   emptyExceptions,
   type Exceptions,
@@ -1298,13 +1299,27 @@ function summaryText(
 ) {
   const parts = [intro];
   if (actions.length) parts.push(`Action needed\n\n${actions.join("\n")}`);
-  if (security.length) parts.push(`Security fixes\n\n${security.join("\n")}`);
   parts.push(
     [
-      "| Package | From | To | note |",
+      "| Package | From | To | Change |",
       "| --- | --- | --- | --- |",
       ...rows.map((row) => `| ${row.join(" | ")} |`),
     ].join("\n"),
+  );
+  if (security.length) parts.push("Security fixes\n\n" + security.join("\n"));
+  parts.push(
+    "## What changes in the package\n\n" +
+      rows.map((r) => {
+        const [name, path] = r[0].split(" (");
+        const version = r[2] === "—"
+          ? "(removed)"
+          : r[3].includes("major")
+          ? r[2].split(".").slice(0, r[2].startsWith("0.") ? 2 : 1).join(".")
+          : r[2];
+        return `- **${name} ${version}${
+          path ? ", " + path.slice(0, -1) : ""
+        }.** No code changes needed.`;
+      }).join("\n"),
   );
   return `${title}\n\n${parts.join("\n\n")}\n`;
 }
@@ -1334,14 +1349,17 @@ test("summary writes exact single major PR text from working tree lock", async (
     "package-lock.json",
     npmLock({ react: "20.0.0", transitive: "2.0.0" }),
   );
-  const result = await r.execute("summary", { base }, cleanNpmAudit);
+  const result = await r.execute("summary", {
+    projectType: "node-package",
+    base,
+  }, cleanNpmAudit);
   assertEquals(
     result.text,
     summaryText(
       "Update react to 20.0.0",
       "This updates react from 19.0.0 to 20.0.0.",
       [["react", "19.0.0", "20.0.0", "major"]],
-      ["react 19.0.0 → 20.0.0 is a major update. Check its upgrade notes before you deploy."],
+      ["react 19.0.0 → 20.0.0 is a major update. Check its upgrade notes for downstream breaking changes."],
     ),
   );
 });
@@ -1355,7 +1373,10 @@ test("summary of several direct updates uses the UTC maintenance title", async (
     "package-lock.json",
     npmLock({ react: "20.0.0", lodash: "4.17.21", transitive: "2.0.0" }),
   );
-  const result = await r.execute("summary", { base }, cleanNpmAudit);
+  const result = await r.execute("summary", {
+    projectType: "node-package",
+    base,
+  }, cleanNpmAudit);
   const month = new Date().toLocaleString("en-US", {
     month: "long",
     year: "numeric",
@@ -1365,14 +1386,14 @@ test("summary of several direct updates uses the UTC maintenance title", async (
     result.text,
     summaryText(
       `Maintenance update for ${month}`,
-      "This is a routine maintenance update. The packages below were updated to their newest safe versions.",
+      "Updates the dependencies listed below.",
       [["lodash", "4.17.20", "4.17.21", ""], [
         "react",
         "19.0.0",
         "20.0.0",
         "major",
       ]],
-      ["react 19.0.0 → 20.0.0 is a major update. Check its upgrade notes before you deploy."],
+      ["react 19.0.0 → 20.0.0 is a major update. Check its upgrade notes for downstream breaking changes."],
     ),
   );
 });
@@ -1411,7 +1432,11 @@ test("summary defaults to origin HEAD merge-base", async (r) => {
     "refs/remotes/origin/main",
   );
   await r.json("package-lock.json", npmLock({ react: "19.0.1" }));
-  const result = await r.execute("summary", {}, cleanNpmAudit);
+  const result = await r.execute(
+    "summary",
+    { projectType: "node-package" },
+    cleanNpmAudit,
+  );
   assertEquals(result.title, "Update react to 19.0.1");
 });
 for (const base of ["-bad", "HEAD..main", "HEAD;echo bad"]) {
@@ -1427,7 +1452,10 @@ test("Bun 0.x minor summary treats a newer minor as major", async (r) => {
   await r.json("bun.lock", {
     packages: { "@scope/pkg": bunEntry("@scope/pkg", "0.3.0") },
   });
-  const result = await r.execute("summary", { base }, {
+  const result = await r.execute("summary", {
+    projectType: "node-package",
+    base,
+  }, {
     "bun pm audit --json": [{ data: {} }],
   });
   assertEquals(result.title, "Update @scope/pkg to 0.3.0");
@@ -1445,7 +1473,10 @@ test("Bun lock instance key differs from the descriptor name", async (r) => {
       "parent/@scope/pkg": bunEntry("@scope/pkg", "0.1.1"),
     },
   });
-  const result = await r.execute("summary", { base }, {
+  const result = await r.execute("summary", {
+    projectType: "node-package",
+    base,
+  }, {
     "bun pm audit --json": [{ data: {} }],
   });
   assertEquals(result.changes.length, 1);
@@ -1462,7 +1493,10 @@ for (const mode of ["add", "remove"]) {
       mode === "add" ? { react: "^19" } : {},
       mode === "add" ? { react: "19.0.0" } : {},
     );
-    const result = await r.execute("summary", { base }, cleanNpmAudit);
+    const result = await r.execute("summary", {
+      projectType: "node-package",
+      base,
+    }, cleanNpmAudit);
     assertEquals(
       result.text,
       summaryText(
@@ -1486,7 +1520,10 @@ test("cleared npm via advisories appear on the controlling direct package", asyn
     "package-lock.json",
     npmLock({ shadcn: "4.22.0", react: "19.0.0", "vite-plus": "0.2.9" }),
   );
-  const result = await r.execute("summary", { base }, {
+  const result = await r.execute("summary", {
+    projectType: "node-package",
+    base,
+  }, {
     [audit]: [emptyAudit, { data: finding }],
   });
   const link = "[1243066](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5)";
@@ -1495,7 +1532,7 @@ test("cleared npm via advisories appear on the controlling direct package", asyn
     summaryText(
       "Update shadcn to 4.22.0 (security fix)",
       "This updates shadcn from 4.21.0 to 4.22.0.",
-      [["shadcn", "4.21.0", "4.22.0", `security fix ${link}`]],
+      [["shadcn", "4.21.0", "4.22.0", "security fix"]],
       [],
       [`shadcn: ${link}`],
     ),
@@ -1515,7 +1552,10 @@ test("nested npm change can clear an advisory while the direct locked version st
       "node_modules/shadcn/node_modules/zod": { version: "4.6.6" },
     }),
   );
-  const result = await r.execute("summary", { base }, {
+  const result = await r.execute("summary", {
+    projectType: "node-package",
+    base,
+  }, {
     [audit]: [emptyAudit, { data: finding }],
   });
   assertEquals(result.title, "Update shadcn to 4.21.0 (security fix)");
@@ -1536,7 +1576,10 @@ test("nested Bun advisory clearance is assigned to its unchanged direct package"
       "shadcn/zod": bunEntry("zod", "4.6.6"),
     },
   });
-  const result = await r.execute("summary", { base }, {
+  const result = await r.execute("summary", {
+    projectType: "node-package",
+    base,
+  }, {
     [audit]: [{ data: {} }, {
       data: {
         zod: [{ id: 123, url: "https://github.com/advisories/GHSA-zod" }],
@@ -1550,7 +1593,10 @@ test("summary does not count a still-open advisory as fixed", async (r) => {
   await r.npm({ react: "^19" }, { react: "19.0.0" });
   const base = await r.base();
   await r.json("package-lock.json", npmLock({ react: "19.0.1" }));
-  const result = await r.execute("summary", { base }, {
+  const result = await r.execute("summary", {
+    projectType: "node-package",
+    base,
+  }, {
     "npm audit --json": [{ data: npmFinding("react") }],
   });
   assertEquals(result.title, "Update react to 19.0.1");
@@ -1573,7 +1619,10 @@ test("removing a direct declaration is not a fix if its advisory remains install
       },
     },
   };
-  const result = await r.execute("summary", { base }, {
+  const result = await r.execute("summary", {
+    projectType: "node-package",
+    base,
+  }, {
     "npm audit --json": [{ data }],
   });
   assertEquals(result.title, "Remove lodash");
@@ -1608,7 +1657,10 @@ for (const manager of ["npm", "bun"]) {
           url: "https://github.com/advisories/GHSA-lodash",
         }],
       };
-    const result = await r.execute("summary", { base }, {
+    const result = await r.execute("summary", {
+      projectType: "node-package",
+      base,
+    }, {
       [manager === "npm" ? "npm audit --json" : "bun pm audit --json"]: [{
         data: manager === "npm" ? { vulnerabilities: {} } : {},
       }, { data: previous }],
@@ -1622,7 +1674,7 @@ for (const manager of ["npm", "bun"]) {
           "alias",
           "4.17.20",
           "4.17.21",
-          "security fix [1065](https://github.com/advisories/GHSA-lodash)",
+          "security fix",
         ]],
         [],
         ["alias: [1065](https://github.com/advisories/GHSA-lodash)"],
@@ -1640,7 +1692,10 @@ test("an npm direct dependency becoming an alias does not mark its advisory fixe
       "node_modules/alias": { name: "npm:lodash@4.17.20", version: "4.17.20" },
     }),
   );
-  const result = await r.execute("summary", { base }, {
+  const result = await r.execute("summary", {
+    projectType: "node-package",
+    base,
+  }, {
     "npm audit --json": [{ data: npmFinding("lodash") }],
   });
   assertEquals(
@@ -1653,7 +1708,10 @@ test("summary leaves non-HTTPS advisory ids as plain text", async (r) => {
   await r.npm({ react: "^19" }, { react: "19.0.0" });
   const base = await r.base();
   await r.json("package-lock.json", npmLock({ react: "19.0.1" }));
-  const result = await r.execute("summary", { base }, {
+  const result = await r.execute("summary", {
+    projectType: "node-package",
+    base,
+  }, {
     "npm audit --json": [emptyAudit, {
       data: npmFinding("react", 123, "http://example.com/123"),
     }],
@@ -1672,7 +1730,11 @@ test("summary combines Composer and JS, including non-root paths", async (r) => 
     packages: [{ name: "other/pkg", version: "2.0.0" }],
   });
   await r.json("package-lock.json", npmLock({ expo: "58.0.0" }), "mobile");
-  const result = await r.execute("summary", { base, paths: [".", "mobile"] }, {
+  const result = await r.execute("summary", {
+    projectType: "node-package",
+    base,
+    paths: [".", "mobile"],
+  }, {
     "composer audit --locked --format=json --no-plugins --no-scripts": [{
       data: { advisories: {} },
     }],
@@ -1716,7 +1778,10 @@ test("mixed root summary sorts Composer and JS rows together by package", async 
     "package-lock.json",
     npmLock({ alpha: "1.0.1", charlie: "1.0.1" }),
   );
-  const result = await r.execute("summary", { base }, {
+  const result = await r.execute("summary", {
+    projectType: "node-package",
+    base,
+  }, {
     "composer audit --locked --format=json --no-plugins --no-scripts": [{
       data: { advisories: {} },
     }],
@@ -1734,7 +1799,7 @@ test("mixed root summary sorts Composer and JS rows together by package", async 
     result.text,
     summaryText(
       title,
-      "This is a routine maintenance update. The packages below were updated to their newest safe versions.",
+      "Updates the dependencies listed below.",
       names.map((name) => [name, "1.0.0", "1.0.1", ""]),
     ),
   );
@@ -1898,4 +1963,108 @@ test("a failed Bun security command still returns its exception receipt", async 
   assertEquals(r.handles, ["exceptions", "failure"]);
   assertEquals((r.exceptions as Exceptions).exceptions[0].package, "shadcn");
   assertEquals(await r.exists("maintainer-exceptions.json"), false);
+});
+
+test("summary includes the checked repair effect without changing the repository", async (r) => {
+  await r.npm({ react: "^19" }, { react: "19.0.0" });
+  const base = await r.base();
+  await r.json("package-lock.json", npmLock({ react: "20.0.0" }));
+  await Deno.writeTextFile(`${r.cwd}/component.ts`, "typed component");
+  await r.git("add", ".");
+  await r.git("commit", "-m", "repair");
+  const tree = await r.git("rev-parse", "HEAD^{tree}");
+  const report = JSON.stringify({
+    updates: [{
+      manager: "js",
+      path: ".",
+      package: "react",
+      codeChanged: true,
+      effect: "The component now has explicit types; pages render the same.",
+      files: ["component.ts"],
+    }],
+  });
+  const result = await r.execute("summary", {
+    base,
+    impact: {
+      report,
+      inventory: [{ manager: "js", path: ".", package: "react" }],
+      scriptTree: tree,
+      repairTree: tree,
+      checkedTree: tree,
+    },
+  }, cleanNpmAudit);
+  assertStringIncludes(result.body, "What changes on the site");
+  assertStringIncludes(
+    result.body,
+    "The component now has explicit types; pages render the same.",
+  );
+  await assertRejects(
+    () =>
+      r.execute("summary", {
+        base,
+        impact: {
+          report,
+          scriptTree: tree,
+          repairTree: tree,
+          checkedTree: tree,
+        },
+      }, cleanNpmAudit),
+    Error,
+    "inventory",
+  );
+  assertEquals(await r.git("status", "--porcelain"), "");
+});
+
+test("repair inventory keeps Composer transitive and JS direct advisory rows despite uncovered source edits", async (r) => {
+  await r.npm({ shadcn: "^4.21.0" }, { shadcn: "4.21.0" });
+  await r.json("composer.json", { require: { "laravel/framework": "^12" } });
+  await r.json("composer.lock", {
+    packages: [{ name: "laravel/framework", version: "12.0.0" }, {
+      name: "symfony/http-foundation",
+      version: "7.0.0",
+    }],
+  });
+  const base = await r.base();
+  await r.json("composer.lock", {
+    packages: [{ name: "laravel/framework", version: "12.0.0" }, {
+      name: "symfony/http-foundation",
+      version: "7.0.1",
+    }],
+  });
+  await r.json("package-lock.json", npmLock({ shadcn: "4.22.0" }));
+  await Deno.writeTextFile(
+    `${r.cwd}/types.d.ts`,
+    "export type Page = unknown;\n",
+  );
+  const before = await r.git("status", "--porcelain");
+  const result = await r.execute("inventory", { base }, {
+    "composer audit --locked --format=json --no-plugins --no-scripts": [{
+      data: { advisories: {} },
+    }, {
+      data: {
+        advisories: {
+          "symfony/http-foundation": [{
+            advisoryId: "PKSA-fixture",
+            link: "https://example.test/advisory",
+            title: "fixture",
+            affectedVersions: "<7.0.1",
+          }],
+        },
+      },
+    }],
+    "npm audit --json": [emptyAudit, { data: finding }],
+  });
+  assertEquals(
+    (result.changes as Change[]).map(({ manager, path, package: name }) => ({
+      manager,
+      path,
+      package: name,
+    })),
+    [{ manager: "js", path: ".", package: "shadcn" }, {
+      manager: "composer",
+      path: ".",
+      package: "symfony/http-foundation",
+    }],
+  );
+  assertEquals(await r.git("status", "--porcelain"), before);
 });

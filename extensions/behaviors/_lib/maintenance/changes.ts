@@ -18,6 +18,7 @@ const canonical = (value: unknown): string => {
 /** Compare all locked instances; audit only changed paths, and keep real advisory identity across owners. */
 export async function changesFor(
   place: Place,
+  manager: Change["manager"],
   beforeDirect: Record<string, string>,
   afterDirect: Record<string, string>,
   before: LockView,
@@ -71,6 +72,7 @@ export async function changesFor(
       return [];
     }
     return [{
+      manager,
       path: place.path,
       package: name,
       from: from ?? "—",

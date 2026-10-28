@@ -1,3 +1,5 @@
+import { type ImpactContext, impacts } from "../../_lib/maintenance/impact.ts";
+import type { ProjectType } from "../../_lib/maintenance/project_type.ts";
 import { changesFor, type LockView } from "../../_lib/maintenance/changes.ts";
 import { composerRows } from "../../_lib/maintenance/composer_summary.ts";
 import {
@@ -70,6 +72,7 @@ async function rowsFor(
   const baseLock = await show(root, place, base, file, signal);
   return await changesFor(
     place,
+    "js",
     direct(baseManifest),
     js.direct,
     view(baseLock, js),
@@ -103,8 +106,8 @@ async function rowsFor(
     },
   );
 }
-/** Include Composer in the same paths when present; the format is shared with Composer maintenance. */
-export async function summarize(
+/** Inventory and publication share the same ecosystem-specific change calculation. */
+export async function inventory(
   root: string,
   places: Place[],
   base?: string,
@@ -126,5 +129,25 @@ export async function summarize(
       ),
     );
   }
-  return summaryResult(changes);
+  return { resolved, changes };
+}
+/** Include Composer in the same paths when present; the format is shared with Composer maintenance. */
+export async function summarize(
+  root: string,
+  places: Place[],
+  base?: string,
+  signal?: AbortSignal,
+  projectType: ProjectType = "laravel-app",
+  impact?: ImpactContext | null,
+) {
+  const { resolved, changes } = await inventory(root, places, base, signal);
+  const effects = await impacts(
+    root,
+    places,
+    resolved,
+    changes,
+    impact,
+    signal,
+  );
+  return summaryResult(changes, projectType, effects);
 }

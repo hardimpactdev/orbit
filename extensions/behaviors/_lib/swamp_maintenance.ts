@@ -275,6 +275,8 @@ export function maintenanceInputs(
     summary: {
       ...common(all),
       ...(request.base ? { base: request.base } : {}),
+      projectType: request.projectType,
+      ...(request.impact ? { impact: request.impact } : {}),
     },
   };
   if (retained) {
@@ -298,6 +300,8 @@ export interface MaintenanceResult {
   runId?: string;
   result?: Record<string, unknown>;
   lastError?: string;
+  code?: string;
+  retryable?: boolean;
   workerName?: string;
 }
 export async function runMaintenance(
@@ -399,6 +403,20 @@ export function maintenanceResult(run: WorkflowRun): MaintenanceResult {
     ? run.inputs.worker
     : undefined;
   const steps = run.jobs.flatMap((job) => job.steps);
+  const inventory = steps.find((step) => step.name === "inventory");
+  const inventoryFailure = resource(inventory, "failure");
+  if (inventory?.status === "failed" || inventoryFailure) {
+    return {
+      state: "failed",
+      runId: run.id,
+      workerName,
+      code: "maintenance.inventory_failed",
+      retryable: true,
+      lastError: `Maintenance inventory infrastructure failure: ${
+        inventory?.error ?? inventoryFailure?.message ?? "inventory unavailable"
+      }`,
+    };
+  }
   const before = resource(
     steps.find((step) => step.name === "before"),
     "snapshot",
@@ -426,7 +444,9 @@ export function maintenanceResult(run: WorkflowRun): MaintenanceResult {
       workerName,
     };
   }
-  const receipts = steps.map((step) => resource(step, "failure")).filter((
+  const receipts = steps.filter((step) => step.name !== "inventory").map((
+    step,
+  ) => resource(step, "failure")).filter((
     value,
   ) => value !== undefined);
   if (receipts.some((value) => !Number.isInteger(value?.exitCode))) {
@@ -460,6 +480,9 @@ export function maintenanceResult(run: WorkflowRun): MaintenanceResult {
       ...(summary
         ? { summary: { title: summary.title, body: summary.body } }
         : {}),
+      impactRows:
+        resource(steps.find((step) => step.name === "inventory"), "inventory")
+          ?.changes ?? null,
       plans: steps.flatMap((step) => {
         const plan = resource(step, "plan");
         return plan ? [plan] : [];

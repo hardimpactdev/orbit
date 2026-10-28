@@ -1,3 +1,9 @@
+import { isPackage, type ProjectType } from "./project_type.ts";
+import {
+  impactKey,
+  PlainTextSchema,
+  type RepairReportSchema,
+} from "./impact.ts";
 import { z } from "npm:zod@4";
 import { command, MaintenanceFailure, type Place } from "./io.ts";
 
@@ -6,6 +12,7 @@ const LinkSchema = z.strictObject({
   url: z.string().nullable(),
 });
 export const ChangeSchema = z.strictObject({
+  manager: z.enum(["composer", "js"]),
   path: z.string(),
   package: z.string(),
   from: z.string(),
@@ -89,7 +96,14 @@ function links(row: Change): string {
   ).join(", ");
 }
 
-export function render(changes: Change[]) {
+export function render(
+  changes: Change[],
+  projectType: ProjectType = "laravel-app",
+  effects = new Map<
+    string,
+    z.infer<typeof RepairReportSchema>["updates"][number]
+  >(),
+) {
   const only = changes.length === 1 ? changes[0] : null;
   let title: string;
   let intro: string;
@@ -101,8 +115,7 @@ export function render(changes: Change[]) {
         timeZone: "UTC",
       })
     }`;
-    intro =
-      "This is a routine maintenance update. The packages below were updated to their newest safe versions.";
+    intro = "Updates the dependencies listed below.";
   } else if (only.to === "—" && only.from !== "—") {
     title = `Remove ${only.package}`;
     intro = `This removes ${only.package} ${only.from}.`;
@@ -118,21 +131,27 @@ export function render(changes: Change[]) {
       : `This updates ${only.package} from ${only.from} to ${only.to}.`;
   }
   const actions: string[] = [];
-  const fixes: string[] = [];
-  const table = ["| Package | From | To | note |", "| --- | --- | --- | --- |"];
+  const fixes = new Map<string, string[]>();
+  const table = [
+    "| Package | From | To | Change |",
+    "| --- | --- | --- | --- |",
+  ];
   for (const row of changes) {
     const name = row.path === "."
       ? row.package
       : `${row.package} (${row.path})`;
-    if (row.major) {
+    if (row.major && isPackage(projectType)) {
       actions.push(
-        `${name} ${row.from} → ${row.to} is a major update. Check its upgrade notes before you deploy.`,
+        `${name} ${row.from} → ${row.to} is a major update. Check its upgrade notes for downstream breaking changes.`,
       );
     }
-    if (row.advisories.length) fixes.push(`${name}: ${links(row)}`);
+    if (row.advisories.length) {
+      const advisory = links(row);
+      fixes.set(advisory, [...fixes.get(advisory) ?? [], name]);
+    }
     const note = [
       row.major ? "major" : "",
-      row.advisories.length ? `security fix ${links(row)}` : "",
+      row.advisories.length ? "security fix" : "",
     ].filter(Boolean).join("; ");
     table.push(
       `| ${
@@ -143,15 +162,70 @@ export function render(changes: Change[]) {
   }
   const parts = [intro];
   if (actions.length) parts.push(`Action needed\n\n${actions.join("\n")}`);
-  if (fixes.length) parts.push(`Security fixes\n\n${fixes.join("\n")}`);
   parts.push(table.join("\n"));
+  if (fixes.size) {
+    parts.push(
+      `Security fixes\n\n${
+        [...fixes].map(([advisory, names]) =>
+          names.length > 1
+            ? `${names.slice(0, -1).join(", ")} and ${
+              names.at(-1)
+            } fix ${advisory}.`
+            : `${names[0]}: ${advisory}`
+        ).join("\n")
+      }`,
+    );
+  }
+  const groups = new Map<
+    string,
+    { names: string[]; label?: string; text: string }
+  >();
+  for (const row of changes) {
+    const u = effects.get(impactKey(row));
+    const version = row.to.replace(/^v/, "").split(".");
+    const name = row.to === "—"
+      ? `${row.package} (removed)`
+      : `${row.package} ${
+        row.major
+          ? version.slice(0, version[0] === "0" ? 2 : 1).join(".")
+          : row.to
+      }`;
+    const displayed = row.path === "." ? name : `${name}, ${row.path}`;
+    const text = u?.codeChanged
+      ? PlainTextSchema.parse(u.effect)
+      : "No code changes needed.";
+    const label = u?.label ? PlainTextSchema.parse(u.label) : undefined;
+    const key = u?.codeChanged
+      ? JSON.stringify([label ?? null, text])
+      : impactKey(row);
+    const group = groups.get(key);
+    if (group) group.names.push(displayed);
+    else groups.set(key, { names: [displayed], label, text });
+  }
+  parts.push(
+    `## What changes ${
+      isPackage(projectType) ? "in the package" : "on the site"
+    }\n\n` + [...groups.values()].map((g) =>
+      `- **${
+        g.label ? `${g.label} (${g.names.join(", ")})` : g.names.join(", ")
+      }.** ${g.text}`
+    ).join("\n"),
+  );
   const body = parts.join("\n\n") + "\n";
   return { title, body, text: title + "\n\n" + body };
 }
 
-export function summaryResult(changes: Change[]) {
+export function summaryResult(
+  changes: Change[],
+  projectType: ProjectType = "laravel-app",
+  effects?: Parameters<typeof render>[2],
+) {
   if (!changes.length) {
     throw new MaintenanceFailure("No dependency changes to summarize.", 1);
   }
-  return { schema: 1 as const, ...render(changes), changes };
+  return {
+    schema: 1 as const,
+    ...render(changes, projectType, effects),
+    changes,
+  };
 }

@@ -1,3 +1,5 @@
+import { ChangeSchema } from "./maintenance/summary.ts";
+import { ProjectTypeSchema } from "./maintenance/project_type.ts";
 import { readProjectConfiguration } from "./project_configuration.ts";
 import { type MaintenanceResult } from "./swamp_maintenance.ts";
 import { dependencyProject, type DependencyProject } from "./dependency_projects.ts";
@@ -172,7 +174,8 @@ export function inputIdentity(args: StageArgs): string {
   if (args.routine) return canonical({ schema: 2, routine: true, ...(args.dependencyProject ? { dependencyProject: dependencyWorkIdentity(args.dependencyProject) } : {}), ...(args.detection ? { detection: true } : {}), ...(args.packageTarget ? { packageTarget: args.packageTarget } : {}),
     ...(args.stage === "handoff" ? { script: ref(args.script), change: ref(args.change) } : {}),
     ...(["repair", "publish", "finish"].includes(args.stage) ? { handoff: ref(args.handoff) } : {}),
-    ...(["repair", "finish"].includes(args.stage) ? { script: ref(args.script) } : {}) });
+    ...(["repair", "finish"].includes(args.stage) ? { script: ref(args.script) } : {}),
+    ...(args.stage === "publish" && ref(args.change) ? { change: ref(args.change) } : {}) });
   switch (args.stage) {
     case "implement":
       return JSON.stringify({ handoff: ref(args.handoff), review: ref(args.review), plan: envelope(args.plan)?.payload ?? null, analysis: envelope(args.analysis)?.payload ?? null, workspace: envelope(args.workspace)?.payload ?? null });
@@ -402,7 +405,13 @@ async function maintenanceRequest(args: StageArgs, g: GroupRow, http: Http, mode
   const base = envelope(args.workspace)?.payload.startingCommit ?? instance.starting_commit;
   if (typeof base !== "string" || !/^[a-f0-9]{40}$/.test(base)) throw new Error("maintenance requires the immutable provision starting commit");
   if (args.packageTarget?.sourceCommit && base !== args.packageTarget.sourceCommit) throw new Error("package checkout head differs from the scanned source; detect again");
-  return { path: "swamp:maintenance", body: { cwd: instance.checkout_path, mode, base }, idempotencyKey: mode === "summary" ? `${args.key}.summary` : args.key };
+  const project = await http("GET", `/api/v1/projects/${args.dependencyProject!.projectId}`);
+  if (project.status !== 200 || data(project).id !== args.dependencyProject!.projectId) throw new Error("Cannot read maintenance Project type");
+  const projectType = ProjectTypeSchema.parse(data(project).type);
+  const change = mode === "summary" ? envelope(args.change)?.payload : null;
+  const impact = change ? { report: change.summary, inventory: change.impactRows, scriptTree: change.scriptTree, repairTree: (change.candidate as Candidate)?.tree, checkedTree: (envelope(args.handoff)?.payload.candidate as Candidate)?.tree } : undefined;
+  if (change && (change.subtask !== envelope(args.handoff)?.payload.subtask || change.outcome !== "ready_for_review")) throw new Error("summary impact requires the scoped successful repair");
+  return { path: "swamp:maintenance", body: { cwd: instance.checkout_path, mode, base, projectType, ...(impact ? { impact } : {}) }, idempotencyKey: mode === "summary" ? `${args.key}.summary` : args.key };
 }
 
 /** Plan the operation for a stage. Returns null for `merged`, which starts no operation. */
@@ -459,12 +468,18 @@ async function plan(args: StageArgs, group: number, http: Http, deps: Deps): Pro
       const h = ofSubtask(args.handoff, t.id);
       const script = ofSubtask(args.script, t.id);
       if (!(h && ["failed", "changed"].includes(String(h.outcome))) && !(script && script.outcome === "failed")) throw new Error("repair requires failed script or local check evidence");
+      if (!Array.isArray(script?.impactRows)) throw new Error("repair requires the worker's exact update inventory; rerun the script before repair");
+      const rows = script.impactRows.map(row => {
+        const { manager, path, package: name } = ChangeSchema.parse(row);
+        return { manager, path, package: name };
+      });
       const scope = `${args.packageTarget ? `Only ${packageDescription(args.packageTarget)}. Swamp reruns this exact batch and verifies its selected advisories. ` : ""}The Swamp worker owns dependency commands. Fix their cause and the failing checks only; do not make unrelated dependency updates. Swamp will rerun the extension after this turn. `;
       return req("/turn", { subtask: t.id, role: "implementer", thread: "new", prompt:
         implementerPrompt(g, t, null, envelope(args.handoff), null) +
         "\n\n" + scope + "This is the single routine dependency repair turn. Preserve manifest ranges, overrides and release-age/security policy. " +
         (args.packageTarget ? "Fix the failing checks. Do not add unrelated upgrades or changes. " : "Fix the failing checks. Do not add majors or unrelated changes. ") + "Stop blocked if you cannot finish within this turn. " +
-        `\nRoutine command output: ${String(script?.output ?? "")}` }, t.id);
+        "For your turn receipt summary, return only JSON: {\"updates\":[{\"manager\":\"js\",\"path\":\".\",\"package\":\"example\",\"codeChanged\":true,\"label\":\"Background effect\",\"effect\":\"The visible effect in one short sentence.\",\"files\":[\"src/example.ts\"]}]}. Use exactly the manager, path and package rows below, one entry per row. Do not add or reinterpret rows. Use manager composer or js and repository-relative files. For updates needing no code changes use codeChanged false, files an empty array; their effect text is ignored. Cover every source, config, documentation and test file that still differs from the immutable base; omit reverted files. Labels and effects may contain only letters, digits, spaces and . , ; ( ) ' - /. Do not include domains, commit hashes or ranges, emoji shortcodes, math, Markdown or HTML. Keep the full JSON under 16384 characters. Name the update and its site or package effect; explain type-only changes plainly. Leave out test results, process history, group/check IDs and reader instructions. " +
+        `\nExact update rows: ${JSON.stringify(rows)}\nRoutine command output: ${String(script?.output ?? "")}` }, t.id);
     }
     case "baseline":
       await setSubtaskStatus(http, group, t, "running");
@@ -676,7 +691,7 @@ async function products(job: Job, op: Record<string, unknown>, http: Http, args:
       // The Gateway returns the thread as its id (TaskTurnOperation).
       const artifact: Record<string, unknown> = {
         subtask: job.subtask,
-        ...(args.routine ? { rerunMaintenance: true } : {}),
+        ...(args.routine ? { rerunMaintenance: true, impactRows: envelope(args.script)?.payload.impactRows, scriptTree: envelope(args.script)?.payload.tree ?? null } : {}),
         outcome: job.invalidated ? "blocked" : outcome,
         summary: receipt ? String(receipt.summary ?? "") : "",
         question: receipt?.question ?? null,
@@ -805,18 +820,19 @@ async function completeUnchangedGroup(job: Job, http: Http): Promise<Job> {
 /** A summary already validated for this same checked commit, from an earlier publish cycle. */
 async function savedSummary(args: StageArgs, checkId: number, deps: Deps): Promise<{ title: string; body: string } | null> {
   if (!deps.readPriorPublish) return null;
-  const current = JSON.parse(inputIdentity(args)) as { handoff?: unknown; packageTarget?: unknown };
+  const current = JSON.parse(inputIdentity(args)) as { handoff?: unknown; packageTarget?: unknown; change?: unknown };
   const jobs = (await deps.readPriorPublish()).filter((job) => job.key !== args.key && job.stage === "publish" && job.inputIdentity !== null);
   jobs.sort((a, b) => keyParts(a.key).cycle - keyParts(b.key).cycle);
   for (const job of jobs.reverse()) {
-    let stored: { handoff?: unknown; packageTarget?: unknown };
+    let stored: { handoff?: unknown; packageTarget?: unknown; change?: unknown };
     try {
-      stored = JSON.parse(job.inputIdentity!) as { handoff?: unknown; packageTarget?: unknown };
+      stored = JSON.parse(job.inputIdentity!) as { handoff?: unknown; packageTarget?: unknown; change?: unknown };
     } catch {
       continue;
     }
     if (canonical(stored.handoff ?? null) !== canonical(current.handoff ?? null)) continue;
     if (canonical(stored.packageTarget ?? null) !== canonical(current.packageTarget ?? null)) continue;
+    if (canonical(stored.change ?? null) !== canonical(current.change ?? null)) continue;
     const request = job.request;
     const pull = request?.body.pull_request as { title?: unknown; body?: unknown } | undefined;
     if (!request?.path.endsWith("/publish") || request.body.check !== checkId || typeof pull?.title !== "string" || typeof pull.body !== "string") continue;
@@ -836,7 +852,7 @@ function pullRequestSummary(output: string): { title: string; body: string } {
   const title = text.slice(0, split).trim();
   const body = text.slice(split + 1).trim();
   if (title === "" || title.length > 240 || body === "") throw new Error("dependency summary has no title and body");
-  if (!body.includes("| Package |") || !body.includes("| From |") || !body.includes("| To |") || !/^Tested: \S/m.test(body)) {
+  if (!body.includes("| Package |") || !body.includes("| From |") || !body.includes("| To |") || !/^## What changes (?:on the site|in the package)$/m.test(body)) {
     throw new Error("dependency summary is not a pull request title and body");
   }
   return { title, body };
@@ -926,7 +942,7 @@ export async function runStage(args: StageArgs, deps: Deps): Promise<Job> {
       if (outcome.state === "running") {
         current = { ...current, operationStatus: "Swamp worker maintenance", lastError: null };
       } else if (outcome.state === "failed" || !outcome.result) {
-        current = { ...current, state: "failed", lastError: outcome.lastError ?? "Swamp maintenance requires investigation", evidence: { status: "failed", runId: outcome.runId ?? args.key, workerName: outcome.workerName, error: outcome.lastError ?? "Swamp maintenance requires investigation" } };
+        current = { ...current, state: "failed", lastError: outcome.lastError ?? "Swamp maintenance requires investigation", evidence: { status: "failed", runId: outcome.runId ?? args.key, workerName: outcome.workerName, ...(outcome.code ? { code: outcome.code, retryable: outcome.retryable } : {}), error: outcome.lastError ?? "Swamp maintenance requires investigation" } };
       } else if (args.stage === "script") {
         current = { ...current, state: "succeeded", ...scriptProducts(current, outcome.result, args, { status: "succeeded", runId: outcome.runId, workerName: outcome.workerName }) };
       } else {
@@ -936,7 +952,7 @@ export async function runStage(args: StageArgs, deps: Deps): Promise<Job> {
           current = { ...current, state: "failed", lastError: "dependency summary failed or changed the checked tree", evidence: { status: "failed", runId: outcome.runId } };
         } else {
           try {
-            const text = pullRequestSummary(`${String(result.output)}\n\nTested: ${args.dependencyProject!.check} (Gateway check ${String(handoff.checkId)}).`);
+            const text = pullRequestSummary(String(result.output));
             current = { ...current, request: { path: `/api/v1/task-groups/${group}/publish`, body: { check: handoff.checkId, pull_request: text }, idempotencyKey: idempotencyKey(args.key, null) } };
           } catch {
             current = { ...current, state: "failed", lastError: "dependency summary is unreadable", evidence: { status: "failed", runId: outcome.runId } };

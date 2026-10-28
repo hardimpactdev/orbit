@@ -1,3 +1,5 @@
+import { ImpactContextSchema } from "../_lib/maintenance/impact.ts";
+import { ProjectTypeSchema } from "../_lib/maintenance/project_type.ts";
 import {
   BatchPlanSchema,
   type Candidate,
@@ -68,7 +70,11 @@ const PackageResultSchema = z.strictObject({
   purpose: z.enum(["major", "security"]),
   advisoryIds: z.array(z.string()),
 });
-const SummaryArgsSchema = CommonSchema.extend({ base: z.string().optional() });
+const SummaryArgsSchema = CommonSchema.extend({
+  base: z.string().optional(),
+  projectType: ProjectTypeSchema.default("laravel-app"),
+  impact: ImpactContextSchema.nullish(),
+});
 const SummarySchema = z.strictObject({
   schema: z.literal(1),
   title: z.string(),
@@ -80,7 +86,7 @@ const SummarySchema = z.strictObject({
 /** Swamp behavior: local commands and versioned schema 1 resources. */
 export const behavior = {
   type: "@nckrtl/composer-maintenance",
-  version: "2026.10.28.3",
+  version: "2026.10.28.6",
   globalArguments: z.strictObject({}),
   resources: {
     failure: failureResource,
@@ -362,7 +368,14 @@ export const behavior = {
           ctx,
           "summary",
           SummarySchema,
-          await summarize(project.root, project.places, args.base, ctx.signal),
+          await summarize(
+            project.root,
+            project.places,
+            args.base,
+            ctx.signal,
+            args.projectType,
+            args.impact,
+          ),
         );
       },
     },

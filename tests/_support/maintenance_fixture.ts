@@ -4,6 +4,16 @@ import { maintenanceResult } from "../../extensions/behaviors/_lib/swamp_mainten
 import { type WorkflowRun } from "../../extensions/behaviors/_lib/maintenance_worker.ts";
 import { type startFakeGateway } from "./fake_gateway.ts";
 
+export const impactRows = [{
+  manager: "composer",
+  path: ".",
+  package: "livewire/livewire",
+  from: "4.2.0",
+  to: "4.2.1",
+  major: false,
+  advisories: [],
+}];
+
 /** Native workflow receipts at the worker boundary; the driver and factory stay real. */
 export function maintenanceFixture(fake: ReturnType<typeof startFakeGateway>) {
   const started = new Set<string>();

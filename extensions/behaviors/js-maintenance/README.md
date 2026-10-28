@@ -196,5 +196,11 @@ of all tracked and untracked, non-ignored files. It uses a temporary index and
 leaves HEAD and the real index intact. Composer-only checkouts are supported.
 Gateway handoff still owns commits.
 
+Summary accepts optional `impact` with the repair receipt's JSON `report`,
+`repairTree` and `checkedTree`. The
+[batch PR text contract](../../../docs/website-packages.md#pull-request-text)
+defines entries, coverage and publication failures. Without a repair, only
+manifest and lock changes may say `No code changes needed.`
+
 Batch range rules and lock synchronization follow the shared
 [manifest range policy](../../../docs/website-packages.md#manifest-range-styles).

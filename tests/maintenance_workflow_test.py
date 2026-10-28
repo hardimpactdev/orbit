@@ -28,7 +28,7 @@ class MaintenanceWorkflowTest(unittest.TestCase):
             shutil.copyfile(REPO / "workflows/workflow-maintenance-worker.yaml",
                             root / "workflows/workflow-maintenance-worker.yaml")
             workflow = root / "workflows/workflow-maintenance-worker.yaml"
-            workflow.write_text(workflow.read_text().replace("queueTimeout: 120", "queueTimeout: 1") + """
+            workflow.write_text(workflow.read_text().replace("queueTimeout: 120", "queueTimeout: 5") + """
       - name: environment
         dependsOn:
           - step: before
@@ -55,7 +55,7 @@ class MaintenanceWorkflowTest(unittest.TestCase):
             # Only the worker has this command on PATH. Serve cannot execute it.
             (bins / "composer").write_text('''#!/usr/bin/env python3
 import json,sys,pathlib
-if pathlib.Path('fail').exists(): sys.exit(23)
+if pathlib.Path('fail').exists() and sys.argv[1]=='update': sys.exit(23)
 if sys.argv[1]=='update':
  manifest=json.loads(pathlib.Path('composer.json').read_text())
  if pathlib.Path('fail-security-update').exists(): sys.exit(23)
@@ -81,7 +81,10 @@ if sys.argv[1]=='update':
  lock=json.loads(pathlib.Path('package-lock.json').read_text());lock['packages']['node_modules/fixture-pkg']['version']='1.1.0'
  pathlib.Path('package-lock.json').write_text(json.dumps(lock))
 elif sys.argv[1]=='outdated': print('{}')
-elif sys.argv[1]=='audit': print('{"auditReportVersion":2,"vulnerabilities":{}}')
+elif sys.argv[1]=='audit':
+ if pathlib.Path('fail-inventory').exists():
+  print('audit network unavailable',file=sys.stderr);sys.exit(70)
+ print('{"auditReportVersion":2,"vulnerabilities":{}}')
 else:sys.exit(64)
 ''')
             (bins / "npm").chmod(0o755)
@@ -175,7 +178,7 @@ else:sys.exit(64)
                     # With only the impostor online, named placement must time out
                     # without executing even a snapshot on that worker.
                     empty = {"cwd": str(work), "paths": [], "policy": {}, "captureFailure": True}
-                    isolated = dict(key="tg-7.isolation", name="tg-7-isolation", group="7", worker="task-group-7-1", cwd=str(work), mode="detect", method="detect", composerPaths=[], jsPaths=[], composer=empty, js=empty, composerCommon=empty, jsCommon=empty, summary=dict(empty, base=base))
+                    isolated = dict(key="tg-7.isolation", name="tg-7-isolation", group="7", worker="task-group-7-1", cwd=str(work), mode="detect", method="detect", composerPaths=[], jsPaths=[], composer=empty, js=empty, composerCommon=empty, jsCommon=empty, summary=dict(empty, base=base, projectType="laravel-package"))
                     started = json.loads(command("swamp", "workflow", "run", "maintenance-worker", "--detach", "--server", url, "--stdin", "--json", stdin=json.dumps(isolated)))
                     for _ in range(100):
                         isolated_run = json.loads(command("swamp", "workflow", "history", "get", started["runId"], "--server", url, "--json"))
@@ -211,14 +214,19 @@ else:sys.exit(64)
                         self.fail("worker did not enroll")
                     common = {"cwd": str(work), "paths": ["."], "policy": {".": {"minimumReleaseAgeDays": 7}}, "captureFailure": True}
 
-                    def run(mode, number, **extra):
-                        inputs = dict(key=f"tg-7.script.c{number}", name=f"tg-7-script-c{number}", group="7", worker="task-group-7-1", cwd=str(work), mode=mode, method="batch" if mode == "package" else mode, composerPaths=["."], jsPaths=["."], composer=dict(common, **extra), js=common, composerCommon=common, jsCommon=dict(common, paths=[]), summary=dict(common, base=base))
+                    last_history = None
+                    def run(mode, number, expected_status="succeeded", **extra):
+                        nonlocal last_history
+                        inputs = dict(key=f"tg-7.script.c{number}", name=f"tg-7-script-c{number}", group="7", worker="task-group-7-1", cwd=str(work), mode=mode, method="batch" if mode == "package" else mode, composerPaths=["."], jsPaths=["."], composer=dict(common, **extra), js=common, composerCommon=common, jsCommon=dict(common, paths=[]), summary=dict(common, base=base, projectType="laravel-package"))
                         if mode == "package":
                             inputs["jsPaths"] = []
                             inputs["composer"] = dict(common, targets=[dict(path=extra.get("path", "."),manager="composer",package=extra["package"],version=extra["version"],purpose=extra["purpose"],advisories=extra.get("advisoryIds", []),advisoryUrls=["https://example.test/advisory" for _ in extra.get("advisoryIds", [])])])
-                        output = json.loads(command("swamp", "workflow", "run", "maintenance-worker", "--server", url, "--stdin", "--json", stdin=json.dumps(inputs)))
+                        completed = execute(["swamp", "workflow", "run", "maintenance-worker", "--server", url, "--stdin", "--json"], stdin=json.dumps(inputs))
+                        self.assertEqual(completed.returncode, 1 if expected_status == "failed" else 0, completed.stdout[-1000:] + completed.stderr[-1000:])
+                        output = json.loads(completed.stdout)
                         history = json.loads(command("swamp", "workflow", "history", "get", output["id"], "--server", url, "--json"))
-                        self.assertEqual(history["status"], "succeeded")
+                        last_history = history
+                        self.assertEqual(history["status"], expected_status)
                         self.assertTrue((root / "task-group-7-1.trace").exists(), "named worker must execute filesystem steps")
                         self.assertFalse((root / "task-group-8-1.trace").exists(), "a different group's worker must never receive group-7 steps despite its forged label")
                         return {step["name"]: {artifact["name"]: artifact.get("attributes") for artifact in step.get("dataArtifacts", [])} for step in history["jobs"][0]["steps"]}
@@ -227,6 +235,7 @@ else:sys.exit(64)
                     self.assertEqual(json.loads((work / "composer.lock").read_text())["packages"][0]["version"], "1.1.0")
                     self.assertNotEqual(routine["before"]["snapshot"]["tree"], routine["after"]["snapshot"]["tree"])
                     self.assertIn("routine", routine["js"])
+                    self.assertEqual([(r["manager"], r["path"], r["package"]) for r in routine["inventory"]["inventory"]["changes"]], [("js", ".", "fixture-pkg"), ("composer", ".", "vendor/pkg")])
                     detect = run("detect", 2)
                     self.assertEqual(detect["composer"]["detection"]["candidates"], [])
                     self.assertEqual(detect["js"]["detection"]["candidates"], [])
@@ -250,6 +259,24 @@ else:sys.exit(64)
                     self.assertNotIn("exceptions", failed_security["composer"])
                     self.assertEqual(failed_security["composer"]["failure"]["exitCode"], 23)
                     self.assertFalse((work / "maintainer-exceptions.json").exists())
+                    # An audit outage belongs to inventory, never the command result.
+                    (work / "fail-security-update").unlink()
+                    (work / "security-target").unlink()
+                    (work / "fail-inventory").touch()
+                    failed_inventory = run("routine", 8, expected_status="failed")
+                    self.assertIn("routine", failed_inventory["composer"])
+                    self.assertIn("routine", failed_inventory["js"])
+                    self.assertNotIn("failure", failed_inventory["inventory"])
+                    inventory_run_id = last_history["id"]
+                    self.assertEqual(next(s["status"] for s in last_history["jobs"][0]["steps"] if s["name"] == "inventory"), "failed")
+                    (work / "fail-inventory").unlink()
+                    # Native resume retries the failed step with the original command receipts.
+                    command_receipts = [s for s in last_history["jobs"][0]["steps"] if s["name"] in ["composer", "js"]]
+                    command("swamp", "workflow", "resume", "maintenance-worker", "--run", inventory_run_id, "--from", "inventory", "--server", url, "--json")
+                    resumed = json.loads(command("swamp", "workflow", "history", "get", inventory_run_id, "--server", url, "--json"))
+                    self.assertEqual([s for s in resumed["jobs"][0]["steps"] if s["name"] in ["composer", "js"]], command_receipts)
+                    self.assertEqual(resumed["status"], "succeeded")
+                    self.assertNotEqual(next(s["status"] for s in resumed["jobs"][0]["steps"] if s["name"] == "inventory"), "failed")
                     (work / "fail").touch()
                     failure = run("routine", 5)
                     self.assertEqual(failure["composer"]["failure"]["exitCode"], 23)

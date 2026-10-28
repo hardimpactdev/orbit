@@ -1,3 +1,5 @@
+import { ImpactContextSchema } from "../_lib/maintenance/impact.ts";
+import { ProjectTypeSchema } from "../_lib/maintenance/project_type.ts";
 import {
   BatchPlanSchema,
   type Candidate,
@@ -27,7 +29,7 @@ import {
 import { ChangeSchema } from "../_lib/maintenance/summary.ts";
 import { allowSecurity, staleExceptions, StaleSchema } from "./_lib/policy.ts";
 import { audit, majors, published } from "./_lib/reports.ts";
-import { summarize } from "./_lib/summary.ts";
+import { inventory, summarize } from "./_lib/summary.ts";
 import {
   cli,
   coupled,
@@ -81,7 +83,18 @@ const PackageResultSchema = z.strictObject({
   purpose: z.enum(["major", "security"]),
   advisoryIds: z.array(z.string()),
 });
-const SummaryArgsSchema = CommonSchema.extend({ base: z.string().optional() });
+const InventoryArgsSchema = CommonSchema.extend({
+  base: z.string().optional(),
+});
+const InventorySchema = z.strictObject({
+  schema: z.literal(1),
+  changes: z.array(ChangeSchema),
+});
+const SummaryArgsSchema = CommonSchema.extend({
+  base: z.string().optional(),
+  projectType: ProjectTypeSchema.default("laravel-app"),
+  impact: ImpactContextSchema.nullish(),
+});
 const SummarySchema = z.strictObject({
   schema: z.literal(1),
   title: z.string(),
@@ -99,7 +112,7 @@ async function project(args: z.infer<typeof CommonSchema>) {
 /** Local commands with versioned schema 1 resources, matching Composer maintenance. */
 export const behavior = {
   type: "@nckrtl/js-maintenance",
-  version: "2026.10.28.3",
+  version: "2026.10.28.6",
   globalArguments: z.strictObject({}),
   resources: {
     snapshot: {
@@ -142,6 +155,12 @@ export const behavior = {
     package: {
       description: "One completed dependency update",
       schema: PackageResultSchema,
+      lifetime: "30d",
+      garbageCollection: 20,
+    },
+    inventory: {
+      description: "Exact change rows for the dependency repair receipt",
+      schema: InventorySchema,
       lifetime: "30d",
       garbageCollection: 20,
     },
@@ -392,6 +411,23 @@ export const behavior = {
         });
       },
     },
+    inventory: {
+      description:
+        "List the same JS and Composer update rows that publication expects",
+      arguments: InventoryArgsSchema,
+      execute: async (
+        input: z.input<typeof InventoryArgsSchema>,
+        ctx: Context,
+      ) => {
+        const args = parse(InventoryArgsSchema, input);
+        const p = await places(args, null);
+        const rows = await inventory(p.root, p.places, args.base, ctx.signal);
+        return await write(ctx, "inventory", InventorySchema, {
+          schema: 1,
+          changes: rows.changes,
+        });
+      },
+    },
     summary: {
       description:
         "Write a dependency PR description covering JS and Composer paths",
@@ -407,7 +443,14 @@ export const behavior = {
           ctx,
           "summary",
           SummarySchema,
-          await summarize(p.root, p.places, args.base, ctx.signal),
+          await summarize(
+            p.root,
+            p.places,
+            args.base,
+            ctx.signal,
+            args.projectType,
+            args.impact,
+          ),
         );
       },
     },

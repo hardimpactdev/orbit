@@ -33,8 +33,8 @@ spend no repair turn. Clearing board assistance does not approve a factory gate.
 Gateway handoff runs the Project's check and commits the tree. Publication uses
 that exact check. Before publication, the same execution path runs `summary`
 against the provision starting commit. Worker summary must leave the checked
-HEAD and tree intact. Its PR text includes the Gateway check evidence. Invalid
-summary stops publication. A later publish cycle for the same check reuses the
+HEAD and tree intact. Check evidence stays in internal artifacts; the PR body
+describes package updates and site effects. Invalid summary stops publication. A later publish cycle for the same check reuses the
 saved summary after the child has ended. If maintenance changed nothing and the
 checked tree matches, the group completes without a PR.
 

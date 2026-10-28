@@ -13,7 +13,7 @@
       "check": 3,
       "pull_request": {
         "title": "Pre-retirement dependencies",
-        "body": "| Package | From | To |\n| --- | --- | --- |\n| fixture/pkg | 1 | 2 |\n\nTested: composer check."
+        "body": "| Package | From | To |\n| --- | --- | --- |\n| fixture/pkg | 1 | 2 |\n\n## What changes on the site\n\n- fixture/pkg 2: No code changes needed."
       }
     },
     "idempotencyKey": "tg-7.publish.c1"

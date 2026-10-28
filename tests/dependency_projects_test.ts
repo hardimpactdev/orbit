@@ -1,4 +1,4 @@
-import { maintenanceFixture } from "./_support/maintenance_fixture.ts";
+import { impactRows, maintenanceFixture } from "./_support/maintenance_fixture.ts";
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { DependencyProjectsSchema } from "../extensions/behaviors/_lib/dependency_projects.ts";
 import { runStage, type Http, type Job, type StageArgs } from "../extensions/behaviors/_lib/gateway_stage.ts";
@@ -7,7 +7,7 @@ import { startFakeGateway } from "./_support/fake_gateway.ts";
 
 function fixture() {
   const fake = startFakeGateway({ 7: { projectId: SECOND_PROJECT.projectId } });
-  fake.projects.set(SECOND_PROJECT.projectId, { id: SECOND_PROJECT.projectId, repository_url: SECOND_PROJECT.repository, task_check: SECOND_PROJECT.check, default_branch: SECOND_PROJECT.defaultBranch });
+  fake.projects.set(SECOND_PROJECT.projectId, { id: SECOND_PROJECT.projectId, repository_url: SECOND_PROJECT.repository, type: "laravel-app", task_check: SECOND_PROJECT.check, default_branch: SECOND_PROJECT.defaultBranch });
   const calls: { method: string; path: string; body?: Record<string, unknown>; key?: string }[] = [];
   let job: Job | null = null;
   const http: Http = async (method, path, body, key) => {
@@ -63,7 +63,7 @@ Deno.test("a second project's worker request survives restart and refuses change
 Deno.test("second-project repair uses its worker without changing the ordinary check API", async () => {
   const f = fixture();
   try {
-    await runStage({ ...f.args, stage: "repair", key: "tg-7.repair.c1", script: { payload: { subtask: 701, outcome: "failed", output: "update failed" }, recordedAt: "2026-10-25T20:00:00Z" } }, f.deps);
+    await runStage({ ...f.args, stage: "repair", key: "tg-7.repair.c1", script: { payload: { subtask: 701, outcome: "failed", impactRows, output: "update failed" }, recordedAt: "2026-10-25T20:00:00Z" } }, f.deps);
     const repair = f.calls.find((c) => c.path.endsWith("/turn"))!;
     assert(String(repair.body!.prompt).includes("Swamp will rerun the extension"));
     assert(!String(repair.body!.prompt).includes("scripts/dependencies"));

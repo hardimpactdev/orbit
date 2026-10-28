@@ -123,6 +123,20 @@ jobs:
             policy: '${{ inputs.jsCommon.policy }}'
             exceptions: '${{ has(inputs.jsCommon.exceptions) ? inputs.jsCommon.exceptions : {"schema": 1, "exceptions": []} }}'
             captureFailure: true
+      - name: inventory
+        guard: "${{ inputs.mode == 'summary' || inputs.mode == 'detect' }}"
+        dependsOn:
+          - step: js_detect
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        task:
+          type: model_method
+          modelType: '@nckrtl/js-maintenance'
+          modelName: '${{ "maintenance-inventory-" + inputs.name }}'
+          methodName: inventory
+          inputs:
+            cwd: '${{ inputs.cwd }}'
+            paths: '${{ inputs.summary.paths }}'
+            base: '${{ inputs.summary.base }}'
       - name: summary
         guard: "${{ !(inputs.mode == 'summary') }}"
         dependsOn:
@@ -141,6 +155,8 @@ jobs:
             policy: '${{ inputs.summary.policy }}'
             exceptions: '${{ has(inputs.summary.exceptions) ? inputs.summary.exceptions : {"schema": 1, "exceptions": []} }}'
             base: '${{ inputs.summary.base }}'
+            projectType: '${{ inputs.summary.projectType }}'
+            impact: '${{ has(inputs.summary.impact) ? inputs.summary.impact : null }}'
             captureFailure: true
       - name: after
         dependsOn:
@@ -157,6 +173,8 @@ jobs:
           - step: composer_detect
             condition: { type: or, conditions: [{ type: succeeded }, { type: failed }, { type: skipped }] }
           - step: js_detect
+            condition: { type: or, conditions: [{ type: succeeded }, { type: failed }, { type: skipped }] }
+          - step: inventory
             condition: { type: or, conditions: [{ type: succeeded }, { type: failed }, { type: skipped }] }
           - step: summary
             condition: { type: or, conditions: [{ type: succeeded }, { type: failed }, { type: skipped }] }

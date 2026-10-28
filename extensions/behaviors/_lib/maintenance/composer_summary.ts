@@ -27,6 +27,7 @@ export async function composerRows(
   const after = versions(await optionalText(`${place.dir}/composer.lock`));
   return await changesFor(
     place,
+    "composer",
     beforeDirect,
     afterDirect,
     { versions: before, instances: before },

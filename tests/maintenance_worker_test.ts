@@ -1,3 +1,4 @@
+import { impactRows } from "./_support/maintenance_fixture.ts";
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import {
   ensureMaintenance,
@@ -307,9 +308,27 @@ Deno.test("package placement carries VM cwd, configured paths/policy and literal
   });
 });
 
+Deno.test("summary placement preserves the repair report and checked identity", () => {
+  const impact = {
+    report: '{"updates":[]}',
+    scriptTree: "c".repeat(40),
+    repairTree: "a".repeat(40),
+    checkedTree: "b".repeat(40),
+  };
+  const input = maintenanceInputs(project, { ...args, stage: "publish" }, 7, {
+    cwd: "/vm/repo",
+    mode: "summary",
+    base: "c".repeat(40),
+    projectType: "laravel-app",
+    impact,
+  });
+  assertEquals((input.summary as Record<string, unknown>).impact, impact);
+});
+
 Deno.test("worker receipts distinguish completed command failures from interruption and malformed snapshots", () => {
   const run = runFixture();
   assertEquals(maintenanceResult(run).result!.changed, true);
+  assertEquals(maintenanceResult(run).result!.impactRows, impactRows);
   const failure = {
     name: "failure",
     attributes: { exitCode: 1, message: "composer update failed" },
@@ -508,7 +527,7 @@ Deno.test("worker summary publication reuses saved checked text and rejects malf
             tree: "c".repeat(40),
             output: scenario === "malformed"
               ? "bad"
-              : "Update dependencies\n\n| Package | From | To |\n| --- | --- | --- |\n| fixture | 1 | 2 |",
+              : "Update dependencies\n\n| Package | From | To |\n| --- | --- | --- |\n| fixture | 1 | 2 |\n\n## What changes on the site\n\n- fixture 2: No code changes needed.",
           },
         });
       },
@@ -596,7 +615,12 @@ Deno.test("worker repair keeps the exact package and advisory scope and returns 
     stage: "repair",
     key: "tg-7.repair.c1",
     script: {
-      payload: { subtask: 701, outcome: "failed", output: "update failed" },
+      payload: {
+        subtask: 701,
+        outcome: "failed",
+        output: "update failed",
+        impactRows,
+      },
       recordedAt: "2026-10-27T00:00:00Z",
     },
     packageTarget: {
@@ -1309,4 +1333,83 @@ Deno.test("exception receipts are saved on the owning project even when a worker
     method: "record_exceptions",
     arguments: receipt,
   });
+});
+
+Deno.test("inventory failures are retryable infrastructure failures, never script failures", () => {
+  for (const captured of [false, true]) {
+    const run = runFixture();
+    const inventory = run.jobs[0].steps.find((s) => s.name === "inventory")!;
+    if (captured) {
+      inventory.dataArtifacts = [{
+        name: "failure",
+        attributes: { exitCode: 70, message: "audit network unavailable" },
+      }];
+    } else {
+      run.status = "failed";
+      inventory.status = "failed";
+      inventory.error = "audit network unavailable";
+      inventory.dataArtifacts = [];
+    }
+    const result = maintenanceResult(run);
+    assertEquals(result.state, "failed");
+    assertEquals(result.code, "maintenance.inventory_failed");
+    assertEquals(result.retryable, true);
+    assertEquals(result.result, undefined);
+    assert(result.lastError?.includes("audit network unavailable"));
+  }
+});
+
+Deno.test("an inventory infrastructure failure produces no repairable script artifact", async () => {
+  const fake = startFakeGateway({ 7: {} });
+  let job: Job | null = null;
+  fake.groups.get(7)!.taskable_id = 7;
+  let turns = 0;
+  const run = runFixture();
+  run.status = "failed";
+  const inventory = run.jobs[0].steps.find((s) => s.name === "inventory")!;
+  inventory.status = "failed";
+  inventory.error = "audit network unavailable";
+  try {
+    const result = await runStage(args, {
+      projects: [project],
+      http: async (method, path, body, key) => {
+        if (path.endsWith("/turn")) turns++;
+        if (path === "/api/v1/instances/7") {
+          return {
+            status: 200,
+            body: {
+              data: {
+                id: 7,
+                project_id: 20,
+                checkout_path: "/vm/repo",
+                starting_commit: "a".repeat(40),
+              },
+            },
+          };
+        }
+        const r = await fetch(fake.url + path, {
+          method,
+          headers: {
+            "Content-Type": "application/json",
+            ...(key ? { "Idempotency-Key": key } : {}),
+          },
+          ...(body ? { body: JSON.stringify(body) } : {}),
+        });
+        return { status: r.status, body: await r.json() };
+      },
+      readJob: () => Promise.resolve(job),
+      writeJob: (value) => {
+        job = structuredClone(value);
+        return Promise.resolve();
+      },
+      maintenance: () => Promise.resolve(maintenanceResult(run)),
+    });
+    assertEquals(result.state, "failed");
+    assertEquals(result.evidence?.code, "maintenance.inventory_failed");
+    assertEquals(result.evidence?.retryable, true);
+    assertEquals(result.artifacts.script, undefined);
+    assertEquals(turns, 0);
+  } finally {
+    await fake.close();
+  }
 });

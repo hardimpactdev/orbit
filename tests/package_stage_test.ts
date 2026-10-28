@@ -1,4 +1,4 @@
-import { maintenanceFixture } from "./_support/maintenance_fixture.ts";
+import { impactRows, maintenanceFixture } from "./_support/maintenance_fixture.ts";
 import { WEBSITE_PROJECT } from "./_support/dependency_projects.ts";
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { admitPackage, PackageTargetSchema, type PackageTarget } from "../extensions/behaviors/_lib/package_target.ts";
@@ -110,7 +110,7 @@ Deno.test("package worker request survives restart and refuses a changed target"
 Deno.test("package repair preserves the target and advisories with Gateway-shaped nullable defaults; no unrelated upgrade or second turn", async () => {
   const f = fixture();
   try {
-    const script = { payload: { subtask: 701, outcome: "failed", exit_code: 2, output: "Composer advisory blocks resolution" }, recordedAt: "2026-10-25T20:00:00Z" };
+    const script = { payload: { subtask: 701, outcome: "failed", impactRows, exit_code: 2, output: "Composer advisory blocks resolution" }, recordedAt: "2026-10-25T20:00:00Z" };
     const a = f.args("repair", { script }); const deps = f.stageDeps(a.key);
     await runStage(a, deps); f.tick();
     const done = await runStage(a, deps); await runStage(a, deps);

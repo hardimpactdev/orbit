@@ -17,7 +17,7 @@ async function query(cwd: string, predicate: string, select: string) {
 }
 Deno.test({ name: "dependency-package official factory enforces sequential fresh groups, green/one repair/second red and no extra effects", sanitizeResources: false, sanitizeOps: false, fn: async () => {
   const fake = startFakeGateway({ 901: { handoffFailOnce: true, prStaysOpen: true }, 902: { provisionIdentity: { instance_id: 2, node_id: 2, starting_commit: "b".repeat(40) } }, 903: { scriptFailsOnce: true }, 904: { handoffAlwaysFails: true }, 905: { scriptFails: true }, 906: { projectId: SECOND_PROJECT.projectId } });
-  fake.projects.set(SECOND_PROJECT.projectId, { id: SECOND_PROJECT.projectId, repository_url: SECOND_PROJECT.repository, task_check: SECOND_PROJECT.check, default_branch: SECOND_PROJECT.defaultBranch });
+  fake.projects.set(SECOND_PROJECT.projectId, { id: SECOND_PROJECT.projectId, repository_url: SECOND_PROJECT.repository, type: "laravel-app", task_check: SECOND_PROJECT.check, default_branch: SECOND_PROJECT.defaultBranch });
   const dir = await Deno.makeTempDir({ prefix: "dependency-package-routing-" });
   let passed = false;
   try {

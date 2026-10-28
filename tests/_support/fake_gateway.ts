@@ -64,17 +64,19 @@ const SUMMARY = [
   "",
   "Nothing changes for users of the app.",
   "",
-  "| Package | From | To | note |",
+  "| Package | From | To | Change |",
   "| --- | --- | --- | --- |",
   "| livewire/livewire | 4.2.0 | 4.2.1 | |",
   "",
-  "Tested: compared the lockfiles with the base commit.",
+  "## What changes on the site",
+  "",
+  "- livewire/livewire 4.2.1: No code changes needed.",
 ].join("\n");
 
 export function startFakeGateway(scenarios: Record<number, Scenario>) {
   const projects = new Map([[20, {
     id: 20, repository_url: WEBSITE_PROJECT.repository,
-    task_check: WEBSITE_PROJECT.check, default_branch: WEBSITE_PROJECT.defaultBranch,
+    type: "laravel-app", task_check: WEBSITE_PROJECT.check, default_branch: WEBSITE_PROJECT.defaultBranch,
   }]]);
   const groups = new Map<number, Group>();
   for (const [id, scenario] of Object.entries(scenarios)) {

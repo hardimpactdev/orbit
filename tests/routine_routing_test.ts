@@ -74,7 +74,7 @@ Deno.test({
     const fake = startFakeGateway(scenarios);
     fake.projects.set(SECOND_PROJECT.projectId, {
       id: SECOND_PROJECT.projectId,
-      repository_url: SECOND_PROJECT.repository,
+      repository_url: SECOND_PROJECT.repository, type: "laravel-app",
       task_check: SECOND_PROJECT.check,
       default_branch: SECOND_PROJECT.defaultBranch,
     });

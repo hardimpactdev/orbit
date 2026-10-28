@@ -22,6 +22,7 @@ Deno.test({
       79: { scriptNoChange: true, scriptFails: true },
       80: {},
       81: { scriptNoChange: true, scriptFailsOnce: true },
+      82: {},
     });
     const counts = new Map<number, number>();
     const remote = Deno.serve(
@@ -53,6 +54,15 @@ Deno.test({
             ),
           );
           const steps = run.jobs[0].steps;
+          if (group.id === 82) {
+            run.status = "failed";
+            const inventory = steps.find((s: { name: string }) =>
+              s.name === "inventory"
+            );
+            inventory.status = "failed";
+            inventory.error = "inventory audit network unavailable";
+            inventory.dataArtifacts = [];
+          }
           steps[0].dataArtifacts[0].attributes = {
             head: group.head,
             tree: group.tree,
@@ -63,7 +73,7 @@ Deno.test({
                 name: "summary",
                 attributes: {
                   text:
-                    "Update fixture dependencies\n\n| Package | From | To |\n| --- | --- | --- |\n| fixture/pkg | 1.0 | 1.1 |",
+                    "Update fixture dependencies\n\n| Package | From | To |\n| --- | --- | --- |\n| fixture/pkg | 1.0 | 1.1 |\n\n## What changes on the site\n\n- fixture/pkg 1.1: No code changes needed.",
                 },
               }];
           } else {
@@ -232,9 +242,8 @@ export const behavior = {
         "configuration",
       );
       await Deno.writeTextFile(projectModule, projectSource);
-      const items = [...fake.groups.keys()].filter((id) => id < 78).map((id) =>
-        `tg-${id}`
-      );
+      const items = [...fake.groups.keys()].filter((id) => id < 78 || id === 82)
+        .map((id) => `tg-${id}`);
       for (const item of items) {
         await swamp(
           "model",
@@ -256,6 +265,7 @@ export const behavior = {
         "completed",
         "assistance",
         "completed",
+        "assistance",
         "assistance",
         "assistance",
       ];
@@ -308,19 +318,63 @@ export const behavior = {
         assert(String(query.results[0].lastError).includes("five minutes"));
         assertEquals(fake.groups.get(id)!.assistance_requested, true);
       }
-      assertEquals([...counts], [[71, 1], [72, 1], [73, 2], [74, 2], [75, 2]]);
+      assertEquals([...counts].sort(([a], [b]) => a - b), [
+        [71, 1],
+        [72, 1],
+        [73, 2],
+        [74, 2],
+        [75, 2],
+        [82, 1],
+      ]);
       assertEquals(fake.startsOf(71, "publish"), 1);
       assertEquals(fake.startsOf(72, "publish"), 0);
       for (const id of [73, 74, 75]) {
         assertEquals(fake.startsOf(id, "repair"), 1);
       }
       assertEquals(fake.startsOf(74, "publish"), 0);
+      for (const id of [73, 75]) {
+        const query = JSON.parse(
+          await swamp(
+            "data",
+            "query",
+            `modelName == "orbit-gateway" && name == "job-tg-${id}.publish.c1"`,
+            "--select",
+            "attributes",
+            "--json",
+          ),
+        );
+        assertEquals(
+          JSON.parse(query.results[0].inputIdentity).change.payload.summary,
+          "done",
+          "the real factory carries the repair report to publish",
+        );
+      }
       assert(
         [...fake.operations.values()].every((op) => op.kind !== "tasks.script"),
       );
-      // Simulated operator cancellation frees the three parked fixture VMs before
+      const inventoryJob = JSON.parse(
+        await swamp(
+          "data",
+          "query",
+          'modelName == "orbit-gateway" && name == "job-tg-82.script.c1"',
+          "--select",
+          "attributes",
+          "--json",
+        ),
+      ).results[0];
+      assertEquals(inventoryJob.state, "failed");
+      assertEquals(inventoryJob.evidence.code, "maintenance.inventory_failed");
+      assertEquals(inventoryJob.evidence.retryable, true);
+      assertEquals(inventoryJob.artifacts.script, undefined);
+      assertEquals(
+        [...fake.operations.values()].filter((op) =>
+          op.target_id === 82 && op.kind === "tasks.turn"
+        ),
+        [],
+      );
+      // Simulated operator cancellation frees the four parked fixture VMs before
       // the next independent scenarios. Production cancellation is never performed.
-      for (const id of [74, 76, 77]) {
+      for (const id of [74, 76, 77, 82]) {
         const group = fake.groups.get(id)!;
         Object.assign(group, {
           status: "cancelled",
