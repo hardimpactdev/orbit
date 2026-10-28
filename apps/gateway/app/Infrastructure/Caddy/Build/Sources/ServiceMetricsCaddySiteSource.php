@@ -23,6 +23,11 @@ final readonly class ServiceMetricsCaddySiteSource implements NodeCaddySiteSourc
         private ServiceMetricsConfigRenderer $renderer = new ServiceMetricsConfigRenderer,
     ) {}
 
+    public function order(): int
+    {
+        return 30;
+    }
+
     public function sites(Node $node): array
     {
         $metrics = CaddySiteRoles::serving(RoleName::Metrics);

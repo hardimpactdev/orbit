@@ -26,6 +26,11 @@ final readonly class AiRouterCaddySiteSource implements ContributedCaddySiteSour
         private CaddySiteCertificates $certificates = new CaddySiteCertificates,
     ) {}
 
+    public function order(): int
+    {
+        return 70;
+    }
+
     public function certificateSlug(): string
     {
         return self::CertificateSlug;

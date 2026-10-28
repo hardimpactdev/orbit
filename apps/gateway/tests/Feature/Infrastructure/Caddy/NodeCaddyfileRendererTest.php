@@ -695,6 +695,11 @@ function caddy_build_compose(array $sites, ?string $lan = null, bool $ingress = 
         /** @param list<CaddySite> $sites */
         public function __construct(private array $sites) {}
 
+        public function order(): int
+        {
+            return 0;
+        }
+
         public function sites(Node $node): array
         {
             return $this->sites;

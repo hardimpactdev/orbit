@@ -12,6 +12,9 @@ use App\Models\Node;
  */
 interface NodeCaddySiteSource
 {
+    /** The stable render order, independent of provider discovery. */
+    public function order(): int;
+
     /** @return list<CaddySite> */
     public function sites(Node $node): array;
 }

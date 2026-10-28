@@ -30,7 +30,7 @@ final readonly class NodeCaddyfileRenderer
     public const string TaskVmMatcher = '@orbit_task_vms';
 
     /**
-     * @param  iterable<NodeCaddySiteSource>  $sources  Core's sources, in render order.
+     * @param  iterable<NodeCaddySiteSource>  $sources  Core's sources, ordered by each source's order().
      * @param  iterable<ContributedCaddySiteSource>  $contributions  Rendered after core's sources.
      */
     public function __construct(
@@ -38,12 +38,29 @@ final readonly class NodeCaddyfileRenderer
         #[Tag(ContributedCaddySiteSource::class)] private iterable $contributions = [],
     ) {}
 
+    /**
+     * @template T of NodeCaddySiteSource
+     *
+     * @param  iterable<T>  $sources
+     * @return list<T>
+     */
+    private function orderedSources(iterable $sources): array
+    {
+        $ordered = [];
+        foreach ($sources as $source) {
+            $ordered[] = $source;
+        }
+        usort($ordered, static fn (NodeCaddySiteSource $left, NodeCaddySiteSource $right): int => $left->order() <=> $right->order());
+
+        return $ordered;
+    }
+
     public function render(Node $node): NodeCaddyfile
     {
         $problems = [];
         $sites = [];
 
-        foreach ($this->sources as $source) {
+        foreach ($this->orderedSources($this->sources) as $source) {
             try {
                 array_push($sites, ...$source->sites($node));
             } catch (Throwable $exception) {
@@ -51,7 +68,7 @@ final readonly class NodeCaddyfileRenderer
             }
         }
 
-        foreach ($this->contributions as $source) {
+        foreach ($this->orderedSources($this->contributions) as $source) {
             try {
                 foreach ($source->sites($node) as $site) {
                     $sites[] = $site;

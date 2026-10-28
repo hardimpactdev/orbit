@@ -28,6 +28,11 @@ final readonly class RouteCaddySiteSource implements NodeCaddySiteSource
         private DevelopmentCaddyConfigRenderer $renderer,
     ) {}
 
+    public function order(): int
+    {
+        return 40;
+    }
+
     public function sites(Node $node): array
     {
         return $this->fromSites($this->repository->forNode($node));

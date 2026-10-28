@@ -58,7 +58,7 @@ A version holds only its `Caddyfile`. It imports nothing. The version name is th
 
 ## Node Caddy build
 
-The Gateway renders the sites from committed database state only, so the same state always gives the same file. Route transitions are [stored state](/reference/routes#stored-transitions): a Route that is being published or withdrawn, an Instance that is being removed, a placement change, and a Router replacement each have a record that the build reads.
+The Gateway renders the sites from committed database state only, so the same state always gives the same file. Each core site source declares its render order: Gateway web, Metrics, service metrics, Routes, WebSocket, then analytics. Family providers register their own sources; provider discovery does not change the rendered order. Extension sources declare their own order and render after core sites. Route transitions are [stored state](/reference/routes#stored-transitions): a Route that is being published or withdrawn, an Instance that is being removed, a placement change, and a Router replacement each have a record that the build reads.
 
 A role's sites render while the role is provisioning or active, and after a failed convergence, because they can already be live. They stop rendering when the role's removal starts.
 

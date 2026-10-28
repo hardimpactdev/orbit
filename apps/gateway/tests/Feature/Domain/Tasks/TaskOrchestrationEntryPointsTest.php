@@ -44,7 +44,7 @@ function task_orchestration_sources(string $directory): array
 {
     $sources = [];
     foreach (File::allFiles(app_path($directory)) as $file) {
-        if ($file->getExtension() === 'php') {
+        if ($file->getExtension() === 'php' && $file->getFilename() !== 'operation-kinds.php') {
             $sources[$file->getPathname()] = 'App\\'.str_replace('/', '\\', $directory.'/'.substr($file->getRelativePathname(), 0, -4));
         }
     }

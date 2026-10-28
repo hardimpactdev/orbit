@@ -27,6 +27,11 @@ final readonly class MetricsCaddySiteSource implements NodeCaddySiteSource
         private CaddySiteCertificates $certificates = new CaddySiteCertificates,
     ) {}
 
+    public function order(): int
+    {
+        return 20;
+    }
+
     public function sites(Node $node): array
     {
         if (

@@ -467,6 +467,11 @@ function node_caddy_builder_renderer(bool $duplicate = false, array $contributio
     {
         public function __construct(private bool $duplicate) {}
 
+        public function order(): int
+        {
+            return 0;
+        }
+
         public function sites(Node $node): array
         {
             $site = static fn (string $name): CaddySite => new CaddySite(
@@ -490,6 +495,11 @@ function node_caddy_builder_contribution(string $host, string $source = 'extensi
     return new readonly class($host, $source) implements ContributedCaddySiteSource
     {
         public function __construct(private string $host, private string $source) {}
+
+        public function order(): int
+        {
+            return 70;
+        }
 
         public function certificateSlug(): ?string
         {
