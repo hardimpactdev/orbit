@@ -2,22 +2,17 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\Instances\Environment\InstanceEnvironmentContext;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
-use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentPhpFpmConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Instances\ProductionPhpRuntimeConfigRenderer;
-use App\Infrastructure\Instances\RemoteInstanceEnvironmentRuntimeRefresher;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
@@ -25,7 +20,6 @@ use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Schema;
 use Tests\Support\CachedLaravelApplicationFixture;
-use Tests\Support\FakeAgentCommandRunner;
 
 beforeAll(function (): void {
     CachedLaravelApplicationFixture::prepare();
@@ -251,78 +245,6 @@ it('keeps a dedicated production route in Caddy and out of shared FPM publicatio
 });
 
 /** @return array{Instance, Node} */
-it('prepares production config before resetting opcache and reports refresh skips and failures', function (string $receipt, int $exit, bool $php, bool|string $runtimeFails, string $expected, ?string $root): void {
-    [$instance] = orb214_runtime_instance();
-    $instance->project->update(['root' => 'apps/from-project/public']);
-    $instance->update(['root' => $root]);
-    if (! $php) {
-        $instance->update(['selected_php_version' => null]);
-    }
-    $agents = new FakeAgentCommandRunner;
-    $prepared = false;
-    $agents->answer('instance.refresh-config-cache', function (array $input) use ($instance, $exit, $receipt, &$prepared): array {
-        expect($input)->toBe([
-            'user' => $instance->production_user,
-            'home' => $instance->production_home,
-            'version' => '8.5',
-            'application' => $instance->production_home.'/current/'.($instance->root === null ? 'apps/from-project' : 'apps/site'),
-        ]);
-        if ($exit === 2) {
-            throw new RuntimeException('SECRET SSH failure');
-        }
-        if ($exit !== 0) {
-            throw new AgentCommandRefused('instance.refresh-config-cache', 'instance.release_step_failed', 'SECRET config output', ['step' => 'rebuild the configuration cache']);
-        }
-        $prepared = true;
-
-        return ['outcome' => $receipt];
-    });
-    $runtime = Mockery::mock(ProductionPhpRuntimeManager::class);
-    $shouldReset = $php && $exit === 0 && in_array($receipt, ['config_cached', 'config_uncached'], true);
-    if ($shouldReset) {
-        $call = $runtime->shouldReceive('refreshCache')->once()->withArgs(function (Instance $target) use ($instance, &$prepared): bool {
-            expect($prepared)->toBeTrue();
-
-            return $target->id === $instance->id;
-        });
-        if ($runtimeFails) {
-            $call->andThrow($runtimeFails === 'unexpected'
-                ? new RuntimeException('SECRET unexpected runtime output')
-                : new RuntimeConvergenceException(step: 'reset', errorCode: 'failed', message: 'SECRET runtime output'));
-        }
-    } else {
-        $runtime->shouldNotReceive('refreshCache');
-    }
-    $refresher = new RemoteInstanceEnvironmentRuntimeRefresher($agents, $runtime);
-    $context = new InstanceEnvironmentContext(
-        instanceId: $instance->id, projectId: $instance->project_id, nodeId: $instance->node_id,
-        environment: 'production', path: $instance->production_home, executionUser: $instance->production_user,
-        laravel: true, routeId: null, routeDomain: null, nodeStatus: 'active', node: $instance->node,
-    );
-    if (str_starts_with($expected, 'env.')) {
-        try {
-            $refresher->refresh($context);
-            test()->fail('Refresh failure was swallowed.');
-        } catch (ResourceOperationException $exception) {
-            expect($exception->errorCode)->toBe($expected)->and($exception->getMessage())->not->toContain('SECRET');
-        }
-    } else {
-        expect($refresher->refresh($context))->toBe($expected);
-    }
-    expect($agents->calls)->toHaveCount($php ? 1 : 0);
-})->with([
-    'cached' => ['config_cached', 0, true, false, 'config_cache_and_opcache_refreshed'],
-    'uncached' => ['config_uncached', 0, true, false, 'opcache_refreshed_config_uncached'],
-    'no release' => ['no_current_release', 0, true, false, 'skipped_no_current_release'],
-    'no PHP' => ['', 0, false, false, 'skipped_no_php_version'],
-    'config failed' => ['SECRET config output', 1, true, false, 'env.config_cache_refresh_failed'],
-    'unconfirmed' => ['', 0, true, false, 'env.config_cache_refresh_failed'],
-    'config refused' => ['failed', 0, true, false, 'env.config_cache_refresh_failed'],
-    'runtime failed' => ['config_cached', 0, true, true, 'env.php_runtime_refresh_failed'],
-    'unexpected runtime failure' => ['config_cached', 0, true, 'unexpected', 'env.php_runtime_refresh_failed'],
-    'unexpected remote failure' => ['', 2, true, false, 'env.config_cache_refresh_failed'],
-])->with(['project root' => [null], 'instance root' => ['apps/site/public']]);
-
 it('keeps copied Laravel caches and their application paths private', function (): void {
     $directory = sys_get_temp_dir().'/orbit-env-laravel-copies-'.bin2hex(random_bytes(8));
     $files = new Filesystem;

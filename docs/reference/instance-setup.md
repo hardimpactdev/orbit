@@ -2,8 +2,8 @@
 title: "Instance setup and teardown"
 description: "How a Project stores named setup and teardown commands, and when Orbit runs them for a development Instance."
 covers:
-  - apps/gateway/app/Domain/Projects/{LifecyclePhase,LifecycleStep,ProjectLifecycleRunner,ProjectLifecycleStepStore,GatewaySetupSteps}.php
-  - apps/gateway/app/Actions/*/{Create*InstanceAction,CopyInstanceDependenciesAction,RegisterInstanceAction,RunInstanceSetupAction}.php
+  - apps/gateway/app/Domain/{Projects/{LifecyclePhase,LifecycleStep,ProjectLifecycleRunner,ProjectLifecycleStepStore,GatewaySetupSteps}.php,Instances/StepLists/**}
+  - apps/gateway/app/Actions/*/{Create*InstanceAction,CopyInstanceDependenciesAction,RegisterInstanceAction,StartInstanceStepListAction}.php
   - apps/gateway/app/Infrastructure/{*/NativeDevelopment*Provisioner,Instances/{RemoteDevelopmentInstanceConfigurator,RemoteDevelopmentInstanceSourceLifecycle,RemoteRegistrationSourceManager,RemoteInstanceDestinationGuard,RemoteInstanceDependencyCopier},AppDev/DevelopmentSshExecutor,AppProd/ProductionSshExecutor}.php
   - apps/gateway/app/Domain/Instances/{DevelopmentInstanceProvisioner,InstanceSourceProfileGuard,DependencyCopy/InstanceDependencyCopier}.php
   - apps/gateway/app/Http/Controllers/Api/ProjectLifecycleStepsController.php
@@ -18,7 +18,7 @@ A Project stores two ordered lists of named commands: setup steps and teardown s
 
 Production Instances run neither list. They use [deploy steps](/reference/deployments#deploy-steps). A Project's [development deploy steps](/reference/deployments#development-deploy-steps) are a third, independent list. Setup and teardown do not run that list.
 
-Each step is one database row with a name, a command string, a timeout, and a position. Orbit writes no script into the checkout. The lists belong to the Project, and no Instance keeps a copy. The next run uses the lists as they are at that moment.
+Each step is one database row with a name, a command string, a timeout, and a position. Orbit writes no script into the checkout. The lists belong to the Project, and no Instance keeps a copy. Admission records the current list digest. A configuration change before execution refuses the admitted list; start a new Operation to use the new configuration.
 
 ## Record a step
 
@@ -50,7 +50,7 @@ The Gateway checks each change against these limits and stores nothing when one 
 | `before`, `after` | The name of a step in the same list. Use at most one. |
 | `rebalance` | Other steps in the same list and their new timeouts, each as `name` and `timeout_seconds`. The Gateway sets them in the same write. |
 
-A list holds at most 32 steps. The timeouts of one list add up to at most 540 seconds, so a whole list fits in one API request. The Gateway stores a step only when its timeout is inside that limit, and a later read returns the stored timeout.
+A list holds at most 32 steps. The timeouts of one list add up to at most 540 seconds, within the list Operation budget. The Gateway stores a step only when its timeout is inside that limit, and a later read returns the stored timeout.
 
 A list stored before that limit can total more. The Gateway keeps it, and accepts a change only when the change does not raise the list's total. A lower total becomes the new ceiling, so do not lower a step on its own to make room.
 
@@ -89,6 +89,8 @@ A fetch and `ls-remote` carry a GitHub token. `ls-remote` runs outside the check
 The checkout's `.git/config` is not trusted. The operator writes it, and so does every program that runs as the managed user: setup steps, development Processes, and any agent working in the checkout. Command-line settings outrank that file, so a planted credential helper, hook, `url.*.insteadOf`, or transport setting cannot run a command or move the fetch off HTTPS while the token is in the environment.
 
 ## Run setup
+
+Swamp executes each Project setup or teardown list as an `instance.run_steps` Operation. The Gateway keeps list configuration, validates its immutable digest and target, and records proven receipts. `instance:setup` admits the setup list through `POST /api/v1/instances/{instance}/setup`, which returns `202` and an Operation. Its optional `Idempotency-Key` replays the same admission. The CLI follows that Operation; `--json` returns its final record. An empty list completes with a proven no-op receipt. An explicit setup failure keeps the Instance. A create or removal parent owns its rollback policy.
 
 A create that fails before activation cleans up its owned resources without running setup or teardown, and keeps the original failure code. If cleanup cannot finish or the process is interrupted, removal accepts the pre-activation states `reserved`, `checkout_prepared`, and `source_resolved` and skips teardown. See [pre-activation removal](/reference/instance-removal#pre-activation-removal).
 
@@ -153,11 +155,11 @@ orbit instance:setup <instance>
 
 ## Deadlines
 
-One API request runs a whole list. The request's remote work ends after 570 seconds, and its forward work stops 20 seconds earlier to leave time for cleanup. Each step's timeout is cut to the time that remains.
+The API returns after admitting the Operation. A list has 550 seconds of forward work from its first claim. Before each command, the Gateway records a bound budget receipt from server time. The command timeout is the smaller of its stored timeout and the remaining budget, with five seconds reserved for command cleanup. Restarting Swamp does not reset that budget.
 
-`instance:create` keeps 150 seconds back from its setup list for rollback: up to 60 seconds for the teardown list and 90 seconds for the removal. Nested operations, such as rendering a [Gateway-owned setup step](#gateway-owned-setup-steps), keep their own local timeout while preserving that hold and the request cleanup reserve. They cannot extend the parent request deadline. `instance:setup` and `instance:register --setup` roll nothing back, so their setup list can use the whole request.
+`instance:create` keeps 150 seconds of its forward budget for rollback: up to 60 seconds for the teardown list and 90 seconds for removal. Its setup list therefore has at most 400 seconds. Each child also respects the parent deadline; admitting a child does not reset it. `instance:setup` and `instance:register --setup` roll nothing back, so their list can use the full list budget.
 
-A step that the request deadline stops, or that has no time left to start, is not a failed command. The request returns `command.deadline_exceeded` (HTTP 504) with `outcome: deadline` and the step name. `instance:create` still rolls back and keeps that code. Lower the step timeouts until the list fits.
+A step cut short by the list budget, or with no time left to start, ends the Operation with `command.deadline_exceeded`, `outcome: deadline`, and the step name. The Gateway validates this classification against the proven command or budget receipt. `instance:create` still rolls back and keeps that code. Lower the step timeouts until the list fits.
 
 ## Run teardown
 
@@ -169,7 +171,7 @@ The first teardown command that exits non-zero or times out stops the removal. T
 
 ## Bootstrap the Orbit repository
 
-The Orbit Project can record `bin/bootstrap` as a setup step, or record its locked dependency installs as separate steps. It installs the locked dependencies, seeds caches, and runs the checks in all five Composer projects. A cold bootstrap can exceed the request deadline.
+The Orbit Project can record `bin/bootstrap` as a setup step, or record its locked dependency installs as separate steps. It installs the locked dependencies, seeds caches, and runs the checks in all five Composer projects. A cold bootstrap can exceed the list budget.
 
 ```bash
 orbit instance:setup-step:create bootstrap --project=PROJECT_ID --command='bin/bootstrap' --timeout=540
@@ -217,7 +219,7 @@ orbit instance:teardown-step:list --project=46 --json
 
 Confirm `task_check` is `composer check`. Confirm each stored `timeout_seconds` is an integer from 1 to 540. A new list totals at most 540 seconds. A list stored before that cap may total more, and a later change may not raise its total. To add a step to such a list, [rebalance the other steps in the same write](#make-room-in-a-full-list).
 
-The task baseline runs each setup step with that step's own timeout, outside the API request deadline. `instance:create`, `instance:setup`, and `instance:destroy` run one whole list inside one request. Remote work ends at 570 seconds, and forward work stops 20 seconds earlier. `instance:create` holds 150 seconds back: 60 for teardown and 90 for removal.
+The task baseline runs each setup step with that step's own timeout. Instance setup and removal use the list Operation budget described under [Deadlines](#deadlines). `instance:create` holds 150 seconds back: 60 for teardown and 90 for removal.
 
 A setup list whose timeouts cannot fit is cut with `command.deadline_exceeded`. Lower those timeouts before relying on `instance:create` or `instance:setup` for this Project. Do not raise the total.
 
@@ -286,7 +288,7 @@ These codes name the step that failed. The sections above say whether the Instan
 | `instance.setup_step_unavailable` | A setup command was not found or is not executable on the Node; `outcome: missing`. |
 | `instance.teardown_step_unavailable` | A teardown command was not found or is not executable on the Node; `outcome: missing`. |
 | `instance.setup_unavailable` | `instance:setup` targets an Instance that is not an active development Instance. |
-| `command.deadline_exceeded` | The request deadline stopped a step. |
+| `command.deadline_exceeded` | The list budget stopped a step. |
 
 ## Why it works this way
 

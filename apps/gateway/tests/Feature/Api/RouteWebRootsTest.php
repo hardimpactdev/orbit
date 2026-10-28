@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 use App\Actions\Instances\DestroyInstanceAction;
 use App\Actions\Routes\SynchronizeRouteWebRootUrlsAction;
-use App\Actions\Tools\PrepareVpEnvironmentAction;
 use App\Domain\AppDev\AppDevPhpFpmManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\InstanceState;
@@ -35,7 +33,6 @@ use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Doctor\ProductionInstanceInspectionExpectationFactory;
 use App\Infrastructure\Instances\ProductionPhpRuntimeConfigRenderer;
-use App\Infrastructure\Instances\RemoteProductionDeployment;
 use App\Infrastructure\Projects\NativeProjectUpdateProjectionMutator;
 use App\Infrastructure\Routes\NativeRouteRemovalProjector;
 use App\Models\Instance;
@@ -44,7 +41,6 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Collection;
-use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeRouteRemovalProjector;
 use Tests\Support\RouteSwampGatewayFixture;
 
@@ -696,11 +692,7 @@ function web_root_production(Project $project): array
 /** @return list<array{web_root: string, directory: string}> The served web roots that a later release preparation sends. */
 function web_root_production_deploy_served(Instance $instance): array
 {
-    $agents = new FakeAgentCommandRunner()->answer('instance.prepare-release', ['name' => '20261009-a1', 'commit' => str_repeat('b', 40)]);
-    $instance->update(['source_layout' => 'checkout']);
-    new RemoteProductionDeployment($agents, app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class), static fn (): string => '20261009-a1')->prepare($instance->refresh(), 'main');
-
-    return $agents->calls[0]['input']['served'];
+    return array_map(static fn (array $application): array => ['web_root' => $application['web_root'], 'directory' => $application['directory']], RouteWebRoot::servedApplications($instance));
 }
 
 function web_root_route(Instance $instance, string $domain, ?string $webRoot = null): Route

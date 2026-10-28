@@ -9,7 +9,7 @@ use App\Actions\Instances\SynchronizeInstanceEnvironmentAction;
 use App\Domain\Instances\DatabaseClone\InstanceSqliteCloner;
 use App\Domain\Instances\Dependencies\SwampDependencyReader;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
-use App\Domain\Instances\Deployment\DevelopmentDeployment;
+use App\Domain\Instances\Deployment\InstanceDeploymentSecrets;
 use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\DevelopmentInstanceBranchInspector;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
@@ -52,6 +52,8 @@ use App\Domain\Instances\Sqlite\SqliteSnapshotTransfer;
 use App\Domain\Instances\Transfer\InstanceTransferRouteProjector;
 use App\Domain\Instances\Transfer\InstanceTransferRuntime;
 use App\Domain\Instances\Transfer\InstanceTransferSource;
+use App\Domain\Instances\StepLists\InstanceStepListSecrets;
+use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentSecrets;
 use App\Domain\Operations\OperationSecretSource;
 use App\Http\Controllers\Api\OperationExecutorController;
 use App\Http\Middleware\Instances\SerializeInstanceEnvironment;
@@ -69,7 +71,6 @@ use App\Infrastructure\Instances\NativeProductionRouteProjector;
 use App\Infrastructure\Instances\PlacementRouteApplicationUrlWriter;
 use App\Infrastructure\Instances\ProtectedSqliteSnapshotTransfer;
 use App\Infrastructure\Instances\RecordedProductionInstanceSourceRemoval;
-use App\Infrastructure\Instances\RemoteDevelopmentDeployment;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceConfigurator;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceLifecycle;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceRemoval;
@@ -124,7 +125,6 @@ final class InstancesServiceProvider extends ServiceProvider
         DevelopmentSourceAccess::class => NativeDevelopmentSourceAccess::class,
         ProductionInstanceProvisioner::class => NativeProductionInstanceProvisioner::class,
         ProductionDeployment::class => RemoteProductionDeployment::class,
-        DevelopmentDeployment::class => RemoteDevelopmentDeployment::class,
         ProductionInstanceSourceLifecycle::class => RemoteProductionInstanceSourceLifecycle::class,
         ProductionReleaseLayout::class => RemoteProductionInstanceSourceLifecycle::class,
         ProductionPhpRuntimeManager::class => RemoteProductionPhpRuntimeManager::class,
@@ -140,7 +140,7 @@ final class InstancesServiceProvider extends ServiceProvider
 
     public function register(): void
     {
-        $this->app->tag([InstanceLifecycleGitSecret::class, InstanceLifecycleUrlSecret::class, EnvironmentSyncSecrets::class], OperationSecretSource::class);
+        $this->app->tag([InstanceLifecycleGitSecret::class, InstanceLifecycleUrlSecret::class, EnvironmentSyncSecrets::class, InstanceStepListSecrets::class, InstanceDeploymentSecrets::class, InstanceVpEnvironmentSecrets::class], OperationSecretSource::class);
         $this->app->bind(SwampDependencyReader::class, static fn (): SwampDependencyReader => new WebSocketSwampDependencyReader(
             static fn (int $limit): WebSocketClient => new StreamWebSocketClient($limit, $limit),
             Config::string('swamp.address'), Config::string('swamp.read_token'), Config::string('swamp.ca_path'),

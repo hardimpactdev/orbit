@@ -3,8 +3,8 @@ title: "Instance releases"
 description: "How production Instances build releases and select current code, and how development defaults deploy in their checkout."
 covers:
   - apps/gateway/app/Domain/{Instances/Deployment/**,Instances/Smoke/**,Instances/ProductionWebRootManager.php,Projects/*DeployStep*.php}
-  - apps/gateway/app/Actions/Instances/{DeployInstanceAction,DeployDefaultInstanceAction,StartInstanceDeployAction,StartInstanceRollbackAction,RunAutomaticDeploysAction,RollbackInstanceAction,RestartInstanceProcessesAction,InstanceDeploymentConfigResolver,UpdateInstanceAction,ListInstanceReleasesAction,ListInstanceDeploymentsAction,*InstanceSmoke*Action,*InstanceDeployStep*Action}.php
-  - apps/gateway/app/Infrastructure/Instances/{GitHubInstanceSmoke,SmokeArtifactEvidence,RemoteProductionDeployment,RemoteDevelopmentDeployment,DevelopmentCheckoutProgram,ProductionApplicationPaths,ProductionWebRootProgram,RemoteProductionWebRootManager}.php
+  - apps/gateway/app/Actions/Instances/{StartInstanceDeployAction,StartInstanceRollbackAction,RunAutomaticDeploysAction,RestartInstanceProcessesAction,InstanceDeploymentConfigResolver,UpdateInstanceAction,ListInstanceReleasesAction,ListInstanceDeploymentsAction,*InstanceSmoke*Action,*InstanceDeployStep*Action}.php
+  - apps/gateway/app/Infrastructure/Instances/{GitHubInstanceSmoke,SmokeArtifactEvidence,RemoteProductionDeployment,DevelopmentCheckoutProgram,ProductionApplicationPaths,ProductionWebRootProgram,RemoteProductionWebRootManager}.php
   - apps/gateway/app/Console/Commands/AutoDeployCommand.php
   - apps/agent/src/commands/{production,production_tests,production_home,production_home_tests,deploy_step}.rs
   - apps/gateway/app/Http/{Controllers/Api/{InstanceSmokeController,InstanceDeploymentsController,InstanceDeployStepsController,InstanceReleasesController,InstanceRollbacksController,ProjectDevelopmentDeployStepsController},Requests/Projects/*ProjectDevelopmentDeployStepRequest}.php
@@ -14,7 +14,11 @@ covers:
 
 # Instance releases
 
-An Instance on an `app-prod` Node serves code from a release. The Gateway deploys the Instance's branch into a fresh release, runs the Instance's deploy steps, and switches the `current` link atomically. Environment configuration and an optional SQLite database live outside the releases, so they survive each deployment. [Cloning](/reference/instance-cloning) creates every production Instance, and its first deployment selects the first release. [`instance`](/cli/instance#orbit-instancedeploy) lists the commands.
+An Instance on an `app-prod` Node serves code from a release. Swamp deploys the Instance's branch into a fresh release, runs the Instance's deploy steps, and switches the `current` link atomically. The Gateway validates admission and each named Node command, stores deploy-step configuration, and records proven deployment receipts. Environment configuration and an optional SQLite database live outside the releases, so they survive each deployment. [Cloning](/reference/instance-cloning) creates every production Instance, and its first deployment selects the first release. [`instance`](/cli/instance#orbit-instancedeploy) lists the commands.
+
+Deployment execution uses the shared child and receipt contracts. The Gateway refuses admission with `operation.kind_unavailable` when a required owning-family child is unavailable. It never falls back to a PHP deploy executor. Production deployment requires the Process/Schedule installation and restart children; PHP requires `node.prepare_php_packages`; a Vite+ build requires `tool.manager_converge`. These dependency paths remain unavailable until their enforced kit capabilities and registrations ship. The family completion receipt proves every required descriptor and exact child result for that deployment variant; development never requires production children.
+
+Environment writes use `instance.sync_environment`, with protected material resolved in Gateway memory. Explicit production environment synchronization composes that child with config-cache refresh, PHP cache refresh and `process.restart_instance`; its Process-ID result requires the list-result capability. A failed refresh keeps the pending marker. Route preparation uses `instance.prepare_php_runtime` and `instance.prepare_served_web_roots` for admitted production targets before their associations become active. Route URL-only synchronization accepts the `synchronize-web-root-urls.rollback.<instance_id>` child key after the parent restores its stored web root.
 
 The `app-prod` role decides this layout. `APP_ENV` does not; see [Laravel mode](/reference/environment-variables#laravel-mode).
 
@@ -153,7 +157,7 @@ Deploy-step and branch changes need an access grant to the Instance's Node. The 
 
 ### Vite store prerequisite
 
-Before a JavaScript step (`npm-build`, or a command using `vp`, Node, npm/npx, pnpm, Yarn, Bun, Vite, or Corepack), Orbit prepares the [Project environment in the vp store](/reference/tools#project-environments-in-the-vite-store) when the Project declares `vite-plus`. The prerequisite runs before the application command, as the store owner. It records desired versions before installing missing content and verifies the result before allowing the step to start. It does not run package install scripts as the store owner.
+Before a JavaScript step (`npm-build`, or a command using `vp`, Node, npm/npx, pnpm, Yarn, Bun, Vite, or Corepack), Swamp runs the `instance.prepare_vp_environment` child to prepare the [Project environment in the vp store](/reference/tools#project-environments-in-the-vite-store) when the Project declares `vite-plus`. The Gateway reads and validates runtime requirements and resolves protected registry settings only in memory. Swamp executes the bound prerequisite before the application command, as the store owner. It records desired versions before installing missing content and verifies the result before allowing the step to start. It does not run package install scripts as the store owner.
 
 The default JavaScript deploy runs `vp install --frozen-lockfile` followed by `vp run build`, through `vp env exec` with recorded exact Node and package-manager versions as the Instance user. That execution reads the shared store but never writes it. A data migration replaces stored legacy default steps containing hard-coded Node and npm paths; runtime execution does not rewrite commands. Customized commands keep their flags, shell operators, and additional build scripts, including SSR builds.
 
@@ -161,7 +165,7 @@ A missing runtime or package manager that cannot be installed fails with `deploy
 
 ## Deploy through the API
 
-A deployment and a rollback each run as an [operation](/reference/operations) on the Gateway queue.
+Swamp executes each deployment and rollback as an [operation](/reference/operations). The Gateway keeps admission, deploy-step configuration, target exclusion, history and receipts.
 
 | Request | Body | Result |
 | --- | --- | --- |
@@ -186,7 +190,7 @@ Under the Instance lock, the automatic operation rechecks enablement, manual pau
 
 A manual deploy or rollback row pauses it regardless of whether that attempt is running, failed or succeeded. A rollback records its rolled-away block when its outcome is recorded, before history pruning, so resume and history pruning cannot lose it while Swamp is idle. `auto_deploy=true` resumes after the newest manual row and keeps the block. A paused operation ends with `deployment.paused`; a rolled-away commit ends with `deployment.commit_blocked`. A manual action that has already started and still holds the Instance makes a new start busy. A rollback may supersede an unclaimed queued deploy under the existing rules.
 
-These primitives retain the existing operation receipt, history, output, recovery, target exclusion and cooperative cancellation. Swamp owns production policy; PHP retains development defaults. These commands do not install a Swamp workflow.
+These primitives retain the existing operation receipt, history, output, recovery, target exclusion and cooperative cancellation. Swamp owns production policy and executes production and development deployment Operations. Development scheduling keeps its existing admission path.
 
 ### The deploy operation
 
@@ -205,13 +209,13 @@ The operation's steps follow the phases below. Each name is a phase, or a phase 
 | `after_activation.<step>` | no | `after_activation` |
 | `cleanup` | yes | none: a failed cleanup is a warning |
 
-An in-flight deploy whose stored plan predates `process_restart` finishes that original plan after a Gateway upgrade. It does not restart Processes automatically. New deploy operations include the restart phase. Other changes to a stored plan still fail with `operation.plan_changed`.
+The admitted configuration stays fixed for the Operation. A changed script, target, release identity or command input cannot replace that intent during execution.
 
 A development default has `source_preparation` and one `before_activation.<step>` for each [development deploy step](#development-deploy-steps). `php_refresh` appears only for an Instance that serves PHP.
 
 When the operation ends, `result` holds `deployment_id`, `release`, `selected_release`, and `commit`. A failed operation names the step in `failed_step` and the deployment's error code in `error_code`, such as `deployment.step_failed`. Read the full log of the run from its [history row](#history).
 
-A lost worker resumes a resumable step and fails any other step with `operation.worker_lost`, as [Recover a lost worker](/reference/operations#recover-a-lost-worker) describes. The failed boundary decides the selected release, as for any failure.
+Swamp reuses successful keyed receipts after restart. After a lost reply, it reads the keyed receipt on the target before another invocation. A proven receipt supplies the original result; a running or unreadable receipt leaves the Operation pending. An arbitrary deploy script with recorded intent and no proven result ends interrupted; it is never repeated. The failed boundary decides the selected release, as for any failure. A saved completion is replayed after a lost reply without running another Node command.
 
 ### The rollback operation
 
@@ -243,13 +247,13 @@ A rollback ignores a cancel request once its `activation` step succeeded: it sti
 
 A deployment reads the branch and the steps once, when it starts. Then it runs these phases in order.
 
-1. **Source preparation.** The Gateway clones the branch into a new release as the production user, then prepares its shared paths and public storage link.
-2. **Environment sync.** The Gateway writes the stored configuration into `<home>/.env`, as [synchronization](/reference/environment-variables#synchronize) does. This needs exactly one Route on the Instance. An Instance without a Route fails here with `env.owner_unavailable`.
-3. **Before activation.** The Gateway runs each `before_activation` step in order, from the new release, as the production user, with a non-interactive shell.
+1. **Source preparation.** Swamp asks the Node agent to clone the branch into a new release as the production user, then prepares its shared paths and public storage link.
+2. **Environment sync.** Swamp runs `instance.sync_environment` to write the stored configuration into `<home>/.env`, as [synchronization](/reference/environment-variables#synchronize) does. This needs exactly one Route on the Instance. An Instance without a Route fails here with `env.owner_unavailable`.
+3. **Before activation.** Swamp runs each `before_activation` step in order, from the new release, as the production user, with a non-interactive shell.
 4. **Activation.** The Gateway replaces `current` atomically with a link to the new release.
 5. **PHP refresh.** The Gateway reconciles and confirms the dedicated FPM runtime, then resets that service's OPcache and waits for completion.
 6. **Process restart.** The Gateway restarts active Instance Processes that are desired `running` and have `restart_on_deploy: true` (the default). Stopped Processes stay stopped.
-7. **After activation.** The Gateway runs each `after_activation` step in order.
+7. **After activation.** Swamp runs each `after_activation` step in order.
 8. **Cleanup.** The Gateway removes old releases, as [Retained releases](#retained-releases) describes. A failed cleanup is a warning in the output, not a failed deployment.
 
 Each Process restart uses the normal Process restart action and reports success or failure in deployment events. A failure stops the deployment before after-activation steps and cleanup. The new release stays selected.
@@ -424,7 +428,7 @@ Publication updates only the public projection in `auto_deploy_state`, preserves
 
 Publication uses a short database transaction without the deployment host lock. The history version hashes the stored fields of retained deployment rows, including `caller_node_id`, without events or display names. Adding a deployment or finishing an existing deployment changes it, even when the newest ID stays the same. Renaming or removing a caller Node does not change it. The recorder writes the terminal history and rollback blocks in one transaction, with the Instance row locked and refreshed before changing policy state. It preserves a projection that publication already committed.
 
-It accepts only the cursor and history version Swamp observed, so a later manual action cannot be hidden by a stale publication. Resume and deployment effects remain Gateway-owned. Swamp owns selection, retries, gate caches, alert intents, and publication order; it must serialize ticks for each Instance.
+It accepts only the cursor and history version Swamp observed, so a later manual action cannot be hidden by a stale publication. Resume admission remains Gateway-owned; Swamp executes deployment effects. Swamp owns selection, retries, gate caches, alert intents, and publication order; it must serialize ticks for each Instance.
 
 Event operations use a separate `instance_policy` target lock. A running deployment does not prevent a stall alert. The delivery step cannot resume after worker loss, because a webhook may already have left the Gateway. Replaying its admission key returns the same operation; it does not deliver twice. Inspect partial notifier receipts and uncertain outcomes instead of creating another event key.
 

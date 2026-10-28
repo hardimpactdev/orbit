@@ -16,6 +16,8 @@ use App\Data\Operations\OperationData;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Instances\Deployment\AutomaticDeployState;
+use App\Domain\Instances\Deployment\InstanceDeploymentAvailability;
+use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Operations\OperationKinds;
@@ -31,7 +33,7 @@ final readonly class InstanceSmokeRecoveryAction
 {
     public function __construct(private InstanceEnvironmentOperationLock $lock, private ReadInstanceSmokeReceiptAction $smokes,
         private ReadInstanceSmokeContextAction $context, private ProductionDeployment $deployment,
-        private StartOperationAction $operations, private RollbackInstanceAction $rollback) {}
+        private StartOperationAction $operations, private InstanceDeploymentIntent $intent) {}
 
     public function record(Instance $instance, Node $caller, InstanceSmokeFailureData $failure, string $key, string $fingerprint): InstanceSmokeBlockData
     {
@@ -81,13 +83,14 @@ final readonly class InstanceSmokeRecoveryAction
 
         return $this->lock->run([$instance->id], function () use ($instance, $caller, $data, $requestId): Operation {
             $this->guard($instance, $caller, $data);
-            $this->rollback->plan($instance);
+            $deployment = $this->intent->snapshot($instance, rollback: true);
+            InstanceDeploymentAvailability::assertAvailable($deployment);
             $queued = Operation::query()->where('lock_key', OperationStore::lockKey('instance', $instance->id))
                 ->where('kind', OperationKinds::InstanceDeploy)->where('status', 'queued')
                 ->whereIn('triggered_by', AutomaticDeployHistory::Triggers)->exists();
 
             return $this->operations->execute(OperationKinds::InstanceRollback, 'instance', $instance->id, $instance->node_id,
-                [...$data->toArray(), 'caller_node_id' => $caller->id, 'recovery_redeploy_required' => $queued], 'swamp:smoke', $requestId,
+                [...$data->toArray(), 'instance_id' => $instance->id, 'deployment' => $deployment, 'caller_node_id' => $caller->id, 'recovery_redeploy_required' => $queued], 'swamp:smoke', $requestId,
                 supersedes: [OperationKinds::InstanceDeploy]);
         });
     }

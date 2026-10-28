@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\InstanceQueueController;
 use App\Http\Controllers\Api\InstanceReleasesController;
 use App\Http\Controllers\Api\InstanceRollbacksController;
 use App\Http\Controllers\Api\InstancesController;
+use App\Http\Controllers\Api\InstanceSetupController;
 use App\Http\Controllers\Api\InstanceSmokeControlController;
 use App\Http\Controllers\Api\InstanceSmokeController;
 use App\Http\Controllers\Api\InstanceSmokeRepairController;
@@ -72,7 +73,7 @@ Route::middleware([
         ->name('instance:transfer');
     Route::delete('instances/{instance}', [InstancesController::class, 'destroy'])
         ->name('instance:destroy');
-    Route::post('instances/{instance}/setup', [InstancesController::class, 'setup'])
+    Route::post('instances/{instance}/setup', [InstanceSetupController::class, 'store'])
         ->whereNumber('instance')
         ->name('instance:setup');
     Route::get(

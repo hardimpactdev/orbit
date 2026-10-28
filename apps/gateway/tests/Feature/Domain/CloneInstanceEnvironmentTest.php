@@ -2,24 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Actions\DatabaseConnections\AttachDatabaseConnectionAction;
-use App\Actions\Instances\CloneInstanceAction;
-use App\Actions\Instances\CloneInstanceDatabaseAction;
 use App\Actions\Instances\CloneInstanceEnvironmentAction;
-use App\Actions\Instances\DeployInstanceAction;
-use App\Actions\Instances\InstanceDeploymentConfigResolver;
-use App\Actions\Instances\InstantiateProjectRuntimeDefinitionsAction;
 use App\Actions\Instances\SynchronizeInstanceEnvironmentAction;
-use App\Data\Instances\CloneInstanceData;
-use App\Domain\AppDev\AppDevSourceOperationLock;
-use App\Domain\AppDev\DevelopmentProjectionOperationLock;
-use App\Domain\Instances\CloneCandidateSource;
-use App\Domain\Instances\Deployment\DeploymentRelease;
-use App\Domain\Instances\Deployment\DeploymentRequest;
-use App\Domain\Instances\Deployment\InstanceDeployStepStore;
-use App\Domain\Instances\Deployment\ProductionDeployment;
-use App\Domain\Instances\DevelopmentSourceProfile;
-use App\Domain\Instances\DevelopmentSourceResolution;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
@@ -30,23 +14,14 @@ use App\Domain\Instances\Environment\InstanceEnvironmentValidator;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
-use App\Domain\Instances\InstanceCloneCandidateInspector;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
-use App\Domain\Instances\ProductionCloneRouteProjector;
-use App\Domain\Instances\ProductionInstanceSourceLifecycle;
-use App\Domain\Instances\ProductionPhpRuntimeManager;
-use App\Domain\Instances\ProductionRouteProjector;
-use App\Domain\Instances\Sqlite\InstanceSqliteSeeder;
-use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
-use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\Instance;
 use App\Models\InstanceEnvironmentValue;
 use App\Models\Node;
@@ -110,129 +85,6 @@ it('copies independent encrypted values and resolves placeholders through the ex
         ->toBe([$source->id, $target->id])
         ->and($preflight->requiredCapacityBytes)
         ->toBeGreaterThan(InstanceEnvironmentValidator::MaximumFileBytes);
-});
-
-it('clones and deploys an Instance without a route', function (): void {
-    [$candidate, $reservedTarget, $targetRoute] = clone_environment_fixture('lifecycle');
-    $candidate->project->update(['type' => 'monorepo']);
-    $candidate->update(['branch' => 'main', 'source_is_laravel' => false]);
-    $candidate->routes()->delete();
-    $targetRoute->delete();
-    $reservedTarget->delete();
-    $targetNode = Node::query()->findOrFail($reservedTarget->node_id);
-    orbit_test_set_app_placement_role($targetNode, true);
-    $candidate->environmentValues()->createMany([
-        ['env_key' => 'APP_ENV', 'env_value' => '{{instance.environment}}'],
-        ['env_key' => 'APP_KEY', 'env_value' => 'base64:literal-key'],
-    ]);
-
-    $lock = new Orb198CloneEnvironmentLock;
-    $preflight = new Orb198CloneEnvironmentPreflight;
-    $writer = new Orb198CloneEnvironmentWriter(changed: true);
-    app()->instance(InstanceEnvironmentOperationLock::class, $lock);
-    app()->instance(InstanceOperationPreflight::class, $preflight);
-    app()->instance(InstanceEnvironmentWriter::class, $writer);
-    app()->instance(InstanceEnvironmentReader::class, $writer);
-    $contexts = new InstanceEnvironmentContextResolver;
-    $store = new InstanceEnvironmentStore($contexts, new InstanceEnvironmentValidator);
-    $cloneEnvironment = new CloneInstanceEnvironmentAction(
-        $lock,
-        $contexts,
-        $store,
-        $preflight,
-        new InstanceEnvironmentRenderer,
-        $writer,
-    );
-    $inspector = Mockery::mock(InstanceCloneCandidateInspector::class);
-    $inspector->shouldReceive('inspect')->twice()->andReturn(new CloneCandidateSource(
-        instanceId: $candidate->id,
-        environment: 'development',
-        basePath: $candidate->checkout_path,
-        executionUser: 'orbit',
-        branch: 'main',
-        commit: str_repeat('a', 40),
-        node: Node::query()->findOrFail($candidate->node_id),
-    ));
-    $source = Mockery::mock(ProductionInstanceSourceLifecycle::class);
-    $source->shouldReceive('prepareUser')->once();
-    $source->shouldReceive('prepareSource')->once();
-    $source->shouldReceive('resolve')->once()->andReturn(new DevelopmentSourceResolution('main', str_repeat('b', 40)));
-    $source->shouldReceive('inspectProfile')->once()->andReturn(new DevelopmentSourceProfile(null, false));
-    $source->shouldReceive('prepareCaddyAccess')->once();
-    $sourceLock = Mockery::mock(AppDevSourceOperationLock::class);
-    $sourceLock->shouldReceive('synchronized')->once()->andReturnUsing(
-        static fn (int $nodeId, Closure $operation): mixed => $operation(),
-    );
-    $sqlite = Mockery::mock(InstanceSqliteSeeder::class)->shouldIgnoreMissing();
-    $projection = Mockery::mock(ProductionRouteProjector::class)->shouldIgnoreMissing();
-    $cloneProjection = Mockery::mock(ProductionCloneRouteProjector::class)->shouldIgnoreMissing();
-    $projectionOwner = Mockery::mock(DevelopmentProjectionOperationLock::class)->shouldIgnoreMissing();
-    $metrics = Mockery::mock(MetricsFleetReconciler::class);
-    $metrics->shouldReceive('reconcile')->once();
-    $clone = new CloneInstanceAction(
-        $inspector,
-        $lock,
-        $sourceLock,
-        $source,
-        new RouteStateResolver,
-        $cloneEnvironment,
-        $sqlite,
-        app(InstantiateProjectRuntimeDefinitionsAction::class),
-        $projection,
-        $cloneProjection,
-        $projectionOwner,
-        app(AttachDatabaseConnectionAction::class),
-        app(SynchronizeInstanceEnvironmentAction::class),
-        app(CloneInstanceDatabaseAction::class),
-        $metrics,
-    );
-
-    $cloned = $clone->execute($candidate, new CloneInstanceData(
-        nodeId: $targetNode->id,
-        name: 'route-less-production',
-        previewName: 'unused',
-        branch: null,
-        sqliteSourcePath: null,
-    ))['instance'];
-
-    $deployment = Mockery::mock(ProductionDeployment::class);
-    $deployment->shouldReceive('selected')->once()->andReturn(null);
-    $release = new DeploymentRelease(
-        'release-1',
-        "{$cloned->production_home}/releases/release-1",
-        str_repeat('c', 40),
-    );
-    $deployment->shouldReceive('prepare')->once()->andReturn($release);
-    $deployment->shouldReceive('activate')->once()->andReturn($release);
-    $deploy = new DeployInstanceAction(
-        new InstanceDeploymentConfigResolver(new InstanceDeployStepStore),
-        $lock,
-        new SynchronizeInstanceEnvironmentAction(
-            $lock,
-            $contexts,
-            $store,
-            $preflight,
-            new InstanceEnvironmentRenderer,
-            $writer,
-        ),
-        $deployment,
-        Mockery::mock(ProductionPhpRuntimeManager::class),
-        app(InstantiateProjectRuntimeDefinitionsAction::class),
-        new CommandDeadline,
-    );
-
-    $result = $deploy->execute($cloned, operation_steps($cloned, $deploy), DeploymentRequest::withoutOutput());
-
-    expect($cloned->status)->toBe(InstanceState::Active)
-        ->and($cloned->provisioning_step)->toBe('active')
-        ->and($cloned->clone_completed_at)->not->toBeNull()
-        ->and($cloned->routes)->toBeEmpty()
-        ->and($writer->context?->nodeId)->toBe($targetNode->id)
-        ->and($writer->context?->path)->toBe($cloned->production_home)
-        ->and($writer->context?->executionUser)->toBe($cloned->production_user)
-        ->and($writer->contents)
-        ->toBe("APP_DEBUG=\"false\"\nAPP_ENV=\"production\"\nAPP_KEY=\"base64:literal-key\"\n")
-        ->and($result->succeeded)->toBeTrue();
 });
 
 it('renders independent literal fragments without joining them into a Route placeholder', function (): void {

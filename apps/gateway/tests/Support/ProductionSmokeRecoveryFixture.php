@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
-use App\Actions\Instances\DeployInstanceAction;
 use App\Data\Instances\InstanceSmokeResultData;
+use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStepPlan;
 use App\Domain\Operations\OperationStore;
@@ -77,9 +77,9 @@ final class ProductionSmokeRecoveryFixture
         app(OperationStore::class)->plan($op, array_map(
             fn (string $name) => new OperationStepPlan($name, true), ['rollback', 'activation', 'php_refresh', 'process_restart']));
         $op->refresh()->update(['state' => ['deployment_id' => $row->id, 'steps' => [
-            'rollback' => ['previous' => DeployInstanceAction::storableRelease($initial),
-                'release' => DeployInstanceAction::storableRelease($target)],
-            'activation' => DeployInstanceAction::storableRelease($target),
+            'rollback' => ['previous' => InstanceDeploymentIntent::storableRelease($initial),
+                'release' => InstanceDeploymentIntent::storableRelease($target)],
+            'activation' => InstanceDeploymentIntent::storableRelease($target),
         ]], 'status' => OperationStatus::Running, 'worker' => 'lost-worker', 'current_step' => 'php_refresh']);
         $op->steps()->whereIn('name', ['rollback', 'activation'])->update(['status' => 'succeeded']);
         $op->steps()->where('name', 'php_refresh')->update(['status' => 'running']);

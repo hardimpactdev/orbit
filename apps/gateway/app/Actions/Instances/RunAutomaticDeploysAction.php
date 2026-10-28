@@ -10,7 +10,7 @@ use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Instances\Deployment\AutomaticDeployOutcome;
 use App\Domain\Instances\Deployment\AutomaticDeployResult;
 use App\Domain\Instances\Deployment\AutomaticDeployState;
-use App\Domain\Instances\Deployment\InstanceDeployOperation;
+use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
@@ -33,7 +33,7 @@ final readonly class RunAutomaticDeploysAction
     public function __construct(
         private RemoteBranchHeads $heads,
         private StartInstanceDeployAction $deploys,
-        private DeployDefaultInstanceAction $defaults,
+        private StartInstanceProjectionRepairAction $projections,
         private AutomaticDeployAlerts $alerts,
     ) {}
 
@@ -88,7 +88,9 @@ final readonly class RunAutomaticDeploysAction
 
         if ($instance->development_projection_pending && ! $this->holder($instance) instanceof Operation) {
             try {
-                $this->defaults->repairProjection($instance);
+                $repair = $this->projections->execute($instance);
+
+                return new AutomaticDeployOutcome($instance->id, AutomaticDeployResult::Busy, $head, $repair->id);
             } catch (RuntimeConvergenceException|ResourceOperationException $exception) {
                 return $this->failed($instance, $exception, $head);
             }
@@ -105,7 +107,7 @@ final readonly class RunAutomaticDeploysAction
         if ($holder instanceof Operation) {
             $own = $holder->kind === OperationKinds::InstanceDeploy
                 && $holder->triggered_by === AutomaticDeployHistory::Trigger
-                && InstanceDeployOperation::commit($holder) === $commit;
+                && InstanceDeploymentIntent::commit($holder) === $commit;
 
             return new AutomaticDeployOutcome($instance->id, $own ? AutomaticDeployResult::Deploying : AutomaticDeployResult::Busy, $commit, $holder->id);
         }

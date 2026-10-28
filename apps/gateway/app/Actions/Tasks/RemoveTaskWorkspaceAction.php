@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Actions\Tasks;
 
+use App\Actions\Instances\StartInstanceStepListAction;
 use App\Actions\TaskVms\DeleteTaskVmAction;
 use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\InstanceRemover;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Projects\LifecyclePhase;
-use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\RemotePrograms\RemoteProgramFailed;
 use App\Domain\RemotePrograms\RemoteProgramFailure;
 use App\Domain\Shared\ResourceOperationException;
@@ -138,7 +138,7 @@ final readonly class RemoveTaskWorkspaceAction
     {
         for ($cause = $exception; $cause instanceof Throwable; $cause = $cause->getPrevious()) {
             if ($cause instanceof ProcessTimedOutException
-                || ($cause instanceof ResourceOperationException && ($cause->details['outcome'] ?? null) === 'unconfirmed')
+                || ($cause instanceof ResourceOperationException && (($cause->details['outcome'] ?? null) === 'unconfirmed' || $cause->errorCode === 'operation.await_timeout'))
                 || ($cause instanceof RuntimeConvergenceException && $cause->result !== null && in_array($cause->result->exitCode, [124, 137, 143, 255], true))
                 || ($cause instanceof RemoteProgramFailed && $cause->reason !== RemoteProgramFailure::Unreachable
                     && ($cause->exitCode === null || in_array($cause->exitCode, [124, 137, 143, 255], true)))
@@ -172,7 +172,9 @@ final readonly class RemoveTaskWorkspaceAction
     {
         $started = ! in_array($instance->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared], true);
         if ($vm->state === TaskVmState::Ready && $started && ! $instance->removalMember()->exists()) {
-            app(ProjectLifecycleRunner::class)->run($instance, LifecyclePhase::Teardown);
+            $lists = app(StartInstanceStepListAction::class);
+            $teardown = $lists->retained($instance, LifecyclePhase::Teardown, 'orbit:task-workspace-remove');
+            $lists->await($teardown);
         }
         if ($vm->state === TaskVmState::Ready && $vm->group_id !== null && $vm->node_id !== null) {
             app(ArchiveAgentTranscriptsAction::class)->execute($vm->group_id, $vm->node_id);

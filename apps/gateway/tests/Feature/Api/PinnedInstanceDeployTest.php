@@ -3,13 +3,8 @@
 declare(strict_types=1);
 
 use App\Domain\Instances\Deployment\AutomaticDeployHistory;
-use App\Domain\Instances\Deployment\DeploymentResult;
-use App\Domain\Instances\Deployment\DevelopmentDeployment;
-use App\Domain\Instances\Deployment\DevelopmentTarget;
 use App\Domain\Instances\Deployment\InstanceDeploymentRecorder;
-use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Http\Mcp\ToolManifest;
-use App\Models\Instance;
 use App\Models\InstanceDeployment;
 use App\Models\Node;
 use App\Models\Operation;
@@ -34,15 +29,6 @@ function pinned_deploy_start(object $test, bool $automatic = false, ?string $bod
 }
 
 describe('public pinned deploy starts', function (): void {
-    it('deploys exactly the requested commit and preserves the manual caller identity', function (): void {
-        $id = pinned_deploy_start($this)->assertAccepted()->json('data.id');
-        $operation = Operation::query()->findOrFail($id);
-        expect($operation->input)->toBe(['commit' => $this->sha])->and($operation->triggered_by)->toBe($this->fixture->caller->name);
-        run_operation_jobs();
-        expect($this->fixture->deployment->preparedCommits)->toBe([$this->sha]);
-        $row = InstanceDeployment::query()->sole();
-        expect($row->commit)->toBe($this->sha)->and($row->branch)->toBe('release')->and($row->triggered_by)->toBe($this->fixture->caller->name);
-    });
 
     it('rejects invalid SHA input and trigger spoofing before recording anything', function (string $body, bool $automatic): void {
         pinned_deploy_start($this, $automatic, body: $body)->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
@@ -76,18 +62,6 @@ describe('public pinned deploy starts', function (): void {
 });
 
 describe('trusted automatic deploy starts', function (): void {
-    it('stores caller commit and key on one automatic receipt and replays it after completion', function (): void {
-        $id = pinned_deploy_start($this, true)->assertAccepted()->assertJsonPath('data.triggered_by', 'swamp:auto-deploy')->assertJsonPath('data.caller_node_id', $this->fixture->caller->id)->json('data.id');
-        $operation = Operation::query()->findOrFail($id);
-        expect($operation->input)->toBe(['commit' => $this->sha, 'caller_node_id' => $this->fixture->caller->id])
-            ->and($operation->triggered_by)->toBe(AutomaticDeployHistory::SwampTrigger)->and($operation->idempotency_key)->toBe('deploy.17.b');
-        run_operation_jobs();
-        $this->fixture->instance->update(['auto_deploy' => false]);
-        pinned_deploy_start($this, true)->assertAccepted()->assertJsonPath('data.id', $id)->assertJsonPath('data.status', 'succeeded');
-        $this->assertDatabaseCount('operations', 1);
-        expect($this->fixture->deployment->preparedCommits)->toBe([$this->sha]);
-        expect(InstanceDeployment::query()->sole()->triggered_by)->toBe(AutomaticDeployHistory::SwampTrigger);
-    });
 
     it('requires a stable key and a commit', function (bool $missingKey): void {
         pinned_deploy_start($this, true, body: $missingKey ? null : '{}', key: $missingKey ? null : 'automatic')->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
@@ -140,138 +114,11 @@ describe('trusted automatic deploy starts', function (): void {
         $this->assertDatabaseCount('operations', 1);
     })->with(['caller', 'commit', 'Instance', 'manual']);
 
-    it('rechecks a manual pause under the Instance lock before any effects', function (string $status, string $kind): void {
-        pinned_deploy_start($this, true)->assertAccepted();
-        $instance = $this->fixture->instance;
-        $lock = Mockery::mock(InstanceEnvironmentOperationLock::class);
-        $lock->shouldReceive('run')->once()->with([$instance->id], Mockery::type(Closure::class))->andReturnUsing(function (array $ids, Closure $work) use ($instance, $status, $kind): mixed {
-            InstanceDeployment::query()->create(['instance_id' => $instance->id, 'branch' => 'release', 'kind' => $kind, 'triggered_by' => 'operator', 'status' => $status, 'started_at' => now()]);
-
-            return $work();
-        });
-        app()->instance(InstanceEnvironmentOperationLock::class, $lock);
-        run_operation_jobs();
-        expect(Operation::query()->sole()->error_code)->toBe('deployment.paused')->and($this->fixture->deployment->invocations)->toBe(0);
-        $this->assertDatabaseCount('instance_deployments', 1);
-    })->with(['running', 'failed', 'succeeded'])->with(['deploy', 'rollback']);
-
-    it('preserves rollback blocks through resume and pruning without a native tick', function (): void {
-        $instance = $this->fixture->instance;
-        $recorder = app(InstanceDeploymentRecorder::class);
-        $previous = $recorder->start($instance, 'operator');
-        $recorder->finish($previous, DeploymentResult::checkedOut($this->sha), []);
-        $rollback = $recorder->start($instance, 'operator', InstanceDeployment::Rollback);
-        $recorder->finish($rollback, DeploymentResult::checkedOut(str_repeat('a', 40)), []);
-        $this->patchJson('/api/v1/instances/'.$instance->id, ['auto_deploy' => true])->assertOk();
-        InstanceDeployment::query()->where('instance_id', $instance->id)->delete();
-        pinned_deploy_start($this, true)->assertAccepted();
-        run_operation_jobs();
-        expect(Operation::query()->sole()->error_code)->toBe('deployment.commit_blocked')->and($this->fixture->deployment->invocations)->toBe(0);
-    });
-});
-
-it('executes generated MCP pinned starts with the same receipt and caller contracts', function (bool $automatic): void {
-    $tool = $automatic ? 'instance-deploy-automatic' : 'instance-deploy';
-    $arguments = ['instance' => $this->fixture->instance->id, 'commit' => $this->sha, 'Idempotency-Key' => 'mcp.pinned'];
-    $call = fn (array $input) => $this->postJson('/mcp', [
-        'jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call', 'params' => ['name' => $tool, 'arguments' => $input],
-    ])->assertOk();
-    $response = $call($arguments)->assertJsonPath('result.isError', false);
-    $started = json_decode($response->json('result.content.0.text'), true, flags: JSON_THROW_ON_ERROR)['operation'];
-    $id = $started['id'];
-    expect($started['caller_node_id'])->toBe($automatic ? $this->fixture->caller->id : null);
-    expect($started['triggered_by'])->toBe($automatic ? 'swamp:auto-deploy' : $this->fixture->caller->name);
-    $again = $call($arguments)->assertJsonPath('result.isError', false);
-    expect(json_decode($again->json('result.content.0.text'), true, flags: JSON_THROW_ON_ERROR)['operation']['id'])->toBe($id);
-    $bad = $call([...$arguments, 'commit' => str_repeat('c', 40)])->assertJsonPath('result.isError', true);
-    expect(json_decode($bad->json('result.content.0.text'), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('operation.idempotency_conflict');
-    expect(Operation::query()->sole()->triggered_by)->toBe($automatic ? AutomaticDeployHistory::SwampTrigger : $this->fixture->caller->name);
-    run_operation_jobs();
-    expect($this->fixture->deployment->preparedCommits)->toBe([$this->sha]);
-    $deploymentId = InstanceDeployment::query()->sole()->id;
-    foreach (['operation-show' => ['operation' => $id], 'instance-deployment-show' => ['deployment' => $deploymentId]] as $name => $input) {
-        $read = $this->postJson('/mcp', [
-            'jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/call', 'params' => ['name' => $name, 'arguments' => $input],
-        ])->assertOk()->assertJsonPath('result.isError', false);
-        $data = json_decode($read->json('result.content.0.text'), true, flags: JSON_THROW_ON_ERROR)['data'];
-        expect($data['triggered_by'])->toBe($started['triggered_by']);
-        expect($data['caller_node_id'])->toBe($started['caller_node_id']);
-    }
-})->with([false, true]);
-
-it('rechecks enablement before starting a queued automatic effect', function (): void {
-    pinned_deploy_start($this, true)->assertAccepted();
-    $this->fixture->instance->update(['auto_deploy' => false]);
-    run_operation_jobs();
-    expect(Operation::query()->sole()->error_code)->toBe('deployment.paused');
-    expect($this->fixture->deployment->invocations)->toBe(0);
-    $this->assertDatabaseCount('instance_deployments', 0);
 });
 
 it('publishes the required automatic key and commit in the generated MCP contract', function (): void {
     $tool = collect(ToolManifest::default()->definitions())->first(fn ($tool): bool => $tool->name === 'instance-deploy-automatic');
     expect($tool?->inputSchema['required'])->toEqualCanonicalizing(['instance', 'commit', 'Idempotency-Key']);
-});
-
-it('pins a development default to the requested Project-branch commit and refuses automatic origin', function (): void {
-    $fixture = $this->fixture;
-    $fixture->owner->roles()->update(['role' => 'app-dev']);
-    $fixture->instance->update(['name' => 'default', 'source_layout' => 'checkout', 'checkout_path' => '/fast/apps/deployment-stream/default']);
-    $remote = Mockery::mock(DevelopmentDeployment::class);
-    $remote->shouldReceive('target')->once()->with(Mockery::type(Instance::class), $this->sha)->andReturn(new DevelopmentTarget($this->sha));
-    $remote->shouldReceive('checkout')->once();
-    app()->instance(DevelopmentDeployment::class, $remote);
-    pinned_deploy_start($this, true)->assertConflict()->assertJsonPath('error.code', 'instance.auto_deploy_role_inactive');
-    pinned_deploy_start($this)->assertAccepted();
-    run_operation_jobs();
-    expect(Operation::query()->sole()->status->value)->toBe('succeeded');
-    expect(InstanceDeployment::query()->sole()->commit)->toBe($this->sha);
-    expect($fixture->deployment->invocations)->toBe(0);
-});
-
-it('does not permanently block a commit when rollback retains that same commit', function (): void {
-    $instance = $this->fixture->instance;
-    $recorder = app(InstanceDeploymentRecorder::class);
-    $previous = $recorder->start($instance, 'operator');
-    $recorder->finish($previous, DeploymentResult::checkedOut($this->sha), []);
-    $rollback = $recorder->start($instance, 'operator', InstanceDeployment::Rollback);
-    $recorder->finish($rollback, DeploymentResult::checkedOut($this->sha), []);
-    $this->patchJson('/api/v1/instances/'.$instance->id, ['auto_deploy' => true])->assertOk();
-    InstanceDeployment::query()->where('instance_id', $instance->id)->delete();
-    pinned_deploy_start($this, true)->assertAccepted();
-    run_operation_jobs();
-    expect(Operation::query()->sole()->status->value)->toBe('succeeded');
-    expect($this->fixture->deployment->preparedCommits)->toBe([$this->sha]);
-});
-
-it('shows the authorized Swamp caller in deployment and operation reads without pausing the next deploy', function (): void {
-    $id = pinned_deploy_start($this, true)->assertAccepted()->json('data.id');
-    run_operation_jobs();
-    $row = InstanceDeployment::query()->sole();
-    $callerId = $this->fixture->caller->id;
-    $this->fixture->caller->update(['name' => 'renamed-gateway-peer']);
-
-    foreach (['/api/v1/deployments/'.$row->id, '/api/v1/operations/'.$id] as $url) {
-        $this->getJson($url)->assertOk()->assertJsonPath('data.triggered_by', 'swamp:auto-deploy')->assertJsonPath('data.caller_node_id', $callerId)->assertJsonPath('data.caller_node_name', 'renamed-gateway-peer');
-    }
-    $this->getJson('/api/v1/instances/'.$this->fixture->instance->id.'/deployments')->assertOk()
-        ->assertJsonPath('data.0.triggered_by', 'swamp:auto-deploy')->assertJsonPath('data.0.caller_node_id', $callerId)->assertJsonPath('data.0.caller_node_name', 'renamed-gateway-peer');
-    $this->getJson('/api/v1/operations')->assertOk()->assertJsonPath('data.0.caller_node_id', $callerId)->assertJsonPath('data.0.caller_node_name', 'renamed-gateway-peer');
-    expect(new AutomaticDeployHistory($this->fixture->instance)->pausedBy())->toBeNull();
-
-    $this->sha = str_repeat('c', 40);
-    pinned_deploy_start($this, true, key: 'next-swamp-deploy')->assertAccepted();
-    run_operation_jobs();
-    expect($this->fixture->deployment->preparedCommits)->toBe([str_repeat('b', 40), str_repeat('c', 40)]);
-
-    $missingCaller = $callerId + 1000;
-    $row->update(['caller_node_id' => $missingCaller]);
-    Operation::query()->findOrFail($id)->update(['input' => ['caller_node_id' => $missingCaller]]);
-    foreach (['/api/v1/deployments/'.$row->id, '/api/v1/operations/'.$id] as $url) {
-        $this->getJson($url)->assertOk()
-            ->assertJsonPath('data.caller_node_id', $missingCaller)
-            ->assertJsonPath('data.caller_node_name', null);
-    }
 });
 
 it('keeps historical automatic labels and missing caller IDs unchanged', function (): void {

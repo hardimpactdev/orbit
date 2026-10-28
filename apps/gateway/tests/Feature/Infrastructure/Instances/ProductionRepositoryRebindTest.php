@@ -2,9 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Actions\Tools\PrepareVpEnvironmentAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\ProductionRepositoryRecord;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Instances\RemoteProductionDeployment;
@@ -134,7 +132,7 @@ function rebind_instance(string $repository): array
 
     return [
         $instance,
-        new RemoteProductionDeployment($agents, app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class), null, $binding),
+        new RemoteProductionDeployment($agents, $binding),
         $binding,
         $agents,
     ];

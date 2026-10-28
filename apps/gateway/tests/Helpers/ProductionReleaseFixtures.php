@@ -2,8 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Actions\Tools\PrepareVpEnvironmentAction;
-use App\Domain\GitHub\RepositoryReadAccess;
 use App\Infrastructure\Instances\RemoteProductionDeployment;
 use App\Models\Instance;
 use App\Models\Node;
@@ -28,7 +26,7 @@ function release_commands(?Closure $configure = null): array
     if ($configure !== null) {
         $configure($agents);
     }
-    $deployment = new RemoteProductionDeployment($agents, app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class), static fn (): string => '20260911-a1');
+    $deployment = new RemoteProductionDeployment($agents);
 
     return [$deployment, $agents, $instance];
 }

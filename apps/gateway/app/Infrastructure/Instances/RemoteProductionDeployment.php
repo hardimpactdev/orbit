@@ -4,147 +4,22 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Instances;
 
-use App\Actions\Tools\PrepareVpEnvironmentAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\GitHub\RepositoryReadAccess;
-use App\Domain\Instances\Deployment\DeploymentEvent;
-use App\Domain\Instances\Deployment\DeploymentOutputStream;
 use App\Domain\Instances\Deployment\DeploymentRelease;
 use App\Domain\Instances\Deployment\DeploymentReleaseState;
-use App\Domain\Instances\Deployment\DeploymentRequest;
-use App\Domain\Instances\Deployment\DeploymentStep;
 use App\Domain\Instances\Deployment\ProductionDeployment;
-use App\Domain\Instances\Deployment\SharedPaths;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionRepositoryBinding;
-use App\Domain\Logs\LogRedactor;
 use App\Domain\Routes\RouteWebRoot;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\SourceControl\GitCommitSha;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentStep;
-use App\Infrastructure\Processes\CommandResult;
 use App\Models\Instance;
-use Closure;
 
+/** Read-only release and selection queries remain in the Gateway. */
 final readonly class RemoteProductionDeployment implements ProductionDeployment
 {
-    /** @var Closure(): string */
-    private Closure $releaseName;
-
-    /** @param (Closure(): string)|null $releaseName */
-    public function __construct(
-        private AgentCommandRunner $agents,
-        private RepositoryReadAccess $access,
-        private PrepareVpEnvironmentAction $environments,
-        ?Closure $releaseName = null,
-        private ?ProductionRepositoryBinding $repositories = null,
-    ) {
-        $this->releaseName = $releaseName ?? static fn (): string => gmdate('YmdHis').'-'.bin2hex(random_bytes(8));
-    }
-
-    public function prepare(Instance $instance, string $branch, ?string $commit = null): DeploymentRelease
-    {
-        if ($commit !== null) {
-            GitCommitSha::validate($commit);
-        }
-        [$input, $home] = $this->releaseHome($instance);
-        $name = ($this->releaseName)();
-        $this->assertReleaseName($name);
-
-        try {
-            $result = $this->run($instance, 'instance.prepare-release', [
-                ...$input,
-                'name' => $name,
-                'branch' => $branch,
-                'commit' => $commit,
-                'shared_paths' => SharedPaths::forInstance($instance),
-                'git_read' => $this->access->for($input['repository'], $instance->project->source_access),
-            ], 'deployment-prepare', 'deployment.prepare_failed');
-        } catch (RuntimeConvergenceException $exception) {
-            if (AgentStep::refusal($exception)?->errorCode === 'instance.commit_not_on_branch') {
-                throw new ResourceOperationException(
-                    'deployment.commit_not_on_branch',
-                    "The branch [{$branch}] does not contain the commit [{$commit}].",
-                    409,
-                    $exception,
-                );
-            }
-
-            throw $this->bindingFailure($instance, $exception) ?? $exception;
-        }
-
-        [$reportedName, $reportedCommit] = $this->releaseIdentity($result);
-
-        if ($reportedName !== $name || ($commit !== null && $reportedCommit !== $commit)) {
-            throw $this->invalidReceipt();
-        }
-
-        return new DeploymentRelease($name, "{$home}/releases/{$name}", $reportedCommit);
-    }
-
-    public function executeStep(
-        Instance $instance,
-        DeploymentRelease $release,
-        DeploymentStep $step,
-        DeploymentRequest $request,
-    ): CommandResult {
-        [, $user, $home] = $this->identity($instance);
-        $this->assertRelease($release, $home);
-        $instance->loadMissing('environmentValues');
-        $stepName = "deployment-step-{$step->name}";
-        // The Node publishes each line live on the operation's channel; the result keeps the output for the record.
-        $result = AgentStep::run($this->agents, $instance->node, 'instance.run-deploy-step', [
-            'user' => $user,
-            'home' => $home,
-            'release' => $release->name,
-            'script' => $step->command,
-            'vp_environment' => $this->environments->prepare($instance, $release->path, $step->name, $step->command)?->input(),
-            'operation' => $request->operation,
-            'step' => $step->name,
-            'timeout_seconds' => $step->timeoutSeconds,
-            'secrets' => app(LogRedactor::class)->valuesFor($instance),
-            // The agent stops the step at its timeout; the rest leaves time for that stop and the result.
-        ], $stepName, 'deployment.step_failed', 'App production', deadlineSeconds: $step->timeoutSeconds + 30);
-        $streams = ['stdout' => '', 'stderr' => ''];
-
-        foreach (is_array($result['output'] ?? null) ? $result['output'] : [] as $chunk) {
-            $stream = is_array($chunk) ? ($chunk['stream'] ?? null) : null;
-            $value = is_array($chunk) ? ($chunk['value'] ?? null) : null;
-            if (! is_string($value) || ! in_array($stream, ['stdout', 'stderr'], true)) {
-                throw $this->invalidReceipt();
-            }
-            $streams[$stream] .= $value;
-            $request->emit(new DeploymentEvent(
-                step: $step->name,
-                stream: $stream === 'stdout' ? DeploymentOutputStream::Stdout : DeploymentOutputStream::Stderr,
-                value: $value,
-            ));
-        }
-
-        $exitCode = is_int($result['exit_code'] ?? null) ? $result['exit_code'] : throw $this->invalidReceipt();
-        $output = new CommandResult($exitCode, $streams['stdout'], $streams['stderr'], 0, ($result['truncated'] ?? false) === true);
-
-        if ($exitCode !== 0) {
-            throw AgentStep::failed($instance->node, $stepName, 'deployment.step_failed', 'App production', $output);
-        }
-
-        return $output;
-    }
-
-    public function activate(Instance $instance, DeploymentRelease $release): DeploymentRelease
-    {
-        [$input, $home] = $this->releaseHome($instance);
-        $this->assertRelease($release, $home);
-        $result = $this->runBound($instance, 'instance.activate-release', [...$input, 'name' => $release->name, 'commit' => $release->commit], 'deployment-activate', 'deployment.activation_failed');
-        [$name, $commit] = $this->releaseIdentity($result);
-
-        if ($name !== $release->name || $commit !== $release->commit) {
-            throw $this->invalidReceipt();
-        }
-
-        return $release;
-    }
+    public function __construct(private AgentCommandRunner $agents, private ?ProductionRepositoryBinding $repositories = null) {}
 
     public function selected(Instance $instance): ?DeploymentRelease
     {
@@ -186,41 +61,6 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         sort($releases);
 
         return new DeploymentReleaseState($releases, $selected);
-    }
-
-    public function prune(Instance $instance, DeploymentRelease $selected, ?DeploymentRelease $previous): array
-    {
-        [$input, $home] = $this->releaseHome($instance);
-        $this->assertRelease($selected, $home);
-
-        if ($previous !== null) {
-            $this->assertRelease($previous, $home);
-        }
-
-        $result = $this->run($instance, 'instance.prune-releases', [
-            ...$input,
-            'limit' => DeploymentRelease::RETAINED_PER_HOME,
-            'selected' => $selected->name,
-            'previous' => $previous?->name,
-        ], 'deployment-prune', 'deployment.prune_failed');
-        $outcome = ['removed' => [], 'in_use' => []];
-
-        foreach (['removed', 'in_use'] as $key) {
-            foreach (is_array($result[$key] ?? null) ? $result[$key] : [] as $name) {
-                if (! is_string($name)) {
-                    throw $this->invalidReceipt();
-                }
-                $this->assertReleaseName($name);
-                $outcome[$key][] = $name;
-            }
-        }
-
-        $this->environments->releaseRemoved($instance, array_map(
-            static fn (string $name): string => "{$home}/releases/{$name}",
-            $outcome['removed'],
-        ));
-
-        return $outcome;
     }
 
     /**
@@ -354,19 +194,6 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         [$name, $commit] = $this->releaseIdentity(is_array($release) ? $release : []);
 
         return new DeploymentRelease($name, "{$home}/releases/{$name}", $commit);
-    }
-
-    private function assertRelease(DeploymentRelease $release, string $home): void
-    {
-        $this->assertReleaseName($release->name);
-
-        if ($release->path !== "{$home}/releases/{$release->name}") {
-            throw new ResourceOperationException(
-                'deployment.release_invalid',
-                'The deployment release is invalid.',
-                409,
-            );
-        }
     }
 
     private function assertReleaseName(string $name): void

@@ -2,15 +2,11 @@
 
 declare(strict_types=1);
 
-use App\Actions\Tools\PrepareVpEnvironmentAction;
-use App\Domain\GitHub\RepositoryReadAccess;
-use App\Domain\Instances\Deployment\DeploymentRelease;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Instances\ProductionPhpRuntimeConfigRenderer;
-use App\Infrastructure\Instances\RemoteProductionDeployment;
 use App\Infrastructure\Instances\RemoteProductionPhpRuntimeManager;
 use App\Infrastructure\Instances\RemoteProductionRouteApplicationUrlWriter;
 use App\Infrastructure\Instances\RemoteProductionWebRootManager;
@@ -22,36 +18,6 @@ use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\PhpBuildAnswers;
 
 describe('production web roots', function (): void {
-    it('passes the served web roots to release preparation and activation only when a Route has one', function (): void {
-        [$instance] = prodweb_instance();
-        $agents = new FakeAgentCommandRunner()
-            ->answer('instance.prepare-release', ['name' => '20261009-a1', 'commit' => str_repeat('b', 40)])
-            ->answer('instance.activate-release', ['name' => '20261009-a1', 'commit' => str_repeat('b', 40)]);
-        $deployment = new RemoteProductionDeployment($agents, app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class), static fn (): string => '20261009-a1');
-        $deployment->prepare($instance, 'main');
-        prodweb_route($instance, 'docs.example.com', 'apps/docs/public');
-        $release = $deployment->prepare($instance, 'main');
-        $deployment->activate($instance, new DeploymentRelease($release->name, $release->path, $release->commit));
-
-        expect(array_column(array_column($agents->calls, 'input'), 'served'))->toBe([
-            [],
-            [['web_root' => 'apps/docs/public', 'directory' => 'apps/docs']],
-            [['web_root' => 'apps/docs/public', 'directory' => 'apps/docs']],
-        ]);
-    });
-
-    it('prepares the selected release for a Route operation and asks for a deployment first', function (): void {
-        [$instance] = prodweb_instance();
-        prodweb_route($instance, 'docs.example.com', 'apps/docs/public');
-        $agents = new FakeAgentCommandRunner()->answer('instance.prepare-served-web-roots', ['name' => 'r1', 'commit' => str_repeat('a', 40)]);
-        $manager = new RemoteProductionWebRootManager($agents);
-        $manager->prepare($instance);
-
-        expect($agents->calls[0]['input'])->toMatchArray(['user' => 'orbit-acme', 'home' => '/home/orbit-acme', 'served' => [['web_root' => 'apps/docs/public', 'directory' => 'apps/docs']]]);
-        $agents->refuse('instance.prepare-served-web-roots', 'instance.release_missing');
-        expect(fn () => $manager->prepare($instance))
-            ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('route.web_root_release_missing'));
-    });
 
     it('checks one web root in the selected release and names it when the release cannot serve it', function (): void {
         [$instance] = prodweb_instance();
