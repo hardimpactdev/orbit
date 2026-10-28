@@ -23,6 +23,7 @@ final class DestroyScheduleCommand extends ScheduleItemCommand
         {schedule : Schedule UUID or definition name}
         {--project= : Numeric Project ID}
         {--yes : Skip the destructive confirmation prompt}
+        {--idempotency-key= : Reuse a key to retry this Operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -93,7 +94,7 @@ final class DestroyScheduleCommand extends ScheduleItemCommand
 
     protected function request(string $scheduleId): GatewayRequest
     {
-        return new DestroyScheduleRequest($scheduleId);
+        return new DestroyScheduleRequest($scheduleId, is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null);
     }
 
     protected function progressLabels(): array

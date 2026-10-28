@@ -318,6 +318,17 @@ final readonly class ServingNodeResolver
     private function processOwning(Request $request): array
     {
         $process = $request->route('process');
+        if (is_string($process)) {
+            $record = Process::query()->find($process);
+            if ($record instanceof Process) {
+                $process = $record;
+            } elseif ($request->route()?->getName() === 'process:destroy') {
+                $receipt = Operation::query()->where('kind', 'process.destroy')->where('idempotency_key', $request->header('Idempotency-Key'))->first();
+                if ($receipt !== null && (string) ($receipt->input['process_id'] ?? '') === $process) {
+                    return [Node::query()->findOrFail($receipt->node_id)];
+                }
+            }
+        }
 
         if ($process instanceof Process) {
             return match (true) {
@@ -415,6 +426,17 @@ final readonly class ServingNodeResolver
     private function scheduleOwning(Request $request): array
     {
         $schedule = $request->route('schedule');
+        if (is_string($schedule)) {
+            $record = Schedule::query()->find($schedule);
+            if ($record instanceof Schedule) {
+                $schedule = $record;
+            } elseif ($request->route()?->getName() === 'schedule:destroy') {
+                $receipt = Operation::query()->where('kind', 'schedule.destroy')->where('idempotency_key', $request->header('Idempotency-Key'))->first();
+                if ($receipt !== null && (string) ($receipt->input['id'] ?? '') === $schedule) {
+                    return [Node::query()->findOrFail($receipt->node_id)];
+                }
+            }
+        }
 
         if ($schedule instanceof Schedule) {
             return match (true) {

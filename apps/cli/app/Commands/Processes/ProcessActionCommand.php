@@ -7,7 +7,7 @@ namespace App\Commands\Processes;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Responses\Processes\ProcessResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 abstract class ProcessActionCommand extends ProcessCommand
 {
@@ -27,18 +27,13 @@ abstract class ProcessActionCommand extends ProcessCommand
             return self::FAILURE;
         }
 
-        $process = $this->sendWithProgress(
-            $connector,
-            $this->request($processId),
-            ProcessResponse::class,
-            $this->progressLabels(),
-        );
+        $process = $this->send($connector, $this->request($processId), OperationResponse::class);
 
-        if (! $process instanceof ProcessResponse) {
+        if (! $process instanceof OperationResponse) {
             return self::FAILURE;
         }
 
-        return $this->renderProcess($process, "Process [{$process->name}] {$this->pastTense()}.");
+        return $this->finishOperation($connector, $repository, $process, $this->progressLabels()[0]);
     }
 
     abstract protected function request(int $processId): GatewayRequest;

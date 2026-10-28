@@ -14,8 +14,8 @@ use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
 use Orbit\Sdk\Requests\Processes\UpdateProcessRequest;
 use Orbit\Sdk\Requests\Projects\ListProcessDefinitionsRequest;
 use Orbit\Sdk\Requests\Projects\UpdateProcessDefinitionRequest;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Orbit\Sdk\Responses\Processes\ProcessesResponse;
-use Orbit\Sdk\Responses\Processes\ProcessResponse;
 use Orbit\Sdk\Responses\Projects\ProjectRuntimeDefinitionResponse;
 use Orbit\Sdk\Responses\Projects\ProjectRuntimeDefinitionsResponse;
 
@@ -40,6 +40,7 @@ final class UpdateProcessCommand extends ProcessCommand
         {--keep-alive : Keep running through app-dev idle hibernation}
         {--no-restart-on-deploy : Skip automatic restart after production activation}
         {--user= : Existing non-root account for a Node systemd Process}
+        {--idempotency-key= : Reuse a key to retry this Operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -213,19 +214,19 @@ final class UpdateProcessCommand extends ProcessCommand
             if ($connector === null) {
                 return self::FAILURE;
             }
-            $response = $this->sendWithProgress($connector,
+            $response = $this->send($connector,
                 new UpdateProcessRequest(
                     $id, $runtime, $command === [] ? null : $command, $image, $workingDirectory,
                     $environmentWasProvided ? $environment : null, $portsWereProvided ? $ports : null,
                     $volumesWereProvided ? $volumes : null, $restartPolicy,
                     $this->option('keep-alive') === true ? true : null, $user,
                     restartOnDeploy: $this->option('no-restart-on-deploy') === true ? false : null,
+                    idempotencyKey: is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null,
                 ),
-                ProcessResponse::class,
-                ['Update Process', 'Updating Process', 'Updated Process']);
+                OperationResponse::class, );
 
-            return $response instanceof ProcessResponse
-                ? $this->renderProcess($response, 'Updated Process') : self::FAILURE;
+            return $response instanceof OperationResponse
+                ? $this->finishOperation($connector, $repository, $response, 'Update Process') : self::FAILURE;
         }
         if ($this->option('no-restart-on-deploy') === true) {
             return $this->renderGatewayFailure('process.option_invalid', 'Project definitions do not accept --no-restart-on-deploy.');

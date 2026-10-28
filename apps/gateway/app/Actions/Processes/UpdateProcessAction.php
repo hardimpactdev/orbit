@@ -5,14 +5,12 @@ declare(strict_types=1);
 namespace App\Actions\Processes;
 
 use App\Data\Processes\AddProcessData;
-use App\Data\Processes\ProcessData;
 use App\Data\Processes\UpdateProcessData;
-use App\Domain\Broadcasting\RecordEventBroadcaster;
-use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\DatabaseServers\DatabaseServerProcessOwnership;
+use App\Domain\Operations\AwaitOperation;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessAdmissionLock;
-use App\Domain\Processes\ProcessOperationException;
+use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
@@ -23,13 +21,14 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\SshProcessUserResolver;
 use App\Models\Instance;
+use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Process;
+use Illuminate\Support\Facades\DB;
 use SensitiveParameter;
 
 final readonly class UpdateProcessAction
 {
-    use MarksProcessRuntimeFailures;
-
     public function __construct(
         private ProcessRuntimeManager $runtime,
         private ProcessAdmissionLock $admissions,
@@ -37,16 +36,22 @@ final readonly class UpdateProcessAction
         private ProcessTargetResolver $targets,
         private ProcessSpecification $specifications,
         private SshProcessUserResolver $users,
-        private RecordEventBroadcaster $broadcaster,
         private DatabaseServerProcessOwnership $databaseServers,
         private CustomProxyProcessListener $listeners,
     ) {}
 
     public function execute(#[SensitiveParameter] Process $process, #[SensitiveParameter] UpdateProcessData $update): Process
     {
+        app(AwaitOperation::class)->execute($this->admit($process, $update));
+
+        return $process->refresh();
+    }
+
+    public function admit(Process $process, UpdateProcessData $update, ?Node $caller = null, ?string $requestId = null): Operation
+    {
         return $this->admissions->run(
             Instance::isMorphType($process->owner_type) ? [$process->owner_id] : [],
-            fn (): Process => $this->lease->run($process, function (Process $fresh) use ($update): Process {
+            fn (): Operation => DB::transaction(fn (): Operation => $this->lease->run($process, function (Process $fresh) use ($update, $caller, $requestId): Operation {
                 $this->databaseServers->assertUpdatable($fresh);
                 if (isset($fresh->runtime_config['preset'])) {
                     throw new ResourceOperationException('process.option_invalid', 'Preset Processes cannot be updated.', 422);
@@ -67,41 +72,20 @@ final readonly class UpdateProcessAction
                 $candidate = clone $fresh;
                 $candidate->fill($attributes);
                 $this->listeners->assertPreservesRoutes($candidate);
-                $this->runtime->status($fresh);
                 $retiredRuntime = $fresh->runtime !== $attributes['runtime'] ? $fresh->runtime : $fresh->retired_runtime;
                 if ($retiredRuntime !== null) {
                     $retired = clone $fresh;
                     $retired->runtime = $retiredRuntime;
-                    $this->runtime->status($retired);
                 }
                 $fresh->fill($attributes);
-                $this->runtime->status($fresh);
                 if ($fresh->desired_state === DesiredProcessState::Running) {
                     $this->runtime->assertCanStart($fresh);
                 }
                 $fresh->retired_runtime = $retiredRuntime;
                 $fresh->fill(['status' => LifecycleStatus::Provisioning, 'failed_step' => null, 'error_code' => null])->save();
-                try {
-                    if ($fresh->retired_runtime !== null) {
-                        // Keep cleanup intent until removal completes; a crash can safely repeat it.
-                        $retired = clone $fresh;
-                        $retired->runtime = $fresh->retired_runtime;
-                        $this->runtime->remove($retired);
-                        $fresh->retired_runtime = null;
-                        $fresh->save();
-                    }
-                    $this->runtime->converge($fresh);
-                } catch (ProcessOperationException $exception) {
-                    $this->markRuntimeFailed($fresh, $exception);
-                    throw $exception;
-                }
-                $fresh->update(['status' => LifecycleStatus::Active, 'failed_step' => null, 'error_code' => null]);
-                $result = $fresh->refresh();
-                $this->broadcaster->broadcast(RecordEventType::ProcessStatus, $result->id,
-                    ProcessData::fromModel($result, $this->runtime->status($result))->toArray());
 
-                return $result;
-            }),
+                return app(ProcessOperationAdmission::class)->execute($fresh, 'update', caller: $caller, requestId: $requestId);
+            })),
         );
     }
 }

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Requests\Processes;
 
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Responses\Processes\ProcessResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
@@ -41,16 +41,23 @@ final class CreateProcessRequest extends GatewayRequest implements HasBody
         private readonly ?string $preset = null,
         private readonly ?string $user = null,
         private readonly bool $restartOnDeploy = true,
+        private readonly ?string $idempotencyKey = null,
     ) {}
+
+    /** @return array<string, string> */
+    protected function defaultHeaders(): array
+    {
+        return $this->idempotencyKey === null ? [] : ['Idempotency-Key' => $this->idempotencyKey];
+    }
 
     public function resolveEndpoint(): string
     {
         return '/api/v1/processes';
     }
 
-    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): ProcessResponse
+    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): OperationResponse
     {
-        return ProcessResponse::fromGatewayData(
+        return OperationResponse::fromGatewayData(
             $this->unwrapData($response),
             $this->successRequestId($response),
         );

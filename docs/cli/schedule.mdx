@@ -10,6 +10,8 @@ A Schedule runs one command on a native systemd timer for a Node or an Instance.
 
 [Schedules](/reference/schedules) describes the fields, the execution context, the host artifacts, and the error codes. [Processes and schedules](/reference/processes-and-schedules) describes Project definitions and their Instance copies.
 
+Installed writes return and follow an Operation. `--json` prints the final Operation and its steps. Use `--idempotency-key` to retry the same admission. Project definition writes keep their existing responses.
+
 ## Choose the owner
 
 `schedule:create` needs exactly one selector. The CLI refuses two selectors, no selector, `--for` without `--project`, and `--no-start` with `--node` before it sends a request.

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Providers\Domains;
 
 use App\Domain\Processes\ProcessAdmissionLock;
+use App\Domain\Processes\ProcessOperationSecrets;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessRuntimeStatusIndex;
@@ -33,6 +34,9 @@ final class ProcessesServiceProvider extends ServiceProvider
 
     public function register(): void
     {
+        foreach (['process.unit_content', 'process.environment', 'process.command'] as $source) {
+            $this->app->bind('operation.secret.'.$source, ProcessOperationSecrets::class);
+        }
         $this->app->bind(
             ProcessRunner::class,
             static fn ($app): ProcessRunner => new LockRenewingProcessRunner(
