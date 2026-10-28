@@ -440,7 +440,7 @@ The subscriber accepts `client-log` and `client-log-end` only from `agent.{id}` 
 
 ## Delivery
 
-Each Gateway release pins one agent build: the delivery in its commit's [release](#releases). CI builds the Linux and macOS artifacts from that exact source. The manifest names the last commit that changed `apps/agent` or a compiled extension. A delivery job checks that their source commits and versions agree, verifies each binary digest, and combines them into one `manifest.json`:
+Each Gateway release pins one agent build: the delivery in its commit's [release](#releases). CI builds the Linux and macOS artifacts when `apps/agent` differs from the last published delivery. Otherwise it reuses that delivery after checking provenance and binary digests. The manifest names the last commit that changed `apps/agent` or a compiled extension. A delivery job checks that their source commits and versions agree, verifies each binary digest, and combines them into one `manifest.json`:
 
 ```json
 {
@@ -581,7 +581,7 @@ The supervised fixture sends a Unix datagram after execution, including its proc
 
 ## Releases
 
-The agent ships in the one public release that each green `main` commit gets, beside the CLI ([CLI binaries: Published releases](/reference/cli-binaries#published-releases)). A push to `main` builds the [delivery](#delivery) in CI from that exact source and uploads it as the `agent-delivery` artifact. After main's required checks pass, the Orbit CLI Release workflow downloads that artifact from the CI run, checks each binary against its tested digest, and publishes it with the CLI binaries. It never rebuilds the agent. It publishes with the workflow's own token; there is no other credential.
+The agent ships in the one public release that each green `main` commit gets, beside the CLI ([CLI binaries: Published releases](/reference/cli-binaries#published-releases)). A push to `main` builds or reuses the [delivery](#delivery) in CI and uploads it as the `agent-delivery` artifact. An unchanged agent, including a docs-only commit, reuses the last published binaries. After main's required checks pass, the Orbit CLI Release workflow downloads that artifact from the CI run, checks each binary against its manifest digest, and publishes it with the CLI binaries. It never rebuilds the agent. It publishes with the workflow's own token; there is no other credential.
 
 | Asset | Contents |
 | --- | --- |

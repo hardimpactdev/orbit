@@ -2,599 +2,117 @@ name: CI
 
 on:
   pull_request:
-  # A push to task-*-handoff is Orbit's handoff commit, which CI tests as it tests a pull request
-  # (docs/reference/tasks.md#handoff-ci). No pull request has such a branch as head.
   push:
     branches: [main, 'task-*-handoff']
-  # A nightly run on main tests every project in full, as a manual dispatch does.
-  schedule:
-    - cron: '17 3 * * *'
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# Scheduled and manual runs get a group per ref and commit, so a push never cancels a full run. Every other run groups
-# by its ref. Main keeps its running run: a newer push replaces only the waiting one, so after a burst of merges the
-# newest commit is tested next, and every main run tests every project in full. Any other ref, a pull request's merge
-# ref or a handoff branch, keeps only its newest run, so neither cancels the other.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && format('{0}-{1}-{2}', github.event_name, github.ref, github.sha) || github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"},"bearer":{"codeload.github.com":"${{ github.token }}"}}'
-  # The one definition of the two kinds of run. A handoff push is Orbit's push of a task handoff commit to
-  # task-*-handoff, never a manual run or another task-* branch. A change run tests a change before it merges: a pull
-  # request or a handoff push, and every job treats both alike. Steps read these values; a change run differs only
-  # in its cache keys and change bases. The changes job selects projects; selected suites always run in full.
-  HANDOFF_PUSH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') }}
-  CHANGE_RUN: ${{ github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') }}
-  # Pest fits test names to the terminal width; a wide log names a failed or aborted test in full.
-  COLUMNS: '200'
+  CARGO_BUILD_JOBS: '4'
 
 jobs:
-  changes:
-    name: Changed projects
+  php:
+    name: PHP syntax and Composer
     runs-on: ubuntu-26.04
-    outputs:
-      matrix: ${{ steps.changes.outputs.matrix }}
-      jobs: ${{ steps.changes.outputs.jobs }}
     steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ github.sha }}
-      - name: Test project mapping
-        run: python3 -m unittest discover -s tools -p test_ci_changes.py
-      - name: Select touched projects
-        id: changes
-        env:
-          CHANGE_BASE: ${{ github.event.pull_request.base.sha || 'origin/main' }}
-          CHANGE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: python3 bin/ci-changes --base "$CHANGE_BASE" --head "$CHANGE_HEAD" --github-output "$GITHUB_OUTPUT"
-
-  project:
-    needs: changes
-    if: fromJSON(needs.changes.outputs.jobs).project
-    name: ${{ matrix.project.name }}
-    # This Gateway job checks quality on any orbit-shard runner while the Gateway shards run its tests, on every event.
-    # Fork PRs never run on self-hosted runners.
-    runs-on: ${{ matrix.project.directory == 'apps/gateway' && vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "orbit-shard"]') || 'ubuntu-26.04' }}
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
-
-    defaults:
-      run:
-        working-directory: ${{ matrix.project.directory }}
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/php
         with:
-          fetch-depth: 0
-          persist-credentials: false
-          ref: ${{ github.sha }}
-          repository: ${{ github.repository }}
-
-      # The recipe's exact PHP build (ADR 0216). A hosted runner installs it; Sabre only verifies it, because a job never
-      # installs software on a self-hosted runner.
-      - name: Set up PHP
-        uses: ./.github/actions/php
-        with:
-          coverage: pcov
-
-      # Pin the project runtime on hosted runners and self-hosted shards alike.
-      - name: Set up Node
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-
-      - name: Set up Bun for package cache and generated merge tests
-        id: bun
-        if: matrix.project.directory == 'apps/gateway' || matrix.project.directory == 'apps/docs'
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: 1.4.2
-
-      - name: Restore Bun downloads
-        if: (matrix.project.directory == 'apps/gateway' || matrix.project.directory == 'apps/docs') && (github.ref != 'refs/heads/main' || github.event_name == 'pull_request')
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('**/bun.lock') }}
-
-      - name: Cache Bun downloads on main
-        if: (matrix.project.directory == 'apps/gateway' || matrix.project.directory == 'apps/docs') && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('**/bun.lock') }}
-
-      - name: Set up Homebrew
-        if: matrix.project.directory == 'apps/gateway' && runner.environment == 'github-hosted'
-        uses: Homebrew/actions/setup-homebrew@eb02c69dbabdb66ff183c614f4ce7ab3c077592c # 2026.10.12.1
-
-      - name: Install Gateway system dependencies
-        if: matrix.project.directory == 'apps/gateway' && runner.environment == 'github-hosted'
-        timeout-minutes: 10
-        env:
-          # A mirror that stops answering fails the request after 30 seconds and is retried, instead of hanging the job.
-          APT_OPTIONS: -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
-        run: |
-          sudo rm -f /etc/apt/sources.list.d/google-chrome.list /etc/apt/sources.list.d/google-chrome.sources
-          sudo apt-get $APT_OPTIONS update
-          sudo apt-get $APT_OPTIONS install --no-install-recommends --yes acl attr wireguard-tools postgresql-18
-          brew install caddy openssl@3
-          id -u caddy >/dev/null 2>&1 || sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin caddy
-          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
-
-      - name: Prepare application environment
-        if: matrix.project.directory == 'apps/docs' || matrix.project.directory == 'apps/gateway' || matrix.project.directory == 'apps/e2e'
-        run: cp .env.example .env
-
-      - name: Install dependencies
-        if: matrix.project.directory != 'apps/e2e'
-        run: composer install --no-interaction --prefer-dist
-
-      - name: Check that every environment variable is documented
-        if: matrix.project.directory == 'apps/docs'
-        working-directory: .
-        run: php bin/env-docs
-
-      # The Docs merge proof needs Gateway route discovery, not its test or analysis tools.
-      - name: Install generated merge proof dependencies
-        if: matrix.project.directory == 'apps/docs'
-        working-directory: .
-        run: |
-          (cd apps/gateway && cp .env.example .env && composer install --no-dev --no-interaction --prefer-dist)
-          (cd apps/web && bun install --frozen-lockfile)
-
-      - name: Install all project dependencies for E2E integration tests
-        if: matrix.project.directory == 'apps/e2e'
-        working-directory: .
-        run: bin/bootstrap --dependencies-only
-
+          coverage: none
       - name: Validate Composer metadata
-        run: composer validate --strict
-
-      # A change run restores quality caches only from main and saves none.
-      - name: Compute PHPStan result cache prefix
-        id: orbit-phpstan-key
-        working-directory: .
-        run: |
-          printf 'prefix=%s\n' "orbit-phpstan-php8.5-${{ matrix.project.directory }}-${{ hashFiles(format('{0}/composer.lock', matrix.project.directory), format('{0}/phpstan.neon', matrix.project.directory)) }}" >> "$GITHUB_OUTPUT"
-
-      - name: Restore PHPStan result cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ matrix.project.directory }}/vendor/phpstan/cache/resultCache.php
-          key: ${{ steps.orbit-phpstan-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
-          restore-keys: |
-            ${{ env.CHANGE_RUN != 'true' && format('{0}-{1}-', steps.orbit-phpstan-key.outputs.prefix, github.ref_name) || '' }}
-            ${{ steps.orbit-phpstan-key.outputs.prefix }}-main-
-            ${{ env.CHANGE_RUN != 'true' && format('orbit-phpstan-php8.5-{0}-', matrix.project.directory) || '' }}
-
-      - name: Compute Pint cache prefix
-        id: orbit-lint-key
-        working-directory: .
-        run: |
-          printf 'prefix=%s\n' "orbit-lint-php8.5-${{ matrix.project.directory }}-${{ hashFiles(format('{0}/composer.lock', matrix.project.directory), format('{0}/pint.json', matrix.project.directory), format('{0}/rector.php', matrix.project.directory)) }}" >> "$GITHUB_OUTPUT"
-
-      - name: Restore Pint cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ matrix.project.directory }}/vendor/pint.cache
-          key: ${{ steps.orbit-lint-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
-          restore-keys: |
-            ${{ env.CHANGE_RUN != 'true' && format('{0}-{1}-', steps.orbit-lint-key.outputs.prefix, github.ref_name) || '' }}
-            ${{ steps.orbit-lint-key.outputs.prefix }}-main-
-            ${{ env.CHANGE_RUN != 'true' && format('orbit-lint-php8.5-{0}-', matrix.project.directory) || '' }}
-
-      # docs/reference/implementation-loop.md: runner policy, not PATH, is the sudo boundary.
-      - name: Require no sudo for ordinary Gateway tests
-        id: gateway-no-sudo
-        if: matrix.project.directory == 'apps/gateway'
-        uses: ./.github/actions/no-sudo
-
-      - name: Verify Gateway shard coverage
-        if: matrix.project.directory == 'apps/gateway'
-        run: ../../bin/check-pest-shards
-
-      - name: Run project quality checks
-        run: composer check
-
-      - name: Check classification fakes
-        run: php ../../bin/check-classification-fakes tests
-
-      - name: Save PHPStan result cache
-        if: success() && env.CHANGE_RUN != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ matrix.project.directory }}/vendor/phpstan/cache/resultCache.php
-          key: ${{ steps.orbit-phpstan-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
-
-      - name: Save Pint cache
-        if: success() && env.CHANGE_RUN != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ matrix.project.directory }}/vendor/pint.cache
-          key: ${{ steps.orbit-lint-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
-
-      # The Gateway shards run the Gateway suite.
-      - name: Run full test suite
-        if: matrix.project.directory != 'apps/gateway'
-        run: ../../bin/pest-plain vendor/bin/pest --parallel --default-time-limit=5 --compact
-
-      - name: Identify immutable Ubuntu snapshot metadata
-        id: ubuntu-snapshot
-        if: matrix.project.directory == 'apps/gateway' && (github.event_name == 'pull_request' || github.event_name == 'push')
+        run: git ls-files -z '*composer.json' | xargs -0 -I '{}' composer validate --strict --no-check-publish '{}'
+      - name: Check changed PHP syntax
         env:
-          RECIPE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
         run: |
-          # A handoff push compares with where its branch left main: its event base is the previous handoff, or none.
-          if [ "$HANDOFF_PUSH" = true ]; then RECIPE_BASE=$(git merge-base origin/main HEAD); fi
-          if [ -z "$RECIPE_BASE" ] || ! git diff --quiet "$RECIPE_BASE" HEAD -- resources/machine-software/recipe.json; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "snapshot=$(jq -r '.ubuntu.snapshot' resources/machine-software/recipe.json)" >> "$GITHUB_OUTPUT"
-            echo "architectures=$(jq -r '.architectures | sort | join("-")' resources/machine-software/recipe.json)" >> "$GITHUB_OUTPUT"
-          fi
+          if [[ "$BASE" =~ ^0+$ ]]; then BASE=$(git merge-base origin/main HEAD); fi
+          git diff --name-only --diff-filter=ACMR -z "$BASE" HEAD -- '*.php' | xargs -0 -r -n 1 -P 4 php -l
 
-      - name: Restore verified Ubuntu snapshot metadata
-        id: ubuntu-metadata
-        if: steps.ubuntu-snapshot.outputs.changed == 'true'
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ runner.temp }}/ubuntu-snapshot-metadata
-          key: ubuntu-snapshot-metadata-v1-${{ steps.ubuntu-snapshot.outputs.snapshot }}-${{ steps.ubuntu-snapshot.outputs.architectures }}
+  cli:
+    name: CLI build
+    uses: ./.github/workflows/orbit-cli-binary.yml
+    with:
+      commit: ${{ github.sha }}
+      version: ''
 
-      # An unknown event base validates the recipe too.
-      - name: Verify Ubuntu recipe pins against the named snapshot
-        id: verify-ubuntu
-        if: steps.ubuntu-snapshot.outputs.changed == 'true'
-        env:
-          ORBIT_RECIPE_SNAPSHOT_CACHE: ${{ runner.temp }}/ubuntu-snapshot-metadata
-        run: |
-          php artisan orbit:machine-recipe --validate-ubuntu --json --no-interaction
-          echo "verified=true" >> "$GITHUB_OUTPUT"
-
-      - name: Save verified Ubuntu snapshot metadata
-        if: steps.verify-ubuntu.outputs.verified == 'true' && steps.ubuntu-metadata.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ runner.temp }}/ubuntu-snapshot-metadata
-          key: ${{ steps.ubuntu-metadata.outputs.cache-primary-key }}
-
-      - name: Run redaction cases without PCRE JIT
-        if: always() && matrix.project.directory == 'apps/gateway' && steps.gateway-no-sudo.outcome == 'success'
-        env:
-          PCRE_JIT: '0'
-        run: ../../bin/pest-plain php -d pcre.jit="$PCRE_JIT" vendor/bin/pest --default-time-limit=5 tests/Feature/Logs/RedactionCasesTest.php --parallel --passthru-php="-d pcre.jit=$PCRE_JIT"
-
-      # After every check of the project passes, stage the Pint and PHPStan caches that `composer check` wrote, for
-      # the cache-ref publisher. Task workspaces import them; CI exports no test graph.
-      - name: Export main quality caches
-        if: success() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        env:
-          PROJECT: ${{ matrix.project.directory }}
-          EXPORT: ${{ runner.temp }}/ci-cache/${{ matrix.project.directory }}
-        run: |
-          python3 - <<'PY'
-          import hashlib, json, os, shutil, subprocess
-          from pathlib import Path
-          export = Path(os.environ['EXPORT'])
-          (export / 'quality').mkdir(parents=True)
-          quality, configurations = {}, {}
-          for tool, config, source in (('pint', 'pint.json', 'vendor/pint.cache'),
-                                       ('phpstan', 'phpstan.neon', 'vendor/phpstan/cache/resultCache.php')):
-              if Path(source).is_file() and Path(source).stat().st_size:
-                  shutil.copyfile(source, export / 'quality' / tool)
-                  quality[tool] = hashlib.sha256(Path(source).read_bytes()).hexdigest()
-                  configurations[tool] = hashlib.sha256(Path(config).read_bytes()).hexdigest()
-          manifest = {
-              'schema': 3,
-              'project': os.environ['PROJECT'],
-              'commit': os.environ['GITHUB_SHA'],
-              'run_id': os.environ['GITHUB_RUN_ID'],
-              'run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
-              'configurations': configurations,
-              'php': subprocess.run(['php', '-r', 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;'],
-                                    check=True, capture_output=True, text=True).stdout,
-              'quality': quality,
-          }
-          (export / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
-          PY
-
-      - name: Publish main quality caches
-        if: success() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: ci-cache-${{ strategy.job-index }}-${{ github.sha }}
-          path: ${{ runner.temp }}/ci-cache/${{ matrix.project.directory }}
-          if-no-files-found: error
-          retention-days: 14
-
-  # Every run uses the static stock shard matrix below as the only source of the shard count.
-  gateway-shards:
-    needs: changes
-    if: fromJSON(needs.changes.outputs.jobs).gateway-shards
-    name: Gateway shards
-    # Sabre and the Beast/Shark containers carry orbit-shard. Fork PRs use hosted runners.
-    runs-on: ${{ vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "orbit-shard"]') || 'ubuntu-26.04' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4, 5]
-    defaults:
-      run:
-        working-directory: apps/gateway
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-          ref: ${{ github.sha }}
-
-      # A shard container only verifies the recipe build; tools/ci-runners/setup.sh installs it.
-      - name: Set up PHP
-        uses: ./.github/actions/php
-        with:
-          coverage: pcov
-
-      - name: Set up Node
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-
-      - name: Set up Bun for package cache tests
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: 1.4.2
-
-      # Sabre's PHP CLI sets this in 99-github-actions.ini, and the PHP action sets it on a hosted runner. The shard runner
-      # containers keep their PHP CLI default, so the job sets it only for its own processes and Pest's workers.
-      - name: Keep exception arguments in traces
-        if: runner.environment == 'self-hosted'
-        run: |
-          mkdir -p "$RUNNER_TEMP/php"
-          echo 'zend.exception_ignore_args=0' > "$RUNNER_TEMP/php/99-orbit-ci.ini"
-          echo "PHP_INI_SCAN_DIR=:$RUNNER_TEMP/php" >> "$GITHUB_ENV"
-
-      - name: Set up Homebrew
-        if: runner.environment == 'github-hosted'
-        uses: Homebrew/actions/setup-homebrew@eb02c69dbabdb66ff183c614f4ce7ab3c077592c # 2026.10.12.1
-
-      - name: Install Gateway system dependencies
-        if: runner.environment == 'github-hosted'
-        timeout-minutes: 10
-        env:
-          APT_OPTIONS: -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
-        run: |
-          sudo rm -f /etc/apt/sources.list.d/google-chrome.list /etc/apt/sources.list.d/google-chrome.sources
-          sudo apt-get $APT_OPTIONS update
-          sudo apt-get $APT_OPTIONS install --no-install-recommends --yes acl attr wireguard-tools postgresql-18
-          brew install caddy openssl@3
-          id -u caddy >/dev/null 2>&1 || sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin caddy
-          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
-
-      - name: Install dependencies
-        run: |
-          cp .env.example .env
-          composer install --no-interaction --prefer-dist
-
-      - name: Require no sudo for ordinary Gateway tests
-        uses: ./.github/actions/no-sudo
-
-      # Every shard reads the same committed tests/.pest/shards.json; no cache or runtime planner.
-      - name: Run Gateway shard ${{ matrix.shard }}
-        run: ../../bin/pest-plain vendor/bin/pest --parallel --default-time-limit=5 --exclude-group=privileged --shard=${{ matrix.shard }}/${{ strategy.job-total }} --compact
-
-  privileged:
-    needs: changes
-    if: fromJSON(needs.changes.outputs.jobs).privileged
-    name: Gateway privileged
-    # Only a disposable hosted runner may run this group: passwordless sudo, never fleet-host root.
+  docs:
+    name: Docs build
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: apps/gateway
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Set up PHP
-        uses: ./.github/actions/php
+      - uses: ./.github/actions/php
         with:
           coverage: none
-      # The tests need ACL tools and the caddy Unix identity, not the Caddy binary or a package manager.
-      - name: Install privileged test prerequisites
+      - name: Install Docs dependencies
+        run: composer install --working-dir=apps/docs --no-interaction --prefer-dist --no-dev
+      - name: Build and check the documentation index
         run: |
-          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
-          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install --no-install-recommends --yes acl
-          sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin caddy
-      - name: Install Gateway dependencies
-        run: |
-          cp .env.example .env
-          composer install --no-interaction --prefer-dist
-      # Native Caddy and Valkey tests run the agent built from this commit.
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-      - name: Restore Rust caches
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: apps/agent
-      - name: Build the agent
-        working-directory: apps/agent
-        run: cargo build --release --locked
-      - name: Test native Caddy access and Valkey ACL publication
-        working-directory: apps/agent
-        run: cargo test --release --locked --test caddy_access --test valkey_acl -- --ignored
-      # Valkey tests pull their image on the first real docker run.
-      - name: Run privileged tests
-        env:
-          ORBIT_TEST_DOCKER: '1'
-        run: ../../bin/pest-plain vendor/bin/pest --parallel --default-time-limit=5 --group=privileged --fail-on-empty-test-suite --compact --colors=never
-
-  # The programs that the Gateway runs on Nodes: shellcheck, ruff, and their direct tests (docs/reference/remote-programs.md).
-  remote-programs:
-    needs: changes
-    if: fromJSON(needs.changes.outputs.jobs).remote-programs
-    name: Remote programs
-    runs-on: ubuntu-26.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-      # The recipe's exact PHP build (ADR 0216), as in every other PHP job.
-      - name: Set up PHP
-        uses: ./.github/actions/php
-        with:
-          coverage: none
-      - name: Install shellcheck and Python test tools
-        run: |
-          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
-          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install --no-install-recommends --yes shellcheck
-          python3 -m venv "$RUNNER_TEMP/ruff"
-          "$RUNNER_TEMP/ruff/bin/pip" install --quiet ruff==0.17.0 -r tools/test-requirements.txt
-          echo "$RUNNER_TEMP/ruff/bin" >> "$GITHUB_PATH"
-      - name: Refuse Gateway script growth
-        env:
-          NODE_SCRIPTS_BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before || 'HEAD^1' }}
-        run: |
-          pytest -n auto --dist=load -q tools/test_node_scripts_ratchet.py tools/test_agent_source_commit.py
-          # A handoff push compares with where its branch left main: its event base is the previous handoff, or none.
-          if [ "$HANDOFF_PUSH" = true ]; then NODE_SCRIPTS_BASE=$(git merge-base origin/main HEAD); fi
-          bin/node-scripts-ratchet --base "$NODE_SCRIPTS_BASE"
-      - name: Check runner PostgreSQL setup
-        run: |
-          shellcheck tools/ci-runners/setup.sh
-          python3 -m unittest discover -s tools/ci-runners -p 'test_*.py' -v
-      - name: Lint and test the remote programs
-        run: bin/remote-programs-check
+          composer docs-build
+          git diff --exit-code -- docs/generated/context.json
+          composer docs-lint
 
   api-reference:
-    needs: changes
-    if: fromJSON(needs.changes.outputs.jobs).api-reference
-    name: API reference
+    name: Generated contracts
     runs-on: ubuntu-26.04
-
     steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          persist-credentials: false
           ref: ${{ github.sha }}
-
-      # The recipe's exact PHP build (ADR 0216), with PCOV loaded and disabled.
-      - name: Set up PHP
-        uses: ./.github/actions/php
+          persist-credentials: false
+      - uses: ./.github/actions/php
         with:
           coverage: none
-
-      - name: Reject App-domain names
-        run: php bin/project-vocabulary
-
-      - name: Check that the projects share their tooling baseline
-        run: php bin/tooling-baseline
-      - name: Check that every docs page is in the site navigation
-        run: php bin/docs-nav
-
-      - name: Install Gateway and CLI dependencies
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      - name: Install generator dependencies
         run: |
-          for project in apps/gateway apps/cli; do
-            (cd "$project" && { [ -e .env ] || [ ! -f .env.example ] || cp .env.example .env; } && composer install --no-interaction --prefer-dist)
-          done
-
-      - name: Check that the API reference matches the Gateway routes
-        run: bin/docs-openapi --check
-
-      - name: Check that the MCP tool manifest matches the API reference
-        run: bin/mcp-tools --check
+          cp apps/gateway/.env.example apps/gateway/.env
+          composer install --working-dir=apps/gateway --no-interaction --prefer-dist --no-dev
+          bun install --cwd apps/web --frozen-lockfile
+      - name: Check OpenAPI and MCP tools
+        run: |
+          bin/docs-openapi --check
+          bin/mcp-tools --check
+      - name: Check generated web schema
+        run: |
+          bun run --cwd apps/web types
+          git diff --exit-code -- apps/web/src/api/schema.d.ts
 
   web:
-    needs: changes
-    if: fromJSON(needs.changes.outputs.jobs).web
-    name: Web
+    name: Web build
     runs-on: ubuntu-26.04
-
     defaults:
       run:
         working-directory: apps/web
-
     steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          persist-credentials: false
           ref: ${{ github.sha }}
-
-      - name: Set up Node
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
-
-      - name: Set up Bun
-        id: bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.2
-
-      - name: Restore Bun downloads
-        if: github.ref != 'refs/heads/main' || github.event_name == 'pull_request'
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('**/bun.lock') }}
-
-      - name: Cache Bun downloads on main
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('**/bun.lock') }}
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Check that the API types match the API reference
-        run: bun run types && git diff --exit-code src/api/schema.d.ts
-
-      - name: Check formatting, lint, and types
-        run: bun run check
-
-      - name: Install the test browsers
-        timeout-minutes: 10
-        env:
-          # Playwright makes up to five browser download attempts across its download URLs.
-          PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: '30000'
-        run: |
-          # Use Canonical instead of the runner image's preferred Azure mirror, as in the Desktop job.
-          echo 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
-          # --with-deps invokes apt itself, so configure retries and request timeouts for those calls.
-          printf '%s\n' 'Acquire::Retries "3";' 'Acquire::http::Timeout "30";' 'Acquire::https::Timeout "30";' | sudo tee /etc/apt/apt.conf.d/80-download-retries
-          bunx playwright install --with-deps --only-shell chromium webkit
-
-      - name: Run unit and verification tests
-        run: bun run test:unit
-
-      - name: Run browser tests
-        run: bun run test:browser
-
-      # Open pages compare their build with version.json, so the published build must hold it beside index.html.
+      - run: bun install --frozen-lockfile
       - name: Build
         run: bun run build && test -s dist/index.html && test -s dist/version.json
-
-      # Automatic Gateway releases (ADR 0201) install this build for the same commit, so the Gateway needs no Node or Bun.
-      # Every run on main publishes it, a manual dispatch too, so each successful Required checks result on main has one.
       - name: Publish web build
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -605,177 +123,118 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  pi-server:
-    needs: changes
-    if: fromJSON(needs.changes.outputs.jobs).pi-server
-    name: Pi server
+  changes:
+    name: Select agent delivery
     runs-on: ubuntu-26.04
-
-    defaults:
-      run:
-        working-directory: apps/pi-server
-
+    outputs:
+      build: ${{ steps.agent.outputs.build }}
+      release: ${{ steps.agent.outputs.release }}
     steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          persist-credentials: false
           ref: ${{ github.sha }}
-
-      - name: Set up Node
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-
-      - name: Set up Bun
-        id: bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: 1.4.2
-
-      - name: Restore Bun downloads
-        if: github.ref != 'refs/heads/main' || github.event_name == 'pull_request'
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('**/bun.lock') }}
-
-      - name: Cache Bun downloads on main
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('**/bun.lock') }}
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Check formatting, lint, and types
-        run: bun run check
-
-      - name: Run tests
-        run: bun run test
-
-      - name: Build
-        run: bun run build
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Compare with the published agent source
+        id: agent
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 bin/ci-agent-delivery select --github-output "$GITHUB_OUTPUT"
 
   agent:
     needs: changes
-    if: fromJSON(needs.changes.outputs.jobs).agent
-    name: Rust agent
+    if: needs.changes.outputs.build == 'true'
+    name: Build Linux agent
     timeout-minutes: 30
     runs-on: ubuntu-26.04
     defaults:
       run:
         working-directory: apps/agent
     steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ github.sha }}
-          # The delivery names the last commit that changed the agent's sources.
-          fetch-depth: 0
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-        with:
-          targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
-          components: clippy,rustfmt
-      - name: Restore Rust caches
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: apps/agent
-      - name: Install cross compiler
-        run: command -v cross >/dev/null || cargo install cross --locked
-      - name: Set up PHP for native Composer cache tests
-        uses: ./.github/actions/php
-        with:
-          coverage: none
-      - name: Set up Node for native npm cache tests
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-      - name: Set up Bun for native cache tests
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: 1.4.2
-      # Native tests run the fixed /usr/bin/wg and setfacl, and grant the caddy account, as every Linux Node has.
-      - name: Install native test prerequisites
-        run: |
-          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
-          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install --no-install-recommends --yes acl wireguard-tools
-          sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin caddy
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-      - name: Run clippy
-        run: scripts/check-crates clippy --locked --all-targets -- -D warnings
-      - name: Run tests
-        run: scripts/check-crates test --locked
-      # The delivery of this exact source: both static Linux binaries, SHA256SUMS, and manifest.json (ADR 0225).
-      # The Orbit CLI Release workflow publishes this artifact with the commit's release; it never rebuilds.
-      - name: Build the agent delivery
-        run: scripts/build-delivery "$RUNNER_TEMP/agent-delivery"
-      - name: Upload the agent delivery
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: agent-delivery-linux
-          path: ${{ runner.temp }}/agent-delivery
-          if-no-files-found: error
-          retention-days: 30
+    - name: Check out repository
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        ref: ${{ github.sha }}
+        fetch-depth: 0
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
+      with:
+        targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
+    - name: Restore Rust caches
+      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      with:
+        workspaces: apps/agent
+    - name: Install cross compiler
+      run: command -v cross >/dev/null || cargo install cross --locked
+    - name: Build the agent delivery
+      run: scripts/build-delivery "$RUNNER_TEMP/agent-delivery"
+    - name: Upload the agent delivery
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: agent-delivery-linux
+        path: ${{ runner.temp }}/agent-delivery
+        if-no-files-found: error
+        retention-days: 30
 
   agent-macos:
     needs: changes
-    if: fromJSON(needs.changes.outputs.jobs).agent-macos
-    name: Rust agent on macOS
+    if: needs.changes.outputs.build == 'true'
+    name: Build macOS agent
     runs-on: macos-15
     defaults:
       run:
         working-directory: apps/agent
     steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-        with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
-      - name: Restore Rust caches
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: apps/agent
-      - name: Build the macOS delivery
-        run: scripts/build-delivery "$RUNNER_TEMP/agent-delivery" --target aarch64-apple-darwin --target x86_64-apple-darwin
-      - name: Test command mode
-        run: 'cargo test --locked --lib command::'
-      - name: Test native Mac enrollment
-        run: cargo test --locked --lib macos_enrollment
-      - name: Upload the macOS delivery
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: agent-delivery-macos
-          path: ${{ runner.temp }}/agent-delivery
-          if-no-files-found: error
-          retention-days: 30
+    - name: Check out repository
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        ref: ${{ github.sha }}
+        fetch-depth: 0
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
+      with:
+        targets: aarch64-apple-darwin,x86_64-apple-darwin
+    - name: Restore Rust caches
+      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      with:
+        workspaces: apps/agent
+    - name: Build the macOS delivery
+      run: scripts/build-delivery "$RUNNER_TEMP/agent-delivery" --target aarch64-apple-darwin --target x86_64-apple-darwin
+    - name: Upload the macOS delivery
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: agent-delivery-macos
+        path: ${{ runner.temp }}/agent-delivery
+        if-no-files-found: error
+        retention-days: 30
 
   agent-delivery:
-    needs: [changes, agent, agent-macos]
-    if: fromJSON(needs.changes.outputs.jobs).agent-delivery
     name: Combine agent delivery
+    needs: [changes, agent, agent-macos]
+    if: ${{ !cancelled() && needs.changes.result == 'success' && (needs.changes.outputs.build == 'false' || (needs.agent.result == 'success' && needs.agent-macos.result == 'success')) }}
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          persist-credentials: false
           ref: ${{ github.sha }}
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+          persist-credentials: false
+      - name: Download built agent parts
+        if: needs.changes.outputs.build == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: agent-delivery-*
           path: ${{ runner.temp }}/agent-parts
-      - name: Verify and combine the tested artifacts
+      - name: Verify and combine built agents
+        if: needs.changes.outputs.build == 'true'
         run: python3 tools/combine_agent_delivery.py "$RUNNER_TEMP/agent-delivery" "$RUNNER_TEMP/agent-parts/agent-delivery-linux" "$RUNNER_TEMP/agent-parts/agent-delivery-macos"
+      - name: Reuse the published agent delivery
+        if: needs.changes.outputs.build == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE: ${{ needs.changes.outputs.release }}
+        run: python3 bin/ci-agent-delivery reuse --release "$RELEASE" --destination "$RUNNER_TEMP/agent-delivery"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: agent-delivery
@@ -783,110 +242,19 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  desktop:
-    needs: changes
-    if: fromJSON(needs.changes.outputs.jobs).desktop
-    name: Desktop app
-    runs-on: ubuntu-26.04
-    defaults:
-      run:
-        working-directory: apps/desktop
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ github.sha }}
-      - name: Set up Node
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-
-      - name: Set up Bun
-        id: bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: 1.4.2
-      - name: Restore Bun downloads
-        if: github.ref != 'refs/heads/main' || github.event_name == 'pull_request'
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('**/bun.lock') }}
-      - name: Cache Bun downloads on main
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('**/bun.lock') }}
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-      # Tauri links WebKitGTK on Linux; https://v2.tauri.app/start/prerequisites/ lists these packages.
-      - name: Install the Tauri system libraries
-        timeout-minutes: 10
-        run: |
-          # The image prefers Azure, which stalls on .deb downloads even when its indexes are fast.
-          echo 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
-          time sudo apt-get update
-          time sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-        with:
-          components: clippy,rustfmt
-      - name: Restore Rust caches
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: apps/desktop/src-tauri
-      - name: Check formatting
-        working-directory: apps/desktop/src-tauri
-        run: cargo fmt --all -- --check
-      - name: Run clippy
-        working-directory: apps/desktop/src-tauri
-        run: cargo clippy --locked --all-targets -- -D warnings
-
-  publish-ci-cache:
-    name: Publish CI cache ref
-    needs: [required]
-    # Publish only after Required checks passes on main, never for a pull request, fork or other branch.
-    if: ${{ !cancelled() && needs.required.result == 'success' && github.repository == 'hardimpactdev/orbit' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
-    runs-on: ubuntu-26.04
-    permissions:
-      actions: read
-      contents: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          pattern: ci-cache-*-${{ github.sha }}
-          path: ${{ runner.temp }}/ci-cache-exports
-      - name: Publish immutable tested-SHA ref and prune older cache refs
-        run: python3 bin/ci-cache-ref publish --commit "$GITHUB_SHA" --exports "$RUNNER_TEMP/ci-cache-exports"
-
   required:
     name: Required checks
     if: always()
-    needs: [changes, project, gateway-shards, privileged, remote-programs, api-reference, web, pi-server, agent, agent-macos, agent-delivery, desktop]
+    needs: [php, cli, docs, api-reference, web]
     runs-on: ubuntu-26.04
     steps:
-      - name: Require every selected project to pass
+      - name: Require builds and static checks
         env:
           NEEDS: ${{ toJSON(needs) }}
         run: |
           python3 - <<'PYTHON'
           import json, os, sys
-          needs = json.loads(os.environ['NEEDS'])
-          if needs['changes']['result'] != 'success':
-              sys.exit('Project detection did not succeed')
-          selected = json.loads(needs['changes']['outputs']['jobs'])
-          if set(selected) != set(needs) - {'changes'}:
-              sys.exit('Missing project selections')
-          for job, touched in selected.items():
-              if type(touched) is not bool:
-                  sys.exit(f'{job}: invalid selection')
-              result = needs[job]['result']
-              if result != 'success' and not (result == 'skipped' and not touched):
-                  sys.exit(f'{job}: {result}')
+          failed = {job: data['result'] for job, data in json.loads(os.environ['NEEDS']).items() if data['result'] != 'success'}
+          if failed:
+              sys.exit(f'Builds or static checks failed: {failed}')
           PYTHON

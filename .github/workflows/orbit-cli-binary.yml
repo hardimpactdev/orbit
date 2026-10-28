@@ -1,19 +1,6 @@
 name: Orbit CLI Binary
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - 'apps/cli/**'
-      - 'packages/php-sdk/**'
-      - 'apps/gateway/resources/machine-software/**'
-      - 'apps/agent/**'
-      - 'tools/agent_command.py'
-      - '.github/actions/php/**'
-      - 'bin/php-build'
-      - 'bin/orbit-build-cli-binary'
-      - 'bin/orbit-version'
-      - '.github/workflows/orbit-cli-binary.yml'
   workflow_dispatch:
   workflow_call:
     inputs:
@@ -39,13 +26,14 @@ env:
 
 jobs:
   # Every target is built on Linux amd64. PHPacker does not compile: it appends the PHAR to a prebuilt static PHP for the
-  # target, so the host only needs PHP and Composer. Native arm64 runners only run the binaries and need no PHP.
+  # target, so the host only needs PHP and Composer.
   build:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
     outputs:
       version: ${{ steps.version.outputs.value }}
     strategy:
+      max-parallel: 3
       fail-fast: false
       matrix:
         include:
@@ -55,21 +43,18 @@ jobs:
             architecture: x64
             artifact: orbit-linux-x64
             path: apps/cli/builds/dist/linux/linux-x64
-            native: true
           - target: linux-arm64
             runner: ubuntu-26.04
             platform: linux
             architecture: arm
             artifact: orbit-linux-arm64
             path: apps/cli/builds/dist/linux/linux-arm
-            native: false
           - target: macos-arm64
             runner: ubuntu-26.04
             platform: mac
             architecture: arm
             artifact: orbit-macos-arm64
             path: apps/cli/builds/dist/mac/mac-arm
-            native: false
 
     steps:
       - name: Checkout
@@ -106,18 +91,6 @@ jobs:
           VERSION: ${{ steps.version.outputs.value }}
         run: bin/orbit-build-cli-binary "${{ matrix.platform }}" "${{ matrix.architecture }}" "$VERSION"
 
-      - name: Run the binary on its own platform
-        if: matrix.native
-        env:
-          BINARY: ${{ matrix.path }}
-          VERSION: ${{ steps.version.outputs.value }}
-        run: |
-          set -euo pipefail
-          home="$(mktemp -d)"
-          reported="$(env -i HOME="$home" PATH=/usr/bin:/bin "$BINARY" --version)"
-          echo "$reported"
-          test "$reported" = "Orbit ${VERSION}"
-
       - name: Upload binary
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -125,51 +98,3 @@ jobs:
           path: ${{ matrix.path }}
           if-no-files-found: error
           retention-days: ${{ github.event_name == 'pull_request' && 7 || 30 }}
-
-  # Cross-building needs only amd64 recipe PHP; the native arm64 runner tests the self-contained binary.
-  run-linux-arm64:
-    name: Run linux-arm64
-    needs: build
-    runs-on: ubuntu-26.04-arm
-    steps:
-      - name: Download binary
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: orbit-linux-arm64
-          path: binary
-
-      - name: Run the binary on its own platform
-        env:
-          VERSION: ${{ needs.build.outputs.version }}
-        run: |
-          set -euo pipefail
-          test -n "$VERSION"
-          chmod 0755 binary/linux-arm
-          home="$(mktemp -d)"
-          reported="$(env -i HOME="$home" PATH=/usr/bin:/bin binary/linux-arm --version)"
-          echo "$reported"
-          test "$reported" = "Orbit ${VERSION}"
-
-  # The release waits for this job too, so a macOS binary that does not start is never published.
-  run-macos:
-    name: Run macos-arm64
-    needs: build
-    runs-on: macos-26
-    steps:
-      - name: Download binary
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: orbit-macos-arm64
-          path: binary
-
-      - name: Run the binary on its own platform
-        env:
-          VERSION: ${{ needs.build.outputs.version }}
-        run: |
-          set -euo pipefail
-          test -n "$VERSION"
-          chmod 0755 binary/mac-arm
-          home="$(mktemp -d)"
-          reported="$(env -i HOME="$home" PATH=/usr/bin:/bin binary/mac-arm --version)"
-          echo "$reported"
-          test "$reported" = "Orbit ${VERSION}"

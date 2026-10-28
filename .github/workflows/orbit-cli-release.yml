@@ -86,8 +86,8 @@ jobs:
           fi
           echo "Required checks passed on ${COMMIT}"
 
-      # The release carries the agent CI built and tested for this commit (ADR 0225); it never rebuilds it.
-      - name: Find the CI run with the tested agent delivery
+      # The release carries the agent CI built or reused for this commit (ADR 0225); it never rebuilds it.
+      - name: Find the CI run with the verified agent delivery
         id: delivery
         env:
           GH_TOKEN: ${{ github.token }}
@@ -177,7 +177,7 @@ jobs:
           pattern: orbit-*
           path: artifacts
 
-      - name: Download the tested agent delivery
+      - name: Download the verified agent delivery
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: agent-delivery
