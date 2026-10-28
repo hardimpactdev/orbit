@@ -44,19 +44,19 @@ Generated OpenAPI, MCP, web schema and docs navigation outputs are built by the 
 
 ## Primitive contract
 
-All requests are JSON POSTs under `/api/v1/operation-executor`. The caller must be the active Services peer configured by `dependency_detection.services_node_id`, and must have Gateway access. The existing dependency-token setting is reused; this conversion creates no new credential or access grant. MCP tools are generated from the same API and enforce the same identity.
+All requests are JSON POSTs under `/api/v1/operation-executor`. The caller must be the active Services peer configured by `dependency_detection.services_node_id` or an explicitly configured `operation_executor.worker_node_ids` peer, with Gateway access. The authenticated claiming Node and worker string own the lease. This does not change dependency-token authorization or grant new access. MCP tools are generated from the same API and enforce the same identity.
 
 | Suffix | Body | Receipt |
 | --- | --- | --- |
 | `claim` | `kind`, `worker` | One Operation with its input, Node ID, steps, step results, worker and 120-second lease; null if no work is available. |
 | `{operation}/heartbeat` | `worker` | Current Operation; renews its lease. |
 | `{operation}/step` | `worker`, `key`, `name`, `status`; optional `output`, `result`, `error_code` | Appends output to the named step and records its status under the existing Operation sequence. Status is running, succeeded or failed. Failed requires an error_code matching `^[a-z0-9_.-]+$`. |
-| `{operation}/run` | `worker`, `key`, `transport`, `name`, `input` | Only the kind’s declared, redacted scalar result fields from the named agent command or RemoteProgram. Transport is agent or remote_program. The existing named command or program deadline and Gateway request deadline apply. |
+| `{operation}/run` | `worker`, `key`, `transport`, `name`, `input` | Only the kind’s declared, redacted scalar result fields from the named agent command or RemoteProgram. Use a registered transport: built-ins are agent, remote_program and gateway. The stored Operation supplies the Node; a Gateway command may have a null Node. Named-command and request deadlines apply. |
 | `{operation}/complete` | `worker`, `status`; optional `result`, `error_code` | Terminal Operation and projected family intent. Status is succeeded, failed or cancelled. Failed requires an error_code matching `^[a-z0-9_.-]+$`. |
 
 Use a stable workflow-run identity as worker. The runner appends the kind, so each claim can be replayed independently. Heartbeat every 30 seconds while a family runs. A new worker can reclaim an expired Operation. A stale worker receives `operation.lease_lost` and stops. PHP jobs and the PHP recovery sweep leave Swamp kinds alone.
 
-Step event keys identify exact payloads. A replay appends no duplicate output. Run keys bind the named command, target and input before execution; a different payload returns `operation.idempotency_conflict`. A successful result is reused. If the process dies before saving the result, the family must repeat a convergent command or reconcile the original effect. The Gateway serializes invocations on an Operation with its existing attempt lease. It does not promise exactly-once execution of an arbitrary remote program. Output keeps the existing 8 KiB tail.
+Step event keys identify exact payloads. A replay appends no duplicate output. Run keys bind the named command, target and input before execution; a different payload returns `operation.idempotency_conflict`. A successful result is reused. If the process dies before saving the result, the default is an uncertain refusal with no saved result or projection. Only an explicitly resumable convergent command may repeat; other effects require a proven original receipt. The Gateway serializes invocations on an Operation with its existing attempt lease. It does not promise exactly-once execution of an arbitrary remote program. Output keeps the existing 8 KiB tail.
 
 Persist completion intent in Swamp data before posting complete. A lost completion reply replays the same receipt; it must not start another Node command. Terminal Operations reject a different completion. The Gateway rechecks status, lease and cancellation immediately before a new Node command. It records a keyed `operation.cancelled` refusal when cancellation wins. Finish that step as failed and complete the Operation as cancelled; never retry the refused effect. Cancellation before a Node effect returns cancelled. Once an effect has a proven result, finish recording that result.
 
@@ -80,3 +80,74 @@ orbit operation:show REMOVE_OPERATION_ID --json
 Save both Operation IDs, deployed Orbit and orbit-swamp SHAs, the dev Node ID, step names, step output, final backend results, and the final firewall list showing the rule is absent. Expect `ufw-converge` with active and `ufw-remove` with absent. A focused fake test proves contract behavior; only this deployed round trip proves the live path.
 
 The reference tests run the native parent, dispatch and family workflows in a disposable repository. They then resume the failed family in a new Swamp process after losing the Node reply. The fake Gateway records one Node mutation and one completion. These native tests run in CI with the same pinned Swamp release as Services.
+
+## Kit v2 A: protected inputs and family hooks
+
+A run declares `secrets: ['git_read' => 'project.git_read']`. Admission and Swamp carry only `{'$secret': 'project.git_read', 'id': PROJECT_ID}` at that parameter path. No credential bytes may enter Operation input, Swamp resources, logs or results. The Gateway first matches the kind, command, target and exact expected public input, then verifies each reference owner, hydrates it and validates the real command schema. Undeclared references, changed sources, foreign IDs and raw values at protected paths fail with `operation.execution_forbidden`.
+
+Families register resolver classes using their own provider's `$this->app->tag([MySource::class], OperationSecretSource::class)`. There is no central source enum or per-family edit to the executor. `OperationSecretSource` is under `App\Domain\Operations`. Its exact methods are:
+
+```php
+name(): string
+targetTypes(): array // list of Operation target types this source supports
+ownerId(Operation $operation): ?int
+resolve(Operation $operation, int $id, string $key, string $parameter): OperationSecretValue
+```
+
+`ownerId` reads public ownership relations only. The generic hydrator first requires the Operation target type in `targetTypes()`, then requires a non-null owner and an equal reference ID before calling `resolve`. Map ownership through the actual resource relation; equal numeric IDs across types do not prove ownership. Return `new OperationSecretValue($value, $redactionValues)`; values stay in request memory. For script sources such as `instance.deploy_step` and `project.dev_deploy_step`, return `OperationSecretValue::script($contents, $admittedSha256)`. It refuses a digest mismatch before sending anything. Resolve the descriptor from admitted input and the stable run key, never a caller-selected script path. Git sources must preserve `GitReadEnvironment` so the existing credential transport restrictions still apply. Environment sources must include individual sensitive values in the redaction list, including when the transported value is rendered content.
+
+A kind may declare `execution: MyFamilyExecution::class`, implementing `OperationFamilyExecution`:
+
+```php
+context(Operation $operation): array
+input(Operation $operation, array $run): array
+beforeRun(Operation $operation, array $run): void
+received(Operation $operation, array $run, array $receipt): array
+assertCompletion(Operation $operation, OperationOutcome $outcome): void
+cancellationBoundary(Operation $operation): ?array
+```
+
+`context` supplies public workflow context and protected references in executor receipts. `input` returns the exact expected unhydrated command input. It may select nested admitted descriptors, array elements, immutable configuration and previously proven `state.steps` receipts. It replaces static `input_fields`/`input_values` for that kind, while the run allowlist and target Node binding remain mandatory. No raw secrets belong in either method.
+
+`beforeRun` runs after a fresh lease/status/cancellation check and before secret hydration and the Node call. Use it for auto-deploy and smoke policy guards. `received` projects the transport-proven receipt after known-secret redaction in the same transaction that stores the keyed receipt; it runs once for a saved result. It performs DB work only. `assertCompletion` adds family requirements after the generic proof check. Neither hook executes Node work or bypasses the generic evidence contract. The existing `completion: MyCompletion::class` hook still projects final intent through `OperationCompletion::complete(Operation, OperationOutcome)`.
+
+A run defaults to `resumable: false` and never reissues a key whose persisted started invocation has no result. The Gateway marks it started only after guards, hydration and schema checks, immediately before dispatch; a preflight refusal remains safe to retry. It returns `operation.execution_uncertain`; the family must reconcile the effect through a separately allowed read, or end with an explicit unknown outcome. Only a proven convergent command may opt in with `resumable: true` in its runs entry. A descriptor cannot enable replay when the runs entry does not. Firewall explicitly opts in.
+
+`$run` imports the exported PHPStan `RunInput` shape from `SwampOperationExecutor`: `{worker: string, key: string, transport: string, name: string, input: array<string,mixed>}`. `context` returns `{descriptors: list<Descriptor>, result?: array<string,mixed>}`; `Descriptor` is exported by `OperationFamilyExecution`: `{key, step, transport, name, input, resumable: bool, required: bool}`. Descriptors are public, unhydrated inputs. The runtime returns this as `execution_context` in claim and heartbeat receipts. Swamp owns ordering.
+
+`received` receives a transport-proven receipt after redaction of secret fields and values collected during this invocation’s hydration and returns public result fields; it can perform DB-only receipt projection in that transaction. `cancellationBoundary` returns null or `{key, transport, name, result}`. Only an already stored successful matching invocation permits effects after cancellation; a claimed activation flag or caller step cannot authorize that boundary. Production activation can therefore require PHP/process restarts and after steps to finish.
+
+## Kit v2 F: named Gateway effects
+
+`transport: gateway` uses the same `/run`, with no caller Node ID. Register `['github.recipe-pr' => RecipePullRequestCommand::class]` in `app/Domain/<Family>/operation-commands.php`. The class implements `OperationGatewayCommand::schema(): array` and `run(Operation $operation, array $input): array`. Its entry still needs a per-kind run allowlist, exact input binding, protected references and completion proof. Mark the command implementation’s input parameter `#[\SensitiveParameter]`. The schema validates hydrated input. Run fingerprints and stored invocation inputs always use the unhydrated request, including only `{$secret, id}` at protected paths. A newly minted value never changes the run identity. The command runs on the Gateway and cannot pick a Node through the primitive. GitHub writes that cannot safely repeat must set `resumable: false` and reconcile the previous keyed effect.
+
+## Kit v2 G: nested admitted bindings
+
+A run can declare `bind: ['port' => 'input.configuration.ports.0', 'options.path' => 'input.release.path']`. The Gateway reads only those admitted Operation input paths and combines them with fixed `input_values`. Missing paths fail closed. Executor endpoints preserve empty strings and whitespace before binding; send the exact admitted values. The submitted input must match exactly, including array order and types. These bindings also work with the family input hook; explicit bindings remain mandatory constraints on its expected result.
+
+## Family-owned transports and worker peers
+
+Register `['bootstrap-ssh' => BootstrapTransport::class]` in `app/Domain/<Family>/operation-transports.php`. The class implements `OperationTransport::schema(Operation $operation, array $run): array|bool` and `run(Operation $operation, array $run, array $input): array`. `$run` is the exported unhydrated `RunInput`; `$input` is hydrated in memory. Constructors and schema methods perform preparation only. The named effect runs after generic binding, ownership, schema, lease, cancellation and fresh family guards. A custom Node transport uses only `Operation.node_id`; bootstrap pin/host values must be bound to admitted input. Never accept an address, Node override, handler class, shell source or fingerprint outside that binding. Built-in agent, remote_program and gateway transports use the same interface. Registering a transport does not authorize any kind or command; its per-kind allowlist is still required.
+
+Gateway config `operation_executor.worker_node_ids` comes from `ORBIT_OPERATION_EXECUTOR_WORKER_NODE_IDS`, a comma-separated list, empty by default. Configured Services remains included. Every caller must be an active peer with Gateway Node access. A lease stores the authenticated claiming Node ID as well as the worker string. Another peer cannot replay that claim or mutate its Operation, even with the same worker string. An expired lease may be reclaimed by a different peer. This extension applies only to executor routes and does not change Services-only dependency tokens. The orchestrator applies managed env changes and runs `php /home/orbit/orbit/apps/gateway/artisan gateway:release:configure`; never run config:cache inside a release. This change performs no fleet rollout.
+
+A family hook must retain all completed descriptor identities. Every successful descriptor step must match its keyed server-recorded transport result; Services cannot manufacture intermediate `state.steps` values to influence later input. Completion requirements remain mandatory even when the family projects a receipt into `state.steps` itself. The generic store preserves its invocation evidence while the family projects DB state.
+
+
+`execution_context.result` is an optional public terminal-result projection derived only from Gateway state and proven receipts. The Gateway filters it through the kind's `result_fields` and redactor before returning it. Swamp can copy it into failed or cancelled completion without dispatching a command after cancellation. Families validate it in `assertCompletion`, which runs for every terminal outcome. For deploys, retain the deployment ID, actual selected release and commit needed by smoke readers.
+
+`context` performs reads only. For one-time DB intent preparation, declare a keyed Gateway command, then derive later context from its proven receipt. When a guard lock must cover both a fresh policy check and dispatch, the family's registered `OperationTransport::run` holds the existing lock, rechecks inside it, and invokes the named transport while still holding it. `beforeRun` is a point-in-time check. The generic attempt lease serializes one Operation; it does not replace a shared Node or deployment policy lock.
+
+
+A transport that wraps the native agent also implements optional `OperationTransportInput::wireInput(Operation $operation, array $run, #[\SensitiveParameter] array $input): mixed`. Delegate this method and `schema` to `OperationAgentTransport`. The generic validator then checks the native `GitReadEnvironment` and credential wire form, while dispatch still receives the original typed objects. `OperationTransport` itself is unchanged. Plain JSON transports keep JSON validation. Never return a permissive schema to work around serialization. Empty maps require an explicit PHP object from the input builder or source resolver; a PHP list remains a list and is refused where the native schema requires an object. The wire conversion must match what `run` actually sends.
+
+
+Protected sources resolve once per invocation hydration. Step, completion, claim and heartbeat processing never re-resolves a source for redaction and never mints an unused token. Run redaction values exist only in request memory. Swamp receives already-redacted receipts and must reuse those safe values in later payloads; ordinary secret-pattern redaction still applies to steps and completion. Record deletion or a minting-service outage must not prevent failure completion. Transport schemas must be explicit restrictive schemas; `schema() === true` is refused. Schema and wire-conversion failures return only the fixed execution refusal, including invalid UTF-8 and type errors.
+
+
+The kind loader refuses unsupported kind, run and completion-contract keys. Do not declare planned guarantees: `children`, `children_succeeded` and `children_settled` remain invalid until kit B implements their checks. A declaration must fail during loading when the shared kit cannot enforce it.
+
+
+An uncertain refusal leaves the started run’s result unset and never calls the family projection hook. Only a proven original receipt may fill that slot. Typed agent tokens and scalar protected values contribute redaction strings; a non-null protected value without any redaction strings is refused. Sources must provide individual masks for opaque structured values. Use null where the schema permits an absent protected value; public empty maps belong in admitted public input. Transport schemas must also be non-empty; `[]` and `{}` do not supply a validation contract.
+
+Use `OperationKinds::supports($capability)` before registering a kind that needs an optional kit guarantee. Names are `children` (including `children_succeeded`), `children_settled`, `list_of` and `receipts`; all return false in this slice, as do unknown names. Return `operation.kind_unavailable` at admission while a required capability is absent. Do not register a weaker guarantee.

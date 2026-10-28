@@ -15,13 +15,25 @@ export const Registration = z.object({
 export const Operation = z.object({
   id: z.number().int().positive(),
   kind: z.string(),
-  node_id: z.number().int().positive(),
+  node_id: z.number().int().positive().nullable(),
   input: z.record(z.string(), z.unknown()),
   status: z.string(),
   cancel_requested: z.boolean(),
   steps: z.array(z.object({ name: z.string(), status: z.string() })).default(
     [],
   ),
+  execution_context: z.object({
+    descriptors: z.array(z.object({
+      key: z.string(),
+      step: z.string(),
+      transport: z.string(),
+      name: z.string(),
+      input: z.record(z.string(), z.unknown()),
+      resumable: z.boolean(),
+      required: z.boolean(),
+    })),
+    result: z.record(z.string(), z.unknown()).optional(),
+  }).default({ descriptors: [] }),
   step_results: z.preprocess(
     (v) => Array.isArray(v) && v.length === 0 ? {} : v,
     z.record(z.string(), z.unknown()),
