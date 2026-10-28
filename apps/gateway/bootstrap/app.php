@@ -18,7 +18,6 @@ use App\Http\Middleware\RequireNodeAccess;
 use App\Http\Middleware\ValidateRequestBodySize;
 use App\Http\Responses\ApiErrorResponse;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
-use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Infrastructure\Logging\GatewayExceptionStatus;
 use App\Jobs\MaintainMachineRecipe;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
@@ -61,14 +60,6 @@ $app = Application::configure(basePath: dirname(__DIR__))
         GatewaySchedule::command($schedule, 'orbit:auto-deploy', uniqueFor: 600, overlapMinutes: 10)->everyMinute();
         GatewaySchedule::command($schedule, 'orbit:peer-dns-reconcile', uniqueFor: 600, overlapMinutes: 10)->everyFiveMinutes();
         GatewaySchedule::command($schedule, 'orbit:desired-fleet-state', uniqueFor: 600, overlapMinutes: 10)->everyFiveMinutes();
-        GatewaySchedule::command($schedule, 'orbit:activity-finalize-interrupted', uniqueFor: 600, overlapMinutes: 10)->everyFiveMinutes();
-        GatewaySchedule::command($schedule, 'queue:prune-failed', uniqueFor: 3600, overlapMinutes: 60, arguments: ['--hours='.config()->integer('retention.failed_jobs_hours')])->daily();
-        // Operations run only on the queue, so their sweep has nothing to do without it.
-        GatewaySchedule::command($schedule, 'orbit:operations-sweep', uniqueFor: 300)->everyMinute()
-            ->when(static fn (): bool => GatewayQueueRedis::configured());
-        // Horizon's metrics for its dashboard, only while Horizon runs.
-        GatewaySchedule::command($schedule, 'horizon:snapshot', uniqueFor: 300)->everyFiveMinutes()
-            ->when(static fn (): bool => GatewayQueueRedis::configured());
         // Reconcile the deployed recipe each minute; only an identity change queues image builds.
         GatewaySchedule::job($schedule, new RefreshTaskVmBaseImages)->everyMinute()
             ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);
