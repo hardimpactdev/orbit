@@ -88,9 +88,11 @@ CI runs builds and static checks only. It keeps every test file, but runs no tes
 | PHP syntax and Composer | Validate every tracked Composer manifest and run `php -l` on added or changed PHP files, with at most four workers |
 | CLI build | Build the existing Linux and macOS CLI binaries through the reusable Orbit CLI Binary workflow |
 | Docs build | Generate the documentation index, check its committed freshness and run strict documentation lint |
-| Generated contracts | Check OpenAPI, MCP tools and `apps/web/src/api/schema.d.ts` against their generators |
+| Generated contracts | Boot the Gateway and load all Operation kinds, executors and completion contracts; check OpenAPI, MCP tools and `apps/web/src/api/schema.d.ts` against their generators |
 | Web build | Build the web app and require `dist/index.html` and `dist/version.json` |
 | Required checks | Require all five build and static-check jobs to succeed; failures, cancellations and skips fail it |
+
+Run `bin/check-operation-kinds` to repeat the registry check locally. It uses the real Gateway container, loads every family declaration and resolves its PHP executor or Swamp completion and execution handlers plus its named transports. Any loading or resolution failure exits nonzero. It runs no Operation, reads no resource records and contacts no Node. Families register a kind only after the Gateway enforces its required contracts.
 
 The required check name stays exactly `Required checks`. The branch ruleset and automatic Gateway release resolver depend on it. Its dependencies run in minutes and do not wait for agent compilation. The complete CI run must also finish successfully before the CLI release workflow publishes.
 
