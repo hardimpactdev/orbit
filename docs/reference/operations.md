@@ -387,3 +387,10 @@ Kind loading rejects unsupported kind, run and completion-contract keys. A famil
 
 
 An uncertain executor response leaves the keyed result unset for a proven recovered receipt. It never projects uncertainty as a completed effect. A successful outcome clears `failed_step` while retaining any failed best-effort step rows. The Gateway requires redaction strings for each non-null protected value, including typed credentials and scalars. Empty transport schemas are refused. `OperationKinds::supports()` reports optional child, object-list and receipt capabilities; unsupported guarantees remain unavailable at admission.
+
+
+## Discover work for executor workers
+
+`GET /api/v1/operation-executor/claimable` is a read for the active configured Services peer with Gateway access. Listed worker peers cannot use this endpoint. Its `data.kinds` contains one `{kind, claimable, oldest_at}` entry per registered Swamp kind, including zero counts and null timestamps. It exposes no Operation IDs or inputs and changes no lease or Operation. `oldest_at` is the earliest admission timestamp among the candidates, in ISO 8601 UTC.
+
+The read and claim paths use one shared candidate selector. It counts queued Operations and running Operations whose 120-second lease has expired. A live worker's own claim replay is not new claimable work. Services uses this summary to start each kind's workflow on its placed worker; that same authenticated Node claims, heartbeats, runs and completes the Operation. Discovery never claims work on behalf of another Node.
