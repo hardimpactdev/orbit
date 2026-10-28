@@ -69,8 +69,8 @@ jobs:
         run: deno check extensions/behaviors/dependency_scanner.ts extensions/behaviors/orbit_gateway.ts extensions/behaviors/orbit_driver.ts extensions/behaviors/orbit_group_run.ts extensions/behaviors/orbit_group_runs.ts
       - name: Check worker modules
         run: |
-          deno fmt --check extensions/behaviors/_lib/maintenance_worker.ts extensions/behaviors/_lib/swamp_maintenance.ts tests/maintenance_worker_test.ts tests/maintenance_resources_test.ts tests/worker_enrollment_entry_test.ts extensions/behaviors/_lib/group_runs.ts extensions/behaviors/orbit_group_run.ts extensions/behaviors/orbit_group_runs.ts tests/group_runs_test.ts extensions/behaviors/_lib/stage_launch.ts tests/stage_launch_test.ts
-          deno lint extensions/behaviors/_lib/maintenance_worker.ts extensions/behaviors/_lib/swamp_maintenance.ts tests/maintenance_worker_test.ts tests/maintenance_resources_test.ts tests/worker_enrollment_entry_test.ts extensions/behaviors/_lib/group_runs.ts extensions/behaviors/orbit_group_run.ts extensions/behaviors/orbit_group_runs.ts tests/group_runs_test.ts extensions/behaviors/_lib/stage_launch.ts tests/stage_launch_test.ts
+          deno fmt --check extensions/behaviors/_lib/review_capacity.ts tests/review_capacity_test.ts extensions/behaviors/_lib/maintenance_worker.ts extensions/behaviors/_lib/swamp_maintenance.ts tests/maintenance_worker_test.ts tests/maintenance_resources_test.ts tests/worker_enrollment_entry_test.ts extensions/behaviors/_lib/group_runs.ts extensions/behaviors/orbit_group_run.ts extensions/behaviors/orbit_group_runs.ts tests/group_runs_test.ts extensions/behaviors/_lib/stage_launch.ts tests/stage_launch_test.ts
+          deno lint extensions/behaviors/_lib/review_capacity.ts tests/review_capacity_test.ts extensions/behaviors/_lib/maintenance_worker.ts extensions/behaviors/_lib/swamp_maintenance.ts tests/maintenance_worker_test.ts tests/maintenance_resources_test.ts tests/worker_enrollment_entry_test.ts extensions/behaviors/_lib/group_runs.ts extensions/behaviors/orbit_group_run.ts extensions/behaviors/orbit_group_runs.ts tests/group_runs_test.ts extensions/behaviors/_lib/stage_launch.ts tests/stage_launch_test.ts
       - name: Check smoke contracts
         run: |
           deno fmt --check extensions/behaviors/production-smoke tests/production_smoke_test.ts tests/fixtures/production-smoke
@@ -81,7 +81,7 @@ jobs:
         run: >-
           deno test --allow-all
           tests/driver_test.ts tests/group_runs_test.ts tests/group_assistance_test.ts
-          tests/dependency_projects_test.ts tests/routine_stage_test.ts
+          tests/review_capacity_test.ts tests/dependency_projects_test.ts tests/routine_stage_test.ts
           tests/package_stage_test.ts tests/maintenance_worker_test.ts
           tests/maintenance_resources_test.ts tests/worker_enrollment_entry_test.ts tests/stage_launch_test.ts
           tests/dependency_results_test.ts tests/dependency_inventory_test.ts tests/dependency_results_fixtures_test.ts tests/service_detection_security_test.ts tests/dependency_retention_test.ts

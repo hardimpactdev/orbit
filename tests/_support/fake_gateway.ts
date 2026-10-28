@@ -25,6 +25,7 @@ export interface Scenario {
   firstReview?: "changes_requested" | "approved";
   reviewAlways?: "changes_requested";
   publishFailOnce?: boolean;
+  parkFailOnce?: boolean;
   summaryFails?: boolean;
   summaryTruncated?: boolean;
   summaryGarbage?: boolean;
@@ -41,6 +42,7 @@ interface Group {
   title: string;
   brief: string;
   status: string;
+  pr_url: string | null;
   watched_pr_state: string | null;
   orchestration: string;
   assistance_requested: boolean;
@@ -82,7 +84,7 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
   for (const [id, scenario] of Object.entries(scenarios)) {
     const gid = Number(id);
     groups.set(gid, {
-      project_id: scenario.projectId ?? 20, taskable_id: null, vm_power: null, id: gid, title: `Group ${gid}`, brief: "Routing test.", status: "backlog", watched_pr_state: null, scenario, counts: {}, head: HEAD, tree: TREE,
+      project_id: scenario.projectId ?? 20, taskable_id: null, vm_power: null, id: gid, title: `Group ${gid}`, brief: "Routing test.", status: "backlog", pr_url: null, watched_pr_state: null, scenario, counts: {}, head: HEAD, tree: TREE,
       orchestration: "external", assistance_requested: false, assistance_kind: null, assistance_reason: null, assistance_question: null,
       tasks: Array.from({ length: scenario.subtasks ?? 1 }, (_, i) => ({
         id: gid * 100 + i + 1, position: i + 1, title: `Subtask ${i + 1}`, brief: "Do it.", status: "todo", deliverables: [], assistance_requested: false, assistance_kind: null, assistance_question: null, assistance_reason: null,
@@ -153,9 +155,16 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
         }
         return { status: "succeeded", result: { receipt: { outcome: s.repairBlocked ? "blocked" : "ready_for_review", summary: "done" }, thread, state: "done", after: { head: g.head, tree: g.tree } } };
       }
+      case "park": {
+        if (bump(g, "park") === 1 && s.parkFailOnce) return { status: "failed", error_code: "task_vm.not_settled" };
+        g.status = "waiting_for_review";
+        g.vm_power = "stopped";
+        return { status: "succeeded", result: { group_id: g.id, task_vm_id: g.id, instance_id: g.taskable_id, status: "waiting_for_review", power: "stopped" } };
+      }
       case "publish": {
         const n = bump(g, "publish");
         if (s.publishFailOnce && n === 1) return { status: "failed", error_code: "tasks.push_failed" };
+        g.pr_url = `https://example.test/pull/${g.id}`;
         const ok = (g.counts.published = (g.counts.published ?? 0) + 1);
         g.watched_pr_state = s.prClosedOnce && ok === 1 ? "closed" : s.prStaysOpen ? "open" : "merged";
         return { status: "succeeded", result: { branch: `task-${g.id}`, commit: "head", pull_request_number: ok, pull_request_url: `https://example.test/pull/${ok}` } };
@@ -275,7 +284,7 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
         g.vm_power = "destroyed";
         return json(200, view());
       }
-      const op = /^\/(provision|check|analyze|turn|publish)$/.exec(rest);
+      const op = /^\/(provision|check|analyze|turn|publish|park)$/.exec(rest);
       if (req.method === "POST" && op) {
         const key = req.headers.get("idempotency-key") ?? "";
         starts.set(key, (starts.get(key) ?? 0) + 1);
@@ -314,7 +323,7 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
     comments,
     commentsOf: (gid: number) => comments.filter((c) => c.group === gid),
     /** Starts per stage name for a group, from the Idempotency-Keys. */
-    startsOf: (gid: number, stage: string) => [...starts.keys()].filter((k) => k.startsWith(`tg-${gid}.${stage}.`)).length,
+    startsOf: (gid: number, stage: string) => [...starts.keys()].filter((k) => k.startsWith(`tg-${gid}.${stage}.`) && !k.includes(".park.")).length,
     close: () => server.shutdown(),
   };
 }

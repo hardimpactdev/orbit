@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\ParkTaskGroupRequest",
+    "route": "POST /api/v1/task-groups/{group}/park",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "tasks.park_refused",
+            "message": "Review parking requires an idle external group with an open published PR and no assistance or workspace owner.",
+            "details": {}
+        }
+    }
+}

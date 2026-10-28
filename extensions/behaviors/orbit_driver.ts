@@ -152,6 +152,7 @@ interface RunResult {
 }
 
 type Ctx = {
+  repoDir?: string;
   globalArgs: GlobalArgs;
   definitionName: string;
   runModel: (o: { definition: string; method: string; arguments?: Record<string, unknown> }) => Promise<RunResult>;
@@ -165,6 +166,27 @@ async function call(ctx: Ctx, definition: string, method: string, args: Record<s
   ctx.calls = (ctx.calls ?? 0) + 1;
   const r = await ctx.runModel({ definition, method, arguments: args });
   if (!r.ok) throw new Error(`${definition}.${method}: ${r.error?.message}`);
+}
+
+/** Standalone invocation acquires the target model lock; runModel only inherits the caller lock. */
+async function runWork(ctx: Ctx, definition: string, method: string, args: Record<string, unknown>) {
+  if (!ctx.repoDir) throw new Error("method work requires its Swamp repository context");
+  const child = new Deno.Command(Deno.execPath(), {
+    args: ["model", "method", "run", definition, method, "--repo-dir", ctx.repoDir, "--stdin", "--literal-inputs", "--json"],
+    stdin: "piped", stdout: "piped", stderr: "piped",
+  }).spawn();
+  const writer = child.stdin.getWriter();
+  await writer.write(new TextEncoder().encode(JSON.stringify(args)));
+  await writer.close();
+  const output = await child.output();
+  if (!output.success) {
+    let reason = "standalone method invocation failed; inspect its Swamp output";
+    try {
+      const result = JSON.parse(new TextDecoder().decode(output.stderr));
+      reason = typeof result.error === "string" ? result.error : result.error?.message ?? reason;
+    } catch { /* Swamp may fail before it can return a JSON failure. */ }
+    throw new Error(`${definition}.${method}: ${String(reason).slice(0, 2000)}`);
+  }
 }
 
 async function latest<T>(ctx: Ctx, model: string, name: string): Promise<T | null> {
@@ -381,7 +403,11 @@ async function step(ctx: Ctx, workItem: string, killAt?: string): Promise<{ stat
         killIf("after-dispatch", killAt, ctx);
       }
       const m = work.method;
-      await call(ctx, m.modelIdOrName, m.methodName, { ...m.inputs, key });
+      if (["routine", "detect", "package"].includes(m.methodName)) {
+        await runWork(ctx, m.modelIdOrName, m.methodName, { ...m.inputs, key });
+      } else {
+        await call(ctx, m.modelIdOrName, m.methodName, { ...m.inputs, key });
+      }
       const job = (await latest<{
         state: string;
         launchedNow: boolean;
@@ -446,7 +472,7 @@ async function step(ctx: Ctx, workItem: string, killAt?: string): Promise<{ stat
 
 export const behavior = {
   type: "@nckrtl/orbit-driver",
-  version: "2026.10.23.1",
+  version: "2026.10.28.1",
   globalArguments: GlobalArgsSchema,
   resources: {
     launch: {

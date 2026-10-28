@@ -89,6 +89,8 @@ export interface StageArgs {
 export interface Deps {
   http: Http;
   projects?: DependencyProject[];
+  reserveCapacity?: () => Promise<boolean>;
+  reviewWait?: (job: Job) => Promise<Job>;
   maintenance?: (args: StageArgs, group: number, request: Record<string, unknown>) => Promise<MaintenanceResult>;
   revokeWorker?: (group: number) => Promise<void>;
   readJob: () => Promise<Job | null>;
@@ -171,7 +173,7 @@ export function inputIdentity(args: StageArgs): string {
     const e = envelope(rec);
     return e ? { recordedAt: e.recordedAt, payload: e.payload } : null;
   };
-  if (args.routine) return canonical({ schema: 2, routine: true, ...(args.dependencyProject ? { dependencyProject: dependencyWorkIdentity(args.dependencyProject) } : {}), ...(args.detection ? { detection: true } : {}), ...(args.packageTarget ? { packageTarget: args.packageTarget } : {}),
+  if (args.routine) return canonical({ schema: 2, routine: true, ...(args.dependencyProject ? { dependencyProject: dependencyWorkIdentity(args.dependencyProject, args.stage) } : {}), ...(args.detection ? { detection: true } : {}), ...(args.packageTarget ? { packageTarget: args.packageTarget } : {}),
     ...(args.stage === "handoff" ? { script: ref(args.script), change: ref(args.change) } : {}),
     ...(["repair", "publish", "finish"].includes(args.stage) ? { handoff: ref(args.handoff) } : {}),
     ...(["repair", "finish"].includes(args.stage) ? { script: ref(args.script) } : {}),
@@ -194,21 +196,22 @@ export function inputIdentity(args: StageArgs): string {
 }
 
 /** Only project fields that define the work participate in stage identity. */
-function dependencyWorkIdentity(project: DependencyProject | undefined) {
+function dependencyWorkIdentity(project: DependencyProject | undefined, stage?: StageArgs["stage"]) {
   if (!project) return undefined;
   const { projectId, repository, worker, check, defaultBranch } = project;
-  return { projectId, repository, worker, check, defaultBranch };
+  const { jsPackageManagers: _managerPins, ...mergeWorker } = worker;
+  return { projectId, repository, worker: stage === "merged" ? mergeWorker : worker, check, defaultBranch };
 }
 
 /** Upgrade the exact v1 shape, without discarding other identity differences. */
-function storedInputIdentity(value: string, routine: boolean | undefined): string {
+function storedInputIdentity(value: string, routine: boolean | undefined, stage: StageArgs["stage"]): string {
   if (!routine) return value;
   const stored = JSON.parse(value);
   if (stored.schema === undefined && stored.routine === true) {
-    return canonical({ ...stored, schema: 2, dependencyProject: dependencyWorkIdentity(readProjectConfiguration(stored.dependencyProject)) });
+    return canonical({ ...stored, schema: 2, dependencyProject: dependencyWorkIdentity(readProjectConfiguration(stored.dependencyProject), stage) });
   }
   if (stored.schema !== 2) throw new Error("unsupported maintenance input identity version");
-  return canonical(stored);
+  return canonical({ ...stored, ...(stored.dependencyProject ? { dependencyProject: dependencyWorkIdentity(stored.dependencyProject, stage) } : {}) });
 }
 
 const DEFAULT_POLL_SECONDS = 5;
@@ -746,12 +749,13 @@ async function withGroupOutcome(job: Job, http: Http): Promise<Job> {
 }
 
 /** `merged`: complete the group once its published pull request merged. No operation. */
-async function merged(job: Job, http: Http, routine = false): Promise<Job> {
+async function merged(job: Job, http: Http, routine = false, reserve?: () => Promise<boolean>): Promise<Job> {
   const g = await readGroup(http, job.group);
   if (routine && (hasAssistance(g) || g.tasks.some(hasAssistance))) return { ...job, lastError: "routine preserves operator/safety assistance during cleanup" };
   const state = g.watched_pr_state ?? null;
   if (g.status === "completed") return { ...job, state: "succeeded", lastError: null, evidence: { status: "succeeded", runId: job.key, completed: true } };
   if (state === "merged") {
+    if (reserve && !await reserve()) return { ...job, operationStatus: "waiting for maintenance VM capacity" };
     const r = await http("POST", `/api/v1/task-groups/${job.group}/complete`);
     if (r.status !== 200) return { ...job, lastError: `completing group: ${errorCode(r)}` };
     if (routine && (data(r).status !== "completed" || hasAssistance(data(r) as AssistanceFields))) return { ...job, lastError: "routine completion retains cleanup/safety failure" };
@@ -766,7 +770,7 @@ function hasAssistance(r: AssistanceFields): boolean {
 }
 
 /** Read-only detection has no handoff check: the worker records scan and snapshot evidence. */
-async function finishDetection(job: Job, args: StageArgs, http: Http): Promise<Job> {
+async function finishDetection(job: Job, args: StageArgs, http: Http, reserve?: Deps["reserveCapacity"]): Promise<Job> {
   const scan = envelope(args.script)?.payload;
   const worker = args.dependencyProject?.worker;
   const expected = Number(Boolean(worker?.composerPaths.length)) + Number(Boolean(worker?.jsPaths.length));
@@ -784,12 +788,14 @@ async function finishDetection(job: Job, args: StageArgs, http: Http): Promise<J
     !["running", "reviewing", "completed"].includes(group.tasks[0].status)) {
     throw new Error("detect finish preserves the matching child, group state and assistance");
   }
+  if (group.status === "completed") return { ...job, state: "succeeded", evidence: { status: "succeeded", runId: job.key, completed: true } };
+  if (reserve && !await reserve()) return { ...job, operationStatus: "waiting for maintenance VM capacity" };
   if (group.tasks[0].status !== "completed") await setSubtaskStatus(http, job.group, group.tasks[0], "completed");
   return await completeUnchangedGroup(job, http);
 }
 
 /** No-change cleanup uses existing board moves and completion; never invent a PR. */
-async function finishRoutine(job: Job, args: StageArgs, http: Http): Promise<Job> {
+async function finishRoutine(job: Job, args: StageArgs, http: Http, reserve?: Deps["reserveCapacity"]): Promise<Job> {
   const h = envelope(args.handoff)?.payload;
   const script = envelope(args.script)?.payload;
   if (!args.routine || h?.outcome !== "passed" || script?.changed !== false ||
@@ -797,6 +803,7 @@ async function finishRoutine(job: Job, args: StageArgs, http: Http): Promise<Job
   const g = await readGroup(http, job.group);
   if (g.status === "completed" && !hasAssistance(g) && !g.tasks.some(hasAssistance)) return { ...job, state: "succeeded", evidence: { status: "succeeded", runId: job.key, completed: true } };
   if (g.tasks.length !== 1 || g.tasks[0].id !== h.subtask || g.tasks[0].status !== "completed" || hasAssistance(g) || g.tasks.some(hasAssistance) || g.watched_pr_url) throw new Error("no-change cleanup requires its completed child and no assistance or PR");
+  if (reserve && !await reserve()) return { ...job, operationStatus: "waiting for maintenance VM capacity" };
   return await completeUnchangedGroup(job, http);
 }
 
@@ -860,6 +867,16 @@ function pullRequestSummary(output: string): { title: string; body: string } {
 
 /** One ensure call for one driver key. */
 export async function runStage(args: StageArgs, deps: Deps): Promise<Job> {
+  const job = await runOperationStage(args, deps);
+  if (deps.reviewWait && args.routine && !args.detection &&
+      ((args.stage === "publish" && job.state === "succeeded") || (args.stage === "merged" && job.state === "running"))) {
+    const waiting = await deps.reviewWait(job);
+    await deps.writeJob(waiting);
+    return waiting;
+  }
+  return job;
+}
+async function runOperationStage(args: StageArgs, deps: Deps): Promise<Job> {
   const group = groupOf(args.workItem);
   if (args.detection && (!args.routine || !["provision", "script", "finish"].includes(args.stage))) {
     throw new Error("detect permits only provision, read-only scan and finish; no check, repair, turn or publication");
@@ -879,7 +896,7 @@ export async function runStage(args: StageArgs, deps: Deps): Promise<Job> {
   const now = clock();
   const identity = inputIdentity(args);
   let prev = await deps.readJob();
-  const storedIdentity = prev?.inputIdentity == null ? null : storedInputIdentity(prev.inputIdentity, args.routine);
+  const storedIdentity = prev?.inputIdentity == null ? null : storedInputIdentity(prev.inputIdentity, args.routine, args.stage);
   const changedInput = prev && storedIdentity !== null && storedIdentity !== identity;
   const recoverBound = prev?.state === "running" && ["analyze", "implement", "review"].includes(args.stage) && prev.request !== null;
   if (changedInput && !recoverBound) {
@@ -900,13 +917,13 @@ export async function runStage(args: StageArgs, deps: Deps): Promise<Job> {
     };
 
   if (args.stage === "finish") {
-    job = args.detection ? await finishDetection(job, args, deps.http) : await finishRoutine(job, args, deps.http);
+    job = args.detection ? await finishDetection(job, args, deps.http, deps.reserveCapacity) : await finishRoutine(job, args, deps.http, deps.reserveCapacity);
     await deps.writeJob(job);
     try { await deps.revokeWorker?.(group); } catch { /* Minute cleanup retries. */ }
     return job;
   }
   if (args.stage === "merged") {
-    job = await merged(job, deps.http, args.routine);
+    job = await merged(job, deps.http, args.routine, deps.reserveCapacity);
     await deps.writeJob(job);
     try { await deps.revokeWorker?.(group); } catch { /* Minute cleanup retries. */ }
     return job;
@@ -928,6 +945,11 @@ export async function runStage(args: StageArgs, deps: Deps): Promise<Job> {
       await deps.writeJob(current);
     }
     const req = current.request!;
+    if (deps.reserveCapacity && !await deps.reserveCapacity()) {
+      const waiting = { ...current, operationStatus: "waiting for maintenance VM capacity" };
+      await deps.writeJob(waiting);
+      return waiting;
+    }
     if (args.routine) {
       // A retained request may outlive an operator change or a lost response.
       // Reconcile receipts under the same key only while the observed group is safe.

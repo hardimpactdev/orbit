@@ -45,9 +45,12 @@ workflow's steps run. Discovery therefore passes its saved lists into the typed
 A dependency on the discover step alone cannot defer expansion. Discovery does
 not drive their stages and does not select only four active groups. Shared
 admission reserves at most four maintenance VMs across routine, detect
-and package work, including provisioning and parked VMs. It runs under the
-existing orbit-gateway behavior lock before group creation; each group still
-advances independently after admission. See [project batches](website-packages.md).
+and package work. Confirmed idle review parking releases the execution slot and
+retains project ownership; a parked row without stopped proof still holds a slot. It runs under the
+orbit-gateway behavior lock before group creation and every maintenance stage.
+Maintenance method work uses the standalone Swamp method entry so it acquires
+the target lock. Nested runModel calls inherit only the driver lock. Other
+groups advance independently between stage calls. See [project batches](website-packages.md).
 
 Each child uses a driver definition named by work item, with its factory saved
 in the generation intent. It performs bounded guarded advances and returns when

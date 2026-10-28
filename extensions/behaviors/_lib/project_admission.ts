@@ -1,3 +1,4 @@
+import { ParkingSchema, reviewReleased } from "./review_capacity.ts";
 import { z } from "npm:zod@4";
 import { type Http } from "./gateway_stage.ts";
 import {
@@ -11,6 +12,8 @@ export const AdmissionSchema = z.strictObject({
   workItem: z.string().nullable(),
   released: z.boolean(),
   admittedAt: z.string(),
+  parkingEpoch: z.number().int().nonnegative().optional(),
+  parking: ParkingSchema.optional(),
 });
 export type Admission = z.infer<typeof AdmissionSchema>;
 export type AdmissionIntent = Pick<
@@ -104,6 +107,16 @@ export async function reconcileAdmissions(deps: {
         continue;
       }
       if (released(group)) await deps.save({ ...admission, released: true });
+      else if (
+        admission.parking?.confirmed && !reviewReleased(admission, group)
+      ) {
+        admission = {
+          ...admission,
+          parking: undefined,
+          parkingEpoch: (admission.parkingEpoch ?? 0) + 1,
+        };
+        await deps.save(admission);
+      }
       await deps.assistance(admission, null);
     } catch (error) {
       await deps.assistance(
@@ -124,31 +137,52 @@ export async function reserveMaintenance(
     now?: () => string;
   },
 ): Promise<{ admitted: boolean; reason?: string; admission?: Admission }> {
-  const prior = deps.admissions.find((a) => a.key === intent.key);
+  let prior = deps.admissions.find((a) => a.key === intent.key);
+  const admissions = [...deps.admissions];
   const response = await deps.http("GET", "/api/v1/task-groups");
   if (response.status !== 200 || !Array.isArray(response.body?.data)) {
     throw new Error("Cannot read Orbit maintenance capacity evidence");
   }
   const groups = response.body.data as Record<string, unknown>[];
+  for (let i = 0; i < admissions.length; i++) {
+    const a = admissions[i];
+    const g = groups.find((g) => `tg-${g.id}` === a.workItem);
+    if (g && a.parking?.confirmed && !reviewReleased(a, g)) {
+      const held = {
+        ...a,
+        parking: undefined,
+        parkingEpoch: (a.parkingEpoch ?? 0) + 1,
+      };
+      admissions[i] = held;
+      if (prior?.key === a.key) prior = held;
+      await deps.save(held);
+    }
+  }
   const held = new Map<string, AdmissionIntent>();
+  const sleeping = new Set<string>();
   for (
     const a of [
       ...deps.existing,
-      ...deps.admissions.filter((a) => !a.released),
+      ...admissions.filter((a) => !a.released),
     ]
   ) {
     const g = a.workItem
       ? groups.find((g) => `tg-${g.id}` === a.workItem)
       : undefined;
     if (g && released(g)) {
-      const saved = deps.admissions.find((v) => v.key === a.key);
+      const saved = admissions.find((v) => v.key === a.key);
       if (saved && !saved.released) {
-        saved.released = true;
-        await deps.save(saved);
+        const completed = { ...saved, released: true };
+        if (prior?.key === saved.key) prior = completed;
+        await deps.save(completed);
       }
       continue;
     }
     held.set(a.workItem ?? a.key, a);
+    const saved = admissions.find((v) => v.key === a.key);
+    if (g && saved && reviewReleased(saved, g)) {
+      sleeping.add(a.workItem ?? a.key);
+    }
   }
   if (prior?.released) {
     return {
@@ -157,14 +191,23 @@ export async function reserveMaintenance(
       admission: prior,
     };
   }
-  if (prior && !prior.released) return { admitted: true, admission: prior };
+  const used = held.size - sleeping.size;
+  if (prior?.parking?.confirmed && !sleeping.has(prior.workItem ?? prior.key)) {
+    return {
+      admitted: false,
+      reason:
+        "Review parking evidence differs from current group; slot retained",
+    };
+  }
+  if (prior && !prior.released && !sleeping.has(prior.workItem ?? prior.key)) {
+    return { admitted: true, admission: prior };
+  }
   // A pre-existing run already holds a place, even if deployed before admission receipts.
   const same = held.get(intent.workItem ?? intent.key);
   if (!same) {
     if (
       [...held.values()].some((a) =>
-        a.projectId === intent.projectId && a.key !== intent.key &&
-        (intent.mode === "package" || a.mode === "package")
+        a.projectId === intent.projectId && a.key !== intent.key
       )
     ) {
       return {
@@ -172,18 +215,24 @@ export async function reserveMaintenance(
         reason: "Project already has unfinished maintenance work",
       };
     }
-    if (held.size >= 4) {
+    if (used >= 4) {
       return {
         admitted: false,
-        reason:
-          `Maintenance VM limit reached (${held.size}/4 held or reserved)`,
+        reason: `Maintenance VM limit reached (${used}/4 held or reserved)`,
       };
     }
   }
+  if (sleeping.has(intent.workItem ?? intent.key) && used >= 4) {
+    return {
+      admitted: false,
+      reason: "Maintenance VM limit reached (4/4 held or reserved)",
+    };
+  }
   const admission: Admission = {
     ...intent,
+    ...(prior ? { parkingEpoch: (prior.parkingEpoch ?? 0) + 1 } : {}),
     released: false,
-    admittedAt: deps.now?.() ?? new Date().toISOString(),
+    admittedAt: prior?.admittedAt ?? deps.now?.() ?? new Date().toISOString(),
   };
   await deps.save(admission);
   return { admitted: true, admission };

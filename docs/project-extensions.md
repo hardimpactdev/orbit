@@ -222,3 +222,10 @@ swamp data query 'modelName == "orbit-gateway" && name.startsWith("scheduler-ski
 The latest `project-work` resource also lists open issues alongside the runnable
 work items. Fix a stuck row's cause and let reconciliation resolve its issue.
 Never remove a saved create intent just to force another POST.
+
+
+### Review parking capacity
+
+At most one unfinished group belongs to a Project across routine, package and VM detection. [Project batches](website-packages.md) defines execution-slot release, retry and cleanup rules.
+
+A merge-wait stage does not run package tools. Adding or changing JS manager pins does not change its saved input identity; command stages still bind those pins. Other Project settings and batch targets keep their existing identity checks.

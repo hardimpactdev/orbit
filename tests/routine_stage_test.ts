@@ -799,3 +799,120 @@ Deno.test("a pre-deploy publish cannot adopt an unbound old repair receipt or re
     assertEquals(f.get()!.request, stored.request);
   } finally { await f.fake.close(); }
 });
+
+Deno.test("published work waits for review parking without publishing again, including a saved publish result", async () => {
+  const f = await fixture({ prStaysOpen: true });
+  try {
+    let ready = false;
+    let waits = 0;
+    const args = f.args("publish", { handoff });
+    const deps = {
+      ...f.deps,
+      reviewWait: async (job: Job): Promise<Job> => {
+        waits++;
+        return ready ? job : { ...job, state: "running", evidence: null };
+      },
+    };
+    let job: Job;
+    do {
+      job = await runStage(args, deps);
+      f.tick();
+    } while (waits === 0);
+    assertEquals(job.state, "running");
+    ready = true;
+    job = await runStage(args, deps);
+    assertEquals(job.state, "succeeded");
+    // A pre-deploy succeeded receipt also passes through the new review gate.
+    await runStage(args, deps);
+    assertEquals(waits, 3);
+    assertEquals(
+      f.calls.filter((c) => c.method === "POST" && c.path.endsWith("/publish"))
+        .length,
+      1,
+    );
+    f.set(null);
+    await runStage(f.args("merged"), deps);
+    assertEquals(waits, 4);
+  } finally {
+    await f.fake.close();
+  }
+});
+
+Deno.test("capacity denial sends no worker, operation or completion request; cleanup retries after reservation", async () => {
+  for (const stage of ["script", "finish", "merged"] as const) {
+    const f = await fixture();
+    try {
+      const g = f.fake.groups.get(7)!;
+      g.status = "waiting_for_review";
+      g.tasks[0].status = stage === "script" ? "todo" : "completed";
+      g.pr_url = "https://github.com/acme/park/pull/1";
+      g.watched_pr_state = "merged";
+      let reserved = false;
+      let workerCalls = 0;
+      const deps = {
+        ...f.deps,
+        reserveCapacity: () => Promise.resolve(reserved),
+        maintenance: async (
+          ...input: Parameters<typeof f.deps.maintenance>
+        ) => {
+          workerCalls++;
+          return await f.deps.maintenance(...input);
+        },
+      };
+      const args = f.args(stage, { script, handoff });
+      const waiting = await runStage(args, deps);
+      assertEquals(waiting.state, "running");
+      assertEquals(
+        waiting.operationStatus,
+        "waiting for maintenance VM capacity",
+      );
+      assertEquals(f.calls.filter((c) => c.method === "POST"), []);
+      assertEquals(workerCalls, 0);
+      reserved = true;
+      const resumed = await runStage(args, deps);
+      if (stage === "script") assertEquals(workerCalls, 1);
+      else assertEquals(resumed.state, "succeeded");
+    } finally {
+      await f.fake.close();
+    }
+  }
+});
+
+Deno.test("a crash after no-change completion replays without reserving a slot or completing twice", async () => {
+  const f = await fixture();
+  try {
+    f.fake.groups.get(7)!.tasks[0].status = "completed";
+    let crash = true, reservations = 0;
+    const deps = {...f.deps, reserveCapacity: () => {reservations++; return Promise.resolve(true);}, writeJob: (job: Job) => {
+      if (crash && job.state === "succeeded") {crash=false; throw new Error("worker lost after complete");}
+      return f.deps.writeJob(job);
+    }};
+    const args = f.args("finish", {script, handoff});
+    await assertRejects(() => runStage(args, deps), Error, "worker lost after complete");
+    assertEquals(f.fake.groups.get(7)!.status, "completed");
+    const result = await runStage(args, {...deps, reserveCapacity: () => {throw new Error("completed replay must not reserve");}});
+    assertEquals(result.state, "succeeded");
+    assertEquals(reservations, 1);
+    assertEquals(f.calls.filter(c => c.method === "POST" && c.path.endsWith("/complete")).length, 1);
+  } finally {await f.fake.close();}
+});
+Deno.test("merge wait resumes its pre-manager-pin identity but keeps changed batch targets blocked", async () => {
+  const f = await fixture({prStaysOpen: true});
+  try {
+    const g = f.fake.groups.get(7)!;
+    Object.assign(g, {pr_url: "https://github.com/acme/park/pull/1", watched_pr_state: "open"});
+    g.tasks[0].status = "completed";
+    const args = f.args("merged", {packageTarget: {workItem: "tg-7", targets: [{manager: "js", path: ".", package: "one", version: "2.0.0", purpose: "major", advisories: [], advisoryUrls: []}]}});
+    await runStage(args, f.deps);
+    const prior = f.get()!;
+    const stored = JSON.parse(prior.inputIdentity!);
+    stored.dependencyProject.worker.jsPackageManagers = {".": "bun"};
+    f.set({...prior, inputIdentity: JSON.stringify(stored)});
+    const deps = {...f.deps, projects: [{...WEBSITE_PROJECT, worker: {...WEBSITE_PROJECT.worker, jsPackageManagers: {".": "npm" as const}}}]};
+    assertEquals((await runStage(args, deps)).state, "running");
+    const next = structuredClone(args); next.packageTarget!.targets[0].version = "3.0.0";
+    await assertRejects(() => runStage(next, deps), Error, "input conflict");
+    g.watched_pr_state = "merged";
+    assertEquals((await runStage(args, deps)).state, "succeeded");
+  } finally {await f.fake.close();}
+});

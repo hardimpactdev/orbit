@@ -26,6 +26,7 @@ async function enrollmentFixture() {
     async (request) => {
       const path = new URL(request.url).pathname;
       requests.push(`${request.method} ${path}`);
+      if (path === "/api/v1/task-groups") return Response.json({ data: [] });
       if (path === "/api/v1/task-groups/456") {
         return Response.json({
           data: { id: 456, orchestration: "external", ...group },
@@ -74,17 +75,29 @@ async function enrollmentFixture() {
     definition: { name: "orbit-gateway" },
     logger: { info() {} },
     queryData: (predicate: string) => {
-      const match = /^modelName == ("[^"]+") && name == ("[^"]+")$/.exec(
-        predicate,
-      )!;
-      const value = data.get(`${JSON.parse(match[1])}:${JSON.parse(match[2])}`);
-      return Promise.resolve(value ? [value] : []);
+      const model = JSON.parse(predicate.match(/modelName == ("[^"]*")/)![1]);
+      const name = predicate.match(/name == ("[^"]*")/);
+      const prefix = predicate.match(/name.startsWith\(("[^"]*")\)/);
+      return Promise.resolve(
+        [...data].filter(([key]) =>
+          key.startsWith(`${model}:`) &&
+          (name
+            ? key === `${model}:${JSON.parse(name[1])}`
+            : prefix
+            ? key.slice(model.length + 1).startsWith(JSON.parse(prefix[1]))
+            : true)
+        ).map(([, value]) => value),
+      );
     },
     writeResource: (
-      _spec: string,
+      spec: string,
       name: string,
       value: Record<string, unknown>,
     ) => {
+      if (spec === "admission") {
+        data.set(`orbit-gateway:${name}`, value);
+        return Promise.resolve({ name });
+      }
       behavior.resources.worker.schema.parse(value);
       records.push(value);
       data.set(`orbit-gateway:${name}`, value);
@@ -262,6 +275,31 @@ Deno.test("Horizon Project settings must match its configured repository before 
       "https://github.com/nckrtl/horizon-new-dawn-website.git";
     await assertRejects(f.run, Error, "settings differ from config");
     f.noEnrollment();
+  } finally {
+    await f.close();
+  }
+});
+
+Deno.test("standalone maintenance enrollment cannot wake a fifth VM before capacity reservation", async () => {
+  const f = await enrollmentFixture();
+  try {
+    f.configuredProject();
+    for (let id = 1; id <= 4; id++) {
+      f.data.set(`orbit-gateway:admission-other-${id}`, {
+        key: `other-${id}`,
+        projectId: 100 + id,
+        mode: "routine",
+        workItem: `tg-${id}`,
+        released: false,
+        admittedAt: "2026-10-28T00:00:00Z",
+      });
+    }
+    await assertRejects(f.run, Error, "Maintenance VM limit reached");
+    f.noEnrollment();
+    f.data.delete("orbit-gateway:admission-other-1");
+    await f.run();
+    assertEquals(f.calls.minted, 2);
+    assertEquals(f.data.has("orbit-gateway:admission-manual-tg-456"), true);
   } finally {
     await f.close();
   }

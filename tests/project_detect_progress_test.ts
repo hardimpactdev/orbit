@@ -18,6 +18,7 @@ import {
 } from "../extensions/behaviors/_lib/swamp_maintenance.ts";
 import { startFakeGateway } from "./_support/fake_gateway.ts";
 import { WEBSITE_PROJECT } from "./_support/dependency_projects.ts";
+import { standaloneMethodFixture } from "./_support/standalone_method_fixture.ts";
 
 // The factory status/evidence boundary is a fixture. The deployed tick settings,
 // driver, Gateway stage planner, worker startup, placement and result reader are real.
@@ -216,6 +217,7 @@ Deno.test("scheduled detect takes a ready provision through worker startup and r
     return job;
   };
   const context = {
+    repoDir: "/fixture",
     definition: { name: "orbit-driver-detect" },
     globalArgs: driver.globalArguments.parse({
       factory: "dependency-detect",
@@ -239,7 +241,7 @@ Deno.test("scheduled detect takes a ready provision through worker startup and r
       records.set(`orbit-driver-detect/${name}`, value);
       return Promise.resolve({ name });
     },
-    runModel: async (
+    runModel: (
       call: {
         definition: string;
         method: string;
@@ -248,7 +250,9 @@ Deno.test("scheduled detect takes a ready provision through worker startup and r
     ) => {
       const a = call.arguments!;
       if (call.definition === "orbit-gateway") {
-        await stageCall(a as unknown as Parameters<typeof runStage>[0]);
+        throw new Error(
+          "maintenance work must use the standalone method boundary",
+        );
       } else if (call.method === "status") {
         const evidence = records.get(
           `dependency-detect/evidence-tg-7-${stage}-run`,
@@ -292,9 +296,12 @@ Deno.test("scheduled detect takes a ready provision through worker startup and r
         });
       } else if (call.method === "advance") stage = "script";
       else throw new Error(`Unexpected factory method ${call.method}`);
-      return { ok: true };
+      return Promise.resolve({ ok: true });
     },
   };
+  const method = standaloneMethodFixture((args) =>
+    stageCall(args as unknown as Parameters<typeof runStage>[0])
+  );
   try {
     // Reproduce a completed provision whose result the minute driver has not read yet.
     await stageCall({
@@ -335,6 +342,7 @@ Deno.test("scheduled detect takes a ready provision through worker startup and r
     assertEquals(fake.startsOf(7, "publish"), 0);
     assertEquals(fake.startsOf(7, "repair"), 0);
   } finally {
+    method.restore();
     await fake.close();
   }
 });

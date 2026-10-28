@@ -1,7 +1,12 @@
 // Real official factory and driver; the remote-workflow boundary returns native fixtures.
 import { behavior as groupRun } from "../extensions/behaviors/orbit_group_run.ts";
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
+import { WEBSITE_PROJECT } from "./_support/dependency_projects.ts";
 import { startFakeGateway } from "./_support/fake_gateway.ts";
+import {
+  independentProjects,
+  reservationLockFixture,
+} from "./_support/review_parking_fixture.ts";
 
 const REPO = new URL("..", import.meta.url).pathname;
 Deno.test({
@@ -11,7 +16,7 @@ Deno.test({
   sanitizeOps: false,
   fn: async () => {
     const fake = startFakeGateway({
-      71: {},
+      71: { prStaysOpen: true, parkFailOnce: true },
       72: { scriptNoChange: true },
       73: { scriptFailsOnce: true },
       74: { scriptFails: true },
@@ -24,12 +29,18 @@ Deno.test({
       81: { scriptNoChange: true, scriptFailsOnce: true },
       82: {},
     });
+    const projects = independentProjects(fake, WEBSITE_PROJECT);
     const counts = new Map<number, number>();
+    const reservationLock = reservationLockFixture();
     const remote = Deno.serve(
       { hostname: "127.0.0.1", port: 0, onListen() {} },
       async (req) => {
         const path = new URL(req.url).pathname;
         const json = (data: unknown) => Response.json({ data });
+        if (path === "/fixture/reservation-lock") {
+          await reservationLock.observe(dir);
+          return json({});
+        }
         if (path === "/api/v1/instances/1") {
           return json({
             id: 1,
@@ -177,6 +188,7 @@ Deno.test({
           ],
         }).output()).success,
       );
+      await reservationLock.install(dir);
       const def = `${dir}/models/@nckrtl/orbit-gateway/orbit-gateway.yaml`;
       await Deno.writeTextFile(
         def,
@@ -185,7 +197,11 @@ Deno.test({
             /gatewayUrl: .*/,
             `gatewayUrl: http://127.0.0.1:${remote.addr.port}`,
           )
-          .replace(/caFile: .*/, "caFile: /dev/null"),
+          .replace(/caFile: .*/, "caFile: /dev/null")
+          .replace(
+            "dependencyProjects: []",
+            `dependencyProjects: ${JSON.stringify(projects)}`,
+          ),
       );
       const module = `${dir}/extensions/behaviors/_lib/swamp_maintenance.ts`;
       const source = await Deno.readTextFile(module);
@@ -260,7 +276,7 @@ export const behavior = {
         JSON.stringify({ workItems: items, maxSteps: 3 }),
       );
       const expected = [
-        "completed",
+        "merged",
         "completed",
         "completed",
         "assistance",
@@ -270,6 +286,7 @@ export const behavior = {
         "assistance",
       ];
       let stages: string[] = [];
+      let reviewObserved = false, failedParkObserved = false;
       for (let n = 0; n < 30; n++) {
         await swamp(
           "model",
@@ -280,6 +297,45 @@ export const behavior = {
           "--input-file",
           `${dir}/tick.json`,
         );
+        if (
+          !failedParkObserved && (fake.groups.get(71)!.counts.park ?? 0) >= 1
+        ) {
+          const job = JSON.parse(
+            await swamp(
+              "data",
+              "query",
+              'modelName == "orbit-gateway" && name == "job-tg-71.publish.c1"',
+              "--select",
+              "attributes",
+              "--json",
+            ),
+          ).results[0];
+          assert(
+            job.state !== "failed",
+            "a failed park cannot fail the published stage",
+          );
+          failedParkObserved = true;
+        }
+        if (!reviewObserved && fake.groups.get(71)!.vm_power === "stopped") {
+          assertEquals(fake.groups.get(71)!.status, "waiting_for_review");
+          const saved = JSON.parse(
+            await swamp(
+              "data",
+              "query",
+              'modelName == "orbit-gateway" && name == "admission-manual-tg-71"',
+              "--select",
+              "attributes",
+              "--json",
+            ),
+          );
+          if (!saved.results[0].parking.confirmed) {
+            assertEquals(saved.results[0].released, false);
+            continue;
+          }
+          assertEquals(saved.results[0].parking.confirmed.power, "stopped");
+          assertEquals(saved.results[0].released, false);
+          reviewObserved = true;
+        }
         const query = JSON.parse(
           await swamp(
             "data",
@@ -300,9 +356,38 @@ export const behavior = {
         stages = query.results[0].items.map((item: { stage: string }) =>
           item.stage
         );
+        // Let the other projects occupy their slots before simulating this merge.
+        if (
+          reviewObserved && fake.groups.get(71)!.watched_pr_state === "open" &&
+          JSON.stringify(stages.slice(1)) === JSON.stringify(expected.slice(1))
+        ) {
+          fake.groups.get(71)!.watched_pr_state = "merged";
+          continue;
+        }
         if (JSON.stringify(stages) === JSON.stringify(expected)) break;
       }
       assertEquals(stages, expected);
+      const mergeWait = JSON.parse(
+        await swamp(
+          "data",
+          "query",
+          'modelName == "orbit-gateway" && name == "job-tg-71.merged.c1"',
+          "--select",
+          "attributes",
+          "--json",
+        ),
+      ).results[0];
+      assertEquals(
+        mergeWait.operationStatus,
+        "waiting for maintenance VM capacity",
+      );
+      assert(reservationLock.observed());
+      assert(failedParkObserved);
+      assertEquals(fake.groups.get(71)!.counts.park, 2);
+      assert(
+        reviewObserved,
+        "the official factory confirmed review parking before merge cleanup",
+      );
       for (const id of [76, 77]) {
         const query = JSON.parse(
           await swamp(
@@ -394,6 +479,22 @@ export const behavior = {
           });
         }
       }
+      // The inventory-failure case fills the fourth slot; merge cleanup resumes
+      // only after the parked fixture groups have released their reservations.
+      await Deno.writeTextFile(
+        `${dir}/tick.json`,
+        JSON.stringify({ workItems: ["tg-71"], maxSteps: 3 }),
+      );
+      await swamp(
+        "model",
+        "method",
+        "run",
+        "orbit-driver-routine",
+        "tick",
+        "--input-file",
+        `${dir}/tick.json`,
+      );
+      assertEquals(fake.groups.get(71)!.status, "completed");
       // The detection factory uses the same real config/provider and stage client.
       // It has no repair or publication path, even for command failure or changed trees.
       const detections = [78, 79, 80, 81].map((id) => `tg-${id}`);

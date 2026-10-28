@@ -1,4 +1,5 @@
 import { pruneDependencyResults, type RetentionContext } from "./_lib/dependency_retention.ts";
+import { parkForReview } from "./_lib/review_capacity.ts";
 import { AdmissionSchema, reconcileAdmissions, reserveMaintenance, orderProjects, type Admission, type AdmissionIntent } from "./_lib/project_admission.ts";
 import { project as horizonProject } from "./projects/horizon-new-dawn/config.ts";
 import { cleanedCancelledGroup, ensureProjectGroup, batchReceipt, FindingsSchema, isolateScheduleRow, scheduleReceipt, ScheduleReceiptSchema, SchedulerIssueSchema, SchedulerSkipSchema, type ScheduleReceipt } from "./_lib/project_schedule.ts";
@@ -202,6 +203,10 @@ export const behavior = {
           const config = configs.find((entry) => entry.projectId === group.project_id);
           if (!config) throw new Error(`Worker Project ${group.project_id} is not configured`);
           await assertProjectSettings(config, http);
+          const workItem = `tg-${args.group}`;
+          const row = (await scheduleRows(context)).find(r => r.workItem === workItem);
+          const claim = await reserve(context, { key: row?.key ?? `manual-${workItem}`, projectId: config.projectId, mode: row?.mode ?? "routine", workItem });
+          if (!claim.admitted) throw new Error(claim.reason);
         }
         const existing = (await context.queryData(`modelName == ${JSON.stringify(context.definition.name)} && name == ${JSON.stringify(`worker-${args.group}`)}`, "attributes"))[0] as { ready?: boolean } | undefined;
         if (existing?.ready) throw new Error("The group worker is already enrolled; use its owning workflow to reconcile it");
@@ -400,7 +405,23 @@ async function executeStage(args: StageArgs, context: StageContext) {
     const claim=await reserve(context,{key:row?.key??`manual-${args.workItem}`,projectId:config.projectId,mode:args.detection?"detect":args.packageTarget?"package":"routine",workItem:args.workItem});
     if(!claim.admitted)throw new Error(claim.reason);
   }
+  const intent = async () => {
+    const config = (await groupConfigurations(args.workItem, context))[0];
+    const row = (await scheduleRows(context)).find(r => r.workItem === args.workItem);
+    return { key: row?.key ?? `manual-${args.workItem}`, projectId: config.projectId, mode: args.detection ? "detect" as const : args.packageTarget ? "package" as const : "routine" as const, workItem: args.workItem };
+  };
   const job = await runStage(args, {
+    ...(args.routine ? {
+      reserveCapacity: async () => (await reserve(context, await intent())).admitted,
+      reviewWait: async (job: Job) => {
+        const input = await intent();
+        const rows = await context.queryData(`modelName == ${JSON.stringify(context.definition.name)} && name == ${JSON.stringify(`admission-${input.key}`)}`, "attributes");
+        if (!rows[0]) throw new Error("Review parking requires an admission receipt");
+        const result = await parkForReview(job.key, AdmissionSchema.parse(rows[0]), { http, save: async a => { await context.writeResource("admission", `admission-${a.key}`, a); } });
+        if (args.stage === "merged") return { ...job, lastError: job.lastError ?? result.reason ?? null };
+        return result.ready ? job : { ...job, state: "running" as const, evidence: null, lastError: result.reason ?? null };
+      },
+    } : {}),
     maintenance: (input, group, request) => runMaintenance(input, group, input.detection && input.stage === "script" ? { ...request, mode: "detect" } : request, context, http),
     revokeWorker: (group) => revokeEndedWorker(group, workerControl(context, http)),
     http,
