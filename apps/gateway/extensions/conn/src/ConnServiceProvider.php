@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Orbit\Extensions\Conn;
 
 use App\Domain\Activity\ActivityInputRedaction;
-use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Operations\OperationSecretOutputStore;
+use App\Domain\Operations\OperationSecretSource;
 use App\Providers\ExtensionServiceProvider;
 use Orbit\Extensions\Conn\Domain\ConnOperationSecrets;
 use Orbit\Extensions\Conn\Domain\ConnPairingCredentialStore;

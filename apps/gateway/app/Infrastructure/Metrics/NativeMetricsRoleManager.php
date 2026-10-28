@@ -96,8 +96,10 @@ final readonly class NativeMetricsRoleManager implements MetricsRoleManager
         }
 
         IntegrationAvailability::assertKind('metrics.exporter_enable');
+
         return DB::transaction(function () use ($nodeId, $node): Operation {
             $this->preferences->put($nodeId, ExporterPreference::Enabled);
+
             return $this->reconcile('exporter_enable', $node);
         });
     }
@@ -110,8 +112,10 @@ final readonly class NativeMetricsRoleManager implements MetricsRoleManager
             throw new RoleAssignmentException('The metrics node exporter cannot be disabled.');
         }
         IntegrationAvailability::assertKind('metrics.exporter_disable');
+
         return DB::transaction(function () use ($nodeId, $node): Operation {
             $this->preferences->put($nodeId, ExporterPreference::Disabled);
+
             return $this->reconcile('exporter_disable', $node);
         });
     }

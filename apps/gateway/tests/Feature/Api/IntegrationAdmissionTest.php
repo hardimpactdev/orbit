@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Metrics\ExporterPreference;
 use App\Domain\Metrics\ExporterPreferenceRepository;
+use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
@@ -42,9 +43,17 @@ it('retains Reverb reserved names and slug validation before admission', functio
     expect(Operation::query()->count())->toBe(0);
 })->with(['gateway', 'Invalid name', 'with_underscore']);
 
-it('records exporter preference without requiring an existing Metrics role', function (): void {
+it('records exporter preference only when its executor is available', function (): void {
     $node = Node::query()->create(['name' => 'dev', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '192.0.2.5',
         'wireguard_ip' => '10.44.0.5', 'user' => 'orbit', 'ssh_host_fingerprint' => 'fixture-pin']);
+    if (! OperationKinds::supports('list_of')) {
+        $before = app(ExporterPreferenceRepository::class)->get($node->id);
+        $this->putJson('/api/v1/metrics/exporters/'.$node->id)->assertConflict()->assertJsonPath('error.code', 'operation.kind_unavailable');
+        expect(app(ExporterPreferenceRepository::class)->get($node->id))->toBe($before)
+            ->and(Operation::query()->count())->toBe(0);
+
+        return;
+    }
     $this->withHeader('Idempotency-Key', 'exporter-enable')->putJson('/api/v1/metrics/exporters/'.$node->id)->assertAccepted()->assertJsonPath('data.kind', 'metrics.exporter_enable');
     expect(app(ExporterPreferenceRepository::class)->get($node->id))->toBe(ExporterPreference::Enabled)
         ->and(Operation::query()->sole()->input['preference_only'])->toBeTrue();
@@ -56,6 +65,12 @@ it('records Conn pairing admission with only an owner-bound session reference', 
     app(ExtensionStore::class)->set('conn', true);
     $environment = ConnEnvironment::query()->create(['environment_id' => 'env-dev', 'label' => 'dev', 'node_id' => $this->caller->id,
         'url' => 'http://10.44.0.30:3773', 'admin_session' => 'admin-session-sentinel', 'admin_session_expires_at' => now()->addDay(), 'registered_at' => now()]);
+    if (! OperationKinds::supports('secret_outputs')) {
+        $this->postJson('/api/v1/conn/environments/env-dev/pairings')->assertConflict()->assertJsonPath('error.code', 'operation.kind_unavailable');
+        expect(Operation::query()->count())->toBe(0)->and(ConnPairing::query()->count())->toBe(0);
+
+        return;
+    }
     $response = $this->withHeader('Idempotency-Key', 'conn-issue')->postJson('/api/v1/conn/environments/env-dev/pairings')->assertAccepted();
     $operation = Operation::query()->sole();
     $pairing = ConnPairing::query()->sole();

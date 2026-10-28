@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Metrics\StartMetricsOperationAction;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Metrics\MetricsServiceExecution;
+use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\Node;
@@ -82,6 +83,13 @@ it('binds service exporter configuration to post-convergence pool fingerprints',
 
 it('records every retiring Node cleanup without running or waiting for it', function (): void {
     $metrics = Node::query()->create(['name' => 'metrics', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.20', 'public_ssh_host' => '192.0.2.20']);
+    if (! OperationKinds::supports('list_of')) {
+        expect(fn () => app(StartMetricsOperationAction::class)->retire($this->node, $metrics))
+            ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.kind_unavailable'));
+        expect(Operation::query()->count())->toBe(0);
+
+        return;
+    }
     $operation = app(StartMetricsOperationAction::class)->retire($this->node, $metrics);
     expect($operation->kind)->toBe('metrics.retire')->and($operation->node_id)->toBe($this->node->id);
     $children = array_values(array_filter($operation->input['flow'], static fn (array $entry): bool => $entry['type'] === 'child'));

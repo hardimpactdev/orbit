@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseUser;
@@ -27,6 +28,12 @@ beforeEach(function (): void {
 });
 
 it('admits setup with an encrypted immutable snapshot and no remote or queued PHP work', function (): void {
+    if (! OperationKinds::supports('list_of')) {
+        $this->putJson('/api/v1/vault', $this->payload)->assertConflict()->assertJsonPath('error.code', 'operation.kind_unavailable');
+        expect(Operation::query()->count())->toBe(0)->and(app(VaultSettings::class)->configuration())->toBeNull();
+
+        return;
+    }
     $response = $this->withHeader('Idempotency-Key', 'vault-setup')->putJson('/api/v1/vault', $this->payload)->assertAccepted();
     $operation = Operation::query()->sole();
     expect($operation->kind)->toBe('vault.setup')->and($operation->status)->toBe(OperationStatus::Queued)
@@ -46,6 +53,12 @@ it('admits setup with an encrypted immutable snapshot and no remote or queued PH
 });
 
 it('refuses a reference to another record or source', function (): void {
+    if (! OperationKinds::supports('list_of')) {
+        $this->putJson('/api/v1/vault', $this->payload)->assertConflict()->assertJsonPath('error.code', 'operation.kind_unavailable');
+        expect(Operation::query()->count())->toBe(0)->and(app(VaultSettings::class)->configuration())->toBeNull();
+
+        return;
+    }
     $this->putJson('/api/v1/vault', $this->payload)->assertAccepted();
     $operation = Operation::query()->sole();
     expect(fn () => app(VaultOperationSecrets::class)->snapshot($operation, ['$secret' => 'vault.credentials', 'id' => $operation->target_id + 1]))

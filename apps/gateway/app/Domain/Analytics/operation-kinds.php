@@ -4,7 +4,13 @@ declare(strict_types=1);
 
 use App\Domain\Analytics\AnalyticsOperationCompletion;
 use App\Domain\Analytics\InstanceAnalyticsOperationCompletion;
+use App\Domain\Integrations\IntegrationChildAdmission;
 use App\Domain\Integrations\IntegrationExecution;
+use App\Domain\Integrations\IntegrationRoleAdmission;
+use App\Domain\Integrations\IntegrationRoleCompletion;
+use App\Domain\Integrations\IntegrationRoleExecution;
+use App\Domain\Operations\OperationKinds;
+use App\Support\ValidatedData;
 
 return (static function (): array {
     $kinds = [];
@@ -36,24 +42,27 @@ return (static function (): array {
 
     foreach (['role_converge' => 'enable', 'role_remove' => 'disable'] as $roleKind => $base) {
         $definition = $kinds['analytics.'.$base];
-        $definition['admission'] = \App\Domain\Integrations\IntegrationRoleAdmission::class;
-        $definition['execution'] = \App\Domain\Integrations\IntegrationRoleExecution::class;
-        $definition['completion'] = \App\Domain\Integrations\IntegrationRoleCompletion::class;
+        $definition['admission'] = IntegrationRoleAdmission::class;
+        $definition['execution'] = IntegrationRoleExecution::class;
+        $definition['completion'] = IntegrationRoleCompletion::class;
         $definition['runs'][] = ['transport' => 'gateway', 'name' => 'integration.prepare-role', 'resumable' => true];
         $definition['result_fields'][] = 'prepared';
         $children = [];
         foreach ($definition['children'] as $raw) {
-            $child = \App\Support\ValidatedData::object($raw);
-            $children[] = [...$child, 'node_from' => str_replace('input.', 'intent.', \App\Support\ValidatedData::string($child['node_from']))];
+            $child = ValidatedData::object($raw);
+            $children[] = [...$child, 'node_from' => str_replace('input.', 'intent.', ValidatedData::string($child['node_from']))];
         }
         $definition['children'] = $children;
         $kinds['analytics.'.$roleKind] = $definition;
     }
 
-    $kinds['analytics.clickhouse_converge']['admission'] = \App\Domain\Integrations\IntegrationChildAdmission::class;
+    $kinds['analytics.clickhouse_converge']['admission'] = IntegrationChildAdmission::class;
 
     foreach ($kinds as $name => $definition) {
-        if (isset($definition['children']) && ! \App\Domain\Operations\OperationKinds::supports('children')) { unset($kinds[$name]); }
+        if (! OperationKinds::supports('children')) {
+            unset($kinds[$name]);
+        }
     }
+
     return $kinds;
 })();

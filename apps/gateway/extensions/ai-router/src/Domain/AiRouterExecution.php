@@ -6,16 +6,16 @@ namespace Orbit\Extensions\AiRouter\Domain;
 
 use App\Domain\Integrations\IntegrationExecution;
 use App\Domain\Integrations\IntegrationIntent;
-use App\Domain\Operations\OperationFamilyExecution;
 use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationFamilyChildren;
+use App\Domain\Operations\OperationFamilyExecution;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
-final readonly class AiRouterExecution implements OperationFamilyExecution, OperationFamilyChildren
+final readonly class AiRouterExecution implements OperationFamilyChildren, OperationFamilyExecution
 {
     public function __construct(private IntegrationExecution $effects) {}
 
@@ -32,7 +32,10 @@ final readonly class AiRouterExecution implements OperationFamilyExecution, Oper
     /** @return array{intent: array<string, mixed>, children: list<array{key: string, kind: string, node_id: int, input: array<string, mixed>}>} */
     public function childContext(Operation $operation): array
     {
-        if ($operation->input === [] && ! $this->prepared($operation)) { return ['intent' => [], 'children' => []]; }
+        if ($operation->input === [] && ! $this->prepared($operation)) {
+            return ['intent' => [], 'children' => []];
+        }
+
         return $this->effects->childContext($operation);
     }
 
@@ -63,8 +66,11 @@ final readonly class AiRouterExecution implements OperationFamilyExecution, Oper
             throw new ResourceOperationException('operation.completion_unproven', 'The collector preparation has no proven receipt.', 409);
         }
         if ($outcome->status === OperationStatus::Failed && isset(IntegrationIntent::data($operation)['failure_recovery'])) {
-            try { $publication = app(OperationChildren::class)->child($operation, 'collector-publication'); }
-            catch (ResourceOperationException) { $publication = null; }
+            try {
+                $publication = app(OperationChildren::class)->child($operation, 'collector-publication');
+            } catch (ResourceOperationException) {
+                $publication = null;
+            }
             if ($publication?->status !== OperationStatus::Succeeded) {
                 $run = ValidatedData::object($operation->state['executor_runs'] ?? [])['collector-takeover-restore'] ?? null;
                 $restored = is_array($run) && is_array($run['result'] ?? null) && ($run['result']['restored'] ?? false) === true;

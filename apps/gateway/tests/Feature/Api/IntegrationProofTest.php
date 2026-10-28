@@ -39,6 +39,7 @@ function integrationProofChild(Operation $parent, string $key, string $kind, arr
         'parent_operation_id' => $parent->id, 'key' => $key, 'kind' => $kind, 'node_id' => $parent->node_id,
         'target_type' => 'route', 'target_id' => 71, 'input' => $input, 'run_constraints' => []]];
     $child->forceFill(['child_admission' => $snapshot, 'child_fingerprint' => OperationChildIntent::fingerprint($snapshot)])->save();
+
     return $child;
 }
 

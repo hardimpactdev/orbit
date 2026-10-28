@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Integrations;
 
-use App\Domain\Operations\OperationFamilyExecution;
 use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationFamilyChildren;
+use App\Domain\Operations\OperationFamilyExecution;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStepStatus;
@@ -19,7 +19,7 @@ use App\Support\ValidatedData;
  *
  * @phpstan-import-type Flow from IntegrationIntent
  */
-final readonly class IntegrationExecution implements OperationFamilyExecution, OperationFamilyChildren
+final readonly class IntegrationExecution implements OperationFamilyChildren, OperationFamilyExecution
 {
     public function context(Operation $operation): array
     {
@@ -35,8 +35,12 @@ final readonly class IntegrationExecution implements OperationFamilyExecution, O
                 if (isset($entry['when'])) {
                     $condition = $entry['when'];
                     $evidence = ValidatedData::object($operation->state['steps'] ?? [])[$condition['step']] ?? null;
-                    if (! is_array($evidence) || ! array_key_exists($condition['field'], $evidence)) { break; }
-                    if ($evidence[$condition['field']] !== $condition['equals']) { continue; }
+                    if (! is_array($evidence) || ! array_key_exists($condition['field'], $evidence)) {
+                        break;
+                    }
+                    if ($evidence[$condition['field']] !== $condition['equals']) {
+                        continue;
+                    }
                 }
                 if ($entry['type'] === 'child') {
                     $intents[] = ['key' => $entry['key'], 'kind' => $entry['kind'], 'node_id' => $entry['node_id'], 'input' => $entry['input']];
@@ -58,10 +62,17 @@ final readonly class IntegrationExecution implements OperationFamilyExecution, O
         }
         if ($this->recoveryAllowed($operation)) {
             foreach (IntegrationIntent::flow($operation, 'failure_flow') as $entry) {
-                if ($entry['type'] === 'child') { $intents[] = ['key' => $entry['key'], 'kind' => $entry['kind'], 'node_id' => $entry['node_id'], 'input' => $entry['input']]; }
-                try { $this->assertEntry($operation, $entry); } catch (ResourceOperationException) { break; }
+                if ($entry['type'] === 'child') {
+                    $intents[] = ['key' => $entry['key'], 'kind' => $entry['kind'], 'node_id' => $entry['node_id'], 'input' => $entry['input']];
+                }
+                try {
+                    $this->assertEntry($operation, $entry);
+                } catch (ResourceOperationException) {
+                    break;
+                }
             }
         }
+
         return ['intent' => IntegrationIntent::data($operation), 'children' => $intents];
     }
 
@@ -78,7 +89,9 @@ final readonly class IntegrationExecution implements OperationFamilyExecution, O
     public function beforeRun(Operation $operation, array $run): void
     {
         $flow = IntegrationIntent::flow($operation);
-        if ($this->recoveryAllowed($operation) && ! in_array($run['key'], array_column($flow, 'key'), true)) { $flow = IntegrationIntent::flow($operation, 'failure_flow'); }
+        if ($this->recoveryAllowed($operation) && ! in_array($run['key'], array_column($flow, 'key'), true)) {
+            $flow = IntegrationIntent::flow($operation, 'failure_flow');
+        }
         foreach ($flow as $entry) {
             if ($entry['type'] === 'run' && $entry['key'] === $run['key']) {
                 return;
@@ -102,10 +115,14 @@ final readonly class IntegrationExecution implements OperationFamilyExecution, O
                     throw new ResourceOperationException('operation.completion_unproven', 'The rollback failure has no recorded refusal.', 409);
                 }
             } else {
-                foreach ($recovery as $entry) { $this->assertEntry($operation, $entry); }
+                foreach ($recovery as $entry) {
+                    $this->assertEntry($operation, $entry);
+                }
             }
         }
-        if ($outcome->status !== OperationStatus::Succeeded) { return; }
+        if ($outcome->status !== OperationStatus::Succeeded) {
+            return;
+        }
         foreach (IntegrationIntent::flow($operation) as $entry) {
             $this->assertEntry($operation, $entry);
         }
@@ -114,11 +131,20 @@ final readonly class IntegrationExecution implements OperationFamilyExecution, O
     public function recoveryAllowed(Operation $operation): bool
     {
         $condition = IntegrationIntent::data($operation)['failure_when'] ?? null;
-        if (! is_array($condition) || ! isset(IntegrationIntent::data($operation)['failure_flow'])) { return false; }
+        if (! is_array($condition) || ! isset(IntegrationIntent::data($operation)['failure_flow'])) {
+            return false;
+        }
         $step = ValidatedData::string($condition['step']);
         $result = ValidatedData::object($operation->state['steps'] ?? [])[$step] ?? null;
-        if (! is_array($result) || ($result[ValidatedData::string($condition['field'])] ?? null) !== $condition['equals']) { return false; }
-        try { $this->assertEntry($operation, ['type' => 'run', 'key' => $step]); } catch (ResourceOperationException) { return false; }
+        if (! is_array($result) || ($result[ValidatedData::string($condition['field'])] ?? null) !== $condition['equals']) {
+            return false;
+        }
+        try {
+            $this->assertEntry($operation, ['type' => 'run', 'key' => $step]);
+        } catch (ResourceOperationException) {
+            return false;
+        }
+
         return $this->hasProvenFailure($operation, IntegrationIntent::flow($operation));
     }
 
@@ -128,17 +154,26 @@ final readonly class IntegrationExecution implements OperationFamilyExecution, O
         $runs = ValidatedData::object($operation->state['executor_runs'] ?? []);
         foreach ($flow as $entry) {
             if ($entry['type'] === 'child') {
-                try { $child = app(OperationChildren::class)->child($operation, $entry['key']); }
-                catch (ResourceOperationException) { continue; }
-                if ($child->status === OperationStatus::Failed) { return true; }
+                try {
+                    $child = app(OperationChildren::class)->child($operation, $entry['key']);
+                } catch (ResourceOperationException) {
+                    continue;
+                }
+                if ($child->status === OperationStatus::Failed) {
+                    return true;
+                }
+
                 continue;
             }
             $descriptor = IntegrationIntent::effects($operation)[$entry['key']];
             $run = $runs[$entry['key']] ?? null;
             $error = is_array($run) && is_array($run['result'] ?? null) ? ($run['result']['error_code'] ?? null) : null;
             if (is_string($error) && ! in_array($error, ['operation.cancelled', 'node.lock_lost', 'operation.lease_lost'], true)
-                && $run['name'] === $descriptor['name'] && $run['transport'] === $descriptor['transport']) { return true; }
+                && $run['name'] === $descriptor['name'] && $run['transport'] === $descriptor['transport']) {
+                return true;
+            }
         }
+
         return false;
     }
 
@@ -163,7 +198,7 @@ final readonly class IntegrationExecution implements OperationFamilyExecution, O
         if ($entry['type'] === 'child') {
             $children = app(OperationChildren::class);
             $child = ($entry['continue_on_failure'] ?? false) ? $children->child($operation, $entry['key']) : $children->requireSucceeded($operation, $entry['key']);
-            if (! $child instanceof Operation || $child->kind !== $entry['kind'] || $child->node_id !== $entry['node_id']
+            if ($child->kind !== $entry['kind'] || $child->node_id !== $entry['node_id']
                 || array_intersect_key($child->input, $entry['input']) !== $entry['input'] || (($entry['continue_on_failure'] ?? false) ? ! $child->status->terminal() : $child->status !== OperationStatus::Succeeded)) {
                 throw new ResourceOperationException('operation.completion_unproven', 'The integration child has not completed its admitted intent.', 409);
             }
