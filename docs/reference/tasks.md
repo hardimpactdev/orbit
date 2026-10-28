@@ -2518,3 +2518,7 @@ Code decides every fact that code can check. Jev answers only whether the change
 ### Swamp output stays a read
 
 The Gateway reads Swamp's own run history rather than recording a second run ledger. This serves the Mission's lean and deterministic-first principles. Exact group inputs already identify maintenance-worker runs, so the driver needs no tagging change. Polling exposes the output that a read-only principal may see. Swamp's `run.attach` requires a `run` grant, so granting execution just to stream a read-only panel is rejected. A worker agent or a direct browser connection would add another credential and network boundary. The snapshot cache bounds repeated reads and preserves useful evidence during an outage without making Orbit a second orchestrator.
+
+## Production smoke ownership
+
+Repository production-smoke browser tests run through GitHub Actions after explicit Swamp baseline admission. The [Gateway smoke API](/reference/deployments#production-smoke) supplies release context and verified execution evidence. It is separate from task workspace checks. Swamp decides what to do when execution evidence is missing or its baseline deadline expires. The Gateway reports pending or unknown for an uncertain send, missing or ambiguous run, or expired artifacts; those states never mean that tests failed. Only verified execution or test failure can report failed. No smoke state starts a task, repair, rollback or merge in this slice.

@@ -178,6 +178,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'instance:setup-step:list' => ServingNode::ProjectOwning,
         'instance:setup-step:update' => ServingNode::ProjectOwning,
         'instance:show' => ServingNode::InstanceOwning,
+        'instance:smoke:context' => ServingNode::Gateway,
         'instance:teardown-step:create' => ServingNode::ProjectOwning,
         'instance:teardown-step:destroy' => ServingNode::ProjectOwning,
         'instance:teardown-step:list' => ServingNode::ProjectOwning,

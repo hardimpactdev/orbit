@@ -14,7 +14,7 @@ A Gateway reads private `github.com` repositories through its own GitHub App. Th
 
 ## What the App is
 
-Each Gateway owns at most one GitHub App. The App is a registration on GitHub with a private key that only this Gateway holds. It has six permissions: `Actions: read`, `Checks: read`, `Contents: write`, `Metadata: read`, `Pull requests: write`, and `Workflows: write`. It receives no webhooks and cannot change repository settings. Each operation asks GitHub for a token with only the permissions it needs, so a read never carries write access.
+Each Gateway owns at most one GitHub App. The App is a registration on GitHub with a private key that only this Gateway holds. It has seven permissions: `Actions: write`, `Administration: read`, `Checks: read`, `Contents: write`, `Metadata: read`, `Pull requests: write`, and `Workflows: write`. It receives no webhooks and cannot change repository settings. Each operation asks GitHub for a token with only the permissions it needs, so a read never carries write access.
 
 A task push token carries `Workflows: write`, so a task can change `.github/workflows/`. An installation that has not accepted that permission refuses such a push, and the task reason names `Workflows` as the permission to grant. [Tasks](/reference/tasks#pull-request-and-settle-metrics) describes that failure.
 
@@ -294,3 +294,9 @@ The Gateway is private, so GitHub cannot reach it. It lists installations and pu
 ### Cache the installation for the branch list
 
 The Gateway is private, so GitHub cannot push a merge event to it. `tasks:tick` runs every 10 seconds. A list on every tick would call GitHub six times a minute for each active task. The [list-by-head read](#how-orbit-watches-a-task-pull-request) runs at most once a minute. The installation id stays in the Gateway cache so those lists do not resolve the installation again. A refused token drops the id and resolves it once more.
+
+## Production smoke permission
+
+The repository registration manifest requests `Actions: write` for production-smoke dispatch. This affects new registrations only. The Gateway operator updates Actions to read and write in the existing GitHub App's repository permissions, saves the change, then accepts the permission update on each installation that will run smoke. This is an operator step; Orbit never changes an existing App registration or accepts installation permissions. Keep all other permissions unchanged. Enable no Project until the paired Gateway and Swamp feature ships.
+
+A dispatch uses a token scoped to that Project repository with only Actions write. Result reads keep a separate Actions-read token. An installation without Actions write receives `422 instance.smoke_invalid` with an instruction to complete this upgrade. CI receives only the tested commit, deployment ID and HTTPS base URL; no Gateway, Swamp, production or maintainer credential is sent.

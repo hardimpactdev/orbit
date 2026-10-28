@@ -534,3 +534,11 @@ Each step has its own create, update, and destroy, so you can change one step wi
 Every production Instance comes from a clone, and its first deployment builds the release layout. Orbit does not convert a production home that serves code from its checkout.
 
 The production home exists before the first release is selected. Deployment and runtime consumers must not treat that pre-release home as a selected release.
+
+## Production smoke
+
+Swamp can opt a Project into production smoke after a successful production deploy. The Gateway exposes the selected release and dispatches the repository's own GitHub Actions browser-test workflow against its public HTTPS origin. This feature adds no schedule or opt-in and does not block deploys, roll back, repair, resume or merge. Swamp owns baseline admission, deadlines and acceptance policy. The [wire contract for production smoke](https://github.com/hardimpactdev/orbit-swamp/blob/4b99af2784625af3756751d9c68120a88d975d5b/docs/production-smoke-contract.md) defines the paired service fields.
+
+`GET /api/v1/instances/{instance}/smoke/context` and MCP `instance-smoke-context` require Gateway Node access. They return `instance_id`, `project_id`, `repository_url`, `production`, `base_urls`, `selected` and `retained_releases`. Context reads the actual selected retained release on the Node and matches a successful deploy or rollback history row. `selected` is null without matching evidence; otherwise it contains `deployment_id`, the full 40-character `commit` and `release`. A production Instance must be active on an active Node with an active app-prod role and no active app-dev role. URLs are HTTPS origins of active Project-owned Routes targeting that Instance. A development Instance cannot admit smoke.
+
+The complete feature ships as a pair with [orbit-swamp#52](https://github.com/hardimpactdev/orbit-swamp/pull/52). The context endpoint is read-only and works without dispatch permission. Before opt-in, the Gateway operator must complete the [GitHub App permission upgrade](/reference/github-app#production-smoke-permission). No live registration, installation or Project setting changes during release preparation.

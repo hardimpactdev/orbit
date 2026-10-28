@@ -1688,6 +1688,7 @@ RESPONSE_OVERRIDES = {
     }}},
 }
 CTRL_DATA_OVERRIDES = {
+    'InstanceSmokeController@context': ('InstanceSmokeContextData', False),
     'InstanceDeploymentSourceController@head': ('DeploymentSourceHeadData', False),
     'InstanceDeploymentSourceController@commits': ('DeploymentSourceCommitsData', False),
     'InstanceDeploymentSourceController@checks': ('DeploymentSourceChecksData', False),
