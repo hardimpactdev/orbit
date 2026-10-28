@@ -35,7 +35,7 @@ final class InstanceSmokeControlController extends Controller
         $caller = $request->user();
         assert($caller instanceof Node);
 
-        return response()->json(['data' => $action->receipt($instance, $caller, $request->requestKey())]);
+        return response()->json(['data' => $action->receipt($instance, $caller, $request->requestKey())->toArray()]);
     }
 
     #[StartsOperation(OperationKinds::InstanceDeploy, requiresKey: true, maxJsonBytes: 4096, bindCaller: true)]

@@ -9,6 +9,7 @@ use App\Domain\Releases\ReleaseAlert;
 use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Domain\Releases\ReleaseAlertReceipt;
 use App\Domain\Releases\ReleaseAlertStep;
+use App\Http\Mcp\ToolManifest;
 use App\Models\InstanceDeployment;
 use App\Models\Operation;
 use App\Models\ProblemFingerprint;
@@ -166,3 +167,17 @@ it('refuses a caller substitution and ineligible public ownership without changi
     $this->withHeader('Idempotency-Key', 'hold')->postJson($this->url.'/control', $this->control)->assertConflict();
     expect($this->fixture->deployment->activations)->toBe(0);
 })->with(['caller', 'private']);
+
+it('advertises the required control key and transports it through MCP', function (): void {
+    $tool = collect(ToolManifest::default()->definitions())
+        ->first(fn ($tool): bool => $tool->name === 'instance-smoke-control');
+    expect($tool?->inputSchema['required'] ?? [])->toContain('Idempotency-Key');
+    $result = $this->postJson('/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call',
+        'params' => ['name' => 'instance-smoke-control', 'arguments' => [
+            ...$this->control, 'instance' => $this->fixture->instance->id, 'Idempotency-Key' => 'mcp-hold',
+        ]],
+    ])->assertOk()->assertJsonPath('result.isError', false);
+    $body = json_decode($result->json('result.content.0.text'), true, flags: JSON_THROW_ON_ERROR);
+    expect($body['data']['held'])->toBeTrue();
+    expect($body['data']['request_key'])->toBe('mcp-hold');
+});

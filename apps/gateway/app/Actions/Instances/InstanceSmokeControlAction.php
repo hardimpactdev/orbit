@@ -7,6 +7,7 @@ namespace App\Actions\Instances;
 use App\Actions\Operations\StartOperationAction;
 use App\Data\Instances\InstanceSmokeControlData;
 use App\Data\Instances\InstanceSmokeControlEntryData;
+use App\Data\Instances\InstanceSmokeControlLookupData;
 use App\Data\Instances\InstanceSmokeControlReceiptData;
 use App\Data\Instances\InstanceSmokeControlStateData;
 use App\Data\Instances\InstanceSmokeHoldStateData;
@@ -125,13 +126,12 @@ final readonly class InstanceSmokeControlAction
         });
     }
 
-    /** @return array<string, mixed> */
-    public function receipt(Instance $instance, Node $caller, string $key): array
+    public function receipt(Instance $instance, Node $caller, string $key): InstanceSmokeControlLookupData
     {
         $entry = $this->state($instance)->receipts[$key] ?? null;
         $this->check($entry === null || $entry->caller === $caller->id, 'operation.idempotency_conflict');
 
-        return ['request_key' => $key, 'found' => $entry !== null, 'control' => $entry?->receipt->toArray()];
+        return new InstanceSmokeControlLookupData($key, $entry !== null, $entry?->receipt);
     }
 
     public function redeploy(Instance $instance, Node $caller, InstanceSmokeControlData $data, string $requestId): Operation
