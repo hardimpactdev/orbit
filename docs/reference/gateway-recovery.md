@@ -32,7 +32,7 @@ Gateway release unit convergence also installs a journald drop-in and a logrotat
 
 `config/retention.php` sets these limits. `ORBIT_JOURNAL_MAX_MB` defaults to 256 MiB, `ORBIT_JOURNAL_KEEP_FREE_MB` to 1024 MiB, `ORBIT_JOURNAL_DAYS` to seven days, and `ORBIT_JOURNAL_RUNTIME_MAX_MB` to 64 MiB. Journald reads the drop-in at its next start; convergence does not restart it or vacuum existing journals. `ORBIT_LOG_ROTATE_MB` and `ORBIT_LOG_ROTATE_KEEP` set the plain log's threshold and archive count. These are rotation limits, not a hard disk quota: an active journal and log output between hourly checks can exceed them.
 
-The scheduler runs Laravel's `queue:prune-failed` daily. `ORBIT_FAILED_JOBS_HOURS` defaults to 168 hours. The existing daily batch prune uses `ORBIT_JOB_BATCH_HOURS`, which defaults to 24 hours. Neither command vacuums SQLite or changes application data.
+Swamp requests failed-job pruning daily through the Services-only observation API. `ORBIT_FAILED_JOBS_HOURS` defaults to 168 hours. The existing daily batch prune uses `ORBIT_JOB_BATCH_HOURS`, which defaults to 24 hours. Neither prune vacuums SQLite or changes application data.
 
 Local recovery archives need an operator retirement step. Copy a complete state set off the Gateway, verify it there, and remove superseded local copies after the maintenance operation succeeds. Do not accumulate whole-state archives inside `ORBIT_HOME`: the next archive would include them again. Normal release retention owns only `backups/pre-*.sqlite`; it does not own manually named backups, `shared/env-backups`, experiment checkouts, or protected staged recovery copies. The staged copy remains protected until an operator explicitly retires it, as [finalization](#finalization) describes.
 

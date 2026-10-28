@@ -3,7 +3,7 @@ title: "Operations"
 description: "How the Gateway runs a long operation as a queued record with named steps, how a client follows it, and how the Gateway recovers one that a lost worker interrupted."
 covers:
   - apps/gateway/app/{Domain/Operations/**,Actions/Operations/**,Data/Operations/**,Http/Requests/Operations/**}
-  - apps/gateway/app/{Jobs/RunOperation.php,Console/Commands/SweepOperationsCommand.php,Http/Controllers/Api/OperationsController.php,Models/Operation*.php}
+  - apps/gateway/app/{Jobs/RunOperation.php,Http/Controllers/Api/OperationsController.php,Models/Operation*.php}
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/gateway/database/migrations/2026_12_28_000000_add_operation_idempotency_keys.php
   - packages/php-sdk/src/{Requests,Responses}/Operations/**
@@ -237,7 +237,7 @@ An operation holds its target from the start request to its terminal status. A s
 
 ### Recover a lost worker
 
-`orbit:operations-sweep` runs every minute as a [scheduled job](/reference/gateway-queue#scheduled-work). It queues the job again for:
+Swamp requests operation recovery every five minutes through the Services-only [observation API](/reference/gateway-queue#scheduled-work). Gateway state recovery queues the job again for:
 
 - each `running` operation whose attempt lease is free, because its worker died or its attempt ended without recording the outcome, and
 - each `queued` operation whose job was queued more than 10 minutes ago and has not started, and

@@ -53,9 +53,6 @@ The scheduler dispatches each of these as a unique job. While the job waits or r
 | `orbit:auto-deploy` | minute | `tasks` | 600 seconds |
 | `orbit:vault-sync` | minute | `tasks` | 900 seconds |
 | `orbit:desired-fleet-state` | 5 minutes | `tasks` | 600 seconds |
-| `orbit:activity-finalize-interrupted` | 5 minutes | `tasks` | 600 seconds |
-| `orbit:operations-sweep` | minute | `tasks` | 300 seconds |
-| `horizon:snapshot` | 5 minutes | `tasks` | 300 seconds |
 
 The job runs the command in its own PHP process, as the scheduler did, so a command keeps no state from an earlier run. A command that exits nonzero is logged as an error. The "unique for" time only matters when a worker is lost: the lock then frees itself after that time.
 
@@ -65,33 +62,26 @@ These commands stay in the scheduler and never go to the queue, also while it is
 
 | Command | Every | Overlap lock |
 | --- | --- | --- |
-| `problems:collect` (dispatch only) | 10 minutes | none |
-| Horizon Doctor observation | 10 minutes | none |
 | `problems:file` | hour | 30 minutes |
 | `project-documents:probes:reconcile` | minute | 10 minutes |
 | `project-documents:cleanup:work` | 5 minutes | 60 minutes |
 
-`problems:collect` runs every 10 minutes and only dispatches collection on `problems`. One batch observes each Node; a second checks typed resource groups selected by each Doctor family. The last job collects the other signals. Collection never files problems. Only hourly `problems:file` does that, under its lock.
+Swamp owns the observation schedules. Fleet Doctor collection and the independent Horizon health check run every 10 minutes. Activity finalization, operation recovery and Horizon metrics run every 5 minutes. Batch and failed-job pruning run daily. These routines do not poll each minute. Collection never files problems; hourly `problems:file` retains its separate lock.
 
-Each probe group shares one 12-second command deadline. The worker timeout is 13 seconds, a backstop derived from the same budget. Measured package inventory took up to 6.8 seconds, and an unreachable Node took 10.2 seconds. These results must finish inside the probe deadline rather than be replaced by worker failures.
+The Services peer uses only the family APIs under `/api/v1/observation`: create an immutable collection plan, read one selected Node, read one selected resource group, commit signal cursors, or run one named housekeeping routine. They reuse the executor's configured Services identity and require Gateway access. Clients cannot supply Node commands, program names, resource selections, secrets or retention values. Read snapshots and housekeeping receipts expire after seven days.
 
-Normal systemd checks took 2.2–2.5 seconds, so at most three Processes share a job. Instance, Route, Project and database connection checks took under 0.5 seconds each, so at most 20 share a job. A Database server job inspects one running Valkey server; connection, authentication and response reads share the probe deadline.
+Only status and integer counts leave these APIs; raw observations stay in Gateway cache. Doctor's normal API remains a read. This family declares no new executing Operation kind, secret resolver or child Operation, so it does not add a run allowlist or a completion variant.
 
-Each Tool rows job owns one manager on one Node. It reads that manager’s installed inventory once, then compares every selected Tool locally. Homebrew on macOS and Vite+ first use the normal scope probe, including its output checks, then read the inventory. Both calls share the job deadline. Tool environment checks keep one batch read per Node; discovery inventory is separate.
 
-Three read-only Mini measurements of the collection jobs took 1.20–2.85 seconds for five Brew Tools, 1.22–1.26 seconds for one cask, and 0.96–0.97 seconds for one Vite+ Tool. Each manager job made two SSH calls: the normal scope probe and one inventory read. The separate discovery job took 4.54–5.19 seconds. Grouping by manager bounds the remote work independently of the number of registered Tools.
+Collection observes all selected Nodes before inspecting resource groups. Each group shares one 12-second command deadline. Measured package inventory took up to 6.8 seconds, and an unreachable Node took 10.2 seconds. These results must finish inside that deadline. At most three Processes share a group; Instance, Route, Project and database connection groups contain at most 20 resources. Each Database server group inspects one running Valkey server. Tool groups read each selected manager's inventory once and compare selected Tools locally. Environment checks and discovery inventory use separate groups.
 
-Each failed job records unverifiable results in Laravel's `failed()` hook; there is no completion batch.
+Swamp records collection progress between groups and resumes the same collection after interruption. A failed group records unverifiable results for every selected resource. Missing Node observations remain unverifiable. Related-Node checks share the collection's Node observations and their original timestamps, so an old healthy observation cannot clear a newer failure. Signals run after the resource phase, and collection does not depend on Horizon workers.
 
-Laravel batches keep all Node observations available to related-node checks. Observations survive release switches in shared cache. Resource groups commit separately, so a release waits only for the running group, never the full fleet scan. Collection needs the queue; without it, dispatch fails with an error.
-
-The separate scheduler callback inspects only the Gateway's Horizon Process through Doctor's process checks. It records the same Doctor fingerprint without scanning the fleet or depending on a queue worker. Filing also stays independent of Horizon. The [document cleanup](/reference/project-documents) commands stay because their permit belongs to the scheduler's start.
-
-Laravel batch metadata is pruned daily after `ORBIT_JOB_BATCH_HOURS` (24 hours by default) with `queue:prune-batches`. The pruning job runs on `problems` with the collection worker timeout while Tasks is enabled. Failed jobs are pruned daily with `queue:prune-failed` after `ORBIT_FAILED_JOBS_HOURS` (168 hours by default), also while Tasks is disabled. These settings live in `config/retention.php`.
+Horizon health checks only the Gateway's Horizon Process and remain independent of the fleet collection. A deliberately stopped Process is not drift. Metrics and operation recovery run only when the Gateway queue is configured. Collection and batch pruning run only while Tasks is enabled; failed-job pruning also runs while Tasks is disabled. Retention remains `ORBIT_JOB_BATCH_HOURS` (24 hours) and `ORBIT_FAILED_JOBS_HOURS` (168 hours), in `config/retention.php`.
 
 ### Without a queue
 
-While `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the other scheduled commands run inline with their overlap locks, and the Gateway creates no `horizon` Process. Fleet problem collection and task VMs need the queue. While task VMs are enabled, or the UpCloud token file is set, each due run of the host sweep, image reconciliation, or recipe maintenance fails with an error that names the key, instead of being skipped. A task VM claim fails the same way.
+While `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the other scheduled commands run inline with their overlap locks, and the Gateway creates no `horizon` Process. Task VMs need the queue. While task VMs are enabled, or the UpCloud token file is set, each due run of the host sweep, image reconciliation, or recipe maintenance fails with an error that names the key, instead of being skipped. A task VM claim fails the same way.
 
 Operations need the queue too. An Instance deploy or rollback request answers `503` with `operation.queue_unavailable` and records nothing ([Operations](/reference/operations#start-an-operation)).
 
@@ -113,7 +103,7 @@ Open `https://gateway.orbit/horizon` in a browser on a machine that is a WireGua
 
 The dashboard can retry, cancel, and clear jobs, and pause queues, so anyone with Gateway access can change the queue. The Gateway keeps no browser session, so the dashboard has no CSRF token. Laravel's request forgery check runs in origin-only mode instead: a request that changes something passes only when the browser sends `Sec-Fetch-Site: same-origin`. Any other such request gets 403. Bulk actions run as jobs on the `tasks` queue.
 
-Each release publishes the dashboard's compiled assets during `composer install` in [prepare](/reference/gateway-recovery#prepare-a-release), with `php artisan horizon-new-dawn:assets`. The first release with the dashboard runs its migration, which adds the table `horizon_new_dawn_batch_metadata`. The scheduler runs `horizon:snapshot` every five minutes for the dashboard's metrics.
+Each release publishes the dashboard's compiled assets during `composer install` in [prepare](/reference/gateway-recovery#prepare-a-release), with `php artisan horizon-new-dawn:assets`. The first release with the dashboard runs its migration, which adds the table `horizon_new_dawn_batch_metadata`. Swamp records Horizon metrics every five minutes for the dashboard.
 
 The Redis server needs `maxmemory-policy noeviction`, so that it never drops a queued job to free memory. `services-valkey` has it. It has no `maxmemory`, so it can use the memory of `services`; a limit for the Gateway's use is a follow-up.
 
@@ -253,7 +243,7 @@ Run each `php artisan` command as `orbit` in `/home/orbit/orbit/apps/gateway`.
 
 Doctor does not report an old `last_tick_at` yet. Until it does, check [`orbit tasks:status`](/cli/tasks#orbit-tasksstatus) when task groups stop moving.
 
-A Horizon that is down while its Process should run is ordinary Process drift. Doctor reports it as `process.state_mismatch`, or `process.crash_loop` when systemd keeps restarting it. The separate Horizon observation callback runs in the scheduler, so it records that issue within one collection cycle, and `problems:file` files it once two collections 10 minutes apart saw it. A Horizon stopped with `orbit process:stop` is not drift and is not reported.
+A Horizon that is down while its Process should run is ordinary Process drift. Doctor reports it as `process.state_mismatch`, or `process.crash_loop` when systemd keeps restarting it. The separate Swamp Horizon observation runs every 10 minutes, so it records that issue within one collection cycle, and `problems:file` files it once two collections 10 minutes apart saw it. A Horizon stopped with `orbit process:stop` is not drift and is not reported.
 
 The collector rebuilds its quota snapshot in Valkey; quota reads never poll the upstream provider.
 

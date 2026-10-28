@@ -15,7 +15,7 @@ covers:
 
 A Schedule runs one command on a timer for one Node or one Instance. The Gateway stores the Schedule. The host Node runs it with a native systemd timer, so the timer keeps firing while the Gateway is down. macOS has no systemd timers in this feature. A Schedule mutation there returns `schedule.platform_unsupported` (HTTP 422) before SSH. [`schedule`](/cli/schedule) lists the commands. [Processes and schedules](/reference/processes-and-schedules) describes Project Schedule definitions and their Instance copies.
 
-An Orbit Schedule is not a command on the Gateway's own Laravel schedule. The Tasks extension registers `problems:collect` and `problems:file` there. [Tasks](/reference/tasks#execution-ownership) describes those timers. `tasks:tick` runs on the [Gateway queue](/reference/gateway-queue#scheduled-work) when it is set, and problem collection dispatches short jobs, while Horizon observation and hourly problem filing run in the scheduler itself.
+An Orbit Schedule is separate from the Gateway's Laravel schedule. Swamp owns [observation schedules](/reference/gateway-queue#scheduled-work), including Doctor collection, Horizon health, Activity finalization, operation recovery and queue metadata retention. Hourly `problems:file` stays in the Gateway scheduler with its lock.
 
 The Gateway also runs `orbit:auto-deploy` every minute without overlap for [automatic deployments](/reference/deployments#automatic-deployments). That internal tick is not a user-created Schedule and does not install a timer on an app-dev Node. Every 5 minutes it also runs `orbit:desired-fleet-state` without overlap, which resolves the [desired fleet state](/reference/self-update#how-the-gateway-resolves-it) so the CLI release check never waits in a request.
 
@@ -25,11 +25,11 @@ Release handoff queues [base image builds](/reference/compute-drivers#build-the-
 
 The Gateway also attempts `project-documents:probes:reconcile` once per minute without overlap. The [documents extension](/reference/extensions) registers this entry and the cleanup worker below from its provider, and both run whether or not its switch is on. It processes a finite batch from the private probe journal and permanently retains each cleanup record for late PUT recovery. This is an internal attempt schedule, not a promise of object lifetime or a Schedule on a Node. [Reserved probe recovery](/reference/project-documents#recover-reserved-probes) defines its bounds, backoff, repair, and separation from the gate for document-body cleanup.
 
-While the Gateway queue is set, it also runs `orbit:operations-sweep` every minute, which queues the job of an [operation](/reference/operations#recover-a-lost-worker) again after its worker or its job was lost. The Gateway runs `orbit:vault-sync` every minute without overlap while the `vault` [extension](/reference/extensions#the-runtime-switch) is on. It does nothing until [Vaultwarden](/reference/vaultwarden#sync) is set up, and it contacts Vaultwarden only when a credential changed or the hourly check is due.
+While the Gateway queue is set, Swamp requests [operation recovery](/reference/operations#recover-a-lost-worker) every five minutes. The Gateway runs `orbit:vault-sync` every minute without overlap while the `vault` [extension](/reference/extensions#the-runtime-switch) is on. It does nothing until [Vaultwarden](/reference/vaultwarden#sync) is set up, and it contacts Vaultwarden only when a credential changed or the hourly check is due.
 
 The Gateway attempts `project-documents:cleanup:work` every five minutes without overlap. Each run processes at most 100 due document-body cleanup records, and only while the restore-time gate is running. See [Project Documents](/reference/project-documents#publish-and-recover) for authorization, durable claims, retry bounds, and permanent abandoned-upload fences. This worker is separate from reserved-probe reconciliation.
 
-The Gateway prunes failed queue jobs daily with Laravel's `queue:prune-failed`, keeping seven days by default. [Gateway disk retention](/reference/gateway-recovery#disk-retention) describes its configurable cutoff and the batch metadata prune.
+Swamp requests failed queue job pruning daily, keeping seven days by default. [Gateway disk retention](/reference/gateway-recovery#disk-retention) describes its configurable cutoff and the batch metadata prune.
 
 ## Fields
 
