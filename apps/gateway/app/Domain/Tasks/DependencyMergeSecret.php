@@ -21,6 +21,11 @@ final readonly class DependencyMergeSecret implements OperationSecretSource
         return 'github.dependency_merge';
     }
 
+    public function targetTypes(): array
+    {
+        return ['task_group'];
+    }
+
     public function ownerId(Operation $operation): ?int
     {
         return $operation->kind === 'tasks.dependency_merge' ? Task::topLevel()->find($operation->target_id)?->project_id : null;

@@ -793,7 +793,21 @@ function dependencyJsGraph(string $file, array $roots, array $packages): string
         return json_encode(['lockfileVersion' => 2, 'workspaces' => ['' => $root], 'packages' => (object) $entries], JSON_THROW_ON_ERROR);
     }
 
-    return json_encode(['lockfileVersion' => 3, 'packages' => (object) ['' => $root, ...$entries]], JSON_THROW_ON_ERROR);
+    $lock = ['lockfileVersion' => 3, 'packages' => (object) ['' => $root, ...$entries]];
+    if ($file === 'npm-shrinkwrap.json') {
+        $lock['lockfileVersion'] = 2;
+        $legacy = [];
+        foreach ($entries as $location => $entry) {
+            $name = substr($location, strlen('node_modules/'));
+            $legacy[$name] = array_diff_key($entry, ['dependencies' => true]);
+            if (isset($entry['dependencies'])) {
+                $legacy[$name]['requires'] = $entry['dependencies'];
+            }
+        }
+        $lock['dependencies'] = (object) $legacy;
+    }
+
+    return json_encode($lock, JSON_THROW_ON_ERROR);
 }
 
 it('refuses an unreferenced lock package even with trusted sources and an unchanged base name', function (string $file): void {
@@ -909,3 +923,13 @@ it('checks the actual top-level Composer provider version for breaking changes',
         $response->assertConflict()->assertJsonPath('error.code', 'dependency_merge.major_bump');
     }
 })->with([['1.1.0', true], ['2.0.0', false]]);
+
+it('refuses npm v2 legacy entries outside its authoritative package graph', function (): void {
+    $this->content['package.json'] = '{"dependencies":{"library":"^1.0"}}';
+    $lock = json_decode(dependencyJsGraph('npm-shrinkwrap.json', ['library' => '^1.0'], ['library' => ['1.0.0', []]]), true);
+    $orphan = json_decode(dependencyJsGraph('npm-shrinkwrap.json', [], ['orphan' => ['1.0.0', []]]), true);
+    $lock['dependencies']['orphan'] = $orphan['dependencies']['orphan'];
+    dependencyContent($this, 'npm-shrinkwrap.json', json_encode($lock));
+    $this->withHeader('Idempotency-Key', 'legacy-orphan')->postJson($this->url, $this->body)
+        ->assertConflict()->assertJsonPath('error.code', 'dependency_merge.contents_forbidden');
+});

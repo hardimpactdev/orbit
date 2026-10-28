@@ -139,14 +139,12 @@ final readonly class DependencyBatchContents
     {
         $this->check(in_array($lock->lockfileVersion ?? null, [2, 3], true));
         $this->references($lock);
-        if ($lock->lockfileVersion !== 1) {
-            foreach ($this->map($lock->packages ?? null) as $location => $package) {
-                $this->check($package instanceof stdClass);
-                if ($location !== '') {
-                    $this->check(($package->link ?? false) === false);
-                    $this->check(is_string($location) && preg_match('~\A(?:node_modules/'.self::NpmName.'/)*node_modules/('.self::NpmName.')\z~D', $location, $match) === 1);
-                    $this->npmPackage($match[1], $package);
-                }
+        foreach ($this->map($lock->packages ?? null) as $location => $package) {
+            $this->check($package instanceof stdClass);
+            if ($location !== '') {
+                $this->check(($package->link ?? false) === false);
+                $this->check(is_string($location) && preg_match('~\A(?:node_modules/'.self::NpmName.'/)*node_modules/('.self::NpmName.')\z~D', $location, $match) === 1);
+                $this->npmPackage($match[1], $package);
             }
         }
         if ($lock->lockfileVersion !== 3 || property_exists($lock, 'dependencies')) {
