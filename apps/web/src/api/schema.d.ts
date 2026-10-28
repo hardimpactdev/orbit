@@ -10061,7 +10061,10 @@ export interface operations {
     };
     "instance-list": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Return only enabled, active production Instances on Nodes with an active app-prod role. */
+                auto_deploy?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;

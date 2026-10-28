@@ -6,10 +6,7 @@ use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GreenCommit;
-use App\Domain\GitHub\GreenCommitInspection;
-use App\Domain\GitHub\GreenCommitInspector;
 use App\Domain\GitHub\GreenCommitResolver;
-use App\Domain\GitHub\RequiredCheckState;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Tests\Feature\GitHub\GitHubTestSupport;
@@ -241,38 +238,5 @@ describe('GreenCommitResolver', function (): void {
         Http::fake(['https://api.github.com/repos/hardimpactdev/orbit/installation' => Http::response(['message' => 'Not Found'], 404)]);
 
         expect(fn () => green_resolve(str_repeat('e', 40)))->toThrow(GitHubApiException::class, 'The Gateway GitHub App is not installed on hardimpactdev/orbit.');
-    });
-});
-
-describe('GreenCommitInspector', function (): void {
-    function green_inspect(string $deployed, array $failed = []): GreenCommitInspection
-    {
-        return app(GreenCommitInspector::class)->inspect(GitHubRepository::fromOrigin('https://github.com/hardimpactdev/orbit.git'), 'main', 'Required checks', $deployed, $failed);
-    }
-
-    it('reports the head and its own check from the same walk', function (string $state, RequiredCheckState $expected): void {
-        green_fake([$this->tip => GreenCommitFixtures::requiredChecksAs($state, $this->tip)]);
-
-        $inspection = green_inspect($this->third);
-
-        expect($inspection->head)->toBe($this->tip)
-            ->and($inspection->headState)->toBe($expected)
-            ->and($inspection->green?->sha)->toBe($expected === RequiredCheckState::Passed ? $this->tip : $this->second)
-            ->and(green_check_reads())->toBe($expected === RequiredCheckState::Passed ? 1 : 2);
-    })->with([
-        'passed' => ['success', RequiredCheckState::Passed],
-        'pending' => ['queued', RequiredCheckState::Pending],
-        'failed' => ['failure', RequiredCheckState::Failed],
-        'missing' => ['none', RequiredCheckState::Missing],
-    ]);
-
-    it('reports no head check for a head that may not ship', function (): void {
-        green_fake();
-
-        $inspection = green_inspect($this->third, [$this->tip]);
-
-        expect($inspection->head)->toBe($this->tip)
-            ->and($inspection->headState)->toBeNull()
-            ->and($inspection->green?->sha)->toBe($this->second);
     });
 });

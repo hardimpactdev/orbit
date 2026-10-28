@@ -1817,6 +1817,9 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     body_schema = None
     query = []
     cmd = commands.get(route['name'])
+    if route['name'] == 'instance:list':
+        op['parameters'].append({'name': 'auto_deploy', 'in': 'query', 'required': False, 'schema': {'type': 'boolean'}, 'description': 'Return only enabled, active production Instances on Nodes with an active app-prod role.'})
+        query.append('auto_deploy')
     if route['name'] == 'process:update':
         source = (GW / 'app/Http/Requests/Processes/StoreProcessRequest.php').read_text()
         rules_text = block(source, source.find('function rules('))

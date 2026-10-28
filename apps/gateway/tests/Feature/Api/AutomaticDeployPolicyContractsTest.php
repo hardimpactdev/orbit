@@ -14,6 +14,7 @@ use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
 use App\Domain\Instances\Deployment\DeploymentResult;
 use App\Domain\Instances\Deployment\InstanceDeploymentRecorder;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationRequestFingerprint;
 use App\Domain\Operations\OperationStepPlan;
 use App\Domain\Operations\OperationStore;
@@ -441,6 +442,65 @@ it('exposes the shipped owner and accepts Swamp automatic admission', function (
     $this->withHeader('Idempotency-Key', 'swamp')->postJson($this->url.'/deploy/automatic', ['commit' => $this->sha])->assertAccepted();
     expect(Operation::query()->sole()->triggered_by)->toBe('orbit:auto-deploy');
 });
+
+it('returns 409 without automatic admission when the app-prod role is not active', function (?string $status): void {
+    $roles = $this->fixture->owner->roles()->where('role', RoleName::AppProd);
+    $status === null ? $roles->delete() : $roles->update(['status' => $status]);
+
+    $this->withHeader('Idempotency-Key', 'inactive-role')->postJson($this->url.'/deploy/automatic', ['commit' => $this->sha])
+        ->assertConflict()->assertJsonPath('error.code', 'instance.auto_deploy_role_inactive');
+
+    $this->assertDatabaseCount('operations', 0);
+    $this->assertDatabaseCount('instance_deployments', 0);
+    $this->assertDatabaseCount('jobs', 0);
+})->with(['provisioning', 'failed', 'removing', null]);
+
+it('discovers only eligible automatic production Instances', function (?string $roleStatus, bool $enabled, string $state, string $role, int $count): void {
+    $roles = $this->fixture->owner->roles()->where('role', RoleName::AppProd);
+    $roleStatus === null ? $roles->delete() : $roles->update(['status' => $roleStatus, 'role' => $role]);
+    $this->fixture->instance->update(['auto_deploy' => $enabled, 'status' => $state]);
+
+    $response = $this->getJson('/api/v1/instances?auto_deploy=true')->assertOk()->assertJsonCount($count, 'data');
+    if ($count === 1) {
+        $response->assertJsonPath('data.0.id', $this->fixture->instance->id);
+    }
+    $this->getJson('/api/v1/instances')->assertOk()->assertJsonCount(1, 'data');
+})->with([
+    'eligible' => ['active', true, 'active', 'app-prod', 1],
+    'provisioning role' => ['provisioning', true, 'active', 'app-prod', 0],
+    'failed role' => ['failed', true, 'active', 'app-prod', 0],
+    'removing role' => ['removing', true, 'active', 'app-prod', 0],
+    'absent role' => [null, true, 'active', 'app-prod', 0],
+    'disabled' => ['active', false, 'active', 'app-prod', 0],
+    'inactive Instance' => ['active', true, 'reserved', 'app-prod', 0],
+    'development Node' => ['active', true, 'active', 'app-dev', 0],
+]);
+
+it('keeps automatic discovery within the caller Node access', function (): void {
+    $caller = Node::query()->create(['name' => 'discovery-peer', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '192.0.2.223', 'wireguard_ip' => '10.44.0.223', 'user' => 'orbit']);
+    $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip]);
+    $this->getJson('/api/v1/instances?auto_deploy=true')->assertForbidden()->assertJsonPath('error.code', 'node_access.required');
+
+    $caller->accessibleNodes()->attach($this->fixture->owner->id);
+    $this->getJson('/api/v1/instances?auto_deploy=true')->assertOk()->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $this->fixture->instance->id);
+});
+
+it('rechecks the active app-prod role before effects and finishes resumed history', function (?string $status): void {
+    $id = $this->withHeader('Idempotency-Key', 'role-change')->postJson($this->url.'/deploy/automatic', ['commit' => $this->sha])
+        ->assertAccepted()->json('data.id');
+    $row = app(InstanceDeploymentRecorder::class)->start($this->fixture->instance, 'orbit:auto-deploy');
+    Operation::query()->findOrFail($id)->update(['state' => ['deployment_id' => $row->id], 'attempts' => 1]);
+    $roles = $this->fixture->owner->roles()->where('role', RoleName::AppProd);
+    $status === null ? $roles->delete() : $roles->update(['status' => $status]);
+
+    run_operation_jobs();
+
+    $this->getJson('/api/v1/operations/'.$id)->assertOk()->assertJsonPath('data.status', 'failed')
+        ->assertJsonPath('data.error_code', 'instance.auto_deploy_role_inactive');
+    expect($row->fresh()->status)->toBe('failed')->and($row->fresh()->error_code)->toBe('instance.auto_deploy_role_inactive');
+    expect($this->fixture->deployment->invocations)->toBe(0);
+})->with(['removing', null]);
 
 it('fences a missing admission and replays the cancelled receipt instead of deploying late', function (): void {
     $body = ['request_key' => 'lost', 'commit' => $this->sha];

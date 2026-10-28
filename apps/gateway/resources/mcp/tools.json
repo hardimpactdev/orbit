@@ -4448,11 +4448,18 @@
       "method": "GET",
       "path": "/api/v1/instances",
       "path_inputs": [],
-      "query_inputs": [],
+      "query_inputs": [
+        "auto_deploy"
+      ],
       "starts_operation": false,
       "input_schema": {
         "type": "object",
-        "properties": {},
+        "properties": {
+          "auto_deploy": {
+            "type": "boolean",
+            "description": "Return only enabled, active production Instances on Nodes with an active app-prod role."
+          }
+        },
         "additionalProperties": false
       }
     },

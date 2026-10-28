@@ -38,7 +38,7 @@ final class InstancesController extends Controller
 
         return response()->json([
             'data' => $action
-                ->handle($consumer)
+                ->handle($consumer, $request->boolean('auto_deploy'))
                 ->map(static fn (Instance $row): array => InstanceData::fromModel($row)->toArray())
                 ->values()
                 ->all(),

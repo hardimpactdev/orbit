@@ -101,7 +101,6 @@ use App\Domain\GitHub\BranchHeadReader;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubCliToken;
-use App\Domain\GitHub\GreenCommitInspector;
 use App\Domain\GitHub\GreenCommitResolver;
 use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\Hibernation\HibernationMarkerStore;
@@ -560,7 +559,6 @@ final class ApplicationServiceProvider extends ServiceProvider
         GitHubCliToken::class => ProcessGitHubCliToken::class,
         GreenCommitResolver::class => GitHubGreenCommitResolver::class,
         BranchHeadReader::class => GitHubBranchHeadReader::class,
-        GreenCommitInspector::class => GitHubGreenCommitResolver::class,
         RepositoryDefaultBranchResolver::class => NativeRepositoryDefaultBranchResolver::class,
         SshExecutor::class => TaskVmCredentialGuard::class,
         DatabaseInspectionExecutor::class => RegisteredDatabaseInspectionExecutor::class,

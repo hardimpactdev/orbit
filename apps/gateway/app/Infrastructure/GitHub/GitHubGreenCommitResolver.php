@@ -12,8 +12,6 @@ use App\Domain\GitHub\GitHubCheckRun;
 use App\Domain\GitHub\GitHubCommit;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GreenCommit;
-use App\Domain\GitHub\GreenCommitInspection;
-use App\Domain\GitHub\GreenCommitInspector;
 use App\Domain\GitHub\GreenCommitResolver;
 use App\Domain\GitHub\RequiredCheckState;
 use App\Domain\SourceControl\GitBranchName;
@@ -28,7 +26,7 @@ use InvalidArgumentException;
  * `contents: read` token and check runs with a separate `checks: read` token, minted only when a
  * candidate needs one.
  */
-final readonly class GitHubGreenCommitResolver implements GreenCommitInspector, GreenCommitResolver
+final readonly class GitHubGreenCommitResolver implements GreenCommitResolver
 {
     /** Bounds the check-run reads of one resolution. Older candidates wait for a newer green commit. */
     private const int CANDIDATES = 20;
@@ -42,16 +40,17 @@ final readonly class GitHubGreenCommitResolver implements GreenCommitInspector, 
         string $deployedSha,
         array $failedShas = [],
     ): ?GreenCommit {
-        return $this->inspect($repository, $branch, $checkName, $deployedSha, $failedShas)->green;
+        return $this->inspect($repository, $branch, $checkName, $deployedSha, $failedShas);
     }
 
+    /** @param list<string> $failedShas */
     public function inspect(
         GitHubRepository $repository,
         string $branch,
         string $checkName,
         string $deployedSha,
         array $failedShas = [],
-    ): GreenCommitInspection {
+    ): ?GreenCommit {
         GitBranchName::validate($branch);
         if (trim($checkName) !== $checkName || $checkName === '' || strlen($checkName) > 255) {
             throw new InvalidArgumentException('The required check name is invalid.');
@@ -68,33 +67,28 @@ final readonly class GitHubGreenCommitResolver implements GreenCommitInspector, 
 
         $checksToken = null;
         $candidate = array_first($commits);
-        $head = $candidate?->sha;
-        $headState = null;
         for ($examined = 0; $candidate instanceof GitHubCommit && $examined < self::CANDIDATES; $examined++) {
             if ($candidate->sha === $deployed) {
-                return new GreenCommitInspection(null, $head, $headState);
+                return null;
             }
             if (! isset($failed[$candidate->sha])) {
                 $checksToken ??= $this->github->repositoryChecksToken($credentials, $installation, $repository);
                 $runs = $this->github->checkRuns($checksToken, $repository, $candidate->sha, $checkName);
                 $state = RequiredCheckState::of($runs, $candidate->sha, $checkName);
-                if ($candidate->sha === $head) {
-                    $headState = $state;
-                }
                 if ($state === RequiredCheckState::Passed) {
                     // On a first-parent chain, once a commit does not descend from the deployed one, no older commit does.
                     if (! $this->github->compareCommits($contentsToken, $repository, $deployed, $candidate->sha)->headDescendsFromBase()) {
-                        return new GreenCommitInspection(null, $head, $headState);
+                        return null;
                     }
 
-                    return new GreenCommitInspection(new GreenCommit($candidate->sha, $this->passingRun($runs, $checkName)), $head, $headState);
+                    return new GreenCommit($candidate->sha, $this->passingRun($runs, $checkName));
                 }
             }
             $parent = $candidate->firstParent();
             $candidate = $parent !== null ? ($commits[$parent] ?? null) : null;
         }
 
-        return new GreenCommitInspection(null, $head, $headState);
+        return null;
     }
 
     /**

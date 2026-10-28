@@ -292,9 +292,9 @@ After PHP refresh, a rollback restarts the same active, opted-in Instance Proces
 
 ## Automatic deployments
 
-Swamp runs the production automatic-deploy policy and discovers enabled production Instances from the Gateway. The Gateway retains effects, locks, authorization, and history. Its `orbit:auto-deploy` scheduler runs every minute only for [development defaults](#development-defaults), on the [Gateway queue](/reference/gateway-queue#scheduled-work). The command also accepts the alias `orbit:deploy-development-defaults`.
+Swamp runs the production automatic-deploy policy every minute at second 30 (`30 * * * * *`). It discovers enabled, active production Instances on Nodes with an active `app-prod` role from the Gateway. The Gateway retains effects, locks, authorization, and history. Its `orbit:auto-deploy` scheduler runs every minute only for [development defaults](#development-defaults), on the [Gateway queue](/reference/gateway-queue#scheduled-work). The command also accepts the alias `orbit:deploy-development-defaults`.
 
-Each policy tick reads the branch head through the Gateway with `git ls-remote` and the Project's [read credential](/reference/instance-setup#credentialed-git). Production policy uses the [Gateway source contracts](#swamp-policy-contracts); development defaults call the same credentialed reader locally. It keeps the GitHub App installation that covers the repository for up to 60 minutes. It keeps the read tokens for up to 50 minutes, encrypted with the application key. So a quiet minute costs one `ls-remote` and no GitHub API call. A failed read drops the cached installation and tokens.
+Each policy tick reads the branch head through the Gateway with `git ls-remote` and the Project's [read credential](/reference/instance-setup#credentialed-git). Production policy uses the [Gateway source contracts](#swamp-policy-contracts); development defaults call the same credentialed reader locally. It keeps the GitHub App installation that covers the repository for up to 60 minutes. It keeps the read tokens for up to 50 minutes, encrypted with the application key. Between token refreshes, each eligible Instance costs one `ls-remote` and no GitHub API call in a quiet minute. A failed read drops the cached installation and tokens.
 
 - When the Instance already runs the commit the tick would deploy, the tick starts nothing and writes no history row.
 - Otherwise it starts an [`instance.deploy` operation](#the-deploy-operation) pinned to that commit, with `triggered_by` `orbit:auto-deploy`. No Node name contains a colon, so the marker cannot be a caller.
@@ -318,15 +318,17 @@ orbit instance:update <instance> --auto-deploy=true
 
 The tick starts from the commit of the Instance's newest succeeded deployment or rollback. Until a first deployment succeeds, it reports `not_deployed`; deploy the Instance by hand once. It reads the head of the deployment branch: the `--branch` that `instance:update` set, or the Instance's branch.
 
-When the Project has a `merge_check`, the tick deploys the newest commit that passed it. It finds that commit the way [automatic Gateway releases](/reference/github-app#find-the-newest-green-commit) do. The commit is on the branch's first-parent history, and a GitHub Actions check run of that name passed on exactly that commit. It strictly descends from the deployed commit and is not blocked. It never deploys a red or pending commit. When the head is red, it can deploy an older green commit behind it. A commit deploys within about 2 minutes after its check passes.
+When the Project has a `merge_check`, the tick deploys the newest commit that passed it. It finds that commit the way [automatic Gateway releases](/reference/github-app#find-the-newest-green-commit) do. The commit is on the branch's first-parent history, and a GitHub Actions check run of that name passed on exactly that commit. It strictly descends from the deployed commit and is not blocked. It never deploys a red or pending commit. When the head is red, it can deploy an older green commit behind it.
+
+A pending check that passes is normally selected on the next tick, within one minute. A cached failed check is read again on the first tick at least 5 minutes after the failed read. Admission, the operation queue, and deployment steps add time before the commit is live.
 
 | Result | Meaning |
 | --- | --- |
 | `up_to_date` | The Instance runs the head. |
 | `started` | The tick started a deployment of the commit it names. |
 | `deploying` | The tick's deployment has not ended yet. |
-| `gate_pending` | The head's check has not finished, and no older commit is green. The tick reads the check again each minute. |
-| `gate_failed` | The head's check failed, and no older commit is green. The tick reads it again after 5 minutes, so a re-run that passes deploys. |
+| `gate_pending` | The head's check has not finished, and no older commit is green. The tick reads the check again each minute at second 30. |
+| `gate_failed` | The head's check failed with no older green commit. Recheck on the first tick at least 5 minutes after that read. |
 | `no_green_commit` | No commit may deploy: the head is blocked, or it does not descend from the deployed commit, for example after a force push. |
 | `commit_failed` | The head is blocked, and no gate applies: a development default, or a Project without a `merge_check`. |
 | `busy` | Another operation holds the Instance. |
@@ -335,13 +337,13 @@ When the Project has a `merge_check`, the tick deploys the newest commit that pa
 | `not_deployed` | No deployment of the Instance has succeeded yet. |
 | `failed` | The tick could not read the head or the check, or could not start the deployment. `error_code` names why. |
 
-The green-commit walk reads the head's own check run too, so one walk answers both questions. The tick walks again only when the head changed, while the head's check has not finished, or 5 minutes after it failed. A `no_green_commit` answer stays until the head, the deployed commit, or the blocked commits change.
+The green-commit walk reads the head's own check run too, so one walk answers both questions. The tick walks again only when the head changed, while the head's check has not finished, or on the first tick at least 5 minutes after it failed. A `no_green_commit` answer stays until the head, the deployed commit, or the blocked commits change.
 
 Without a `merge_check`, the tick deploys every new head. `instance:update` accepts that and warns about it. A `merge_check` is read through the [GitHub App](/reference/github-app). A Project that reads through the GitHub CLI, or is not on `github.com`, cannot gate: `instance:update --auto-deploy=true` refuses it with `instance.auto_deploy_gate_unreadable` while it has a `merge_check`.
 
 #### Failures of automatic deployments
 
-A failure before any of the Project's own steps ran, at `operation`, `preparation`, or `environment`, is transient. The tick deploys the commit again after 10 minutes, then after 20 minutes. After three failed attempts, the commit is blocked.
+A failure before any of the Project's own steps ran, at `operation`, `preparation`, or `environment`, is transient. The tick retries on the first tick at least 10 minutes after the first failure, then at least 20 minutes after the second failure. After three failed attempts, the commit is blocked.
 
 These failures are lasting, and the commit is blocked at once:
 
@@ -366,7 +368,7 @@ A rollback that came after the tick queued the deployment wins while no worker h
 
 A rollback or manual deployment can also end between the tick's read of the history and the start of its deployment. So the deployment checks for a pause again under the Instance lock. A pause found there ends the operation with `deployment.paused` and deploys nothing. A first attempt writes no history row. An attempt that a worker resumes after a lost worker ends its row with `deployment.paused`, which does not count as a failure of the commit.
 
-**Visibility.** Each automatic deployment has its operation and its [history row](#history) with `triggered_by` `orbit:auto-deploy`. `instance:show` shows the last result, its commit, the head, and a pause. When a result other than `up_to_date`, `deploying`, or `gate_pending` starts, the tick writes one Activity entry, `auto_deploy.<result>`, with the command `orbit:auto-deploy`. A [release alert](/reference/gateway-recovery#release-alerts) with the target `instance:<id>` reports a failed automatic deployment once per commit, a commit or a pending head that waited 30 minutes once per commit, and a pause.
+**Visibility.** Each automatic deployment has its operation and its [history row](#history) with `triggered_by` `orbit:auto-deploy`. `instance:show` shows the last result, its commit, the head, and a pause. When a result other than `up_to_date`, `deploying`, or `gate_pending` starts, the tick writes one Activity entry, `auto_deploy.<result>`, with the command `orbit:auto-deploy`. A [release alert](/reference/gateway-recovery#release-alerts) with the target `instance:<id>` reports a failed automatic deployment once per commit, a commit or a pending head on the first tick after it waited at least 30 minutes, once per commit, and a pause.
 
 **One worker.** Development defaults, production Instances, and manual deployments share the one `operations` worker, as [One worker for every operation](/reference/operations#one-worker-for-every-operation) describes. A tick's deployment waits in the queue while another deployment runs. Instances behind one Route deploy one after another, not together.
 
@@ -403,11 +405,16 @@ If admission already exists, resolution returns its receipt without cancelling o
 
 A terminal worker-lost receipt without effect evidence still needs investigation: stop the old host writer, inspect the live release, then reconcile through a manual deploy or rollback before resuming. Do not clear Swamp storage by hand. After reconciliation, resume with `orbit instance:update <instance> --auto-deploy=true`; the rollback block remains. A missing receipt alone never permits resume or a new request key.
 
-To switch policy back, stop Swamp scheduling, settle every admitted operation and unresolved hold, then ship a reviewed Orbit change that restores the PHP production policy and its `gateway` binding together. Reconstruct policy from retained history before restarting PHP scheduling. A repeat alert is acceptable; a duplicate deploy is not. Keep one writer. There is no automatic fallback.
+To switch policy back:
+
+1. Disable `auto_deploy` on the affected Instances.
+2. Wait until no automatic operation is running or queued.
+3. Revert this PR (code-only, no migrations).
+4. Re-enable `auto_deploy` (PHP owns again).
 
 ### One policy writer during the trial
 
-Swamp decides production automatic deployments. The code-owned writer is `swamp`; Instance list/show exposes it as `auto_deploy.policy_owner`. Swamp discovers enabled production Instances through the Gateway and does nothing when the owner is `gateway`. Automatic admission, publication, and event admission refuse with `instance.auto_deploy_policy_owner` under PHP ownership. The deploy and event workers check ownership again before effects. There is no environment flag or runtime switch.
+Swamp decides production automatic deployments. The code-owned writer is `swamp`; Instance list/show exposes it as `auto_deploy.policy_owner`. Swamp discovers eligible Instances with `GET /api/v1/instances?auto_deploy=true` and does nothing when the owner is `gateway`. The filter uses the same eligibility rule as automatic admission: automatic deployment enabled, active Instance, production placement, and an active `app-prod` role. An inactive or absent `app-prod` role refuses admission with `instance.auto_deploy_role_inactive`. The worker checks this rule again before effects. Unfiltered Instance listing still includes ineligible Instances. Automatic admission, publication, and event admission refuse with `instance.auto_deploy_policy_owner` under PHP ownership. The deploy and event workers check ownership again before effects. There is no environment flag or runtime switch.
 
 The cutover release removes the PHP production policy loop. Development defaults retain their PHP scheduler. Deploy Swamp first: it stays idle until the Gateway reports Swamp ownership. Drain old PHP policy work before activating the Gateway release. Swamp reconstructs policy and retries from the public projection and Gateway history. Alert deduplication starts in Swamp: the owner accepts one possible repeat alert at cutover. Orbit exposes no stored alert-key contract.
 
@@ -488,7 +495,7 @@ A manual deployment means "deploy what the branch holds now". So it takes no com
 
 ### Poll, do not wait for a webhook
 
-Automatic policy reads branch heads through the Gateway instead of receiving a GitHub push webhook. A webhook would need a public endpoint and a webhook secret on a Gateway that otherwise answers only WireGuard peers. Swamp uses the source-read contracts; PHP development defaults and automatic Gateway releases retain their native readers. A quiet minute costs one `git ls-remote`, and a pending check costs a few GitHub API reads, well within the App's rate limit. The price is up to one minute of delay.
+Automatic policy reads branch heads through the Gateway instead of receiving a GitHub push webhook. A webhook would need a public endpoint and a webhook secret on a Gateway that otherwise answers only WireGuard peers. Swamp uses the source-read contracts; PHP development defaults and automatic Gateway releases retain their native readers. A quiet minute costs one `git ls-remote`, and a pending check costs a few GitHub API reads, well within the App's rate limit. The polling delay is up to one minute; failed-check caches, retry backoff, and the operation queue can add time.
 
 Conditional requests with an ETag were rejected: a quiet minute already makes no GitHub API call, and the cache keeps token requests rare.
 

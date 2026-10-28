@@ -71,21 +71,30 @@ Orbit #1546 reports 24m 39s on 2026-10-27, from 21:42:00 to 22:06:39 UTC, or abo
 
 The total for orbit-swamp #46 is 37 minutes and 33 seconds across its three measured intervals. Orbit #1548 reports 23m 13s for implementation and 21m 41s for review fixes. Both totals exclude external review gaps. Owner time was not measured. These are implementation measurements, not proof that the slice passes its gates. Slice 1 alone offers little Orbit CI saving. Savings are expected as more slices reuse the Gateway contracts.
 
+Swamp ticks every minute at second 30 (`30 * * * * *`). Gateway discovery and automatic admission require an enabled, active production Instance on a Node whose `app-prod` role is active. The Gateway owns that eligibility rule; Swamp uses `GET /api/v1/instances?auto_deploy=true`.
+
+To switch policy back:
+
+1. Disable `auto_deploy` on the affected Instances.
+2. Wait until no automatic operation is running or queued.
+3. Revert this PR (code-only, no migrations).
+4. Re-enable `auto_deploy` (PHP owns again).
+
 ### Slice 1 cutover measurements
 
 This Orbit cutover is measured against `40561b4aec9288032476ea8114653b0fe91f3374`. Counts are physical diff lines, including comments and blanks. Source includes the Gateway, CLI, SDK, and OpenAPI generator. Tests exclude fixtures and expected renderings. Documentation includes SDK guidance. Generated files include OpenAPI, MCP, web types, navigation, and documentation context.
 
 | Area | Removed | Added | Net removed |
 | --- | --- | --- | --- |
-| Source | 406 | 373 | 33 |
-| Tests | 669 | 203 | 466 |
-| Documentation | 21 | 66 | -45 |
-| Generated | 6 | 277 | -271 |
+| Source | 472 | 413 | 59 |
+| Tests | 706 | 264 | 442 |
+| Documentation | 27 | 88 | -61 |
+| Generated | 10 | 302 | -292 |
 | Fixtures and expected renderings | 0 | 61 | -61 |
 
-Source detail: Gateway 403 removed and 191 added; CLI and SDK 1 removed and 168 added; generator 2 removed and 14 added. Fenced receipts, original-caller resolution, and Activity auditing are reusable Gateway boundary infrastructure. This cutover reuses the source, publication, event, and receipt contracts from #1548.
+Source detail: CLI and SDK 1 removed and 168 added; Gateway 469 removed and 228 added; generator 2 removed and 17 added. Fenced receipts, original-caller resolution, and Activity auditing are reusable Gateway boundary infrastructure. This cutover reuses the source, publication, event, and receipt contracts from #1548.
 
-The only whole-file removal is `apps/gateway/tests/Feature/Domain/AutoDeployTest.php`, 652 lines. The retained `RunAutomaticDeploysAction.php` removes 229 lines and adds 9; `AutomaticDeployState.php` removes 134 and adds 2; `AutomaticDeployHistory.php` removes 22 and adds 11. These classes retain development defaults, rollback evidence, public projection, and alert subjects. The command and scheduler remain because development defaults still use them. Production policy tests move to orbit-swamp; shared deploy, rollback, and history tests stay in Orbit.
+Whole-file removals are `apps/gateway/tests/Feature/Domain/AutoDeployTest.php` (652 lines), `GreenCommitInspector.php` (25 lines), and `GreenCommitInspection.php` (19 lines). The unused inspector binding, head-check state, and inspector tests are gone. `GreenCommitResolver::resolve()` remains for automatic Gateway releases; its `inspect()` walk returns the selected commit directly. The retained `RunAutomaticDeploysAction.php` removes 229 lines and adds 9; `AutomaticDeployState.php` removes 134 and adds 2; `AutomaticDeployHistory.php` removes 22 and adds 11. These classes retain development defaults, rollback evidence, public projection, and alert subjects. The command and scheduler remain because development defaults still use them. Production policy tests move to orbit-swamp; shared deploy, rollback, and history tests stay in Orbit.
 
 Implementation agent wall-clock: 31m 37s, from 2026-10-28 10:32:15 UTC through final local verification. Independent review ran on the working diff; its time was not separately instrumented. Owner time was not measured. The cutover figures exclude the prerequisite PR deltas above and orbit-swamp #48. They do not establish cumulative slice savings or passed trial gates. No CI saving or live reliability result is claimed; the live window starts when the cutover release is active.
 

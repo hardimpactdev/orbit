@@ -207,7 +207,7 @@ it('pins a development default to the requested Project-branch commit and refuse
     $remote->shouldReceive('target')->once()->with(Mockery::type(Instance::class), $this->sha)->andReturn(new DevelopmentTarget($this->sha));
     $remote->shouldReceive('checkout')->once();
     app()->instance(DevelopmentDeployment::class, $remote);
-    pinned_deploy_start($this, true)->assertConflict()->assertJsonPath('error.code', 'deployment.paused');
+    pinned_deploy_start($this, true)->assertConflict()->assertJsonPath('error.code', 'instance.auto_deploy_role_inactive');
     pinned_deploy_start($this)->assertAccepted();
     run_operation_jobs();
     expect(Operation::query()->sole()->status->value)->toBe('succeeded');

@@ -39,7 +39,7 @@ final readonly class InstanceDeployOperation implements OperationKind
             return OperationOutcome::failed('operation.target_missing');
         }
 
-        if ($operation->triggered_by !== AutomaticDeployHistory::Trigger || ! $instance->placedOnAppProd()) {
+        if ($operation->triggered_by !== AutomaticDeployHistory::Trigger || (! $instance->placedOnAppProd() && ! isset($operation->input['caller_node_id']))) {
             return $this->deploy($operation, $run, $instance);
         }
 
@@ -61,7 +61,7 @@ final readonly class InstanceDeployOperation implements OperationKind
                 return $this->deploy($operation, $run, $instance);
             });
         } catch (ResourceOperationException $exception) {
-            return in_array($exception->errorCode, [AutomaticDeployHistory::Paused, 'instance.auto_deploy_policy_owner'], true)
+            return in_array($exception->errorCode, [AutomaticDeployHistory::Paused, 'instance.auto_deploy_policy_owner', AutomaticDeployPolicyWriter::InactiveRole], true)
                 ? $this->paused($operation, $exception->errorCode)
                 : OperationOutcome::failed($exception->errorCode);
         }
