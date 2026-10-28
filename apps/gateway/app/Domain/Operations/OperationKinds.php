@@ -7,7 +7,11 @@ namespace App\Domain\Operations;
 use Illuminate\Contracts\Container\Container;
 use LogicException;
 
-/** The closed registry of operation kinds. A kind's name is `<family>.<verb>`; its target type is one word. */
+/**
+ * The closed registry of operation kinds. A kind's name is `<family>.<verb>`; its target type is one word.
+ *
+ * @phpstan-import-type SwampDefinition from OperationExecutionContract
+ */
 final readonly class OperationKinds
 {
     /** The form of every kind name, `<family>.<verb>` in lower case, such as `instance.deploy`. */
@@ -46,16 +50,16 @@ final readonly class OperationKinds
     /** All operations on a task group hold the same target. */
     public const string TaskGroupTarget = 'task_group';
 
-    /** @var array<string, class-string<OperationKind>|array{executor: 'swamp', completion: class-string}> */
+    /** @var array<string, class-string<OperationKind>|SwampDefinition> */
     private array $kinds;
 
-    /** @param array<string, class-string<OperationKind>|array{executor: 'swamp', completion: class-string}>|null $kinds */
+    /** @param array<string, class-string<OperationKind>|SwampDefinition>|null $kinds */
     public function __construct(private Container $container, ?array $kinds = null)
     {
         $this->kinds = $kinds ?? self::definitions();
     }
 
-    /** @return array<string, class-string<OperationKind>|array{executor: 'swamp', completion: class-string}> */
+    /** @return array<string, class-string<OperationKind>|SwampDefinition> */
     public static function definitions(): array
     {
         $kinds = [];

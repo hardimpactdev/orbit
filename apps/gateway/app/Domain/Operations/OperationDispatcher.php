@@ -54,6 +54,10 @@ final readonly class OperationDispatcher
 
     public function dispatch(Operation $operation): void
     {
+        if (app(OperationExecutors::class)->swamp($operation->kind)) {
+            return;
+        }
+
         Queue::connection(GatewayQueue::Connection)->pushOn(GatewayQueue::Operations->value, new RunOperation($operation->id));
         $operation->forceFill(['dispatched_at' => Carbon::now()])->save();
     }

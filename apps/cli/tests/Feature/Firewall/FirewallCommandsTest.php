@@ -11,6 +11,9 @@ use Orbit\Sdk\Requests\Firewall\AllowFirewallRuleRequest;
 use Orbit\Sdk\Requests\Firewall\DenyFirewallRuleRequest;
 use Orbit\Sdk\Requests\Firewall\ListFirewallRulesRequest;
 use Orbit\Sdk\Requests\Firewall\RemoveFirewallRuleRequest;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
+use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -31,7 +34,7 @@ afterEach(function (): void {
 });
 
 it('sends normalized allow input through the active gateway as JSON', function (): void {
-    $mock = MockClient::global([
+    $mock = firewall_cli_mock([
         AllowFirewallRuleRequest::class => firewall_cli_response(action: 'allow', backendStatus: 'active', status: 201),
     ]);
 
@@ -47,24 +50,15 @@ it('sends normalized allow input through the active gateway as JSON', function (
         ->expectsOutput(firewall_cli_json(action: 'allow', backendStatus: 'active'))
         ->assertExitCode(0);
 
-    expect($mock->getLastPendingRequest()?->getUrl())
-        ->toBe('https://10.44.0.1/api/v1/nodes/7/firewall-rules/allow')
-        ->and($mock->getLastRequest())
-        ->toBeInstanceOf(AllowFirewallRuleRequest::class)
-        ->and($mock->getLastRequest()?->body()->all())
-        ->toBe([
-            'name' => 'private-web',
-            'source' => '192.0.2.0/24',
-            'protocol' => 'tcp',
-            'port' => '443',
-        ]);
+    $mock->assertSent(fn ($request): bool => $request instanceof AllowFirewallRuleRequest
+        && $request->body()->all() === ['name' => 'private-web', 'source' => '192.0.2.0/24', 'protocol' => 'tcp', 'port' => '443']);
 });
 
 it('omits optional firewall source and protocol for Gateway defaults', function (
     string $command,
     string $requestClass,
 ): void {
-    $mock = MockClient::global([
+    $mock = firewall_cli_mock([
         $requestClass => firewall_cli_response(
             action: $command === 'firewall:allow' ? 'allow' : 'deny',
             backendStatus: 'active',
@@ -80,13 +74,7 @@ it('omits optional firewall source and protocol for Gateway defaults', function 
         ])
         ->assertExitCode(0);
 
-    expect($mock->getLastRequest())
-        ->toBeInstanceOf($requestClass)
-        ->and($mock->getLastRequest()?->body()->all())
-        ->toBe([
-            'name' => 'web',
-            'port' => '443',
-        ]);
+    $mock->assertSent(fn ($request): bool => $request instanceof $requestClass && $request->body()->all() === ['name' => 'web', 'port' => '443']);
 })->with([
     'allow' => ['firewall:allow', AllowFirewallRuleRequest::class],
     'deny' => ['firewall:deny', DenyFirewallRuleRequest::class],
@@ -97,7 +85,7 @@ it('reports inactive UFW as a structured gateway failure', function (
     string $requestClass,
     array $arguments,
 ): void {
-    $mock = MockClient::global([
+    $mock = firewall_cli_mock([
         $requestClass => firewall_cli_backend_inactive_response(),
     ]);
 
@@ -136,7 +124,7 @@ it('reports inactive UFW with the exact safe JSON error envelope', function (
     string $requestClass,
     array $arguments,
 ): void {
-    $mock = MockClient::global([
+    $mock = firewall_cli_mock([
         $requestClass => firewall_cli_backend_inactive_response(),
     ]);
     $expected = json_encode([
@@ -178,7 +166,7 @@ it('reports inactive UFW with the exact safe JSON error envelope', function (
 ]);
 
 it('lists stable named rules for one node', function (): void {
-    MockClient::global([
+    firewall_cli_mock([
         ListFirewallRulesRequest::class => MockResponse::make([
             'data' => [firewall_cli_payload(action: 'allow', backendStatus: null)],
             'meta' => ['request_id' => firewall_cli_request_id()],
@@ -197,7 +185,7 @@ it('lists stable named rules for one node', function (): void {
 });
 
 it('removes one stable name within one node', function (): void {
-    $mock = MockClient::global([
+    $mock = firewall_cli_mock([
         RemoveFirewallRuleRequest::class => firewall_cli_response(action: 'allow', backendStatus: 'absent'),
     ]);
 
@@ -207,12 +195,11 @@ it('removes one stable name within one node', function (): void {
             'name' => 'private-web',
             '--node' => '7',
         ])
-        ->expectsOutput('Firewall rule [private-web] removed.')
+        ->expectsOutputToContain('succeeded')
         ->expectsOutput('Request ID: '.firewall_cli_request_id())
         ->assertExitCode(0);
 
-    expect($mock->getLastPendingRequest()?->getUrl())
-        ->toBe('https://10.44.0.1/api/v1/nodes/7/firewall-rules/private-web');
+    $mock->assertSent(fn ($request): bool => $request instanceof RemoveFirewallRuleRequest && $request->resolveEndpoint() === '/api/v1/nodes/7/firewall-rules/private-web');
 });
 
 it('rejects invalid local input before making a gateway request', function (
@@ -257,7 +244,7 @@ it('rejects invalid local input before making a gateway request', function (
 ]);
 
 it('shows the gateway request ID on bounded failures', function (): void {
-    MockClient::global([
+    firewall_cli_mock([
         AllowFirewallRuleRequest::class => MockResponse::make(
             [
                 'error' => [
@@ -285,7 +272,7 @@ it('shows the gateway request ID on bounded failures', function (): void {
 function firewall_cli_response(string $action, ?string $backendStatus, int $status = 200): MockResponse
 {
     return MockResponse::make([
-        'data' => firewall_cli_payload($action, $backendStatus),
+        'data' => firewall_cli_operation($action, $backendStatus),
         'meta' => ['request_id' => firewall_cli_request_id()],
     ], $status);
 }
@@ -324,15 +311,45 @@ function firewall_cli_payload(string $action, ?string $backendStatus): array
     ];
 }
 
+function firewall_cli_operation(string $action = 'allow', ?string $backendStatus = 'active'): array
+{
+    return ['id' => 42, 'kind' => 'firewall.'.($backendStatus === 'absent' ? 'remove' : $action),
+        'target_type' => 'node_firewall', 'target_id' => 7, 'input' => ['name' => 'private-web'],
+        'status' => 'succeeded', 'sequence' => 5, 'result' => ['backend' => $backendStatus]];
+}
+
+function firewall_cli_mock(array $responses): MockClient
+{
+    $last = array_key_exists(RemoveFirewallRuleRequest::class, $responses) ? 'absent' : 'active';
+    $action = array_key_exists(DenyFirewallRuleRequest::class, $responses) ? 'deny' : 'allow';
+
+    return MockClient::global([...$responses,
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+        ShowOperationRequest::class => firewall_cli_response($action, $last),
+    ]);
+}
+
 function firewall_cli_json(string $action, ?string $backendStatus): string
 {
-    return json_encode([
-        ...firewall_cli_payload($action, $backendStatus),
-        'request_id' => firewall_cli_request_id(),
-    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+    return json_encode(OperationResponse::fromGatewayData(firewall_cli_operation($action, $backendStatus), firewall_cli_request_id())->toArray(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 }
 
 function firewall_cli_request_id(): string
 {
     return '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
 }
+
+it('follows a queued firewall Operation to its final JSON receipt and forwards the retry key', function (): void {
+    $mock = MockClient::global([
+        AllowFirewallRuleRequest::class => MockResponse::make([
+            'data' => [...firewall_cli_operation(), 'status' => 'queued', 'result' => null],
+            'meta' => ['request_id' => firewall_cli_request_id()],
+        ], 202),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+        ShowOperationRequest::class => firewall_cli_response('allow', 'active'),
+    ]);
+    $this->artisan('firewall:allow', ['name' => 'private-web', '--node' => '7', '--port' => '443', '--idempotency-key' => 'allow-7', '--json' => true])
+        ->expectsOutput(firewall_cli_json('allow', 'active'))->assertExitCode(0);
+    $mock->assertSent(fn ($request): bool => $request instanceof AllowFirewallRuleRequest && $request->headers()->get('Idempotency-Key') === 'allow-7');
+    $mock->assertSent(fn ($request): bool => $request instanceof ShowOperationRequest);
+});

@@ -6,9 +6,9 @@ use App\Domain\Instances\Sqlite\SqliteSeedPlacement;
 use App\Infrastructure\AgentCommands\AgentBinaryInput;
 use App\Infrastructure\AgentCommands\AgentBinaryOutput;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentSchemas;
 use App\Infrastructure\Instances\ProtectedSqliteSnapshotTransfer;
 use App\Models\Node;
-use Tests\Support\AgentSchemas;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\ProcessInput;
 

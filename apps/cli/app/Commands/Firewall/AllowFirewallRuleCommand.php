@@ -16,6 +16,7 @@ final class AllowFirewallRuleCommand extends StoreFirewallRuleCommand
         {--from= : Optional source IPv4/IPv6 address, CIDR, or any}
         {--protocol= : Optional tcp or udp protocol}
         {--port= : Destination port or ordered range}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -28,6 +29,6 @@ final class AllowFirewallRuleCommand extends StoreFirewallRuleCommand
         ?string $protocol,
         string $port,
     ): GatewayRequest {
-        return new AllowFirewallRuleRequest($nodeId, $name, $source, $protocol, $port);
+        return new AllowFirewallRuleRequest($nodeId, $name, $source, $protocol, $port, is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null);
     }
 }

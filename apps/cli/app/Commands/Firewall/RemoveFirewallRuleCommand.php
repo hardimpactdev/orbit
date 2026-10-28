@@ -4,22 +4,25 @@ declare(strict_types=1);
 
 namespace App\Commands\Firewall;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use App\Support\Console\ProgressState;
-use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Requests\Firewall\ListFirewallRulesRequest;
 use Orbit\Sdk\Requests\Firewall\RemoveFirewallRuleRequest;
 use Orbit\Sdk\Responses\Firewall\FirewallRuleResponse;
 use Orbit\Sdk\Responses\Firewall\FirewallRulesResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class RemoveFirewallRuleCommand extends FirewallCommand
 {
+    use FollowsOperations;
+
     #[\Override]
     protected $signature = 'firewall:remove
         {name : Stable firewall rule name}
         {--node= : Numeric target node ID}
         {--yes : Confirm firewall rule removal}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -47,7 +50,7 @@ final class RemoveFirewallRuleCommand extends FirewallCommand
             return self::FAILURE;
         }
 
-        if ($this->option('yes') !== true) {
+        if ($this->option('yes') !== true && $this->option('idempotency-key') === null) {
             $rules = $this->sendWithProgress($connector, new ListFirewallRulesRequest($nodeId), FirewallRulesResponse::class,
                 ['Resolve firewall rule', 'Loading firewall rules', 'Loaded firewall rules']);
 
@@ -64,35 +67,14 @@ final class RemoveFirewallRuleCommand extends FirewallCommand
             return self::FAILURE;
         }
 
-        $rule = $this->sendWithProgress(
-            $connector,
-            new RemoveFirewallRuleRequest($nodeId, $name),
-            FirewallRuleResponse::class,
-            ['Remove firewall rule', 'Removing firewall rule', 'Removed firewall rule'],
-            static function (FirewallRuleResponse $response): ProgressState {
-                if ($response->backendStatus !== 'absent') {
-                    throw new GatewayApiException('Gateway response does not confirm the firewall operation.',
-                        'gateway.invalid_response', requestId: $response->requestId);
-                }
-
-                return ProgressState::Success;
-            },
-        );
-
-        if (! $rule instanceof FirewallRuleResponse) {
+        $profile = $this->activeGatewayProfile($repository);
+        if ($profile === null) {
             return self::FAILURE;
         }
+        $operation = $this->send($connector, new RemoveFirewallRuleRequest($nodeId, $name, is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null), OperationResponse::class);
 
-        if ($this->option('json') === true) {
-            $this->writeJson($rule->toArray());
-
-            return self::SUCCESS;
-        }
-
-        $this->writeHumanMessage("Firewall rule [{$rule->name}] removed.");
-
-        $this->writeHumanMessage("Request ID: {$rule->requestId}");
-
-        return self::SUCCESS;
+        return $operation instanceof OperationResponse
+            ? $this->followOperation($connector, $profile, $operation, "Remove firewall rule [{$name}]", 'Firewall rule removal')
+            : self::FAILURE;
     }
 }

@@ -670,14 +670,14 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'extension:list' => [[], ['json' => false]],
         'firewall:allow' => [
             ['name'],
-            ['node' => null, 'from' => null, 'protocol' => null, 'port' => null, 'json' => false],
+            ['node' => null, 'from' => null, 'protocol' => null, 'port' => null, 'idempotency-key' => null, 'json' => false],
         ],
         'firewall:deny' => [
             ['name'],
-            ['node' => null, 'from' => null, 'protocol' => null, 'port' => null, 'json' => false],
+            ['node' => null, 'from' => null, 'protocol' => null, 'port' => null, 'idempotency-key' => null, 'json' => false],
         ],
         'firewall:list' => [[], ['node' => null, 'json' => false]],
-        'firewall:remove' => [['name'], ['node' => null, 'yes' => false, 'json' => false]],
+        'firewall:remove' => [['name'], ['node' => null, 'yes' => false, 'idempotency-key' => null, 'json' => false]],
         'fleet:rollout:resume' => [[], ['skip' => null, 'json' => false]],
         'fleet:rollout:status' => [[], ['json' => false]],
         'gateway:add' => [['gateway'], ['name' => 'default', 'ca' => null, 'accept-ca-change' => false, 'use' => false, 'json' => false]],

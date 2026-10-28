@@ -6,6 +6,7 @@ namespace Tests\Support;
 
 use App\Infrastructure\AgentCommands\AgentContract;
 use App\Infrastructure\AgentCommands\AgentGuest;
+use App\Infrastructure\AgentCommands\AgentSchemas;
 use App\Infrastructure\AgentCommands\GuestAgentCommandRunner;
 use Closure;
 use LogicException;

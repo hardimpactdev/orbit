@@ -10,14 +10,14 @@ use App\Actions\Firewall\ListManagedFirewallRulesAction;
 use App\Actions\Firewall\RemoveFirewallRuleAction;
 use App\Actions\Firewall\StoreFirewallRuleAction;
 use App\Data\Firewall\FirewallRuleData;
-use App\Domain\Firewall\FirewallBackendStatus;
+use App\Data\Operations\OperationData;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Firewall\StoreFirewallRuleRequest;
+use App\Http\Requests\Operations\StartsOperation;
 use App\Models\FirewallRule;
 use App\Models\Node;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -67,46 +67,36 @@ final class FirewallRulesController extends Controller
         ]);
     }
 
-    public function store(
-        StoreFirewallRuleRequest $request,
-        Node $node,
-        StoreFirewallRuleAction $action,
-    ): JsonResponse {
-        $result = $action->execute($node, $request->getData());
-
-        return response()->json(
-            [
-                'data' => FirewallRuleData::fromModel(
-                    $result['rule'],
-                    $result['backend_status'],
-                )->toArray(),
-                'meta' => $this->meta($request),
-            ],
-            $result['created'] ? 201 : 200,
-        );
+    #[StartsOperation('firewall.allow')]
+    public function allow(StoreFirewallRuleRequest $request, Node $node, StoreFirewallRuleAction $action): JsonResponse
+    {
+        return $this->store($request, $node, $action);
     }
 
-    public function destroy(
-        Request $request,
-        Node $node,
-        FirewallRule $firewallRule,
-        RemoveFirewallRuleAction $action,
-    ): JsonResponse {
-        if ($firewallRule->node_id !== $node->id) {
-            throw new ModelNotFoundException()->setModel(FirewallRule::class, [$firewallRule->name]);
-        }
+    #[StartsOperation('firewall.deny')]
+    public function deny(StoreFirewallRuleRequest $request, Node $node, StoreFirewallRuleAction $action): JsonResponse
+    {
+        return $this->store($request, $node, $action);
+    }
 
-        $data = FirewallRuleData::fromModel($firewallRule, FirewallBackendStatus::Absent);
-        $backendStatus = $action->execute($firewallRule);
+    private function store(StoreFirewallRuleRequest $request, Node $node, StoreFirewallRuleAction $action): JsonResponse
+    {
+        $caller = $request->user();
+        $operation = $action->execute($node, $request->getData(), $caller instanceof Node ? $caller : null,
+            $request->attributes->getString('orbit.request_id'));
 
-        if ($backendStatus === FirewallBackendStatus::Inactive) {
-            $data = FirewallRuleData::fromModel($firewallRule->refresh(), $backendStatus);
-        }
+        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
+    }
 
-        return response()->json([
-            'data' => $data->toArray(),
-            'meta' => $this->meta($request),
-        ]);
+    #[StartsOperation('firewall.remove')]
+    public function destroy(Request $request, Node $node, string $firewallRule, RemoveFirewallRuleAction $action): JsonResponse
+    {
+        $firewallRule = $node->firewallRules()->where('name', $firewallRule)->firstOrFail();
+        $caller = $request->user();
+        $operation = $action->execute($firewallRule, $caller instanceof Node ? $caller : null,
+            $request->attributes->getString('orbit.request_id'));
+
+        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
     /** @return array{request_id: string} */

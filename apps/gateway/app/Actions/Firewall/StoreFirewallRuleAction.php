@@ -4,108 +4,64 @@ declare(strict_types=1);
 
 namespace App\Actions\Firewall;
 
-use App\Data\Firewall\FirewallRuleData;
+use App\Actions\Operations\StartOperationAction;
 use App\Data\Firewall\StoreFirewallRuleData;
-use App\Domain\Broadcasting\RecordEventBroadcaster;
-use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Firewall\FirewallAction;
-use App\Domain\Firewall\FirewallBackendStatus;
-use App\Domain\Firewall\FirewallManager;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\FirewallPort;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\FirewallRule;
 use App\Models\Node;
+use App\Models\Operation;
+use Illuminate\Support\Facades\DB;
 
 final readonly class StoreFirewallRuleAction
 {
     public function __construct(
-        private FirewallManager $firewall,
-        private ?RecordEventBroadcaster $broadcaster = null,
+        private StartOperationAction $operations,
     ) {}
 
-    /** @return array{rule: FirewallRule, created: bool, backend_status: FirewallBackendStatus} */
-    public function execute(Node $node, StoreFirewallRuleData $data): array
+    public function execute(Node $node, StoreFirewallRuleData $data, ?Node $caller = null, ?string $requestId = null): Operation
     {
-        $this->guardLinuxPlatform($node);
-        $this->guardRecoverySsh($node, $data);
-        $this->guardActionConflict($node, $data);
-        $rule = FirewallRule::query()->firstOrNew([
-            'node_id' => $node->id,
-            'name' => $data->name,
-        ]);
-        $created = ! $rule->exists;
-        $attributes = [
-            'action' => $data->action,
-            'source' => $data->source,
-            'protocol' => $data->protocol,
-            'port' => $data->port,
-        ];
-
-        if ($rule->exists && ! $this->matches($rule, $attributes)) {
-            throw new ResourceOperationException(
-                errorCode: 'firewall.name_taken',
-                message: "Firewall rule [{$data->name}] already exists with different configuration.",
-                status: 409,
-            );
-        }
-
-        $rule->fill([
-            ...$attributes,
-            'status' => LifecycleStatus::Provisioning,
-            'failed_step' => null,
-            'error_code' => null,
-        ])->save();
-        $rule->setRelation('node', $node);
-
-        try {
-            $backendStatus = $this->firewall->converge($rule);
-
-            if ($backendStatus === FirewallBackendStatus::Inactive) {
-                throw $this->backendInactive($node);
-            }
-        } catch (FirewallOperationException $exception) {
-            $rule->update([
-                'status' => LifecycleStatus::Failed,
-                'failed_step' => $exception->step,
-                'error_code' => $exception->errorCode,
+        return DB::transaction(function () use ($node, $data, $caller, $requestId): Operation {
+            $this->guardLinuxPlatform($node);
+            $this->guardRecoverySsh($node, $data);
+            $this->guardActionConflict($node, $data);
+            $rule = FirewallRule::query()->firstOrNew([
+                'node_id' => $node->id,
+                'name' => $data->name,
             ]);
+            $created = ! $rule->exists;
+            $attributes = [
+                'action' => $data->action,
+                'source' => $data->source,
+                'protocol' => $data->protocol,
+                'port' => $data->port,
+            ];
 
-            throw $exception;
-        }
+            if ($rule->exists && ! $this->matches($rule, $attributes)) {
+                throw new ResourceOperationException(
+                    errorCode: 'firewall.name_taken',
+                    message: "Firewall rule [{$data->name}] already exists with different configuration.",
+                    status: 409,
+                );
+            }
 
-        $rule->update([
-            'status' => LifecycleStatus::Active,
-            'failed_step' => null,
-            'error_code' => null,
-        ]);
+            $rule->fill([
+                ...$attributes,
+                'status' => LifecycleStatus::Provisioning,
+                'failed_step' => null,
+                'error_code' => null,
+            ])->save();
+            $rule->setRelation('node', $node);
 
-        $rule = $rule->refresh()->load('node');
-
-        if ($created) {
-            ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
-                RecordEventType::FirewallCreated,
-                $rule->id,
-                FirewallRuleData::fromModel($rule, $backendStatus)->toArray(),
-            );
-        }
-
-        return [
-            'rule' => $rule,
-            'created' => $created,
-            'backend_status' => $backendStatus,
-        ];
-    }
-
-    private function backendInactive(Node $node): FirewallOperationException
-    {
-        return new FirewallOperationException(
-            step: 'status',
-            errorCode: 'firewall.backend_inactive',
-            message: "UFW is inactive on node [{$node->name}].",
-            status: 503,
-        );
+            return $this->operations->execute('firewall.'.$data->action->value, 'node_firewall', $node->id, $node->id, [
+                'rule_id' => $rule->id, 'created' => $created, 'name' => $rule->name, 'action' => $rule->action->value,
+                'source' => $rule->source, 'protocol' => $rule->protocol, 'port' => $rule->port,
+                'node_id' => $node->id, 'caller_node_id' => $caller?->id,
+            ], 'operator', $requestId);
+        });
     }
 
     /** @param array{action: FirewallAction, source: string, protocol: string, port: string} $attributes */

@@ -8,8 +8,8 @@ use Orbit\Sdk\Requests\Firewall\AllowFirewallRuleRequest;
 use Orbit\Sdk\Requests\Firewall\DenyFirewallRuleRequest;
 use Orbit\Sdk\Requests\Firewall\ListFirewallRulesRequest;
 use Orbit\Sdk\Requests\Firewall\RemoveFirewallRuleRequest;
-use Orbit\Sdk\Responses\Firewall\FirewallRuleResponse;
 use Orbit\Sdk\Responses\Firewall\FirewallRulesResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -42,29 +42,10 @@ it('maps allow and deny requests to fixed named-rule payloads', function (
             'port' => '443',
         ])
         ->and($response)
-        ->toBeInstanceOf(FirewallRuleResponse::class)
-        ->and($response->nodeId)
-        ->toBe(7)
-        ->and($response->node)
-        ->toBe('app-dev')
-        ->and($response->name)
-        ->toBe('private-web')
-        ->and($response->action)
-        ->toBe($action)
-        ->and($response->backendStatus)
-        ->toBe('active')
-        ->and($response->requestId)
-        ->toBe(firewall_sdk_request_id())
-        ->and($response->toArray())
-        ->toMatchArray([
-            'name' => 'private-web',
-            'action' => $action,
-            'source' => '192.0.2.0/24',
-            'protocol' => 'tcp',
-            'port' => '443',
-            'backend_status' => 'active',
-            'request_id' => firewall_sdk_request_id(),
-        ])
+        ->toBeInstanceOf(OperationResponse::class)
+        ->and($response->kind)->toBe('firewall.'.$action)
+        ->and($response->status)->toBe('queued')
+        ->and($response->requestId)->toBe(firewall_sdk_request_id())
         ->and($mock->getLastPendingRequest()?->headers()->get('X-Orbit-Request-Id'))
         ->toBe('11111111-1111-4111-8111-111111111111');
 })->with([
@@ -125,15 +106,9 @@ it('lists and removes stable names within one node', function (): void {
         ->and($remove->resolveEndpoint())
         ->toBe('/api/v1/nodes/7/firewall-rules/private%20web%2Fedge')
         ->and($removeResponse)
-        ->toBeInstanceOf(FirewallRuleResponse::class)
-        ->and($removeResponse->name)
-        ->toBe('private-web')
-        ->and($removeResponse->action)
-        ->toBe('allow')
-        ->and($removeResponse->backendStatus)
-        ->toBe('absent')
-        ->and($removeResponse->requestId)
-        ->toBe(firewall_sdk_request_id())
+        ->toBeInstanceOf(OperationResponse::class)
+        ->and($removeResponse->kind)->toBe('firewall.remove')
+        ->and($removeResponse->requestId)->toBe(firewall_sdk_request_id())
         ->and($removeMock->getLastPendingRequest()?->headers()->get('X-Orbit-Request-Id'))
         ->toBe('11111111-1111-4111-8111-111111111111');
 });
@@ -198,7 +173,8 @@ function firewall_sdk_connector(MockClient $mock): GatewayConnector
 function firewall_sdk_envelope(string $action, ?string $backendStatus = 'active'): array
 {
     return [
-        'data' => firewall_sdk_data($action, $backendStatus),
+        'data' => ['id' => 42, 'kind' => 'firewall.'.($backendStatus === 'absent' ? 'remove' : $action),
+            'target_type' => 'node_firewall', 'target_id' => 7, 'input' => [], 'status' => 'queued', 'sequence' => 1],
         'meta' => ['request_id' => firewall_sdk_request_id()],
     ];
 }
@@ -231,3 +207,10 @@ function firewall_sdk_request_id(): string
 {
     return '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
 }
+
+it('forwards the exact firewall admission retry key', function (): void {
+    $allow = new AllowFirewallRuleRequest(7, 'proof', null, null, '65431', 'proof-allow');
+    $remove = new RemoveFirewallRuleRequest(7, 'proof', 'proof-remove');
+    expect($allow->headers()->get('Idempotency-Key'))->toBe('proof-allow');
+    expect($remove->headers()->get('Idempotency-Key'))->toBe('proof-remove');
+});
