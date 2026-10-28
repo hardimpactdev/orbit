@@ -32,13 +32,15 @@ final class OperationData extends Data
         public bool $cancelRequested,
         public int $attempts,
         public ?string $triggeredBy,
+        public ?int $callerNodeId,
+        public ?string $callerNodeName,
         public ?string $createdAt,
         public ?string $startedAt,
         public ?string $finishedAt,
         public ?int $pollAfterSeconds,
     ) {}
 
-    public static function fromModel(Operation $operation): self
+    public static function fromModel(Operation $operation, ?string $callerNodeName = null): self
     {
         return new self(
             id: $operation->id,
@@ -55,6 +57,8 @@ final class OperationData extends Data
             cancelRequested: $operation->cancel_requested_at !== null,
             attempts: $operation->attempts,
             triggeredBy: $operation->triggered_by,
+            callerNodeId: $operation->callerNodeId(),
+            callerNodeName: $operation->callerNodeId() === null ? null : $callerNodeName,
             createdAt: $operation->created_at?->format(DateTimeInterface::ATOM),
             startedAt: $operation->started_at?->format(DateTimeInterface::ATOM),
             finishedAt: $operation->finished_at?->format(DateTimeInterface::ATOM),

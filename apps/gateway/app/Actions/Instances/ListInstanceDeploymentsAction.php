@@ -14,6 +14,7 @@ final readonly class ListInstanceDeploymentsAction
     public function execute(Instance $instance): Collection
     {
         return $instance->deployments()
+            ->with('callerNode')
             ->orderByDesc('started_at')
             ->orderByDesc('id')
             ->get();

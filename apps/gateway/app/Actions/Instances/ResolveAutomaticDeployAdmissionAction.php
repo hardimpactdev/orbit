@@ -28,7 +28,7 @@ final readonly class ResolveAutomaticDeployAdmissionAction
             $this->operations->fenceAdmission(
                 OperationKinds::InstanceDeploy, $key, $this->receipts->fingerprint($instance, $caller, $commit),
                 OperationKinds::InstanceTarget, $instance->id, $instance->node_id,
-                ['commit' => $commit, 'caller_node_id' => $caller->id], AutomaticDeployHistory::Trigger, $requestId,
+                ['commit' => $commit, 'caller_node_id' => $caller->id], AutomaticDeployHistory::SwampTrigger, $requestId,
             );
 
             return $this->receipts->execute($instance, $caller, $key, $commit);

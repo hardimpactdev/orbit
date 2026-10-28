@@ -31,7 +31,9 @@ Loading deployment...
 │
 ├  Selected release   20260101000000
 │
-├  Triggered by       gateway
+├  Triggered by       swamp:auto-deploy
+│
+├  Caller Node        gateway
 │
 └  Request ID         0198e15c-bf97-7c23-8f1f-61b8fe67a844
 

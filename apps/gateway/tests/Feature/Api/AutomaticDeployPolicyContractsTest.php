@@ -339,6 +339,9 @@ it('uses the native history subjects for policy alerts', function (string $event
     'failure without commit' => ['failed', 'deploy', 'orbit:auto-deploy', null, false, false],
     'current manual pause' => ['paused', 'deploy', null, str_repeat('a', 40), false, true],
     'current rollback pause' => ['paused', 'rollback', 'operator', str_repeat('a', 40), false, true],
+    'Swamp failure' => ['failed', 'deploy', 'swamp:auto-deploy', str_repeat('a', 40), false, true],
+    'Swamp deploy does not pause' => ['paused', 'deploy', 'swamp:auto-deploy', str_repeat('a', 40), false, false],
+    'Swamp-labelled rollback pauses' => ['paused', 'rollback', 'swamp:auto-deploy', str_repeat('a', 40), false, true],
     'current automatic failure' => ['failed', 'deploy', 'orbit:auto-deploy', str_repeat('a', 40), false, true],
 ]);
 
@@ -372,6 +375,28 @@ it('rejects a publication observed before an existing deployment finished', func
     $body['history_version'] = $this->getJson($this->url)->assertOk()->json('data.auto_deploy.history_version');
     $body['result'] = 'up_to_date';
     $this->putJson($this->url.'/auto-deploy/policy', $body)->assertOk()->assertJsonPath('data.auto_deploy.result', 'up_to_date');
+});
+
+it('keeps the history version through caller renames and removals but changes it for a new deployment', function (): void {
+    $caller = Node::query()->create(['name' => 'services', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '192.0.2.222', 'wireguard_ip' => '10.44.0.222', 'user' => 'orbit']);
+    $row = InstanceDeployment::query()->create([
+        'instance_id' => $this->fixture->instance->id, 'kind' => 'deploy', 'status' => 'succeeded',
+        'commit' => $this->sha, 'started_at' => now(), 'triggered_by' => 'swamp:auto-deploy', 'caller_node_id' => $caller->id,
+    ]);
+    $version = $this->getJson($this->url)->assertOk()->json('data.auto_deploy.history_version');
+    $body = [...policy_publication($this), 'last_deployment_id' => $row->id, 'history_version' => $version];
+
+    $caller->update(['name' => 'renamed-services']);
+    $this->getJson($this->url)->assertOk()->assertJsonPath('data.auto_deploy.history_version', $version);
+    $this->putJson($this->url.'/auto-deploy/policy', $body)->assertOk();
+    $caller->delete();
+    $this->getJson($this->url)->assertOk()->assertJsonPath('data.auto_deploy.history_version', $version);
+    $this->putJson($this->url.'/auto-deploy/policy', $body)->assertOk();
+
+    app(InstanceDeploymentRecorder::class)->start($this->fixture->instance, 'swamp:auto-deploy', callerNodeId: $this->fixture->caller->id);
+    $changed = $this->getJson($this->url)->assertOk()->json('data.auto_deploy.history_version');
+    expect($changed)->not->toBe($version);
+    $this->putJson($this->url.'/auto-deploy/policy', $body)->assertConflict()->assertJsonPath('error.code', 'instance.auto_deploy_observation_changed');
 });
 
 it('preserves a committed publication when a rollback records its terminal blocks', function (): void {
@@ -440,7 +465,7 @@ it('distinguishes an already deployed head from a root that cannot reach the bas
 it('exposes the shipped owner and accepts Swamp automatic admission', function (): void {
     $this->getJson($this->url)->assertOk()->assertJsonPath('data.auto_deploy.policy_owner', 'swamp');
     $this->withHeader('Idempotency-Key', 'swamp')->postJson($this->url.'/deploy/automatic', ['commit' => $this->sha])->assertAccepted();
-    expect(Operation::query()->sole()->triggered_by)->toBe('orbit:auto-deploy');
+    expect(Operation::query()->sole()->triggered_by)->toBe('swamp:auto-deploy');
 });
 
 it('returns 409 without automatic admission when the app-prod role is not active', function (?string $status): void {

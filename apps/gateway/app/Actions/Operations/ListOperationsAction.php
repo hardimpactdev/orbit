@@ -23,6 +23,7 @@ final readonly class ListOperationsAction
     public function execute(Node $consumer, array $filters): Collection
     {
         return Operation::query()
+            ->withCallerNodeName()
             ->when(
                 ! $this->access->hasGatewayAuthority($consumer),
                 fn ($query) => $query->whereIn('node_id', $this->access->accessibleNodeIds($consumer)),
