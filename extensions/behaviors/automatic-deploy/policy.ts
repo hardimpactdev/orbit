@@ -3,12 +3,28 @@ import { z } from "npm:zod@4.4.3";
 export const trigger = "orbit:auto-deploy";
 export const sha = z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/);
 const nullable = z.string().nullable();
+export const CallerNodeIdSchema = z.number().int().positive().nullable()
+  .optional();
+interface DeploymentOrigin {
+  kind: string;
+  triggered_by: string | null;
+  caller_node_id?: number | null;
+  input?: { caller_node_id?: number | null };
+}
+/** Gateway caller evidence is automatic; reserved labels also cover old DTOs and history. */
+export function isAutomaticDeployment(origin: DeploymentOrigin): boolean {
+  if (!["deploy", "instance.deploy"].includes(origin.kind)) return false;
+  const caller = origin.caller_node_id ?? origin.input?.caller_node_id;
+  return typeof caller === "number" && Number.isInteger(caller) && caller > 0 ||
+    [trigger, "swamp:auto-deploy"].includes(origin.triggered_by ?? "");
+}
 export const RowSchema = z.object({
   id: z.number().int().positive(),
   kind: z.enum(["deploy", "rollback"]),
   status: z.enum(["running", "succeeded", "failed"]),
   commit: sha.nullable(),
   triggered_by: nullable,
+  caller_node_id: CallerNodeIdSchema,
   failed_step: nullable,
   error_code: nullable,
   started_at: z.string().datetime({ offset: true }),
@@ -19,8 +35,9 @@ export interface Operation {
   id: number;
   kind: string;
   status: string;
-  input: { commit?: string | null };
+  input: { commit?: string | null; caller_node_id?: number | null };
   triggered_by: string | null;
+  caller_node_id?: number | null;
   result?: { deployment_id?: number; [key: string]: unknown } | null;
   attempts?: number;
   error_code?: string | null;
@@ -194,9 +211,8 @@ const lastingCodes = new Set([
 export const transient = (r: Row) =>
   ["operation", "preparation", "environment"].includes(r.failed_step ?? "") &&
   !lastingCodes.has(r.error_code ?? "");
-const automatic = (r: Row) => r.kind === "deploy" && r.triggered_by === trigger;
 const eligibleFailure = (r: Row) =>
-  automatic(r) && r.status === "failed" && r.commit !== null &&
+  isAutomaticDeployment(r) && r.status === "failed" && r.commit !== null &&
   r.error_code !== "deployment.paused";
 const milliseconds = (t: string) => Date.parse(t);
 
@@ -306,7 +322,7 @@ export async function tick(
     state.notifications.push(notification);
   };
   const last = history.findLast((r) =>
-    automatic(r) && r.status !== "running" &&
+    isAutomaticDeployment(r) && r.status !== "running" &&
     r.error_code !== "deployment.paused" && r.id > observation.resumedAfter
   );
   if (last && eligibleFailure(last)) {
@@ -334,7 +350,8 @@ export async function tick(
   }
   state.blocked = [...new Set(rolledAway)].slice(-20);
   const manual =
-    history.findLast((r) => r.kind === "deploy" && !automatic(r))?.id ?? 0;
+    history.findLast((r) => r.kind === "deploy" && !isAutomaticDeployment(r))
+      ?.id ?? 0;
   // Admission is known once its receipt is terminal. Missing effect evidence
   // holds the target separately, regardless of failure code or claim count.
   if (state.effect_hold && manual > state.effect_hold.manual_after) {
@@ -347,7 +364,7 @@ export async function tick(
     const intent = state.intent;
     const row = history.find((r) => r.id === receipt.result?.deployment_id);
     const evidence = row && row.status !== "running" &&
-      row.commit === intent.commit && automatic(row);
+      row.commit === intent.commit && isAutomaticDeployment(row);
     const noEffect = receipt.status === "failed" && receipt.attempts === 1 &&
       !receipt.result?.deployment_id && [
       "deployment.paused",
@@ -391,7 +408,7 @@ export async function tick(
   let requestKey: string | null = null;
   let holderKind = observation.holder?.kind;
   const pause = history.findLast((r) =>
-    r.id > observation.resumedAfter && !automatic(r)
+    r.id > observation.resumedAfter && !isAutomaticDeployment(r)
   );
   // Known receipts are always read before deciding whether a replacement write is safe.
   try {
@@ -578,8 +595,7 @@ export async function tick(
     const holder = observation.holder;
     if (holder) {
       operationId = holder.id;
-      return holder.kind === "instance.deploy" &&
-          holder.triggered_by === trigger && holder.input.commit === selected
+      return isAutomaticDeployment(holder) && holder.input.commit === selected
         ? "deploying"
         : "busy";
     }
@@ -592,7 +608,8 @@ export async function tick(
     // Ordinals never reset at a manual deploy; an old idempotency key must never be reused.
     const attempt = Math.max(
       state.attempts[selected] ?? 0,
-      history.filter((r) => automatic(r) && r.commit === selected).length,
+      history.filter((r) => isAutomaticDeployment(r) && r.commit === selected)
+        .length,
     ) + 1;
     requestKey = `auto.${instance}.${selected}.${attempt}`;
     state.attempts[selected] = attempt;

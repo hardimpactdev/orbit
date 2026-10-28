@@ -953,3 +953,143 @@ Deno.test("terminal failed event receipt preserves partial delivery and never ad
   );
   assertEquals(f.requests.filter((r) => r.path.endsWith("/events")).length, 1);
 });
+
+// The DTOs on either side of orbit#1561: older operations already bind the
+// caller in input; only the new DTOs expose it on operations and history rows.
+const gatewayOrigins = [
+  {
+    name: "before orbit#1561",
+    fields: { triggered_by: "orbit:auto-deploy" },
+  },
+  {
+    name: "after orbit#1561",
+    fields: { triggered_by: "swamp:auto-deploy", caller_node_id: 2 },
+  },
+  {
+    name: "structured caller with a changed display label",
+    fields: { triggered_by: "services", caller_node_id: 2 },
+  },
+];
+
+for (const { name, fields } of gatewayOrigins) {
+  Deno.test(`${name}: admission and completed history stay automatic without a pause or effect hold`, async () => {
+    const f = fixture();
+    Object.assign(f.operation, fields);
+    await f.run();
+    assertEquals(f.state().result, "started");
+    assertEquals(f.state().intent?.operation_id, f.operation.id);
+    assertEquals(deployPosts(f).map((r) => r.body), [{ commit: B }]);
+    const operation = await f.client.operation(f.operation.id);
+    assertEquals(operation.triggered_by, fields.triggered_by);
+    assertEquals(
+      operation.caller_node_id,
+      "caller_node_id" in fields ? 2 : undefined,
+    );
+    assertEquals(operation.input.caller_node_id, 2);
+
+    Object.assign(f.operation, {
+      status: "succeeded",
+      attempts: 1,
+      result: { deployment_id: 2 },
+    });
+    f.setHolder(null);
+    f.setRows([f.fake.observation.history[0], {
+      ...f.fake.observation.history[0],
+      ...fields,
+      id: 2,
+      commit: B,
+    }]);
+    await f.run();
+    assertEquals(f.state().result, "up_to_date");
+    assertEquals(f.state().pause, null);
+    assertEquals(f.state().intent, null);
+    assertEquals(f.state().effect_hold, null);
+    assertEquals(
+      f.state().events.some((e) => e.body.event === "paused"),
+      false,
+    );
+    assertEquals(deployPosts(f).length, 1);
+  });
+
+  Deno.test(`${name}: receipt lookup and resolution follow the automatic operation`, async () => {
+    const f = fixture();
+    Object.assign(f.operation, fields);
+    lostIntent(f);
+    f.setFound(true);
+    const key = `auto.7.${B}.1`;
+    assertEquals((await f.client.receipt(7, B, key))?.id, f.operation.id);
+    assertEquals((await f.client.resolve(7, B, key)).id, f.operation.id);
+    await f.run();
+    assertEquals(f.state().result, "deploying");
+    assertEquals(f.state().operation_id, f.operation.id);
+    assertEquals(deployPosts(f), []);
+  });
+
+  Deno.test(`${name}: own running deploy is deploying and a different commit is busy`, async () => {
+    const f = fixture();
+    Object.assign(f.operation, fields, { status: "running" });
+    f.setHolder(f.operation);
+    await f.run();
+    assertEquals(f.state().result, "deploying");
+    assertEquals(f.state().operation_id, f.operation.id);
+    assertEquals(deployPosts(f), []);
+    f.operation.input.commit = C;
+    await f.run();
+    assertEquals(f.state().result, "busy");
+    assertEquals(deployPosts(f), []);
+  });
+
+  Deno.test(`${name}: automatic failures alert, back off and retain the retry ordinal`, async () => {
+    const f = fixture();
+    Object.assign(f.operation, fields);
+    f.setRows([f.fake.observation.history[0], {
+      ...f.fake.observation.history[0],
+      ...fields,
+      id: 2,
+      status: "failed",
+      commit: B,
+      failed_step: "preparation",
+      error_code: "source.unavailable",
+    }]);
+    await f.run();
+    assertEquals(f.state().result, "backing_off");
+    assertEquals(f.state().pause, null);
+    assertEquals(
+      f.state().events.filter((e) => e.body.event === "failed").length,
+      1,
+    );
+    assertEquals(
+      f.state().events.some((e) => e.body.event === "paused"),
+      false,
+    );
+    assertEquals(deployPosts(f), []);
+    f.fake.now = "2026-10-27T20:10:00.000Z";
+    await f.run();
+    assertEquals(f.state().result, "started");
+    assertEquals(deployPosts(f).map((r) => r.key), [`auto.7.${B}.2`]);
+  });
+
+  Deno.test(`${name}: rollbacks and manual deploys still pause and alert`, async () => {
+    for (const manual of [false, true]) {
+      const f = fixture();
+      f.setRows([f.fake.observation.history[0], {
+        ...f.fake.observation.history[0],
+        ...fields,
+        ...(manual ? { triggered_by: "laptop", caller_node_id: null } : {}),
+        kind: manual ? "deploy" : "rollback",
+        id: 2,
+      }]);
+      await f.run();
+      assertEquals(f.state().result, "paused");
+      assertEquals(
+        f.state().pause?.reason,
+        manual ? "manual_deploy" : "rollback",
+      );
+      assertEquals(
+        f.state().events.filter((e) => e.body.event === "paused").length,
+        1,
+      );
+      assertEquals(deployPosts(f), []);
+    }
+  });
+}

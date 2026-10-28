@@ -1,8 +1,10 @@
 import { z } from "npm:zod@4.4.3";
 import {
+  CallerNodeIdSchema,
   type Decision,
   DecisionSchema,
   type Gateway,
+  isAutomaticDeployment,
   type Observation,
   type Operation,
   PolicyError,
@@ -35,10 +37,11 @@ const OperationSchema = z.object({
     (value) => Array.isArray(value) && value.length === 0 ? {} : value,
     z.object({
       commit: z.string().nullable().optional(),
-      caller_node_id: z.number().optional(),
+      caller_node_id: CallerNodeIdSchema,
     }).passthrough(),
   ),
   triggered_by: z.string().nullable(),
+  caller_node_id: CallerNodeIdSchema,
   result: z.object({ deployment_id: z.number().optional() }).passthrough()
     .nullable(),
   error_code: z.string().nullable(),
@@ -395,7 +398,7 @@ export class GatewayClient implements Gateway {
       receipt.request_key !== key || receipt.found !== (op !== null) ||
       op && (op.target_type !== "instance" || op.target_id !== instance ||
           op.kind !== "instance.deploy" || op.input.commit !== commit ||
-          op.triggered_by !== "orbit:auto-deploy" || !op.input.caller_node_id)
+          !isAutomaticDeployment(op) || !op.input.caller_node_id)
     ) {
       throw new PolicyError(
         "gateway.read_unavailable",
@@ -485,7 +488,7 @@ export class GatewayClient implements Gateway {
       receipt.data.target_id !== instance ||
       receipt.data.kind !== "instance.deploy" ||
       receipt.data.input.commit !== commit ||
-      receipt.data.triggered_by !== "orbit:auto-deploy"
+      !isAutomaticDeployment(receipt.data)
     ) {
       throw new PolicyError(
         "automatic.outcome_unknown",

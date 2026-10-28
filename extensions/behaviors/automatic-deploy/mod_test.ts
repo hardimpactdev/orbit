@@ -5,12 +5,64 @@ import {
 } from "jsr:@std/assert@1.0.19";
 
 import { GatewayClient } from "./gateway.ts";
-import { PolicyError, StateSchema, trigger } from "./policy.ts";
+import {
+  isAutomaticDeployment,
+  PolicyError,
+  StateSchema,
+  trigger,
+} from "./policy.ts";
 import {
   A,
   B,
   PolicyFixture,
 } from "../../../tests/_support/automatic_deploy.ts";
+
+Deno.test("automatic origin accepts Gateway callers and both stored labels while excluding rollbacks", () => {
+  for (const kind of ["deploy", "instance.deploy"]) {
+    for (const triggered_by of ["orbit:auto-deploy", "swamp:auto-deploy"]) {
+      assertEquals(isAutomaticDeployment({ kind, triggered_by }), true);
+      assertEquals(
+        isAutomaticDeployment({ kind, triggered_by, caller_node_id: null }),
+        true,
+      );
+    }
+    for (const triggered_by of ["services", null]) {
+      assertEquals(isAutomaticDeployment({ kind, triggered_by }), false);
+      assertEquals(
+        isAutomaticDeployment({ kind, triggered_by, caller_node_id: null }),
+        false,
+      );
+      assertEquals(
+        isAutomaticDeployment({ kind, triggered_by, caller_node_id: 2 }),
+        true,
+      );
+      assertEquals(
+        isAutomaticDeployment({
+          kind,
+          triggered_by,
+          input: { caller_node_id: 2 },
+        }),
+        true,
+      );
+      for (const caller_node_id of [0, -1, 1.5]) {
+        assertEquals(
+          isAutomaticDeployment({ kind, triggered_by, caller_node_id }),
+          false,
+        );
+      }
+    }
+  }
+  for (
+    const kind of ["rollback", "instance.rollback", "instance.policy_event"]
+  ) {
+    for (const triggered_by of ["orbit:auto-deploy", "swamp:auto-deploy"]) {
+      assertEquals(
+        isAutomaticDeployment({ kind, triggered_by, caller_node_id: 2 }),
+        false,
+      );
+    }
+  }
+});
 
 Deno.test("E05 a restarted tick follows its recorded receipt without a new start", async () => {
   const f = new PolicyFixture();

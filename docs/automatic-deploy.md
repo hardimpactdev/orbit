@@ -10,6 +10,8 @@ One stable behavior, `automatic-production-deploy`, serializes the fleet tick. E
 
 Swamp reads source heads, bounded first-parent walks, exact Actions check evidence, history, controls and keyed admission receipts through the contracts from [orbit#1548](https://github.com/hardimpactdev/orbit/pull/1548). It never reads GitHub or a database directly. Truncated walks, mixed history versions and moved heads fail closed. Stable `auto.<instance>.<full-commit>.<attempt>` keys never reset after manual deployments. The policy saves its admission intent before the automatic POST. Deploy status and success remain Gateway facts.
 
+Automatic deployment classification uses the Gateway-recorded caller Node ID (`caller_node_id`, or `input.caller_node_id` on operations) and accepts both reserved labels: `swamp:auto-deploy` for Swamp and `orbit:auto-deploy` for historical PHP and early Swamp rows. Caller fields can be absent or null on retained history. Before [orbit#1561](https://github.com/hardimpactdev/orbit/pull/1561), history has only the old label and automatic operations bind the caller only in their input. Both Gateway versions use the same policy rule for pauses, failure alerts, backoff, retry counts, operation holders and receipts. Rollbacks always pause automation. Manual Node names do not contain colons, and manual deploys have no automatic caller ID. Receipt validation still requires the bound caller in operation input.
+
 The first live tick imports the public projection and durable rollback blocks. Retry counts come from retained deployment history. The current Gateway DTO does not expose PHP's delivered alert keys. An existing eligible failure or pause can therefore alert once again at cutover; later Swamp ticks use durable deduplication and keyed delivery.
 
 The Swamp Node needs its active WireGuard identity and directed access to the Gateway. Gateway authority covers the fleet reads and automatic-deploy contracts; separate access edges to each production Node are not required. The client uses `https://gateway.orbit` and the Orbit root CA. It adds no bearer credential or caller identity field.
@@ -60,6 +62,8 @@ Use this switch-back order, shared with orbit#1555:
 Keep this PR deployed through the switch-back. Swamp stays idle because the restored Gateway refuses policy publication under PHP ownership. Reverting this PR afterwards is optional cleanup. Reverting this PR alone, or before #1555, leaves no writer and must not be done. Pausing a Swamp schedule alone is not a drain: the pinned scheduler can still start already queued fires. There is no runtime owner switch or automatic fallback.
 
 ## Decisions taken
+
+- Centralize automatic-deployment classification around structured caller evidence and both reserved labels. Keep old Gateway responses and historical rows readable so Swamp can ship before orbit#1561. Do not rewrite stored origins.
 
 - Keep one-minute ticks, offset to second 30. The fleet method makes zero `runModel` calls: discovery and per-Instance calls use the direct Gateway HTTP client, and state reads and writes use its own resource context. Swamp's 100 cross-behavior calls per execution therefore remain unused for every discovered Instance; the cadence change does not increase that per-execution count.
 - Use the Gateway's eligible Instance filter for active-role discovery. Treat the Gateway's role refusal as a known non-admission without a hold; retain genuine unknown-outcome holds.
