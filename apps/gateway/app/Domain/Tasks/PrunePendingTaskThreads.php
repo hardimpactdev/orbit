@@ -10,7 +10,7 @@ final readonly class PrunePendingTaskThreads
 {
     public function run(): void
     {
-        AgentThread::query()->where('external_id', 'like', TaskAgentSpawner::PendingPrefix.'%')
+        AgentThread::query()->where('external_id', 'like', AgentThread::PendingPrefix.'%')
             ->where(static function ($query): void {
                 $query->whereIn('task_group_id', static function ($groups): void {
                     $groups->select('id')->from('tasks')->whereNull('parent_id')->whereIn('status', TaskGroupStatus::endedStatuses());

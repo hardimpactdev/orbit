@@ -38,7 +38,7 @@ The generated API schema also includes the Project development deploy step opera
 
 The generated API schema includes show and update operations for Project Documents storage on the Gateway, with their redacted `DocumentStorage` response. Credential fields are update inputs only, never response properties. These types describe the [storage contract](/reference/project-documents#private-s3-boundary); they do not add storage settings controls to the web app.
 
-[GitHub feedback fixups](/reference/tasks#review-fixup-lifecycle) use the existing subtask `fixup_problem` and `brief` fields. Regenerating the API types confirms that feedback consumption adds no response field or web merge control. Source provenance is task data, not a rendered GitHub instruction or permission to merge.
+[GitHub feedback fixups](/reference/tasks#execution-ownership) use the existing subtask `fixup_problem` and `brief` fields. Regenerating the API types confirms that feedback consumption adds no response field or web merge control. Source provenance is task data, not a rendered GitHub instruction or permission to merge.
 
 The generated Instance rename request exposes optional `branch` and `domain` fields. The Gateway still requires at least one; optional TypeScript properties do not replace API validation. This API operation adds no web UI control.
 
@@ -127,11 +127,11 @@ CPU and memory come from [`process.usage`](/reference/events#process-usage) even
 
 The task group page shows a Swamp panel above its properties and subtasks, including groups without agent threads. It polls only the Gateway every five seconds. Runs and steps show their state, and expandable output uses plain text. Truncated output has a label. Running steps explain that worker output may arrive on completion. Stale and unavailable reads stay visible without hiding the task. [Swamp run output](/reference/tasks#swamp-run-output) defines the read, bounds, credentials, and failure states.
 
-The generated task types expose only `baseline` and `handoff` check kinds, and `orbit_push` and `pull_request_review` reviewed-commit sources. [Final review](/reference/tasks#final-review) publishes the reviewed head; CI on the merge ref checks integration.
+The generated task types expose only `baseline` and `handoff` check kinds, and `orbit_push` and `pull_request_review` reviewed-commit sources. [Final review](/reference/tasks#execution-ownership) publishes the reviewed head; CI on the merge ref checks integration.
 
 The generated task cancellation description follows the [cancel contract](/reference/tasks#cancel-a-stuck-task): cleanup removes eligible pending or failed exclusive Routes with `source_resolved` workspaces and retries the unattached workspace the task owns. Active or shared Routes still block cleanup. This description changes no response fields and adds no web controls.
 
-The generated task comment list operation accepts optional `type` and `limit` query inputs. These types describe the [comment list contract](/reference/tasks#model); they add no web controls and do not change comment bodies. A `question_closed` comment is labeled `Question closed`. The generated types also include `provider_retry` comments. These comments show the reserved attempt, delay, and failed turn for [transient provider retries](/reference/tasks#retry-a-transient-provider-error); the task stays in its current phase while it waits.
+The generated task comment list operation accepts optional `type` and `limit` query inputs. These types describe the [comment list contract](/reference/tasks#model); they add no web controls and do not change comment bodies. A `question_closed` comment is labeled `Question closed`. The generated types also include `provider_retry` comments. These comments show the reserved attempt, delay, and failed turn for [transient provider retries](/reference/tasks#execution-ownership); the task stays in its current phase while it waits.
 
 The generated schema includes the separate [group assistance comment](/reference/tasks#group-assistance-after-all-children-end) create and list operations. They add no web controls. Group assistance still refreshes the board through `task_group.updated`; group-owned comments do not enter a child's history.
 

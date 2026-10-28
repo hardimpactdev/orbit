@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentThreadState;
@@ -16,7 +15,6 @@ use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
-use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskWorkspaceLease;
@@ -170,7 +168,7 @@ it('rolls back a status move combined with a forbidden metadata update', functio
 });
 
 it('keeps tick group status input unchanged and refuses subtask status input', function (): void {
-    [$group, $task] = external_state_group('running', 'running', TaskOrchestration::Tick);
+    [$group, $task] = external_state_group('running', 'running', TaskOrchestration::External);
 
     $this->patchJson("/api/v1/task-groups/{$group->id}", ['status' => 'reviewing'])->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
     $this->patchJson("/api/v1/task-groups/{$group->id}", ['status' => 'todo'])->assertConflict()->assertJsonPath('error.code', 'tasks.already_claimed');
@@ -444,17 +442,3 @@ function external_cancel_turn(Task $group, Task $task, FakeAgentDriver $driver, 
 
     return $holder;
 }
-
-it('refuses external cancellation if a lease is admitted before the cancellation commit', function (): void {
-    [$group, $task] = external_state_group();
-    external_cancel_workspace($group);
-    $leases = app(TaskWorkspaceLease::class);
-
-    expect(fn () => app(TaskScheduler::class)->cancelRunningSubtask($group, $task, function () use ($leases, $group, $task): void {
-        $leases->acquire($group, 'check', 'new-owner', taskId: $task->id);
-    }))->toThrow(ResourceOperationException::class, 'A workspace actor still holds the subtask lease.');
-
-    expect($task->fresh()->status)->toBe(TaskStatus::Running);
-    expect($group->fresh()->status)->toBe(TaskGroupStatus::Running);
-    expect(TaskWorkspaceLeaseRecord::query()->where('status', 'held')->sole()->owner)->toBe('new-owner');
-});

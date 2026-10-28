@@ -224,7 +224,7 @@ Codex sessions use SSE so HTTP and streamed error codes follow the same classifi
 
 Durable 1.4.0 has no retry-decision hook. A Bun patch to pi-ai 1.4.0 makes its shared retry check honor `orbitProviderError` before its text fallback: a transient category permits retry, and explicit `null` forbids it. Orbit supplies that decision through the same classifier used for thread state, for generation and compaction alike. Durable remains the only retry owner and keeps the 1, 2, 4, and 8 minute waits.
 
-The boundary adds no headers, credentials, or raw error bodies to the transcript. Quota exhaustion, account usage limits, authentication errors, and refusals are not transient. Durable owns [automatic retries](/reference/tasks#retry-a-transient-provider-error). Exhausted retries end `failed` with the provider category; the Gateway asks for assistance.
+The boundary adds no headers, credentials, or raw error bodies to the transcript. Quota exhaustion, account usage limits, authentication errors, and refusals are not transient. Durable owns [automatic retries](/reference/tasks#execution-ownership). Exhausted retries end `failed` with the provider category; the Gateway asks for assistance.
 
 Pi has no approvals, so a Pi thread never asks for input. A new turn changes a `done` or `failed` state to `working`.
 

@@ -15,20 +15,11 @@ final class TaskGroupGuard
     /** Every assistance reason from the deliverable path gate before implementer start begins with this. */
     public const string DeliverableGatePrefix = 'Deliverable path validation ';
 
-    public static function requireTick(Task $task): void
-    {
-        $group = $task->isTopLevel() ? $task : $task->parent;
-        if ($group->groupOrchestration() === TaskOrchestration::External) {
-            throw new ResourceOperationException('tasks.orchestrated_externally', 'An external orchestrator owns this task group.', 409);
-        }
-    }
-
     /** @param list<TaskTopology> $topologies */
     public static function supportOrchestration(TaskOrchestration $mode, bool $reviewAndMerge, array $topologies): void
     {
-        if ($mode === TaskOrchestration::External
-            && ($reviewAndMerge || array_any($topologies, static fn (TaskTopology $topology): bool => ! $topology->isEmpty()))) {
-            throw new ResourceOperationException('tasks.orchestration_unsupported', 'External groups cannot declare a topology or use review and merge.', 422);
+        if (array_any($topologies, static fn (TaskTopology $topology): bool => ! $topology->isEmpty())) {
+            throw new ResourceOperationException('tasks.orchestration_unsupported', 'Task groups cannot declare a topology.', 422);
         }
     }
 
@@ -78,7 +69,7 @@ final class TaskGroupGuard
             && is_string($task->assistance_reason) && str_starts_with($task->assistance_reason, self::DeliverableGatePrefix)
             && $task->implementer_agent_thread_id === null
             && ! AgentThread::query()->where('task_id', $task->id)->where('role', TaskThreadRole::Implementer->value)
-                ->where('external_id', 'not like', TaskAgentSpawner::PendingPrefix.'%')->exists();
+                ->where('external_id', 'not like', AgentThread::PendingPrefix.'%')->exists();
     }
 
     /** Called under the group and subtask locks before consuming the one recovery. */
@@ -136,7 +127,7 @@ final class TaskGroupGuard
     {
         return new ResourceOperationException(
             errorCode: 'tasks.already_claimed',
-            message: __('The scheduler has already claimed this task group.'),
+            message: __('This task group already has a workspace reservation.'),
             status: 409,
         );
     }

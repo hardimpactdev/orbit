@@ -17,14 +17,7 @@ use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Jobs\Problems\CollectProblemSignals;
 use App\Jobs\Problems\PruneProblemBatches;
 use App\Jobs\RunScheduledCommand;
-use App\Jobs\TaskVms\DestroyTaskVm;
-use App\Jobs\TaskVms\EnrollTaskVm;
-use App\Jobs\TaskVms\ParkTaskVm;
-use App\Jobs\TaskVms\PrepareTaskVmRuntime;
-use App\Jobs\TaskVms\ProvisionTaskVm;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
-use App\Jobs\TaskVms\ResumeTaskVm;
-use App\Jobs\TaskVms\SweepTaskVmHosts;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
 use App\Models\Process;
@@ -207,16 +200,6 @@ describe('Horizon', function (): void {
             ->and([config('horizon.defaults.task-vms.queue'), config('horizon.defaults.task-vms.minProcesses'), config('horizon.defaults.task-vms.maxProcesses')])->toBe([['task-vms'], 1, 1])
             ->and(config('horizon.defaults.builds.timeout'))->toBeLessThan(config('queue.connections.gateway.retry_after'))
             ->and(array_keys(config('horizon.environments')))->toBe(['*']);
-    });
-
-    it('gives the task-vms worker a timeout no task VM job exceeds, so no job is killed early', function (): void {
-        $jobs = [ProvisionTaskVm::class, EnrollTaskVm::class, PrepareTaskVmRuntime::class, ParkTaskVm::class, ResumeTaskVm::class, DestroyTaskVm::class, SweepTaskVmHosts::class];
-        $supervisor = config('horizon.defaults.task-vms.timeout');
-        // A job without its own timeout runs under the supervisor's.
-        $timeouts = array_map(static fn (string $class): int => (int) ((new ReflectionClass($class))->getDefaultProperties()['timeout'] ?? $supervisor), $jobs);
-
-        expect(max($timeouts))->toBeLessThanOrEqual($supervisor)
-            ->and(new ProvisionTaskVm(1)->queue)->toBe(GatewayQueue::TaskVms->value);
     });
 
     it('shows the New Dawn dashboard only to a WireGuard peer with Gateway access', function (): void {

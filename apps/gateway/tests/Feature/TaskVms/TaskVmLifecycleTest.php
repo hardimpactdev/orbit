@@ -8,9 +8,7 @@ use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Actions\TaskVms\DeleteTaskVmAction;
-use App\Actions\TaskVms\DestroyEndedTaskVmsAction;
 use App\Actions\TaskVms\FailTaskVmAction;
-use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\InstanceRemovalStatus;
@@ -28,7 +26,6 @@ use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessRuntime;
-use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
@@ -38,17 +35,14 @@ use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
-use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCapacityException;
-use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskReviewedCommitSource;
-use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTopology;
 use App\Domain\Tasks\TaskTopologyAdmission;
@@ -60,10 +54,8 @@ use App\Domain\TaskVms\TaskVmFailedException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmPlacementPolicy;
 use App\Domain\TaskVms\TaskVmProvider;
-use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
-use App\Domain\TaskVms\TaskVmWorkspaceGuard;
 use App\Domain\TaskVms\VmObservation;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
@@ -82,7 +74,6 @@ use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Cluster;
 use App\Models\Instance;
-use App\Models\InstanceRemoval;
 use App\Models\InstanceRemovalMember;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -91,8 +82,6 @@ use App\Models\Project;
 use App\Models\Route;
 use App\Models\RouteTarget;
 use App\Models\Task;
-use App\Models\TaskCheck;
-use App\Models\TaskComment;
 use App\Models\TaskReviewedCommit;
 use App\Models\TaskVm;
 use App\Models\TaskWorkspaceLeaseRecord;
@@ -147,7 +136,7 @@ final class TaskVmLifecycleProjector implements InstanceRemovalProjector
  *
  * @return array{0: TaskVm, 1: Instance, 2: Route, 3: Task}
  */
-function tvm_life_stranded_workspace(bool $removalFailed, TaskOrchestration $orchestration = TaskOrchestration::Tick): array
+function tvm_life_stranded_workspace(bool $removalFailed, TaskOrchestration $orchestration = TaskOrchestration::External): array
 {
     $node = tvm_life_node('tvm-node', '10.44.0.129', role: RoleName::AppDev);
     $group = tvm_life_group(TaskGroupStatus::Cancelled, $orchestration);
@@ -211,7 +200,7 @@ function tvm_life_hosts(array $hosts): void
     ]);
 }
 
-function tvm_life_group(TaskGroupStatus $status = TaskGroupStatus::Reserved, TaskOrchestration $orchestration = TaskOrchestration::Tick): Task
+function tvm_life_group(TaskGroupStatus $status = TaskGroupStatus::Reserved, TaskOrchestration $orchestration = TaskOrchestration::External): Task
 {
     return Task::topLevel()->create([
         'orchestration' => $orchestration, 'project_id' => test()->project->id, 'title' => 'Export', 'brief' => 'Work', 'status' => $status, 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
@@ -509,7 +498,7 @@ describe(ProvisionTaskVm::class, function (): void {
             ->and($group->fresh()?->assistance_kind)->toBe($assistance ? AssistanceKind::Failure : null)
             ->and($group->fresh()?->assistance_reason)->toBe($assistance ? "Task VM failed: {$vm->name}: task_vm.host_command_failed: `incus launch` failed. Cancel the group to destroy the VM." : null)
             ->and($destroying->group->fresh()?->assistance_requested)->toBeFalse();
-    })->with(['tick' => [TaskOrchestration::Tick, true], 'external' => [TaskOrchestration::External, false]]);
+    })->with(['tick' => [TaskOrchestration::External, true], 'external' => [TaskOrchestration::External, false]]);
 
     it('retries a failed create once and is unique for its task VM', function (): void {
         $job = new ProvisionTaskVm(7);
@@ -836,30 +825,6 @@ describe(DestroyTaskVm::class, function (): void {
         expect($this->provider->calls)->toBe([])->and($vm->fresh()?->state)->toBe(TaskVmState::Ready);
     });
 
-    it('handles an ownership refusal as a removal failure when the ended groups VM is gone', function (): void {
-        Queue::fake();
-        $vm = tvm_life_vm(tvm_life_group(TaskGroupStatus::Completed), TaskVmState::Ready, tvm_life_node('tvm-node', '10.44.0.129', role: RoleName::AppDev));
-        $instance = tvm_life_workspace($vm->group, $vm->node);
-        $this->provider->observations = [null];
-        try {
-            TaskVmWorkspaceGuard::assertWorkspace($vm->group, Instance::query()->make([
-                'project_id' => $instance->project_id, 'node_id' => $instance->node_id,
-            ]));
-            throw new RuntimeException('Expected ownership refusal.');
-        } catch (TaskVmException $exception) {
-            app(RemoveTaskWorkspaceAction::class)->recordFailure($vm->group, $exception);
-        }
-
-        app(DestroyEndedTaskVmsAction::class)->execute();
-        app()->call([new DestroyTaskVm($vm->id), 'handle']);
-
-        expect($this->provider->calls)->toBe(['observe', 'destroy'])
-            ->and($vm->fresh()->state)->toBe(TaskVmState::Destroyed)
-            ->and($vm->group->fresh()->assistance_requested)->toBeFalse();
-        $this->assertModelMissing($instance);
-        Queue::assertPushed(DestroyTaskVm::class);
-    });
-
     it('destroys the VM past an Instance its group does not own, and forgets that row with the Node', function (): void {
         $node = tvm_life_node('tvm-node', '10.44.0.129', role: RoleName::AppDev);
         $group = tvm_life_group(TaskGroupStatus::Cancelled);
@@ -888,16 +853,6 @@ describe(DestroyTaskVm::class, function (): void {
         $this->provider->onDestroy = null;
         app()->call([new DestroyTaskVm($vm->id), 'handle']);
         expect($vm->fresh()?->state)->toBe(TaskVmState::Destroyed)->and($vm->fresh()?->error_code)->toBeNull();
-    });
-
-    it('queues one destroy job at a time for a task VM', function (): void {
-        $vm = tvm_life_vm(tvm_life_group(TaskGroupStatus::Cancelled), TaskVmState::Failed);
-
-        DestroyTaskVm::dispatch($vm->id);
-        DestroyTaskVm::dispatch($vm->id);
-        app(DestroyEndedTaskVmsAction::class)->execute();
-
-        expect(DB::table('jobs')->count())->toBe(1);
     });
 
     it('leaves a workspace to normal removal while that removal has not failed, or while the VM runs', function (bool $removalFailed): void {
@@ -988,133 +943,6 @@ describe(DestroyTaskVm::class, function (): void {
             ->and($vm->fresh()?->state)->toBe(TaskVmState::Destroyed);
     })->with(['first cancel' => false, 'retry after an earlier failure' => true]);
 
-    it('sweeps an ended group through Project teardown before deleting its VM', function (TaskGroupStatus $status, TaskOrchestration $mode): void {
-        [$vm, $instance, , $group] = tvm_life_stranded_workspace(false, orchestration: $mode);
-        $group->update(['status' => $status]);
-        $task = $group->tasks()->create(['position' => 1, 'title' => 'Failed start', 'brief' => 'Work', 'status' => TaskStatus::Failed]);
-        $receipt = $task->comments()->create(['task_group_id' => $group->id, 'type' => 'ready_for_review', 'body' => 'Stored receipt', 'author' => 'implementer', 'posted_at' => now()]);
-        $check = $task->checks()->create(['kind' => 'handoff', 'status' => 'failed', 'pid' => 42, 'process_started' => 'start', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40), 'output' => 'Stored check output', 'started_at' => now()]);
-        $runs = new ArrayObject;
-        // The runner is final: a partial mock of an instance stands in for it, bound after the action's own dependencies.
-        $scheduler = app(TaskScheduler::class);
-        $lifecycle = app(ProjectLifecycleRunner::class);
-        $runner = Mockery::mock($lifecycle);
-        $runner->shouldReceive('run')->andReturnUsing(function (Instance $ran, LifecyclePhase $phase) use ($runs): bool {
-            $runs->append([$ran->id, $phase, $this->provider->calls]);
-
-            return true;
-        });
-        app()->instance(ProjectLifecycleRunner::class, $runner);
-        Queue::fake();
-
-        expect($scheduler->removeAbandonedWorkspaces())->toBe(1);
-
-        expect($runs->getArrayCopy())->toBe([[$instance->id, LifecyclePhase::Teardown, []]])
-            ->and($this->provider->calls)->toBe(['destroy'])
-            ->and(Instance::query()->find($instance->id))->toBeNull();
-        Queue::assertPushed(DestroyTaskVm::class, fn (DestroyTaskVm $job): bool => $job->taskVmId === $vm->id);
-        app()->instance(ProjectLifecycleRunner::class, $lifecycle);
-        app()->call([new DestroyTaskVm($vm->id), 'handle']);
-        expect($vm->fresh()?->state)->toBe(TaskVmState::Destroyed);
-        expect($group->fresh())->status->toBe($status)->taskable_id->toBeNull();
-        expect(TaskComment::query()->findOrFail($receipt->id)->body)->toBe('Stored receipt');
-        expect(TaskCheck::query()->findOrFail($check->id)->output)->toBe('Stored check output');
-    })->with([TaskGroupStatus::Completed, TaskGroupStatus::Cancelled, TaskGroupStatus::Failed])->with(TaskOrchestration::cases());
-
-    it('pushes the final-reviewed approval before an ended group loses its workspace and VM', function (TaskGroupStatus $status): void {
-        [$vm, $instance, , $group] = tvm_life_stranded_workspace(false);
-        $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
-        $group->update(['status' => $status]);
-        $task = $group->tasks()->create(['position' => 1, 'title' => 'Approved work', 'brief' => 'Work', 'status' => TaskStatus::Completed]);
-        $sha = str_repeat('c', 40);
-        $task->comments()->create(['task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Final reviewed.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => $sha]);
-        TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => $sha, 'source' => TaskReviewedCommitSource::OrbitPush]);
-        $events = new ArrayObject;
-        $publisher = Mockery::mock(TaskPullRequestPublisher::class);
-        $publisher->shouldReceive('push')->once()->withArgs(function (Task $pushed, string $commit) use ($group, $instance, $sha, $events): bool {
-            $events->append('push');
-            expect($this->provider->calls)->toBe([]);
-            $this->assertModelExists($instance);
-
-            return $pushed->id === $group->id && $commit === $sha;
-        });
-        app()->instance(TaskPullRequestPublisher::class, $publisher);
-        $scheduler = app(TaskScheduler::class);
-        $runner = Mockery::mock(app(ProjectLifecycleRunner::class));
-        $runner->shouldReceive('run')->andReturnUsing(function (Instance $ran, LifecyclePhase $phase) use ($events): bool {
-            $events->append($phase->value);
-
-            return true;
-        });
-        app()->instance(ProjectLifecycleRunner::class, $runner);
-        Log::spy();
-        Queue::fake();
-
-        expect($scheduler->removeAbandonedWorkspaces())->toBe(1);
-
-        $this->assertModelMissing($instance);
-        expect($events->getArrayCopy())->toBe(['push', 'teardown']);
-        expect($this->provider->calls)->toBe(['destroy']);
-        Queue::assertPushed(DestroyTaskVm::class, fn (DestroyTaskVm $job): bool => $job->taskVmId === $vm->id);
-        Log::shouldHaveReceived('info')->with('Pushed approved work before removing a task workspace.', Mockery::on(fn (array $context): bool => $context['task_group_id'] === $group->id && $context['commit_sha'] === $sha));
-    })->with([TaskGroupStatus::Completed, TaskGroupStatus::Failed, TaskGroupStatus::Cancelled]);
-
-    it('keeps a failed group VM and workspace while its approved push fails or waits', function (bool $pending): void {
-        [$vm, $instance, , $group] = tvm_life_stranded_workspace(false);
-        $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
-        $group->update(['status' => TaskGroupStatus::Failed]);
-        $task = $group->tasks()->create(['position' => 1, 'title' => 'Approved work', 'brief' => 'Work', 'status' => TaskStatus::Completed]);
-        $sha = str_repeat('c', 40);
-        $task->comments()->create(['task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Final reviewed.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => $sha]);
-        TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => $sha, 'source' => TaskReviewedCommitSource::OrbitPush]);
-        $publisher = Mockery::mock(TaskPullRequestPublisher::class);
-        $publisher->shouldReceive('push')->once()->andThrow($pending ? TaskPullRequestException::pending('Push queued.') : new TaskPullRequestException('Push refused.'))->ordered();
-        $publisher->shouldReceive('push')->once()->andReturnNull()->ordered();
-        app()->instance(TaskPullRequestPublisher::class, $publisher);
-        Queue::fake();
-
-        $scheduler = app(TaskScheduler::class);
-        expect($scheduler->removeAbandonedWorkspaces())->toBe(0);
-
-        $this->assertModelExists($instance);
-        expect($vm->fresh()->state)->toBe(TaskVmState::Ready);
-        expect($this->provider->calls)->toBe([]);
-        expect($group->fresh()->assistance_requested)->toBe(! $pending);
-        if (! $pending) {
-            expect($group->fresh()->assistance_kind)->toBe(AssistanceKind::RemovalFailure);
-            expect($group->fresh()->assistance_reason)->toBe('Workspace removal failed: Push refused.');
-        }
-        Queue::assertNotPushed(DestroyTaskVm::class);
-
-        $this->travel(61)->seconds();
-        app()->instance(ProjectLifecycleRunner::class, Mockery::mock(app(ProjectLifecycleRunner::class))->shouldReceive('run')->andReturn(true)->getMock());
-        expect($scheduler->removeAbandonedWorkspaces())->toBe(1);
-
-        $this->assertModelMissing($instance);
-        expect($this->provider->calls)->toBe(['destroy']);
-        expect($group->fresh()->assistance_requested)->toBeFalse();
-        Queue::assertPushed(DestroyTaskVm::class, fn (DestroyTaskVm $job): bool => $job->taskVmId === $vm->id);
-    })->with(['failed' => false, 'pending' => true]);
-
-    it('preserves the latest reviewed unpublished head despite a newer unreviewed approval', function (): void {
-        [$vm, $instance, , $group] = tvm_life_stranded_workspace(false);
-        $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
-        $group->update(['status' => TaskGroupStatus::Failed]);
-        $task = $group->tasks()->create(['position' => 1, 'title' => 'Reviewed work', 'brief' => 'Work', 'status' => TaskStatus::Completed]);
-        $reviewed = str_repeat('c', 40);
-        TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => $reviewed, 'source' => TaskReviewedCommitSource::OrbitPush]);
-        $task->comments()->create(['task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Later work, final review requested changes.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => str_repeat('d', 40)]);
-        $publisher = Mockery::mock(TaskPullRequestPublisher::class);
-        $publisher->shouldReceive('push')->once()->withArgs(fn (Task $pushed, string $sha): bool => $pushed->id === $group->id && $sha === $reviewed);
-        app()->instance(TaskPullRequestPublisher::class, $publisher);
-        Queue::fake();
-
-        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1);
-
-        $this->assertModelMissing($instance);
-        expect($this->provider->calls)->toBe(['destroy']);
-    });
-
     it('starts a stopped VM through the wake path before preserving its reviewed head', function (): void {
         [$vm, $instance, , $group] = tvm_life_stranded_workspace(true);
         $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
@@ -1146,110 +974,6 @@ describe(DestroyTaskVm::class, function (): void {
         expect($this->provider->calls)->toBe(['observe', 'observe', 'start', 'destroy']);
     });
 
-    it('destroys a VM after its preservation start fails instead of waking it again', function (): void {
-        [$vm, $instance, , $group] = tvm_life_stranded_workspace(true);
-        $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
-        $group->update(['status' => TaskGroupStatus::Failed]);
-        $sha = str_repeat('c', 40);
-        TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => $sha, 'source' => TaskReviewedCommitSource::OrbitPush]);
-        $this->provider->observation = new VmObservation(false, null);
-        $this->provider->startError = new TaskVmException('task_vm.start_failed', 'The provider could not start the VM.', 502);
-        Sleep::fake();
-        Queue::fake([ResumeTaskVm::class, DestroyTaskVm::class]);
-
-        app()->call([new DestroyTaskVm($vm->id), 'handle']);
-        expect($vm->fresh()->state)->toBe(TaskVmState::Parked);
-        $resume = new ResumeTaskVm($vm->id);
-        try {
-            app()->call([$resume, 'handle']);
-            throw new LogicException('Expected start failure.');
-        } catch (TaskVmException $exception) {
-            $resume->failed($exception);
-        }
-        expect($vm->fresh()->state)->toBe(TaskVmState::Failed);
-        expect(app(WakeTaskVmAction::class)->forVm($vm->fresh(), stopped: true))->toBeTrue();
-        expect($vm->fresh()->state)->toBe(TaskVmState::Failed);
-        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0);
-        expect($group->fresh()->assistance_kind)->toBe(AssistanceKind::RemovalFailure);
-
-        app()->call([new DestroyTaskVm($vm->id), 'handle']);
-
-        $this->assertModelMissing($instance);
-        expect($vm->fresh()->state)->toBe(TaskVmState::Destroyed);
-        expect($group->fresh()->assistance_reason)->toContain('Reviewed work lost', $sha, 'The provider could not start the VM.');
-        expect(Activity::query()->where('subject_type', Task::class)->where('subject_id', $group->id)->where('properties->reason', 'like', '%Reviewed work lost%')->sole()->properties->get('reason'))->toContain($sha);
-        Queue::assertPushed(ResumeTaskVm::class, 1);
-        expect($this->provider->calls)->toBe(['observe', 'observe', 'start', 'destroy']);
-    });
-
-    it('keeps one reason while a missing ready VM waits through removal sweeps', function (bool $enabled, LifecycleStatus $hostStatus, string $pause, TaskVmProviderKind $provider = TaskVmProviderKind::Incus): void {
-        [$vm, $instance, , $group] = tvm_life_stranded_workspace(true);
-        tvm_life_settings(enabled: $enabled);
-        config(['task_vms.enabled' => $enabled]);
-        $this->host->update(['status' => $hostStatus]);
-        $vm->update(['provider' => $provider, 'host_node_id' => $provider->needsHostNode() ? $this->host->id : null]);
-        $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
-        $group->update(['status' => TaskGroupStatus::Failed]);
-        $sha = str_repeat('c', 40);
-        TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => $sha, 'source' => TaskReviewedCommitSource::OrbitPush]);
-        $this->provider->observation = null;
-        Queue::fake([ResumeTaskVm::class]);
-        $publisher = Mockery::mock(TaskPullRequestPublisher::class);
-        $publisher->shouldReceive('push')->andThrow(new TaskPullRequestException('The task workspace is unavailable.'));
-        app()->instance(TaskPullRequestPublisher::class, $publisher);
-        mock(TaskCheckRunner::class)->shouldNotReceive('snapshot');
-        $this->freezeTime();
-
-        for ($cycle = 0; $cycle < 3; $cycle++) {
-            app()->call([new DestroyTaskVm($vm->id), 'handle']);
-            expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0);
-            $this->travel(31)->minutes();
-        }
-        app()->call([new DestroyTaskVm($vm->id), 'handle']);
-
-        $this->assertModelExists($instance);
-        expect($vm->fresh()->state)->toBe(TaskVmState::Ready);
-        expect(Activity::query()->where('subject_type', Task::class)->where('subject_id', $group->id)->where('description', 'assistance changed')->count())->toBe(1);
-        expect($group->fresh()->assistance_kind)->toBe(AssistanceKind::RemovalFailure);
-        expect($group->fresh()->assistance_reason)->toBe("Task VM [{$vm->name}] was not found on its host. Reviewed commit [{$sha}] has not been pushed. Workspace removal waits for the host sweep to confirm loss.".$pause);
-        $publisher->shouldNotHaveReceived('push');
-        Queue::assertNotPushed(ResumeTaskVm::class);
-    })->with([
-        'task VMs disabled' => [false, LifecycleStatus::Active, ' The Incus host sweep is paused because task VMs are disabled.'],
-        'host inactive' => [true, LifecycleStatus::Failed, ' The Incus host sweep is paused because host [beast] is inactive.'],
-        'sweep enabled' => [true, LifecycleStatus::Active, ''],
-        'UpCloud with task VMs disabled' => [false, LifecycleStatus::Failed, '', TaskVmProviderKind::UpCloud],
-    ]);
-
-    it('retries the preservation push once the missing VM is found again', function (): void {
-        [$vm, $instance, , $group] = tvm_life_stranded_workspace(true);
-        config(['task_vms.enabled' => true]);
-        $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
-        $group->update(['status' => TaskGroupStatus::Failed]);
-        $sha = str_repeat('c', 40);
-        $reviewed = TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => $sha, 'source' => TaskReviewedCommitSource::OrbitPush]);
-        $publisher = Mockery::mock(TaskPullRequestPublisher::class);
-        $publisher->shouldReceive('push')->once()->withArgs(fn (Task $pushed, string $commit): bool => $pushed->id === $group->id && $commit === $sha);
-        app()->instance(TaskPullRequestPublisher::class, $publisher);
-        $scheduler = app(TaskScheduler::class);
-        Queue::fake();
-        $this->provider->observation = null;
-
-        app()->call([new DestroyTaskVm($vm->id), 'handle']);
-        expect($scheduler->removeAbandonedWorkspaces())->toBe(0);
-        $this->assertModelExists($instance);
-        $this->provider->observation = new VmObservation(true, '10.251.77.20');
-        app()->call([new DestroyTaskVm($vm->id), 'handle']);
-        expect($vm->fresh()->error_code)->toBeNull();
-        expect($scheduler->removeAbandonedWorkspaces())->toBe(1);
-
-        $this->assertModelMissing($instance);
-        expect($reviewed->fresh()->pushed_at)->not->toBeNull();
-        expect($group->fresh()->assistance_requested)->toBeFalse();
-        expect($this->provider->calls)->toBe(['observe', 'observe', 'destroy']);
-        Queue::assertPushed(DestroyTaskVm::class, fn (DestroyTaskVm $job): bool => $job->taskVmId === $vm->id);
-    });
-
     it('explains a paused sweep without resolving providers for an already missing VM', function (bool $enabled, LifecycleStatus $hostStatus, string $pause): void {
         [$vm, , , $group] = tvm_life_stranded_workspace(true);
         config(['task_vms.enabled' => true]);
@@ -1273,43 +997,6 @@ describe(DestroyTaskVm::class, function (): void {
         'task VMs disabled' => [false, LifecycleStatus::Active, 'task VMs are disabled'],
         'host inactive' => [true, LifecycleStatus::Failed, 'host [beast] is inactive'],
     ]);
-
-    it('reports a failed external cleanup without assistance and eventually destroys a failed VM', function (): void {
-        Queue::fake();
-        [$vm, $instance, , $group] = tvm_life_stranded_workspace(false, TaskOrchestration::External);
-        $scheduler = app(TaskScheduler::class);
-        $lifecycle = app(ProjectLifecycleRunner::class);
-        app()->instance(ProjectLifecycleRunner::class, Mockery::mock($lifecycle)->shouldReceive('run')->andThrow(new RuntimeException('Teardown failed.'))->getMock());
-        expect($scheduler->removeAbandonedWorkspaces())->toBe(0)
-            ->and($group->fresh()->assistance_requested)->toBeFalse()
-            ->and($vm->fresh()->state)->toBe(TaskVmState::Ready)
-            ->and(app(DestroyEndedTaskVmsAction::class)->execute())->toBe(1);
-        Queue::assertPushed(DestroyTaskVm::class, fn (DestroyTaskVm $job): bool => $job->taskVmId === $vm->id);
-
-        app()->instance(ProjectLifecycleRunner::class, $lifecycle);
-        $vm->update(['state' => TaskVmState::Failed, 'error_code' => 'task_vm.vm_missing']);
-        app()->call([new DestroyTaskVm($vm->id), 'handle']);
-
-        expect($vm->fresh()->state)->toBe(TaskVmState::Destroyed)
-            ->and(Instance::query()->find($instance->id))->toBeNull()
-            ->and(Node::query()->find($vm->node_id))->toBeNull()
-            ->and($group->fresh()->assistance_requested)->toBeFalse();
-    });
-
-    it('reports an external handoff branch cleanup failure without raising assistance', function (): void {
-        Queue::fake();
-        [$vm, $instance, , $group] = tvm_life_stranded_workspace(false, TaskOrchestration::External);
-        $task = $group->tasks()->create(['title' => 'One', 'brief' => 'One.', 'status' => TaskStatus::Completed]);
-        $task->checks()->create(['kind' => 'handoff', 'status' => 'passed', 'pid' => 42, 'process_started' => 'start', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40), 'commit_sha' => str_repeat('a', 40), 'started_at' => now()]);
-        $publisher = Mockery::mock(TaskPullRequestPublisher::class);
-        $publisher->shouldReceive('deleteHandoffBranch')->once()->andThrow(new TaskPullRequestException('GitHub unavailable.'));
-        app()->instance(TaskPullRequestPublisher::class, $publisher);
-
-        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1)
-            ->and(Instance::query()->find($instance->id))->toBeNull()
-            ->and($group->fresh()->assistance_requested)->toBeFalse()
-            ->and($vm->fresh()->state)->toBe(TaskVmState::Destroying);
-    });
 
     it('keeps external assistance unchanged when VM destruction finds unpublished work', function (TaskVmState $state): void {
         Queue::fake();
@@ -1355,33 +1042,6 @@ describe(DestroyTaskVm::class, function (): void {
         expect(Activity::query()->where('subject_type', Task::class)->where('subject_id', $group->id)->where('description', 'assistance changed')->sole()->properties->get('reason'))->toContain('lost', $sha);
         expect($this->provider->calls)->toBe(['destroy']);
     })->with([TaskGroupStatus::Failed, TaskGroupStatus::Cancelled]);
-
-    it('keeps the original loss reason when deletion fails and workspace removal retries', function (): void {
-        [$vm, $instance, , $group] = tvm_life_stranded_workspace(true);
-        $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
-        $group->update(['status' => TaskGroupStatus::Failed]);
-        $vm->update(['state' => TaskVmState::Failed, 'error_code' => 'task_vm.start_failed', 'error_message' => 'The provider could not start the VM.']);
-        $sha = str_repeat('c', 40);
-        TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => $sha, 'source' => TaskReviewedCommitSource::OrbitPush]);
-        $this->provider->onDestroy = static fn () => throw new RuntimeException('Delete failed.');
-
-        expect(fn () => app()->call([new DestroyTaskVm($vm->id), 'handle']))->toThrow(RuntimeException::class, 'Delete failed.');
-        expect($vm->fresh()->state)->toBe(TaskVmState::Destroying);
-        $lossReason = $group->fresh()->assistance_reason;
-        expect($lossReason)->toContain($sha, 'task_vm.start_failed', 'The provider could not start the VM.');
-        expect($vm->fresh()->error_message)->toBe('Delete failed.');
-        mock(TaskCheckRunner::class)->shouldNotReceive('snapshot');
-        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0);
-        $this->provider->onDestroy = null;
-        app()->call([new DestroyTaskVm($vm->id), 'handle']);
-
-        $this->assertModelMissing($instance);
-        expect($vm->fresh()->state)->toBe(TaskVmState::Destroyed);
-        expect($group->fresh()->assistance_requested)->toBeTrue();
-        expect($group->fresh()->assistance_reason)->toBe($lossReason);
-        expect(Activity::query()->where('subject_type', Task::class)->where('subject_id', $group->id)->where('properties->reason', 'like', '%Reviewed work lost%')->count())->toBe(1);
-        expect($this->provider->calls)->toBe(['destroy', 'destroy']);
-    });
 
     it('records an ordinary removal push before teardown so a later lost VM needs no push', function (): void {
         [$vm, $instance, , $group] = tvm_life_stranded_workspace(false);
@@ -1448,22 +1108,6 @@ describe(DestroyTaskVm::class, function (): void {
         Log::shouldHaveReceived('info')->once()->with('Pushed approved work before removing a task workspace.', ['task_group_id' => $group->id, 'commit_sha' => $sha, 'branch' => 'task-'.$group->id]);
     })->with(['per-subtask publication' => false, 'review and merge' => true]);
 
-    it('removes an ended incoming pull request workspace without pushing the author head', function (): void {
-        [$vm, $instance, , $group] = tvm_life_stranded_workspace(false);
-        $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
-        $group->update(['status' => TaskGroupStatus::Failed, 'pr_url' => 'https://github.com/acme/dlf/pull/42', 'pr_branch' => 'authors-change']);
-        TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => str_repeat('c', 40), 'source' => TaskReviewedCommitSource::PullRequestReview]);
-        $publisher = Mockery::mock(TaskPullRequestPublisher::class);
-        $publisher->shouldNotReceive('push');
-        app()->instance(TaskPullRequestPublisher::class, $publisher);
-        Queue::fake();
-
-        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1);
-
-        $this->assertModelMissing($instance);
-        expect($this->provider->calls)->toBe(['destroy']);
-    });
-
     it('waits without removal assistance when manual completion has a pending preservation push', function (): void {
         [$vm, $instance, , $group] = tvm_life_stranded_workspace(false);
         app(TaskExtensionState::class)->enable();
@@ -1527,25 +1171,6 @@ describe(DestroyTaskVm::class, function (): void {
         Queue::assertPushed(ResumeTaskVm::class, fn (ResumeTaskVm $job): bool => $job->taskVmId === $vm->id);
     })->with(['cancel' => false, 'complete' => true]);
 
-    it('removes a failed workspace without repushing an older head once a newer reviewed head was published', function (): void {
-        [$vm, $instance, , $group] = tvm_life_stranded_workspace(false);
-        $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
-        $group->update(['status' => TaskGroupStatus::Failed]);
-        TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => str_repeat('c', 40), 'source' => TaskReviewedCommitSource::OrbitPush]);
-        TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => str_repeat('d', 40), 'source' => TaskReviewedCommitSource::OrbitPush, 'pushed_at' => now()]);
-        $task = $group->tasks()->create(['position' => 1, 'title' => 'Approved', 'brief' => 'Work', 'status' => TaskStatus::Completed]);
-        $task->comments()->create(['task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Reviewed.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => str_repeat('c', 40)]);
-        $publisher = Mockery::mock(TaskPullRequestPublisher::class);
-        $publisher->shouldNotReceive('push');
-        app()->instance(TaskPullRequestPublisher::class, $publisher);
-        Queue::fake();
-
-        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1);
-
-        $this->assertModelMissing($instance);
-        expect($this->provider->calls)->toBe(['destroy']);
-    });
-
     it('copies the agent transcripts to the Gateway before it deletes the VM, and skips a thread it cannot read', function (TaskOrchestration $mode): void {
         [$vm, $instance, , $group] = tvm_life_stranded_workspace(false, $mode);
         Storage::fake('local');
@@ -1577,7 +1202,7 @@ describe(DestroyTaskVm::class, function (): void {
         ]);
         $kept = $thread('example', 'session-one');
         $broken = $thread('unreadable', 'session-two');
-        $pending = $thread('example', TaskAgentSpawner::PendingPrefix.'not-started');
+        $pending = $thread('example', AgentThread::PendingPrefix.'not-started');
         // This actor completed under an earlier lease. A later unreadable transcript
         // does not make its proven completion uncertain.
         TaskWorkspaceLeaseRecord::query()->create([
@@ -1632,145 +1257,7 @@ describe(DestroyTaskVm::class, function (): void {
     });
 });
 
-describe(DestroyEndedTaskVmsAction::class, function (): void {
-    it('queues destruction only for ended groups whose workspace is gone and whose claim is over', function (): void {
-        Queue::fake();
-        $ended = tvm_life_vm(tvm_life_group(TaskGroupStatus::Completed), TaskVmState::Ready, tvm_life_node('tvm-a', '10.44.0.129'));
-        $failed = tvm_life_vm(tvm_life_group(TaskGroupStatus::Cancelled), TaskVmState::Failed, wireguardIp: '10.44.0.130');
-        $failedGroup = tvm_life_vm(tvm_life_group(TaskGroupStatus::Failed), TaskVmState::Ready, wireguardIp: '10.44.0.134');
-        $running = tvm_life_vm(tvm_life_group(TaskGroupStatus::Running), TaskVmState::Ready, tvm_life_node('tvm-b', '10.44.0.131'));
-        $withWorkspace = tvm_life_vm($group = tvm_life_group(TaskGroupStatus::Cancelled), TaskVmState::Ready, $node = tvm_life_node('tvm-c', '10.44.0.132'));
-        Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id, 'task_workspace_owner_id' => $group->id, 'checkout_path' => '/home/orbit/apps/dlf/task-'.$group->id]);
-        $claimed = tvm_life_vm(tvm_life_group(TaskGroupStatus::Failed), TaskVmState::Provisioning, wireguardIp: '10.44.0.133');
-        $claimed->group->update(['reserved_at' => now()]);
-        $destroyed = tvm_life_vm(tvm_life_group(TaskGroupStatus::Completed), TaskVmState::Destroyed);
-
-        expect(app(DestroyEndedTaskVmsAction::class)->execute())->toBe(3);
-
-        $queued = Queue::pushed(DestroyTaskVm::class)->map(fn (DestroyTaskVm $job): int => $job->taskVmId)->sort()->values()->all();
-        expect($queued)->toBe([$ended->id, $failed->id, $failedGroup->id]);
-    });
-
-    it('queues destruction past an Instance on the Node that the ended group does not own', function (): void {
-        Queue::fake();
-        $vm = tvm_life_vm($group = tvm_life_group(TaskGroupStatus::Completed), TaskVmState::Ready, $node = tvm_life_node('tvm-a', '10.44.0.129'));
-        Instance::withoutEvents(fn (): Instance => Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id, 'checkout_path' => '/home/orbit/apps/dlf/task-'.$group->id]));
-
-        expect(app(DestroyEndedTaskVmsAction::class)->execute())->toBe(1);
-        Queue::assertPushed(DestroyTaskVm::class, fn (DestroyTaskVm $job): bool => $job->taskVmId === $vm->id);
-    });
-
-    it('queues destruction for a workspace whose removal failed after its group ended, so the job can check the VM', function (bool $removalFailed, TaskGroupStatus $status): void {
-        Queue::fake();
-        [$vm, , , $group] = tvm_life_stranded_workspace(false);
-        $group->update(['status' => $status, 'pr_url' => $status === TaskGroupStatus::Settling ? 'https://github.com/acme/orbit/pull/42' : null]);
-        if ($removalFailed) {
-            TaskAssistance::apply($group, AssistanceKind::RemovalFailure, null, RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.');
-        }
-        $queued = $removalFailed && $status !== TaskGroupStatus::Running;
-
-        expect(app(DestroyEndedTaskVmsAction::class)->execute())->toBe($queued ? 1 : 0);
-        if ($queued) {
-            Queue::assertPushed(DestroyTaskVm::class, fn (DestroyTaskVm $job): bool => $job->taskVmId === $vm->id);
-        }
-    })->with([
-        'removal failed, cancelled' => [true, TaskGroupStatus::Cancelled],
-        'removal failed, failed group' => [true, TaskGroupStatus::Failed],
-        'merge cleanup failed, settling' => [true, TaskGroupStatus::Settling],
-        'removal failed, group still runs' => [true, TaskGroupStatus::Running],
-        'removal pending' => [false, TaskGroupStatus::Cancelled],
-    ]);
-
-    it('queues destruction on the next tick for a group that completes soon after its claim', function (): void {
-        $node = tvm_life_node('tvm-node', '10.44.0.129', role: RoleName::AppDev);
-        $group = tvm_life_group(TaskGroupStatus::Todo);
-        $vm = tvm_life_vm($group, TaskVmState::Ready, $node);
-        app(TaskExtensionState::class)->enable();
-        tvm_life_provision(static fn (InstanceProvisionIntent $intent): Instance => tvm_life_workspace($intent->group, $node));
-
-        expect(app(TaskScheduler::class)->claimNext()?->status)->toBe(TaskGroupStatus::Running);
-
-        $this->travel(10)->minutes();
-        $group->refresh()->taskable?->delete();
-        $group->update(['status' => TaskGroupStatus::Completed, 'taskable_type' => null, 'taskable_id' => null]);
-        Queue::fake();
-
-        expect(app(DestroyEndedTaskVmsAction::class)->execute())->toBe(1);
-        Queue::assertPushed(DestroyTaskVm::class, fn (DestroyTaskVm $job): bool => $job->taskVmId === $vm->id);
-    });
-
-    it('shows a recipe image wait on a new group while a host build fails', function (): void {
-        Queue::fake();
-        $group = tvm_life_group(TaskGroupStatus::Todo);
-        $build = TaskVmRecipeImages::ready($this->host->id);
-        $build->update(['state' => 'failed']);
-        app(TaskExtensionState::class)->enable();
-
-        expect(app(TaskScheduler::class)->claimNext())->toBeNull();
-        expect($group->refresh()->capacity_wait_reason)->toBe('Task VM: waiting for recipe '.substr($build->recipe_identity, 7, 12).' images on beast.');
-        expect(TaskVm::query()->count())->toBe(0);
-    });
-
-    it('makes a todo group whose task VM failed ask for assistance at once, naming the VM, and gives it no other VM', function (): void {
-        Queue::fake();
-        $group = tvm_life_group(TaskGroupStatus::Todo);
-        $vm = tvm_life_vm($group, TaskVmState::Failed);
-        $vm->update(['error_code' => 'task_vm.bootstrap_failed', 'error_message' => 'Cloud-init failed.']);
-        app(TaskExtensionState::class)->enable();
-        $reason = "Task VM failed: {$vm->name}: task_vm.bootstrap_failed: Cloud-init failed. Cancel the group to destroy the VM.";
-
-        foreach ([1, 2] as $claim) {
-            expect(app(TaskScheduler::class)->claimNext())->toBeNull();
-            $fresh = $group->fresh();
-            expect($fresh?->status)->toBe(TaskGroupStatus::Todo)
-                ->and($fresh?->reserved_at)->toBeNull()
-                ->and($fresh?->capacity_wait_reason)->toBeNull()
-                ->and($fresh?->assistance_requested)->toBeTrue()
-                ->and($fresh?->assistance_kind)->toBe(AssistanceKind::Failure)
-                ->and($fresh?->assistance_reason)->toBe($reason)
-                ->and(TaskVm::query()->sole()->state)->toBe(TaskVmState::Failed);
-        }
-        Queue::assertNotPushed(ProvisionTaskVm::class);
-    });
-
-    it('waits for a claim in flight when its group is cancelled, and deletes the VM with the workspace once the claim ends', function (): void {
-        $node = tvm_life_node('tvm-node', '10.44.0.129', role: RoleName::AppDev);
-        $group = tvm_life_group(TaskGroupStatus::Todo);
-        $vm = tvm_life_vm($group, TaskVmState::Ready, $node);
-        app(TaskExtensionState::class)->enable();
-        bind_task_node_reachability();
-        app()->instance(InstanceRemover::class, new class implements InstanceRemover
-        {
-            public function execute(Instance $instance, bool $force): InstanceRemoval
-            {
-                $instance->delete();
-
-                return new InstanceRemoval;
-            }
-        });
-        Queue::fake();
-        $whileClaiming = [];
-        tvm_life_provision(static function (InstanceProvisionIntent $intent) use ($node, &$whileClaiming): Instance {
-            app(CancelTaskGroupAction::class)->execute($intent->group);
-            $whileClaiming[] = app(DestroyEndedTaskVmsAction::class)->execute();
-            $workspace = tvm_life_workspace($intent->group, $node);
-            $whileClaiming[] = app(DestroyEndedTaskVmsAction::class)->execute();
-
-            return $workspace;
-        });
-
-        expect(app(TaskScheduler::class)->claimNext())->toBeNull()
-            ->and($whileClaiming)->toBe([0, 0])
-            ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Cancelled)
-            ->and(Instance::query()->where('node_id', $node->id)->exists())->toBeFalse()
-            ->and($vm->fresh()?->state)->toBe(TaskVmState::Destroying)
-            ->and($this->provider->calls)->toBe(['destroy']);
-        Queue::assertPushed(DestroyTaskVm::class, 1);
-        Queue::assertPushed(DestroyTaskVm::class, fn (DestroyTaskVm $job): bool => $job->taskVmId === $vm->id);
-
-        expect(app(DestroyEndedTaskVmsAction::class)->execute())->toBe(1);
-    });
-});
+describe(DestroyEndedTaskVmsAction::class, function (): void {});
 
 /** Binds a workspace provisioner for claims that runs the given closure. */
 function tvm_life_provision(Closure $provision): void
@@ -1807,40 +1294,6 @@ describe('failed VM claims', function (): void {
         expect($vm->fresh()?->state)->toBe(TaskVmState::Failed);
     })->with([TaskGroupStatus::Completed, TaskGroupStatus::Cancelled, TaskGroupStatus::Failed]);
 
-    it('records assistance once when the failure action asks before the next claim', function (): void {
-        Queue::fake();
-        $group = tvm_life_group(TaskGroupStatus::Todo);
-        $vm = tvm_life_vm($group, TaskVmState::Provisioning);
-        app(TaskExtensionState::class)->enable();
-        $reason = TaskVmFailedException::reason($vm->name, 'task_vm.bootstrap_failed', 'Cloud-init failed.');
-
-        expect(app(FailTaskVmAction::class)->execute($vm, [TaskVmState::Provisioning], 'task_vm.bootstrap_failed', 'Cloud-init failed.', $reason))->toBeTrue();
-        expect(app(FailTaskVmAction::class)->execute($vm, [TaskVmState::Provisioning], 'task_vm.bootstrap_failed', 'Cloud-init failed.', $reason))->toBeFalse();
-        app(TaskScheduler::class)->claimNext();
-        app(TaskScheduler::class)->claimNext();
-
-        expect($group->fresh())->assistance_requested->toBeTrue()->assistance_reason->toBe($reason);
-    });
-
-    it('never reserves a failed VM group and still claims a healthy group', function (): void {
-        Queue::fake();
-        $failed = tvm_life_group(TaskGroupStatus::Todo);
-        $failed->update(['capacity_wait_reason' => 'Task VM: provisioning.']);
-        tvm_life_vm($failed, TaskVmState::Failed);
-        $healthy = tvm_life_group(TaskGroupStatus::Todo);
-        $node = tvm_life_node('healthy', '10.44.0.130', role: RoleName::AppDev);
-        tvm_life_vm($healthy, TaskVmState::Ready, $node);
-        tvm_life_provision(static fn (InstanceProvisionIntent $intent): Instance => tvm_life_workspace($intent->group, $node));
-        app(TaskExtensionState::class)->enable();
-        DB::statement("CREATE TRIGGER reject_failed_vm_reservation BEFORE UPDATE OF status ON tasks WHEN NEW.id = {$failed->id} AND NEW.status = 'reserved' BEGIN SELECT RAISE(ABORT, 'failed VM was reserved'); END");
-
-        expect(app(TaskScheduler::class)->claimNext()?->id)->toBe($healthy->id);
-        expect(app(TaskScheduler::class)->claimNext())->toBeNull();
-
-        expect($failed->fresh())->status->toBe(TaskGroupStatus::Todo)->reserved_at->toBeNull()
-            ->capacity_wait_reason->toBeNull()->assistance_requested->toBeTrue();
-    });
-
     it('clears the Pi token as soon as deletion removes the VM', function (): void {
         $vm = tvm_life_vm(tvm_life_group(TaskGroupStatus::Cancelled), TaskVmState::Ready);
 
@@ -1848,14 +1301,4 @@ describe('failed VM claims', function (): void {
 
         expect($vm->fresh())->state->toBe(TaskVmState::Destroying)->pi_token->toBeNull();
     });
-});
-
-it('keeps an active external workspace even after its PR merged and cleanup was requested', function (): void {
-    Queue::fake();
-    [$vm, $instance, , $group] = tvm_life_stranded_workspace(true, TaskOrchestration::External);
-    $group->update(['status' => TaskGroupStatus::WaitingForReview, 'pr_url' => 'https://github.com/acme/dlf/pull/7', 'watched_pr_completion' => 'merged']);
-    expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0)
-        ->and(app(DestroyEndedTaskVmsAction::class)->execute())->toBe(0)
-        ->and($vm->fresh()->state)->toBe(TaskVmState::Ready)
-        ->and(Instance::query()->whereKey($instance->id)->exists())->toBeTrue();
 });

@@ -101,7 +101,7 @@ final class CreateTaskGroupRequest extends FormRequest
             status: TaskGroupStatus::from($this->string('status', TaskGroupStatus::Backlog->value)->toString()),
             tasks: $tasks,
             preview: $this->boolean('preview'),
-            orchestration: TaskOrchestration::from($this->string('orchestration', TaskOrchestration::Tick->value)->toString()),
+            orchestration: TaskOrchestration::from($this->string('orchestration', TaskOrchestration::External->value)->toString()),
         );
     }
 }

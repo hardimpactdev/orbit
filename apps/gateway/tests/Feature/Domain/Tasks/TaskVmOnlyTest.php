@@ -4,11 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskScheduler;
-use App\Domain\Tasks\TaskSettleMetrics;
-use App\Domain\Tasks\TaskSettleMetricsCollector;
-use App\Domain\Tasks\TaskStatus;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
@@ -38,47 +33,6 @@ it('refuses task_compute in the Project API', function (): void {
 
     $this->getJson('/api/v1/projects/'.$project->id)->assertOk()->assertJsonMissingPath('data.task_compute');
     $this->patchJson('/api/v1/projects/'.$project->id, ['task_compute' => 'vm'])->assertUnprocessable();
-});
-
-it('waits visibly for a task VM without creating a workspace', function (): void {
-    $group = Task::topLevel()->create([
-        'project_id' => vm_only_project()->id, 'title' => 'VM task', 'brief' => 'Isolated work.', 'status' => TaskGroupStatus::Todo,
-    ]);
-    Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'First', 'brief' => 'Work.', 'status' => TaskStatus::Todo]);
-
-    expect(app(TaskScheduler::class)->claimNext())->toBeNull();
-
-    expect($group->fresh()->status)->toBe(TaskGroupStatus::Todo)
-        ->and($group->fresh()->capacity_wait_reason)->toBe('Task VM: task VMs are not enabled on this Gateway.')
-        ->and(Instance::query()->count())->toBe(0);
-});
-
-it('rests a published group in waiting_for_review', function (): void {
-    $group = Task::topLevel()->create([
-        'project_id' => vm_only_project()->id, 'title' => 'Published task', 'brief' => 'Wait for review.',
-        'status' => TaskGroupStatus::Settling, 'pr_url' => 'https://github.com/acme/sandbox/pull/42',
-    ]);
-    $metrics = \Pest\Laravel\mock(TaskSettleMetricsCollector::class);
-    $metrics->shouldReceive('collect')->twice()->andReturn(new TaskSettleMetrics(12, 3, 1000, 0, 0));
-    $scheduler = app(TaskScheduler::class);
-    $scheduler->settle($group);
-    $settledAt = $group->fresh()->settled_at;
-    $this->travel(10)->minutes();
-    $scheduler->settle($group->fresh(), checkReturningPullRequest: false);
-
-    expect($group->fresh()->status)->toBe(TaskGroupStatus::WaitingForReview)
-        ->and($group->fresh()->settled_at->equalTo($settledAt))->toBeTrue()
-        ->and($group->fresh()->tokens)->toBe(12);
-});
-
-it('keeps an unpublished group in settling', function (): void {
-    $group = Task::topLevel()->create([
-        'project_id' => vm_only_project()->id, 'title' => 'Unpublished task', 'brief' => 'Publish first.',
-        'status' => TaskGroupStatus::Settling,
-    ]);
-    app(TaskScheduler::class)->settle($group, requestMissingPullRequest: false);
-
-    expect($group->fresh()->status)->toBe(TaskGroupStatus::Settling)->and($group->fresh()->settled_at)->toBeNull();
 });
 
 it('lets a Project review and merge on task VMs', function (): void {

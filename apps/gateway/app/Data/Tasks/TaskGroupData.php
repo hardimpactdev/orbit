@@ -55,7 +55,7 @@ final class TaskGroupData extends Data
         public ?VmPower $vmPower = null,
         public bool $preview = false,
         public ?TaskReviewAndMergeData $reviewAndMerge = null,
-        public TaskOrchestration $orchestration = TaskOrchestration::Tick,
+        public TaskOrchestration $orchestration = TaskOrchestration::External,
     ) {}
 
     /** @return array<string, mixed> */
@@ -126,7 +126,7 @@ final class TaskGroupData extends Data
         if ($vm instanceof TaskVm) {
             return match ($vm->state) {
                 TaskVmState::Ready => VmPower::Running,
-                TaskVmState::Parked => VmPower::Stopped,
+                TaskVmState::Parked => $vm->stop_confirmed_at === null ? null : VmPower::Stopped,
                 TaskVmState::Destroyed => VmPower::Destroyed,
                 default => null,
             };

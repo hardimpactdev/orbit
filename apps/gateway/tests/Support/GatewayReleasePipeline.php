@@ -29,8 +29,6 @@ use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Domain\Releases\ReleaseAlertReceipt;
 use App\Domain\Releases\ReleaseAlertStep;
 use App\Domain\Settings\SettingRepository;
-use App\Domain\Tasks\TaskExtensionState;
-use App\Domain\Tasks\TaskTickClock;
 use App\Infrastructure\GatewayReleases\GatewayReleaseAlerts;
 use App\Infrastructure\GatewayReleases\GatewayReleaseBuilder;
 use App\Infrastructure\GatewayReleases\GatewayReleaseCommands;
@@ -44,7 +42,6 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSource;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSupersession;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSwitcher;
-use App\Infrastructure\GatewayReleases\GatewayReleaseTickConfirmation;
 use DateTimeImmutable;
 use Illuminate\Support\Facades\Config;
 
@@ -182,15 +179,10 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
             new GatewayReleaseAlerts($this, $this->source()),
             $this,
             $this->recorder(),
-            $this->ticks(),
         );
     }
 
     /** The post-release tick confirmation, with the real tick clock and tasks extension state. */
-    public function ticks(): GatewayReleaseTickConfirmation
-    {
-        return new GatewayReleaseTickConfirmation(app(TaskTickClock::class), app(TaskExtensionState::class), new GatewayReleaseAlerts($this, $this->source()), horizonRunning: $this->horizonRunning, horizonWaitSeconds: 1700);
-    }
 
     /** Binds the pipeline into the container, for commands and API requests. */
     public function bind(): void
@@ -447,7 +439,6 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
             $recorder,
             $builder,
             Config::integer('orbit.gateway_releases.keep'),
-            ticks: $this->ticks(),
         );
     }
 }

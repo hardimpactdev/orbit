@@ -43,8 +43,6 @@ use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Nodes\NodeUpdateBroadcaster;
 use App\Domain\Settings\SettingRepository;
-use App\Domain\Tasks\TaskExtensionState;
-use App\Domain\Tasks\TaskTickClock;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentContract;
 use App\Infrastructure\AgentCommands\AgentDelivery;
@@ -55,7 +53,6 @@ use App\Infrastructure\Gateway\GatewayApplicationPath;
 use App\Infrastructure\Gateway\GatewayCheckoutAccessConverger;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Gateway\GatewayHorizon;
-use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Infrastructure\GatewayReleases\ArtisanGatewayReleaseRuntime;
 use App\Infrastructure\GatewayReleases\FilesystemGatewayReleaseObserver;
@@ -76,7 +73,6 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSource;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSupersession;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSwitcher;
-use App\Infrastructure\GatewayReleases\GatewayReleaseTickConfirmation;
 use App\Infrastructure\GatewayReleases\GatewayRuntimeHandoff;
 use App\Infrastructure\GatewayReleases\GatewaySchedulerHandoff;
 use App\Infrastructure\GatewayReleases\GitHubArtifactWebBuild;
@@ -96,7 +92,6 @@ use App\Models\Node;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
-use Laravel\Horizon\Contracts\MasterSupervisorRepository;
 
 /** Wires the Gateway release pipeline ([Update and recover a Gateway](/reference/gateway-recovery#release-layout)). */
 final class GatewayReleasesServiceProvider extends ServiceProvider
@@ -275,20 +270,6 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 keptReleases: Config::integer('orbit.gateway_releases.keep'),
                 retry: $app->make(GatewayReleaseRetry::class),
                 fleet: $app->make(FleetConvergeUnits::class),
-                ticks: $app->make(GatewayReleaseTickConfirmation::class),
-            ),
-        );
-        $this->app->bind(
-            GatewayReleaseTickConfirmation::class,
-            static fn (Application $app): GatewayReleaseTickConfirmation => new GatewayReleaseTickConfirmation(
-                clock: $app->make(TaskTickClock::class),
-                extension: $app->make(TaskExtensionState::class),
-                alerts: $app->make(GatewayReleaseAlerts::class),
-                windowSeconds: Config::integer('orbit.gateway_releases.tick_confirmation_seconds'),
-                horizonRunning: GatewayQueueRedis::configured()
-                    ? static fn (): bool => $app->make(MasterSupervisorRepository::class)->all() !== []
-                    : null,
-                horizonWaitSeconds: GatewayHorizon::longestJobSeconds(),
             ),
         );
         $this->app->bind(

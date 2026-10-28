@@ -134,7 +134,7 @@ final class TaskBroadcasts
 
         if ($threads !== []) {
             foreach (AgentThread::query()->whereKey(array_keys($threads))->orderBy('id')->get() as $thread) {
-                if (str_starts_with($thread->external_id, TaskAgentSpawner::PendingPrefix)) {
+                if (str_starts_with($thread->external_id, AgentThread::PendingPrefix)) {
                     continue;
                 }
                 $this->broadcaster->broadcast(RecordEventType::AgentThreadUpdated, $thread->id, [

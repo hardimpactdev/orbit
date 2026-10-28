@@ -143,17 +143,7 @@ final class SchedulerDrainProbe
     public array $tickLockFree = [];
 
     /** @var array<string, mixed> */
-    public array $drain = ['outcome' => 'drained', 'waited_ms' => 1000, 'running' => ['php artisan tasks:tick']];
-
-    public function observeTickLock(string $step): void
-    {
-        $lock = Cache::lock(GatewaySchedulerHandoff::TickLock, 1);
-        $free = $lock->get();
-        if ($free) {
-            $lock->release();
-        }
-        $this->tickLockFree[] = [$step, $free];
-    }
+    public array $drain = ['outcome' => 'drained', 'waited_ms' => 1000, 'running' => ['php artisan problems:collect']];
 }
 
 /**
@@ -164,13 +154,11 @@ function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?Fleet
     $probe = new SchedulerDrainProbe;
     $probe->time = new MonotonicTime;
     $schedulerAgents = new FakeAgentCommandRunner()->answer('gateway.drain-scheduler', static function () use ($probe): array {
-        $probe->observeTickLock('drain');
 
         return $probe->drain;
     });
     foreach (['gateway.start-scheduler', 'gateway.stop-scheduler', 'gateway.restart-release-process'] as $command) {
-        $schedulerAgents->answer($command, static function () use ($probe, $command): array {
-            $probe->observeTickLock($command);
+        $schedulerAgents->answer($command, static function (): array {
 
             return [];
         });
@@ -193,10 +181,8 @@ function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?Fleet
             scheduler: new GatewaySchedulerHandoff(
                 $schedulerAgents,
                 HANDOFF_APP,
-                tickWaitSeconds: 1,
                 drainSeconds: $drainSeconds,
                 clearMutexes: static function () use ($probe): void {
-                    $probe->observeTickLock('clear');
                     $probe->cleared++;
                 },
             ),
@@ -280,20 +266,6 @@ describe('gateway:release:handoff', function (): void {
             ])
             ->and($probe->cleared)->toBe(0)
             ->and($cleanup->calls)->toContain('reconcile', 'resume:r1');
-    });
-
-    it('holds the tick lock across native stop, overlap cleanup and native start after a forced drain', function (): void {
-        handoff_scheduler(handoff_gateway());
-        [$handoff, $schedulerAgents, , , , $probe] = runtime_handoff(drainSeconds: 0);
-        $probe->drain = ['outcome' => 'forced', 'waited_ms' => 0, 'running' => ['php artisan tasks:tick'], 'stopped' => ['php artisan tasks:tick']];
-
-        $result = $handoff->run();
-
-        expect($result['scheduler_drain'])->toBe($probe->drain)
-            ->and($schedulerAgents->commands())->toBe(['gateway.drain-scheduler', 'gateway.stop-scheduler', 'gateway.start-scheduler'])
-            ->and($probe->tickLockFree)->toBe([['drain', true], ['gateway.stop-scheduler', false], ['clear', false], ['gateway.start-scheduler', false]])
-            ->and($probe->cleared)->toBe(1)
-            ->and(Cache::lock(GatewaySchedulerHandoff::TickLock, 1)->get())->toBeTrue();
     });
 
     it('preserves the native no-pcntl reason and takes the forced path', function (): void {
@@ -528,34 +500,6 @@ describe('gateway:release:handoff', function (): void {
 
         expect(release_failure(fn () => $handoff->run())->errorCode)->toBe('gateway.release_scheduler_failed')
             ->and(array_slice($schedulerAgents->commands(), -1))->toBe(['gateway.start-scheduler']);
-    });
-
-    it('refuses to stop the scheduler after the drain limit while a tasks tick holds its lock', function (): void {
-        $scheduler = handoff_scheduler(handoff_gateway());
-        [$handoff, $schedulerAgents, , , , $probe] = runtime_handoff(drainSeconds: 0);
-        $probe->drain = ['outcome' => 'forced', 'waited_ms' => 0, 'running' => [], 'stopped' => []];
-        $tick = Cache::lock(GatewaySchedulerHandoff::TickLock, 300);
-        expect($tick->get())->toBeTrue();
-
-        $exception = release_failure(fn () => $handoff->run());
-        $tick->release();
-
-        expect($exception->errorCode)->toBe('gateway.release_scheduler_busy')
-            ->and($exception->step)->toBe('handoff')
-            ->and($schedulerAgents->commands())->not->toContain('gateway.stop-scheduler');
-    });
-
-    it('fails the handoff when the scheduler unit does not come back', function (): void {
-        $scheduler = handoff_scheduler(handoff_gateway());
-        [$handoff, $schedulerAgents] = runtime_handoff();
-        $unit = "orbit-process-{$scheduler->id}-schedule-work.service";
-        $schedulerAgents->refuse('gateway.start-scheduler', 'gateway.release_scheduler_failed', ['stage' => 'start']);
-
-        $exception = release_failure(fn () => $handoff->run());
-
-        expect($exception->errorCode)->toBe('gateway.release_scheduler_failed')
-            ->and($schedulerAgents->commands())->toBe(['gateway.drain-scheduler', 'gateway.start-scheduler', 'gateway.start-scheduler'])
-            ->and(Cache::lock(GatewaySchedulerHandoff::TickLock, 1)->get())->toBeTrue();
     });
 
     it('fails the handoff with a release error when Caddy cannot publish', function (): void {

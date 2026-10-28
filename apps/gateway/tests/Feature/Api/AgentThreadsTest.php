@@ -7,7 +7,6 @@ use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentThreadEvent;
 use App\Domain\Tasks\AgentThreadState;
-use App\Domain\Tasks\TaskAgentSpawner;
 use App\Models\AgentThread;
 use App\Models\Node;
 use App\Models\Project;
@@ -56,7 +55,7 @@ describe('task agent viewer', function (): void {
         [$group, $session] = agent_viewer_fixture();
         AgentThread::query()->create([
             'task_group_id' => $group->id, 'node_id' => $session->node_id, 'role' => 'reviewer',
-            'model' => 'gpt-5.6-luna', 'effort' => 'high', 'external_id' => TaskAgentSpawner::PendingPrefix.'not-started',
+            'model' => 'gpt-5.6-luna', 'effort' => 'high', 'external_id' => AgentThread::PendingPrefix.'not-started',
             'driver' => 'pi', 'runtime_key' => 'node:'.$session->node_id,
         ]);
 
@@ -181,7 +180,7 @@ describe('task agent viewer', function (): void {
         Exceptions::fake();
         $driver = new FakeAgentDriver;
         app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
-        $session->update(['driver' => 'example', 'external_id' => TaskAgentSpawner::PendingPrefix.'not-started']);
+        $session->update(['driver' => 'example', 'external_id' => AgentThread::PendingPrefix.'not-started']);
 
         $this->getJson("/api/v1/task-groups/{$group->id}/agents/{$session->id}?after_sequence=run.8")->assertOk()
             ->assertJsonPath('data.thread_id', $session->id)->assertJsonPath('data.kind', 'snapshot')

@@ -13,8 +13,6 @@ use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskOrchestration;
-use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTopology;
 use App\Models\Project;
@@ -24,7 +22,6 @@ final readonly class CreateTaskGroupAction
 {
     public function __construct(
         private RequireTasksExtensionAction $requireExtension,
-        private TaskScheduler $scheduler,
         private AgentDriverRegistry $drivers,
     ) {}
 
@@ -82,10 +79,6 @@ final readonly class CreateTaskGroupAction
                 'topology' => $task->topology,
                 'status' => TaskStatus::Todo,
             ]);
-        }
-
-        if ($data->status === TaskGroupStatus::Todo && $data->orchestration === TaskOrchestration::Tick) {
-            $this->scheduler->claimNext();
         }
 
         return $group->refresh()->load(['project', 'tasks', 'taskable']);

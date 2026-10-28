@@ -36,7 +36,6 @@ require_once __DIR__.'/Support/Orb245TransferFakes.php';
 require_once __DIR__.'/Support/AgentDriverTestSupport.php';
 require_once __DIR__.'/Support/TaskNodeReachability.php';
 require_once __DIR__.'/Support/TaskVmGroups.php';
-require_once __DIR__.'/Support/TaskSchedulerTickFixtures.php';
 require_once __DIR__.'/Support/ResponseFixtures.php';
 require_once __DIR__.'/Support/RedactionPcreFailure.php';
 require_once __DIR__.'/Support/ValkeyDeadlineClock.php';

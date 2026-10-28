@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
-use App\Domain\Tasks\TaskCheckStatus;
-use App\Domain\Tasks\TaskSubtaskRunner;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
@@ -363,23 +361,6 @@ PYTHON;
         ->and($data['current']['state'])->toBe('running')
         ->and($data['old_cancel']['cancelled'])->toBeFalse()
         ->and($data['ambiguous_legacy'])->toBeTrue();
-});
-
-it('records a rebooted exact check as failed and releases only with uncertain attribution', function (): void {
-    $leases = app(TaskWorkspaceLease::class);
-    $leases->run($this->group, 'check', 'test-check', fn () => $leases->startCheck($this->group, $this->group->tasks->first(), 'true'));
-    $lease = TaskWorkspaceLeaseRecord::query()->where('status', 'held')->sole();
-    $check = TaskCheck::query()->findOrFail($lease->check_id);
-    expect($check->process()->runId)->toBe($lease->getAttribute('check_run_id'));
-
-    app(TaskSubtaskRunner::class)->recordReading($check, TaskCheckReading::interrupted('The workspace rebooted.'));
-    $leases->reconcile($this->group);
-
-    expect($check->fresh()->status)->toBe(TaskCheckStatus::Failed)
-        ->and($check->fresh()->exit_code)->toBe(1)
-        ->and($check->fresh()->head_after)->toBeNull()
-        ->and($lease->fresh()->status)->toBe('released')
-        ->and($lease->fresh()->getAttribute('causality_uncertain'))->toBeTrue();
 });
 
 it('never stops a native live managed unit to manufacture operator quiescence', function (bool $queued): void {

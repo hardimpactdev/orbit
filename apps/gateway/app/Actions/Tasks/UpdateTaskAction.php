@@ -11,7 +11,6 @@ use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskPositions;
 use App\Domain\Tasks\TaskReviewBase;
 use App\Domain\Tasks\TaskStatus;
@@ -76,9 +75,6 @@ final readonly class UpdateTaskAction
             }
             $task->setRelation('parent', $locked);
             if ($data->status !== null) {
-                if ($locked->groupOrchestration() !== TaskOrchestration::External) {
-                    throw ValidationException::withMessages(['status' => ['A tick group does not accept a subtask status update.']]);
-                }
                 TaskStatusMoves::subtask($locked, $task, $data->status);
                 if ($data->status === TaskStatus::Completed && $task->status !== TaskStatus::Completed) {
                     TaskAssistance::resolveExternalSubtask($task, $locked);

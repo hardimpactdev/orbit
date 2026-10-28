@@ -84,8 +84,8 @@ final class UpdateTaskGroupCommand extends TaskCommand
                     'brief' => $brief = $this->promptText('Brief', self::BRIEF_MAX, multiline: true, default: $current->brief),
                     default => $status = $this->promptChoice(
                         'Status',
-                        array_combine($current->orchestration === 'external' ? self::GROUP_STATUSES : self::PLANNING_STATUSES, $current->orchestration === 'external' ? self::GROUP_STATUSES : self::PLANNING_STATUSES),
-                        $current->orchestration === 'external' || in_array($current->status, self::PLANNING_STATUSES, true) ? $current->status : 'todo',
+                        array_combine(self::GROUP_STATUSES, self::GROUP_STATUSES),
+                        $current->status,
                     ),
                 };
             }

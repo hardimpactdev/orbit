@@ -27,7 +27,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskScheduler;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\InstanceRemovalMember;
@@ -82,28 +81,6 @@ it('runs project teardown for an unattached route-free workspace when the group 
     task_teardown_expect_route_free($world['workspace']->id);
 });
 
-it('sweeps attached and unattached route-free workspaces through project teardown and leaves other workspaces', function (): void {
-    app(TaskExtensionState::class)->enable();
-    $ended = task_teardown_world('sweep-attached', TaskGroupStatus::Cancelled);
-    $unattached = task_teardown_workspace($ended['project'], $ended['node'], 'sweep-loose', TaskGroupStatus::Cancelled, attached: false);
-    $running = task_teardown_workspace($ended['project'], $ended['node'], 'sweep-running', TaskGroupStatus::Running);
-
-    expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(2)
-        ->and(Instance::query()->find($ended['workspace']->id))->toBeNull()
-        ->and(Instance::query()->find($unattached['workspace']->id))->toBeNull()
-        ->and(Instance::query()->find($running['workspace']->id))->not->toBeNull()
-        ->and(Instance::query()->find($ended['neighbor']->id))->not->toBeNull()
-        ->and($ended['group']->fresh()?->status)->toBe(TaskGroupStatus::Cancelled)
-        ->and($unattached['group']->fresh()?->status)->toBe(TaskGroupStatus::Cancelled)
-        ->and($running['group']->fresh()?->status)->toBe(TaskGroupStatus::Running);
-    task_teardown_expect_commands($ended['harness'], [
-        $ended['workspace']->checkout_path,
-        $unattached['workspace']->checkout_path,
-    ]);
-    task_teardown_expect_route_free($ended['workspace']->id);
-    task_teardown_expect_route_free($unattached['workspace']->id);
-});
-
 it('keeps the source and record when teardown fails and a retry removes only the owned workspace', function (): void {
     app(TaskExtensionState::class)->enable();
     $world = task_teardown_world('complete-retry', TaskGroupStatus::Settling);
@@ -136,39 +113,6 @@ it('keeps the source and record when teardown fails and a retry removes only the
     ]);
 });
 
-it('keeps a swept workspace when teardown fails and retries only that workspace after the backoff', function (TaskGroupStatus $status): void {
-    $this->freezeTime();
-    // A system-clock backoff must fail even when the case does not cross a real second.
-    $this->travel(1)->day();
-    app(TaskExtensionState::class)->enable();
-    $world = task_teardown_world('sweep-retry', $status);
-    $world['harness']->exit = 1;
-
-    expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0)
-        ->and($world['group']->fresh()?->status)->toBe($status)
-        ->and($world['group']->fresh()?->assistance_requested)->toBeTrue()
-        ->and($world['group']->fresh()?->assistance_reason)->toBe('Workspace removal failed: Teardown step failed.')
-        ->and($world['workspace']->fresh()?->status)->toBe(InstanceState::SourceResolved)
-        ->and($world['harness']->source->finalized)->toBe([])
-        ->and(InstanceRemoval::query()->count())->toBe(0);
-
-    $this->travel(59)->seconds();
-    expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0)
-        ->and(Instance::query()->find($world['workspace']->id))->not->toBeNull()
-        ->and($world['harness']->transport->inputs)->toHaveCount(1);
-
-    $this->travel(2)->seconds();
-    $world['harness']->exit = 0;
-
-    expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1)
-        ->and($world['group']->fresh()?->status)->toBe($status)
-        ->and($world['group']->fresh()?->assistance_requested)->toBeFalse()
-        ->and($world['group']->fresh()?->assistance_reason)->toBeNull()
-        ->and(Instance::query()->find($world['workspace']->id))->toBeNull()
-        ->and(Instance::query()->find($world['neighbor']->id))->not->toBeNull()
-        ->and($world['harness']->source->finalized)->toBe([$world['workspace']->id]);
-})->with([TaskGroupStatus::Cancelled, TaskGroupStatus::Failed]);
-
 it('retains the workspace when the teardown outcome is unconfirmed', function (): void {
     app(TaskExtensionState::class)->enable();
     $world = task_teardown_world('unconfirmed');
@@ -188,24 +132,6 @@ it('retains the workspace when the teardown outcome is unconfirmed', function ()
         ->and($world['workspace']->fresh()?->status)->toBe(InstanceState::SourceResolved)
         ->and($world['harness']->source->finalized)->toBe([])
         ->and(InstanceRemoval::query()->count())->toBe(0)
-        ->and(Instance::query()->find($world['neighbor']->id))->not->toBeNull();
-});
-
-it('refuses speculative deletion and skips teardown when the source cannot be inspected', function (): void {
-    app(TaskExtensionState::class)->enable();
-    $world = task_teardown_world('source-missing', TaskGroupStatus::Cancelled, attached: false);
-    $world['harness']->source->unavailable = true;
-
-    expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0);
-
-    $fresh = $world['group']->fresh();
-    expect($fresh?->status)->toBe(TaskGroupStatus::Cancelled)
-        ->and($fresh?->assistance_requested)->toBeTrue()
-        ->and($fresh?->assistance_reason)->toBe('Workspace removal failed: The checkout is missing.')
-        ->and($world['harness']->transport->inputs)->toBe([])
-        ->and($world['harness']->source->finalized)->toBe([])
-        ->and(InstanceRemoval::query()->count())->toBe(0)
-        ->and($world['workspace']->fresh()?->status)->toBe(InstanceState::SourceResolved)
         ->and(Instance::query()->find($world['neighbor']->id))->not->toBeNull();
 });
 

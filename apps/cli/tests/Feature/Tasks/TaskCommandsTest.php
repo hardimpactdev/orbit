@@ -548,7 +548,7 @@ function task_prompt_mock(): MockClient
 {
     $meta = ['request_id' => '11111111-1111-4111-8111-111111111111'];
     $group = static fn (int $id, string $title, string $status): array => [
-        'id' => $id, 'project_id' => 1, 'project' => 'orbit', 'project_code' => 'ORB', 'title' => $title, 'brief' => 'Brief', 'orchestration' => 'tick', 'status' => $status, 'tasks' => [],
+        'id' => $id, 'project_id' => 1, 'project' => 'orbit', 'project_code' => 'ORB', 'title' => $title, 'brief' => 'Brief', 'orchestration' => 'external', 'status' => $status, 'tasks' => [],
     ];
 
     return MockClient::global([

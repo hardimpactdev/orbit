@@ -6,7 +6,7 @@ namespace App\Infrastructure\TaskVms;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Tasks\TaskCapacityException;
-use App\Domain\Tasks\TaskSubtaskRunner;
+use App\Domain\Tasks\TaskCheckEvidence;
 use App\Domain\Tasks\TaskTopology;
 use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\Tasks\TaskTopologyEvidence;
@@ -26,7 +26,7 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Prepares a group's declared topology nested in its task VM, before each turn that Orbit prepares for a subtask that
- * declares one ({@see TaskSubtaskRunner::prepareTurn()}). So it runs after the group's baseline check, whose Project
+ * declares one ({@see TaskCheckEvidence::prepareTurn()}). So it runs after the group's baseline check, whose Project
  * setup installs what the harness needs. The first such turn starts a preparation unit ({@see TaskVmTopologyUnit}),
  * which runs the host setup, which adopts the VM's clone of the topology seed, and acquires `TASK-<group>` with the
  * union of the group's declarations. Each tick reads the unit's state until it is ready. A ready topology that holds the subtask's

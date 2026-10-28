@@ -95,9 +95,6 @@ final readonly class TaskOperations
 
     public function requireOpenExternal(Task $group): void
     {
-        if ($group->groupOrchestration() !== TaskOrchestration::External) {
-            throw new ResourceOperationException('tasks.not_orchestrated', 'This task group uses tick orchestration.', 409);
-        }
         if (in_array($group->status, TaskGroupStatus::endedStatuses(), true)) {
             throw new ResourceOperationException('tasks.group_closed', 'This task group has ended.', 409);
         }

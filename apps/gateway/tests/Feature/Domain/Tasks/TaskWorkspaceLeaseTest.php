@@ -10,7 +10,6 @@ use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentThreadObserver;
 use App\Domain\Tasks\AgentThreadState;
-use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckReading;
@@ -18,10 +17,7 @@ use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskReviewedCommitSource;
-use App\Domain\Tasks\TaskScheduler;
-use App\Domain\Tasks\TaskSessionObserver;
 use App\Domain\Tasks\TaskStatus;
-use App\Domain\Tasks\TaskSubtaskRunner;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceSnapshot;
@@ -30,7 +26,6 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
-use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskReviewedCommit;
 use App\Models\TaskVm;
@@ -236,23 +231,6 @@ it('admits a queued reviewer before capturing the post-check dispatch baseline',
     $checks->tree = str_repeat('d', 40); // Packet/preparation may change the tree before dispatch.
     $leases->dispatch($thread);
     expect($task->fresh()->review_workspace_tree)->toBe($checks->tree);
-});
-
-it('queues baseline admission without creating an unstarted claim and starts once after release', function (): void {
-    $group = tick_group();
-    lease_stopped_driver();
-    $checks = new FakeTaskCheckRunner([TaskCheckReading::running()]);
-    app()->instance(TaskCheckRunner::class, $checks);
-    $leases = app(TaskWorkspaceLease::class);
-    $holder = $leases->acquire($group, 'publication', 'busy');
-    $task = $group->tasks->first();
-    $start = new ReflectionMethod(TaskSubtaskRunner::class, 'startBaseline');
-    expect(fn () => $start->invoke(app(TaskSubtaskRunner::class), app(TaskScheduler::class), $group, $task))->toThrow(TaskWorkspaceWaiting::class);
-    expect($task->checks()->count())->toBe(0)->and($checks->starts)->toBe(0);
-    $leases->release($holder);
-    $start->invoke(app(TaskSubtaskRunner::class), app(TaskScheduler::class), $group, $task);
-    expect(fn () => $start->invoke(app(TaskSubtaskRunner::class), app(TaskScheduler::class), $group, $task))->toThrow(TaskWorkspaceWaiting::class);
-    expect($task->checks()->count())->toBe(1)->and($checks->starts)->toBe(1)->and($task->fresh()->communication_failures)->toBe(0);
 });
 
 it('does not resurrect a completed pre-lease actor when its runtime later becomes unreadable', function (): void {
@@ -482,31 +460,6 @@ it('acknowledges a completed keyed send after restart without reopening its turn
     expect($leases->acquire($group, 'publication', 'after-completion')->status)->toBe('held');
 });
 
-it('drops a cancelled subtasks queued baseline and admits its successor without discarding a holder', function (): void {
-    $group = tick_group();
-    AgentThread::query()->where('task_group_id', $group->id)->delete();
-    $group->tasks()->update(['implementer_agent_thread_id' => null, 'reviewer_agent_thread_id' => null]);
-    $group->update(['implementer_agent_thread_id' => null, 'reviewer_agent_thread_id' => null]);
-    $group->refresh()->load('tasks');
-    lease_stopped_driver();
-    $checks = new FakeTaskCheckRunner([TaskCheckReading::running()]);
-    app()->instance(TaskCheckRunner::class, $checks);
-    $leases = app(TaskWorkspaceLease::class);
-    $holder = $leases->acquire($group, 'publication', 'busy');
-    $task = $group->tasks->first();
-    $next = Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Next', 'brief' => 'Next', 'status' => TaskStatus::Todo]);
-    $start = new ReflectionMethod(TaskSubtaskRunner::class, 'startBaseline');
-    expect(fn () => $start->invoke(app(TaskSubtaskRunner::class), app(TaskScheduler::class), $group, $task))->toThrow(TaskWorkspaceWaiting::class);
-    $queued = TaskWorkspaceLeaseRecord::query()->where('owner', 'check:'.$task->id)->sole();
-    expect($queued->getAttribute('task_id'))->toBe($task->id)->and($task->checks()->count())->toBe(0);
-    app(TaskScheduler::class)->cancelRunningSubtask($group, $task, static function (): void {});
-    expect($task->fresh()->status)->toBe(TaskStatus::Cancelled)->and($queued->fresh()->status)->toBe('cancelled');
-    expect($holder->fresh()->status)->toBe('held')->and($checks->starts)->toBe(0);
-    $leases->release($holder);
-    $start->invoke(app(TaskSubtaskRunner::class), app(TaskScheduler::class), $group->fresh(), $next->fresh());
-    expect($checks->starts)->toBe(1)->and($next->fresh()->communication_failures)->toBe(0);
-});
-
 it('refuses a check outside an admitted scope without creating a lease or starting a process', function (): void {
     $group = tick_group();
     $checks = new FakeTaskCheckRunner;
@@ -518,77 +471,6 @@ it('refuses a check outside an admitted scope without creating a lease or starti
     expect(TaskWorkspaceLeaseRecord::query()->exists())->toBeFalse()
         ->and($group->tasks->first()->checks()->exists())->toBeFalse()->and($checks->starts)->toBe(0);
 });
-
-it('admits a handoff after a held verdict without queuing its check ahead of its receipt', function (): void {
-    [$group, $task, $checks] = tick_checking([TaskCheckReading::running()]);
-    lease_stopped_driver();
-    $leases = app(TaskWorkspaceLease::class);
-    $scheduler = app(TaskScheduler::class);
-    $runner = app(TaskSubtaskRunner::class);
-    $scheduler->collectReceipt($group, $task, TaskThreadRole::Implementer);
-    $receipt = $scheduler->pendingReceipt($task, TaskThreadRole::Implementer);
-    $observation = app(TaskSessionObserver::class)->observe($group, $task);
-    $holder = $leases->acquire($group, 'verdict', 'review-outcome:'.$task->id, taskId: $task->id);
-
-    // A receipt is already stored, but its check request meets a still-held verdict.
-    $handoff = new ReflectionMethod(TaskSubtaskRunner::class, 'checkHandoff');
-    expect(fn () => $handoff->invoke($runner, $scheduler, $group, $task, $observation->thread(TaskThreadRole::Implementer), $receipt, $observation))
-        ->toThrow(TaskWorkspaceWaiting::class);
-    // The next scheduler pass reads the receipt before it can retry that check.
-    expect(fn () => $runner->handleImplementerCompletion($scheduler, $group, $task, $observation))
-        ->toThrow(TaskWorkspaceWaiting::class);
-    expect($holder->fresh()->status)->toBe('held')->and($checks->starts)->toBe(0)
-        ->and($task->checks()->count())->toBe(0);
-    $leases->release($holder);
-
-    $runner->handleImplementerCompletion($scheduler, $group, $task, $observation);
-
-    $check = $task->checks()->sole();
-    expect($checks->starts)->toBe(1)->and($check->task_comment_id)->toBe($receipt->id);
-    expect(TaskWorkspaceLeaseRecord::query()->where('status', 'queued')->exists())->toBeFalse();
-    $admitted = TaskWorkspaceLeaseRecord::query()->where('status', 'held')->sole();
-    expect($admitted->check_id)->toBe($check->id)
-        ->and($admitted->owner)->toBe('receipt:'.$task->id.':'.$task->implementer_agent_thread_id);
-});
-
-it('leases immutable deliverable validation and reuses an existing prepared actor on retry', function (bool $pending): void {
-    $group = tick_group();
-    lease_stopped_driver();
-    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
-    $task = $group->tasks->first();
-    $task->update(['subtask_start_commit' => str_repeat('a', 40), 'deliverables' => [['id' => 'source', 'type' => 'file', 'path' => 'existing.php', 'change' => 'modified']]]);
-    if ($pending) {
-        AgentThread::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id, 'node_id' => $group->taskable->node_id,
-            'driver' => 'pi', 'runtime_key' => 'node:'.$group->taskable->node_id, 'external_id' => 'pending:path-validation', 'role' => 'implementer']);
-    }
-    $repository = new class implements DeliverablePathRepository
-    {
-        public int $reads = 0;
-
-        public function defaultBranchCommit(Project $project): string
-        {
-            return str_repeat('a', 40);
-        }
-
-        public function files(Project $project, string $commit, ?Instance $workspace = null): array
-        {
-            $this->reads++;
-            expect(TaskWorkspaceLeaseRecord::query()->where('active_instance_id', $workspace->id)->exists())->toBeTrue();
-
-            return ['existing.php'];
-        }
-    };
-    app()->instance(DeliverablePathRepository::class, $repository);
-    $leases = app(TaskWorkspaceLease::class);
-    $holder = $leases->acquire($group, 'publication', 'busy');
-    $validate = new ReflectionMethod(TaskSubtaskRunner::class, 'validateImplementerDeliverablePaths');
-    expect(fn () => $validate->invoke(app(TaskSubtaskRunner::class), app(TaskScheduler::class), $task, $group))->toThrow(TaskWorkspaceWaiting::class);
-    expect($repository->reads)->toBe(0);
-    $leases->release($holder);
-    expect($validate->invoke(app(TaskSubtaskRunner::class), app(TaskScheduler::class), $task, $group))->toBeTrue();
-    expect($repository->reads)->toBe(1);
-    expect(TaskWorkspaceLeaseRecord::query()->where('status', 'queued')->exists())->toBeFalse();
-})->with([false, true]);
 
 it('does not credit an outside edit observed during metadata-only remote work to Orbit', function (): void {
     $group = tick_group();

@@ -11,7 +11,6 @@ Loading tasks status...
 │
 ├  Status      enabled
 │
-└  Last tick   not recorded
 
 Failures
 

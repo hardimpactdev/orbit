@@ -6,16 +6,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\QuestionCause;
 use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskPromptGroup;
-use App\Domain\Tasks\TaskPromptRenderer;
-use App\Domain\Tasks\TaskPromptSubtask;
-use App\Domain\Tasks\TaskQuestions;
-use App\Domain\Tasks\TaskReviewPacketBuilder;
-use App\Domain\Tasks\TaskRubricItem;
-use App\Domain\Tasks\TaskRubricReminder;
-use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
-use App\Domain\Tasks\TaskTurnInstructions;
 use App\Domain\Tasks\TaskTurnMode;
 use App\Domain\Tasks\TaskTurnOutcome;
 use App\Domain\Tasks\TaskTurnReceiptException;
@@ -32,8 +23,6 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
-use App\Models\TaskComment;
-use App\Models\TaskQuestion;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
@@ -483,57 +472,6 @@ it('requires a cause on every outcome of the review after a direction resolution
         ->and($receipt?->cause)->toBe('brief_unclear');
 });
 
-it('accepts the prompted verdict after an operator resolution and stops requiring cause once answered', function (string $outcome, bool $continued): void {
-    $checkout = turn_receipt_checkout();
-    $instance = turn_receipt_instance($checkout, group: [
-        'title' => 'Direction', 'brief' => 'Follow the contract.',
-        'status' => TaskGroupStatus::Running,
-    ]);
-    $group = Task::topLevel()->findOrFail($instance->task_workspace_owner_id);
-    $task = Task::query()->create([
-        'parent_id' => $group->id, 'position' => 1, 'title' => 'Review', 'brief' => 'Check the fix.',
-        'status' => TaskStatus::Reviewing, 'review_attempt' => 1,
-    ]);
-    $resolution = TaskComment::query()->create([
-        'task_id' => $task->id, 'task_group_id' => $group->id, 'type' => 'resolution',
-        'body' => 'Follow the ADR.', 'author' => 'operator', 'review_attempt' => 1, 'posted_at' => now(),
-    ]);
-    $question = TaskQuestion::query()->create([
-        'task_id' => $group->id, 'subtask_id' => $task->id, 'attempt' => 1, 'asked_by' => 'reviewer',
-        'question' => 'Which contract?', 'status' => 'escalated', 'asked_at' => now(),
-        'resolution_comment_id' => $resolution->id,
-    ]);
-    $receipts = turn_receipts(new LocalShellSshExecutor);
-    $mode = new TaskTurnMode(causeRequired: TaskQuestions::awaitsCause($task));
-    $receipts->prepare($instance, TaskThreadRole::Reviewer, final: $task->opensPullRequest(), threadId: 123, mode: $mode);
-    $prompt = app(TaskReviewPacketBuilder::class)->build($task, $continued, 123);
-    $metadata = json_decode(File::get($checkout.'/.git/orbit/turn.json'), true);
-    expect($metadata['cause_required'] ?? false)->toBeTrue();
-
-    // Execute the verdict form shown in the packet, replacing only its placeholders.
-    preg_match('/--outcome='.$outcome.' --summary="[^"]+"(?: --pr-[a-z]+="[^"]+")* --cause=CAUSE/', $prompt, $matches);
-    expect($matches)->not->toBeEmpty();
-    $command = str_replace(['--cause=CAUSE'], ['--cause=contract_gap'], $matches[0]);
-    $process = Process::fromShellCommandline(escapeshellarg($checkout.'/.git/orbit/turn').' --thread=123 '.$command, env: ['PATH' => StandardLibraryPython::path((string) getenv('PATH'))]);
-    $process->run();
-    expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
-        ->and($receipts->read($instance)?->cause)->toBe('contract_gap');
-
-    $answer = TaskComment::query()->create([
-        'task_id' => $task->id, 'task_group_id' => $group->id, 'type' => $outcome,
-        'body' => 'Checked.', 'author' => 'reviewer', 'cause' => 'contract_gap', 'posted_at' => now(),
-    ]);
-    expect(TaskQuestions::answerPending($task, $answer))->toBeTrue()
-        ->and($question->fresh()?->status->value)->toBe('answered');
-    $mode = new TaskTurnMode(causeRequired: TaskQuestions::awaitsCause($task));
-    $receipts->prepare($instance, TaskThreadRole::Reviewer, mode: $mode);
-    $prompt = app(TaskReviewPacketBuilder::class)->build($task, true, 123);
-    expect($prompt)->not->toContain('every normal review outcome also needs --cause', '--summary="What you checked" --cause=CAUSE');
-    $refused = turn_receipt_script($checkout, ['--outcome='.$outcome, '--summary=Checked.', '--cause=scope']);
-    expect($refused->getExitCode())->toBe(2)
-        ->and($refused->getErrorOutput())->toContain('--cause is only for');
-})->with(['approved', 'changes_requested'])->with([false, true]);
-
 it('refuses to write a receipt before Orbit starts a turn', function (): void {
     $checkout = turn_receipt_checkout();
     File::ensureDirectoryExists($checkout.'/.git/orbit');
@@ -707,48 +645,6 @@ describe('deliverable confirmations', function (): void {
         expect($process->getExitCode())->toBe(2)
             ->and($process->getErrorOutput())->toBe("orbit turn: unknown deliverable docs. This subtask's deliverables are: none.\n");
     });
-});
-
-it('names the turn command in the prompts and the reminder', function (): void {
-    $prompt = TaskPromptRenderer::implementer(new TaskPromptGroup(
-        id: 183,
-        title: 'One task model',
-        brief: 'Replace task groups.',
-        projectSlug: 'orbit',
-        projectId: 1,
-        defaultBranch: 'main',
-        taskCheck: null,
-        startCommit: null,
-    ), new TaskPromptSubtask(
-        id: 491,
-        title: 'Rename the run receipt',
-        brief: 'End each turn with the turn command.',
-        position: 4,
-        deliverables: [],
-    ), 17);
-    $reviewer = TaskTurnInstructions::reviewer(threadId: 19);
-    $reminder = TaskRubricReminder::compose(TaskThreadRole::Implementer, [
-        new TaskRubricItem('turn_receipt', false, 'No turn receipt was found.'),
-    ], threadId: 17);
-
-    expect($prompt)->toContain('"$(git rev-parse --git-path orbit)/turn" --thread=17 --outcome=ready_for_review')
-        ->and($prompt)->toContain('"$(git rev-parse --git-path orbit)/turn" --thread=17 --outcome=blocked')
-        ->and($prompt)->toContain('Your reviewer answers first.')
-        ->and($prompt)->not->toContain('brief_unclear')
-        ->and($prompt)->not->toContain('.git/orbit/run')
-        ->and($reviewer)->toContain('"$(git rev-parse --git-path orbit)/turn" --thread=19 --outcome=approved')
-        ->and($reviewer)->toContain('"$(git rev-parse --git-path orbit)/turn" --thread=19 --outcome=changes_requested')
-        ->and($reviewer)->not->toContain('This is a consult')
-        ->and($reviewer)->not->toContain('--outcome=answered')
-        ->and(TaskTurnInstructions::consult(19))->toContain('"$(git rev-parse --git-path orbit)/turn" --thread=19 --outcome=answered')
-        ->and(TaskTurnInstructions::consult(19))->toContain('This is a consult, not a review.')
-        ->and(TaskTurnInstructions::consult(19))->toContain('brief_unclear, contract_gap, scope, environment, or missed_contract')
-        ->and(TaskTurnInstructions::relay(19))->toContain("This is a relay of the operator's direction, not a review.")
-        ->and(TaskTurnInstructions::relay(19))->toContain('"$(git rev-parse --git-path orbit)/turn" --thread=19 --outcome=answered')
-        ->and($reviewer)->not->toContain('.git/orbit/run')
-        ->and($reminder)->toContain('No turn receipt was found.')
-        ->and($reminder)->toContain('"$(git rev-parse --git-path orbit)/turn" --thread=17 --outcome=ready_for_review')
-        ->and($reminder)->not->toContain('.git/orbit/run');
 });
 
 it('writes the review context with the turn file and leaves no partial file', function (): void {

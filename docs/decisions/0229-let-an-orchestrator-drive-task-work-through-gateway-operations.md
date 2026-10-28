@@ -99,7 +99,7 @@ Each effect becomes an operation that wraps the code Tasks runs today:
 
 | CLI command | Kind | Does | Wraps |
 | --- | --- | --- | --- |
-| `tasks:provision` | `tasks.provision` | Claims the group's task VM and creates its workspace | The [claim](/reference/tasks#claim-and-provision) |
+| `tasks:provision` | `tasks.provision` | Claims the group's task VM and creates its workspace | The [claim](/reference/tasks#execution-ownership) |
 | `tasks:check` | `tasks.check` | Runs the baseline or the handoff check of a subtask | The [Project check](/reference/tasks#project-check) and its supervision |
 | `tasks:analyze` | `tasks.analyze` | Runs fixed read-only repository analysis on a typed plan and candidate | Existing detached check supervision and repository-owned `bin/task-analyze` |
 | `tasks:turn` | `tasks.turn` | Runs one agent turn on a subtask, optionally bound to stored analysis | The [Pi driver](/reference/tasks#drivers) |
@@ -257,7 +257,7 @@ Pi on the Durable harness replaces the session internals of the Pi server inside
 
 - The send key stays the submission key. It becomes Durable's request ID, so a repeat still starts no turn.
 - A Pi server restart no longer fails the turn: the server resumes it. The Gateway no longer sends a restart resume; [Restarts](/reference/pi-server#restarts) describes Durable's recovery. Durable's crash-loop parking after five restarts fails the turn. The orchestrator raises assistance for an external group, and the tick for a tick group.
-- Durable retries a transient provider error, with its policy set to Orbit's budget. The Gateway no longer retries after 1, 2, 4, and 8 minutes ([Retry a transient provider error](/reference/tasks#retry-a-transient-provider-error)).
+- Durable retries a transient provider error, with its policy set to Orbit's budget. The Gateway no longer retries after 1, 2, 4, and 8 minutes ([Retry a transient provider error](/reference/tasks#execution-ownership)).
 - Durable deduplicates within the VM's storage only. Across a lost VM, the keyed operation is the guard.
 - Checks stay operations. An agent does not reliably rerun a check that was cut off.
 

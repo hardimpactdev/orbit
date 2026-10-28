@@ -3,14 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\AgentDriverRegistry;
-use App\Domain\Tasks\AgentSpawner;
-use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskReviewDiffException;
-use App\Domain\Tasks\TaskReviewPacketBuilder;
-use App\Domain\Tasks\TaskScheduler;
-use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
@@ -32,7 +25,6 @@ use App\Models\Project;
 use App\Models\Task;
 use Symfony\Component\Process\Process;
 use Tests\Support\AcceptingTaskWorkspaceMcp;
-use Tests\Support\FakeAgentDriver;
 use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\TestOrbitHome;
 
@@ -203,68 +195,6 @@ it('keeps the full counts when the captured output is only the tail', function (
         ->and($diff['summary']['insertions'])->toBeGreaterThan(1)
         ->and($diff['summary']['deletions'])->toBeGreaterThan(0);
 });
-
-it('does not send a review when git cannot produce the stat, the body, or the file list', function (string $failure): void {
-    $checkout = review_diff_checkout();
-    $start = trim((new Process(['git', '-C', $checkout, 'rev-parse', 'HEAD']))->mustRun()->getOutput());
-    file_put_contents($checkout.'/tracked.php', "<?php\nreturn 2;\n");
-    if ($failure === 'untracked') {
-        file_put_contents($checkout.'/secret.php', "hidden\n");
-    }
-    $bin = TestOrbitHome::scratch('git-bin');
-    mkdir($bin);
-    $git = trim((new Process(['sh', '-c', 'command -v git']))->mustRun()->getOutput());
-    $record = TestOrbitHome::scratch('git-failure');
-    $condition = match ($failure) {
-        'stat' => '[ "$argument" = --numstat ]',
-        'body' => '[ "$argument" = diff ] && [ "$stat" = no ]',
-        'untracked' => '[ "$argument" = --intent-to-add ]',
-        'ls-files' => '[ "$argument" = ls-files ]',
-    };
-    file_put_contents($bin.'/git', "#!/bin/sh\nstat=no\nfor argument in \"\$@\"; do [ \"\$argument\" != --numstat ] || stat=yes; done\n".
-        'for argument in "$@"; do if '.$condition.'; then printf %s '.escapeshellarg($failure).' > '.escapeshellarg($record).'; exit 3; fi; done'."\n".
-        'exec '.escapeshellarg($git).' "$@"'."\n");
-    \chmod($bin.'/git', 0755);
-    $ssh = new class($bin.':'.(getenv('PATH') ?: '')) implements SshExecutor
-    {
-        public function __construct(private string $path) {}
-
-        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-        {
-            $process = new Process($command->arguments, null, ['PATH' => $this->path], $command->input);
-            $process->run();
-
-            return new CommandResult((int) $process->getExitCode(), $process->getOutput(), $process->getErrorOutput(), 1, false);
-        }
-    };
-    $instance = review_diff_instance($checkout, group: [
-        'title' => 'Unread diff',
-        'brief' => 'Git cannot produce the diff.',
-        'status' => TaskGroupStatus::Running,
-    ]);
-    $group = Task::topLevel()->findOrFail($instance->task_workspace_owner_id);
-    $task = Task::query()->create([
-        'parent_id' => $group->id,
-        'position' => 1,
-        'title' => 'Review',
-        'brief' => 'Review it.',
-        'status' => TaskStatus::Running,
-        'subtask_start_commit' => $start,
-    ]);
-    $driver = new FakeAgentDriver('pi');
-    app()->instance(TaskReviewDiff::class, review_diff_reader($ssh));
-    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
-    app()->forgetInstance(AgentSpawner::class);
-    app()->forgetInstance(TaskReviewPacketBuilder::class);
-
-    app(TaskScheduler::class)->settleImplementer($task);
-
-    expect(file_get_contents($record))->toBe($failure);
-    expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
-        ->and($task->fresh()?->review_notified_attempt)->toBeNull()
-        ->and($task->fresh()?->communication_failures)->toBe(1)
-        ->and($driver->calls)->toBe([]);
-})->with(['stat', 'body', 'untracked', 'ls-files']);
 
 function review_diff_checkout(): string
 {

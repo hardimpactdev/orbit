@@ -27,11 +27,9 @@ use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
 use App\Domain\TaskVms\TaskVmPackageCacheMount;
-use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Tasks\TaskWorkspaceProvisioner;
 use App\Models\Instance;
@@ -621,16 +619,6 @@ it('keeps the source-resolved orbit clone and asks for assistance when removal i
 })->with(['cancel', 'complete', 'unattached']);
 
 describe('task VMs', function (): void {
-    it('makes a group wait while a task VM value is invalid', function (): void {
-        task_vm_node_hosts([['node_id' => 9, 'cidr' => '10.251.77.0/24', 'max_vms' => 2, 'pool' => 'Bad_Pool']]);
-        app()->forgetInstance(TaskVmSettings::class);
-        provisioner_node('beast', '10.44.0.7');
-        bind_task_workspace_fakes();
-
-        expect(app(TaskScheduler::class))->toBeInstanceOf(TaskScheduler::class)
-            ->and(fn () => app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent(provisioner_group(provisioner_app('dlf')), true)))
-            ->toThrow(TaskCapacityException::class, 'Task VM: task_vm.invalid_config: ');
-    });
 
     it('creates the unrouted workspace of an Orbit vm group on its ready task VM Node, like any Project', function (): void {
         $project = provisioner_app('orbit', '.', ProjectType::Monorepo);

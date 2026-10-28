@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\Tasks\AgentThreadState;
-use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskBroadcastObserver;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Attributes\Scope;
@@ -65,6 +64,8 @@ use Illuminate\Support\Carbon;
 #[ObservedBy([TaskBroadcastObserver::class])]
 final class AgentThread extends Model
 {
+    public const string PendingPrefix = 'pending:';
+
     /** @var list<string> */
     #[\Override]
     protected $fillable = ['task_group_id', 'task_id', 'node_id', 'driver', 'runtime_key', 'external_id', 'role', 'model', 'effort', 'state', 'observation_version', 'observed_at', 'archived_at', 'archive_command_id', 'archive_attempts', 'archive_retry_at', 'observation_error', 'error', 'tokens', 'input_tokens', 'cached_input_tokens', 'output_tokens', 'model_calls', 'peak_context_tokens', 'cost_usd', 'lines_added', 'lines_deleted', 't3_input_tokens', 't3_cached_input_tokens', 't3_output_tokens', 't3_model_calls', 't3_peak_context_tokens', 't3_counted_total_processed_tokens', 't3_observed_total_processed_tokens', 't3_event_sequence', 't3_metrics_partial', 't3_metrics_initialized', 't3_metrics_collected_at', 't3_metrics_final_at', 't3_metrics_retry_at', 't3_metrics_attempts', 't3_metrics_activity_version', 't3_metrics_observed_activity_version'];
@@ -100,7 +101,7 @@ final class AgentThread extends Model
     /** The spawner reserved this thread, but its agent conversation has not started: the external ID is a placeholder. */
     public function isPending(): bool
     {
-        return str_starts_with($this->external_id, TaskAgentSpawner::PendingPrefix);
+        return str_starts_with($this->external_id, AgentThread::PendingPrefix);
     }
 
     /**
@@ -111,7 +112,7 @@ final class AgentThread extends Model
     #[Scope]
     protected function started(Builder $query): void
     {
-        $query->where('external_id', 'not like', TaskAgentSpawner::PendingPrefix.'%');
+        $query->where('external_id', 'not like', AgentThread::PendingPrefix.'%');
     }
 
     /** @return array<string, string> */

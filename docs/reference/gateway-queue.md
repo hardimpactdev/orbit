@@ -9,7 +9,7 @@ covers:
 
 # Gateway queue
 
-The Gateway scheduler dispatches most of its work. Each scheduled command that does work, such as `tasks:tick`, becomes a queued job, and [Laravel Horizon](https://laravel.com/docs/horizon) runs the jobs. A long build therefore never delays a tick, and a slow tick never delays the next minute of the schedule. The narrow Horizon observation, problem filing, and document cleanup run in the scheduler itself, as [Scheduled work](#scheduled-work) lists.
+The Gateway scheduler dispatches most of its work. Each scheduled command that does work, such as a recipe refresh, becomes a queued job, and [Laravel Horizon](https://laravel.com/docs/horizon) runs the jobs. A long build therefore does not delay the scheduler. The narrow Horizon observation, problem filing, and document cleanup run in the scheduler itself, as [Scheduled work](#scheduled-work) lists.
 
 ## Connection
 
@@ -49,7 +49,6 @@ The scheduler dispatches each of these as a unique job. While the job waits or r
 
 | Command | Every | Queue | Unique for |
 | --- | --- | --- | --- |
-| `tasks:tick` | 10 seconds | `tasks` | 330 seconds |
 | `gateway:swamp-reader:check` | hour | `problems` | 300 seconds |
 | `orbit:auto-deploy` | minute | `tasks` | 600 seconds |
 | `orbit:vault-sync` | minute | `tasks` | 900 seconds |
@@ -58,7 +57,7 @@ The scheduler dispatches each of these as a unique job. While the job waits or r
 | `orbit:operations-sweep` | minute | `tasks` | 300 seconds |
 | `horizon:snapshot` | 5 minutes | `tasks` | 300 seconds |
 
-The job runs the command in its own PHP process, as the scheduler did, so a command keeps no state from an earlier run. A command that exits nonzero is logged as an error. `tasks:tick` keeps its own lock of 300 seconds. The "unique for" time only matters when a worker is lost: the lock then frees itself after that time.
+The job runs the command in its own PHP process, as the scheduler did, so a command keeps no state from an earlier run. A command that exits nonzero is logged as an error. The "unique for" time only matters when a worker is lost: the lock then frees itself after that time.
 
 The [task VM jobs](/reference/compute-drivers#jobs) that the scheduler queues, the host sweep, image reconciliation, and [recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance), go to the same connection.
 

@@ -24,7 +24,7 @@ final class CreateTaskGroupCommand extends TaskCommand
         {--project= : Numeric Project ID}
         {--brief= : Goal and acceptance}
         {--status= : backlog (default) or todo}
-        {--orchestration= : tick (default) or external}
+        {--orchestration= : external (default; Swamp executes task groups)}
         {--subtasks= : JSON file with an ordered array of objects that each hold a title, a brief, and optional deliverables}
         {--preview : Keep the sandbox running during review}
         {--json : Return machine-readable JSON}';
@@ -35,8 +35,8 @@ final class CreateTaskGroupCommand extends TaskCommand
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
         $orchestration = $this->option('orchestration');
-        if ($orchestration !== null && ! in_array($orchestration, ['tick', 'external'], true)) {
-            return $this->renderGatewayFailure('tasks.orchestration_invalid', 'Orchestration must be tick or external.');
+        if ($orchestration !== null && ! in_array($orchestration, ['external'], true)) {
+            return $this->renderGatewayFailure('tasks.orchestration_invalid', 'Orchestration must be external.');
         }
         $status = $this->option('status');
 

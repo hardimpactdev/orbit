@@ -8,8 +8,6 @@ use App\Domain\Operations\OperationStore;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskPullRequestWatcher;
-use App\Domain\Tasks\TaskScheduler;
 use App\Domain\TaskVms\TaskVmPublishState;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Processes\CommandResult;
@@ -218,26 +216,6 @@ it('opens or updates the watched pull request without coverage or reviewers', fu
     Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), 'requested_reviewers'));
     Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), 'typesafe'));
 })->with([false, true]);
-
-it('lets the existing external tick record a published pull request ending without settling', function (string $state): void {
-    [$group, $check] = publish_operation_group();
-    publish_operation_github();
-    TaskVm::forGroup($group)->update(['publish_commit' => $check->commit_sha, 'publish_branch' => 'task-'.$group->id, 'publish_state' => TaskVmPublishState::Pushed]);
-    $operation = publish_operation_start($group, $check, ['pull_request' => ['title' => 'Title', 'body' => 'Body']]);
-    app(OperationRunner::class)->run($operation->id);
-    expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded);
-    expect($group->refresh()->pr_url)->toBe('https://github.com/acme/shop/pull/12');
-    $watcher = $this->mock(TaskPullRequestWatcher::class);
-    $watcher->shouldReceive('status')->once()->andReturn($state);
-    $watcher->shouldNotReceive('health');
-
-    app(TaskScheduler::class)->tick();
-
-    expect($group->refresh()->watched_pr_state)->toBe($state);
-    expect($group->status)->toBe(TaskGroupStatus::Running);
-    expect($group->settled_at)->toBeNull();
-    expect($group->watched_pr_completion)->toBeNull();
-})->with(['merged', 'closed']);
 
 it('looks up the open pull request again after an interrupted pull request step', function (): void {
     [$group, $check] = publish_operation_group();

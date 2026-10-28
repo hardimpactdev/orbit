@@ -8,12 +8,9 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckOutputBuilder;
 use App\Domain\Tasks\TaskCheckProcess;
-use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskDeliverableEvidence;
 use App\Domain\Tasks\TaskDeliverableVerifier;
-use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tools\ToolManagerException;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\Processes\CommandResult;
@@ -25,7 +22,6 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
-use App\Models\TaskCheck;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
@@ -124,59 +120,6 @@ it('normalizes VP_HOME probe refusals without launching a check', function (stri
     'conflict' => ['tool.vp_scope_conflict'],
     'unreadable' => ['tool.vp_scope_unreadable'],
 ]);
-
-it('releases the unstarted baseline reservation and retries after a VP_HOME probe timeout', function (): void {
-    test_bind_snapshot_driver();
-    $instance = check_runner_instance('/fast/apps/shop/task-8', group: [
-        'title' => 'Probe timeout', 'brief' => 'Retry baseline',
-        'status' => TaskGroupStatus::Running, 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
-    ]);
-    $group = Task::topLevel()->findOrFail($instance->task_workspace_owner_id);
-    $task = Task::query()->create([
-        'parent_id' => $group->id, 'position' => 1, 'title' => 'First', 'brief' => 'First subtask', 'status' => TaskStatus::Running, 'subtask_start_commit' => 'abc',
-    ]);
-    $timeout = new ProcessTimedOutException(new Process(['ssh', 'probe']), ProcessTimedOutException::TYPE_GENERAL);
-    $probeCalls = 0;
-    $probe = new FakeAgentCommandRunner()->answer('tool.inspect-vp-scope', static function () use ($timeout, &$probeCalls): array {
-        expect(TaskCheck::query()->sole()->pid)->toBe(0);
-        if (++$probeCalls === 1) {
-            throw $timeout;
-        }
-
-        return ['binary' => '/opt/orbit/vite-plus/bin/vp'];
-    });
-    $transport = new class implements SshExecutor
-    {
-        public int $starts = 0;
-
-        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-        {
-            if (str_contains($command->input ?? '', ' start "$checkout"')) {
-                $this->starts++;
-
-                return new CommandResult(0, '{"pid":4100,"started":"started","head":"abc","tree":"def"}', '', 1, false);
-            }
-
-            return new CommandResult(0, '{"head":"abc","tree":"def"}', '', 1, false);
-        }
-    };
-    app()->instance(TaskCheckRunner::class, check_runner($transport, probe: $probe));
-
-    test_pass_baseline();
-
-    expect(TaskCheck::query()->count())->toBe(0);
-    expect($transport->starts)->toBe(0);
-    expect($task->fresh()->communication_failures)->toBe(1);
-    expect($group->fresh()->assistance_requested)->toBeFalse();
-
-    test_pass_baseline();
-
-    expect(TaskCheck::query()->sole()->pid)->toBe(4100);
-    expect($probe->calls)->toHaveCount(2);
-    expect($transport->starts)->toBe(1);
-    expect($task->fresh()->communication_failures)->toBe(0);
-    expect($group->fresh()->assistance_requested)->toBeFalse();
-});
 
 it('normalizes thrown failures only during the known unstarted VP_HOME probe', function (string $failure): void {
     $instance = check_runner_instance('/fast/apps/shop/task-8');

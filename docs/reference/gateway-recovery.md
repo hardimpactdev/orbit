@@ -509,19 +509,19 @@ The handoff compares recorded working-directory paths to find the scheduler and 
 
 The Gateway sends the selected Process identity and drain limit to `gateway.drain-scheduler`. The agent checks the owned unit, probes the fixed Gateway PHP 8.5 runtime for `pcntl`, reads the main PID and bounded control-group members, and signals only the main process. It returns the drain result. `gateway.start-scheduler` starts the unit and waits for active state; `gateway.stop-scheduler` stops it without changing its enabled state. `gateway.restart-release-process` applies the handoff's try-restart to each other selected Process. These commands share the Process mutation lock.
 
-The Gateway retains `schedule:interrupt`, the `tasks:tick` cache lock, and `schedule:clear-cache`. On a forced drain it holds that cache lock across native stop, overlap-lock cleanup, and native start. A failed step still requests a scheduler start and preserves the original failure.
+The Gateway retains `schedule:interrupt` and `schedule:clear-cache`. On a forced drain it performs native stop, overlap-lock cleanup, and native start. A failed step still requests a scheduler start and preserves the original failure.
 
 The drain needs the Gateway's PHP 8.5 runtime to have the `pcntl` extension, so `schedule:work` can handle SIGTERM. Without it, the handoff takes the forced path at once and records `reason: no_pcntl`.
 
-1. It runs `schedule:interrupt`, so repeating events such as `tasks:tick` stop after their current run.
+1. It runs `schedule:interrupt`, so repeating events such as recipe refreshes stop after their current run.
 2. It sends SIGTERM to the `schedule:work` main process only. That process starts no new `schedule:run` and waits for the running ones, so a long command such as a development deploy finishes on the release it started on.
 3. When the main process has exited, it starts the unit, which now runs the new release, and waits until it is active.
 
-Each command ran to its end and released its own overlap lock, so the handoff clears none. While the old scheduler drains, it starts nothing, so `tasks:tick` pauses for the drain at most. While the [Gateway queue](/reference/gateway-queue) is set, the scheduler dispatches most work, so a running tick finishes in Laravel Horizon.
+Each command ran to its end and released its own overlap lock, so the handoff clears none. While the old scheduler drains, it starts nothing, so scheduled work pauses for the drain at most. While the [Gateway queue](/reference/gateway-queue) is set, the scheduler dispatches most work, so a running tick finishes in Laravel Horizon.
 
 Fleet problem collection runs as short jobs in Horizon and does not hold the scheduler drain. Each collection job has a 12-second probe deadline and a 13-second worker timeout, so collection cannot hold Horizon termination for a full fleet scan. Only the narrow Horizon Process observation and problem filing [stay in the scheduler](/reference/gateway-queue#scheduled-work).
 
-The drain waits at most `ORBIT_GATEWAY_RELEASE_SCHEDULER_DRAIN_SECONDS` (default 600, maximum 3600). After that limit, the handoff takes the `tasks:tick` lock and stops the unit, which ends what still runs. It then clears the schedule's overlap locks with `schedule:clear-cache`, because the stopped commands cannot release them, and starts the unit. The release record's `handoff.scheduler_drain` shows `outcome` (`drained`, `forced`, or `not_running`), `waited_ms`, the commands that were `running` when the drain began, and, after a forced stop, the commands it `stopped`.
+The drain waits at most `ORBIT_GATEWAY_RELEASE_SCHEDULER_DRAIN_SECONDS` (default 600, maximum 3600). After that limit, the handoff stops the unit, which ends what still runs. It then clears the schedule's overlap locks with `schedule:clear-cache`, because the stopped commands cannot release them, and starts the unit. The release record's `handoff.scheduler_drain` shows `outcome` (`drained`, `forced`, or `not_running`), `waited_ms`, the commands that were `running` when the drain began, and, after a forced stop, the commands it `stopped`.
 
 The new scheduler pauses document cleanup when it starts. The handoff waits for the new cleanup generation, runs `project-documents:cleanup:reconcile`, and resumes with that report. Without configured document storage it reports `skipped`. The documents extension contributes this cleanup through the `GatewayReleaseCleanup` [plug-in point](/reference/extensions#plug-in-points); with several contributions, the release records the first cleanup that stays paused. When the report has differences or resume is refused, cleanup stays paused. The release record then has `cleanup_paused: true` and the handoff's `cleanup_error_code`, and the release continues.
 
@@ -569,120 +569,8 @@ The Python checks trust Orbit's root CA through `SSL_CERT_FILE`, set to Caddy's 
 
 The release record stores the smoke JSON as `phases.smoke.report`, also when smoke fails. Smoke fails when it exits nonzero, reports `passed: false`, prints no JSON, or the release has no `bin/gateway-smoke`. When it runs 15 seconds past its own limit, the step fails with `gateway.release_smoke_timeout`. `timeout` then sends `SIGTERM` to smoke, which kills every check command it started, each in a session of its own, and prints a `terminated` result that the record keeps as the report. After 5 more seconds, `timeout` kills what is left. No check outlives the step. A smoke failure is handled like a failed verification: switch back without migrations, pause after them.
 
-Smoke does not wait for the first `tasks:tick`, because a restarted scheduler starts it only at the next full minute. It checks that the scheduler's process runs from the new release and that the release's `artisan schedule:list` lists `tasks:tick`. The first tick is [confirmed after the release](#post-release-tick-confirmation). Pass `--wait-for-tick` to `bin/gateway-smoke` by hand to wait for it instead.
 
-#### Post-release tick confirmation
-
-A verified release starts with the step `tick` set to `pending`. The step records `since`, the time the runtime handoff started. It also records `deadline`, which comes `ORBIT_GATEWAY_RELEASE_TICK_CONFIRMATION_SECONDS` after the release was verified. The default is 180 seconds, and the minimum is 60. Every [tick of the release runner](#what-a-tick-does) decides the pending confirmations it can, also while automatic releases are disabled or paused, so a manual deploy and a rollback are confirmed too.
-
-`tasks:tick` records when it started and the version of the code that ran it, the commit in the release's `REVISION`. The step ends as one of these:
-
-| Outcome | When |
-| --- | --- |
-| `confirmed` | A tick started at or after `since` and ran the release's own commit. It records `last_tick_at`, `last_tick_version`, and `decided_at`. A tick that ran during smoke confirms the release at once |
-| `missed` | The first runner tick after `deadline` saw no such tick. It records the last tick it saw and raises at most one [`release_scheduler_silent` alert](#release-alerts), stored as `tick.alert` |
-| `skipped` | The tasks extension is disabled, so the scheduler runs no `tasks:tick` |
-
-While the [Gateway queue](/reference/gateway-queue) is set, Horizon runs `tasks:tick`. During a release, the old Horizon master can wait up to 1700 seconds for a long job, and no master is registered until it exits. While no master is registered, a confirmation past its deadline stays `pending`, for at most those 1700 seconds more. The alert then names the scheduler Process and the `horizon` Process.
-| `superseded` | A newer verified release went live. That release has a confirmation of its own. While another release is only being tried, the step stays `pending`, because a failed attempt switches back |
-
-A missed confirmation does not switch back or pause. The release passed verify and smoke, and its scheduler runs the new code, so a forward fix still ships automatically. The record stays `verified`, and the fleet rollout follows it as usual. Check the scheduler Process with `orbit process:list` and `orbit process:logs`. While the [Gateway queue](/reference/gateway-queue) is set, check the `horizon` Process too. `gateway:release:show` lists the step with the others, and `gateway:release:auto:status` shows it for the current release as `tick_confirmation`.
-
-Run the same smoke by hand against the live Gateway. It runs `bin/gateway-smoke` of the current release for its commit, or for the commit you name. It changes nothing and writes no release record.
-
-```bash
-orbit gateway:release:smoke [<SHA>] [--since=<TIME>]
-```
-
-From any Node with access to the Gateway, [`orbit gateway:release:smoke`](/cli/gateway#orbit-gatewayreleasesmoke) asks the Gateway to run it. Smoke restarts nothing and writes no record, so it runs inside the API request, unlike a deploy. An API request gets 570 seconds, 20 of them reserved for cleanup, and PHP-FPM ends it after 600. So the API lowers the smoke limit to what the request has left, about 520 seconds at most. With the 15-second grace period and the stop and kill delays, the run ends within the request. The default limit of 90 seconds stays as it is.
-
-Checks that did not pass answer with the `failed` outcome and the report, and the CLI exits 1. One API smoke runs at a time, because a run and its checks hold several PHP-FPM workers. A second one fails with `gateway.release_smoke_in_progress`.
-
-On the Gateway host, the Artisan command runs the same smoke without the lower limit:
-
-```bash
-php /home/orbit/orbit/apps/gateway/artisan gateway:release:smoke [<SHA>] [--since=<TIME>]
-```
-
-It prints one JSON object with `release`, `sha`, `outcome`, and the smoke `report`. A failed smoke exits 1 with `error_code`, `step`, `message`, and the report under `detail.report`. A commit or `--since` value it cannot read exits 2.
-
-#### Release records
-
-Every attempt writes one release record. The record exists from the start of the attempt and stores each step as it ends, so a caller can follow it. The same attempt writes an Activity entry with the command `gateway:release:<trigger>`. A refusal that changes nothing, such as an unknown commit or a downgrade, ends its record `failed` and retryable, so the commit is not marked failed. A step refused by the release lock writes nothing, unless it ran for a queued record, which then ends `failed`.
-
-| Field | Content |
-| --- | --- |
-| `id` | The record id |
-| `release`, `sha` | The release id and the full commit. Both are null while a queued deploy names a short SHA that prepare has not resolved |
-| `requested` | The commit or release id the caller named |
-| `trigger` | `deploy` for a manual release, `auto` for the [automatic runner](#automatic-releases), or `rollback` |
-| `outcome` | `queued` or `running` while the attempt runs, then `verified`, `switched_back`, `paused`, `failed`, or `interrupted` |
-| `finished` | False while the outcome is `queued` or `running` |
-| `retryable` | True when the commit may be tried again. A retryable failure does not mark the commit failed |
-| `phases` | Each step that ended, in order, with its outcome |
-| `alert` | The receipt of the [release alert](#release-alerts) the record raised, or null |
-
-A failure the commit itself causes, such as a downgrade, a failed migration, or a missing or invalid web build, is final at once. Any other failure, such as low disk, a fetch error, a slow verify, or an unexpected error, is recorded with `retryable: true` for the first two attempts of a commit; the third is final. Only earlier finished attempts that failed, switched back, or were interrupted count, from a deploy, an automatic release, or an adoption. A rollback, a verified release, and the attempt that runs do not count.
-
-`gateway:release:list` reads the 50 newest records. `gateway:release:show` takes a record id of one to six digits, or a hex SHA of 7 to 40 characters for the newest record of that commit.
-
-A record is `interrupted` when its process ended before it wrote an outcome, for example after a kill or a unit timeout. Three places end such a record with `gateway.release_interrupted`:
-
-- the release unit's `ExecStopPost`, which runs `gateway:release:settle` as soon as its main process exits;
-- every tick of the automatic runner, under the release lock;
-- every new release attempt and every API request, under the release lock.
-
-Under the lock no release process runs, so a `running` record is dead. `ExecStopPost` also ends a `running` record only while the lock is free. A `queued` record is dead when its unit does not run two minutes after the request. When an interrupted record's steps show a snapshot, a migration, or a switch, it pauses automatic releases and alerts, because a retry could run old code on a migrated schema.
-
-Otherwise it spends one attempt of the commit's retry budget, and it alerts once that budget is spent. An attempt that died before prepare named the commit counts by the full SHA it requested.
-
-While a record is `running`, the Gateway Node reads as [updating](#nodes-being-updated).
-
-One release step holds `ORBIT_HOME/gateway-release.lock`. A second step is refused with `gateway.release_in_progress`.
-
-#### Deploy through the API
-
-`orbit gateway:release:deploy <sha>` and `orbit gateway:release:rollback <id>` ask the Gateway API for the release. The release never runs in the PHP-FPM worker that answers, because it can restart the scheduler and reload PHP-FPM. Instead the Gateway:
-
-1. ends the records of dead releases, then checks that no release step holds the lock and no requested release waits to start;
-2. writes a `queued` record;
-3. starts `orbit-gateway-release-run@<record>.service` with `sudo systemctl start --no-block`;
-4. answers 202 with the queued record.
-
-The unit runs `gateway:release:run <record>`, which claims the record and runs the same deploy or rollback as the commands above. The CLI follows the record until it finishes. A queued start is no proof, so the Gateway reads the unit state for up to five seconds after it. When systemd refuses the unit, the unit fails, or it neither runs nor claims the record in time, the request fails with `gateway.release_unit_failed` and the record ends as failed. Install the units with `orbit:gateway-web` on the Gateway.
-
-| Error code | Meaning |
-| --- | --- |
-| `gateway.release_not_adopted` | `/home/orbit/orbit` is still an in-place checkout. |
-| `gateway.release_not_prepared` | The release id is not a finished release. |
-| `gateway.release_switch_failed` | The current link could not be replaced. It stays on the previous release. |
-| `gateway.release_snapshot_failed`, `gateway.release_snapshot_unavailable` | The pre-migration snapshot failed, or the database is not SQLite. Nothing changed. |
-| `gateway.release_migrate_failed` | The release's migrations failed. The release pauses. |
-| `gateway.release_caddy_failed`, `gateway.release_fpm_failed`, `gateway.release_units_failed` | The handoff could not publish Caddy, reload PHP-FPM, or install the Gateway units. Caddy also fails while task VMs are configured and `task_vms.wireguard_range` is invalid: see [Refuse task VMs in Caddy](/reference/compute-drivers#refuse-task-vms-in-caddy). |
-| `gateway.release_scheduler_busy` | After the drain limit, a tasks tick held its lock for more than 330 seconds, so the scheduler was not stopped. See below. |
-| `gateway.release_scheduler_failed` | The scheduler unit did not stop, start, or become active. |
-| `gateway.release_handoff_failed` | The release printed no handoff result. |
-| `gateway.release_verify_failed` | `/up` or Gateway status did not match the commit. |
-| `gateway.release_web_build_missing` | The release's web build is not installed, so `web/current` was not switched. |
-| `gateway.release_web_publish_failed` | `web/current` could not be switched. It stays on the build it served. |
-| `gateway.release_smoke_failed` | Smoke failed after the web switch, or printed no result. |
-| `gateway.release_smoke_timeout` | Smoke ran past its limit and was stopped. |
-| `gateway.release_smoke_killed` | Smoke was killed before its limit by something else, such as the kernel's out-of-memory killer. |
-| `gateway.release_smoke_missing` | The release has no `bin/gateway-smoke`. |
-| `gateway.release_smoke_in_progress` | Another smoke run through the API is in progress. |
-| `gateway.release_switch_back_failed` | The failure was real, and returning to the previous release also failed. |
-| `gateway.release_configuration_failed` | The release's configuration could not be cached again. It runs before migrations, so nothing changed. |
-| `gateway.release_unexpected_failure` | A step failed with an error the release code did not expect. The message names it. |
-| `gateway.release_downgrade` | The commit does not descend from the current release. |
-| `gateway.release_scheduler_missing`, `gateway.release_scheduler_mismatch` | The Gateway Node has no scheduler Process, or it runs outside the Gateway application path. |
-| `gateway.release_unit_failed` | systemd did not start the release unit for a requested release. |
-| `gateway.release_not_queued` | `gateway:release:run` named a record that is not queued. |
-| `gateway.release_not_found` | No release record matches the id or commit. |
-| `gateway.release_interrupted` | The process of a running record ended before it wrote an outcome. |
-
-When the handoff reports `gateway.release_scheduler_busy`, the old scheduler still finishes its commands and exits. With `Restart=always`, systemd then starts it on the current release. Otherwise, start its unit by hand.
-
-### Roll back
+##### Roll back
 
 Roll back to return the Gateway to a release it still keeps, for example after a pause or a bad release that verify and smoke did not catch.
 
@@ -933,7 +821,6 @@ The alert leaves an Activity entry and a problem for the [outer loop](/reference
 | `rollout_halted` | A fleet rollout stopped at a Node that failed |
 | `release_stalled` | [Automatic releases](#failure-and-alerts) made no progress for 30 minutes, or the branch head stayed unreleased for 6 hours |
 | `release_cleanup_paused` | A release went live, but [document cleanup](/reference/project-documents#restore-time-cleanup-gate) stayed paused after the handoff |
-| `release_scheduler_silent` | A release went live, but its own scheduler ran no `tasks:tick` by the [confirmation deadline](#post-release-tick-confirmation). At most once per release; nothing switches back or pauses |
 | `release_gateway_agent_failed` | A release went live, but the handoff could not bring the [Gateway Node's agent](#gateway-node-agent) to the pin. At most once per release; nothing switches back or pauses |
 | `rollout_stalled` | `orbit self-update` on one Node stayed `incomplete` for 6 visits in a row, or a rollout waited more than 2 hours for a CLI release with no [fallback](/reference/self-update#fallback-to-an-ancestor-release). The rollout does not halt |
 | `rollout_caddy_skipped` | A fleet rollout kept a Node's live Caddyfile because the new one was refused. Once per rollout; the rollout does not halt |

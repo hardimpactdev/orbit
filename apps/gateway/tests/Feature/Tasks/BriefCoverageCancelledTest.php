@@ -3,11 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Tasks\BriefCoverageLabeler;
-use App\Domain\Tasks\TaskExtensionState;
-use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestHealth;
-use App\Domain\Tasks\TaskPullRequestWatcher;
-use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTurnPullRequest;
 use App\Infrastructure\Tasks\JevRecorder;
@@ -15,15 +11,12 @@ use App\Infrastructure\Tasks\LaravelAiTaskBriefCoverage;
 use App\Models\JevDecision;
 use App\Models\Project;
 use App\Models\Task;
-use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Exceptions;
 use Laravel\Ai\Classification;
 use Laravel\Ai\Prompts\ClassificationPrompt;
 use Laravel\Ai\Responses\Data\BooleanAnswer;
-
-use function Pest\Laravel\mock;
 
 /** @return array{Task, Task, Task, Task} */
 function cancelled_brief_coverage_group(): array
@@ -81,64 +74,6 @@ it('skips cancelled brief coverage when the remaining subtasks are covered', fun
     expect(app(LaravelAiTaskBriefCoverage::class)->missing($group, cancelled_brief_coverage_pull_request()))->toBe([]);
     Classification::assertClassified(static fn (ClassificationPrompt $prompt): bool => array_column($prompt->state['subtasks'], 'title') === ['Export']
         && array_keys($prompt->questions) === ['subtask_'.$completed->id]);
-});
-
-it('labels a false negative from a pull request observed merged and records both snapshots', function (): void {
-    [$group, $cancelled, $failed, $completed] = cancelled_brief_coverage_group();
-    Classification::fake([[
-        'subtask_'.$completed->id => new BooleanAnswer(0.2),
-    ]])->preventStrayClassifications();
-
-    app(LaravelAiTaskBriefCoverage::class)->missing($group, cancelled_brief_coverage_pull_request(), 81, ['Orders export as CSV.']);
-    $mergedBody = "Summary.\n\n## Changes\n\n- Orders export as CSV.\n\n## Breaking changes\nNone.\n";
-    $merge = new TaskPullRequestHealth(
-        state: 'merged',
-        headSha: 'different-head-sha',
-        pullRequestNumber: 42,
-        mergeBody: $mergedBody,
-        mergeSha: 'actual-merge-sha',
-        mergedAt: '2026-10-01T10:00:00Z',
-    );
-    $group->update(['status' => 'settling', 'pr_url' => 'https://github.com/acme/shop/pull/42']);
-    app()->instance(TaskPullRequestWatcher::class, new class($merge) implements TaskPullRequestWatcher
-    {
-        public function __construct(private TaskPullRequestHealth $merge) {}
-
-        public function status(Task $group): ?string
-        {
-            return 'merged';
-        }
-
-        public function health(Task $group): ?TaskPullRequestHealth
-        {
-            return $this->merge;
-        }
-    });
-    app(TaskExtensionState::class)->enable();
-    app(TaskScheduler::class)->tick();
-
-    expect($group->fresh()->status)->toBe(TaskGroupStatus::Completed)
-        ->and($group->fresh()->merged_at?->toIso8601ZuluString())->toBe('2026-10-01T10:00:00Z');
-    $decision = JevDecision::query()->sole();
-    $label = $decision->labels['questions']['subtask_'.$completed->id];
-    expect($decision->approval_changes)->toBe(['Orders export as CSV.'])
-        ->and($decision->approval_changes_digest)->toBe(hash('sha256', json_encode(['Orders export as CSV.'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE)))
-        ->and($decision->merge_changes)->toBe(['Orders export as CSV.'])
-        ->and($decision->merge_changes_digest)->toBe(hash('sha256', json_encode(['Orders export as CSV.'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE)))
-        ->and($decision->merge_body_digest)->toBe(hash('sha256', $mergedBody))
-        ->and($decision->merged_pull_request_number)->toBe(42)
-        ->and($decision->merge_commit_sha)->toBe('actual-merge-sha')
-        ->and($decision->merged_at)->toBe('2026-10-01T10:00:00Z')
-        ->and($decision->input_state['pull_request']['changes'])->toBe(['Orders export as CSV.'])
-        ->and($label['label'])->toBe('false_negative')
-        ->and($label['source']['rule'])->toBe('brief_coverage_v1')
-        ->and($label['source']['task_id'])->toBe($completed->id)
-        ->and($label['source']['approval_comment_id'])->toBe(81)
-        ->and($label['source']['approval_changes_digest'])->toBe(hash('sha256', json_encode(['Orders export as CSV.'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE)))
-        ->and($label['source']['pull_request_number'])->toBe(42)
-        ->and($label['source']['merge_sha'])->toBe('actual-merge-sha')
-        ->and($label['source']['merged_at'])->toBe('2026-10-01T10:00:00Z')
-        ->and($label['source']['matching_change_line'])->toBe('Orders export as CSV.');
 });
 
 it('does not treat breaking-change lines as coverage when the Changes section is empty', function (): void {
@@ -333,42 +268,7 @@ it('caps Unicode questions, input state, and merge changes at the persisted JSON
         ->and($stored->merge_changes)->toContain('truncated');
 });
 
-it('completes the group when bookkeeping failure occurs during labeling', function (): void {
-    [$group, $cancelled, $failed, $completed] = cancelled_brief_coverage_group();
-    Classification::fake([['subtask_'.$completed->id => new BooleanAnswer(0.2)]])->preventStrayClassifications();
-    app(LaravelAiTaskBriefCoverage::class)->missing($group, cancelled_brief_coverage_pull_request(), 81, ['Orders export as CSV.']);
-    $merge = new TaskPullRequestHealth(
-        state: 'merged',
-        pullRequestNumber: 42,
-        mergeBody: "Summary.\n\n## Changes\n\n- Orders export as CSV.\n",
-        mergeSha: 'actual-merge-sha',
-        mergedAt: '2026-10-01T10:00:00Z',
-    );
-    $group->update(['status' => 'settling', 'pr_url' => 'https://github.com/acme/shop/pull/42']);
-    app()->instance(TaskPullRequestWatcher::class, new class($merge) implements TaskPullRequestWatcher
-    {
-        public function __construct(private TaskPullRequestHealth $merge) {}
-
-        public function status(Task $group): ?string
-        {
-            return 'merged';
-        }
-
-        public function health(Task $group): ?TaskPullRequestHealth
-        {
-            return $this->merge;
-        }
-    });
-    app(TaskExtensionState::class)->enable();
-    mock(ExceptionHandler::class)->shouldReceive('report')->once()->andThrow(new RuntimeException('reporter failed'));
-    DB::statement("CREATE TRIGGER fail_jev_decision_update BEFORE UPDATE ON jev_decisions BEGIN SELECT RAISE(ABORT, 'jev bookkeeping label failed'); END");
-
-    app(TaskScheduler::class)->tick();
-
-    expect($group->fresh()->status)->toBe(TaskGroupStatus::Completed);
-});
-
-it('still reports an unmatched active subtask', function (TaskStatus $status): void {
+it('completes thets an unmatched active subtask', function (TaskStatus $status): void {
     [$group, $cancelled, $failed, $completed] = cancelled_brief_coverage_group();
     $active = Task::query()->create([
         'parent_id' => $group->id,

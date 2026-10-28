@@ -33,7 +33,6 @@ use App\Domain\Tools\ToolInventoryScanState;
 use App\Domain\Tools\ToolManagerName;
 use App\Models\Activity;
 use App\Models\Node;
-use App\Models\ProblemCollectorState;
 use App\Models\ProblemFingerprint;
 use App\Models\Process;
 use App\Models\Project;
@@ -298,40 +297,6 @@ it('collects activity occurrences from created_at across separate windows', func
         ->and($fingerprint->last_seen?->utc()->format('Y-m-d H:i:s'))->toBe('2026-10-01 00:06:06');
 });
 
-it('collects one occurrence at the log time for a burst of log records in one window', function (): void {
-    problem_collector_sandbox();
-    problem_log('');
-    problem_collector_run();
-    $this->travelTo(Carbon::parse('2026-10-02 15:00:00', 'UTC'));
-
-    $frame = base_path().'/app/Domain/Tasks/TaskScheduler.php';
-    $call = 'App\\Domain\\Tasks\\TaskScheduler->tick()';
-    $record = problem_log_record(
-        'RuntimeException',
-        $frame,
-        $call,
-        (string) Str::uuid(),
-        'T3 subscription ended.',
-        '2026-10-01 00:01:06',
-    );
-    $records = 129;
-    problem_log(str_repeat($record, $records));
-
-    problem_collector_run();
-
-    $fingerprint = ProblemFingerprint::query()->sole();
-
-    expect($fingerprint->fingerprint)->toBe(
-        'log|RuntimeException|app/Domain/Tasks/TaskScheduler.php:App\\Domain\\Tasks\\TaskScheduler->tick',
-    )
-        ->and($fingerprint->source)->toBe(ProblemSource::Log)
-        ->and($fingerprint->occurrences)->toBe(1)
-        ->and($fingerprint->evidence['observation_times'])->toBe(['2026-10-01T00:01:06.000000Z'])
-        ->and($fingerprint->evidence['observation_counts'])->toBe([$records])
-        ->and($fingerprint->first_seen?->utc()->format('Y-m-d H:i:s'))->toBe('2026-10-01 00:01:06')
-        ->and($fingerprint->last_seen?->utc()->format('Y-m-d H:i:s'))->toBe('2026-10-01 00:01:06');
-});
-
 it('does not count a signal again when its window has left the occurrence sample', function (): void {
     problem_collector_sandbox();
     problem_collector_run();
@@ -399,46 +364,6 @@ it('records the next activity occurrence at created_at after dropping legacy his
         ->and($fingerprint->evidence['paths'])->toBe(['/resources/instance:clone'])
         ->and($fingerprint->first_seen?->utc()->format('Y-m-d H:i:s'))->toBe('2026-10-01 00:01:06')
         ->and($fingerprint->last_seen?->utc()->format('Y-m-d H:i:s'))->toBe('2026-10-01 00:01:06');
-});
-
-it('collects fingerprints once so the cursor and log offset prevent double counting on the next run', function (): void {
-    problem_collector_sandbox();
-    $frame = base_path().'/app/Domain/Tasks/TaskScheduler.php';
-    $call = 'App\\Domain\\Tasks\\TaskScheduler->tick()';
-    problem_activity('instance:clone', 'instance.clone_failed', 1);
-    problem_log(problem_log_record('RuntimeException', $frame, $call, (string) Str::uuid(), 'Already on disk'));
-
-    problem_collector_run();
-
-    expect(ProblemFingerprint::query()->count())->toBe(0);
-
-    $requestId = (string) Str::uuid();
-    $activity = problem_activity('node:provision', 'gateway.unhandled', 1, $requestId);
-    problem_log(problem_log_record('RuntimeException', $frame, $call, $requestId, 'Provision failed'));
-
-    problem_collector_run();
-
-    $activityFingerprint = ProblemFingerprint::query()->where('source', ProblemSource::Activity)->sole();
-    $logFingerprint = ProblemFingerprint::query()->where('source', ProblemSource::Log)->sole();
-    $state = ProblemCollectorState::query()->sole();
-
-    expect($activityFingerprint->fingerprint)->toBe('activity|node:provision|gateway.unhandled')
-        ->and($activityFingerprint->occurrences)->toBe(1)
-        ->and($activityFingerprint->evidence['request_ids'])->toBe([$requestId])
-        ->and($logFingerprint->fingerprint)->toBe(
-            'log|RuntimeException|app/Domain/Tasks/TaskScheduler.php:App\\Domain\\Tasks\\TaskScheduler->tick',
-        )
-        ->and($logFingerprint->occurrences)->toBe(1)
-        ->and($logFingerprint->evidence['request_ids'])->toBe([$requestId])
-        ->and($state->activity_cursor)->toBe($activity->id)
-        ->and($state->log_offset)->toBe(filesize(storage_path('logs/laravel.log')));
-
-    problem_collector_run();
-
-    expect($activityFingerprint->refresh()->occurrences)->toBe(1)
-        ->and($logFingerprint->refresh()->occurrences)->toBe(1)
-        ->and(ProblemCollectorState::query()->sole()->activity_cursor)->toBe($activity->id)
-        ->and(ProblemCollectorState::query()->sole()->log_offset)->toBe(filesize(storage_path('logs/laravel.log')));
 });
 
 it('collects fingerprints for a closure frame without line numbers', function (): void {

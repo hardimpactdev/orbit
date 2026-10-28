@@ -67,7 +67,7 @@ Final DevOps review and its designated reviewer stay outside Orbit. The Tasks sc
 
 Operators can [inspect durable approval evidence](/reference/tasks#inspect-approval-observations) through the read-only Gateway console report. Its reviewer/review/commit provenance and `current`, `historical`, or `unverified` status describe the stored scan only. It cannot replace this workflow's fresh checks or establish the designated final reviewer's identity or delegated consent.
 
-For blocking findings, submit a formal `REQUEST_CHANGES` review through GitHub's reviews API with `commit_id` set to the full reviewed head SHA. Put the bounded findings in its body and inline review comments, not only in an issue comment or linked evidence. An eligible trusted request creates at most one automatic fixup for that review ID, within the shared [fixup caps](/reference/tasks#fix-a-settling-pull-request). Editing or dismissing a consumed review does not rewrite or cancel that work.
+For blocking findings, submit a formal `REQUEST_CHANGES` review through GitHub's reviews API with `commit_id` set to the full reviewed head SHA. Put the bounded findings in its body and inline review comments, not only in an issue comment or linked evidence. An eligible trusted request creates at most one automatic fixup for that review ID, within the shared [fixup caps](/reference/tasks#execution-ownership). Editing or dismissing a consumed review does not rewrite or cancel that work.
 
 If the request exceeds the retrieval limits or needs a product decision, scope it with the operator instead of assuming Orbit will follow links or implement every instruction in the prose.
 
@@ -359,7 +359,7 @@ The maintainer decides whether a feature belongs in Orbit. Turning on [review an
 
 For named Orbit task work, the maintainer can delegate final review and merge. That delegation is the consent to submit the formal GitHub approval and to merge the reviewed commit. The review records the reviewed head, the evidence, and the verdict in GitHub's review state. A plain comment is not that approval, because its prose does not distinguish approval from requested changes. A Tasks engine subtask approval, or any other agent review, does not replace the final review of the whole pull request and does not authorize unrelated work.
 
-The merge uses the maintainer's GitHub CLI profile. That admin profile bypasses GitHub enforcement of `Required checks`, and GitHub does not require an approving review, so the DevOps reviewer checks the formal approval and green CI before merging the reviewed commit. A ruleset change that requires an approving review is deferred: it needs new credentials, API behavior, and deployment work. The App merge of [review and merge](/reference/tasks#merge-on-green) has no admin bypass, so the ruleset binds it. It runs only for Projects that opt in.
+The merge uses the maintainer's GitHub CLI profile. That admin profile bypasses GitHub enforcement of `Required checks`, and GitHub does not require an approving review, so the DevOps reviewer checks the formal approval and green CI before merging the reviewed commit. A ruleset change that requires an approving review is deferred: it needs new credentials, API behavior, and deployment work. The App merge of [review and merge](/reference/tasks#execution-ownership) has no admin bypass, so the ruleset binds it. It runs only for Projects that opt in.
 
 ### Every project passes the gate at each handoff
 

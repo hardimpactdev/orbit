@@ -25,7 +25,7 @@ use LogicException;
 final readonly class TaskProvisionOperation implements OperationWaitingKind, OperationWaitingStep
 {
     public function __construct(
-        private TaskClaimAdmission $claims,
+        private InstanceProvisioning $provisioning,
         private TaskWorkspaceRoute $routes,
         private TaskOperations $operations,
         private TaskExecutionLock $execution,
@@ -121,7 +121,7 @@ final readonly class TaskProvisionOperation implements OperationWaitingKind, Ope
             $group = Task::topLevel()->findOrFail($operation->target_id);
             $this->operations->requireOpenExternal($group);
             try {
-                $instance = $this->claims->provisionWorkspace($group);
+                $instance = $this->provisioning->provision(InstanceProvisionIntent::for($group));
             } catch (TaskVmFailedException $exception) {
                 throw new ResourceOperationException($exception->vm->error_code ?? 'task_vm.job_failed', $exception->getMessage(), previous: $exception);
             }

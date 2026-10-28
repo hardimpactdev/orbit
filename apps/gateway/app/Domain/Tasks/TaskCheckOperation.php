@@ -31,7 +31,7 @@ final readonly class TaskCheckOperation implements OperationWaitingKind, Operati
     public function __construct(
         private TaskExecutionLock $execution,
         private TaskWorkspaceLease $leases,
-        private TaskSubtaskRunner $subtasks,
+        private TaskCheckEvidence $subtasks,
         private TaskVmWorkspace $vms,
         private TaskCheckRunner $checks,
         private TaskWorkspaceSigner $signer,
@@ -299,7 +299,7 @@ final readonly class TaskCheckOperation implements OperationWaitingKind, Operati
             'observed_at' => now()->toIso8601String(), 'runs' => $reading->runs, 'suites' => $reading->suites];
         $this->recordCi($operation, $ci);
         if ($reading->fault === 'change') {
-            $check->update(['status' => TaskCheckStatus::Failed, 'failed_step' => TaskHandoffCi::FailedStep, 'output' => $this->output->tail($reading->output)]);
+            $check->update(['status' => TaskCheckStatus::Failed, 'failed_step' => TaskHandoffCiChecks::FailedStep, 'output' => $this->output->tail($reading->output)]);
         } elseif ($reading->state !== RequiredCheckState::Passed) {
             $run->wait(30);
         }

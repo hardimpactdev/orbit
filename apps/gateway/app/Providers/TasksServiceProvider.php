@@ -11,20 +11,16 @@ use App\Console\Commands\JevReportCommand;
 use App\Console\Commands\ReleaseTaskWorkspaceLeaseCommand;
 use App\Console\Commands\RenderTaskPromptCommand;
 use App\Console\Commands\TaskGitHubReviewsCommand;
-use App\Console\Commands\TickTaskSessionsCommand;
 use App\Domain\Tasks\AgentDriverRegistry;
-use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\BriefCoverageLabeler;
 use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
 use App\Domain\Tasks\SwampRunReader;
-use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskAnalysisRunner;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskBriefCoverage;
 use App\Domain\Tasks\TaskBroadcasts;
-use App\Domain\Tasks\TaskCheckOutputBuilder;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskPullRequestCheckOutput;
@@ -34,7 +30,6 @@ use App\Domain\Tasks\TaskPullRequestReviewWatcher;
 use App\Domain\Tasks\TaskPullRequestUpdater;
 use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskReviewDiff;
-use App\Domain\Tasks\TaskReviewPacketBuilder;
 use App\Domain\Tasks\TaskReviewReset;
 use App\Domain\Tasks\TaskScriptRunner;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
@@ -85,7 +80,6 @@ final class TasksServiceProvider extends ExtensionServiceProvider
         InstanceProvisioning::class => TaskWorkspaceProvisioner::class,
         TaskWorkspaceRoute::class => TaskWorkspaceProvisioner::class,
         TaskTopologyAdmission::class => TaskVmTopologyAdmission::class,
-        AgentSpawner::class => TaskAgentSpawner::class,
         TaskWorkspaceMcp::class => RemoteTaskWorkspaceMcp::class,
         TaskWorkspaceSigner::class => RemoteTaskWorkspaceSigner::class,
         TaskWorkspaceDiffReader::class => AgentViewTaskWorkspaceDiffReader::class,
@@ -152,7 +146,6 @@ final class TasksServiceProvider extends ExtensionServiceProvider
         parent::register();
 
         $this->app->bind(AgentDriverRegistry::class, fn (Application $app): AgentDriverRegistry => new AgentDriverRegistry([$app->make(PiDriver::class)]));
-        $this->app->bind(TaskReviewPacketBuilder::class, fn (Application $app): TaskReviewPacketBuilder => new TaskReviewPacketBuilder($app->make(TaskReviewDiff::class), $app->make(TaskCheckOutputBuilder::class)));
         $this->app->singleton(TaskExecutionLock::class, static fn (): TaskExecutionLock => new NativeTaskExecutionLock(
             rtrim(Config::string('orbit.home'), '/').'/locks/task-execution',
         ));
@@ -170,7 +163,6 @@ final class TasksServiceProvider extends ExtensionServiceProvider
             RenderTaskPromptCommand::class,
             TaskGitHubReviewsCommand::class,
             BackfillTaskMergedAtCommand::class,
-            TickTaskSessionsCommand::class,
         ]);
 
         // {group} is the top-level task. The Task scope itself returns only subtasks.

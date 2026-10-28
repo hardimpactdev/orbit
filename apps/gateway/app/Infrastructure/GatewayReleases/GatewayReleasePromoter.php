@@ -52,7 +52,6 @@ final readonly class GatewayReleasePromoter
         private int $keptReleases,
         private GatewayReleaseRetry $retry = new GatewayReleaseRetry,
         private ?FleetConvergeUnits $fleet = null,
-        private ?GatewayReleaseTickConfirmation $ticks = null,
     ) {}
 
     /**
@@ -122,11 +121,6 @@ final readonly class GatewayReleasePromoter
             $this->recorder->progress($record, $phases);
             $step = 'smoke';
             $phases['smoke'] = $this->smoke->run($id, $sha, $handoffAt, $phases['web']['outcome'] === 'kept' ? ['web'] : []);
-            // Smoke checks that the release schedules tasks:tick. Its first tick comes at the next full minute, so the
-            // release runner confirms it later and never switches back for it.
-            if ($this->ticks instanceof GatewayReleaseTickConfirmation) {
-                $phases['tick'] = $this->ticks->start($sha, $handoffAt);
-            }
         } catch (Throwable $exception) {
             $this->fail(
                 exception: GatewayReleaseException::fromThrowable($exception, $step, $sha),

@@ -11,10 +11,7 @@ use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\AssistanceKind;
-use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskFinalReview;
-use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSettings;
@@ -108,9 +105,6 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
                 }
             }
             $lostCommit = $commit;
-            if ($lostCommit !== null && $vm->state === TaskVmState::Failed && $group->orchestration === TaskOrchestration::Tick) {
-                TaskAssistance::apply($group, AssistanceKind::RemovalFailure, reason: "Reviewed work lost: commit [{$lostCommit}] was never pushed and task VM [{$vm->name}] cannot preserve it. Recorded VM failure: [{$vm->error_code}] {$vm->error_message} Waiting cannot recover the lost work.", replaceFailure: true);
-            }
         }
 
         app(DeleteTaskVmAction::class)->execute($vm);
@@ -139,9 +133,6 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
         $reason = "Task VM [{$vm->name}] was not found on its host. Reviewed commit [{$commit}] has not been pushed. Workspace removal waits for the host sweep to confirm loss.".$this->hostSweepPause($vm);
         if ($vm->hostSweepWaitReason() !== $reason) {
             $vm->update(['error_code' => TaskVmError::AwaitingHostSweep->value, 'error_message' => $reason]);
-        }
-        if ($group->orchestration === TaskOrchestration::Tick) {
-            TaskAssistance::apply($group, AssistanceKind::RemovalFailure, reason: $reason, replaceFailure: true);
         }
     }
 
