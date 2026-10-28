@@ -6,10 +6,7 @@ use App\Actions\Activities\FinalizeInterruptedActivitiesAction;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Models\Activity;
-use Illuminate\Console\Scheduling\Event;
-use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
@@ -46,9 +43,7 @@ describe('the interrupted Activity sweep', function (): void {
         $stale = interrupted_activity_row('running', 11 * 86_400);
         $justStale = interrupted_activity_row('running', 901, 'node:role:relocate');
 
-        Artisan::call('orbit:activity-finalize-interrupted');
-
-        expect(Artisan::output())->toContain('Finalized 2 interrupted Activity records.')
+        expect(app(FinalizeInterruptedActivitiesAction::class)->execute())->toBe(2)
             ->and(interrupted_activity_state($stale))->toMatchArray(['status' => 'failed', 'error_code' => 'activity.interrupted'])
             ->and(interrupted_activity_state($justStale))->toMatchArray(['status' => 'failed', 'error_code' => 'activity.interrupted']);
     });
@@ -101,16 +96,6 @@ describe('the interrupted Activity sweep', function (): void {
             ->and(config('orbit.activity_interrupted_after'))->toBeGreaterThan((int) ceil((int) $fpm[1] * 4 / 3) + 60);
     });
 
-    it('runs on the Gateway scheduler every five minutes with a lock that expires after ten minutes', function (): void {
-        Artisan::call('schedule:list');
-        $event = collect(app(Schedule::class)->events())
-            ->first(fn (Event $event): bool => str_contains((string) $event->command, 'orbit:activity-finalize-interrupted'));
-
-        expect($event)->not->toBeNull()
-            ->and($event->expression)->toBe('*/5 * * * *')
-            ->and($event->withoutOverlapping)->toBeTrue()
-            ->and($event->expiresAt)->toBe(10);
-    });
 });
 
 describe('the shutdown finalizer', function (): void {

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
-use App\Console\Commands\SweepOperationsCommand;
 use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Operations\OperationAttemptLease;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
@@ -38,9 +37,6 @@ final class GatewayQueueServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        $this->commands([
-            SweepOperationsCommand::class,
-        ]);
         // The dashboard admits the WireGuard peers with Gateway access, the same peers the Gateway API admits.
         Horizon::auth(static function (Request $request): bool {
             $peer = RequireActiveWireGuardPeer::activePeer($request);

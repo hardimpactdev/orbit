@@ -653,6 +653,7 @@ TAGS = [
 ]
 TAG_BY_PREFIX = {p: t for p, t, _ in TAGS}
 INTERNAL = {'project:dependency-read-token', 'tasks:agents', 'tasks:agent-stream', 'agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
+INTERNAL.update({'observation:plan', 'observation:observe', 'observation:inspect', 'observation:signals', 'observation:maintain'})
 DEFINITION_ROUTES = {
     'ProjectRuntimeDefinitionsController@processIndex': 'List process definitions',
     'ProjectRuntimeDefinitionsController@processStore': 'Create a process definition',
