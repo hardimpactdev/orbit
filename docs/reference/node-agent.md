@@ -581,7 +581,9 @@ The supervised fixture sends a Unix datagram after execution, including its proc
 
 ## Releases
 
-The agent ships in the one public release that each green `main` commit gets, beside the CLI ([CLI binaries: Published releases](/reference/cli-binaries#published-releases)). A push to `main` builds or reuses the [delivery](#delivery) in CI and uploads it as the `agent-delivery` artifact. An unchanged agent, including a docs-only commit, reuses the last published binaries. Reused bytes keep their original agent source commit and digests. After main's required checks pass, the Orbit CLI Release workflow downloads that artifact from the CI run, checks each binary against its manifest digest, and publishes it with the CLI binaries. It never rebuilds the agent. It publishes with the workflow's own token; there is no other credential.
+The agent ships in the one public release that each green `main` commit gets, beside the CLI ([CLI binaries: Published releases](/reference/cli-binaries#published-releases)). A push to `main` builds or reuses the [delivery](#delivery) in CI and uploads it as the `agent-delivery` artifact. An unchanged agent, including a docs-only commit, reuses the last published binaries. Reused bytes keep their original agent source commit and digests.
+
+After main's required checks pass, the Orbit CLI Release workflow downloads that artifact from the CI run, checks each binary against its manifest digest, and publishes it with the CLI binaries. It never rebuilds the agent. It publishes with the workflow's own token; there is no other credential.
 
 | Asset | Contents |
 | --- | --- |
