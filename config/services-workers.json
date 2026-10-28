@@ -1,0 +1,25 @@
+{
+  "version": "20261028.205235.0-sha.1602a617",
+  "linux_x86_64_sha256": "38b81986c7203f1e93806fc7b6d38e560a86456ea755a4369a89b17b64d4fbe3",
+  "image": "orbit-swamp-worker:20261028.205235.0-sha.1602a617",
+  "scheduled_runs": 32,
+  "webhook_runs": 4,
+  "workers": [
+    {
+      "node": 17,
+      "name": "migration-services",
+      "pool": "services-local",
+      "docker_sudo": true
+    },
+    {
+      "node": 12,
+      "name": "migration-sabre",
+      "pool": "migration"
+    },
+    {
+      "node": 13,
+      "name": "migration-shark",
+      "pool": "migration"
+    }
+  ]
+}

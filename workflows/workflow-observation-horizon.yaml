@@ -1,18 +1,20 @@
 id: 09fb7a5a-6b19-4fb6-8f14-16382563f822
 name: observation-horizon
 description: Run the bounded Orbit observation horizon pass.
+labels: { pool: services-local }
+queueTimeout: 300
 autoResume: true
 concurrency: 1
 trigger:
-  schedule: '45 */10 * * * *'
+  schedule: "45 */10 * * * *"
 jobs:
   - name: observation
     steps:
       - name: health
         task:
           type: behavior
-          behaviorType: '@nckrtl/observation'
+          behaviorType: "@nckrtl/observation"
           behaviorName: observation-horizon
           methodName: health
           inputs:
-            runId: '${{ run.id }}'
+            runId: "${{ run.id }}"

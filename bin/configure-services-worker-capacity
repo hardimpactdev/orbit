@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+"""Drain and update only swamp-serve's scheduled and webhook admission limits."""
+import importlib.machinery
+import importlib.util
+import json
+import os
+from pathlib import Path
+import shlex
+
+ROOT = Path(__file__).resolve().parent.parent
+loader = importlib.machinery.SourceFileLoader('deploy_services', str(ROOT / 'bin/deploy-services'))
+spec = importlib.util.spec_from_loader(loader.name, loader)
+deploy = importlib.util.module_from_spec(spec)
+loader.exec_module(deploy)
+CONFIG = json.loads((ROOT / 'config/services-workers.json').read_text())
+
+
+def capacity_command(current):
+    limits = {'--max-concurrent-scheduled-runs': str(CONFIG['scheduled_runs']),
+              '--max-concurrent-webhook-runs': str(CONFIG['webhook_runs'])}
+    result = []
+    skip = False
+    for arg in current:
+        if skip:
+            if not arg.isdecimal() or int(arg) < 1:
+                raise ValueError('Invalid existing capacity value; refusing to consume another flag')
+            skip = False
+            continue
+        if arg in limits:
+            skip = True
+        elif arg.split('=', 1)[0] not in limits:
+            result.append(arg)
+    if skip:
+        raise ValueError('Incomplete existing capacity flag')
+    for key, value in limits.items():
+        result += [key, value]
+    return result
+
+
+def configure():
+    node = deploy.orbit('node:show', '17')
+    processes = deploy.orbit('process:list', '--node=17')['processes']
+    matches = [p for p in processes if p['name'] == 'swamp-serve']
+    if node['status'] != 'active' or node['user'] != 'orbit' or len(matches) != 1:
+        raise RuntimeError('Expected active Services and its one swamp-serve Process')
+    process = matches[0]
+    if process['runtime'] != 'systemd' or process['user'] != 'orbit' or process['working_directory'] != deploy.APP:
+        raise RuntimeError('Unexpected swamp-serve specification')
+    current = process['runtime_config']['command']
+    command = capacity_command(current)
+    options = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15']
+    if os.environ.get('SWAMP_SSH_IDENTITY'):
+        options += ['-i', os.environ['SWAMP_SSH_IDENTITY']]
+
+    def remote(script, *args, timeout=deploy.REMOTE_TIMEOUT):
+        return deploy.run(['ssh', *options, f"orbit@{node['wireguard_ip']}",
+                           shlex.join(['env', 'SWAMP_SERVE_TIMEOUT_MS=120000', 'bash', '-s', '--', *args])],
+                          source=script, timeout=timeout)
+
+    remote(deploy.CHECK_HOST, deploy.APP, deploy.SWAMP, deploy.REQUIRED_SWAMP)
+    token = '/home/orbit/.config/swamp/serve-driver-token'
+    with deploy.interruption_handlers(), deploy.deployment_lock(remote) as progress:
+        if current != command:
+            with deploy.paused_schedules(remote, token, None, progress):
+                deploy.wait_for_idle(remote, token)
+                deploy.orbit('process:update', str(process['id']), *['--command=' + part for part in command])
+                remote(deploy.HEALTH, deploy.SWAMP, token, timeout=400)
+    return {'process': process['id'], 'scheduled': CONFIG['scheduled_runs'],
+            'webhook': CONFIG['webhook_runs'], 'changed': current != command}
+
+
+if __name__ == '__main__':
+    print(json.dumps(configure()))

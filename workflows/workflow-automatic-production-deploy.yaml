@@ -1,6 +1,8 @@
 id: 78efdd30-08ce-4ffb-a8eb-c7259c96ad24
 name: automatic-production-deploy
 description: Run production auto-deploy policy after the Gateway cutover. Discover all enabled production Instances.
+labels: { pool: services-local }
+queueTimeout: 300
 trigger:
   schedule: 30 * * * * *
 inputs:
@@ -17,8 +19,8 @@ jobs:
       - name: tick
         task:
           type: model_method
-          modelType: '@nckrtl/automatic-deploy'
+          modelType: "@nckrtl/automatic-deploy"
           modelName: automatic-production-deploy
           methodName: tick
           inputs:
-            instances: '${{ inputs.instances }}'
+            instances: "${{ inputs.instances }}"

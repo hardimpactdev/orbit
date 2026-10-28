@@ -28,7 +28,12 @@ class OperationRunnerNativeTest(unittest.TestCase):
             path.write_text(f'import {{ fixtureHttp }} from "{relative}";\n' + source)
         (self.repo / "workflows").mkdir()
         for path in ROOT.glob("workflows/workflow-operation-*.yaml"):
-            shutil.copy(path, self.repo / "workflows" / path.name)
+            # This fixture proves receipts and recovery in fresh local processes.
+            # Container dispatch is proved separately in services_workers_native_test.
+            source = path.read_text()
+            source = "\n".join(line for line in source.splitlines()
+                               if not line.startswith(("labels:", "queueTimeout:"))) + "\n"
+            (self.repo / "workflows" / path.name).write_text(source)
         self.state = {"operation": {"id": 7, "kind": "firewall.allow", "node_id": 2,
                      "status": "queued", "cancel_requested": False, "step_results": {}, "steps": [],
                      "input": {"node_id": 2, "name": "proof", "action": "allow", "source": "192.0.2.1/32", "protocol": "tcp", "port": "65431"}},
