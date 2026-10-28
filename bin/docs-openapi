@@ -1245,6 +1245,14 @@ def ref(cls):
         for key, prop in schema_fields(d):
             props[key] = prop_schema(prop)
         components[name] = {'type': 'object', 'properties': props}
+        if cls in ('InstanceSmokeContextData', 'InstanceSmokeSelectionData', 'InstanceSmokeReceiptData', 'InstanceSmokeResultData'):
+            components[name]['required'] = list(props)
+        if cls == 'InstanceSmokeResultData':
+            props['state']['enum'] = ['pending', 'passed', 'failed', 'unknown']
+            for field in ('tests', 'failures', 'errors', 'skipped'):
+                props[field]['minimum'] = 0
+            props['output']['description'] = 'Redacted UTF-8 output, at most 64 KiB.'
+            props['artifacts']['items'] = {'type': 'object', 'required': ['name', 'url'], 'properties': {'name': {'type': 'string'}, 'url': {'type': 'string'}}}
     return {'$ref': f'#/components/schemas/{name}'}
 
 
@@ -2205,15 +2213,6 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     spec['paths'].setdefault(path, {})[method] = op
     nav_pages[tag].append(f'{route["method"]} {path}')
 
-for name in ('InstanceSmokeContext', 'InstanceSmokeSelection', 'InstanceSmokeReceipt', 'InstanceSmokeResult'):
-    component = components[name]
-    component['required'] = list(component['properties'])
-smoke = components['InstanceSmokeResult']['properties']
-smoke['state']['enum'] = ['pending', 'passed', 'failed', 'unknown']
-for field in ('tests', 'failures', 'errors', 'skipped'):
-    smoke[field]['minimum'] = 0
-smoke['output']['description'] = 'Redacted UTF-8 output, at most 64 KiB.'
-smoke['artifacts']['items'] = {'type': 'object', 'required': ['name', 'url'], 'properties': {'name': {'type': 'string'}, 'url': {'type': 'string'}}}
 spec['components']['schemas'].update({k: v for k, v in components.items() if v is not None})
 
 
