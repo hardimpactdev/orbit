@@ -8,22 +8,16 @@ use App\Domain\Operations\OperationChildren;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Support\ValidatedData;
-use ReflectionClass;
 
 /** Read only the shared child relation. Swamp cannot supply footprint proof in a parent run body. */
 final readonly class FleetFootprintChild
 {
+    public function __construct(private OperationChildren $children) {}
+
     public function succeeded(Operation $parent): Operation
     {
-        if (! class_exists(OperationChildren::class)) {
-            throw new ResourceOperationException('operation.kind_unavailable', 'Shared child Operation proof is not installed.', 409);
-        }
-        $proof = new ReflectionClass(OperationChildren::class)->getMethod('requireSucceeded');
-        if (! $proof->isPublic()) {
-            throw new ResourceOperationException('operation.kind_unavailable', 'Shared child Operation proof is not public.', 409);
-        }
-        $child = $proof->invoke(app(OperationChildren::class), $parent, 'footprint');
-        if (! $child instanceof Operation || $child->kind !== 'node.converge' || $child->node_id !== $parent->node_id) {
+        $child = $this->children->requireSucceeded($parent, 'footprint');
+        if ($child->kind !== 'node.converge' || $child->node_id !== $parent->node_id) {
             throw new ResourceOperationException('operation.completion_unproven', 'The proven footprint child has another kind or target.', 409);
         }
 
