@@ -1463,6 +1463,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/instances/{instance}/auto-deploy/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * instance:auto-deploy:event:create
+         * @description Admits a keyed instance.policy_event operation for a notable Activity entry or a Gateway release alert. Requires Gateway Node access and Idempotency-Key. The PHP-owned trial returns instance.auto_deploy_policy_owner. Delivery cannot resume after worker loss. Read its operation receipt rather than admitting a replacement. See /reference/deployments#swamp-policy-contracts.
+         */
+        post: operations["instance-auto-deploy-event-create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/instances/{instance}/auto-deploy/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * instance:auto-deploy:policy:update
+         * @description Publishes the shared public automatic deployment projection only under Swamp ownership. The PHP-owned trial returns instance.auto_deploy_policy_owner. Requires Gateway Node access. A changed resume cursor, newest deployment ID, or history_version returns instance.auto_deploy_observation_changed. Read history_version from the Instance projection; it changes when an existing deployment finishes. Preserves Gateway rollback blocks. See /reference/deployments#one-policy-writer-during-the-trial.
+         */
+        put: operations["instance-auto-deploy-policy-update"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/instances/{instance}/database-connections/{database_connection}": {
         parameters: {
             query?: never;
@@ -1626,6 +1666,86 @@ export interface paths {
          * @description Starts the existing instance.deploy operation for exactly the required full commit SHA. Requires Gateway Node access, an enabled production Instance, and Idempotency-Key. Derives automatic origin from the authorized command and records the caller Node ID. Replays bind caller, command, Instance and commit. Rechecks pause and rollback blocks under the Instance lock before effects. Branch membership is checked on the first-parent chain during queued source preparation; refusal ends with deployment.commit_not_on_branch. Follow with operation:show. See /reference/deployments#pinned-commits-and-automatic-callers.
          */
         post: operations["instance-deploy-automatic"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/instances/{instance}/deploy/automatic/receipt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * instance:deploy:automatic:receipt
+         * @description Reads the original automatic admission by exact request key, caller, Instance, command, and commit. Returns the operation and retained terminal deployment evidence. A conflicting identity returns operation.idempotency_conflict. A missing receipt does not authorize retry: an admission might still be in flight. This read starts nothing. Requires Gateway Node access.
+         */
+        get: operations["instance-deploy-automatic-receipt"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/instances/{instance}/deployment-source/checks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * instance:deployment-source:checks
+         * @description Reads the latest exact runs for the configured Project merge check on commit, through the GitHub App. Includes head SHA and App slug so the policy can reject mismatched evidence. Requires Gateway Node access. Empty evidence does not prove success.
+         */
+        get: operations["instance-deployment-source-checks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/instances/{instance}/deployment-source/commits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * instance:deployment-source:commits
+         * @description Reads at most 20 first-parent candidates from the GitHub deployment branch, stopping at base or the end of the bounded listing. Each candidate includes strict ancestry evidence relative to base. reached_base confirms the walk reached base; truncated reports the 20-candidate bound or a missing parent in the 100-row source listing. The flags let callers fail closed on incomplete history. Requires Gateway Node access and GitHub App source access. Swamp owns commit selection.
+         */
+        get: operations["instance-deployment-source-commits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/instances/{instance}/deployment-source/head": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * instance:deployment-source:head
+         * @description Reads the fresh credentialed head of the Instance deployment branch through the Gateway. Requires Gateway Node access. Does not read the native policy cache. See /reference/deployments#swamp-policy-contracts.
+         */
+        get: operations["instance-deployment-source-head"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4524,6 +4644,7 @@ export interface components {
         InstanceDeployment: {
             id?: number;
             instance_id?: number;
+            kind?: string;
             release?: string | null;
             branch?: string | null;
             commit?: string | null;
@@ -4814,6 +4935,9 @@ export interface components {
             error_code?: string | null;
             message?: string | null;
             pause?: components["schemas"]["InstanceAutoDeployPause"] | null;
+            resumed_after?: number;
+            blocked?: string[];
+            history_version?: string | null;
         };
         InstanceAutoDeployPause: {
             reason?: string;
@@ -4848,17 +4972,6 @@ export interface components {
             review_and_merge?: boolean;
             merge_check?: string | null;
         };
-        DatabaseConnectionAttachment: {
-            instance_id?: number;
-            slug?: string;
-            prefix?: string;
-            keys?: string[];
-            host?: string | null;
-            port?: number | null;
-            operation?: string;
-            changed?: boolean;
-            key_count?: number;
-        };
         Operation: {
             id?: number;
             kind?: string;
@@ -4882,6 +4995,48 @@ export interface components {
             started_at?: string | null;
             finished_at?: string | null;
             poll_after_seconds?: number | null;
+        };
+        DatabaseConnectionAttachment: {
+            instance_id?: number;
+            slug?: string;
+            prefix?: string;
+            keys?: string[];
+            host?: string | null;
+            port?: number | null;
+            operation?: string;
+            changed?: boolean;
+            key_count?: number;
+        };
+        AutomaticDeployReceipt: {
+            request_key?: string;
+            found?: boolean;
+            operation?: components["schemas"]["Operation"] | null;
+            deployment?: components["schemas"]["InstanceDeployment"] | null;
+        };
+        DeploymentSourceChecks: {
+            gate?: string | null;
+            runs?: components["schemas"]["DeploymentSourceCheck"][];
+        };
+        DeploymentSourceCheck: {
+            name?: string;
+            head_sha?: string | null;
+            app?: string | null;
+            status?: string | null;
+            conclusion?: string | null;
+        };
+        DeploymentSourceCommits: {
+            head?: string;
+            commits?: components["schemas"]["DeploymentSourceCommit"][];
+            reached_base?: boolean;
+            truncated?: boolean;
+        };
+        DeploymentSourceCommit: {
+            sha?: string;
+            parents?: string[];
+            descends_from_deployed?: boolean;
+        };
+        DeploymentSourceHead: {
+            head?: string;
         };
         DeploymentReleaseState: {
             releases?: string[];
@@ -10733,6 +10888,185 @@ export interface operations {
             };
         };
     };
+    "instance-auto-deploy-event-create": {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A permanent key scoped to this operation kind, binding caller and command as well as target and input. The same request returns the existing operation with HTTP 202; a changed identity returns operation.idempotency_conflict (409). */
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Numeric Instance ID. */
+                instance: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    event: "activity" | "failed" | "paused" | "stalled";
+                    /** @description Conditionally required. */
+                    deployment_id?: number | null;
+                    /** @description Conditionally required. */
+                    commit?: string | null;
+                    /** @description Conditionally required. */
+                    since?: string | null;
+                    /**
+                     * @description Conditionally required.
+                     * @enum {string|null}
+                     */
+                    result?: "up_to_date" | "started" | "deploying" | "busy" | "backing_off" | "failed" | "paused" | "not_deployed" | "gate_pending" | "gate_failed" | "no_green_commit" | "commit_failed" | null;
+                    operation_id?: number | null;
+                    error_code?: string | null;
+                    message?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Accepted. The operation is queued; follow it with `operation:show`. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Operation"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. The key already belongs to another target or input (`operation.idempotency_conflict`), or another operation holds the target (`operation.target_busy`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). A malformed Idempotency-Key also returns `validation.failed`. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "instance-auto-deploy-policy-update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Instance ID. */
+                instance: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    resumed_after: number;
+                    last_deployment_id: number;
+                    history_version: string;
+                    /** @enum {string} */
+                    result: "up_to_date" | "started" | "deploying" | "busy" | "backing_off" | "failed" | "paused" | "not_deployed" | "gate_pending" | "gate_failed" | "no_green_commit" | "commit_failed";
+                    commit: string | null;
+                    head: string | null;
+                    since: string;
+                    error_code: string | null;
+                    message: string | null;
+                    pause: {
+                        /** @enum {string} */
+                        reason?: "manual_deploy" | "rollback";
+                        deployment_id?: number;
+                        commit?: string | null;
+                        paused_at?: string;
+                    } | null;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Instance"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "instance-database-add": {
         parameters: {
             query?: never;
@@ -11483,6 +11817,189 @@ export interface operations {
             };
             /** @description The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed. */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "instance-deploy-automatic-receipt": {
+        parameters: {
+            query: {
+                commit: string;
+                request_key: string;
+            };
+            header?: never;
+            path: {
+                /** @description Numeric Instance ID. */
+                instance: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AutomaticDeployReceipt"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "instance-deployment-source-checks": {
+        parameters: {
+            query: {
+                commit: string;
+            };
+            header?: never;
+            path: {
+                /** @description Numeric Instance ID. */
+                instance: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DeploymentSourceChecks"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "instance-deployment-source-commits": {
+        parameters: {
+            query: {
+                base: string;
+            };
+            header?: never;
+            path: {
+                /** @description Numeric Instance ID. */
+                instance: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DeploymentSourceCommits"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "instance-deployment-source-head": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Instance ID. */
+                instance: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DeploymentSourceHead"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

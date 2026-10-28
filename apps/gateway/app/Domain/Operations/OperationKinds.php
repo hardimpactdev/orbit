@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Operations;
 
+use App\Domain\Instances\Deployment\AutomaticDeployEventOperation;
 use App\Domain\Instances\Deployment\InstanceDeployOperation;
 use App\Domain\Instances\Deployment\InstanceRollbackOperation;
 use App\Domain\Tasks\TaskAnalysisOperation;
@@ -26,6 +27,8 @@ final readonly class OperationKinds
     public const string TargetTypePattern = '/\A[a-z][a-z0-9_]*\z/D';
 
     public const string InstanceDeploy = 'instance.deploy';
+
+    public const string InstancePolicyEvent = 'instance.policy_event';
 
     public const string InstanceRollback = 'instance.rollback';
 
@@ -52,6 +55,7 @@ final readonly class OperationKinds
     /** @var array<string, class-string<OperationKind>> */
     private const array Kinds = [
         self::InstanceDeploy => InstanceDeployOperation::class,
+        self::InstancePolicyEvent => AutomaticDeployEventOperation::class,
         self::InstanceRollback => InstanceRollbackOperation::class,
         self::TasksPublish => TaskPublishOperation::class,
         self::TasksScript => TaskScriptOperation::class,

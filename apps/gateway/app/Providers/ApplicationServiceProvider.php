@@ -111,6 +111,7 @@ use App\Domain\Hibernation\InstanceCheckoutInspector;
 use App\Domain\Hibernation\InstanceRuntimeReadiness;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Instances\DatabaseClone\InstanceSqliteCloner;
+use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
 use App\Domain\Instances\Deployment\DevelopmentDeployment;
 use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\DevelopmentInstanceBranchInspector;
@@ -589,6 +590,7 @@ final class ApplicationServiceProvider extends ServiceProvider
 
     public function register(): void
     {
+        $this->app->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Gateway);
         $this->app->bind(InstallSwampReaderCredentialAction::class, fn ($app): InstallSwampReaderCredentialAction => new InstallSwampReaderCredentialAction(
             $app->make(GatewayReleaseLock::class),
             $app->make(SwampReaderEnvironment::class),

@@ -112,6 +112,7 @@ final class Instance extends Model
     /** @var array<string, mixed> */
     #[\Override]
     protected $attributes = [
+        'auto_deploy_resumed_after' => 0,
         'source_layout' => 'checkout',
         'registration_detached' => false,
         'registration_primary' => false,

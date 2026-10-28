@@ -6,21 +6,14 @@ namespace App\Http\Middleware;
 
 use App\Data\Operations\OperationData;
 use App\Domain\Operations\OperationIdempotency;
+use App\Domain\Operations\OperationRequestFingerprint;
 use App\Http\Requests\Operations\StartsOperation;
-use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\Node;
-use App\Support\StrictJson;
 use Closure;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
 use Illuminate\Validation\ValidationException;
-use InvalidArgumentException;
-use JsonException;
-use ReflectionMethod;
-use stdClass;
 use Symfony\Component\HttpFoundation\Response;
-use UnexpectedValueException;
 
 /** Checks a start key after access checks, before Form Requests or target creation. */
 final readonly class HandleOperationIdempotency
@@ -32,16 +25,14 @@ final readonly class HandleOperationIdempotency
     {
         $route = $request->route();
 
-        if (! $route instanceof Route || ! is_object($controller = $route->getController())) {
+        if (! $route instanceof Route) {
             return $next($request);
         }
 
-        $attribute = new ReflectionMethod($controller, $route->getActionMethod())->getAttributes(StartsOperation::class)[0] ?? null;
-
-        if ($attribute === null) {
+        $start = StartsOperation::forRoute($route);
+        if ($start === null) {
             return $next($request);
         }
-        $start = $attribute->newInstance();
         if (! $request->headers->has('Idempotency-Key')) {
             if ($start->requiresKey) {
                 throw ValidationException::withMessages(['Idempotency-Key' => ['Idempotency-Key is required.']]);
@@ -61,11 +52,9 @@ final readonly class HandleOperationIdempotency
         $this->idempotency->kind = $start->kind;
         $this->idempotency->key = $key;
         $caller = $request->user();
-        $this->idempotency->fingerprint = hash('sha256', json_encode([
-            ...($start->bindCaller ? ['caller_node_id' => $caller instanceof Node ? $this->nodeId($caller) : null, 'command' => $route->getName()] : []),
-            'target' => array_map(static fn (mixed $value): mixed => $value instanceof Model ? $value->getKey() : $value, $route->parameters()),
-            'input' => $this->input($request->getContent(), $start->maxJsonBytes, $start->secretInputs),
-        ], JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION));
+        $this->idempotency->fingerprint = app(OperationRequestFingerprint::class)->make(
+            $caller instanceof Node ? $caller : null, $route->getName(), $route->parameters(), $request->getContent(), $start,
+        );
 
         try {
             $operation = $this->idempotency->replay($this->idempotency->kind);
@@ -77,54 +66,5 @@ final readonly class HandleOperationIdempotency
         } finally {
             [$this->idempotency->kind, $this->idempotency->key, $this->idempotency->fingerprint] = $previous;
         }
-    }
-
-    private function nodeId(Node $node): int
-    {
-        return $node->id;
-    }
-
-    /** @param list<string> $secrets */
-    private function input(#[\SensitiveParameter] string $content, ?int $limit, array $secrets): string
-    {
-        try {
-            if ($limit !== null) {
-                $input = StrictJson::decode($content, $limit);
-            } else {
-                $input = json_decode($content, flags: JSON_THROW_ON_ERROR);
-                if ($input instanceof stdClass) {
-                    new TopLevelJsonObjectInspector()->inspect($content, array_keys(get_object_vars($input)));
-                }
-            }
-
-            foreach ($secrets as $path) {
-                $keys = explode('.', $path);
-                $last = array_pop($keys);
-                $object = $input;
-                foreach ($keys as $key) {
-                    $object = $object instanceof stdClass ? ($object->{$key} ?? null) : null;
-                }
-                if ($object instanceof stdClass) {
-                    unset($object->{$last});
-                }
-            }
-
-            return json_encode($this->canonical($input), JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION);
-        } catch (JsonException|InvalidArgumentException|UnexpectedValueException) {
-            // Invalid input still conflicts with an existing key before the Form Request validates it.
-            return 'invalid-json:'.hash('sha256', $content);
-        }
-    }
-
-    private function canonical(mixed $value): mixed
-    {
-        if ($value instanceof stdClass) {
-            $properties = get_object_vars($value);
-            ksort($properties);
-
-            return (object) array_map($this->canonical(...), $properties);
-        }
-
-        return is_array($value) ? array_map($this->canonical(...), $value) : $value;
     }
 }

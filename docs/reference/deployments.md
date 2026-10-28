@@ -370,11 +370,46 @@ A rollback or manual deployment can also end between the tick's read of the hist
 
 **One worker.** Development defaults, production Instances, and manual deployments share the one `operations` worker, as [One worker for every operation](/reference/operations#one-worker-for-every-operation) describes. A tick's deployment waits in the queue while another deployment runs. Instances behind one Route deploy one after another, not together.
 
+## Swamp policy contracts
+
+The [ADR 0238 trial](/decisions/0238-trial-two-swamp-slices-before-a-wider-move) exposes policy evidence through the Gateway. Swamp never reads GitHub, the database, or a notifier directly. These API/MCP contracts require Gateway Node access. They add no human CLI command.
+
+| Request | Evidence or effect |
+| --- | --- |
+| `GET /api/v1/instances/{instance}/deployment-source/head` | A fresh credentialed `head` of the recorded deployment branch. Works without a GitHub gate. |
+| `GET /api/v1/instances/{instance}/deployment-source/commits?base=<sha>` | The current GitHub branch `head` and up to 20 first-parent `commits`, newest first, before `base`. Each has `sha`, `parents`, and `descends_from_deployed`. |
+| `GET /api/v1/instances/{instance}/deployment-source/checks?commit=<sha>` | The Project's configured `gate` and exact latest check `runs`, with name, head SHA, App slug, status, and conclusion. Empty runs never prove success. |
+| `GET /api/v1/instances/{instance}/deploy/automatic/receipt?request_key=<key>&commit=<sha>` | Exact keyed admission lookup, bound to caller, automatic command, Instance, and commit. Returns `request_key`, `found`, `operation`, and retained `deployment`, when available. Conflicting input returns `operation.idempotency_conflict`. |
+| `PUT /api/v1/instances/{instance}/auto-deploy/policy` | Publish the public policy projection with the observed `resumed_after`, `last_deployment_id`, and `history_version`. A changed cursor or history returns `instance.auto_deploy_observation_changed`. |
+| `POST /api/v1/instances/{instance}/auto-deploy/events` | Admit an `instance.policy_event` operation with required `Idempotency-Key`. One `activity` event records a notable policy result; one `failed`, `paused`, or `stalled` event uses the Gateway's release alert notifier. Follow the operation to read its delivery receipt. |
+
+The source listing contains at most 100 reachable commits, and the walk returns at most 20 first-parent candidates. `reached_base` says the walk reached `base`, including when the last candidate names it as its first parent. `truncated` says the candidate bound or a missing parent cut the walk short. Reaching the repository root without `base` returns both flags false. Swamp can fail closed on a truncated walk. Each returned candidate carries an exact ancestry comparison with `base`. The source reads accept full 40- or 64-character commit SHAs.
+
+The commits and checks reads require the Project's GitHub App access. They return `instance.auto_deploy_gate_unreadable` for another source provider and `instance.auto_deploy_gate_unavailable` when the upstream read fails. They expose evidence, not a green-commit decision. Swamp applies the policy and checks that the walk's head matches its fresh head. A moved branch does not silently change a selected commit.
+
+Instance list/show and broadcasts expose `auto_deploy.resumed_after`, `auto_deploy.blocked`, and `auto_deploy.history_version`. The cursor is set only by `instance:update --auto-deploy=true`. The block list combines durable rollback blocks and retained rolled-away history without waiting for a tick. When automatic deployment is off, blocks are empty and the history version is null; these reads make no policy-history query. No block-write contract is needed: Gateway rollback history already preserves these blocks before pruning. Swamp keeps its retry and gate state itself. Deployment list/show expose `kind` (`deploy` or `rollback`); automatic versus manual origin remains `triggered_by`.
+
+A found automatic receipt is the original operation, including its bound caller in `input.caller_node_id`, status, result, and error. Follow that operation and read fresh deployment history before deciding what happened. A missing receipt means only that no admission is recorded at the read: an earlier request might still be in flight. It never authorizes a retry. A worker-lost outcome or a terminal operation without required effect evidence stays unresolved. Keyed operations are retained. Neither lookup nor outcome resolution starts work.
+
+### One policy writer during the trial
+
+PHP remains the active production policy writer. Policy publication and event admission return `instance.auto_deploy_policy_owner` while the code-owned writer is `gateway`. There is no environment flag or runtime switch. These guarded contracts prepare step 3b without changing the runner or sending duplicate alerts. The same ownership check runs again in the event worker.
+
+Step 3b must change the code-owned writer to `swamp` in the same release that removes the PHP production policy loop and enables Swamp scheduling. Drain policy work and transfer the last policy and alert deduplication state before switching. Development defaults keep their PHP owner. Publication then updates only the public projection in `auto_deploy_state`, preserves Gateway rollback blocks, and broadcasts the same Instance DTO used by API, MCP, CLI, and web.
+
+Publication uses a short database transaction without the deployment host lock. The history version hashes the retained public deployment rows without events, so finishing an existing deployment changes it even when the newest ID stays the same. The recorder writes the terminal history and rollback blocks in one transaction, with the Instance row locked and refreshed before changing policy state. It preserves a projection that publication already committed.
+
+It accepts only the cursor and history version Swamp observed, so a later manual action cannot be hidden by a stale publication. Resume and deployment effects remain Gateway-owned. Swamp owns selection, retries, gate caches, alert intents, and publication order; it must serialize ticks for each Instance.
+
+Event operations use a separate `instance_policy` target lock. A running deployment does not prevent a stall alert. The delivery step cannot resume after worker loss, because a webhook may already have left the Gateway. Replaying its admission key returns the same operation; it does not deliver twice. Inspect partial notifier receipts and uncertain outcomes instead of creating another event key.
+
+The Gateway derives alert targets and repositories from the Instance. Both policy callers use the same history selectors for the current pause and latest terminal automatic failure after resume, including the required commit for a failure alert. They also use the same notable Activity writer. Callers cannot choose an unrelated notifier target.
+
 ## History
 
 The Gateway records one row for each deployment and each rollback. It writes the row when a worker first starts the deploy or rollback operation, and completes it when the run ends. It keeps the last 50 rows for each Instance.
 
-Each row holds `release`, `branch`, `commit`, `started_at`, `finished_at`, `duration_seconds`, `status` (`running`, `succeeded`, or `failed`), `failed_step`, `error_code`, `selected_release`, `triggered_by` (the calling Node's name, or `orbit:auto-deploy` for an [automatic deployment](#automatic-deployments)), and `events`. `events` holds the phase and output events of the run, with at most 128 KiB of output. A deployment saves them after each step, so a resumed deployment keeps the events up to the last step that ended. The `cleanup` phase marks release cleanup. A development deployment records `commit` and leaves `release` and `selected_release` null.
+Each row holds `kind` (`deploy` or `rollback`), `release`, `branch`, `commit`, `started_at`, `finished_at`, `duration_seconds`, `status` (`running`, `succeeded`, or `failed`), `failed_step`, `error_code`, `selected_release`, `triggered_by` (the calling Node's name, or `orbit:auto-deploy` for an [automatic deployment](#automatic-deployments)), and `events`. `events` holds the phase and output events of the run, with at most 128 KiB of output. A deployment saves them after each step, so a resumed deployment keeps the events up to the last step that ended. The `cleanup` phase marks release cleanup. A development deployment records `commit` and leaves `release` and `selected_release` null.
 
 | Request | Result |
 | --- | --- |

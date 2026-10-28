@@ -122,7 +122,10 @@
                     "since": null,
                     "error_code": null,
                     "message": null,
-                    "pause": null
+                    "pause": null,
+                    "resumed_after": 0,
+                    "blocked": [],
+                    "history_version": null
                 }
             },
             {
@@ -242,7 +245,10 @@
                     "since": null,
                     "error_code": null,
                     "message": null,
-                    "pause": null
+                    "pause": null,
+                    "resumed_after": 0,
+                    "blocked": [],
+                    "history_version": null
                 }
             },
             {
@@ -362,7 +368,10 @@
                     "since": null,
                     "error_code": null,
                     "message": null,
-                    "pause": null
+                    "pause": null,
+                    "resumed_after": 0,
+                    "blocked": [],
+                    "history_version": null
                 }
             },
             {
@@ -482,7 +491,10 @@
                     "since": null,
                     "error_code": null,
                     "message": null,
-                    "pause": null
+                    "pause": null,
+                    "resumed_after": 0,
+                    "blocked": [],
+                    "history_version": null
                 }
             }
         ],

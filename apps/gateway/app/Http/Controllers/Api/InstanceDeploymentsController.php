@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Actions\Instances\ListInstanceDeploymentsAction;
+use App\Actions\Instances\ReadAutomaticDeployReceiptAction;
 use App\Actions\Instances\StartInstanceDeployAction;
 use App\Data\Instances\InstanceDeploymentData;
 use App\Data\Operations\OperationData;
@@ -14,6 +15,7 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Instances\AutomaticDeployInstanceRequest;
+use App\Http\Requests\Instances\AutomaticDeployReceiptRequest;
 use App\Http\Requests\Instances\DeployInstanceRequest;
 use App\Http\Requests\Operations\StartsOperation;
 use App\Models\Instance;
@@ -85,6 +87,15 @@ final class InstanceDeploymentsController extends Controller
             'data' => OperationData::fromModel($operation)->toArray(),
             'meta' => $this->meta($request),
         ], 202);
+    }
+
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function receipt(AutomaticDeployReceiptRequest $request, Instance $instance, ReadAutomaticDeployReceiptAction $action): JsonResponse
+    {
+        $caller = $request->user();
+        assert($caller instanceof Node);
+
+        return response()->json(['data' => $action->execute($instance, $caller, $request->requestKey(), $request->commit())->toArray(), 'meta' => $this->meta($request)]);
     }
 
     /** @return array{request_id: string} */

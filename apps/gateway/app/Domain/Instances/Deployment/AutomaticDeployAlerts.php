@@ -10,9 +10,12 @@ use App\Domain\Releases\ReleaseAlertKind;
 use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Domain\Releases\ReleaseAlertSubject;
 use App\Domain\Releases\ReleaseIncident;
+use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
+use Illuminate\Support\Str;
 use InvalidArgumentException;
+use Throwable;
 
 /**
  * Raises the release alerts of automatic production deployments: an Activity entry, a filed problem, and the signed
@@ -23,6 +26,40 @@ use InvalidArgumentException;
 final readonly class AutomaticDeployAlerts
 {
     public function __construct(private ReleaseAlertNotifier $notifier) {}
+
+    /** @return array<string, mixed> */
+    public function activity(Instance $instance, AutomaticDeployOutcome $outcome, ?string $requestId = null): array
+    {
+        if (! $outcome->result->isNotable()) {
+            return ['outcome' => 'skipped', 'reason' => 'not_notable'];
+        }
+
+        try {
+            $activity = Activity::query()->create([
+                'log_name' => 'deployments',
+                'description' => 'auto_deploy.'.$outcome->result->value,
+                'subject_type' => Instance::MorphAlias,
+                'subject_id' => $instance->id,
+                'properties' => [
+                    'instance_id' => $instance->id,
+                    'commit' => $outcome->commit,
+                    'operation_id' => $outcome->operationId,
+                    'error_code' => $outcome->errorCode,
+                    'message' => $outcome->message,
+                ],
+                'request_id' => $requestId ?? (string) Str::uuid(),
+                'command' => AutomaticDeployHistory::Trigger,
+                'status' => $outcome->result->isError() ? 'failed' : 'completed',
+                'error_code' => $outcome->errorCode,
+            ]);
+
+            return ['activity_id' => $activity->id];
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return ['outcome' => 'failed', 'reason' => 'activity_unavailable'];
+        }
+    }
 
     /** @return array<string, mixed> */
     public function failed(Instance $instance, InstanceDeployment $deployment): array
