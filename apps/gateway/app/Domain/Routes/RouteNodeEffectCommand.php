@@ -9,6 +9,7 @@ use App\Domain\Operations\OperationGatewayCommand;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Firewall\UfwManagedRule;
+use App\Infrastructure\Firewall\UfwRuleShape;
 use App\Infrastructure\Routes\IngressSiteRepository;
 use App\Infrastructure\Routes\PublicProcessRouteFirewall;
 use App\Models\Instance;
@@ -71,9 +72,30 @@ final readonly class RouteNodeEffectCommand implements OperationGatewayCommand
             return ['command' => 'firewall.route-lan', 'input' => ['operation' => 'remove', 'route_id' => $routeId]];
         }
         $route = Route::query()->with(['targets.instance', 'cluster.routerAssignment.node', 'cluster.ingressAssignment.node'])->findOrFail(ValidatedData::integer($operation->input['route_id']));
+        if ($operation->kind === 'route.router_lan_retire') {
+            $router = Node::query()->findOrFail(ValidatedData::integer($operation->input['router_node_id']));
+            if ($route->cluster_id === null || ! $route->targets->contains(static fn ($target): bool => $target->instance->node_id === $node->id)
+                || ! $router->roles()->where('cluster_id', $route->cluster_id)->where('role', RoleName::Router)->exists()) {
+                throw new ResourceOperationException('operation.execution_forbidden', 'Retire only a recorded Router allowance on its Route workload Node.', 422);
+            }
+            if ($router->id === $node->id || ! is_string($router->lan_ip) || $router->lan_ip === '' || ! is_string($node->lan_ip) || $node->lan_ip === '') {
+                return ['skip' => true];
+            }
+            $shape = new UfwRuleShape("orbit:route-{$route->id}-lan", 'allow', 'in', $router->lan_ip, $node->lan_ip, '443', 'tcp', null, null, 'v4');
+
+            return ['command' => 'firewall.rules', 'input' => ['desired' => [], 'remove' => [$shape->toAgentInput()], 'enable' => false]];
+        }
+        if ($operation->kind === 'route.workload_firewall') {
+            $instance = Instance::query()->findOrFail(ValidatedData::integer($operation->input['instance_id']));
+            if (! $instance->placedOnAppProd() || $instance->node_id !== $node->id || ! $route->targets->contains('instance_id', $instance->id)) {
+                throw new ResourceOperationException('operation.execution_forbidden', 'Production firewall intent requires its stored Route workload Node.', 422);
+            }
+
+            return $this->roleFirewall($node, RoleName::AppProd);
+        }
         if (in_array($operation->kind, ['route.lan_converge', 'route.workload_verify'], true)) {
             $instance = Instance::query()->findOrFail(ValidatedData::integer($operation->input['instance_id']));
-            if (! $route->targets->contains('instance_id', $instance->id)) {
+            if (! $route->targets->contains('instance_id', $instance->id) && ! new RoutePreparedWorkloads()->contains($operation, $route, $instance)) {
                 throw new ResourceOperationException('route.target_conflict', 'The workload must remain a stored Route target.', 409);
             }
             $router = $route->cluster?->routerAssignment?->node;
@@ -101,12 +123,7 @@ final readonly class RouteNodeEffectCommand implements OperationGatewayCommand
             throw new ResourceOperationException('operation.execution_forbidden', 'The public effect belongs to the stored Ingress Node.', 422);
         }
         if ($operation->kind === 'route.public_firewall') {
-            $baseline = $this->firewall->forNode($node);
-            $rules = [$baseline[1], ...$this->firewall->forRole($node, RoleName::Ingress)];
-
-            return ['command' => 'firewall.rules', 'input' => [
-                'desired' => array_map(static fn (UfwManagedRule $rule): array => ['shape' => $rule->shape->toAgentInput(), 'replace_port' => $rule->replacePort], $rules),
-                'remove' => array_map(static fn (UfwManagedRule $rule): array => $rule->shape->toAgentInput(), [$baseline[0], ...$this->firewall->retiredForRole($node, RoleName::Ingress)]), 'enable' => false]];
+            return $this->roleFirewall($node, RoleName::Ingress);
         }
         if ($route->isCustomProxy()) {
             $process = $route->customProxy?->process;
@@ -124,5 +141,16 @@ final readonly class RouteNodeEffectCommand implements OperationGatewayCommand
         }
 
         return ['command' => 'route.verify-certificate', 'input' => ['address' => $override->routerAddress, 'port' => 443, 'domain' => $route->domain]];
+    }
+
+    /** @return array<string, mixed> */
+    private function roleFirewall(Node $node, RoleName $role): array
+    {
+        $baseline = $this->firewall->forNode($node);
+        $rules = [$baseline[1], ...$this->firewall->forRole($node, $role)];
+
+        return ['command' => 'firewall.rules', 'input' => [
+            'desired' => array_map(static fn (UfwManagedRule $rule): array => ['shape' => $rule->shape->toAgentInput(), 'replace_port' => $rule->replacePort], $rules),
+            'remove' => array_map(static fn (UfwManagedRule $rule): array => $rule->shape->toAgentInput(), [$baseline[0], ...$this->firewall->retiredForRole($node, $role)]), 'enable' => false]];
     }
 }

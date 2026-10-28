@@ -2,10 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Actions\Routes\CertificateChildAdmission;
 use App\Domain\Certificates\CertificateExecution;
 use App\Domain\Certificates\CertificateOperationCompletion;
+use App\Domain\Operations\OperationKinds;
 
-return [
+$definitions = [
     'certificate.converge' => [
         'executor' => 'swamp', 'completion' => CertificateOperationCompletion::class,
         'execution' => CertificateExecution::class,
@@ -28,3 +30,12 @@ return [
         'result_fields' => ['error_code'],
     ],
 ];
+
+if (OperationKinds::supports('children')) {
+    foreach ($definitions as &$definition) {
+        $definition['admission'] = CertificateChildAdmission::class;
+    }
+    unset($definition);
+}
+
+return $definitions;

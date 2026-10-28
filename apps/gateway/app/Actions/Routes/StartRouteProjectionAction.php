@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Routes;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Routes\RouteKitAvailability;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
@@ -18,6 +19,7 @@ final readonly class StartRouteProjectionAction
 
     public function converge(Route $route, Instance $instance, ?string $requestId = null): Operation
     {
+        RouteKitAvailability::kind('route.converge');
         if (! $route->targets()->where('instance_id', $instance->id)->exists()) {
             throw new ResourceOperationException('route.target_conflict', 'The Instance must be a recorded Route target.', 409);
         }
@@ -28,6 +30,7 @@ final readonly class StartRouteProjectionAction
 
     public function withdraw(Route $route, bool $offline = false, ?string $requestId = null): Operation
     {
+        RouteKitAvailability::kind('route.withdraw');
         $nodeId = $route->node_id ?? $route->cluster?->routerAssignment?->node_id;
         if (! is_int($nodeId)) {
             throw new ResourceOperationException('route.router_required', 'The Route has no serving Node.', 409);
@@ -51,6 +54,7 @@ final readonly class StartRouteProjectionAction
 
     public function retireSource(InstanceTransfer $transfer, ?string $requestId = null): Operation
     {
+        RouteKitAvailability::kind('route.retire_source');
         if ($transfer->cutover_at === null || $transfer->source_router_node_id === null) {
             throw new ResourceOperationException('instance.transfer_source_router_unknown', 'Record cutover and the source Router before retiring source projections.', 409);
         }

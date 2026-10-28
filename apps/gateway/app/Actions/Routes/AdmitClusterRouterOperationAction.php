@@ -8,6 +8,7 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ClusterRouterReplacementStep;
+use App\Domain\Routes\RouteKitAvailability;
 use App\Domain\Routes\RouteReconciliationGuard;
 use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Shared\LifecycleStatus;
@@ -28,6 +29,8 @@ final readonly class AdmitClusterRouterOperationAction
 
     public function set(Cluster $cluster, Node $node, ?string $requestId = null): Operation
     {
+        RouteKitAvailability::kind('cluster.router_set');
+
         return DB::transaction(function () use ($cluster, $node, $requestId): Operation {
             $cluster = Cluster::query()->lockForUpdate()->findOrFail($cluster->id);
             $node = Node::query()->lockForUpdate()->findOrFail($node->id);
@@ -58,6 +61,8 @@ final readonly class AdmitClusterRouterOperationAction
 
     public function unset(Cluster $cluster, ?string $requestId = null): Operation
     {
+        RouteKitAvailability::kind('cluster.router_unset');
+
         return DB::transaction(function () use ($cluster, $requestId): Operation {
             $cluster = Cluster::query()->lockForUpdate()->findOrFail($cluster->id);
             $this->routes->assertClusterRouterMutable($cluster->id);

@@ -21,7 +21,7 @@ final readonly class RouteExecutionProof
             if ($descriptor['key'] === $key) {
                 return;
             }
-            $run = data_get($operation->state, 'executor_runs.'.$descriptor['key']);
+            $run = ValidatedData::object($operation->state['executor_runs'] ?? [])[$descriptor['key']] ?? null;
             if (! is_array($run) || ($run['name'] ?? null) !== $descriptor['name'] || ($run['transport'] ?? null) !== $descriptor['transport']
                 || ! is_array($run['result'] ?? null) || isset($run['result']['error_code'])) {
                 throw new ResourceOperationException('operation.completion_unproven', 'The preceding Route effect needs a successful receipt.', 409);
@@ -33,7 +33,9 @@ final readonly class RouteExecutionProof
     /** @return array<string, mixed> */
     public static function result(Operation $operation, string $key): array
     {
-        return ValidatedData::object(data_get($operation->state, 'executor_runs.'.$key.'.result') ?? []);
+        $entry = ValidatedData::object(ValidatedData::object($operation->state['executor_runs'] ?? [])[$key] ?? []);
+
+        return ValidatedData::object($entry['result'] ?? []);
     }
 
     /** @return list<array<string, mixed>> */

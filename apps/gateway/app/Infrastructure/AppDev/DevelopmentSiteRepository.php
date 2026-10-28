@@ -12,6 +12,7 @@ use App\Domain\Routes\CustomProxyUpstream;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteCertificateStaging;
 use App\Domain\Routes\RouteKind;
+use App\Domain\Routes\RoutePreparedWorkloads;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
@@ -191,6 +192,12 @@ final readonly class DevelopmentSiteRepository
             if ($unavailable instanceof DevelopmentSite) {
                 $sites->push($unavailable);
             }
+        }
+
+        foreach (new RoutePreparedWorkloads()->sites($node?->id) as $prepared) {
+            $site = $this->instanceSite($prepared['instance'], $prepared['route'], domainChange: true);
+            $sites = $sites->reject(static fn (DevelopmentSite $current): bool => $current->addressKey() === $site->addressKey());
+            $sites->push($site);
         }
 
         $bindings = WebSocketAppTarget::query()->with(['route', 'webSocketApp'])->whereNotNull('route_id')->get();

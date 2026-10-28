@@ -13,6 +13,7 @@ use App\Domain\Routes\ReservedPrivateHostname;
 use App\Domain\Routes\RouteAssociationGuard;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\Routes\RouteExecutionProof;
+use App\Domain\Routes\RouteKitAvailability;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RouteReconciliationGuard;
 use App\Domain\Routes\RouteStatus;
@@ -38,6 +39,8 @@ final readonly class AdmitRouteOperationAction
 
     public function create(CreateRouteData $data, ?Node $caller = null, ?string $requestId = null): Operation
     {
+        RouteKitAvailability::kind('route.create');
+
         return DB::transaction(function () use ($data, $caller, $requestId): Operation {
             $result = $this->create->executeForRouteCreate($data);
             $route = $result['route'];
@@ -49,6 +52,8 @@ final readonly class AdmitRouteOperationAction
 
     public function update(Route $route, UpdateRouteData $data, ?Node $caller = null, ?string $requestId = null, bool $allowGenerated = false): Operation
     {
+        RouteKitAvailability::kind('route.update');
+
         return DB::transaction(function () use ($route, $data, $caller, $requestId, $allowGenerated): Operation {
             $route = Route::query()->with('targets.instance.node')->lockForUpdate()->findOrFail($route->id);
             if (! $route->isApp()) {
@@ -68,6 +73,12 @@ final readonly class AdmitRouteOperationAction
                 'web_root' => $data->webRootProvided ? RouteWebRoot::normalize($data->webRoot) : $route->web_root,
                 'previous_web_root' => $route->web_root, 'previous_publication' => $route->publication->value,
                 'allow_generated' => $allowGenerated];
+            if ($data->webRootProvided) {
+                app(RouteWebRootState::class)->assertChange($route, $input['web_root']);
+            }
+            if ($data->domainProvided && ((! $allowGenerated && $route->provenance !== RouteProvenance::Explicit) || $data->domain === null)) {
+                throw new ResourceOperationException('route.domain_immutable', 'Only an explicit Route domain can be updated.', 409);
+            }
             if ($domain !== $route->domain || $route->replaced_by_route_id !== null) {
                 $this->reserved->assertAvailable($domain);
                 if ($route->hasWebRoot()) {
@@ -93,6 +104,8 @@ final readonly class AdmitRouteOperationAction
 
     public function setTargets(Route $route, SetRouteTargetsData $proposal, ?Node $caller = null, ?string $requestId = null): Operation
     {
+        RouteKitAvailability::kind('route.target_set');
+
         return DB::transaction(function () use ($route, $proposal, $caller, $requestId): Operation {
             $route = Route::query()->with('targets')->lockForUpdate()->findOrFail($route->id);
             $this->targetGuard->assertCompatibleIntent($route, $proposal);
@@ -107,6 +120,8 @@ final readonly class AdmitRouteOperationAction
 
     public function setTarget(Route $route, int $instanceId, ?Node $caller = null, ?string $requestId = null): Operation
     {
+        RouteKitAvailability::kind('route.target_set');
+
         return DB::transaction(function () use ($route, $instanceId, $caller, $requestId): Operation {
             $previous = $route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->values()->all();
             $updated = app(SetRouteTargetAction::class)->execute($route, $instanceId);
@@ -117,6 +132,8 @@ final readonly class AdmitRouteOperationAction
 
     public function clearTarget(Route $route, ?Node $caller = null, ?string $requestId = null): Operation
     {
+        RouteKitAvailability::kind('route.target_unset');
+
         return DB::transaction(function () use ($route, $caller, $requestId): Operation {
             $previous = $route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->values()->all();
             $updated = app(ClearRouteTargetAction::class)->execute($route);
@@ -127,6 +144,8 @@ final readonly class AdmitRouteOperationAction
 
     public function destroy(Route $route, bool $offline = false, ?Node $caller = null, ?string $requestId = null): Operation
     {
+        RouteKitAvailability::kind('route.destroy');
+
         return DB::transaction(function () use ($route, $offline, $caller, $requestId): Operation {
             $ids = array_values($route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->all());
             $route = $this->removal->lockAndGuard($route, $ids);
@@ -145,6 +164,7 @@ final readonly class AdmitRouteOperationAction
     /** @param array<string, mixed> $input */
     public function start(string $kind, Route $route, array $input, ?Node $caller = null, ?string $requestId = null): Operation
     {
+        RouteKitAvailability::kind($kind);
         $route->loadMissing(['targets.instance.node', 'cluster.routerAssignment.node', 'cluster.ingressAssignment.node', 'customProxy.node']);
         $currentIds = $route->targets->pluck('instance_id')->map(StoredInteger::from(...))->values()->all();
         $proposedIds = $this->instanceIds($input['targets'] ?? $currentIds);
