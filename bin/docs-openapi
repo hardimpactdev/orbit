@@ -731,6 +731,10 @@ SUMMARIES = {
     'tasks:worker': 'Start a Task group Swamp worker', 'tasks:provision': 'Provision a Task group workspace', 'tasks:complete': 'Complete a Task group', 'tasks:cancel': 'Cancel a Task group',
 }
 DESCRIPTIONS = {
+    'instance:smoke:failure': 'Atomically records a verified executed failing smoke and permanent SHA block under the Instance writer lock. Requires Gateway access and Idempotency-Key. Does not pause or resume. See /reference/deployments#verified-smoke-failure-and-guarded-rollback.',
+    'instance:smoke:failure:receipt': 'Reads the original caller-bound failure block by request_key. Missing evidence is null. Starts no work.',
+    'instance:smoke:rollback': 'Starts the native instance.rollback with caller-bound required Idempotency-Key, recorded permanent failure block, exact expected selection and retained prior smoke-passed target. Rechecks under the writer lock before effects. Never resumes or changes data. See /reference/deployments#verified-smoke-failure-and-guarded-rollback.',
+    'instance:smoke:rollback:receipt': 'Reads the original caller-bound guarded rollback and its retained deployment, whose ID is new. A missing receipt starts no work; failed or cancelled rollback requires assistance with the original key.',
     'tasks:park': 'Starts keyed tasks.park for an idle external group with an open published PR. Requires Gateway access, an empty body, and Idempotency-Key. Refuses preview, assistance, open children, workspace leases or mismatched workspace ownership with tasks.park_refused (409). Moves the group to waiting_for_review and preserves its workspace. Succeeds only after the provider confirms stopped power; missing, transitional or still-running guests fail. Result contains group_id, task_vm_id, instance_id, status and power. Retry a lost reply with the same key. See /reference/tasks#park-an-external-group-for-review.',
     'instance:smoke:context': 'Reads actual retained release selection, successful deployment history and active Project Route origins. Requires Gateway access; never dispatches.',
     'instance:smoke': 'Starts instance.smoke with a required caller-bound key, full Request and separate instance_smoke target. Requires an active production Instance and its Route, selected deployment and accepted Actions write permission. Records send intent before GitHub and never repeats an uncertain send. See /reference/deployments#production-smoke.',
@@ -1246,8 +1250,15 @@ def ref(cls):
         for key, prop in schema_fields(d):
             props[key] = prop_schema(prop)
         components[name] = {'type': 'object', 'properties': props}
-        if cls in ('InstanceSmokeContextData', 'InstanceSmokeSelectionData', 'InstanceSmokeReceiptData', 'InstanceSmokeResultData'):
+        if cls.startswith('InstanceSmoke'):
             components[name]['required'] = list(props)
+            for field in ('deployment_id', 'instance_id', 'run_id', 'run_attempt'):
+                if field in props:
+                    props[field]['minimum'] = 1
+        if cls == 'InstanceSmokeBlockData':
+            props['blocked']['enum'] = [True]
+        if cls == 'InstanceSmokeRollbackDeploymentData':
+            props['status']['enum'] = ['running', 'succeeded', 'failed']
         if cls == 'InstanceSmokeResultData':
             props['state']['enum'] = ['pending', 'passed', 'failed', 'unknown']
             for field in ('tests', 'failures', 'errors', 'skipped'):
@@ -1707,6 +1718,9 @@ RESPONSE_OVERRIDES = {
 CTRL_DATA_OVERRIDES = {
     'InstanceSmokeController@receipt': ('InstanceSmokeReceiptData', False),
     'InstanceSmokeController@context': ('InstanceSmokeContextData', False),
+    'InstanceSmokeController@failure': ('InstanceSmokeBlockData', False),
+    'InstanceSmokeController@failureReceipt': ('InstanceSmokeBlockReceiptData', False),
+    'InstanceSmokeController@rollbackReceipt': ('InstanceSmokeRollbackReceiptData', False),
     'InstanceDeploymentSourceController@head': ('DeploymentSourceHeadData', False),
     'InstanceDeploymentSourceController@commits': ('DeploymentSourceCommitsData', False),
     'InstanceDeploymentSourceController@checks': ('DeploymentSourceChecksData', False),
@@ -1997,6 +2011,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             body_schema['additionalProperties'] = False
         op['requestBody'] = {'required': body_required or bool(body_schema.get('required')), 'content': {'application/json': {'schema': body_schema}}}
     starts_operation = controllers.get(action, {}).get('starts_operation', False)
+    if route['name'] == 'instance:smoke:failure':
+        op['parameters'].append({'name': 'Idempotency-Key', 'in': 'header', 'required': True, 'schema': {'type': 'string', 'maxLength': 128}, 'description': 'Permanent smoke-failure.<instance>.<deployment> key, bound to caller, Instance and full body; identical retry returns the original block.'})
     if starts_operation:
         op['x-orbit-operation'] = 'start'
         op['parameters'].append({

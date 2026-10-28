@@ -389,7 +389,7 @@ The source listing contains at most 100 reachable commits, and the walk returns 
 
 The commits and checks reads require the Project's GitHub App access. They return `instance.auto_deploy_gate_unreadable` for another source provider and `instance.auto_deploy_gate_unavailable` when the upstream read fails. They expose evidence, not a green-commit decision. Swamp applies the policy and checks that the walk's head matches its fresh head. A moved branch does not silently change a selected commit.
 
-Instance list/show and broadcasts expose `auto_deploy.policy_owner`, `auto_deploy.resumed_after`, `auto_deploy.blocked`, and `auto_deploy.history_version`. The cursor is set only by `instance:update --auto-deploy=true`. The block list combines durable rollback blocks and retained rolled-away history without waiting for a tick. When automatic deployment is off, blocks are empty and the history version is null; these reads make no policy-history query. No block-write contract is needed: Gateway rollback history already preserves these blocks before pruning. Swamp keeps its retry and gate state itself. Deployment list/show expose `kind` (`deploy` or `rollback`); origin is recorded in `triggered_by`, with the authorized automatic caller in `caller_node_id`.
+Instance list/show and broadcasts expose `auto_deploy.policy_owner`, `auto_deploy.resumed_after`, `auto_deploy.blocked`, and `auto_deploy.history_version`. The cursor is set only by `instance:update --auto-deploy=true`. The block list combines durable rollback blocks and retained rolled-away history without waiting for a tick. When automatic deployment is off, only permanent smoke blocks are returned and the history version is null; these reads make no policy-history query. The smoke failure contract also records a permanent block before recovery; those blocks remain visible even when automatic deployment is disabled. Swamp keeps its retry and gate state itself. Deployment list/show expose `kind` (`deploy` or `rollback`); origin is recorded in `triggered_by`, with the authorized automatic caller in `caller_node_id`.
 
 A found automatic receipt is the original operation, including its bound caller in `input.caller_node_id`, status, result, and error. Follow that operation and read fresh deployment history before deciding what happened. A missing receipt means only that no admission is recorded at the read: an earlier request might still be in flight. It never authorizes a retry. A worker-lost outcome or a terminal operation without required effect evidence stays unresolved. Keyed operations are retained. Neither lookup nor outcome resolution starts work.
 
@@ -551,7 +551,7 @@ The production home exists before the first release is selected. Deployment and 
 
 ## Production smoke
 
-Swamp can opt a Project into production smoke after a successful production deploy. The Gateway exposes the selected release and dispatches the repository's own GitHub Actions browser-test workflow against its public HTTPS origin. This feature adds no schedule or opt-in and does not block deploys, roll back, repair, resume or merge. Swamp owns baseline admission, deadlines and acceptance policy. This page owns the Gateway wire contract. The private [Swamp implementation reference](https://github.com/hardimpactdev/orbit-swamp/blob/main/docs/production-smoke-contract.md) is supporting material.
+Swamp can opt a Project into production smoke after a successful production deploy. The Gateway exposes the selected release and dispatches the repository's own GitHub Actions browser-test workflow against its public HTTPS origin. This feature adds no schedule or opt-in. Separate keyed recovery endpoints can block a proven failing SHA and request a guarded rollback; they do not repair, resume or merge. Swamp owns baseline admission, deadlines and acceptance policy. This page owns the Gateway wire contract. The private [Swamp implementation reference](https://github.com/hardimpactdev/orbit-swamp/blob/main/docs/production-smoke-contract.md) is supporting material.
 
 `GET /api/v1/instances/{instance}/smoke/context` and MCP `instance-smoke-context` require Gateway Node access. They return `instance_id`, `project_id`, `repository_url`, `production`, `base_urls`, `selected` and `retained_releases`. Context reads the actual selected retained release on the Node and matches a successful deploy or rollback history row. `selected` is null without matching evidence; otherwise it contains `deployment_id`, the full 40-character `commit` and `release`. A production Instance must be active on an active Node with an active app-prod role and no active app-dev role. URLs are HTTPS origins of active public Project-owned Routes targeting that Instance. A development Instance cannot admit smoke.
 
@@ -610,3 +610,29 @@ Observation ends 720 seconds after admission: Swamp's 600-second budget plus 120
 | Unknown receipt | `instance.smoke_run_unsuccessful` | Clean JUnit with an unsuccessful GitHub conclusion |
 | Unknown receipt | `instance.smoke_github_auth` | GitHub denied a read without rate-limit evidence |
 | Unknown receipt | `instance.smoke_observation_expired` | The 720-second observation limit expired |
+
+
+### Verified smoke failure and guarded rollback
+
+This contract pairs with [orbit-swamp#57](https://github.com/hardimpactdev/orbit-swamp/pull/57). Live recovery stays disabled. No Project or Schedule is enabled. The later deploy-writer hold, alerts, restored smoke and conditional resume require separate work and an explicitly authorized production proof.
+
+All routes below require Gateway Node access, normal JSON envelopes and positive integer IDs. `Selection` retains the definition above. `Failure` adds `smoke_request_key` to Selection. `Rollback` has exactly `failure_key`, `expected: Selection`, `target: Selection` and `target_smoke_request_key`. Both POSTs require `Idempotency-Key`. The block key is `smoke-failure.<instance>.<deployment>`; rollback appends `.rollback`.
+
+| Route under `/api/v1/instances/{instance}/smoke` | MCP | Data |
+| --- | --- | --- |
+| `POST /failure` | `instance-smoke-failure` | 200 Block |
+| `GET /failure/receipt?request_key=...` | `instance-smoke-failure-receipt` | 200 BlockReceipt |
+| `POST /rollback` | `instance-smoke-rollback` | 202 instance.rollback Operation |
+| `GET /rollback/receipt?request_key=...` | `instance-smoke-rollback-receipt` | 200 RollbackReceipt |
+
+Block is `{request_key, instance_id, failure: Failure, blocked: true}`. BlockReceipt is `{request_key, found, block: Block | null}`. RollbackReceipt is `{request_key, found, operation: OperationData | null, deployment: (Selection & {status: running | succeeded | failed}) | null}`. Required nullable fields remain present. A missing receipt has `found: false` and null evidence. GET never creates effects. Identical POST retries return the original receipt; changed caller, Instance or full body refuses with `operation.idempotency_conflict`.
+
+The Gateway independently reads the caller-bound stored smoke receipt. It requires the exact deployment SHA/release, admitted repository and active public Project Route, positive non-skipped tests, failure/error counts, and the run/attempt/workflow/target evidence already verified by the smoke reader. A workflow conclusion alone cannot block. Missing, pending, unknown or cancelled evidence cannot block or roll back. A newer selected release does not invalidate an already verified failure.
+
+Under the existing Instance deploy-writer lock, one database transaction stores the immutable keyed failure in `auto_deploy_state.smoke_failures` and its SHA in `auto_deploy_state.blocked`. Smoke blocks are exempt from the ordinary recent rollback-block bound. The receipt and block survive selection changes, target pruning, recovery failure and resume. Recording failure does not pause or resume automation.
+
+Rollback requires that caller's recorded failure and block, exact current `expected` selection, and the requested target's prior passed smoke plus retained SHA and release. The target has a lower deployment ID and a different SHA and release from the failed deployment. It never chooses another target.
+
+Admission and queued execution check these guards under the existing Instance deploy-writer lock. The native `instance.rollback` operation uses its existing Instance target lock, resumable steps, history and manual-pause semantics. After activation, a resumed operation checks the selected target instead of the old expected release. Success also verifies the selected target SHA/release under the lock; its rollback deployment ID is new. No revert commit or data change is made. No automatic resume occurs.
+
+Changed selection is `409 instance.smoke_selection_changed`; a pruned or mismatched retained target is `409 instance.smoke_rollback_target_missing`. Unverified failure or ownership is `422 instance.smoke_failure_invalid`; invalid rollback proof/body is `422 instance.smoke_rollback_invalid`. Existing access, queue and operation-lock errors remain. Failed/cancelled rollback or unreadable receipts require assistance using the original key and target; the permanent block remains.

@@ -52,7 +52,7 @@ final class InstanceAutoDeployData extends Data
 
         return new self(
             resumedAfter: $instance->auto_deploy_resumed_after,
-            blocked: $history === null ? [] : array_values(array_unique([...$automatic->blocked(), ...$history->rolledAway])),
+            blocked: $history === null ? $automatic->smokeBlocked() : array_values(array_unique([...$automatic->blocked(), ...$history->rolledAway])),
             historyVersion: $history?->version,
             enabled: $enabled,
             policyOwner: $developmentDefault ? AutomaticDeployPolicyWriter::Gateway->value : app(AutomaticDeployPolicyWriter::class)->value,
