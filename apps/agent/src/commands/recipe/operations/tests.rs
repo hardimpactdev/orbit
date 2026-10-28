@@ -1,3 +1,4 @@
+use super::super::test_process::{Worker, WAIT};
 use super::*;
 use crate::commands::recipe::{store, Output};
 use sha2::{Digest, Sha256};
@@ -305,45 +306,108 @@ fn install_and_audit_failures_remove_restart_suppression_and_expose_bounded_diag
 fn interruption_command_helper() {
     use std::os::unix::net::UnixDatagram;
     let socket = UnixDatagram::unbound().unwrap();
+    socket.set_write_timeout(Some(WAIT)).unwrap();
     socket
         .connect(std::env::var_os("ORBIT_RECIPE_INTERRUPT_SOCKET").unwrap())
         .unwrap();
     // The native recipe runner establishes a process group before exec.
     let group = rustix::process::getpgrp().as_raw_pid();
     socket.send(&group.to_ne_bytes()).unwrap();
-    loop {
-        // SAFETY: pause waits for a signal; SIGTERM has its default terminating action.
-        unsafe { libc::pause() };
-    }
+    std::thread::sleep(WAIT);
+    panic!("the command fixture did not receive a terminating signal within {WAIT:?}");
 }
 
 // Hold the real handler behind a socket barrier without changing child signal masks.
 #[cfg(target_os = "linux")]
 mod delayed_handler {
+    use super::WAIT;
     use std::{
         io::{Read, Write},
         os::{fd::AsRawFd, unix::net::UnixStream},
         sync::atomic::{AtomicI32, AtomicUsize, Ordering},
-        time::Duration,
     };
 
     static SOCKET: AtomicI32 = AtomicI32::new(-1);
     static HANDLER: AtomicUsize = AtomicUsize::new(0);
 
+    // The handler can itself be interrupted. Poll against one monotonic deadline
+    // and use nonblocking I/O so EINTR never releases the barrier or renews its bound.
+    fn transfer(fd: i32, bytes: &mut [u8], send: bool) -> bool {
+        let mut time: libc::timespec = unsafe { std::mem::zeroed() };
+        // SAFETY: clock_gettime, poll, send, and recv are async-signal-safe. All
+        // pointers refer to live stack data, and this fixture owns the socket.
+        unsafe {
+            if libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut time) != 0 {
+                return false;
+            }
+            let milliseconds = |time: libc::timespec| time.tv_sec * 1000 + time.tv_nsec / 1_000_000;
+            let deadline = milliseconds(time) + WAIT.as_millis() as i64;
+            loop {
+                if libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut time) != 0 {
+                    return false;
+                }
+                let remaining = deadline - milliseconds(time);
+                if remaining <= 0 {
+                    return false;
+                }
+                let mut event = libc::pollfd {
+                    fd,
+                    events: if send { libc::POLLOUT } else { libc::POLLIN },
+                    revents: 0,
+                };
+                let ready = libc::poll(&mut event, 1, remaining as i32);
+                let count = if ready > 0 {
+                    if send {
+                        libc::send(
+                            fd,
+                            bytes.as_ptr().cast(),
+                            bytes.len(),
+                            libc::MSG_DONTWAIT | libc::MSG_NOSIGNAL,
+                        )
+                    } else {
+                        libc::recv(
+                            fd,
+                            bytes.as_mut_ptr().cast(),
+                            bytes.len(),
+                            libc::MSG_DONTWAIT,
+                        )
+                    }
+                } else if ready == 0 {
+                    return false;
+                } else {
+                    -1
+                };
+                if count >= 0 {
+                    return count == bytes.len() as isize;
+                }
+                if !matches!(*libc::__errno_location(), libc::EINTR | libc::EAGAIN) {
+                    return false;
+                }
+            }
+        }
+    }
+
     extern "C" fn delayed(signal: libc::c_int) {
         let fd = SOCKET.load(Ordering::Acquire);
-        let thread = unsafe { libc::gettid() }.to_ne_bytes();
-        let mut release = 0u8;
-        // SAFETY: the fixture keeps the socket open until the handler acknowledges
-        // completion. read/write are async-signal-safe; the saved action is the
-        // one-argument handler installed by interruption::Guard in this process.
+        // SAFETY: gettid only reads the current thread ID.
+        let mut thread = unsafe { libc::gettid() }.to_ne_bytes();
+        let mut release = [0u8];
+        // SAFETY: the saved action is the one-argument handler installed by
+        // interruption::Guard. write and _exit are async-signal-safe.
         unsafe {
-            libc::write(fd, thread.as_ptr().cast(), thread.len());
-            libc::read(fd, (&mut release as *mut u8).cast(), 1);
+            if !transfer(fd, &mut thread, true) || !transfer(fd, &mut release, false) {
+                let message = b"delayed signal handler entry/release failed or timed out\n";
+                libc::write(libc::STDERR_FILENO, message.as_ptr().cast(), message.len());
+                libc::_exit(101);
+            }
             let handler: extern "C" fn(libc::c_int) =
                 std::mem::transmute(HANDLER.load(Ordering::Acquire));
             handler(signal);
-            libc::write(fd, (&release as *const u8).cast(), 1);
+            if !transfer(fd, &mut release, true) {
+                let message = b"delayed signal handler acknowledgement failed or timed out\n";
+                libc::write(libc::STDERR_FILENO, message.as_ptr().cast(), message.len());
+                libc::_exit(101);
+            }
         }
     }
 
@@ -356,8 +420,10 @@ mod delayed_handler {
     impl Guard {
         pub(super) fn install(signal: libc::c_int) -> Self {
             let (peer, socket) = UnixStream::pair().unwrap();
-            peer.set_read_timeout(Some(Duration::from_secs(30)))
-                .unwrap();
+            peer.set_read_timeout(Some(WAIT)).unwrap();
+            peer.set_write_timeout(Some(WAIT)).unwrap();
+            socket.set_read_timeout(Some(WAIT)).unwrap();
+            socket.set_write_timeout(Some(WAIT)).unwrap();
             SOCKET.store(socket.as_raw_fd(), Ordering::Release);
             // SAFETY: both actions are initialized and the process is isolated.
             let previous = unsafe {
@@ -379,25 +445,113 @@ mod delayed_handler {
 
         pub(super) fn wait_until_entered(&mut self) {
             let mut thread = [0; std::mem::size_of::<libc::pid_t>()];
-            self.peer.read_exact(&mut thread).unwrap();
+            self.peer
+                .read_exact(&mut thread)
+                .expect("delayed handler did not report entry before its deadline");
             // SAFETY: getpid only reads this process's ID.
             assert_eq!(
                 i32::from_ne_bytes(thread),
                 unsafe { libc::getpid() },
-                "the process-wide signal must run on the main thread"
+                "the delayed signal must run on the main thread"
             );
+        }
+
+        pub(super) fn release(&mut self) {
+            self.peer
+                .write_all(&[1])
+                .expect("release delayed handler before its deadline");
+            self.peer
+                .read_exact(&mut [0])
+                .expect("delayed handler did not acknowledge release before its deadline");
         }
     }
     impl Drop for Guard {
         fn drop(&mut self) {
+            // Unblock the handler on assertion failure without waiting during unwinding.
             let _ = self.peer.write_all(&[1]);
-            let _ = self.peer.read_exact(&mut [0]);
             // SAFETY: the saved action came from sigaction for this same signal.
             unsafe {
                 libc::sigaction(self.signal, &self.previous, std::ptr::null_mut());
             }
         }
     }
+}
+
+#[test]
+#[ignore = "subprocess helper installs process-wide signal handlers"]
+#[cfg(target_os = "linux")]
+fn interrupted_handler_helper() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static NESTED: AtomicBool = AtomicBool::new(false);
+    extern "C" fn nested(_: libc::c_int) {
+        NESTED.store(true, Ordering::Relaxed);
+    }
+
+    // SAFETY: this isolated fixture installs a handler that only sets an atomic.
+    let main = unsafe {
+        let mut action: libc::sigaction = std::mem::zeroed();
+        action.sa_sigaction = nested as *const () as usize;
+        libc::sigemptyset(&mut action.sa_mask);
+        assert_eq!(
+            libc::sigaction(libc::SIGUSR1, &action, std::ptr::null_mut()),
+            0
+        );
+        libc::getpid()
+    };
+    let _signals = interruption::Guard::install().unwrap();
+    let mut delayed = delayed_handler::Guard::install(libc::SIGTERM);
+    // SAFETY: both signals target this fixture's main thread.
+    assert_eq!(unsafe { libc::tgkill(main, main, libc::SIGTERM) }, 0);
+    delayed.wait_until_entered();
+    let wait_for_poll = || {
+        let deadline = Instant::now() + WAIT;
+        while !fs::read_to_string(format!("/proc/self/task/{main}/wchan"))
+            .unwrap()
+            .contains("poll")
+        {
+            assert!(
+                Instant::now() < deadline,
+                "delayed handler did not enter its bounded poll"
+            );
+            std::thread::yield_now();
+        }
+    };
+    wait_for_poll();
+    assert_eq!(unsafe { libc::tgkill(main, main, libc::SIGUSR1) }, 0);
+    let deadline = Instant::now() + WAIT;
+    while !NESTED.load(Ordering::Relaxed) {
+        assert!(
+            Instant::now() < deadline,
+            "nested signal handler did not run"
+        );
+        std::thread::yield_now();
+    }
+    wait_for_poll();
+    assert!(
+        interruption::check().is_ok(),
+        "EINTR released the handler barrier early"
+    );
+    delayed.release();
+    assert!(interruption::check().is_err());
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn an_interrupted_handler_wait_keeps_the_barrier_until_release() {
+    let mut worker = Worker::spawn(
+        std::process::Command::new(std::env::current_exe().unwrap()).args([
+            "--ignored",
+            "--exact",
+            "commands::recipe::operations::tests::interrupted_handler_helper",
+        ]),
+    );
+    let status = worker
+        .wait(WAIT)
+        .expect("nested signal fixture exceeded its exit deadline");
+    assert!(
+        status.success(),
+        "nested signal fixture exited with {status}"
+    );
 }
 
 #[test]
@@ -427,7 +581,7 @@ fn interruption_helper() {
         )
     });
     let _policy = Policy::install(&files).unwrap();
-    let context = Context::new(Platform::Linux, Instant::now() + Duration::from_secs(60));
+    let context = Context::new(Platform::Linux, Instant::now() + WAIT);
     let mut host = Native(&context);
     let binary = std::env::current_exe().unwrap();
     let call = Invocation::new(&[
@@ -440,7 +594,7 @@ fn interruption_helper() {
     if let Some(mut delayed) = delayed {
         delayed.wait_until_entered();
         // The result is settled before the real handler can set the flag.
-        drop(delayed);
+        delayed.release();
     }
     let error = result.unwrap_err();
     assert_eq!(error.stage, "interrupted", "{error:?}");
@@ -467,19 +621,19 @@ fn interruption_before_execution_helper() {
 
 #[test]
 fn interruption_before_execution_starts_no_command_and_unwinds_the_restart_policy() {
-    let output = std::process::Command::new(std::env::current_exe().unwrap())
-        .args([
+    let mut worker = Worker::spawn(
+        std::process::Command::new(std::env::current_exe().unwrap()).args([
             "--ignored",
             "--exact",
             "commands::recipe::operations::tests::interruption_before_execution_helper",
-        ])
-        .output()
-        .unwrap();
+        ]),
+    );
+    let status = worker
+        .wait(WAIT)
+        .expect("interruption fixture exceeded its deadline");
     assert!(
-        output.status.success(),
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
+        status.success(),
+        "interruption fixture exited with {status}"
     );
 }
 
@@ -509,7 +663,7 @@ fn interruption_after_execution_helper() {
             let (_work, files, _account, _input, _fake) = fixture();
             let _signals = interruption::Guard::install().unwrap();
             let policy = Policy::install(&files).unwrap();
-            let context = Context::new(Platform::Linux, Instant::now() + Duration::from_secs(60));
+            let context = Context::new(Platform::Linux, Instant::now() + WAIT);
             let mut host = AfterCommand {
                 native: Native(&context),
                 signal,
@@ -529,19 +683,19 @@ fn interruption_after_execution_helper() {
 
 #[test]
 fn interruption_after_execution_stops_the_recipe_and_unwinds_the_restart_policy() {
-    let output = std::process::Command::new(std::env::current_exe().unwrap())
-        .args([
+    let mut worker = Worker::spawn(
+        std::process::Command::new(std::env::current_exe().unwrap()).args([
             "--ignored",
             "--exact",
             "commands::recipe::operations::tests::interruption_after_execution_helper",
-        ])
-        .output()
-        .unwrap();
+        ]),
+    );
+    let status = worker
+        .wait(WAIT)
+        .expect("interruption fixture exceeded its deadline");
     assert!(
-        output.status.success(),
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
+        status.success(),
+        "interruption fixture exited with {status}"
     );
 }
 
@@ -569,35 +723,13 @@ fn process_termination_before_handler_dispatch_interrupts_an_optional_command() 
 
 #[cfg(target_os = "linux")]
 fn termination_unwinds(required: bool, signal: i32, delay_handler: bool) {
-    use std::os::unix::{net::UnixDatagram, process::CommandExt};
-
-    struct Worker {
-        child: std::process::Child,
-        supervisor: Option<i32>,
-    }
-    impl Drop for Worker {
-        fn drop(&mut self) {
-            // Clean up owned processes even when readiness or a signal assertion fails.
-            // SAFETY: these process groups belong to this test's fixtures.
-            unsafe {
-                if let Some(group) = self.supervisor.take() {
-                    libc::kill(-group, libc::SIGKILL);
-                }
-                if self.child.try_wait().ok().flatten().is_none() {
-                    libc::kill(-(self.child.id() as i32), libc::SIGKILL);
-                }
-            }
-            let _ = self.child.wait();
-        }
-    }
+    use std::os::unix::net::UnixDatagram;
 
     let work = WorkDir::new().unwrap();
     fs::create_dir_all(work.0.join("usr/sbin")).unwrap();
     let path = work.0.join("ready.sock");
     let ready = UnixDatagram::bind(&path).unwrap();
-    ready
-        .set_read_timeout(Some(Duration::from_secs(30)))
-        .unwrap();
+    ready.set_read_timeout(Some(WAIT)).unwrap();
     let mut command = std::process::Command::new(std::env::current_exe().unwrap());
     command
         .args([
@@ -609,13 +741,8 @@ fn termination_unwinds(required: bool, signal: i32, delay_handler: bool) {
         .env("ORBIT_RECIPE_INTERRUPT_SOCKET", &path)
         .env("ORBIT_RECIPE_INTERRUPT_REQUIRED", required.to_string())
         .env("ORBIT_RECIPE_INTERRUPT_SIGNAL", signal.to_string())
-        .env("ORBIT_RECIPE_DELAY_HANDLER", delay_handler.to_string())
-        .process_group(0);
-    let child = command.spawn().unwrap();
-    let mut worker = Worker {
-        child,
-        supervisor: None,
-    };
+        .env("ORBIT_RECIPE_DELAY_HANDLER", delay_handler.to_string());
+    let mut worker = Worker::spawn(&mut command);
     let mut message = [0; std::mem::size_of::<i32>()];
     let received = ready
         .recv(&mut message)
@@ -623,17 +750,25 @@ fn termination_unwinds(required: bool, signal: i32, delay_handler: bool) {
     assert_eq!(received, message.len(), "invalid readiness message");
     let group = i32::from_ne_bytes(message);
     assert!(group > 0);
-    assert_ne!(group, worker.child.id() as i32);
-    worker.supervisor = Some(group);
+    assert_ne!(group, worker.id());
+    worker.command_group = Some(group);
     assert!(work.0.join("usr/sbin/policy-rc.d").exists());
     // The command owns a separate process group. Systemd kills both groups in the service cgroup.
     // SAFETY: readiness identifies the supervisor group owned by this test.
     unsafe {
-        assert_eq!(libc::kill(-(worker.child.id() as i32), signal), 0);
+        if delay_handler {
+            // Process-wide kill may choose the recipe thread, which must remain
+            // free to release the test barrier. Pin only the delayed test signal.
+            assert_eq!(libc::tgkill(worker.id(), worker.id(), signal), 0);
+        } else {
+            assert_eq!(libc::kill(-worker.id(), signal), 0);
+        }
         assert_eq!(libc::kill(-group, signal), 0);
     }
-    let status = worker.child.wait().unwrap();
-    worker.supervisor = None;
+    let status = worker
+        .wait(WAIT)
+        .expect("interruption helper exceeded its exit deadline");
     assert!(status.success(), "interruption helper exited with {status} (required={required}, signal={signal}, delay_handler={delay_handler})");
     assert!(!work.0.join("usr/sbin/policy-rc.d").exists());
+    worker.command_group = None;
 }
