@@ -433,6 +433,7 @@
               "PATCH /api/v1/instances/{instance}/deploy-steps/{step}",
               "POST /api/v1/instances/{instance}/deploy/automatic",
               "GET /api/v1/instances/{instance}/deploy/automatic/receipt",
+              "POST /api/v1/instances/{instance}/deploy/automatic/resolve",
               "GET /api/v1/instances/{instance}/deployment-source/checks",
               "GET /api/v1/instances/{instance}/deployment-source/commits",
               "GET /api/v1/instances/{instance}/deployment-source/head",

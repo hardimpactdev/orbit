@@ -9,16 +9,7 @@ use App\Models\Instance;
 use App\Models\InstanceDeployment;
 use Illuminate\Support\Carbon;
 
-/**
- * What an Instance's deployment history means for automatic deployment
- * ([Automatic deployments](/reference/deployments#automatic-deployments)): whether a manual deployment or a rollback
- * paused it, which commits may not deploy automatically, and which wait for a retry.
- *
- * A failed automatic deployment counts against its commit until the next manual deployment. A production commit
- * whose deployment failed for a lasting cause, and any commit that failed {@see self::MaxAttempts} times, does not
- * deploy automatically again. A commit that failed fewer times waits {@see self::RetryMinutes} minutes, doubled after
- * each failure.
- */
+/** Gateway pause and rollback evidence, plus retry history for development defaults. */
 final readonly class AutomaticDeployHistory
 {
     /** The `triggered_by` of an automatic deployment. It contains a colon, so no Node name can take it. */
@@ -122,20 +113,20 @@ final readonly class AutomaticDeployHistory
      *
      * @return list<string>
      */
-    public function blocked(bool $production): array
+    public function blocked(): array
     {
         return array_keys(array_filter(
-            $this->failures($production),
-            static fn (array $failure): bool => $failure['lasting'] || $failure['attempts'] >= self::MaxAttempts,
+            $this->failures(),
+            static fn (array $failure): bool => $failure['attempts'] >= self::MaxAttempts,
         ));
     }
 
     /** Whether the commit failed fewer than {@see self::MaxAttempts} times and its retry is not due yet. */
-    public function backingOff(string $commit, bool $production): bool
+    public function backingOff(string $commit): bool
     {
-        $failure = $this->failures($production)[$commit] ?? null;
+        $failure = $this->failures()[$commit] ?? null;
 
-        if ($failure === null || $failure['lasting'] || $failure['attempts'] >= self::MaxAttempts) {
+        if ($failure === null || $failure['attempts'] >= self::MaxAttempts) {
             return false;
         }
 
@@ -145,12 +136,11 @@ final readonly class AutomaticDeployHistory
     }
 
     /**
-     * Failed automatic deployments since the last manual deployment, by commit. Only a production failure can be
-     * lasting; a development default retries every failure up to the cap.
+     * Failed automatic development deployments since the last manual deployment, by commit.
      *
-     * @return array<string, array{attempts: int, last: Carbon, lasting: bool}>
+     * @return array<string, array{attempts: int, last: Carbon}>
      */
-    private function failures(bool $production): array
+    private function failures(): array
     {
         $manual = InstanceDeployment::query()
             ->where('instance_id', $this->instance->id)
@@ -170,11 +160,10 @@ final readonly class AutomaticDeployHistory
             ->orderBy('id')
             ->get() as $deployment) {
             $commit = (string) $deployment->commit;
-            $previous = $failures[$commit] ?? ['attempts' => 0, 'lasting' => false];
+            $previous = $failures[$commit] ?? ['attempts' => 0];
             $failures[$commit] = [
                 'attempts' => $previous['attempts'] + 1,
                 'last' => $deployment->finished_at ?? $deployment->started_at,
-                'lasting' => $previous['lasting'] || ($production && ! AutomaticDeployFailure::isTransient($deployment)),
             ];
         }
 

@@ -7,7 +7,7 @@ description: "Frozen slice 1 policy cases and public surface contracts for the S
 
 These cases freeze slice 1 of [ADR 0238](https://github.com/hardimpactdev/orbit/pull/1545). The baseline is Orbit `46afd964c4557140c9dae18ae6949eb349a46b70`, before the pinned-deploy primitive changes. The eight flows are selection, unchanged/busy handling, gate recheck, backoff/blocking, manual pause, rollback/resume, alerts, and state/history projection. Several cases belong to one flow. The denominator remains eight.
 
-The [deployment reference](/reference/deployments#automatic-deployments) owns policy. This ledger records expected behavior and existing proof. A named test proves only its layer. A domain test does not prove a web or CLI rendering. `Untested` is a coverage gap to close before the policy cutover, not permission to drop behavior. Step 1 adds primitives; it does not move policy or claim the full trial passed.
+The [deployment reference](/reference/deployments#automatic-deployments) owns policy. This ledger records expected behavior and existing proof. A named test proves only its layer. A domain test does not prove a web or CLI rendering. `Untested` is a coverage gap to close before the policy cutover, not permission to drop behavior. The cutover moves production policy to orbit-swamp. The pinned baseline links below preserve the original PHP proof; the policy tests now live in `tests/automatic_deploy_test.ts` in orbit-swamp. Gateway deploy, rollback, ownership, receipt, and development-default tests retain their boundary coverage. The project owner waived the slice 1 shadow phase; live acceptance remains pending the 14-day window.
 
 ## Surface inventory
 

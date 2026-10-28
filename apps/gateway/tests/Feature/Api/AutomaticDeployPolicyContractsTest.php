@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Instances\ResolveAutomaticDeployAdmissionAction;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubCheckRun;
@@ -13,6 +14,7 @@ use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
 use App\Domain\Instances\Deployment\DeploymentResult;
 use App\Domain\Instances\Deployment\InstanceDeploymentRecorder;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationRequestFingerprint;
 use App\Domain\Operations\OperationStepPlan;
 use App\Domain\Operations\OperationStore;
@@ -29,10 +31,12 @@ use App\Models\InstanceDeployment;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
 use Mockery\MockInterface;
+use Orbit\Sdk\Requests\Deployments\ResolveAutomaticDeployAdmissionRequest;
 use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\Fleet\RecordingReleaseAlertNotifier;
 use Tests\Support\Orb220DeploymentApiFixture;
@@ -73,7 +77,7 @@ it('requires Gateway authority for every policy contract even with target Node a
     $this->assertDatabaseCount('operations', 0);
 })->with([
     ['GET', '/deployment-source/head'], ['GET', '/deployment-source/commits'], ['GET', '/deployment-source/checks'],
-    ['GET', '/deploy/automatic/receipt'], ['PUT', '/auto-deploy/policy'], ['POST', '/auto-deploy/events'],
+    ['GET', '/deploy/automatic/receipt'], ['POST', '/deploy/automatic/resolve'], ['PUT', '/auto-deploy/policy'], ['POST', '/auto-deploy/events'],
 ]);
 
 it('reads the fresh deployment branch head rather than cached policy state', function (): void {
@@ -176,15 +180,17 @@ it('preserves worker-lost outcomes with missing deployment evidence', function (
     $this->assertDatabaseCount('operations', 1);
 });
 
-it('refuses Swamp publication and delivery while PHP owns the policy', function (): void {
+it('refuses automatic admission publication and delivery while PHP owns the policy', function (): void {
+    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Gateway);
+    $this->getJson($this->url)->assertOk()->assertJsonPath('data.auto_deploy.policy_owner', 'gateway');
+    $this->withHeader('Idempotency-Key', 'deploy')->postJson($this->url.'/deploy/automatic', ['commit' => $this->sha])->assertConflict()->assertJsonPath('error.code', 'instance.auto_deploy_policy_owner');
     $this->putJson($this->url.'/auto-deploy/policy', policy_publication($this))->assertConflict()->assertJsonPath('error.code', 'instance.auto_deploy_policy_owner');
     $this->withHeader('Idempotency-Key', 'event')->postJson($this->url.'/auto-deploy/events', ['event' => 'activity', 'result' => 'started'])->assertConflict()->assertJsonPath('error.code', 'instance.auto_deploy_policy_owner');
     $this->assertDatabaseCount('operations', 0);
     expect($this->fixture->instance->fresh()->auto_deploy_state)->toBeNull();
 });
 
-it('publishes through the shared Instance projection with test-supplied cutover ownership', function (): void {
-    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
+it('publishes through the shared Instance projection under the shipped Swamp ownership', function (): void {
     $this->fixture->instance->update(['auto_deploy_state' => ['blocked' => [$this->base]]]);
     $body = policy_publication($this);
     $body['pause'] = ['reason' => 'rollback', 'deployment_id' => 19, 'commit' => $this->sha, 'paused_at' => $body['since']];
@@ -196,7 +202,6 @@ it('publishes through the shared Instance projection with test-supplied cutover 
 });
 
 it('rejects publication after resume or history changes and rejects owner injection', function (string $change): void {
-    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
     $body = policy_publication($this);
     if ($change === 'resume') {
         $this->fixture->instance->update(['auto_deploy_resumed_after' => 17]);
@@ -209,7 +214,6 @@ it('rejects publication after resume or history changes and rejects owner inject
 })->with(['resume', 'history']);
 
 it('records notable Activity once through a keyed operation', function (): void {
-    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
     $body = ['event' => 'activity', 'result' => 'started', 'commit' => $this->sha];
     $id = $this->withHeader('Idempotency-Key', 'event.activity')->postJson($this->url.'/auto-deploy/events', $body)->assertAccepted()->json('data.id');
     run_operation_jobs();
@@ -220,7 +224,6 @@ it('records notable Activity once through a keyed operation', function (): void 
 });
 
 it('uses the Gateway notifier and retains partial delivery receipts without replaying delivery', function (): void {
-    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
     $this->fixture->instance->project->update(['repository_url' => 'https://github.com/acme/shop.git']);
     $notifier = Mockery::mock(ReleaseAlertNotifier::class);
     $notifier->shouldReceive('alert')->once()->withArgs(fn (ReleaseAlert $alert): bool => $alert->subject->target === 'instance:'.$this->fixture->instance->id && $alert->subject->sha === $this->sha)
@@ -235,7 +238,6 @@ it('uses the Gateway notifier and retains partial delivery receipts without repl
 });
 
 it('does not deliver alerts for missing or foreign deployment subjects', function (): void {
-    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
     $notifier = Mockery::mock(ReleaseAlertNotifier::class);
     $notifier->shouldNotReceive('alert');
     app()->instance(ReleaseAlertNotifier::class, $notifier);
@@ -245,7 +247,6 @@ it('does not deliver alerts for missing or foreign deployment subjects', functio
 });
 
 it('requires stable event keys and validates inputs before admission', function (): void {
-    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
     $this->postJson($this->url.'/auto-deploy/events', ['event' => 'activity', 'result' => 'started'])->assertUnprocessable();
     $this->withHeader('Idempotency-Key', 'event.invalid')->postJson($this->url.'/auto-deploy/events', ['event' => 'failed'])->assertUnprocessable();
     $this->withHeader('Idempotency-Key', 'event.invalid')->postJson($this->url.'/auto-deploy/events', ['event' => 'stalled', 'commit' => 'main'])->assertUnprocessable();
@@ -254,7 +255,6 @@ it('requires stable event keys and validates inputs before admission', function 
 });
 
 it('does not replay a delivery step after worker loss', function (): void {
-    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
     $notifier = Mockery::mock(ReleaseAlertNotifier::class);
     $notifier->shouldNotReceive('alert');
     app()->instance(ReleaseAlertNotifier::class, $notifier);
@@ -273,7 +273,6 @@ it('does not replay a delivery step after worker loss', function (): void {
 });
 
 it('keeps policy delivery independent of an Instance deployment lock', function (): void {
-    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
     $this->withHeader('Idempotency-Key', 'deploy.busy')->postJson($this->url.'/deploy/automatic', ['commit' => $this->sha])->assertAccepted();
     $this->withHeader('Idempotency-Key', 'event.busy')->postJson($this->url.'/auto-deploy/events', ['event' => 'activity', 'result' => 'busy'])->assertAccepted()->assertJsonPath('data.target_type', 'instance_policy');
     expect(Operation::query()->pluck('lock_key')->unique()->count())->toBe(2);
@@ -302,7 +301,6 @@ it('bounds source reads and stops at a missing first parent', function (): void 
 });
 
 it('publishes deploying state while a deployment holds the host lock', function (): void {
-    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
     $held = new class implements InstanceEnvironmentOperationLock
     {
         public function run(array $instanceIds, Closure $operation): mixed
@@ -317,7 +315,6 @@ it('publishes deploying state while a deployment holds the host lock', function 
 });
 
 it('uses the native history subjects for policy alerts', function (string $event, string $kind, ?string $trigger, ?string $commit, bool $resumed, bool $delivers): void {
-    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
     $this->fixture->instance->project->update(['repository_url' => 'https://github.com/acme/shop.git']);
     $notifier = new RecordingReleaseAlertNotifier;
     app()->instance(ReleaseAlertNotifier::class, $notifier);
@@ -346,7 +343,6 @@ it('uses the native history subjects for policy alerts', function (string $event
 ]);
 
 it('does not alert an older failure after a newer terminal automatic success', function (): void {
-    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
     $notifier = new RecordingReleaseAlertNotifier;
     app()->instance(ReleaseAlertNotifier::class, $notifier);
     $first = InstanceDeployment::query()->create(['instance_id' => $this->fixture->instance->id, 'kind' => 'deploy', 'triggered_by' => 'orbit:auto-deploy', 'status' => 'failed', 'commit' => $this->sha, 'started_at' => now()]);
@@ -358,7 +354,6 @@ it('does not alert an older failure after a newer terminal automatic success', f
 });
 
 it('uses the same notable Activity filter as the PHP policy', function (): void {
-    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
     $id = $this->withHeader('Idempotency-Key', 'quiet')->postJson($this->url.'/auto-deploy/events', ['event' => 'activity', 'result' => 'up_to_date'])->assertAccepted()->json('data.id');
     run_operation_jobs();
     $this->getJson('/api/v1/operations/'.$id)->assertOk()->assertJsonPath('data.result.reason', 'not_notable');
@@ -366,7 +361,6 @@ it('uses the same notable Activity filter as the PHP policy', function (): void 
 });
 
 it('rejects a publication observed before an existing deployment finished', function (): void {
-    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
     $recorder = app(InstanceDeploymentRecorder::class);
     $row = $recorder->start($this->fixture->instance, 'orbit:auto-deploy');
     $body = [...policy_publication($this), 'last_deployment_id' => $row->id, 'result' => 'deploying'];
@@ -381,7 +375,6 @@ it('rejects a publication observed before an existing deployment finished', func
 });
 
 it('preserves a committed publication when a rollback records its terminal blocks', function (): void {
-    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
     InstanceDeployment::query()->create(['instance_id' => $this->fixture->instance->id, 'kind' => 'deploy', 'status' => 'succeeded', 'commit' => $this->sha, 'started_at' => now()]);
     $recorder = app(InstanceDeploymentRecorder::class);
     $row = $recorder->start($this->fixture->instance, 'operator', 'rollback');
@@ -443,3 +436,178 @@ it('distinguishes an already deployed head from a root that cannot reach the bas
     $this->getJson($this->url.'/deployment-source/commits?base='.$this->base)->assertOk()->assertJsonPath('data.reached_base', true)->assertJsonPath('data.truncated', false)->assertJsonCount(0, 'data.commits');
     $this->getJson($this->url.'/deployment-source/commits?base='.$this->base)->assertOk()->assertJsonPath('data.reached_base', false)->assertJsonPath('data.truncated', false)->assertJsonCount(1, 'data.commits');
 });
+
+it('exposes the shipped owner and accepts Swamp automatic admission', function (): void {
+    $this->getJson($this->url)->assertOk()->assertJsonPath('data.auto_deploy.policy_owner', 'swamp');
+    $this->withHeader('Idempotency-Key', 'swamp')->postJson($this->url.'/deploy/automatic', ['commit' => $this->sha])->assertAccepted();
+    expect(Operation::query()->sole()->triggered_by)->toBe('orbit:auto-deploy');
+});
+
+it('returns 409 without automatic admission when the app-prod role is not active', function (?string $status): void {
+    $roles = $this->fixture->owner->roles()->where('role', RoleName::AppProd);
+    $status === null ? $roles->delete() : $roles->update(['status' => $status]);
+
+    $this->withHeader('Idempotency-Key', 'inactive-role')->postJson($this->url.'/deploy/automatic', ['commit' => $this->sha])
+        ->assertConflict()->assertJsonPath('error.code', 'instance.auto_deploy_role_inactive');
+
+    $this->assertDatabaseCount('operations', 0);
+    $this->assertDatabaseCount('instance_deployments', 0);
+    $this->assertDatabaseCount('jobs', 0);
+})->with(['provisioning', 'failed', 'removing', null]);
+
+it('discovers only eligible automatic production Instances', function (?string $roleStatus, bool $enabled, string $state, string $role, int $count): void {
+    $roles = $this->fixture->owner->roles()->where('role', RoleName::AppProd);
+    $roleStatus === null ? $roles->delete() : $roles->update(['status' => $roleStatus, 'role' => $role]);
+    $this->fixture->instance->update(['auto_deploy' => $enabled, 'status' => $state]);
+
+    $response = $this->getJson('/api/v1/instances?auto_deploy=true')->assertOk()->assertJsonCount($count, 'data');
+    if ($count === 1) {
+        $response->assertJsonPath('data.0.id', $this->fixture->instance->id);
+    }
+    $this->getJson('/api/v1/instances')->assertOk()->assertJsonCount(1, 'data');
+})->with([
+    'eligible' => ['active', true, 'active', 'app-prod', 1],
+    'provisioning role' => ['provisioning', true, 'active', 'app-prod', 0],
+    'failed role' => ['failed', true, 'active', 'app-prod', 0],
+    'removing role' => ['removing', true, 'active', 'app-prod', 0],
+    'absent role' => [null, true, 'active', 'app-prod', 0],
+    'disabled' => ['active', false, 'active', 'app-prod', 0],
+    'inactive Instance' => ['active', true, 'reserved', 'app-prod', 0],
+    'development Node' => ['active', true, 'active', 'app-dev', 0],
+]);
+
+it('keeps automatic discovery within the caller Node access', function (): void {
+    $caller = Node::query()->create(['name' => 'discovery-peer', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '192.0.2.223', 'wireguard_ip' => '10.44.0.223', 'user' => 'orbit']);
+    $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip]);
+    $this->getJson('/api/v1/instances?auto_deploy=true')->assertForbidden()->assertJsonPath('error.code', 'node_access.required');
+
+    $caller->accessibleNodes()->attach($this->fixture->owner->id);
+    $this->getJson('/api/v1/instances?auto_deploy=true')->assertOk()->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $this->fixture->instance->id);
+});
+
+it('rechecks the active app-prod role before effects and finishes resumed history', function (?string $status): void {
+    $id = $this->withHeader('Idempotency-Key', 'role-change')->postJson($this->url.'/deploy/automatic', ['commit' => $this->sha])
+        ->assertAccepted()->json('data.id');
+    $row = app(InstanceDeploymentRecorder::class)->start($this->fixture->instance, 'orbit:auto-deploy');
+    Operation::query()->findOrFail($id)->update(['state' => ['deployment_id' => $row->id], 'attempts' => 1]);
+    $roles = $this->fixture->owner->roles()->where('role', RoleName::AppProd);
+    $status === null ? $roles->delete() : $roles->update(['status' => $status]);
+
+    run_operation_jobs();
+
+    $this->getJson('/api/v1/operations/'.$id)->assertOk()->assertJsonPath('data.status', 'failed')
+        ->assertJsonPath('data.error_code', 'instance.auto_deploy_role_inactive');
+    expect($row->fresh()->status)->toBe('failed')->and($row->fresh()->error_code)->toBe('instance.auto_deploy_role_inactive');
+    expect($this->fixture->deployment->invocations)->toBe(0);
+})->with(['removing', null]);
+
+it('fences a missing admission and replays the cancelled receipt instead of deploying late', function (): void {
+    $body = ['request_key' => 'lost', 'commit' => $this->sha];
+    $id = $this->postJson($this->url.'/deploy/automatic/resolve', $body)->assertOk()->assertJsonPath('data.found', true)
+        ->assertJsonPath('data.operation.status', 'cancelled')->assertJsonPath('data.operation.error_code', 'operation.admission_fenced')->json('data.operation.id');
+    $this->postJson($this->url.'/deploy/automatic/resolve', $body)->assertOk()->assertJsonPath('data.operation.id', $id);
+    $this->withHeader('Idempotency-Key', 'lost')->postJson($this->url.'/deploy/automatic', ['commit' => $this->sha])->assertAccepted()->assertJsonPath('data.id', $id);
+    $this->getJson($this->url.'/deploy/automatic/receipt?request_key=lost&commit='.$this->sha)->assertOk()->assertJsonPath('data.operation.id', $id);
+    run_operation_jobs();
+    $this->assertDatabaseCount('operations', 1);
+    $this->assertDatabaseCount('instance_deployments', 0);
+    expect(Operation::query()->sole()->lock_key)->toBeNull()->and(Operation::query()->sole()->attempts)->toBe(0);
+    expect(Activity::query()->where('command', 'instance:deploy:automatic:resolve')->where('status', 'succeeded')->exists())->toBeTrue();
+});
+
+it('resolves an admitted request without changing its outcome or admitting another', function (): void {
+    $id = $this->withHeader('Idempotency-Key', 'admitted')->postJson($this->url.'/deploy/automatic', ['commit' => $this->sha])->assertAccepted()->json('data.id');
+    $before = Operation::query()->findOrFail($id)->getAttributes();
+    $this->postJson($this->url.'/deploy/automatic/resolve', ['request_key' => 'admitted', 'commit' => $this->sha])->assertOk()->assertJsonPath('data.operation.id', $id)->assertJsonPath('data.operation.status', 'queued');
+    expect(Operation::query()->findOrFail($id)->getAttributes())->toBe($before);
+    $this->postJson($this->url.'/deploy/automatic/resolve', ['request_key' => 'admitted', 'commit' => $this->base])->assertConflict()->assertJsonPath('error.code', 'operation.idempotency_conflict');
+    $this->assertDatabaseCount('operations', 1);
+});
+
+it('validates resolution identity before fencing any admission', function (): void {
+    $this->postJson($this->url.'/deploy/automatic/resolve', [])->assertUnprocessable();
+    $this->postJson($this->url.'/deploy/automatic/resolve', ['request_key' => 'invalid key', 'commit' => 'main'])->assertUnprocessable();
+    $this->assertDatabaseCount('operations', 0);
+});
+
+it('rechecks the code owned writer before automatic deployment effects', function (): void {
+    $id = $this->withHeader('Idempotency-Key', 'owner-change')->postJson($this->url.'/deploy/automatic', ['commit' => $this->sha])->assertAccepted()->json('data.id');
+    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Gateway);
+    run_operation_jobs();
+    $this->getJson('/api/v1/operations/'.$id)->assertOk()->assertJsonPath('data.status', 'failed')->assertJsonPath('data.error_code', 'instance.auto_deploy_policy_owner');
+    $this->assertDatabaseCount('instance_deployments', 0);
+});
+
+it('resolves the original caller identity explicitly and audits both Nodes', function (): void {
+    $original = $this->fixture->caller;
+    $actor = Node::query()->create(['name' => 'operator', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '192.0.2.223', 'wireguard_ip' => '10.44.0.223', 'user' => 'orbit']);
+    $actor->accessibleNodes()->attach($original->id);
+    $this->withServerVariables(['REMOTE_ADDR' => $actor->wireguard_ip]);
+    $body = ['request_key' => 'operator-fenced', 'commit' => $this->sha, 'caller_node_id' => $original->id];
+    $id = $this->postJson($this->url.'/deploy/automatic/resolve', $body)->assertOk()->assertJsonPath('data.operation.input.caller_node_id', $original->id)->json('data.operation.id');
+    $activity = Activity::query()->where('command', 'instance:deploy:automatic:resolve')->sole();
+    expect($activity->getAttribute('caller_node_id'))->toBe($actor->id)
+        ->and($activity->properties->get('automatic_deploy_resolution'))->toBe(['caller_node_id' => $original->id]);
+    $this->postJson($this->url.'/deploy/automatic/resolve', ['request_key' => 'operator-fenced', 'commit' => $this->sha])->assertConflict()->assertJsonPath('error.code', 'operation.idempotency_conflict');
+    $this->withServerVariables(['REMOTE_ADDR' => $original->wireguard_ip]);
+    $this->getJson($this->url.'/deploy/automatic/receipt?request_key=operator-fenced&commit='.$this->sha)->assertOk()->assertJsonPath('data.operation.id', $id);
+    $this->withHeader('Idempotency-Key', 'operator-fenced')->postJson($this->url.'/deploy/automatic', ['commit' => $this->sha])->assertAccepted()->assertJsonPath('data.id', $id);
+    $this->assertDatabaseCount('operations', 1);
+    $this->assertDatabaseCount('instance_deployments', 0);
+});
+
+it('does not let another caller resolve an admitted request without naming its owner', function (): void {
+    $id = $this->withHeader('Idempotency-Key', 'caller-bound')->postJson($this->url.'/deploy/automatic', ['commit' => $this->sha])->assertAccepted()->json('data.id');
+    $actor = Node::query()->create(['name' => 'operator', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '192.0.2.223', 'wireguard_ip' => '10.44.0.223', 'user' => 'orbit']);
+    $actor->accessibleNodes()->attach($this->fixture->caller->id);
+    $this->withServerVariables(['REMOTE_ADDR' => $actor->wireguard_ip]);
+    $body = ['request_key' => 'caller-bound', 'commit' => $this->sha];
+    $this->postJson($this->url.'/deploy/automatic/resolve', $body)->assertConflict()->assertJsonPath('error.code', 'operation.idempotency_conflict');
+    $this->postJson($this->url.'/deploy/automatic/resolve', [...$body, 'caller_node_id' => $this->fixture->caller->id])->assertOk()->assertJsonPath('data.operation.id', $id)->assertJsonPath('data.operation.status', 'queued');
+    $this->assertDatabaseCount('operations', 1);
+});
+
+it('records the automatic resolution response fixture', function (): void {
+    $this->travelTo(Carbon::parse('2026-01-01T00:00:00Z'));
+    $response = $this->withHeader('X-Orbit-Request-Id', fixture_request_id())->postJson($this->url.'/deploy/automatic/resolve', ['request_key' => 'lost.key', 'commit' => $this->sha])->assertOk();
+    record_fixture($response, 'instances/instance-deploy-automatic-resolve/fenced', ResolveAutomaticDeployAdmissionRequest::class, 'POST /api/v1/instances/{instance}/deploy/automatic/resolve');
+});
+
+it('returns the fence when resolution wins after the admission preflight read', function (): void {
+    $reads = 0;
+    $fenced = null;
+    DB::listen(function (QueryExecuted $query) use (&$reads, &$fenced): void {
+        if (! str_starts_with($query->sql, 'select * from "operations" where "kind" =') || ++$reads !== 2) {
+            return;
+        }
+        $fenced = app(ResolveAutomaticDeployAdmissionAction::class)->execute($this->fixture->instance, $this->fixture->caller, 'race', $this->sha, fixture_request_id());
+    });
+
+    $response = $this->withHeader('Idempotency-Key', 'race')->postJson($this->url.'/deploy/automatic', ['commit' => $this->sha])->assertAccepted();
+
+    expect($fenced)->not->toBeNull();
+    $response->assertJsonPath('data.id', $fenced->operation->id)->assertJsonPath('data.error_code', 'operation.admission_fenced');
+    $this->assertDatabaseCount('operations', 1);
+    $this->assertDatabaseCount('jobs', 0);
+    run_operation_jobs();
+    $this->assertDatabaseCount('instance_deployments', 0);
+});
+
+it('finishes resumed automatic history when ownership or enablement stops effects', function (bool $ownerChange): void {
+    $id = $this->withHeader('Idempotency-Key', 'resumed')->postJson($this->url.'/deploy/automatic', ['commit' => $this->sha])->assertAccepted()->json('data.id');
+    $row = app(InstanceDeploymentRecorder::class)->start($this->fixture->instance, 'orbit:auto-deploy');
+    Operation::query()->findOrFail($id)->update(['state' => ['deployment_id' => $row->id], 'attempts' => 1]);
+    if ($ownerChange) {
+        app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Gateway);
+    } else {
+        $this->fixture->instance->update(['auto_deploy' => false]);
+    }
+
+    run_operation_jobs();
+
+    $code = $ownerChange ? 'instance.auto_deploy_policy_owner' : 'deployment.paused';
+    $this->getJson('/api/v1/operations/'.$id)->assertOk()->assertJsonPath('data.status', 'failed')->assertJsonPath('data.error_code', $code);
+    expect($row->fresh()->status)->toBe('failed')->and($row->fresh()->error_code)->toBe($code)
+        ->and($this->fixture->deployment->invocations)->toBe(0);
+})->with([true, false]);

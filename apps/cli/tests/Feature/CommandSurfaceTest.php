@@ -123,6 +123,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'instance:deploy-step:destroy',
         'instance:deploy-step:list',
         'instance:deploy-step:update',
+        'instance:deploy:automatic:resolve',
         'instance:deployment:list',
         'instance:deployment:show',
         'instance:destroy',
@@ -718,6 +719,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ['slug'],
             ['instance' => null, 'prefix' => null, 'force' => false, 'json' => false],
         ],
+        'instance:deploy:automatic:resolve' => [['instance', 'request_key', 'commit'], ['caller-node' => null, 'json' => false]],
         'instance:deploy' => [['instance'], ['commit' => null, 'idempotency-key' => null, 'json' => false]],
         'instance:deploy-step:create' => [
             ['instance', 'name'],
@@ -1248,6 +1250,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             '--instance' => '12',
             '--force' => true,
         ], ...$profileMissing],
+        'instance:deploy:automatic:resolve' => [['instance' => '1', 'request_key' => 'lost', 'commit' => str_repeat('a', 40)], ...$profileMissing],
         'instance:deploy' => [['instance' => '1'], ...$profileMissing],
         'instance:deploy-step:create' => [['instance' => '1', 'name' => 'migrate', '--command' => 'true'], ...$profileMissing],
         'instance:deploy-step:destroy' => [['instance' => '1', 'name' => 'migrate'], ...$profileMissing],

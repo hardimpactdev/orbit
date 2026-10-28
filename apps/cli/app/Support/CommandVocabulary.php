@@ -39,6 +39,7 @@ final readonly class CommandVocabulary
             'logs',
             'register',
             'rename',
+            'resolve',
             'rollback',
             'scan',
             'setup',
@@ -123,7 +124,7 @@ final readonly class CommandVocabulary
      */
     public static function routeRequiresMatchingCommand(string $routeName, array $commandNames): bool
     {
-        if (in_array($routeName, ['instance:dependencies:show', 'project:document:destroy', 'project:document:version:list'], true)) {
+        if (in_array($routeName, ['instance:resolve', 'instance:dependencies:show', 'project:document:destroy', 'project:document:version:list'], true)) {
             return false;
         }
 

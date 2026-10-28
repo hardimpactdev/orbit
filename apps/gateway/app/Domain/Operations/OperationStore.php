@@ -95,6 +95,39 @@ final readonly class OperationStore
     }
 
     /**
+     * Records a terminal no-effect receipt if admission is absent. The unique kind/key constraint settles a race
+     * with a delayed start; the winner's fingerprint is checked before returning either receipt.
+     *
+     * @param  array<string, mixed>  $input
+     */
+    public function fenceAdmission(string $kind, string $key, string $fingerprint, string $targetType, int $targetId, ?int $nodeId, array $input, string $triggeredBy, string $requestId): Operation
+    {
+        try {
+            $operation = Operation::query()->create([
+                'kind' => $kind, 'idempotency_key' => $key, 'idempotency_fingerprint' => $fingerprint,
+                'target_type' => $targetType, 'target_id' => $targetId, 'node_id' => $nodeId,
+                'input' => $input, 'triggered_by' => $triggeredBy, 'request_id' => $requestId,
+                'status' => OperationStatus::Cancelled, 'sequence' => 1, 'attempts' => 0,
+                'finished_at' => Carbon::now(), 'error_code' => 'operation.admission_fenced',
+                'result' => ['admission_fenced' => true],
+            ]);
+        } catch (UniqueConstraintViolationException $exception) {
+            $operation = Operation::query()->where('kind', $kind)->where('idempotency_key', $key)->first();
+            if ($operation === null) {
+                throw $exception;
+            }
+            if ($operation->idempotency_fingerprint !== $fingerprint) {
+                throw new ResourceOperationException('operation.idempotency_conflict', 'The request key belongs to another caller, command, Instance, or input.', 409);
+            }
+
+            return $operation;
+        }
+        $this->broadcaster->created($operation);
+
+        return $operation;
+    }
+
+    /**
      * Applies the changes to the operation and to one of its steps under one new sequence.
      *
      * @param  array<string, mixed>  $changes

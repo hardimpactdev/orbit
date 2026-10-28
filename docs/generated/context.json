@@ -373,6 +373,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Activity",
                 "Cluster",
                 "Database server",
                 "Deployment",
@@ -1253,6 +1254,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Activity",
                 "Deployment",
                 "Doctor",
                 "Extension",

@@ -364,6 +364,7 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Operations\\ListOperationsRequest',
             'Orbit\\Sdk\\Requests\\Operations\\ShowOperationRequest',
             'Orbit\\Sdk\\Requests\\Operations\\CancelOperationRequest',
+            'Orbit\\Sdk\\Requests\\Deployments\\ResolveAutomaticDeployAdmissionRequest',
         ];
         $fleetRequests = [
             'Orbit\\Sdk\\Requests\\Gateway\\ShowDesiredFleetStateRequest',

@@ -16,6 +16,7 @@ use App\Models\Operation;
 use App\Models\Route;
 use Tests\Support\Dev935Deployment;
 use Tests\Support\FakeRemoteBranchHeads;
+use Tests\Support\Orb220DeploymentApiFixture;
 
 beforeEach(function (): void {
     enable_operation_queue();
@@ -223,4 +224,16 @@ describe('development defaults on the automatic deployment tick', function (): v
 
         expect($this->instance->fresh()->development_projection_pending)->toBeFalse();
     });
+});
+
+it('leaves production policy entirely to Swamp while deploying development defaults', function (): void {
+    $production = Orb220DeploymentApiFixture::create()->instance;
+    $production->update(['auto_deploy' => true, 'auto_deploy_state' => ['result' => 'gate_pending']]);
+    $this->instance->update(['seed_commit' => str_repeat('b', 40)]);
+
+    $this->artisan('orbit:auto-deploy')->assertSuccessful();
+
+    expect($this->heads->reads)->toBe(['dev935:main'])
+        ->and($production->fresh()->auto_deploy_state)->toBe(['result' => 'gate_pending']);
+    $this->assertDatabaseCount('operations', 0);
 });

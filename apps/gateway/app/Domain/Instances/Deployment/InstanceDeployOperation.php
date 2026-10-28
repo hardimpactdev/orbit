@@ -28,6 +28,7 @@ final readonly class InstanceDeployOperation implements OperationKind
         private InstanceDeploymentRecorder $recorder,
         private InstanceEnvironmentOperationLock $locks,
         private OperationDeploymentHistory $history,
+        private AutomaticDeployPolicyWriter $writer,
     ) {}
 
     public function run(Operation $operation, OperationRun $run): OperationOutcome
@@ -38,7 +39,7 @@ final readonly class InstanceDeployOperation implements OperationKind
             return OperationOutcome::failed('operation.target_missing');
         }
 
-        if ($operation->triggered_by !== AutomaticDeployHistory::Trigger || ! $instance->placedOnAppProd()) {
+        if ($operation->triggered_by !== AutomaticDeployHistory::Trigger || (! $instance->placedOnAppProd() && ! isset($operation->input['caller_node_id']))) {
             return $this->deploy($operation, $run, $instance);
         }
 
@@ -47,7 +48,8 @@ final readonly class InstanceDeployOperation implements OperationKind
         // operation holds the Instance, no other deployment starts, and a rollback cancels it before a worker starts it.
         try {
             return $this->locks->run([$instance->id], function () use ($operation, $run, $instance): OperationOutcome {
-                $history = new AutomaticDeployHistory($instance->refresh());
+                $this->writer->assertSwamp($instance->refresh());
+                $history = new AutomaticDeployHistory($instance);
                 if ($history->pausedBy() instanceof InstanceDeployment || (isset($operation->input['caller_node_id']) && ! $instance->auto_deploy)) {
                     return $this->paused($operation);
                 }
@@ -59,7 +61,9 @@ final readonly class InstanceDeployOperation implements OperationKind
                 return $this->deploy($operation, $run, $instance);
             });
         } catch (ResourceOperationException $exception) {
-            return OperationOutcome::failed($exception->errorCode);
+            return in_array($exception->errorCode, [AutomaticDeployHistory::Paused, 'instance.auto_deploy_policy_owner', AutomaticDeployPolicyWriter::InactiveRole], true)
+                ? $this->paused($operation, $exception->errorCode)
+                : OperationOutcome::failed($exception->errorCode);
         }
     }
 

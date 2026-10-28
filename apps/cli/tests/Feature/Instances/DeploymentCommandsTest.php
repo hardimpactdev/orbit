@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Deployments\DeployInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\ListInstanceReleasesRequest;
+use Orbit\Sdk\Requests\Deployments\ResolveAutomaticDeployAdmissionRequest;
 use Orbit\Sdk\Requests\Deployments\RollbackInstanceRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -463,3 +464,30 @@ it('never turns an explicitly empty commit option into an unpinned deploy', func
     expect(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('deployment.commit_required');
     expect($mock->getLastPendingRequest())->toBeNull();
 })->with(['empty string' => '', 'bare option' => null]);
+
+it('resolves an automatic receipt through the SDK with an explicit original caller', function (bool $json): void {
+    $class = ResolveAutomaticDeployAdmissionRequest::class;
+    $sha = str_repeat('b', 40);
+    $mock = MockClient::global([$class => MockResponse::make([
+        'data' => ['request_key' => 'lost.key', 'found' => true, 'deployment' => null, 'operation' => [
+            'id' => 51, 'kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => 17,
+            'status' => 'cancelled', 'sequence' => 1, 'error_code' => 'operation.admission_fenced', 'attempts' => 0,
+        ]], 'meta' => ['request_id' => deployment_cli_request_id()],
+    ])]);
+
+    expect(Artisan::call('instance:deploy:automatic:resolve', ['instance' => '17', 'request_key' => 'lost.key', 'commit' => $sha, '--caller-node' => '8', '--json' => $json]))->toBe(0);
+    expect($mock->getLastPendingRequest()->body()->all())->toBe(['request_key' => 'lost.key', 'commit' => $sha, 'caller_node_id' => 8]);
+    if ($json) {
+        $body = json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR);
+        expect($body['operation']['error_code'])->toBe('operation.admission_fenced')->and($body['request_id'])->toBe(deployment_cli_request_id());
+    } else {
+        expect(instance_source_text(Artisan::output()))->toContain('Operation 51: cancelled (operation.admission_fenced)', 'Request ID: '.deployment_cli_request_id());
+    }
+})->with([true, false]);
+
+it('rejects an invalid original caller before sending resolution', function (?string $caller): void {
+    $mock = MockClient::global();
+    expect(Artisan::call('instance:deploy:automatic:resolve', ['instance' => '17', 'request_key' => 'lost', 'commit' => str_repeat('b', 40), '--caller-node' => $caller, '--json' => true]))->toBe(1);
+    expect(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('node.id_invalid');
+    expect($mock->getRecordedResponses())->toHaveCount(0);
+})->with(['invalid' => 'not-a-node', 'empty' => '', 'bare flag' => null]);

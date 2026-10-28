@@ -48,6 +48,7 @@ Release commands prepare and operate a production Instance.
 | Command | Result |
 | --- | --- |
 | [`instance:clone`](#orbit-instanceclone) | Clone a candidate into a prepared production Instance. |
+| [`instance:deploy:automatic:resolve`](#orbit-instancedeployautomaticresolve) | Resolve a lost automatic admission and fence late requests. |
 | [`instance:update`](#orbit-instanceupdate) | Change the deployment branch, shared paths, or automatic deployment of a production Instance. |
 | [`instance:deploy-step:create`](#orbit-instancedeploy-stepcreate) | Record one named deploy step. |
 | [`instance:deploy-step:list`](#orbit-instancedeploy-steplist) | List deploy steps in phase and placement order. |
@@ -629,6 +630,16 @@ List retained release names and the current selection. A production home keeps a
 ```bash
 orbit instance:release:list <instance> [--json]
 ```
+
+## orbit instance:deploy:automatic:resolve
+
+Resolve a lost automatic admission without starting a deploy. If the key has no receipt, the Gateway records a terminal cancelled operation that fences late requests. If admission exists, it returns that operation unchanged. This command requires Gateway access.
+
+```bash
+orbit instance:deploy:automatic:resolve 17 auto.17.4 <full-commit-sha> --caller-node=8
+```
+
+The `instance` argument is the numeric Instance ID. Pass the original `request_key`; `commit` is the original full commit SHA. `--caller-node` identifies the original caller when you resolve for another Node; omit it for your own keys. Human output shows the operation ID, status, error, and request ID. `--json` returns the receipt with `request_key`, `found`, `operation`, `deployment`, and `request_id`. Activity records the acting and original Nodes. See [hold resolution](/reference/deployments#clear-an-unresolved-admission-hold).
 
 ## orbit instance:rollback
 
