@@ -9,6 +9,7 @@ use App\Data\Instances\InstanceSmokeSelectionData;
 use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Instance;
@@ -25,7 +26,10 @@ final readonly class ReadInstanceSmokeContextAction
         $roles = $instance->node->roles->where('status', LifecycleStatus::Active)->pluck('role');
         $production = $instance->status === InstanceState::Active && $instance->node->status === LifecycleStatus::Active
             && $instance->placedOnAppProd() && $roles->contains(RoleName::AppProd) && ! $roles->contains(RoleName::AppDev);
-        $urls = $instance->routes->filter(static fn (Route $route): bool => $route->isApp() && $route->status === RouteStatus::Active && $route->project_id === $instance->project_id)
+        $urls = $instance->routes->filter(static fn (Route $route): bool => $route->isApp()
+                && $route->status === RouteStatus::Active
+                && $route->publication === RoutePublication::Public
+                && $route->project_id === $instance->project_id)
             ->map(static fn (Route $route): string => 'https://'.$route->domain)->unique()->sort()->values()->all();
         $retained = [];
         $selected = null;

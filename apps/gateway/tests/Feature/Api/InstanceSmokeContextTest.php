@@ -6,14 +6,13 @@ use App\Domain\Nodes\RoleName;
 use App\Models\InstanceDeployment;
 use App\Models\Route;
 use Tests\Support\Orb220DeploymentApiFixture;
+use Tests\Support\ProductionSmokeRoute;
 
 it('reads the actual retained selection with successful history and project routes without dispatch', function (): void {
     $fixture = Orb220DeploymentApiFixture::create();
     $instance = $fixture->instance;
     $history = InstanceDeployment::query()->create(['instance_id' => $instance->id, 'release' => 'initial', 'commit' => str_repeat('a', 40), 'kind' => 'rollback', 'status' => 'succeeded', 'started_at' => now()]);
-    $route = Route::query()->create(['project_id' => $instance->project_id, 'node_id' => $fixture->owner->id, 'domain' => 'smoke.example.test', 'status' => 'pending', 'publication' => 'private', 'provenance' => 'explicit']);
-    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
-    $route->update(['status' => 'active']);
+    ProductionSmokeRoute::create($instance);
     $this->withServerVariables(['REMOTE_ADDR' => $fixture->caller->wireguard_ip])->getJson('/api/v1/instances/'.$instance->id.'/smoke/context')
         ->assertOk()->assertJsonPath('data.production', true)->assertJsonPath('data.base_urls', ['https://smoke.example.test'])
         ->assertJsonPath('data.selected', ['deployment_id' => $history->id, 'commit' => str_repeat('a', 40), 'release' => 'initial'])
@@ -54,4 +53,21 @@ it('does not treat an unretained live release as a selected receipt', function (
     InstanceDeployment::query()->create(['instance_id' => $fixture->instance->id, 'release' => 'unretained', 'commit' => str_repeat('a', 40), 'status' => 'succeeded', 'started_at' => now()]);
     $this->withServerVariables(['REMOTE_ADDR' => $fixture->caller->wireguard_ip])->getJson('/api/v1/instances/'.$fixture->instance->id.'/smoke/context')
         ->assertOk()->assertJsonPath('data.selected', null);
+});
+
+it('excludes private Routes from hosted production smoke context', function (): void {
+    $fixture = Orb220DeploymentApiFixture::create();
+    $route = Route::query()->create([
+        'project_id' => $fixture->instance->project_id,
+        'node_id' => $fixture->owner->id,
+        'domain' => 'smoke.orbit',
+        'status' => 'pending',
+        'publication' => 'private',
+        'provenance' => 'explicit',
+    ]);
+    $route->targets()->create(['instance_id' => $fixture->instance->id, 'position' => 0]);
+    $route->update(['status' => 'active']);
+    $this->withServerVariables(['REMOTE_ADDR' => $fixture->caller->wireguard_ip])
+        ->getJson('/api/v1/instances/'.$fixture->instance->id.'/smoke/context')
+        ->assertOk()->assertJsonPath('data.base_urls', []);
 });
