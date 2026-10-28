@@ -4,13 +4,26 @@ declare(strict_types=1);
 
 namespace App\Commands\Processes;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Commands\GatewayCommand;
+use App\Repositories\GatewayConfigRepository;
 use App\Support\Console\ConsoleWriter;
 use App\Support\Logs\LogRedaction;
+use Orbit\Sdk\GatewayConnector;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Orbit\Sdk\Responses\Processes\ProcessResponse;
 
 abstract class ProcessCommand extends GatewayCommand
 {
+    use FollowsOperations;
+
+    protected function finishOperation(GatewayConnector $connector, GatewayConfigRepository $repository, OperationResponse $operation, string $title): int
+    {
+        $profile = $this->activeGatewayProfile($repository);
+
+        return $profile === null ? self::FAILURE : $this->followOperation($connector, $profile, $operation, $title, 'Process');
+    }
+
     /** @param array<string, mixed> $payload
      * @return array<string, mixed>
      */

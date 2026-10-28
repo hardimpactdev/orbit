@@ -10,7 +10,7 @@ use App\Services\GatewayConnectorFactory;
 use JsonException;
 use Orbit\Sdk\Requests\Processes\CreateProcessRequest;
 use Orbit\Sdk\Requests\Projects\CreateProcessDefinitionRequest;
-use Orbit\Sdk\Responses\Processes\ProcessResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Orbit\Sdk\Responses\Projects\ProjectRuntimeDefinitionResponse;
 
 final class CreateProcessCommand extends TargetedProcessCommand
@@ -37,6 +37,7 @@ final class CreateProcessCommand extends TargetedProcessCommand
         {--keep-alive : Keep running through app-dev idle hibernation}
         {--no-restart-on-deploy : Skip automatic restart after production activation}
         {--start : Start after adding}
+        {--idempotency-key= : Reuse a key to retry this Operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -222,7 +223,7 @@ final class CreateProcessCommand extends TargetedProcessCommand
             return self::FAILURE;
         }
 
-        $process = $this->sendWithProgress(
+        $process = $this->send(
             $connector,
             new CreateProcessRequest(
                 target: $target,
@@ -240,16 +241,16 @@ final class CreateProcessCommand extends TargetedProcessCommand
                 restartOnDeploy: $this->option('no-restart-on-deploy') !== true,
                 preset: $preset,
                 user: $user,
+                idempotencyKey: is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null,
             ),
-            ProcessResponse::class,
-            ['Create Process', 'Creating Process', 'Created Process'],
+            OperationResponse::class,
         );
 
-        if (! $process instanceof ProcessResponse) {
+        if (! $process instanceof OperationResponse) {
             return self::FAILURE;
         }
 
-        return $this->renderProcess($process, "Process [{$process->name}] is {$process->runtimeStatus}.");
+        return $this->finishOperation($connector, $repository, $process, "Create Process [{$name}]");
     }
 
     /**
