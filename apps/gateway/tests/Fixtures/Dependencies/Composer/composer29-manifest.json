@@ -1,7 +1,0 @@
-{
-    "name": "sample/laravel-app",
-    "require": {"php": "^8.2", "sample/vcs-package": "dev-main"},
-    "repositories": [{"type": "vcs", "url": "https://fixture-user:fixture-secret@example.test/private/repo.git"}],
-    "config": {"allow-plugins": {"sample/plugin": true}},
-    "scripts": {"post-autoload-dump": ["must-not-execute"]}
-}

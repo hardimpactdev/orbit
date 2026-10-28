@@ -39,6 +39,8 @@ Registration adopts the entire repository checkout or worktree and inherits the 
 
 ### Dependency and lifecycle scope
 
+The native dependency scan and update rules in the next two paragraphs are superseded by [Swamp dependency ownership](/reference/instance-dependencies#native-feature-retirement). Runtime installation and hibernation still use the application directory.
+
 For a Laravel Instance, dependency scans and constrained updates use the same derived application directory. They read only that directory's Composer and JavaScript manifests, lockfiles, and manager signals, not manifests at the repository root or in sibling apps. A nested app is one dependency tree; it is not an instruction to aggregate a monorepo. Existing refusals for workspaces, several importers, path repositories, and local links remain. Non-Laravel Instances keep their repository-root dependency scope.
 
 The scan's `source.project_root` names the directory actually read: `<checkout>/apps/site` in development or `<home>/releases/<name>/apps/site` for a production root of `apps/site/public`. Production collection still validates and pins `current` to its selected release, then descends to the application directory; a release or source change during collection fails rather than mixing observations. Development updates inspect manager presence, run Composer and Vite+ commands, and perform the final scan in that same directory. Source snapshots retain the effective root and Laravel classification needed to select it. When the CLI selects by directory, it still identifies the owning Instance from the whole checkout or production home; the caller's current subdirectory does not select another dependency tree.

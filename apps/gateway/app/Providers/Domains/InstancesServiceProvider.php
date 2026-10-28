@@ -7,6 +7,7 @@ namespace App\Providers\Domains;
 use App\Actions\Instances\DestroyInstanceAction;
 use App\Actions\Instances\SynchronizeInstanceEnvironmentAction;
 use App\Domain\Instances\DatabaseClone\InstanceSqliteCloner;
+use App\Domain\Instances\Dependencies\SwampDependencyReader;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
 use App\Domain\Instances\Deployment\DevelopmentDeployment;
 use App\Domain\Instances\Deployment\ProductionDeployment;
@@ -51,6 +52,9 @@ use App\Domain\Instances\Transfer\InstanceTransferRouteProjector;
 use App\Domain\Instances\Transfer\InstanceTransferRuntime;
 use App\Domain\Instances\Transfer\InstanceTransferSource;
 use App\Domain\Operations\OperationSecretSource;
+use App\Infrastructure\AgentView\StreamWebSocketClient;
+use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Dependencies\WebSocketSwampDependencyReader;
 use App\Infrastructure\Instances\NativeDevelopmentInstanceProvisioner;
 use App\Infrastructure\Instances\NativeDevelopmentRouteProjector;
 use App\Infrastructure\Instances\NativeDevelopmentSourceAccess;
@@ -133,6 +137,10 @@ final class InstancesServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->tag([InstanceLifecycleGitSecret::class, InstanceLifecycleUrlSecret::class], OperationSecretSource::class);
+        $this->app->bind(SwampDependencyReader::class, static fn (): SwampDependencyReader => new WebSocketSwampDependencyReader(
+            static fn (int $limit): WebSocketClient => new StreamWebSocketClient($limit, $limit),
+            Config::string('swamp.address'), Config::string('swamp.read_token'), Config::string('swamp.ca_path'),
+        ));
         $this->app->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
         $this->app->scoped(
             InstanceEnvironmentOperationLock::class,

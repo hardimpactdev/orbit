@@ -1,17 +1,17 @@
 # Public contract
 
-The SDK models exactly 243 concrete public Gateway API operations:
+The SDK models exactly 241 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
 - Node: list, show, add, rename, settings update, WireGuard key set, platform set, remove, access add, access remove, role list, role add, role relocate, role remove, and metrics.
 - Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.
 - Project Documents: Project-scoped list, search, create, show, update, write, read, download, version list, restore-version, archive, restore, and removal; Gateway-scoped storage show and update. Preserve revisions, hashes, cursor metadata and request IDs. Credentials are write-only. Decode bounded downloads only after verifying size and digest; never retry conflicts automatically.
-- Project: list, show, create, update, and remove; development deploy step list, create, update, and remove. Development steps carry a name, command, timeout, and required boolean. Omit null optional fields and preserve explicit false.
+- Project: list, show, create, update, remove, and Swamp dependency results read; development deploy step list, create, update, and remove. Development steps carry a name, command, timeout, and required boolean. Omit null optional fields and preserve explicit false.
 - Development node exclusion: add, list, and remove from either the Project or the Node.
 - Project runtime definition: process and Schedule list, create, show, update, and destroy.
 - Operation: list, show, and cancel. Instance deploy, rollback, and task group provision, check, script, analyze, turn, park, and publish return the queued operation.
-- Instance: list, show, create, register, rename, clone, transfer, remove, update, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, deployment-history list and show, environment import, environment update, environment synchronization, dependency inventory read, dependency scan, dependency update, and full-domain and directory instance resolution through the concise Instance routes.
+- Instance: list, show, create, register, rename, clone, transfer, remove, update, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, deployment-history list and show, environment import, environment update, environment synchronization, Swamp dependency results read, and full-domain and directory instance resolution through the concise Instance routes.
 - Route: list, show, create, update, target set, target clear, and remove.
 - Process: list, add, start, stop, restart, logs, and remove.
 - Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.
@@ -65,10 +65,9 @@ operations. Keep the public API typed and small.
   optional import replacement, one key and string value for update, an empty
   synchronization body, and the bounded value-free operation result. The
   Gateway owns lookup, validation, references, storage, and synchronization.
-- Keep Instance dependency update transport limited to a numeric instance ID
-  and an explicit empty JSON object. Preserve typed step statuses, possible
-  mutation flags, nullable inventory, and request correlation. The Gateway owns
-  target authorization, preflight, package execution, and inventory refresh.
+- Keep dependency reads bodyless and transport only numeric resource identity,
+  optional source identity, and pagination. Preserve Swamp provenance, freshness,
+  findings and PR certainty. The Gateway owns validation and read policy.
 - Keep Route transport limited to Project, domain, publication intent, exclusive
   Node-or-Cluster scope, a single Instance target, an ordered production
   target set with explicit Instance and Route identities plus removal

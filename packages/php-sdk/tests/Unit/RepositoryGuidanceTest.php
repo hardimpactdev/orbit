@@ -59,7 +59,6 @@ use Orbit\Sdk\Requests\Instances\RegisterInstanceRequest;
 use Orbit\Sdk\Requests\Instances\RenameInstanceRequest;
 use Orbit\Sdk\Requests\Instances\SetupInstanceRequest;
 use Orbit\Sdk\Requests\Instances\TransferInstanceRequest;
-use Orbit\Sdk\Requests\Instances\UpdateInstanceDependenciesRequest;
 use Orbit\Sdk\Requests\Instances\UpdateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\UpdateProjectLifecycleStepRequest;
 use Orbit\Sdk\Requests\Logs\CreateLogStreamRequest;
@@ -76,6 +75,7 @@ use Orbit\Sdk\Requests\Nodes\ShowNodeMetricsRequest;
 use Orbit\Sdk\Requests\Projects\AddProjectExcludedNodeRequest;
 use Orbit\Sdk\Requests\Projects\ListProjectExcludedNodesRequest;
 use Orbit\Sdk\Requests\Projects\RemoveProjectExcludedNodeRequest;
+use Orbit\Sdk\Requests\Projects\ShowProjectDependenciesRequest;
 use Orbit\Sdk\Requests\Projects\UpdateProjectRequest;
 use Orbit\Sdk\Requests\Schedules\CompleteScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\CreateScheduleRequest;
@@ -375,7 +375,7 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Fleet\\ResumeFleetRolloutRequest',
             'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeRequest',
         ];
-        $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($webSocketRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($aiRouterRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 19;
+        $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($webSocketRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($aiRouterRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 17;
         $expectedRequests = [
             'Orbit\\Sdk\\Requests\\Tools\\ListToolManagersRequest',
             'Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest',
@@ -489,7 +489,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(ImportInstanceEnvironmentRequest::class)
             ->toContain(UpdateInstanceEnvironmentRequest::class)
             ->toContain(SynchronizeInstanceEnvironmentRequest::class)
-            ->toContain(UpdateInstanceDependenciesRequest::class)
+            ->toContain(ShowProjectDependenciesRequest::class)
             ->toContain(CreateInstanceDeployStepRequest::class)
             ->toContain(ListInstanceDeployStepsRequest::class)
             ->toContain(UpdateInstanceDeployStepRequest::class)
@@ -602,7 +602,7 @@ describe('repository guidance bootstrap', function (): void {
                 '- Project runtime definition: process and Schedule list, create, show, update, and destroy.',
             )
             ->toContain(
-                '- Instance: list, show, create, register, rename, clone, transfer, remove, update, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, deployment-history list and show, environment import, environment update, environment synchronization, dependency inventory read, dependency scan, dependency update, and full-domain and directory instance resolution through the concise Instance routes.',
+                '- Instance: list, show, create, register, rename, clone, transfer, remove, update, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, deployment-history list and show, environment import, environment update, environment synchronization, Swamp dependency results read, and full-domain and directory instance resolution through the concise Instance routes.',
             )
             ->toContain('- Route: list, show, create, update, target set, target clear, and remove.')
             ->not->toContain('- Workspace: list, show, create, remove, and update PHP.')

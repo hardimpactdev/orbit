@@ -2,10 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Actions\Instances\Dependencies\CollectInstanceDependencyFilesAction;
-use App\Actions\Instances\Dependencies\SelectDependencyInputAction;
-use App\Domain\Instances\Dependencies\CollectedDependencyFiles;
-use App\Domain\Instances\Dependencies\DependencyEcosystem;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
@@ -132,36 +128,4 @@ it('rejects unknown Project types on create and update', function (): void {
     ])->assertUnprocessable()
         ->assertJsonPath('error.code', 'validation.failed')
         ->assertJsonPath('error.details.type.0', fn (string $message): bool => $message !== '');
-});
-
-it('selects Composer and Node package manifests and lockfiles without web-root assumptions', function (): void {
-    $files = [];
-    $hashes = [];
-    foreach (CollectInstanceDependencyFilesAction::FILES as $name) {
-        $files[$name] = null;
-        $hashes[$name] = null;
-    }
-    $files['composer.json'] = '{"name":"acme/laravel-kit","require":{"illuminate/support":"^13.0"}}';
-    $files['composer.lock'] = '{"packages":[]}';
-
-    $composer = new SelectDependencyInputAction()->execute(
-        new CollectedDependencyFiles('/checkout', 'main', 'laravel-kit', $files, $hashes, []),
-        DependencyEcosystem::Composer,
-    );
-
-    expect($composer->manager)->toBe('composer')
-        ->and($composer->lockfileName)->toBe('composer.lock');
-
-    $files['composer.json'] = null;
-    $files['composer.lock'] = null;
-    $files['package.json'] = '{"name":"acme/node-kit","packageManager":"bun@1.2.3","dependencies":{"vite":"^6.0.0"}}';
-    $files['bun.lock'] = 'lockfileVersion = 1';
-
-    $javascript = new SelectDependencyInputAction()->execute(
-        new CollectedDependencyFiles('/checkout', 'main', 'node-kit', $files, $hashes, []),
-        DependencyEcosystem::Npm,
-    );
-
-    expect($javascript->manager)->toBe('bun')
-        ->and($javascript->lockfileName)->toBe('bun.lock');
 });

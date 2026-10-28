@@ -359,8 +359,6 @@ describe('success request ID boundary', function (): void {
 
         expect(success_request_id_source_violations($source))->toBeEmpty();
     })->with([
-        'DependencyInventoryDecoder::decodeFromResponse($response, $this->instanceId, false)',
-        'DependencyInventoryDecoder::decodeUpdate($response, $this->instanceId)',
         'InstanceResolutionDecoder::decodeFromResponse($response, $this->domain)',
         'InstanceResolutionDecoder::decodeDirectoryFromResponse($response)',
     ]);
@@ -472,7 +470,7 @@ function success_request_id_factory_violations(string $contents): array
     if (
         str_contains($contents, 'createDtoFromResponse(')
         && preg_match('/->success(?:Header)?RequestId\s*\(\s*\$response\s*\)/s', $contents) !== 1
-        && preg_match('/\breturn\s+(?:DependencyInventoryDecoder::(?:decodeFromResponse|decodeUpdate)|InstanceResolutionDecoder::(?:decodeFromResponse|decodeDirectoryFromResponse))\s*\(\s*\$response\b/s', $contents) !== 1
+        && preg_match('/\breturn\s+(?:InstanceResolutionDecoder::(?:decodeFromResponse|decodeDirectoryFromResponse))\s*\(\s*\$response\b/s', $contents) !== 1
     ) {
         $violations[] = 'missing centralized request ID extraction';
     }

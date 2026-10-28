@@ -17,7 +17,6 @@ pub mod clone_candidate;
 mod composer_global;
 mod composer_scope;
 pub mod database_server;
-pub mod dependencies;
 pub mod deploy_step;
 pub mod dev_certificates;
 pub mod dev_deploy;
@@ -419,10 +418,6 @@ pub fn all() -> Vec<Entry> {
         entry::<dev_certificates::PublishLeaf>(),
         entry::<dev_certificates::InspectLeaf>(),
         entry::<dev_certificates::RemoveLeaf>(),
-        entry::<dependencies::ReadFiles>(),
-        entry::<dependencies::ReadReleaseFiles>(),
-        entry::<dependencies::ProbeUpdate>(),
-        entry::<dependencies::UpdateDependencies>(),
         entry::<dev_deploy::ResolveTarget>(),
         entry::<dev_deploy::CheckoutDefault>(),
         entry::<dev_deploy::RunStep>(),

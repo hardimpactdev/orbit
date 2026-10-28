@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Actions\Instances\Dependencies\ResolveDirectoryInstanceAction;
+use App\Actions\Instances\ResolveDirectoryInstanceAction;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;

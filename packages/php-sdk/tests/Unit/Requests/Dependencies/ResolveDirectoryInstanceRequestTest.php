@@ -62,5 +62,5 @@ describe('directory resolution transport', function (): void {
         } catch (GatewayApiException $error) {
             expect($error->errorCode())->toBe($code)->and($error->requestId())->toBe($id);
         }
-    })->with([[403, 'node_access.required'], [404, 'dependencies.target_not_found'], [409, 'dependencies.target_ambiguous'], [422, 'dependencies.directory_invalid']]);
+    })->with([[403, 'node_access.required'], [404, 'instance.target_not_found'], [409, 'instance.target_ambiguous'], [422, 'instance.directory_invalid']]);
 });

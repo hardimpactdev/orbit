@@ -103,8 +103,6 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, Schedule> $schedules
  * @property-read InstanceRemovalMember|null $removalMember
  * @property-read Collection<int, InstanceTransfer> $transfers
- * @property-read Collection<int, InstanceDependencyObservation> $dependencyObservations
- * @property-read Collection<int, InstanceDependencyScanAttempt> $dependencyScanAttempts
  * @property-read Collection<int, Task> $tasks
  */
 final class Instance extends Model
@@ -302,18 +300,6 @@ final class Instance extends Model
     public function transfers(): HasMany
     {
         return $this->hasMany(InstanceTransfer::class);
-    }
-
-    /** @return HasMany<InstanceDependencyObservation, $this> */
-    public function dependencyObservations(): HasMany
-    {
-        return $this->hasMany(InstanceDependencyObservation::class);
-    }
-
-    /** @return HasMany<InstanceDependencyScanAttempt, $this> */
-    public function dependencyScanAttempts(): HasMany
-    {
-        return $this->hasMany(InstanceDependencyScanAttempt::class);
     }
 
     /** @return MorphMany<Task, $this> */

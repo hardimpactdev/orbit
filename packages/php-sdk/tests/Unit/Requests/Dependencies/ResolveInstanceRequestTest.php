@@ -111,5 +111,5 @@ describe('full-domain SDK resolution', function (): void {
         } catch (GatewayApiException $exception) {
             expect($exception->errorCode())->toBe($code)->and($exception->requestId())->toBe(resolution_response()['meta']['request_id']);
         }
-    })->with([[404, 'dependencies.target_not_found'], [409, 'dependencies.target_ambiguous'], [403, 'node_access.required'], [422, 'dependencies.domain_invalid']]);
+    })->with([[404, 'instance.target_not_found'], [409, 'instance.target_ambiguous'], [403, 'node_access.required'], [422, 'instance.domain_invalid']]);
 });

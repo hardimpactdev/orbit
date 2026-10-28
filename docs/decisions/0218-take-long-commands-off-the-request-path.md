@@ -12,6 +12,8 @@ description: "In progress. Each command that can still run for minutes inside a 
 
 In progress.
 
+Dependency maintenance now belongs to Swamp. Its retired scan and update commands need no operation conversion; see [Instance dependencies](/reference/instance-dependencies#native-feature-retirement).
+
 Principle: [Agents operate, humans steer](/mission#principles). An agent that adds a Node, transfers an Instance, or moves a role can lose its connection and still find the operation, its current step, and its result with one read. It also serves [One way, one name](/mission#principles): every long command uses the same record, the same reads, and the same recovery, and no command keeps a run record of its own beside the operation. No principle exception is proposed.
 
 ## Context
@@ -52,7 +54,6 @@ A command becomes an operation when it changes a Node, a Cluster, an Instance, a
 | `instance:clone` | `instance.clone` | `instance`, the new one | 89 s | Clone, certificates, and a database copy of up to 600 s |
 | `instance:register` | `instance.register` | `instance`, the primary | 522 s | Grows with worktrees, plus the setup list with `--setup` |
 | `instance:setup` | `instance.setup` | `instance` | 70 s | A list that a person wrote, up to 540 s |
-| `instance:dependencies:update` | `instance_dependencies.update` | `instance` | Never run | Two package steps of 600 s each by design |
 | `instance:analytics:enable`, `instance:analytics:disable` | `instance_analytics.enable`, `instance_analytics.disable` | `instance` | 130 s | Route convergence and the fleet Metrics reconcile |
 | `database:server:create` | `database_server.create` | `database_server` | 12.5 s | An image pull and two readiness waits of 120 s |
 | `project:update` that the Instances must follow | `project.update` | `project` | 15 s | One Git fetch and one Route convergence per Instance |
@@ -69,11 +70,10 @@ An operation's `node_id` is the serving Node of its target. A Cluster or Project
 
 A command can take input that needs no remote work, such as `cluster:update` with only a new name or `project:update` with only a new `merge_check`. For such input the command answers 200 with the record. For input that needs remote work, the same command answers 202 with an operation. The OpenAPI document lists both answers.
 
-Each kind caps its run with one `CommandDeadline::within()` call, as `instance.deploy` caps itself with its deploy deadline. The cap is 570 seconds, the command deadline these commands have today, so no command gets less time than now, and none gets more without a decision. Waiting for a lock counts against the cap. The ADR 0209 kinds that are not built yet use the same cap. This ADR decides four exceptions:
+Each kind caps its run with one `CommandDeadline::within()` call, as `instance.deploy` caps itself with its deploy deadline. The cap is 570 seconds, the command deadline these commands have today, so no command gets less time than now, and none gets more without a decision. Waiting for a lock counts against the cap. The ADR 0209 kinds that are not built yet use the same cap. This ADR decides three exceptions:
 
 - `instance.create`, `instance.register` with `--setup`, and `instance.destroy` add the total of their setup or teardown list, at most 540 seconds. Today the list gets only what the rest of the command leaves of the request.
 - `instance.clone` adds its database copy timeout of 600 seconds.
-- `instance_dependencies.update` uses the whole 1,600-second operation deadline, because its two package steps have 600 seconds each.
 - `instance.rollback` keeps the 900 seconds that it has as an operation since [#1301](https://github.com/hardimpactdev/orbit/pull/1301).
 
 ### Commands that move elsewhere
@@ -110,7 +110,7 @@ The Node's source lock is a blocking lock today, and operations hold it for many
 | `schedule:*` | 4.9 s | Already explicit, at most 150 s |
 | `firewall:allow`, `firewall:deny`, `firewall:remove`, `firewall:live:list` | 2 s, 1 s, 1 s, 10 s | 30 s per SSH call |
 | `node:settings`, `node:wireguard-key`, `node:metrics`, `node:rename`, `node:access:*` | 1 s, never run, 10 s, 0.1 s, 0.1 s | 30 s per SSH and local call, and a timed lock instead of a blocking one |
-| `env:sync`, `env:import`, `env:update`, `instance:update`, `instance:database:*`, `instance:logs`, `instance:queue`, `instance:release:list`, `instance:dependencies:scan`, `instance:rename` without a new domain | 1.1 s, 0.9 s, 0.1 s, 0.1 s, 0.1 s, 10 s (failed), 34 s, 12 s, 66 s, 0.1 s | 30 s per SSH call of `env:sync`, `env:import`, and `instance:release:list`; the timed source lock for `instance:dependencies:scan` and `instance:rename` |
+| `env:sync`, `env:import`, `env:update`, `instance:update`, `instance:database:*`, `instance:logs`, `instance:queue`, `instance:release:list`, `instance:rename` without a new domain | 1.1 s, 0.9 s, 0.1 s, 0.1 s, 0.1 s, 10 s (failed), 34 s, 12 s, 0.1 s | 30 s per SSH call of `env:sync`, `env:import`, and `instance:release:list`; the timed source lock for `instance:rename` |
 | `database:create`, `database:destroy`, `database:user:create`, `database:update`, `database:server:destroy`, `database:query`, `database:schema`, `database:tables`, `database:describe` | 0.4 s or less | A 60-second timeout on statements, except the copy that clone uses; a statement timeout for `database:query`; one call for `database:schema`; SSH timeouts in `database:update` |
 | `metrics:status`, `metrics:credentials:reset` | 13 s, never run | A 20-second limit on each Grafana call |
 | `vault:*`, `conn:*`, `github:app:*`, `analytics:credentials:*`, `instance:analytics:stats`, `ai-router:*` | 16 s | A total budget of 120 s for `vault:sync`, whose scheduled run continues the rest; `conn:pairing:revoke` marks expired links locally instead of calling T3 for each; `github:app:*` reads a bounded number of pages |
@@ -130,7 +130,7 @@ Every other endpoint is a database read or write.
 The maintainer decided on 16 Oct 2026: an operation is the only record of a long run. The pull request that converts a command replaces that command's own progress or history records with the operation. It does not keep them beside it. Data of a converted command falls into three classes:
 
 1. **Run progress and run history** go into the operation: how far a run got, what it produced, and why it failed. These become steps, step output, `state`, `input`, and `result`.
-2. **Domain state** stays on the domain record: the current state of a record that other code reads, such as the status of a Node, a role, or an Instance, the serving state of a Route, a Node's footprint, the dependency inventory, or a desired setting. A pointer from a domain record to the operation that changes it is domain state too.
+2. **Domain state** stays on the domain record: the current state of a record that other code reads, such as the status of a Node, a role, or an Instance, the serving state of a Route, a Node's footprint, or a desired setting. A pointer from a domain record to the operation that changes it is domain state too.
 3. **Work owed beyond an operation** stays as a small record of its own. Such a record stays when it names work that another run must finish at a time Orbit cannot bound, such as cleanup on a machine that is down, or when guards must keep refusing until that work is done. It names the work and the target, it is not a copy of an operation, and the run that finishes the work deletes it.
 
 | Record | Command | Class | Outcome |
@@ -149,7 +149,7 @@ The maintainer decided on 16 Oct 2026: an operation is the only record of a long
 | `nodes.failed_step`, `nodes.error_code`, `database_servers.failed_step`, `database_servers.error_code` | `node:add`, `database:server:create` | 1 | Replaced. The statuses stay |
 | `node_roles.failed_step` with its `converge:` or `remove:` prefix | Role commands, `cluster:router:*` | 2 and 1 | The prefix stays, because Caddy and Ingress read it to decide whether a role still serves. The step and code move to the operation |
 | The Router replacement phase | `cluster:router:set` | 2 | Stays, because every Caddy build and DNS publication reads it |
-| Route transition columns, `node_footprints`, Metrics degradation settings, the Plausible version pin, the dependency inventory | Several | 2 | Stay |
+| Route transition columns, `node_footprints`, Metrics degradation settings, the Plausible version pin | Several | 2 | Stay |
 | The prior state that a failure restores, such as a Node's earlier network and the earlier Plausible version | `node:add`, `analytics:update` | 1 | Moves from memory into operation `state`, so the next attempt can still undo the change after a worker is lost |
 | What stays on an unreachable machine after `--offline`, and role follow-ups | `node:remove`, `node:role:remove`, `node:role:relocate` | 1 | Goes into the operation `result`. Today it is lost when the response is read |
 
@@ -213,7 +213,7 @@ Task workspace provisioning stays in the claim of Swamp group execution. It does
 The `operations` queue keeps one worker. Memory is one reason: each worker costs about 50 MB. Order is the other: Instances behind one Route deploy one after another, and ADR 0217 rejected a second worker. Three rules keep other work from holding up deploys. They need no new queue, worker, or priority.
 
 1. **No operation spans the fleet.** `doctor` stays a read in the request. The fleet rollout stays in `orbit-fleet-converge.service`, and problem collection stays in the scheduler.
-2. **Each operation is capped.** A kind of this ADR caps its run at 570 seconds, as [Kind names, targets, and deadlines](#kind-names-targets-and-deadlines) says. A deploy therefore waits at most about 10 minutes behind most operations. Behind the longest it waits up to about 27 minutes: another deploy, a dependency update, or a create, registration, removal, or clone that runs a full list or copy. ADR 0217's stall alert fires after 30 minutes, so one long operation ahead does not raise it.
+2. **Each operation is capped.** A kind of this ADR caps its run at 570 seconds, as [Kind names, targets, and deadlines](#kind-names-targets-and-deadlines) says. A deploy therefore waits at most about 10 minutes behind most operations. Behind the longest it waits up to about 27 minutes: another deploy, or a create, registration, removal, or clone that runs a full list or copy. ADR 0217's stall alert fires after 30 minutes, so one long operation ahead does not raise it.
 3. **Background work yields.** Work that no person or agent waits for starts one operation at a time, and only while the `operations` queue holds no job, waiting or running. The check and the start run under one cache lock, so Swamp group execution and `DestroyTaskVm` never both start one. A task workspace removal is such work, also after `tasks:cancel` or `tasks:complete`, because the group ends at once. `DestroyTaskVm` follows the same rule when it starts a removal. A burst of ended groups therefore queues no burst of removals: the tick starts the next removal only when the worker is idle. A deploy that arrives can still wait for the one removal that runs, 52 to 196 seconds in the 9 Oct burst, at most 1,110 seconds when it runs a full teardown list. A burst never adds more. A command that a person or agent runs starts its operation at once, in order. Automatic deploys are the one exception: they start as they do now, even while the queue holds a job.
 
 Horizon already flags a wait of more than 300 seconds on the `operations` queue. If such waits become common, the next step is a queue of their own for deploys that the same worker reads first. Horizon supports this order. It is not built now.
@@ -306,7 +306,6 @@ Each step is one pull request. Steps 2b to 5 start after step 1, and each step a
 | 4a | `instance.setup` and `instance.register` | 2b | 2b, 2c |
 | 4b | `instance.transfer`, with its debt record | 1 | 2b |
 | 4c | `instance.clone` | 2c | 2c |
-| 4d | `instance_dependencies.update` | 1 | The common files |
 | 4e | `node.add` and `node.remove`, with the web app's Node form | 1 | 4f |
 | 4f | `node_role.add`, `node_role.remove`, `node_role.relocate`, `metrics:enable`, `metrics:disable`, `analytics.update`, and claims owned by operations | 1 | 4e, 4g, 4h, 5e |
 | 4g | `node.converge` and `metrics_exporter.*` | 1 | 4f |

@@ -28,7 +28,6 @@ describe('caller directory resolution', function (): void {
         $response = $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->get('/api/v1/instances/resolve-directory?directory='.rawurlencode($directory));
         $response->assertOk()->assertJsonPath('data', ['instance_id' => $instance->id, 'project_id' => $instance->project_id, 'node_id' => $caller->id, 'environment' => 'development']);
         expect($response->getContent())->not->toContain('/home/orbit');
-        $this->assertDatabaseCount('instance_dependency_scan_attempts', 0);
     })->with(['/home/orbit/project', '/home/orbit/project/public', '/home/orbit/project/child directory']);
 
     it('preserves trailing spaces as path bytes rather than selecting a trimmed sibling', function (): void {
@@ -40,7 +39,7 @@ describe('caller directory resolution', function (): void {
     it('rejects unmanaged paths and prefix siblings', function (string $directory): void {
         [$caller] = directory_resolution_fixture();
         $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->get('/api/v1/instances/resolve-directory?directory='.rawurlencode($directory))
-            ->assertNotFound()->assertJsonPath('error.code', 'dependencies.target_not_found')->assertJsonMissingPath('data');
+            ->assertNotFound()->assertJsonPath('error.code', 'instance.target_not_found')->assertJsonMissingPath('data');
     })->with(['/home/orbit', '/home/orbit/project-other', '/unmanaged', '/']);
 
     it('never selects a matching root on another Node even with fleet authority', function (): void {
@@ -56,14 +55,14 @@ describe('caller directory resolution', function (): void {
         [$caller, $instance] = directory_resolution_fixture();
         $instance->project->instances()->create(['node_id' => $caller->id, 'name' => 'overlap', 'environment' => 'development', 'status' => $status, 'checkout_path' => $root]);
         $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->get('/api/v1/instances/resolve-directory?directory=/home/orbit/project/child')
-            ->assertStatus(409)->assertJsonPath('error.code', 'dependencies.target_ambiguous')->assertJsonMissingPath('data');
+            ->assertStatus(409)->assertJsonPath('error.code', 'instance.target_ambiguous')->assertJsonMissingPath('data');
     })->with([['/home/orbit/project/child', 'active'], ['/home/orbit/project/child', 'reserved']]);
 
     it('refuses unavailable matches', function (array $changes): void {
         [$caller, $instance] = directory_resolution_fixture();
         $instance->update($changes);
         $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->get('/api/v1/instances/resolve-directory?directory=/home/orbit/project')
-            ->assertStatus(409)->assertJsonPath('error.code', 'dependencies.instance_unavailable');
+            ->assertStatus(409)->assertJsonPath('error.code', 'instance.unavailable');
     })->with([[['status' => 'reserved']]]);
 
     it('uses the registered production home rather than a stale checkout field', function (): void {

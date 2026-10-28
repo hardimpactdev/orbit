@@ -634,3 +634,10 @@ body {
         animation: none;
     }
 }
+
+/* Dependency evidence wraps without overlapping the next resolution. */
+.dependency-rows .row:not([data-head]) {
+    height: auto;
+    min-height: var(--lh);
+    align-items: start;
+}

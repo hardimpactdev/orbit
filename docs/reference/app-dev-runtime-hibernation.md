@@ -71,7 +71,7 @@ The same sweep deletes `vendor` and `node_modules` when all of these are true:
 
 For a Laravel Instance, dependency inspection, pruning, and restoration use its [application directory](/reference/projects#application-directory). Root `apps/site/public` means `apps/site/vendor` and `apps/site/node_modules` inside the checkout; Composer and Vite+ install commands run in `apps/site`. Root `public` and non-Laravel Instances keep checkout-root dependency paths. Hibernation does not prune sibling dependency trees. Source activity still covers the whole checkout, so edits outside the application directory also prevent pruning.
 
-Orbit deletes `vendor` only next to `composer.json` and `composer.lock`. It deletes `node_modules` only next to `package.json` and exactly one JavaScript lockfile. It never follows a symlink and keeps every lockfile. Then it writes the cold marker. The [dependency inventory](/reference/instance-dependencies) stays, because it reads lockfiles.
+Orbit deletes `vendor` only next to `composer.json` and `composer.lock`. It deletes `node_modules` only next to `package.json` and exactly one JavaScript lockfile. It never follows a symlink and keeps every lockfile. Then it writes the cold marker. The [Swamp dependency view](/reference/instance-dependencies) stays available because it reads repository evidence through the Gateway, independently of the Instance runtime.
 
 ## Wake
 

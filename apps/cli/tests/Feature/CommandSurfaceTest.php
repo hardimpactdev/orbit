@@ -116,8 +116,6 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'instance:create',
         'instance:database:add',
         'instance:database:remove',
-        'instance:dependencies:scan',
-        'instance:dependencies:update',
         'instance:deploy',
         'instance:deploy-step:create',
         'instance:deploy-step:destroy',
@@ -267,10 +265,6 @@ describe('command vocabulary', function (): void {
         expect($commands)->not->toContain('metrics:list');
         expect(CommandVocabulary::routeRequiresMatchingCommand('schedule:complete', $commands))->toBeFalse();
         expect(CommandVocabulary::routeRequiresMatchingCommand('instance:deploy:automatic', ['instance:deploy']))->toBeFalse();
-        expect(CommandVocabulary::routeRequiresMatchingCommand('instance:dependencies:show', ['instance:dependencies:scan']))->toBeFalse();
-        expect(CommandVocabulary::routeRequiresMatchingCommand('instance:dependencies:update', ['instance:dependencies:update']))->toBeTrue();
-        expect(CommandVocabulary::routeRequiresMatchingCommand('instance:dependencies:update', ['instance:dependencies:scan']))->toBeTrue();
-        expect(CommandVocabulary::routeRequiresMatchingCommand('instance:dependencies:scan', ['instance:dependencies:scan']))->toBeTrue();
         expect(CommandVocabulary::routeRequiresMatchingCommand('instance:deployment-config:show', $commands))->toBeFalse();
     });
 
@@ -824,8 +818,6 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         ],
         'instance:release:list' => [['instance'], ['json' => false]],
         'instance:rollback' => [['instance'], ['release' => null, 'idempotency-key' => null, 'json' => false]],
-        'instance:dependencies:scan' => [[], ['project' => null, 'all' => false, 'json' => false]],
-        'instance:dependencies:update' => [[], ['project' => null, 'all' => false, 'latest' => false, 'json' => false]],
         'instance:show' => [['instance'], ['json' => false]],
         'instance:transfer' => [
             ['instance', 'node'],
@@ -1284,8 +1276,6 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'instance:teardown-step:update' => [['name' => 'drop-sqlite', '--project' => '1', '--command' => 'true'], ...$profileMissing],
         'instance:release:list' => [['instance' => '1'], ...$profileMissing],
         'instance:rollback' => [['instance' => '1', '--release' => 'release-a'], ...$profileMissing],
-        'instance:dependencies:scan' => [[], ...$profileMissing],
-        'instance:dependencies:update' => [[], ...$profileMissing],
         'instance:show' => [['instance' => '1'], ...$profileMissing],
         'instance:transfer' => [
             ['instance' => '1', 'node' => '2', '--force' => true],

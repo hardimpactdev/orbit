@@ -276,7 +276,8 @@ final class StreamWebSocketClient implements WebSocketClient
         }
 
         if (! str_starts_with($response, 'HTTP/1.1 101')) {
-            throw new WebSocketException('Reverb refused the WebSocket handshake.');
+            $status = preg_match('/\AHTTP\/1\.[01] ([0-9]{3})\b/', $response, $matches) === 1 ? (int) $matches[1] : 0;
+            throw new WebSocketException('Reverb refused the WebSocket handshake.', $status);
         }
 
         $expected = base64_encode(sha1($key.self::HANDSHAKE_GUID, binary: true));

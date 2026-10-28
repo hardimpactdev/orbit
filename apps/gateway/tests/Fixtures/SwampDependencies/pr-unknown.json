@@ -1,0 +1,222 @@
+{
+  "fixture_version": 1,
+  "scenario": "pr-unknown",
+  "snapshots": [
+    {
+      "index": {
+        "request": {
+          "type": "data.get",
+          "id": "6e7a5a13-b031-5959-9569-7cbd259827f0",
+          "payload": {
+            "modelIdOrName": "orbit-gateway",
+            "dataName": "dependencies-v1-project-20-f921bd05e68b03740c450e565e0e6173e546193170b2dd404ddb6f153e9b5bf3",
+            "includeContent": true
+          }
+        },
+        "response": {
+          "type": "data.get",
+          "id": "6e7a5a13-b031-5959-9569-7cbd259827f0",
+          "payload": {
+            "data": {
+              "id": "2504df58-b2ee-5e35-bf52-2909bd045150",
+              "name": "dependencies-v1-project-20-f921bd05e68b03740c450e565e0e6173e546193170b2dd404ddb6f153e9b5bf3",
+              "modelId": "f5fa45d6-6307-48b6-a094-9aae8f79febc",
+              "modelName": "orbit-gateway",
+              "modelType": "@nckrtl/orbit-gateway",
+              "version": 4,
+              "contentType": "application/json",
+              "lifetime": "infinite",
+              "garbageCollection": "infinite",
+              "streaming": false,
+              "tags": {
+                "contract": "orbit.dependencies.v1",
+                "kind": "index",
+                "project_id": "20",
+                "repository": "github.com/fixture/dependency-app",
+                "source_ref": "refs/heads/main",
+                "type": "resource",
+                "specName": "dependencyIndex",
+                "modelName": "orbit-gateway"
+              },
+              "ownerDefinition": {
+                "ownerType": "model-method",
+                "ownerRef": "f5fa45d6-6307-48b6-a094-9aae8f79febc"
+              },
+              "createdAt": "2026-10-28T00:10:00Z",
+              "size": 1482,
+              "checksum": "65ef71208e3c57ed1ebe8c25d062e3665ea325e3518cdf48c28c9b39b66fd044",
+              "contentPath": ".swamp/data/@nckrtl/orbit-gateway/f5fa45d6-6307-48b6-a094-9aae8f79febc/dependencies-v1-project-20-f921bd05e68b03740c450e565e0e6173e546193170b2dd404ddb6f153e9b5bf3/4/raw",
+              "content": "{\"schema_version\":1,\"publication_id\":\"879e38e3-c7c8-50d2-ad33-ff2da85ecdef\",\"project_id\":20,\"repository\":\"github.com/fixture/dependency-app\",\"source_ref\":\"refs/heads/main\",\"source_commit\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"generated_at\":\"2026-10-28T00:10:00Z\",\"last_attempt\":{\"run_id\":\"31dc1fe1-67d8-574d-86dc-88bd9e0b6fb8\",\"started_at\":\"2026-10-28T00:00:00Z\",\"finished_at\":\"2026-10-28T00:00:00Z\",\"status\":\"succeeded\",\"error_code\":null},\"sources\":[{\"path\":\".\",\"ecosystem\":\"composer\",\"package_manager\":\"composer\",\"last_attempt\":{\"run_id\":\"31dc1fe1-67d8-574d-86dc-88bd9e0b6fb8\",\"started_at\":\"2026-10-28T00:00:00Z\",\"finished_at\":\"2026-10-28T00:00:00Z\",\"status\":\"succeeded\",\"error_code\":null},\"report\":{\"modelIdOrName\":\"orbit-gateway\",\"dataName\":\"dependencies-v1-report-5cf8c626-cae8-54a4-895a-bc5988955faf-64da9c6b9583ae0c64fd780c2d9ccea8959252e57cd608441c257ca98dc27dcf\",\"version\":1,\"source_commit\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"observed_at\":\"2026-10-28T00:00:00Z\",\"publication_id\":\"5cf8c626-cae8-54a4-895a-bc5988955faf\",\"path\":\".\",\"ecosystem\":\"composer\",\"package_manager\":\"composer\"}}],\"batch_pr\":{\"status\":\"open\",\"checked_at\":\"2026-10-28T00:10:00Z\",\"last_success_at\":\"2026-10-28T00:10:00Z\",\"error_code\":null,\"value\":{\"repository\":\"github.com/fixture/dependency-app\",\"number\":17,\"url\":\"https://github.com/fixture/dependency-app/pull/17\",\"head_commit\":\"cccccccccccccccccccccccccccccccccccccccc\",\"group_id\":2195,\"run_id\":\"e503d945-8f3c-5b35-8d80-925aa0d8b61d\"}}}",
+              "contentEncoding": "utf-8"
+            }
+          }
+        }
+      },
+      "reports": [
+        {
+          "request": {
+            "type": "data.get",
+            "id": "d1e3a8e4-6c21-581d-a8de-2d7ad8a9e028",
+            "payload": {
+              "modelIdOrName": "orbit-gateway",
+              "dataName": "dependencies-v1-report-5cf8c626-cae8-54a4-895a-bc5988955faf-64da9c6b9583ae0c64fd780c2d9ccea8959252e57cd608441c257ca98dc27dcf",
+              "includeContent": true,
+              "version": 1
+            }
+          },
+          "response": {
+            "type": "data.get",
+            "id": "d1e3a8e4-6c21-581d-a8de-2d7ad8a9e028",
+            "payload": {
+              "data": {
+                "id": "4e4312f5-4ec3-5f4f-8676-2f7d3b310e2b",
+                "name": "dependencies-v1-report-5cf8c626-cae8-54a4-895a-bc5988955faf-64da9c6b9583ae0c64fd780c2d9ccea8959252e57cd608441c257ca98dc27dcf",
+                "modelId": "f5fa45d6-6307-48b6-a094-9aae8f79febc",
+                "modelName": "orbit-gateway",
+                "modelType": "@nckrtl/orbit-gateway",
+                "version": 1,
+                "contentType": "application/json",
+                "lifetime": "infinite",
+                "garbageCollection": "infinite",
+                "streaming": false,
+                "tags": {
+                  "contract": "orbit.dependencies.v1",
+                  "kind": "report",
+                  "project_id": "20",
+                  "repository": "github.com/fixture/dependency-app",
+                  "source_ref": "refs/heads/main",
+                  "type": "resource",
+                  "specName": "dependencyReport",
+                  "modelName": "orbit-gateway"
+                },
+                "ownerDefinition": {
+                  "ownerType": "model-method",
+                  "ownerRef": "f5fa45d6-6307-48b6-a094-9aae8f79febc"
+                },
+                "createdAt": "2026-10-28T00:10:00Z",
+                "size": 1232,
+                "checksum": "7fd051e92bfcf9ba5d4208a5f9577208735b906910a57b53d2f4b70f08252095",
+                "contentPath": ".swamp/data/@nckrtl/orbit-gateway/f5fa45d6-6307-48b6-a094-9aae8f79febc/dependencies-v1-report-5cf8c626-cae8-54a4-895a-bc5988955faf-64da9c6b9583ae0c64fd780c2d9ccea8959252e57cd608441c257ca98dc27dcf/1/raw",
+                "content": "{\"schema_version\":1,\"publication_id\":\"5cf8c626-cae8-54a4-895a-bc5988955faf\",\"published_at\":\"2026-10-28T00:10:00Z\",\"project_id\":20,\"repository\":\"github.com/fixture/dependency-app\",\"source_commit\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"path\":\".\",\"ecosystem\":\"composer\",\"package_manager\":\"composer\",\"observed_at\":\"2026-10-28T00:00:00Z\",\"run_id\":\"31dc1fe1-67d8-574d-86dc-88bd9e0b6fb8\",\"basis\":\"locked\",\"observed_on\":\"repository\",\"instance_id\":null,\"packages\":[{\"id\":\"example/library@1.0.0\",\"name\":\"example/library\",\"version\":\"1.0.0\",\"direct\":true,\"scopes\":[\"regular\",\"development\"],\"origin\":\"registry\"},{\"id\":\"fixture/transitive@3.0.0\",\"name\":\"fixture/transitive\",\"version\":\"3.0.0\",\"direct\":false,\"scopes\":[\"development\"],\"origin\":\"registry\"},{\"id\":\"fixture/local@dev-main\",\"name\":\"fixture/local\",\"version\":\"dev-main\",\"direct\":true,\"scopes\":[\"regular\"],\"origin\":\"path\"}],\"findings\":[{\"id\":\"finding-example-advisory\",\"package\":\"example/library\",\"kind\":\"advisory\",\"current_versions\":[\"1.0.0\"],\"target_version\":\"1.0.1\",\"advisory_ids\":[\"GHSA-2345-6789-cfgh\"],\"state\":\"in_batch\",\"reason\":{\"code\":\"batch_admitted\",\"text\":\"Included in the whole-project batch.\"},\"links\":{\"group_id\":2195,\"run_id\":\"e503d945-8f3c-5b35-8d80-925aa0d8b61d\"}}]}",
+                "contentEncoding": "utf-8"
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "inventory": "current",
+        "admission": "in_batch",
+        "pr": "open"
+      }
+    },
+    {
+      "index": {
+        "request": {
+          "type": "data.get",
+          "id": "8c59c9f4-de61-5b7c-9491-40dc4062a021",
+          "payload": {
+            "modelIdOrName": "orbit-gateway",
+            "dataName": "dependencies-v1-project-20-f921bd05e68b03740c450e565e0e6173e546193170b2dd404ddb6f153e9b5bf3",
+            "includeContent": true
+          }
+        },
+        "response": {
+          "type": "data.get",
+          "id": "8c59c9f4-de61-5b7c-9491-40dc4062a021",
+          "payload": {
+            "data": {
+              "id": "2504df58-b2ee-5e35-bf52-2909bd045150",
+              "name": "dependencies-v1-project-20-f921bd05e68b03740c450e565e0e6173e546193170b2dd404ddb6f153e9b5bf3",
+              "modelId": "f5fa45d6-6307-48b6-a094-9aae8f79febc",
+              "modelName": "orbit-gateway",
+              "modelType": "@nckrtl/orbit-gateway",
+              "version": 5,
+              "contentType": "application/json",
+              "lifetime": "infinite",
+              "garbageCollection": "infinite",
+              "streaming": false,
+              "tags": {
+                "contract": "orbit.dependencies.v1",
+                "kind": "index",
+                "project_id": "20",
+                "repository": "github.com/fixture/dependency-app",
+                "source_ref": "refs/heads/main",
+                "type": "resource",
+                "specName": "dependencyIndex",
+                "modelName": "orbit-gateway"
+              },
+              "ownerDefinition": {
+                "ownerType": "model-method",
+                "ownerRef": "f5fa45d6-6307-48b6-a094-9aae8f79febc"
+              },
+              "createdAt": "2026-10-28T00:11:00Z",
+              "size": 1501,
+              "checksum": "dd69c84a4025d25d2c0bf3c40c6ecb294c3903fce960956ebd39a25743ff9fee",
+              "contentPath": ".swamp/data/@nckrtl/orbit-gateway/f5fa45d6-6307-48b6-a094-9aae8f79febc/dependencies-v1-project-20-f921bd05e68b03740c450e565e0e6173e546193170b2dd404ddb6f153e9b5bf3/5/raw",
+              "content": "{\"schema_version\":1,\"publication_id\":\"32b6255e-bf63-5f4a-af30-5758555d41b3\",\"project_id\":20,\"repository\":\"github.com/fixture/dependency-app\",\"source_ref\":\"refs/heads/main\",\"source_commit\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"generated_at\":\"2026-10-28T00:11:00Z\",\"last_attempt\":{\"run_id\":\"31dc1fe1-67d8-574d-86dc-88bd9e0b6fb8\",\"started_at\":\"2026-10-28T00:00:00Z\",\"finished_at\":\"2026-10-28T00:00:00Z\",\"status\":\"succeeded\",\"error_code\":null},\"sources\":[{\"path\":\".\",\"ecosystem\":\"composer\",\"package_manager\":\"composer\",\"last_attempt\":{\"run_id\":\"31dc1fe1-67d8-574d-86dc-88bd9e0b6fb8\",\"started_at\":\"2026-10-28T00:00:00Z\",\"finished_at\":\"2026-10-28T00:00:00Z\",\"status\":\"succeeded\",\"error_code\":null},\"report\":{\"modelIdOrName\":\"orbit-gateway\",\"dataName\":\"dependencies-v1-report-5cf8c626-cae8-54a4-895a-bc5988955faf-64da9c6b9583ae0c64fd780c2d9ccea8959252e57cd608441c257ca98dc27dcf\",\"version\":1,\"source_commit\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"observed_at\":\"2026-10-28T00:00:00Z\",\"publication_id\":\"5cf8c626-cae8-54a4-895a-bc5988955faf\",\"path\":\".\",\"ecosystem\":\"composer\",\"package_manager\":\"composer\"}}],\"batch_pr\":{\"status\":\"unknown\",\"checked_at\":\"2026-10-28T00:11:00Z\",\"last_success_at\":\"2026-10-28T00:10:00Z\",\"error_code\":\"lookup_unavailable\",\"value\":{\"repository\":\"github.com/fixture/dependency-app\",\"number\":17,\"url\":\"https://github.com/fixture/dependency-app/pull/17\",\"head_commit\":\"cccccccccccccccccccccccccccccccccccccccc\",\"group_id\":2195,\"run_id\":\"e503d945-8f3c-5b35-8d80-925aa0d8b61d\"}}}",
+              "contentEncoding": "utf-8"
+            }
+          }
+        }
+      },
+      "reports": [
+        {
+          "request": {
+            "type": "data.get",
+            "id": "d1e3a8e4-6c21-581d-a8de-2d7ad8a9e028",
+            "payload": {
+              "modelIdOrName": "orbit-gateway",
+              "dataName": "dependencies-v1-report-5cf8c626-cae8-54a4-895a-bc5988955faf-64da9c6b9583ae0c64fd780c2d9ccea8959252e57cd608441c257ca98dc27dcf",
+              "includeContent": true,
+              "version": 1
+            }
+          },
+          "response": {
+            "type": "data.get",
+            "id": "d1e3a8e4-6c21-581d-a8de-2d7ad8a9e028",
+            "payload": {
+              "data": {
+                "id": "4e4312f5-4ec3-5f4f-8676-2f7d3b310e2b",
+                "name": "dependencies-v1-report-5cf8c626-cae8-54a4-895a-bc5988955faf-64da9c6b9583ae0c64fd780c2d9ccea8959252e57cd608441c257ca98dc27dcf",
+                "modelId": "f5fa45d6-6307-48b6-a094-9aae8f79febc",
+                "modelName": "orbit-gateway",
+                "modelType": "@nckrtl/orbit-gateway",
+                "version": 1,
+                "contentType": "application/json",
+                "lifetime": "infinite",
+                "garbageCollection": "infinite",
+                "streaming": false,
+                "tags": {
+                  "contract": "orbit.dependencies.v1",
+                  "kind": "report",
+                  "project_id": "20",
+                  "repository": "github.com/fixture/dependency-app",
+                  "source_ref": "refs/heads/main",
+                  "type": "resource",
+                  "specName": "dependencyReport",
+                  "modelName": "orbit-gateway"
+                },
+                "ownerDefinition": {
+                  "ownerType": "model-method",
+                  "ownerRef": "f5fa45d6-6307-48b6-a094-9aae8f79febc"
+                },
+                "createdAt": "2026-10-28T00:10:00Z",
+                "size": 1232,
+                "checksum": "7fd051e92bfcf9ba5d4208a5f9577208735b906910a57b53d2f4b70f08252095",
+                "contentPath": ".swamp/data/@nckrtl/orbit-gateway/f5fa45d6-6307-48b6-a094-9aae8f79febc/dependencies-v1-report-5cf8c626-cae8-54a4-895a-bc5988955faf-64da9c6b9583ae0c64fd780c2d9ccea8959252e57cd608441c257ca98dc27dcf/1/raw",
+                "content": "{\"schema_version\":1,\"publication_id\":\"5cf8c626-cae8-54a4-895a-bc5988955faf\",\"published_at\":\"2026-10-28T00:10:00Z\",\"project_id\":20,\"repository\":\"github.com/fixture/dependency-app\",\"source_commit\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"path\":\".\",\"ecosystem\":\"composer\",\"package_manager\":\"composer\",\"observed_at\":\"2026-10-28T00:00:00Z\",\"run_id\":\"31dc1fe1-67d8-574d-86dc-88bd9e0b6fb8\",\"basis\":\"locked\",\"observed_on\":\"repository\",\"instance_id\":null,\"packages\":[{\"id\":\"example/library@1.0.0\",\"name\":\"example/library\",\"version\":\"1.0.0\",\"direct\":true,\"scopes\":[\"regular\",\"development\"],\"origin\":\"registry\"},{\"id\":\"fixture/transitive@3.0.0\",\"name\":\"fixture/transitive\",\"version\":\"3.0.0\",\"direct\":false,\"scopes\":[\"development\"],\"origin\":\"registry\"},{\"id\":\"fixture/local@dev-main\",\"name\":\"fixture/local\",\"version\":\"dev-main\",\"direct\":true,\"scopes\":[\"regular\"],\"origin\":\"path\"}],\"findings\":[{\"id\":\"finding-example-advisory\",\"package\":\"example/library\",\"kind\":\"advisory\",\"current_versions\":[\"1.0.0\"],\"target_version\":\"1.0.1\",\"advisory_ids\":[\"GHSA-2345-6789-cfgh\"],\"state\":\"in_batch\",\"reason\":{\"code\":\"batch_admitted\",\"text\":\"Included in the whole-project batch.\"},\"links\":{\"group_id\":2195,\"run_id\":\"e503d945-8f3c-5b35-8d80-925aa0d8b61d\"}}]}",
+                "contentEncoding": "utf-8"
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "inventory": "current",
+        "admission": "in_batch",
+        "pr": "unknown"
+      }
+    }
+  ]
+}
