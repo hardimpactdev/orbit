@@ -39,7 +39,7 @@ return (static function (): array {
             $runs[] = ['transport' => 'agent', 'name' => 'process.control', 'input_fields' => [...$artifact, 'on_demand'], 'input_values' => ['operation' => 'stop']];
         }
         foreach ($runs as &$run) {
-            $run['resumable'] = ! ($run['name'] === 'process.control' && ($run['input_values']['operation'] ?? null) === 'restart');
+            $run['resumable'] = ! ($run['name'] === 'process.control' && $run['input_values']['operation'] === 'restart');
         }
         unset($run);
         $proof = static function (string $variant) use ($verb): array {
