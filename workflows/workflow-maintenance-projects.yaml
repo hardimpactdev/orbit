@@ -11,3 +11,10 @@ jobs:
           type: behavior
           behavior: orbit-gateway
           methodName: project_work
+      - name: dependency-prs
+        dependsOn: [{ step: work, condition: { type: succeeded } }]
+        task:
+          type: model_method
+          modelType: "@nckrtl/dependency-scanner"
+          modelName: dependency-pr-reader
+          methodName: refresh

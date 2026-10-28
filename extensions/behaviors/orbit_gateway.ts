@@ -6,10 +6,10 @@ import { cleanedCancelledGroup, ensureProjectGroup, batchReceipt, FindingsSchema
 import { runMaintenance, reconcileWorkers, workerControl, type MaintenanceContext } from "./_lib/swamp_maintenance.ts";
 import { ensureWorker, revokeEndedWorker } from "./_lib/maintenance_worker.ts";
 import { projectConfigurations, ProjectExtensionsSchema } from "./_lib/project_config.ts";
-import { assertProjectSettings, DependencyProjectsSchema } from "./_lib/dependency_projects.ts";
+import { assertProjectSettings, DependencyProjectSchema, DependencyProjectsSchema } from "./_lib/dependency_projects.ts";
 import { admitPackage, assertPreviousPackages, PackageTargetSchema, type PackageTarget } from "./_lib/package_target.ts";
-import { indexName, reportName, IndexSchema, ReportSchema, type Index } from "./_lib/dependency_results_schema.ts";
-import { assertCurrentPlan, reconcileDependencyIndex } from "./_lib/service_detection.ts";
+import { indexName, reportName, IndexSchema, ReportSchema } from "./_lib/dependency_results_schema.ts";
+import { assertCurrentPlan, reconcileDependencyIndex, BatchEvidenceSchema } from "./_lib/service_detection.ts";
 // @nckrtl/orbit-gateway — the stage work of the orbit-groups factory.
 // `stage` ensures one Gateway task operation per driver key and never waits:
 // see _lib/gateway_stage.ts. The Gateway authenticates this Node by its
@@ -85,9 +85,10 @@ export function curlHttp(g: Pick<GlobalArgs, "gatewayUrl" | "caFile" | "timeoutS
 
 export const behavior = {
   type: "@nckrtl/orbit-gateway",
-  version: "2026.10.28.3",
+  version: "2026.10.28.5",
   globalArguments: GlobalArgsSchema,
   resources: {
+    dependencyRefreshInput:{description:"Bounded credential-free PR refresh configuration",schema:z.object({runId:z.string(),rows:z.array(z.object({project:DependencyProjectSchema,index:IndexSchema})),http:z.object({gatewayUrl:z.string(),caFile:z.string(),timeoutSeconds:z.number()})}),lifetime:"infinite",garbageCollection:2},
     dependencyScanInput: {description:"Scan configuration handoff",schema:z.object({runId:z.string(),project:DependencyProjectsSchema.element,http:z.object({gatewayUrl:z.string(),caFile:z.string(),timeoutSeconds:z.number()})}),lifetime:"infinite",garbageCollection:1},
     // Index history is seven days; reports are pruned only by retained-index reachability.
     dependencyIndex: { description: "orbit.dependencies.v1 Project/ref publication", schema: IndexSchema, lifetime: "infinite", garbageCollection: Number.MAX_SAFE_INTEGER },
@@ -143,6 +144,29 @@ export const behavior = {
     },
   },
   methods: {
+    prepare_dependency_refresh: {
+      description:"Select due PR observations without holding the model lock during network access",
+      arguments:z.object({runId:z.string()}),
+      execute:async(args:{runId:string},context:StageContext)=>{
+        const indexes=(await context.queryData('modelName == "orbit-gateway" && name.startsWith("dependencies-v1-project-")',"attributes")).map(i=>IndexSchema.parse(i))
+          .filter(i=>Date.now()-Date.parse(i.batch_pr.checked_at)>=180000).sort((a,b)=>a.batch_pr.checked_at.localeCompare(b.batch_pr.checked_at)).slice(0,6);
+        const rows=[];
+        for(const index of indexes){const project=(await projectConfigurations(context.globalArgs.dependencyProjects,context.globalArgs.projectExtensions,context,index.project_id))[0];if(project?.worker)rows.push({project,index});}
+        const {gatewayUrl,caFile}=context.globalArgs;
+        return {dataHandles:[await context.writeResource("dependencyRefreshInput","dependency-refresh-input",{runId:args.runId,rows,http:{gatewayUrl,caFile,timeoutSeconds:5}})]};
+      },
+    },
+    publish_dependency_refresh: {
+      description:"Publish credential-free evidence only if its index publication is still current",
+      arguments:z.object({projectId:z.number().int().positive(),expectedPublicationId:z.string(),evidence:BatchEvidenceSchema}),
+      execute:async(args:{projectId:number;expectedPublicationId:string;evidence:z.infer<typeof BatchEvidenceSchema>},context:StageContext)=>{
+        const indexes=(await context.queryData(`modelName == "orbit-gateway" && name.startsWith("dependencies-v1-project-${args.projectId}-")`,"attributes")).map(i=>IndexSchema.parse(i));
+        const index=indexes.find(i=>i.publication_id===args.expectedPublicationId);
+        if(!index)return {dataHandles:[]};
+        await reconcileDependencyIndex(index,context,args.evidence);
+        return {dataHandles:[]};
+      },
+    },
     prune_dependency_results: {
       description: "Prune seven-day dependency history while preserving referenced exact reports",
       arguments:z.object({}),
@@ -748,23 +772,12 @@ async function projectWork(context: StageContext) {
     )).map((r) => SchedulerIssueSchema.parse(r)).filter((r) =>
       r.status === "open"
     );
-  // Refresh at most six indexes per minute: all 19 PR observations fit inside five minutes.
-  // Missing/failed authoritative lookups become unknown and keep last-success evidence.
-  const indexes = (await context.queryData(`modelName == ${JSON.stringify(context.definition.name)} && name.startsWith("dependencies-v1-project-")`, "attributes")).map((i) => IndexSchema.parse(i));
-  const refreshOffset = indexes.length ? (previous?.nextPendingOffset ?? 0) % indexes.length : 0;
-  const refresh = [...indexes.slice(refreshOffset), ...indexes.slice(0, refreshOffset)].slice(0, 6);
-  for (const index of refresh) {
-    await isolateScheduleRow(context, { key: `dependencies-${index.project_id}`, projectId: index.project_id }, "finding", async () => {
-      const project = (await projectConfigurations(context.globalArgs.dependencyProjects, context.globalArgs.projectExtensions, context, index.project_id))[0];
-      await reconcileDependencyIndex(project, index, context, curlHttp({...context.globalArgs,timeoutSeconds:5}));
-    });
-  }
   const handle = await context.writeResource("projectWork", "project-work", {
     ...work,
     issues,
     nextOffset: active.length ? (offset + batch.length) % active.length : 0,
     nextQueueOffset: 0,
-    nextPendingOffset: indexes.length ? (refreshOffset + refresh.length) % indexes.length : 0,
+    nextPendingOffset: 0,
   });
   return { dataHandles: [handle] };
 }

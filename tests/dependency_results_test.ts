@@ -686,10 +686,18 @@ Deno.test("minute reconciliation ends an interrupted running attempt and preserv
     runModel: () => Promise.resolve({ ok: true }),
   };
   await reconcileDependencyIndex(
-    project,
     stale,
     ctx,
-    () => Promise.resolve({ status: 200, body: { data: [] } }),
+    {
+      pr: {
+        status: "absent",
+        checked_at: time,
+        last_success_at: time,
+        error_code: null,
+        value: null,
+      },
+      links: [],
+    },
   );
   assertEquals(saved.last_attempt.status, "failed");
   assertEquals(saved.last_attempt.error_code, "scan_interrupted");

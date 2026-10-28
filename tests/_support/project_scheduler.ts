@@ -22,7 +22,7 @@ export const reports = JSON.parse(
   ),
 );
 
-export function fixture() {
+export function fixture(token?: Record<string, unknown>) {
   const data = new Map<string, unknown>();
   const groups = new Map<number, Record<string, unknown>>();
   let posts = 0;
@@ -36,6 +36,9 @@ export function fixture() {
       const url = new URL(req.url);
       const json = (value: unknown, status = 200) =>
         Response.json({ data: value }, { status });
+      if (url.pathname === "/api/v1/projects/20/dependency-read-token") {
+        return json(token ?? null, token ? 200 : 403);
+      }
       if (url.pathname === "/api/v1/projects/20") {
         return json({
           id: 20,

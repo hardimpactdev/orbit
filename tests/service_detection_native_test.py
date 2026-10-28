@@ -42,6 +42,9 @@ class ServiceDetectionNativeTest(unittest.TestCase):
             bins.mkdir()
             trace = root / "commands.jsonl"
             hold = root / "hold-scanner"
+            leak_git = root / "leak-git"
+            hold_token, token_entered, release_token = threading.Event(), threading.Event(), threading.Event()
+            token_requests = []
             for manager in ["composer", "npm"]:
                 script = bins / manager
                 script.write_text("#!/usr/bin/env python3\nimport json,pathlib,sys,os,time\n"
@@ -68,6 +71,13 @@ else:sys.exit(64)
             work = root / "source"
             work.mkdir()
             (home / ".gitconfig").write_text(f'[url "file://{work}"]\n\tinsteadOf = https://github.com/fixture/dependency-app.git\n')
+            real_git = shutil.which("git")
+            git_shim = bins / "git"
+            git_shim.write_text("#!/usr/bin/env python3\nimport os,sys,pathlib\nargs=sys.argv[1:]\n"
+                               + f"if 'clone' in args and pathlib.Path({str(leak_git)!r}).exists(): print('fatal: authentication failed fixture_ephemeral',file=sys.stderr);sys.exit(1)\n"
+                               + f"args=[{str(work)!r} if a=='https://github.com/fixture/dependency-app.git' else a for a in args]\n"
+                               + f"os.execv({real_git!r},['git','-c','protocol.file.allow=always',*args])\n")
+            git_shim.chmod(0o755)
             (work / "composer.json").write_text(json.dumps({"require": {"fixture/pkg": "^1.0.0"}}))
             (work / "composer.lock").write_text(json.dumps({"packages": [{"name": "fixture/pkg", "version": "1.0.0"}], "packages-dev": []}))
             (work / "package.json").write_text(json.dumps({"name": "app", "devDependencies": {"vite-plus": "*"}}))
@@ -122,15 +132,33 @@ else:sys.exit(64)
                     self.wfile.write(json.dumps({"data": data}).encode())
 
                 def do_POST(self):
-                    writes.append(self.path)
-                    self.send_error(500)
+                    if self.path == "/api/v1/projects/20/dependency-read-token":
+                        token_requests.append(time.monotonic())
+                        token_entered.set()
+                        if hold_token.is_set(): release_token.wait(10)
+                        self.send_response(200)
+                        self.send_header("Content-Type", "application/json")
+                        self.end_headers()
+                        import datetime
+                        expires = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+                        self.wfile.write(json.dumps({"data": {"project_id":20,"repository":"github.com/fixture/dependency-app","clone_url":project["repository"],"token":"fixture_ephemeral","expires_at":expires}}).encode())
+                    else:
+                        writes.append(self.path)
+                        self.send_error(500)
 
             gateway = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Gateway)
             threading.Thread(target=gateway.serve_forever, daemon=True).start()
             created = json.loads(execute("swamp", "behavior", "create", "@nckrtl/orbit-gateway", "orbit-gateway", "--json"))
             Path(created["path"]).write_text(json.dumps({"id": created["id"], "type": "@nckrtl/orbit-gateway", "typeVersion": created["version"], "name": "orbit-gateway", "version": 1,
                 "globalArguments": {"gatewayUrl": f"http://127.0.0.1:{gateway.server_port}", "caFile": "/dev/null", "dependencyProjects": [project]}}))
+            shutil.copytree(REPO / "models/@nckrtl/dependency-scanner", root / "models/@nckrtl/dependency-scanner")
             (root / "workflows").mkdir()
+            shutil.copyfile(REPO / "workflows/workflow-maintenance-projects.yaml", root / "workflows/workflow-maintenance-projects.yaml")
+            execute("swamp", "workflow", "validate", "maintenance-projects", "--json")
+            execute("swamp", "behavior", "validate", "dependency-scanner", "--json")
+            execute("swamp", "behavior", "validate", "dependency-pr-reader", "--json")
+            minute_workflow=root / "workflows/workflow-maintenance-projects.yaml"
+            minute_workflow.write_text(minute_workflow.read_text().replace("trigger:\n  schedule: '40 * * * * *'\n", ""))
             shutil.copyfile(REPO / "workflows/workflow-project-nckrtl-com-detect.yaml", root / "workflows/workflow-detect.yaml")
             # This isolated repo has no schedule trigger: the test starts exactly its named workflow.
             workflow = root / "workflows/workflow-detect.yaml"
@@ -152,8 +180,8 @@ else:sys.exit(64)
                     else:
                         self.fail("isolated serve did not start")
 
-                    def rpc(name, version=None):
-                        payload = {"modelIdOrName": "orbit-gateway", "dataName": name, "includeContent": True}
+                    def rpc(name, version=None, model="orbit-gateway"):
+                        payload = {"modelIdOrName": model, "dataName": name, "includeContent": True}
                         if version is not None:
                             payload["version"] = version
                         frame = json.loads(execute("deno", "eval", RPC, url, json.dumps({"id": "native-read", "type": "data.get", "payload": payload})))
@@ -162,6 +190,7 @@ else:sys.exit(64)
                     def run():
                         result = json.loads(execute("swamp", "workflow", "run", "@nckrtl/project-nckrtl-com/detect", "--server", url, "--json"))
                         self.assertEqual(result["status"], "succeeded")
+                        return result
 
                     name = "dependencies-v1-project-20-" + hashlib.sha256(b"refs/heads/main").hexdigest()
                     # Concurrent scan fires serialize on the scanner lock, not orbit-gateway.
@@ -218,6 +247,44 @@ else:sys.exit(64)
                     self.assertEqual(failed["last_attempt"]["status"], "failed")
                     self.assertEqual(failed["sources"][0]["report"], old)
                     self.assertEqual(rpc(old["dataName"], old["version"]), report_frame)
+                    leak_git.touch()
+                    run_output = run()
+                    failed = json.loads(rpc(name)["payload"]["data"]["content"])
+                    self.assertEqual(failed["sources"][0]["last_attempt"]["error_code"], "source_acquisition_failed")
+                    diagnostics = json.loads(rpc("scan-diagnostics",model="dependency-scanner")["payload"]["data"]["content"])
+                    self.assertEqual(diagnostics["project_id"],20)
+                    self.assertEqual(diagnostics["run_id"],failed["last_attempt"]["run_id"])
+                    self.assertIn({"stage":"git","code":"git_auth_failed","exit_status":1},diagnostics["failures"])
+                    for evidence in [failed,diagnostics,run_output,json.loads(rpc(old["dataName"],old["version"])["payload"]["data"]["content"])]:
+                        self.assertNotIn("fixture_ephemeral",json.dumps(evidence))
+                    self.assertNotIn("fixture_ephemeral",(root / "serve.log").read_text())
+                    # A minute reader blocked on its token must neither hold orbit-gateway
+                    # nor accumulate new cron fires. Only this isolated fixture uses 1-second cron.
+                    due = dict(failed)
+                    due["batch_pr"] = dict(failed["batch_pr"], checked_at="2020-01-01T00:00:00Z", last_success_at="2020-01-01T00:00:00Z")
+                    execute("swamp", "behavior", "run", "orbit-gateway", "publish_dependency",
+                            "--input", "projectId=20", "--input", "runId=" + failed["last_attempt"]["run_id"],
+                            "--input", "spec=dependencyIndex", "--input", "name=" + name,
+                            "--input", "value=" + json.dumps(due), "--server", url, "--json")
+                    token_entered.clear()
+                    before_tokens = len(token_requests)
+                    hold_token.set()
+                    try:
+                        execute("swamp", "workflow", "trigger", "set", "maintenance-projects", "--schedule", "* * * * * *", "--server", url, "--json")
+                        self.assertTrue(token_entered.wait(10), "minute workflow must resolve its shipped reader and request a token")
+                        time.sleep(2.1)
+                        with urllib.request.urlopen(f"http://127.0.0.1:{port}/health",timeout=2) as response:
+                            health = json.load(response)
+                        scheduled = next(item for item in health["scheduling"]["schedules"] if item["workflowName"] == "maintenance-projects")
+                        self.assertEqual(scheduled["queued"],0,"cron fires must skip the running token reader, not pile up")
+                        self.assertEqual(len(token_requests)-before_tokens,1)
+                        started=time.monotonic()
+                        execute("swamp","behavior","run","orbit-gateway","project_work","--server",url,"--json")
+                        self.assertLess(time.monotonic()-started,5,"token wait must not hold the orchestration lock")
+                        execute("swamp","workflow","schedule","pause","maintenance-projects","--reason","fixture complete","--server",url,"--json")
+                    finally:
+                        release_token.set()
+                        hold_token.clear()
                     self.assertEqual(writes, [])
                     self.assertFalse(smudge.exists(),"Git must not execute repository-selected checkout filters")
                     calls = [json.loads(line) for line in trace.read_text().splitlines()]

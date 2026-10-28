@@ -4,7 +4,7 @@ Phase 4f producer implementation. Swamp owns dependency scanning, policy, target
 and updates. Orbit reads dependency state and supplies the existing task
 operations. The producer contract below answers Orbit draft ADR 0239 (originally 0238),
 `orbit.dependencies.v1`. This branch implements the producer; these
-resources are not deployed yet.
+resources are deployed; the Gateway reader cutover waits for a successful live producer proof.
 
 The canonical wire fixtures and pinned field definitions are in
 [`tests/fixtures/dependency-results-v1/README.md`](../tests/fixtures/dependency-results-v1/README.md).
@@ -20,9 +20,7 @@ enrolls no worker.
 
 Use a bounded Git CLI clone with hooks and checkout disabled to obtain a disposable checkout and pin
 the scan to one default-branch SHA. A checkout preserves workspace and
-local-package relationships that individual GitHub file reads could miss. Use
-Services-side repository read access; credentials do not belong in project
-config or results.
+local-package relationships that individual GitHub file reads could miss. Use [short-lived Gateway-issued read tokens](service-dependency-tokens.md) for Git and gh only; credentials never enter project config, package-tool environments or results. There is no standing GitHub credential on Services.
 
 The shared Composer and JS extensions read manifests and lockfiles at the
 configured paths, including `mobile/`. Lockfile inventory contains the resolved

@@ -1,0 +1,8 @@
+type: '@nckrtl/dependency-scanner'
+typeVersion: 2026.10.28.5
+id: 97878793-4155-4f74-b5de-641952ee355d
+name: dependency-pr-reader
+version: 1
+tags: {}
+globalArguments: {}
+methods: {}

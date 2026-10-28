@@ -59,6 +59,15 @@ Deno.test("Services scratch excludes repo config/code and overrides npm env and 
           npm_config_registry: "http://10.44.0.1",
           HOME: f.root,
         });
+        for (const binary of ["npm", "bun", "composer"]) {
+          const env = toolOptions(binary, [], {
+            GH_TOKEN: "ephemeral_sentinel",
+            ORBIT_GIT_TOKEN: "ephemeral_sentinel",
+            GIT_ASKPASS: "helper",
+          }).env;
+          assert(!JSON.stringify(env).includes("ephemeral_sentinel"));
+          assert(!("GIT_ASKPASS" in env));
+        }
         assertEquals(opts.env.npm_config_git, "git");
         assertEquals(
           opts.env.npm_config_registry,
@@ -247,7 +256,14 @@ for (const url of ["https://10.44.0.1/x.tgz", "a/../../../../home/x.tgz"]) {
   });
 }
 
-Deno.test("gh uses account config outside tool HOME; missing credentials yield unknown with last good PR", async () => {
+const tokenFixture = {
+  project_id: 20,
+  repository: "github.com/nckrtl/website",
+  clone_url: "https://github.com/nckrtl/website.git",
+  token: "ephemeral_sentinel",
+  expires_at: new Date(Date.now() + 3600000).toISOString(),
+};
+Deno.test("gh uses only a scan token outside tool HOME; missing tokens retain last good PR", async () => {
   const root = await Deno.makeTempDir({ prefix: "gh-account-" });
   const saved = Object.fromEntries(
     [
@@ -272,12 +288,12 @@ Deno.test("gh uses account config outside tool HOME; missing credentials yield u
       `${root}/gh`,
       `#!/usr/bin/env python3
 import json,os,pathlib,sys
-assert os.environ['GH_CONFIG_DIR'] == str(pathlib.Path(os.environ['HOME']) / '.config/gh')
+assert os.environ['GH_CONFIG_DIR'] == os.environ['HOME']
 assert os.environ['GH_PROMPT_DISABLED'] == '1'
-assert 'GH_TOKEN' not in os.environ
+assert os.environ['GH_TOKEN'] == 'ephemeral_sentinel'
 assert 'GITHUB_TOKEN' not in os.environ
 assert os.environ['HOME'] != ${JSON.stringify(scratch.policy.home)}
-if not (pathlib.Path(os.environ['GH_CONFIG_DIR']) / 'hosts.yml').is_file(): sys.exit(4)
+assert not (pathlib.Path(os.environ['GH_CONFIG_DIR']) / 'hosts.yml').exists()
 print(json.dumps({'url':sys.argv[3],'number':17,'headRefOid':'a'*40,'state':'OPEN'}))
 `,
     );
@@ -315,24 +331,45 @@ print(json.dumps({'url':sys.argv[3],'number':17,'headRefOid':'a'*40,'state':'OPE
           }],
         },
       });
-    const good = await batchEvidence(WEBSITE_PROJECT, null, ctx, http);
+    const good = await batchEvidence(
+      WEBSITE_PROJECT,
+      null,
+      ctx,
+      http,
+      (url) => githubPr(url, tokenFixture),
+    );
     assertEquals(good.pr.status, "open");
     await Deno.remove(`${config}/hosts.yml`);
-    await assertRejects(() => githubPr(url), Error, "github_lookup_failed");
-    const missing = await batchEvidence(WEBSITE_PROJECT, good.pr, ctx, http);
+    await assertRejects(
+      () => githubPr(url, { ...tokenFixture, token: "" }),
+      Error,
+      "token_missing",
+    );
+    const missing = await batchEvidence(
+      WEBSITE_PROJECT,
+      good.pr,
+      ctx,
+      http,
+      (url) => githubPr(url, { ...tokenFixture, token: "" }),
+    );
     assertEquals(missing.pr.status, "unknown");
-    assertEquals(missing.pr.error_code, "batch_pr_lookup_failed");
+    assertEquals(missing.pr.error_code, "token_missing");
     assertEquals(missing.pr.last_success_at, good.pr.last_success_at);
     assertEquals(missing.pr.value, good.pr.value);
     // Exercise installed gh too: an empty config cannot authenticate even if
     // the parent holds tokens. gh refuses this before making a network request.
     Deno.env.set("PATH", saved.PATH!);
-    await assertRejects(() => githubPr(url), Error, "github_lookup_failed");
+    await assertRejects(
+      () => githubPr(url, { ...tokenFixture, token: "" }),
+      Error,
+      "token_missing",
+    );
     const realMissing = await batchEvidence(
       WEBSITE_PROJECT,
       good.pr,
       ctx,
       http,
+      (url) => githubPr(url, { ...tokenFixture, token: "" }),
     );
     assertEquals(realMissing.pr.status, "unknown");
     assertEquals(realMissing.pr.last_success_at, good.pr.last_success_at);
@@ -645,11 +682,20 @@ Deno.test("hung gh is bounded and cancellation aborts before spawning", async ()
     Deno.env.set("PATH", `${root}:${old}`);
     const start = Date.now();
     await assertRejects(() =>
-      githubPr("https://github.com/fixture/app/pull/1", undefined, 50)
+      githubPr(
+        "https://github.com/nckrtl/website/pull/1",
+        tokenFixture,
+        undefined,
+        50,
+      )
     );
     assert(Date.now() - start < 2000);
     await assertRejects(() =>
-      githubPr("https://github.com/fixture/app/pull/1", AbortSignal.abort())
+      githubPr(
+        "https://github.com/nckrtl/website/pull/1",
+        tokenFixture,
+        AbortSignal.abort(),
+      )
     );
   } finally {
     Deno.env.set("PATH", old);

@@ -1,3 +1,4 @@
+import { z } from "npm:zod@4";
 import { behavior as composer } from "../composer-maintenance/mod.ts";
 import { behavior as js } from "../js-maintenance/mod.ts";
 import {
@@ -34,7 +35,13 @@ import { type Context } from "./maintenance/context.ts";
 import { type Findings } from "./project_schedule.ts";
 import { aliases, lock, workspace } from "../js-maintenance/_lib/workspace.ts";
 import { scanPnpm } from "../js-maintenance/_lib/locked.ts";
-import { join } from "node:path";
+import {
+  type Credential,
+  credentialCommand,
+  CredentialFailure,
+  dependencyCredential,
+  type Diagnostic,
+} from "./dependency_credentials.ts";
 
 export interface DependencyContext {
   definition: { name: string };
@@ -192,6 +199,7 @@ export async function serviceDetection(
   runId: string,
   ctx: DependencyContext,
   http: Http,
+  diagnostic: (value: Diagnostic) => void = () => {},
 ) {
   const signal = AbortSignal.any([
     ctx.signal ?? new AbortController().signal,
@@ -200,21 +208,41 @@ export async function serviceDetection(
   const store = resultStore(ctx);
   let tools: Awaited<ReturnType<typeof serviceWorkspace>> | null = null;
   let links: BatchLink[] = [];
+  let credential: Awaited<ReturnType<typeof dependencyCredential>> | undefined;
+  let tokenError: CredentialFailure | undefined;
+  let preflight: "settings" | "token" = "settings";
+  try {
+    await assertProjectSettings(project, http);
+    preflight = "token";
+    credential = await dependencyCredential(project, http, signal);
+  } catch (error) {
+    tokenError = error instanceof CredentialFailure
+      ? error
+      : new CredentialFailure({
+        stage: preflight,
+        code: preflight === "settings"
+          ? "project_settings_unavailable"
+          : "token_unavailable",
+        exit_status: null,
+      });
+    diagnostic(tokenError.diagnostic);
+  }
+  const observe = (error: unknown) => {
+    if (error instanceof CredentialFailure) diagnostic(error.diagnostic);
+  };
   return await scanProject(project, runId, {
     store,
     now: () => new Date().toISOString(),
     acquire: async () => {
-      await assertProjectSettings(project, http);
+      if (!credential) throw tokenError;
       const root = await Deno.makeTempDir({
         prefix: `dependency-source-${project.projectId}-`,
       });
       try {
-        const result = await command(
+        await credentialCommand(
           root,
           "git",
           [
-            "-c",
-            "core.hooksPath=/dev/null",
             "clone",
             "--no-checkout",
             "--depth",
@@ -222,14 +250,18 @@ export async function serviceDetection(
             "--branch",
             project.defaultBranch,
             "--",
-            project.repository,
+            credential.clone_url,
             root,
           ],
+          credential,
           signal,
-          { GIT_TERMINAL_PROMPT: "0" },
         );
-        if (result.code) throw new Error("source_acquisition_failed");
-        const tree = await command(root, "git", ["read-tree", "HEAD"], signal);
+        const tree = await command(
+          root,
+          "git",
+          ["read-tree", "HEAD"],
+          signal,
+        );
         if (tree.code) throw new Error("source_tree_unavailable");
         tools = await serviceWorkspace(root, signal);
         const resultHead = await command(
@@ -249,6 +281,7 @@ export async function serviceDetection(
           },
         };
       } catch (error) {
+        observe(error);
         if (tools) await tools.close();
         await Deno.remove(root, { recursive: true });
         throw error;
@@ -307,7 +340,15 @@ export async function serviceDetection(
         return plans;
       }),
     pr: async (p, previous) => {
-      const e = await batchEvidence(p, previous, { ...ctx, signal }, http);
+      if (!credential) return unknownPr(previous, tokenError!.message);
+      const e = await batchEvidence(
+        p,
+        previous,
+        { ...ctx, signal },
+        http,
+        (url) => githubPr(url, credential!, signal),
+        observe,
+      );
       links = e.links;
       return e.pr;
     },
@@ -319,9 +360,26 @@ export async function serviceDetection(
         value,
       );
     },
+  }).finally(() => {
+    credential = undefined;
   });
 }
 
+export const BatchEvidenceSchema = z.strictObject({
+  pr: PrSchema,
+  links: z.array(z.strictObject({
+    group_id: z.number().int().positive(),
+    run_id: z.string().min(1).max(256),
+    targets: z.array(
+      z.strictObject({
+        path: z.string(),
+        manager: z.string(),
+        package: z.string(),
+        version: z.string(),
+      }),
+    ).max(500),
+  })).max(100),
+});
 export type BatchLink = {
   group_id: number;
   run_id: string;
@@ -338,8 +396,15 @@ export async function batchEvidence(
   previous: Pr | null,
   ctx: DependencyContext,
   http: Http,
-  github: (url: string) => Promise<Record<string, unknown>> = (url) =>
-    githubPr(url, ctx.signal),
+  github: (url: string) => Promise<Record<string, unknown>> = () =>
+    Promise.reject(
+      new CredentialFailure({
+        stage: "gh",
+        code: "token_missing",
+        exit_status: null,
+      }),
+    ),
+  diagnostic: (error: unknown) => void = () => {},
 ): Promise<{ pr: Pr; links: BatchLink[] }> {
   const checked = new Date().toISOString(),
     repository = repositoryIdentity(project.repository),
@@ -443,38 +508,53 @@ export async function batchEvidence(
       }),
       links,
     };
-  } catch {
+  } catch (error) {
+    diagnostic(error);
     return {
       pr: PrSchema.parse({
         status: "unknown",
         checked_at: checked,
         last_success_at: previous?.last_success_at ?? null,
-        error_code: "batch_pr_lookup_failed",
+        error_code: error instanceof CredentialFailure
+          ? error.message
+          : "batch_pr_lookup_failed",
         value: previous?.value ?? null,
       }),
       links: [],
     };
   }
 }
+export function unknownPr(previous: Pr | null, code: string): Pr {
+  return PrSchema.parse({
+    status: "unknown",
+    checked_at: new Date().toISOString(),
+    last_success_at: previous?.last_success_at ?? null,
+    error_code: code,
+    value: previous?.value ?? null,
+  });
+}
+
 export async function githubPr(
   url: string,
+  credential: Credential,
   signal?: AbortSignal,
   timeoutMs = 3000,
 ) {
+  const prefix = `https://${credential.repository}/pull/`;
+  if (
+    !url.startsWith(prefix) || !/^[1-9][0-9]*$/.test(url.slice(prefix.length))
+  ) {
+    throw new CredentialFailure({
+      stage: "gh",
+      code: "token_invalid",
+      exit_status: null,
+    });
+  }
   const bounded = AbortSignal.any([
     signal ?? new AbortController().signal,
     AbortSignal.timeout(timeoutMs),
   ]);
-  bounded.throwIfAborted();
-  // This runs outside withServiceTools: use the service account's gh config,
-  // never the disposable package-tool HOME or a repository-controlled credential.
-  const home = Deno.env.get("HOME");
-  if (!home) throw new Error("github_credential_home_unavailable");
-  const config = join(
-    Deno.env.get("XDG_CONFIG_HOME") ?? join(home, ".config"),
-    "gh",
-  );
-  const out = await command(
+  const out = await credentialCommand(
     Deno.cwd(),
     "gh",
     [
@@ -484,18 +564,24 @@ export async function githubPr(
       "--json",
       "number,url,headRefOid,state",
     ],
+    credential,
     bounded,
-    { GH_CONFIG_DIR: config, GH_PROMPT_DISABLED: "1" },
   );
-  if (out.code) throw new Error("github_lookup_failed");
-  return JSON.parse(out.stdout);
+  try {
+    return JSON.parse(out) as Record<string, unknown>;
+  } catch {
+    throw new CredentialFailure({
+      stage: "gh",
+      code: "gh_lookup_failed",
+      exit_status: null,
+    });
+  }
 }
 
 export async function reconcileDependencyIndex(
-  project: DependencyProject,
   index: Index,
   ctx: DependencyContext,
-  http: Http,
+  evidence: { pr: Pr; links: BatchLink[] },
 ) {
   const now = new Date().toISOString();
   if (
@@ -520,7 +606,6 @@ export async function reconcileDependencyIndex(
       index,
     );
   }
-  const evidence = await batchEvidence(project, index.batch_pr, ctx, http);
   evidence.pr = coalescePr(index.batch_pr, evidence.pr);
   // Lookup uncertainty retains existing finding links as well as the last known PR value.
   if (evidence.pr.status === "unknown") {

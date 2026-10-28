@@ -10,6 +10,7 @@ on:
       - 'extensions/behaviors/orbit_group*.ts'
       - 'extensions/behaviors/_lib/**'
       - 'models/@nckrtl/orbit-gateway/**'
+      - 'models/@nckrtl/dependency-scanner/**'
       - 'models/@swamp/software-factory/dependency-*.yaml'
       - 'workflows/workflow-maintenance-*.yaml'
       - 'workflows/workflow-group*.yaml'
@@ -31,6 +32,7 @@ on:
       - 'extensions/behaviors/orbit_group*.ts'
       - 'extensions/behaviors/_lib/**'
       - 'models/@nckrtl/orbit-gateway/**'
+      - 'models/@nckrtl/dependency-scanner/**'
       - 'models/@swamp/software-factory/dependency-*.yaml'
       - 'workflows/workflow-maintenance-*.yaml'
       - 'workflows/workflow-group*.yaml'
@@ -84,11 +86,11 @@ jobs:
           tests/review_capacity_test.ts tests/dependency_projects_test.ts tests/routine_stage_test.ts
           tests/package_stage_test.ts tests/maintenance_worker_test.ts
           tests/maintenance_resources_test.ts tests/worker_enrollment_entry_test.ts tests/stage_launch_test.ts
-          tests/dependency_results_test.ts tests/dependency_inventory_test.ts tests/dependency_results_fixtures_test.ts tests/service_detection_security_test.ts tests/dependency_retention_test.ts
+          tests/dependency_credentials_test.ts tests/dependency_results_test.ts tests/dependency_inventory_test.ts tests/dependency_results_fixtures_test.ts tests/service_detection_security_test.ts tests/dependency_retention_test.ts
       - name: Check Services producer modules
         run: |
-          deno fmt --check extensions/behaviors/_lib/dependency_inventory.ts extensions/behaviors/_lib/dependency_results.ts extensions/behaviors/_lib/dependency_results_schema.ts extensions/behaviors/_lib/service_detection.ts extensions/behaviors/_lib/service_workspace.ts extensions/behaviors/_lib/dependency_retention.ts extensions/behaviors/_lib/maintenance/tool_policy.ts extensions/behaviors/dependency_scanner.ts tests/service_detection_security_test.ts tests/dependency_retention_test.ts tests/dependency_results_test.ts tests/dependency_inventory_test.ts
-          deno lint extensions/behaviors/_lib/dependency_inventory.ts extensions/behaviors/_lib/dependency_results.ts extensions/behaviors/_lib/dependency_results_schema.ts extensions/behaviors/_lib/service_detection.ts extensions/behaviors/_lib/service_workspace.ts extensions/behaviors/_lib/dependency_retention.ts extensions/behaviors/_lib/maintenance/tool_policy.ts extensions/behaviors/dependency_scanner.ts tests/service_detection_security_test.ts tests/dependency_retention_test.ts tests/dependency_results_test.ts tests/dependency_inventory_test.ts
+          deno fmt --check extensions/behaviors/_lib/dependency_credentials.ts extensions/behaviors/_lib/dependency_inventory.ts extensions/behaviors/_lib/dependency_results.ts extensions/behaviors/_lib/dependency_results_schema.ts extensions/behaviors/_lib/service_detection.ts extensions/behaviors/_lib/service_workspace.ts extensions/behaviors/_lib/dependency_retention.ts extensions/behaviors/_lib/maintenance/tool_policy.ts extensions/behaviors/dependency_scanner.ts tests/dependency_credentials_test.ts tests/service_detection_security_test.ts tests/dependency_retention_test.ts tests/dependency_results_test.ts tests/dependency_inventory_test.ts
+          deno lint extensions/behaviors/_lib/dependency_credentials.ts extensions/behaviors/_lib/dependency_inventory.ts extensions/behaviors/_lib/dependency_results.ts extensions/behaviors/_lib/dependency_results_schema.ts extensions/behaviors/_lib/service_detection.ts extensions/behaviors/_lib/service_workspace.ts extensions/behaviors/_lib/dependency_retention.ts extensions/behaviors/_lib/maintenance/tool_policy.ts extensions/behaviors/dependency_scanner.ts tests/dependency_credentials_test.ts tests/service_detection_security_test.ts tests/dependency_retention_test.ts tests/dependency_results_test.ts tests/dependency_inventory_test.ts
   native-group-workflows:
     runs-on: [self-hosted, hardimpact]
     timeout-minutes: 10
@@ -130,6 +132,7 @@ jobs:
           python3 -B -m unittest discover -s tests -p production_smoke_workflow_test.py -v
           python3 -m unittest tests/group_workflow_test.py
           python3 -B -m unittest tests/service_detection_native_test.py
+          python3 -B -m unittest tests/dependency_credentials_https_test.py
           python3 -B -m unittest discover -s tests -p deploy_services_native_test.py -v
           deno test --allow-all tests/maintenance_factory_test.ts
       - name: Remove isolated Swamp account state

@@ -1,0 +1,8 @@
+type: '@nckrtl/dependency-scanner'
+typeVersion: 2026.10.28.5
+id: a7d392d3-8ca3-4418-823d-74183c0d8a38
+name: dependency-scanner
+version: 1
+tags: {}
+globalArguments: {}
+methods: {}
