@@ -1452,3 +1452,13 @@ Repository production-smoke browser tests run through GitHub Actions after expli
 Only JUnit failures or errors report failed. A clean JUnit report with an unsuccessful GitHub conclusion is unknown; it cannot justify a rollback. No smoke state starts a task, repair, rollback or merge in this slice.
 
 Production smoke recovery uses the [keyed failure block and guarded rollback contract](/reference/deployments#verified-smoke-failure-and-guarded-rollback). It creates no repair Task in this slice. Recovery remains disabled until paired review, the failure-hold integration and an explicitly authorized production proof.
+
+### Dependency batch squash admission
+
+Dependency batches may use `POST /api/v1/task-groups/{group}/dependency-merge` with a required Idempotency-Key and `{publish_operation_id, head_sha}`. Only the configured Services peer may admit it. The Gateway records a `tasks.dependency_merge` Operation; Swamp executes its one `gateway` command, `github.dependency-squash`, through the operation executor. The command receives a Project-bound `github.dependency_merge` secret reference. Write tokens stay in Gateway memory. Completion requires the proven merge receipt.
+
+All Projects are disabled: `dependency_merge.projects` is empty and the private project extension's `dependencyAutoMerge` defaults to false. Enabling is a separate change after the live smoke/rollback pilot. Package and unclassified monorepo Projects are ineligible. Admission and the command independently verify the hosted production Instance, external batch group, package deliverable, passed handoff check and exact successful publish receipt. Feature and repair groups have no authority through this endpoint.
+
+Fresh GitHub reads must show an open non-draft same-repository `task-{group}` PR into the current Project and repository default branch. Require GitHub Actions' `Required checks` on the exact head. A repository with a Production smoke workflow also requires `Production smoke / smoke`: the raw `smoke` job must belong to that workflow's latest PR suite. Missing, pending, skipped, failed, unreadable or superseded checks refuse admission and execution. Changed head, base, lineage or enable switch before the effect refuses the merge. The GitHub write uses squash with the expected head SHA.
+
+Lost merge replies reconcile the same PR and head before another write; a verified merged PR returns its merge SHA. No retry selects a new head or a new PR. The ordinary task factory observes the merge and owns completion and cleanup. This path neither deploys nor changes task, access or production controls.

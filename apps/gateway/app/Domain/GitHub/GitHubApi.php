@@ -230,5 +230,7 @@ interface GitHubApi
      *
      * @throws GitHubApiException when GitHub cannot be reached
      */
+    public function squashPullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $sha): GitHubMergeResult;
+
     public function mergePullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $sha): GitHubMergeResult;
 }

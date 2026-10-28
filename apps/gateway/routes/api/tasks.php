@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Api\AgentThreadsController;
+use App\Http\Controllers\Api\DependencyBatchMergeController;
 use App\Http\Controllers\Api\TaskGroupsController;
 use App\Http\Controllers\Api\TaskInsightsController;
 use App\Http\Controllers\Api\TaskQuestionsController;
@@ -62,6 +63,8 @@ Route::middleware([
             ->whereNumber('group')->whereNumber('task')->name('tasks:comment:list');
         Route::post('task-groups/{group}/park', [TaskGroupsController::class, 'park'])
             ->whereNumber('group')->name('tasks:park');
+        Route::post('task-groups/{group}/dependency-merge', [DependencyBatchMergeController::class, 'store'])
+            ->whereNumber('group')->name('tasks:dependency-merge');
         Route::post('task-groups/{group}/publish', [TaskGroupsController::class, 'publish'])
             ->whereNumber('group')->name('tasks:publish');
         Route::post('task-groups/{group}/analyze', [TaskGroupsController::class, 'analyze'])

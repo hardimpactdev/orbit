@@ -179,6 +179,11 @@ final readonly class CachedGitHubApi implements GitHubApi
         return $this->github->submitReview($token, $repository, $number, $commitId, $event, $body);
     }
 
+    public function squashPullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $sha): GitHubMergeResult
+    {
+        return $this->github->squashPullRequest($token, $repository, $number, $sha);
+    }
+
     public function mergePullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $sha): GitHubMergeResult
     {
         return $this->github->mergePullRequest($token, $repository, $number, $sha);
