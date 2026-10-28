@@ -23,6 +23,7 @@ export const behavior = projectConfig("@nckrtl/project-operator", {
     "jsPaths": [
       "server/web",
     ],
+    "jsPackageManagers": { "server/web": "bun" },
     "policy": {
       "server/web": {
         "minimumReleaseAgeDays": 7,

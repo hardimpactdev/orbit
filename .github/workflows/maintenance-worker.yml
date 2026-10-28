@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'extensions/behaviors/orbit_gateway.ts'
+      - 'extensions/behaviors/dependency_scanner.ts'
       - 'extensions/behaviors/orbit_driver.ts'
       - 'extensions/behaviors/orbit_group*.ts'
       - 'extensions/behaviors/_lib/**'
@@ -21,6 +22,7 @@ on:
     branches: [main]
     paths:
       - 'extensions/behaviors/orbit_gateway.ts'
+      - 'extensions/behaviors/dependency_scanner.ts'
       - 'extensions/behaviors/orbit_driver.ts'
       - 'extensions/behaviors/orbit_group*.ts'
       - 'extensions/behaviors/_lib/**'
@@ -46,8 +48,21 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.9.8
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Install pinned GitHub CLI for credential-boundary tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh_tools="$RUNNER_TEMP/gh-2.103.3"
+          mkdir -p "$gh_tools"
+          curl --fail --location --retry 3 https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_amd64.tar.gz --output "$gh_tools/gh.tar.gz"
+          printf '%s  %s\n' 4c806978ffce1cec70853302a56d70ac6da4f19bae7adca4e1a8ab00633dd91d "$gh_tools/gh.tar.gz" | sha256sum --check
+          tar -xzf "$gh_tools/gh.tar.gz" -C "$gh_tools" --strip-components=1 gh_2.103.3_linux_amd64/bin/gh
+          echo "$gh_tools/bin" >> "$GITHUB_PATH"
       - name: Check driver types
-        run: deno check extensions/behaviors/orbit_gateway.ts extensions/behaviors/orbit_driver.ts extensions/behaviors/orbit_group_run.ts extensions/behaviors/orbit_group_runs.ts
+        run: deno check extensions/behaviors/dependency_scanner.ts extensions/behaviors/orbit_gateway.ts extensions/behaviors/orbit_driver.ts extensions/behaviors/orbit_group_run.ts extensions/behaviors/orbit_group_runs.ts
       - name: Check worker modules
         run: |
           deno fmt --check extensions/behaviors/_lib/maintenance_worker.ts extensions/behaviors/_lib/swamp_maintenance.ts tests/maintenance_worker_test.ts tests/maintenance_resources_test.ts tests/worker_enrollment_entry_test.ts extensions/behaviors/_lib/group_runs.ts extensions/behaviors/orbit_group_run.ts extensions/behaviors/orbit_group_runs.ts tests/group_runs_test.ts extensions/behaviors/_lib/stage_launch.ts tests/stage_launch_test.ts
@@ -59,6 +74,11 @@ jobs:
           tests/dependency_projects_test.ts tests/routine_stage_test.ts
           tests/package_stage_test.ts tests/maintenance_worker_test.ts
           tests/maintenance_resources_test.ts tests/worker_enrollment_entry_test.ts tests/stage_launch_test.ts
+          tests/dependency_results_test.ts tests/dependency_inventory_test.ts tests/dependency_results_fixtures_test.ts tests/service_detection_security_test.ts tests/dependency_retention_test.ts
+      - name: Check Services producer modules
+        run: |
+          deno fmt --check extensions/behaviors/_lib/dependency_inventory.ts extensions/behaviors/_lib/dependency_results.ts extensions/behaviors/_lib/dependency_results_schema.ts extensions/behaviors/_lib/service_detection.ts extensions/behaviors/_lib/service_workspace.ts extensions/behaviors/_lib/dependency_retention.ts extensions/behaviors/_lib/maintenance/tool_policy.ts extensions/behaviors/dependency_scanner.ts tests/service_detection_security_test.ts tests/dependency_retention_test.ts tests/dependency_results_test.ts tests/dependency_inventory_test.ts
+          deno lint extensions/behaviors/_lib/dependency_inventory.ts extensions/behaviors/_lib/dependency_results.ts extensions/behaviors/_lib/dependency_results_schema.ts extensions/behaviors/_lib/service_detection.ts extensions/behaviors/_lib/service_workspace.ts extensions/behaviors/_lib/dependency_retention.ts extensions/behaviors/_lib/maintenance/tool_policy.ts extensions/behaviors/dependency_scanner.ts tests/service_detection_security_test.ts tests/dependency_retention_test.ts tests/dependency_results_test.ts tests/dependency_inventory_test.ts
   native-group-workflows:
     runs-on: [self-hosted, hardimpact]
     timeout-minutes: 10
@@ -96,7 +116,9 @@ jobs:
           set -euo pipefail
           unset SWAMP_API_KEY_FILE SWAMP_SERVER_TOKEN SWAMP_SERVER_TOKEN_FILE SWAMP_SERVE_URL SWAMP_SERVER_URL
           swamp extension pull @swamp/software-factory@2026.10.23.1 --json
+          swamp extension pull @swamp/git@2026.10.16.1 --json
           python3 -m unittest tests/group_workflow_test.py
+          python3 -B -m unittest tests/service_detection_native_test.py
           python3 -B -m unittest discover -s tests -p deploy_services_native_test.py -v
           deno test --allow-all tests/maintenance_factory_test.ts
       - name: Remove isolated Swamp account state

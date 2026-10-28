@@ -21,10 +21,18 @@ export const DependencyProjectSchema = z.object({
   worker: z.object({
     composerPaths: MaintenancePaths,
     jsPaths: MaintenancePaths,
+    jsPackageManagers: z.record(MaintenancePath, z.enum(["npm", "bun", "pnpm"]))
+      .optional(),
     policy: PolicySchema,
   }).strict().refine(
     (v) => v.composerPaths.length + v.jsPaths.length > 0,
     "worker needs maintenance paths",
+  ).refine(
+    (v) =>
+      Object.keys(v.jsPackageManagers ?? {}).every((p) =>
+        v.jsPaths.includes(p)
+      ),
+    "JavaScript manager needs a configured path",
   ).refine(
     (v) =>
       Object.keys(v.policy).every((p) =>

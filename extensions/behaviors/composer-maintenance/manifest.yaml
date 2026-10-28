@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: "@nckrtl/composer-maintenance"
-version: 2026.10.27.2
+version: 2026.10.28.3
 visibility: private
 license: MIT
 description: Composer updates, locked detection, security exceptions, and dependency PR descriptions.
@@ -17,6 +17,7 @@ include:
   - _lib/maintenance/composer_summary.ts
   - _lib/maintenance/context.ts
   - _lib/maintenance/environment.ts
+  - _lib/maintenance/tool_policy.ts
   - _lib/maintenance/exceptions.ts
   - _lib/maintenance/policy_schema.ts
   - _lib/maintenance/io.ts

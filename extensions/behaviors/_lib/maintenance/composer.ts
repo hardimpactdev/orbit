@@ -50,7 +50,13 @@ export function reportJson(
 }
 
 export async function audit(dir: string, signal?: AbortSignal): Promise<Audit> {
-  const args = ["audit", "--locked", "--format=json"];
+  const args = [
+    "audit",
+    "--locked",
+    "--format=json",
+    "--no-plugins",
+    "--no-scripts",
+  ];
   const result = await command(dir, "composer", args, signal);
   let data: Record<string, unknown>;
   if (result.code === 0 && result.stdout.trim() === "") {

@@ -9,8 +9,9 @@ jobs:
   - name: detect
     task:
       type: model_method
-      modelIdOrName: orbit-gateway
-      methodName: schedule_project
+      modelType: "@nckrtl/dependency-scanner"
+      modelName: dependency-scanner
+      methodName: scan
       inputs:
         projectId: 20
-        mode: detect
+        runId: '${{ run.id }}'

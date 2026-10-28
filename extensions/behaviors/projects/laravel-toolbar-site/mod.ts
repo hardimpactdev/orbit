@@ -23,6 +23,7 @@ export const behavior = projectConfig("@nckrtl/project-laravel-toolbar-site", {
     "jsPaths": [
       ".",
     ],
+    "jsPackageManagers": { ".": "npm" },
     "policy": {
       ".": {
         "minimumReleaseAgeDays": 7,

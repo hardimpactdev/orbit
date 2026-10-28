@@ -1,0 +1,24 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "service-workspace-fixture",
+      "dependencies": {
+        "is-number": "catalog:",
+        "l": "file:l",
+        "remote": "https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz",
+      },
+    },
+  },
+  "catalog": {
+    "is-number": "7.0.0",
+  },
+  "packages": {
+    "is-number": ["is-number@7.0.0", "", {}, "sha512-41Cifkg6e8TylSpdtTpeLVMqvSBEVzTttHvERD741+pnZ8ANv0004MRL43QKPDlK9cGvNp6NZWZUBlbGXYxxng=="],
+
+    "l": ["l@file:l", {}],
+
+    "remote": ["is-number@https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz", {}, "sha512-41Cifkg6e8TylSpdtTpeLVMqvSBEVzTttHvERD741+pnZ8ANv0004MRL43QKPDlK9cGvNp6NZWZUBlbGXYxxng=="],
+  }
+}

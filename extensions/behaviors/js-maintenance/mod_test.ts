@@ -103,6 +103,19 @@ class Repo {
     args: Record<string, unknown> = {},
     fixture: Fixture = emptyDetect,
   ) {
+    if (method === "detect") {
+      const bun = await this.exists("bun.lock");
+      fixture = Object.fromEntries(
+        Object.entries(fixture).map(([key, value]) => [
+          key === outdated
+            ? (bun ? "bun outdated" : "npm outdated --json")
+            : key === audit
+            ? (bun ? "bun pm audit --json" : "npm audit --json")
+            : key,
+          value,
+        ]),
+      );
+    }
     await Deno.writeTextFile(
       `${this.temp}/fixture.json`,
       JSON.stringify(fixture),
@@ -349,14 +362,13 @@ test("routine stops before a later path after update failure", async (r) => {
   assertEquals(await r.log(), `vp|update|${r.cwd}\n`);
 });
 for (const manager of ["npm", "bun"]) {
-  test(`fresh Vite+ ${manager} bootstraps with a frozen install`, async (r) => {
+  test(`fresh Vite+ ${manager} detects from lockfiles without a bootstrap install`, async (r) => {
     if (manager === "bun") {
       await r.bun({ react: "^19" }, { react: bunEntry("react", "19.0.0") });
     }
     await Deno.remove(`${r.cwd}/node_modules`, { recursive: true });
     const file = manager === "npm" ? "package-lock.json" : "bun.lock";
-    const before = await Deno.readTextFile(`${r.cwd}/${file}`),
-      manifest = await Deno.readTextFile(`${r.cwd}/package.json`);
+    const before = await Deno.readTextFile(`${r.cwd}/${file}`);
     const result = await r.execute(
       "detect",
       {},
@@ -365,27 +377,13 @@ for (const manager of ["npm", "bun"]) {
         : emptyDetect,
     );
     assertEquals(result, { schema: 1, candidates: [] });
-    assertStringIncludes(
-      await r.log(),
-      manager === "npm"
-        ? "npm|ci --ignore-scripts|"
-        : "bun|install --frozen-lockfile --ignore-scripts|",
-    );
-    assert(
-      (await r.log()).indexOf("--ignore-scripts|") <
-        (await r.log()).indexOf("vp|outdated"),
-    );
+    assertStringIncludes(await r.log(), `${manager}|outdated`);
+    assert(!(await r.log()).includes("install"));
+    assert(!(await r.log()).includes("vp|"));
+    assertEquals(await r.exists("node_modules"), false);
     assertEquals(await Deno.readTextFile(`${r.cwd}/${file}`), before);
-    assertEquals(await Deno.readTextFile(`${r.cwd}/package.json`), manifest);
   });
 }
-test("frozen install failure stops before Vite+", async (r) => {
-  await Deno.remove(`${r.cwd}/node_modules`, { recursive: true });
-  await r.failure("detect", {}, {
-    "npm ci --ignore-scripts": [{ code: 17, raw: "broken" }],
-  }, 17);
-  assertEquals(await r.log(), `npm|ci --ignore-scripts|${r.cwd}\n`);
-});
 for (
   const [declared, locks, message] of [
     ["npm@11.12.0", ["bun.lock"], "bun.lock and no package-lock.json"],
@@ -629,15 +627,22 @@ test("npm via chains preserve real IDs, URLs, title, severity and affected range
     [outdated]: [{ data: {} }],
     [audit]: [{ code: 1, data: finding }],
   });
-  assertEquals(result.candidates.map((c) => c.package), ["shadcn"]);
-  assertEquals(result.candidates[0].advisories, [{
-    id: "1243066",
-    url: "https://github.com/advisories/GHSA-mrhx-c7xc-m3w5",
-    title:
-      "Zod can exhaust memory while validating oversized constrained collections",
-    affected: "<4.6.6",
-    severity: "high",
-  }]);
+  assertEquals(result.candidates.map((c) => c.package), [
+    "@shadcn/registry",
+    "shadcn",
+    "zod",
+  ]);
+  assertEquals(
+    result.candidates.find((c) => c.package === "shadcn")!.advisories,
+    [{
+      id: "1243066",
+      url: "https://github.com/advisories/GHSA-mrhx-c7xc-m3w5",
+      title:
+        "Zod can exhaust memory while validating oversized constrained collections",
+      affected: "<4.6.6",
+      severity: "high",
+    }],
+  );
 });
 test("one shared npm advisory remains on every controlling direct dependency", async (r) => {
   const data = structuredClone(finding);
@@ -646,7 +651,12 @@ test("one shared npm advisory remains on every controlling direct dependency", a
     [outdated]: [{ data: {} }],
     [audit]: [{ data }],
   });
-  assertEquals(result.candidates.map((c) => c.package), ["react", "shadcn"]);
+  assertEquals(result.candidates.map((c) => c.package), [
+    "@shadcn/registry",
+    "react",
+    "shadcn",
+    "zod",
+  ]);
   assertEquals(
     result.candidates[0].advisories,
     result.candidates[1].advisories,
@@ -1663,7 +1673,9 @@ test("summary combines Composer and JS, including non-root paths", async (r) => 
   });
   await r.json("package-lock.json", npmLock({ expo: "58.0.0" }), "mobile");
   const result = await r.execute("summary", { base, paths: [".", "mobile"] }, {
-    "composer audit --locked --format=json": [{ data: { advisories: {} } }],
+    "composer audit --locked --format=json --no-plugins --no-scripts": [{
+      data: { advisories: {} },
+    }],
     ...cleanNpmAudit,
   });
   assertEquals(result.changes.map((c) => [c.path, c.package]), [[
@@ -1705,7 +1717,9 @@ test("mixed root summary sorts Composer and JS rows together by package", async 
     npmLock({ alpha: "1.0.1", charlie: "1.0.1" }),
   );
   const result = await r.execute("summary", { base }, {
-    "composer audit --locked --format=json": [{ data: { advisories: {} } }],
+    "composer audit --locked --format=json --no-plugins --no-scripts": [{
+      data: { advisories: {} },
+    }],
     ...cleanNpmAudit,
   });
   const names = ["alpha", "bravo/pkg", "charlie", "delta/pkg"];

@@ -11,6 +11,7 @@ export const behavior = projectConfig("@nckrtl/project-ai-cli-proxy", {
     "jsPaths": [
       ".",
     ],
+    "jsPackageManagers": { ".": "bun" },
     "policy": {},
   },
   "check": "composer check",

@@ -17,8 +17,9 @@ type Summary = z.infer<typeof behavior.resources.summary.schema>;
 type Response = { code?: number; raw?: string; data?: unknown };
 type Fixture = Record<string, Response[]>;
 type Method = keyof typeof behavior.methods;
-const outdated = "composer outdated --locked --major-only --format=json";
-const audit = "composer audit --locked --format=json";
+const outdated =
+  "composer outdated --no-plugins --no-scripts --locked --major-only --format=json";
+const audit = "composer audit --locked --format=json --no-plugins --no-scripts";
 const finding = JSON.parse(
   await Deno.readTextFile(
     new URL("./fixtures/livewire-audit.json", import.meta.url),
@@ -360,7 +361,7 @@ test("detect has exact upstream Composer candidates without vendor", async (r) =
   });
   assertEquals(
     await r.log(),
-    `composer|outdated --locked --major-only --format=json|${r.cwd}\ncomposer|audit --locked --format=json|${r.cwd}\n`,
+    `composer|outdated --no-plugins --no-scripts --locked --major-only --format=json|${r.cwd}\ncomposer|audit --locked --format=json --no-plugins --no-scripts|${r.cwd}\n`,
   );
   assertEquals(await r.exists("vendor"), false);
 });

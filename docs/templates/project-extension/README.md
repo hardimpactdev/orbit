@@ -5,6 +5,10 @@
 2. Read the project's package manifests, maintenance paths and setup.
    Copy its exact paths, check, branch and policy. Use `[]` for an unused
    ecosystem. Include application paths such as Hauzer's `mobile/` explicitly.
+   Pin every JavaScript path's actual lockfile manager in
+   `worker.jsPackageManagers` (`npm`, `bun` or `pnpm`). Services detection needs
+   that identity even when repository acquisition fails. pnpm inventory is
+   supported; its update targets stay blocked until native planning exists.
 3. Add `{ projectId: <id>, type: '@nckrtl/project-<slug>' }` to the Gateway's
    `projectExtensions`. Remove its old `dependencyProjects` entry in the same
    change. The IDs are routing keys; config lives only in the extension.
@@ -14,6 +18,8 @@
    `@nckrtl/project-<slug>/routine` and `@nckrtl/project-<slug>/detect` to meet
    Swamp's collective packaging rule. Stagger their
    `trigger.schedule` values. Swamp schedules use UTC.
+   The detect step passes `runId: '${{ run.id }}'` and runs on Services without
+   creating a task group or worker.
 5. Add a fixture for the config copied from the project's setup. Test config
    resolution, path/policy validation and identical maintenance inputs. Run only
    the affected tests, with no more than four workers. Validate both workflows

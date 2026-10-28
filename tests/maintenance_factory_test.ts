@@ -611,6 +611,7 @@ export const behavior = {
       assertEquals(config.results[0].worker, {
         composerPaths: ["."],
         jsPaths: ["."],
+        jsPackageManagers: { ".": "npm" },
         policy: { ".": { minimumReleaseAgeDays: 7 } },
       });
       // A provision failure reaches assistance before any script artifact exists.

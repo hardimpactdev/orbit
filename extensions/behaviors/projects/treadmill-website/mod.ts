@@ -11,6 +11,7 @@ export const behavior = projectConfig("@nckrtl/project-treadmill-website", {
     "jsPaths": [
       ".",
     ],
+    "jsPackageManagers": { ".": "npm" },
     "policy": {},
   },
   "check": "composer test && composer analyse && vp check",

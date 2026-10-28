@@ -11,6 +11,7 @@ export const behavior = projectConfig("@nckrtl/project-platform11", {
     "jsPaths": [
       ".",
     ],
+    "jsPackageManagers": { ".": "bun" },
     "policy": {
       ".": {
         "minimumReleaseAgeDays": 7,

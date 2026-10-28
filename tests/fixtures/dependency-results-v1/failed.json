@@ -1,0 +1,63 @@
+{
+  "fixture_version": 1,
+  "scenario": "failed",
+  "snapshots": [
+    {
+      "index": {
+        "request": {
+          "type": "data.get",
+          "id": "399a0cf4-ad47-5cc3-897d-736fbbd35601",
+          "payload": {
+            "modelIdOrName": "orbit-gateway",
+            "dataName": "dependencies-v1-project-20-f921bd05e68b03740c450e565e0e6173e546193170b2dd404ddb6f153e9b5bf3",
+            "includeContent": true
+          }
+        },
+        "response": {
+          "type": "data.get",
+          "id": "399a0cf4-ad47-5cc3-897d-736fbbd35601",
+          "payload": {
+            "data": {
+              "id": "2504df58-b2ee-5e35-bf52-2909bd045150",
+              "name": "dependencies-v1-project-20-f921bd05e68b03740c450e565e0e6173e546193170b2dd404ddb6f153e9b5bf3",
+              "modelId": "f5fa45d6-6307-48b6-a094-9aae8f79febc",
+              "modelName": "orbit-gateway",
+              "modelType": "@nckrtl/orbit-gateway",
+              "version": 1,
+              "contentType": "application/json",
+              "lifetime": "infinite",
+              "garbageCollection": "infinite",
+              "streaming": false,
+              "tags": {
+                "contract": "orbit.dependencies.v1",
+                "kind": "index",
+                "project_id": "20",
+                "repository": "github.com/fixture/dependency-app",
+                "source_ref": "refs/heads/main",
+                "type": "resource",
+                "specName": "dependencyIndex",
+                "modelName": "orbit-gateway"
+              },
+              "ownerDefinition": {
+                "ownerType": "model-method",
+                "ownerRef": "f5fa45d6-6307-48b6-a094-9aae8f79febc"
+              },
+              "createdAt": "2026-10-28T00:10:00Z",
+              "size": 844,
+              "checksum": "cc181142df8a16d2a85036ef075287ab2834b037de3840baaac5476bdbd1bd54",
+              "contentPath": ".swamp/data/@nckrtl/orbit-gateway/f5fa45d6-6307-48b6-a094-9aae8f79febc/dependencies-v1-project-20-f921bd05e68b03740c450e565e0e6173e546193170b2dd404ddb6f153e9b5bf3/1/raw",
+              "content": "{\"schema_version\":1,\"publication_id\":\"f07908e1-f361-5981-abcb-5c6aad0e81c0\",\"project_id\":20,\"repository\":\"github.com/fixture/dependency-app\",\"source_ref\":\"refs/heads/main\",\"source_commit\":null,\"generated_at\":\"2026-10-28T00:10:00Z\",\"last_attempt\":{\"run_id\":\"a9044e67-f951-5973-b99c-cf596e024d01\",\"started_at\":\"2026-10-28T00:10:00Z\",\"finished_at\":\"2026-10-28T00:10:00Z\",\"status\":\"failed\",\"error_code\":\"checkout_unavailable\"},\"sources\":[{\"path\":\".\",\"ecosystem\":\"composer\",\"package_manager\":\"composer\",\"last_attempt\":{\"run_id\":\"a9044e67-f951-5973-b99c-cf596e024d01\",\"started_at\":\"2026-10-28T00:10:00Z\",\"finished_at\":\"2026-10-28T00:10:00Z\",\"status\":\"failed\",\"error_code\":\"checkout_unavailable\"},\"report\":null}],\"batch_pr\":{\"status\":\"unknown\",\"checked_at\":\"2026-10-28T00:10:00Z\",\"last_success_at\":null,\"error_code\":\"lookup_unavailable\",\"value\":null}}",
+              "contentEncoding": "utf-8"
+            }
+          }
+        }
+      },
+      "reports": [],
+      "expected": {
+        "inventory": "unavailable",
+        "admission": "blocked",
+        "pr": "unknown"
+      }
+    }
+  ]
+}

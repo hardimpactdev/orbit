@@ -99,7 +99,7 @@ async function project(args: z.infer<typeof CommonSchema>) {
 /** Local commands with versioned schema 1 resources, matching Composer maintenance. */
 export const behavior = {
   type: "@nckrtl/js-maintenance",
-  version: "2026.10.27.2",
+  version: "2026.10.28.3",
   globalArguments: z.strictObject({}),
   resources: {
     snapshot: {
@@ -176,10 +176,11 @@ export const behavior = {
       arguments: CommonSchema,
       execute: async (input: z.input<typeof CommonSchema>, ctx: Context) => {
         const args = parse(CommonSchema, input), p = await project(args);
-        for (const js of p.workspaces) await prepare(js, ctx.signal);
         const candidates = new Map<string, z.infer<typeof CandidateSchema>>();
         for (const js of p.workspaces) {
-          for (const row of await majors(js, ctx.signal)) {
+          for (
+            const row of await majors({ ...js, vitePlus: false }, ctx.signal)
+          ) {
             if (js.expo && coupled(row.name) && row.name !== "expo") continue;
             candidates.set(`${js.path}:js:${row.name}`, {
               path: js.path,
@@ -198,7 +199,9 @@ export const behavior = {
         for (const js of p.workspaces) {
           for (
             const [name, advisories] of Object.entries(
-              published(await audit(js, ctx.signal)),
+              published(
+                await audit({ ...js, vitePlus: false }, ctx.signal, true),
+              ),
             )
           ) {
             if (!advisories.length) continue;

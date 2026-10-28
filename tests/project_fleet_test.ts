@@ -152,7 +152,9 @@ Deno.test("the fleet registers all 18 projects once and owns private, correctly 
           steps: {
             task: {
               type: string;
-              modelIdOrName: string;
+              modelIdOrName?: string;
+              modelType?: string;
+              modelName?: string;
               methodName: string;
               inputs: unknown;
             };
@@ -174,9 +176,18 @@ Deno.test("the fleet registers all 18 projects once and owns private, correctly 
       schedules.add(`${mode}:${workflow.trigger.schedule}`);
       assertEquals(workflow.jobs[0].steps[0].task, {
         type: "model_method",
-        modelIdOrName: "orbit-gateway",
-        methodName: "schedule_project",
-        inputs: { projectId: source.project.id, mode },
+        ...(mode === "detect"
+          ? {
+            modelType: "@nckrtl/dependency-scanner",
+            modelName: "dependency-scanner",
+            methodName: "scan",
+          }
+          : { modelIdOrName: "orbit-gateway", methodName: "schedule_project" }),
+        inputs: {
+          projectId: source.project.id,
+          ...(mode === "routine" ? { mode } : {}),
+          ...(mode === "detect" ? { runId: "${{ run.id }}" } : {}),
+        },
       });
     }
   }

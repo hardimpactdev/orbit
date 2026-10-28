@@ -1,0 +1,16 @@
+{
+  "name": "service-workspace-fixture",
+  "private": true,
+  "packageManager": "bun@1.4.0",
+  "dependencies": {
+    "l": "file:l",
+    "remote": "https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz",
+    "is-number": "catalog:"
+  },
+  "workspaces": {
+    "packages": [],
+    "catalog": {
+      "is-number": "7.0.0"
+    }
+  }
+}

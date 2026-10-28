@@ -1,11 +1,14 @@
+import { pruneDependencyResults, type RetentionContext } from "./_lib/dependency_retention.ts";
 import { AdmissionSchema, reconcileAdmissions, reserveMaintenance, orderProjects, type Admission, type AdmissionIntent } from "./_lib/project_admission.ts";
 import { project as horizonProject } from "./projects/horizon-new-dawn/config.ts";
-import { cleanedCancelledGroup, ensureProjectGroup, projectFindings, batchReceipt, FindingsSchema, isolateScheduleRow, scheduleReceipt, ScheduleReceiptSchema, SchedulerIssueSchema, SchedulerSkipSchema, type ScheduleReceipt } from "./_lib/project_schedule.ts";
+import { cleanedCancelledGroup, ensureProjectGroup, batchReceipt, FindingsSchema, isolateScheduleRow, scheduleReceipt, ScheduleReceiptSchema, SchedulerIssueSchema, SchedulerSkipSchema, type ScheduleReceipt } from "./_lib/project_schedule.ts";
 import { runMaintenance, reconcileWorkers, workerControl, type MaintenanceContext } from "./_lib/swamp_maintenance.ts";
 import { ensureWorker, revokeEndedWorker } from "./_lib/maintenance_worker.ts";
 import { projectConfigurations, ProjectExtensionsSchema } from "./_lib/project_config.ts";
 import { assertProjectSettings, DependencyProjectsSchema } from "./_lib/dependency_projects.ts";
 import { admitPackage, assertPreviousPackages, PackageTargetSchema, type PackageTarget } from "./_lib/package_target.ts";
+import { indexName, reportName, IndexSchema, ReportSchema, type Index } from "./_lib/dependency_results_schema.ts";
+import { assertCurrentPlan, reconcileDependencyIndex } from "./_lib/service_detection.ts";
 // @nckrtl/orbit-gateway — the stage work of the orbit-groups factory.
 // `stage` ensures one Gateway task operation per driver key and never waits:
 // see _lib/gateway_stage.ts. The Gateway authenticates this Node by its
@@ -81,9 +84,13 @@ export function curlHttp(g: Pick<GlobalArgs, "gatewayUrl" | "caFile" | "timeoutS
 
 export const behavior = {
   type: "@nckrtl/orbit-gateway",
-  version: "2026.10.27.5",
+  version: "2026.10.28.3",
   globalArguments: GlobalArgsSchema,
   resources: {
+    dependencyScanInput: {description:"Scan configuration handoff",schema:z.object({runId:z.string(),project:DependencyProjectsSchema.element,http:z.object({gatewayUrl:z.string(),caFile:z.string(),timeoutSeconds:z.number()})}),lifetime:"infinite",garbageCollection:1},
+    // Index history is seven days; reports are pruned only by retained-index reachability.
+    dependencyIndex: { description: "orbit.dependencies.v1 Project/ref publication", schema: IndexSchema, lifetime: "infinite", garbageCollection: Number.MAX_SAFE_INTEGER },
+    dependencyReport: { description: "Immutable orbit.dependencies.v1 source report", schema: ReportSchema, lifetime: "infinite", garbageCollection: Number.MAX_SAFE_INTEGER },
     schedule: {
       description: "Project schedule and admitted batch group-creation receipts",
       schema: ScheduleReceiptSchema, lifetime: "infinite", garbageCollection: 10,
@@ -135,6 +142,38 @@ export const behavior = {
     },
   },
   methods: {
+    prune_dependency_results: {
+      description: "Prune seven-day dependency history while preserving referenced exact reports",
+      arguments:z.object({}),
+      execute:async(_args:Record<string,never>,context:RetentionContext)=>{await pruneDependencyResults(context);return {dataHandles:[]};},
+    },
+    prepare_dependency_scan: {
+      description: "Read scan configuration without holding the gateway lock during scanning",
+      arguments: z.object({projectId:z.number().int().positive(),runId:z.string().min(1).max(256)}),
+      execute: async (args: {projectId:number;runId:string}, context: StageContext) => {
+        const project = (await projectConfigurations(context.globalArgs.dependencyProjects, context.globalArgs.projectExtensions, context, args.projectId))[0];
+        if(!project?.worker) throw new Error("unconfigured_dependency_project");
+        const {gatewayUrl,caFile,timeoutSeconds}=context.globalArgs;
+        return {dataHandles:[await context.writeResource("dependencyScanInput",`dependency-scan-input-${args.projectId}`,{runId:args.runId,project,http:{gatewayUrl,caFile,timeoutSeconds:Math.min(timeoutSeconds,5)}})]};
+      },
+    },
+    publish_dependency: {
+      description: "Publish one bounded dependency resource under the short gateway model lock",
+      arguments: z.object({spec:z.enum(["dependencyIndex","dependencyReport","findings"]),name:z.string(),value:z.record(z.string(),z.unknown()),overrides:z.object({tags:z.record(z.string(),z.string())}).optional(),runId:z.string(),projectId:z.number().int().positive()}),
+      execute: async (args: {spec:string;name:string;value:Record<string,unknown>;overrides?:{tags:Record<string,string>};runId:string;projectId:number}, context: StageContext) => {
+        const request=(await context.queryData(`modelName == "orbit-gateway" && name == "dependency-scan-input-${args.projectId}"`,"attributes"))[0] as {runId?:string}|undefined;
+        if(request?.runId!==args.runId) throw new Error("stale_scan_publication");
+        if(args.spec === "findings") {
+          const value=FindingsSchema.parse(args.value);
+          if(value.projectId!==args.projectId || value.source!==args.runId || args.name!==`findings-${args.projectId}`) throw new Error("scan_publication_identity_mismatch");
+        } else {
+          const value=args.spec==="dependencyIndex"?IndexSchema.parse(args.value):ReportSchema.parse(args.value);
+          const expected="last_attempt" in value ? await indexName(value.project_id,value.source_ref) : await reportName(value.publication_id,value);
+          if(args.name!==expected || value.project_id!==args.projectId || ("last_attempt" in value ? value.last_attempt.run_id : value.run_id)!==args.runId) throw new Error("scan_publication_identity_mismatch");
+        }
+        return {dataHandles:[await context.writeResource(args.spec,args.name,args.value,args.overrides)]};
+      },
+    },
     ensure_worker: {
       description: "Enroll or reconcile worker startup on one provisioned external group; never starts agents or task work",
       arguments: z.object({ group: z.number().int().positive() }),
@@ -179,12 +218,15 @@ export const behavior = {
       },
     },
     schedule_project: {
-      description: "Start or reconcile one project's scheduled routine or detection group",
-      arguments: z.object({ projectId: z.number().int().positive(), mode: z.enum(["routine", "detect"]) }),
-      execute: async (args: { projectId: number; mode: "routine" | "detect" }, context: StageContext) => {
+      description: "Scan a Project on Services without a VM, or schedule routine execution",
+      arguments: z.object({ projectId: z.number().int().positive(), mode: z.enum(["routine", "detect"]), runId: z.string().min(1).max(256).optional() }),
+      execute: async (args: { projectId: number; mode: "routine" | "detect"; runId?: string }, context: StageContext) => {
         const configs = await projectConfigurations(context.globalArgs.dependencyProjects, context.globalArgs.projectExtensions, context, args.projectId);
         const config = configs[0];
         if (!config?.worker) throw new Error("scheduled maintenance requires a configured project worker");
+        if (args.mode === "detect") {
+          throw new Error("Use the project detect workflow on dependency-scanner");
+        }
         await assertProjectSettings(config, curlHttp(context.globalArgs));
         const store = scheduleStore(context);
         const desired = scheduleReceipt(config, args.mode);
@@ -284,7 +326,7 @@ export const behavior = {
           globalArgs: { gatewayUrl: string; caFile: string; timeoutSeconds: number };
           definition: { name: string };
           queryData: (predicate: string, select?: string) => Promise<unknown[]>;
-          writeResource: (spec: string, name: string, data: Record<string, unknown>) => Promise<{ name: string }>;
+          writeResource: (spec: string, name: string, data: Record<string, unknown>, overrides?:{tags:Record<string,string>}) => Promise<{ name: string }>;
         },
       ) => {
         const read = async <T>(name: string): Promise<T | null> =>
@@ -339,11 +381,13 @@ export const behavior = {
 };
 
 interface StageContext extends MaintenanceContext {
+  signal?: AbortSignal;
+  readResource?: (name: string, version?: number) => Promise<Record<string, unknown> | null>;
   runModel: MaintenanceContext["runModel"] & ((args: { definition: string; method: string; arguments?: Record<string, unknown> }) => Promise<{ ok: boolean; error?: { message: string } }>);
   globalArgs: GlobalArgs;
   definition: { name: string };
   queryData: (predicate: string, select?: string) => Promise<unknown[]>;
-  writeResource: (spec: string, name: string, data: Record<string, unknown>) => Promise<{ name: string }>;
+  writeResource: (spec: string, name: string, data: Record<string, unknown>, overrides?:{tags:Record<string,string>}) => Promise<{ name: string }>;
   logger: { info: (msg: string, props?: Record<string, unknown>) => void };
 }
 
@@ -478,7 +522,7 @@ async function projectWork(context: StageContext) {
         JSON.stringify(context.definition.name)
       } && name == "project-work"`,
       "attributes",
-    ))[0] as { nextOffset?: number } | undefined;
+    ))[0] as { nextOffset?: number; nextPendingOffset?: number } | undefined;
   const active = rows.filter((r) => r.started && !r.completed),
     offset = active.length ? (previous?.nextOffset ?? 0) % active.length : 0;
   const batch = [...active.slice(offset), ...active.slice(0, offset)].slice(
@@ -526,46 +570,12 @@ async function projectWork(context: StageContext) {
       if (state.stageId !== "completed") {
         return;
       }
-      if (receipt.mode === "detect") {
-        const config =
-          (await groupConfigurations(receipt.workItem!, context))[0];
-        const artifact =
-          (await context.queryData(
-            `modelName == "dependency-detect" && name == ${
-              JSON.stringify(`artifact-${receipt.workItem}-script`)
-            }`,
-            "attributes",
-          ))[0] as
-            | { payload?: { detections?: unknown[]; plans?: unknown[] } }
-            | undefined;
-        if (!Array.isArray(artifact?.payload?.detections)) {
-          throw new Error("completed detection has no report evidence");
-        }
-        const findings = await projectFindings(
-          config,
-          receipt.key,
-          artifact.payload.detections,
-          artifact.payload.plans ?? [],
-        );
-        await context.writeResource(
-          "findings",
-          `findings-${receipt.projectId}`,
-          findings,
-        );
-      }
+      // VM-era artifacts remain historical evidence. They cannot overwrite a Services plan.
       await store.save({ ...receipt, completed: true });
     });
   }
   // Only admitted intents are materialized. Findings without targets stay data.
-  const latestRows = await scheduleRows(context);
-  const queued = latestRows.filter((r) => !r.started && !r.completed).map(
-    (r) => ({
-      projectId: r.projectId,
-      security: Boolean(r.targets?.some((t) => t.purpose === "security")),
-      receipt: r,
-      findings: null as z.infer<typeof FindingsSchema> | null,
-    })
-  );
+  let latestRows = await scheduleRows(context);
   const documents =
     (await context.queryData(
       `modelName == ${
@@ -573,10 +583,30 @@ async function projectWork(context: StageContext) {
       } && name.startsWith("findings-")`,
       "attributes",
     )).map((f) => FindingsSchema.parse(f));
+  // Supersede only a proven unattempted, unbound package intent. Keep the complete ledger.
+  // Attempted creates and real groups remain held until their ordinary reconciliation settles.
+  for (const receipt of latestRows.filter(r => r.mode === "package" && !r.attempted && !r.started && !r.completed && !r.workItem)) {
+    const current = documents.find(f => f.projectId === receipt.projectId);
+    if (!current || current.source === receipt.findingsRunId) continue;
+    await isolateScheduleRow(context,receipt,"admission",async()=>{
+      const reservations = await context.queryData(`modelName == ${JSON.stringify(context.definition.name)} && name == ${JSON.stringify(`admission-${receipt.key}`)}`,"attributes");
+      if(reservations.length>1)throw new Error("ambiguous unattempted admission");
+      if(reservations.length){
+        const reservation=AdmissionSchema.parse(reservations[0]);
+        if(reservation.workItem!==null)throw new Error("superseded admission remains bound to a group");
+        if(!reservation.released)await context.writeResource("admission",`admission-${receipt.key}`,{...reservation,released:true});
+      }
+      await store.save({...receipt,completed:true,supersededBy:current.source});
+    });
+  }
+  latestRows = await scheduleRows(context);
+  const queued = latestRows.filter((r) => !r.started && !r.completed && r.mode !== "detect").map(
+    (r) => ({projectId:r.projectId,security:Boolean(r.targets?.some(t=>t.purpose==="security")),receipt:r,findings:null as z.infer<typeof FindingsSchema>|null})
+  );
   for (const findings of documents) {
-    if (!findings.targets.length) continue;
+    if (!findings.targets.length || !findings.sourceCommit) continue;
     if (
-      latestRows.some((r) => r.projectId === findings.projectId && !r.completed)
+      latestRows.some((r) => r.projectId === findings.projectId && !r.completed && (r.mode !== "detect" || r.attempted))
     ) continue;
     const config =
       (await projectConfigurations(
@@ -605,6 +635,10 @@ async function projectWork(context: StageContext) {
     await isolateScheduleRow(context, entry.receipt, "admission", async () => {
       let receipt = entry.receipt;
       if (receipt.mode === "package") {
+        const current = documents.find((f) => f.projectId === receipt.projectId && f.source === receipt.findingsRunId);
+        if (!current || JSON.stringify(current.targets) !== JSON.stringify(receipt.targets)) throw new Error("fresh_service_detection_required");
+        const config = (await projectConfigurations(context.globalArgs.dependencyProjects, context.globalArgs.projectExtensions, context, receipt.projectId))[0];
+        await assertCurrentPlan(config, current, context);
         await callDefinition(context, "dependency-package", "status", {});
         const runs =
           (await context.queryData(
@@ -643,6 +677,7 @@ async function projectWork(context: StageContext) {
         const target = PackageTargetSchema.parse({
           workItem: receipt.workItem,
           targets: receipt.targets,
+          sourceCommit: documents.find((f) => f.source === receipt.findingsRunId && f.projectId === receipt.projectId)?.sourceCommit,
         });
         await callDefinition(context, "dependency-package", "status", {});
         const runs =
@@ -692,12 +727,23 @@ async function projectWork(context: StageContext) {
     )).map((r) => SchedulerIssueSchema.parse(r)).filter((r) =>
       r.status === "open"
     );
+  // Refresh at most six indexes per minute: all 19 PR observations fit inside five minutes.
+  // Missing/failed authoritative lookups become unknown and keep last-success evidence.
+  const indexes = (await context.queryData(`modelName == ${JSON.stringify(context.definition.name)} && name.startsWith("dependencies-v1-project-")`, "attributes")).map((i) => IndexSchema.parse(i));
+  const refreshOffset = indexes.length ? (previous?.nextPendingOffset ?? 0) % indexes.length : 0;
+  const refresh = [...indexes.slice(refreshOffset), ...indexes.slice(0, refreshOffset)].slice(0, 6);
+  for (const index of refresh) {
+    await isolateScheduleRow(context, { key: `dependencies-${index.project_id}`, projectId: index.project_id }, "finding", async () => {
+      const project = (await projectConfigurations(context.globalArgs.dependencyProjects, context.globalArgs.projectExtensions, context, index.project_id))[0];
+      await reconcileDependencyIndex(project, index, context, curlHttp({...context.globalArgs,timeoutSeconds:5}));
+    });
+  }
   const handle = await context.writeResource("projectWork", "project-work", {
     ...work,
     issues,
     nextOffset: active.length ? (offset + batch.length) % active.length : 0,
     nextQueueOffset: 0,
-    nextPendingOffset: 0,
+    nextPendingOffset: indexes.length ? (refreshOffset + refresh.length) % indexes.length : 0,
   });
   return { dataHandles: [handle] };
 }

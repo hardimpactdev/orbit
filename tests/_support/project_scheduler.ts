@@ -1,6 +1,16 @@
 import { taskInputs, todoError } from "./task_contract.ts";
 import { behavior } from "../../extensions/behaviors/orbit_gateway.ts";
 import { behavior as projectBehavior } from "../../extensions/behaviors/projects/nckrtl-com/mod.ts";
+import { type Findings } from "../../extensions/behaviors/_lib/project_schedule.ts";
+import {
+  policyIdentity,
+  sources,
+} from "../../extensions/behaviors/_lib/dependency_results.ts";
+import {
+  type Index,
+  indexName,
+  repositoryIdentity,
+} from "../../extensions/behaviors/_lib/dependency_results_schema.ts";
 export const original = JSON.parse(
   await Deno.readTextFile(
     new URL("../fixtures/project-extensions/nckrtl-com.json", import.meta.url),
@@ -143,6 +153,13 @@ export function fixture() {
         });
         return { ok: true };
       }
+      if (args.modelType === "@swamp/git" && args.method === "remote_ref") {
+        data.set(`${args.name}/remote-ref-refs-heads-main`, {
+          sha: "a".repeat(40),
+          ref: "refs/heads/main",
+        });
+        return { ok: true };
+      }
       if (args.method === "start") {
         starts++;
         data.set(`${args.definition}/state-${args.arguments!.workItem}`, {
@@ -186,4 +203,61 @@ export function fixture() {
       mismatch = true;
     },
   };
+}
+
+/** A coherent, current producer result at the scheduler boundary; producer internals have their own tests. */
+export async function seedServicePlan(
+  f: ReturnType<typeof fixture>,
+  findings: Findings,
+) {
+  const now = new Date().toISOString(),
+    ref = "refs/heads/main",
+    sourceCommit = "a".repeat(40);
+  const value = {
+    ...findings,
+    sourceCommit,
+    sourceRef: ref,
+    policyIdentity: await policyIdentity(original),
+  };
+  const attempt = {
+    run_id: findings.source,
+    started_at: now,
+    finished_at: now,
+    status: "succeeded" as const,
+    error_code: null,
+  };
+  const publication = crypto.randomUUID();
+  const index: Index = {
+    schema_version: 1,
+    publication_id: publication,
+    project_id: 20,
+    repository: repositoryIdentity(original.repository),
+    source_ref: ref,
+    source_commit: sourceCommit,
+    generated_at: now,
+    last_attempt: attempt,
+    sources: sources(original).map((identity) => ({
+      ...identity,
+      last_attempt: attempt,
+      report: {
+        ...identity,
+        modelIdOrName: "orbit-gateway",
+        dataName: `dependencies-v1-report-${publication}-${"0".repeat(64)}`,
+        version: 1,
+        source_commit: sourceCommit,
+        observed_at: now,
+        publication_id: publication,
+      },
+    })),
+    batch_pr: {
+      status: "absent",
+      checked_at: now,
+      last_success_at: now,
+      error_code: null,
+      value: null,
+    },
+  };
+  f.data.set(`orbit-gateway/${await indexName(20, ref)}`, index);
+  f.data.set("orbit-gateway/findings-20", value);
+  return value;
 }

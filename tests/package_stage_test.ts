@@ -6,6 +6,16 @@ import { runStage, type Http, type Job, type StageArgs } from "../extensions/beh
 import { startFakeGateway } from "./_support/fake_gateway.ts";
 
 const target: PackageTarget = { workItem: "tg-7", targets: [{ path:".", manager: "composer", package: "livewire/livewire", version: "4.9.9", purpose: "security", advisoryUrls: ["https://github.com/advisories/GHSA-fixture-one", "https://github.com/advisories/GHSA-fixture-two"], advisories: ["PKSA-xhv3-nr94-h8db", "PKSA-bgw4-5zmg-2njg"] }] };
+
+Deno.test("Services batch refuses a provisioned head that differs from the scanned commit before worker execution", async () => {
+  const f=fixture();
+  try {
+    Object.assign(f.fake.groups.get(7)!,{taskable_id:1,vm_power:"running",status:"running"});
+    const args=f.args("script",{packageTarget:{...target,sourceCommit:"b".repeat(40)}});
+    await assertRejects(()=>runStage(args,f.stageDeps(args.key)),Error,"checkout head differs");
+    assertEquals(f.worker.calls,[]);
+  } finally { await f.fake.close(); }
+});
 function fixture() {
   const fake = startFakeGateway({ 7: { prStaysOpen: true }, 8: {} });
   const calls: { method: string; path: string; body?: Record<string, unknown>; key?: string }[] = [];

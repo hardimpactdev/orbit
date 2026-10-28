@@ -11,6 +11,7 @@ export const behavior = projectConfig("@nckrtl/project-launch-starter-kit", {
     "jsPaths": [
       ".",
     ],
+    "jsPackageManagers": { ".": "bun" },
     "policy": {},
   },
   "check": "composer test && composer analyse && vp check",

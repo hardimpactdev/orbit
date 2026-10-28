@@ -18,6 +18,8 @@ export const ScheduleReceiptSchema = z.object({
   started: z.boolean(),
   completed: z.boolean(),
   targets: TargetsSchema.optional(),
+  findingsRunId: z.string().optional(),
+  supersededBy: z.string().optional(),
 }).strict();
 export type ScheduleReceipt = z.infer<typeof ScheduleReceiptSchema>;
 export interface ScheduleStore {
@@ -201,6 +203,9 @@ export const FindingsSchema = z.strictObject({
   key: z.string(),
   projectId: z.number().int().positive(),
   source: z.string(),
+  sourceCommit: z.string().regex(/^[a-f0-9]{40}$/).optional(),
+  sourceRef: z.string().optional(),
+  policyIdentity: z.string().optional(),
   reports: z.array(z.unknown()),
   plans: z.array(BatchPlanSchema),
   targets: z.array(TargetsSchema.element),
@@ -263,6 +268,7 @@ export async function batchReceipt(
     started: false,
     completed: false,
     targets: findings.targets,
+    ...(findings.sourceCommit ? { findingsRunId: findings.source } : {}),
     request: {
       project_id: project.projectId,
       title,

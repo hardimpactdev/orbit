@@ -12,6 +12,7 @@ export const behavior = projectConfig("@nckrtl/project-hauzer", {
       ".",
       "mobile",
     ],
+    "jsPackageManagers": { ".": "npm", "mobile": "npm" },
     "policy": {
       ".": {
         "minimumReleaseAgeDays": 7,

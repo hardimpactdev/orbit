@@ -394,7 +394,11 @@ Deno.test("configuration migration rejects unknown keys and versions instead of 
       ),
     ),
   );
-  assertEquals(readProjectConfiguration(legacy), original);
+  const { jsPackageManagers: _managers, ...legacyWorker } = original.worker;
+  assertEquals(readProjectConfiguration(legacy), {
+    ...original,
+    worker: legacyWorker,
+  });
   assertEquals(readProjectConfiguration({ ...original, schema: 3 }), original);
   for (
     const invalid of [

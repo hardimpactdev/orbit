@@ -185,7 +185,7 @@ Deno.test("completed closed-unmerged PR retains its reservation with assistance;
 Deno.test("the idle minute driver expires failed-create reservations and keeps assistance visible on repeat", async () => {
   const f = scheduler();
   try {
-    const receipt = scheduleReceipt(WEBSITE_PROJECT, "detect");
+    const receipt = scheduleReceipt(WEBSITE_PROJECT, "routine");
     f.data.set(`orbit-gateway/schedule-${receipt.key}`, receipt);
     f.createStatus(422);
     await behavior.methods.project_work.execute({}, f.ctx);
@@ -225,7 +225,7 @@ Deno.test("the idle minute driver expires failed-create reservations and keeps a
     );
     const next = scheduleReceipt(
       WEBSITE_PROJECT,
-      "detect",
+      "routine",
       new Date("2030-01-01T00:00:00Z"),
     );
     f.data.set(`orbit-gateway/schedule-${next.key}`, next);
@@ -277,12 +277,12 @@ Deno.test("the idle minute driver reports a closed PR even after its schedule re
 Deno.test("a repeated entry after pre-create expiration retires its recreated intent without holding the project", async () => {
   const f = scheduler();
   try {
-    const receipt = scheduleReceipt(WEBSITE_PROJECT, "detect");
+    const receipt = scheduleReceipt(WEBSITE_PROJECT, "routine");
     f.data.set(`orbit-gateway/schedule-${receipt.key}`, receipt);
     f.data.set(`orbit-gateway/admission-${receipt.key}`, {
       key: receipt.key,
       projectId: 20,
-      mode: "detect",
+      mode: "routine",
       workItem: null,
       admittedAt: "2020-01-01T00:00:00Z",
       released: true,

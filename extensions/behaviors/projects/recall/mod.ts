@@ -23,6 +23,7 @@ export const behavior = projectConfig("@nckrtl/project-recall", {
     "jsPaths": [
       ".",
     ],
+    "jsPackageManagers": { ".": "bun" },
     "policy": {
       ".": {
         "minimumReleaseAgeDays": 7,

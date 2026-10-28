@@ -7,6 +7,7 @@ export const behavior = projectConfig("@nckrtl/project-nckrtl-com", {
   worker: {
     composerPaths: ["."],
     jsPaths: ["."],
+    jsPackageManagers: { ".": "npm" },
     policy: { ".": { minimumReleaseAgeDays: 7 } },
   },
   check: "composer check",

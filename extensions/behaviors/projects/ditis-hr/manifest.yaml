@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: "@nckrtl/project-ditis-hr"
-version: 2026.10.27.1
+version: 2026.10.28.1
 visibility: private
 license: MIT
 description: ditis-hr maintenance configuration and schedules.

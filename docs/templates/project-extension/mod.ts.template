@@ -6,6 +6,7 @@ export const behavior = projectConfig("@nckrtl/project-PROJECT-SLUG", {
   worker: {
     composerPaths: ["."],
     jsPaths: ["."],
+    jsPackageManagers: { ".": "ACTUAL_LOCKFILE_MANAGER" },
     policy: { ".": { minimumReleaseAgeDays: 7 } },
   },
   check: "EXACT_ORBIT_TASK_CHECK",

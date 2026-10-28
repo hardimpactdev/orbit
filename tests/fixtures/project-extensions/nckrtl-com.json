@@ -2,11 +2,25 @@
   "projectId": 20,
   "repository": "git@github.com:nckrtl/website.git",
   "worker": {
-    "composerPaths": ["."],
-    "jsPaths": ["."],
-    "policy": { ".": { "minimumReleaseAgeDays": 7 } }
+    "composerPaths": [
+      "."
+    ],
+    "jsPaths": [
+      "."
+    ],
+    "policy": {
+      ".": {
+        "minimumReleaseAgeDays": 7
+      }
+    },
+    "jsPackageManagers": {
+      ".": "npm"
+    }
   },
   "check": "composer check",
   "defaultBranch": "main",
-  "exceptions": { "schema": 1, "exceptions": [] }
+  "exceptions": {
+    "schema": 1,
+    "exceptions": []
+  }
 }

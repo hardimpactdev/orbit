@@ -6,7 +6,7 @@ upgrades as the test case. The [dependency routine](docs/website-routine.md) and
 [project batch workflow](docs/website-packages.md) use the official software
 factory and Gateway operations in task VMs.
 
-Maintained projects run the shared maintenance extensions on a Swamp worker inside its
+Routine and package updates run the shared maintenance extensions on a Swamp worker inside their
 task VM. [Worker placement and enrollment](docs/task-worker-maintenance.md)
 cover the lifecycle and replay rules. Project config requires worker paths and
 contains no repository script. Each repository keeps its version constraints
@@ -29,9 +29,11 @@ original unit is stopped and disabled, with its files retained. See the
 
 `@nckrtl/project-nckrtl-com` holds Project 20's config and weekly routine/daily
 detection schedules. Shared factories and the group worker do the work.
-Detection creates separate major/advisory tasks; exact major targets enter the
-existing package sequence, while security tasks wait for verified fixed
-versions. See [the design and rollout](docs/project-extensions.md) and
+Detection runs on Services without an Orbit group or VM and publishes the
+[`orbit.dependencies.v1` index and immutable source reports](docs/service-dependency-detection.md).
+Only a complete verified plan can enter the existing four-VM admission path,
+with one whole-project batch and PR. Blocked findings remain data.
+See [the design and rollout](docs/project-extensions.md) and
 [extension template](docs/templates/project-extension/README.md). The
 [fleet inventory](docs/maintained-project-extensions.md) covers the other 18
 maintained projects and their source config.

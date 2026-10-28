@@ -1,3 +1,4 @@
+import { seedServicePlan } from "./_support/project_scheduler.ts";
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import {
   type Candidate,
@@ -294,7 +295,10 @@ Deno.test("findings remain data at the fleet cap; after cleanup one group contai
         reason: "No valid fixed target",
       }],
     }];
-    const findings = await projectFindings(project, "source", reports, plans);
+    const findings = await seedServicePlan(
+      f,
+      projectFindings(project, "source", reports, plans),
+    );
     f.data.set("orbit-gateway/findings-20", findings);
     for (let i = 1; i <= 4; i++) {
       f.data.set(`orbit-gateway/admission-held${i}`, {

@@ -175,6 +175,7 @@ function npmAdvisories(
   data: Record<string, unknown>,
   js: Workspace,
   packages: Record<string, unknown>,
+  includeTransitive = false,
 ): Findings {
   if (!("vulnerabilities" in data) && !("advisories" in data)) {
     throw new MaintenanceFailure(
@@ -225,7 +226,9 @@ function npmAdvisories(
   };
   for (const name of Object.keys(vulnerabilities)) {
     const owners = name in js.direct ? [name] : buckets(name, js, map);
-    for (const owner of owners) {
+    for (
+      const owner of owners.length ? owners : includeTransitive ? [name] : []
+    ) {
       result[owner] = new Map([...(result[owner] ?? []), ...resolve(name)]);
     }
   }
@@ -314,6 +317,7 @@ function bunAdvisories(
 export async function audit(
   js: Workspace,
   signal?: AbortSignal,
+  includeTransitive = false,
 ): Promise<Findings> {
   const text = await report(
     js,
@@ -328,7 +332,7 @@ export async function audit(
   const packages = await lock(js);
   return js.manager === "bun"
     ? bunAdvisories(data, js, packages)
-    : npmAdvisories(data, js, packages);
+    : npmAdvisories(data, js, packages, includeTransitive);
 }
 export function published(findings: Findings): Audit {
   return Object.fromEntries(

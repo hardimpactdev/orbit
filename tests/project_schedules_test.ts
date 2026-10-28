@@ -1,4 +1,11 @@
-import { fixture, original, reports } from "./_support/project_scheduler.ts";
+import { serviceDetection } from "../extensions/behaviors/_lib/service_detection.ts";
+import { curlHttp } from "../extensions/behaviors/orbit_gateway.ts";
+import {
+  fixture,
+  original,
+  reports,
+  seedServicePlan,
+} from "./_support/project_scheduler.ts";
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { behavior } from "../extensions/behaviors/orbit_gateway.ts";
 import {
@@ -47,15 +54,21 @@ Deno.test("scheduler uses extension config and reconciles a lost factory-start r
       nextPendingOffset: 0,
       issues: [],
     });
-    await behavior.methods.schedule_project.execute({
-      projectId: 20,
-      mode: "detect",
-    }, f.ctx);
-    const skip = [...f.data].find(([key]) =>
-      key.startsWith("orbit-gateway/scheduler-skip-")
-    )![1] as { blocker: string; reason: string };
-    assertEquals(skip.blocker.includes("20-routine-"), true);
-    assertEquals(skip.reason.includes("skip this detect fire"), true);
+    await assertRejects(
+      () =>
+        behavior.methods.schedule_project.execute({
+          projectId: 20,
+          mode: "detect",
+        }, f.ctx),
+      Error,
+      "dependency-scanner",
+    );
+    assertEquals(
+      [...f.data.keys()].some((key) =>
+        key.startsWith("orbit-gateway/scheduler-skip-")
+      ),
+      false,
+    );
     assertEquals(f.posts(), 1);
   } finally {
     await f.close();
@@ -74,6 +87,39 @@ Deno.test("scheduler refuses a Gateway setting mismatch before group creation", 
         }, f.ctx),
       Error,
       "settings differ",
+    );
+    assertEquals(f.posts(), 0);
+  } finally {
+    await f.close();
+  }
+});
+
+Deno.test("Gateway preflight failure records a failed detect attempt and revokes yesterday's plan", async () => {
+  const f = fixture();
+  try {
+    await seedServicePlan(f, projectFindings(original, "old", reports, plans));
+    f.mismatch();
+    await serviceDetection(
+      {
+        ...original,
+        worker: { ...original.worker, jsPackageManagers: { ".": "npm" } },
+      },
+      "new-scan",
+      f.ctx,
+      curlHttp(f.ctx.globalArgs),
+    );
+    const key = [...f.data.keys()].find((k) =>
+      k.includes("dependencies-v1-project-")
+    )!;
+    const index = f.data.get(key) as {
+      last_attempt: { status: string; run_id: string };
+    };
+    assertEquals(index.last_attempt.status, "failed");
+    assertEquals(index.last_attempt.run_id, "new-scan");
+    assertEquals(
+      (f.data.get("orbit-gateway/findings-20") as { targets: unknown[] })
+        .targets,
+      [],
     );
     assertEquals(f.posts(), 0);
   } finally {
@@ -109,49 +155,192 @@ const plans = reports.map((
     reason: "No verified target",
   })),
 }));
-Deno.test("completed detection stores findings then admits one immutable whole-project batch exactly once", async () => {
+Deno.test("successful Services findings admit one immutable whole-project batch exactly once", async () => {
   const f = fixture();
   try {
-    await behavior.methods.schedule_project.execute({
-      projectId: 20,
-      mode: "detect",
-    }, f.ctx);
-    Object.assign(f.groups.get(1)!, {
-      status: "completed",
-      vm_power: "destroyed",
-      tasks: [{ status: "completed" }],
-    });
-    f.data.set("dependency-detect/state-tg-1", {
-      stageId: "completed",
-      status: "terminal",
-    });
-    f.data.set("dependency-detect/artifact-tg-1-script", {
-      payload: { detections: reports, plans },
-    });
+    await seedServicePlan(
+      f,
+      projectFindings(original, "service-scan", reports, plans),
+    );
     await behavior.methods.project_work.execute({}, f.ctx);
-    assertEquals(f.posts(), 2);
-    assertEquals(f.starts(), 2);
-    const findings = f.data.get("orbit-gateway/findings-20") as {
-      targets: unknown[];
-      blocked: unknown[];
-    };
-    assertEquals(findings.targets.length, 2);
-    assertEquals(findings.blocked.length, 1);
+    assertEquals(f.posts(), 1);
+    assertEquals(f.starts(), 1);
     const receipts = [...f.data].filter(([k]) =>
       k.startsWith("orbit-gateway/schedule-")
     ).map(([, v]) => ScheduleReceiptSchema.parse(v));
-    assertEquals(receipts.filter((r) => r.mode === "package").length, 1);
-    assertEquals(
-      receipts.find((r) => r.mode === "package")!.targets!.length,
-      2,
-    );
+    assertEquals(receipts.length, 1);
+    assertEquals(receipts[0].mode, "package");
+    assertEquals(receipts[0].targets!.length, 2);
     await behavior.methods.project_work.execute({}, f.ctx);
-    assertEquals(f.posts(), 2);
-    assertEquals(f.starts(), 2);
+    assertEquals(f.posts(), 1);
+    assertEquals(f.starts(), 1);
   } finally {
     await f.close();
   }
 });
+
+Deno.test("pending VM-era detect receipts and findings cannot allocate another detect VM", async () => {
+  const f = fixture();
+  try {
+    const old = scheduleReceipt(original, "detect");
+    f.data.set(`orbit-gateway/schedule-${old.key}`, old);
+    f.data.set(
+      "orbit-gateway/findings-20",
+      projectFindings(original, "old-vm-scan", reports, plans),
+    );
+    await behavior.methods.project_work.execute({}, f.ctx);
+    assertEquals(f.posts(), 0);
+    assertEquals(f.starts(), 0);
+    assertEquals(f.data.get(`orbit-gateway/schedule-${old.key}`), old);
+  } finally {
+    await f.close();
+  }
+});
+
+Deno.test("an unattempted VM-era detect intent does not block a fresh Services batch", async () => {
+  const f = fixture();
+  try {
+    const old = scheduleReceipt(original, "detect");
+    f.data.set(`orbit-gateway/schedule-${old.key}`, old);
+    await seedServicePlan(
+      f,
+      projectFindings(original, "new-service-scan", reports, plans),
+    );
+    await behavior.methods.project_work.execute({}, f.ctx);
+    assertEquals(f.posts(), 1);
+    assertEquals(f.starts(), 1);
+    assertEquals(f.data.get(`orbit-gateway/schedule-${old.key}`), old);
+  } finally {
+    await f.close();
+  }
+});
+
+Deno.test("completed VM-era detect cannot overwrite an independent Services plan", async () => {
+  const f = fixture();
+  try {
+    const old = {
+      ...scheduleReceipt(original, "detect"),
+      workItem: "tg-99",
+      attempted: true,
+      started: true,
+    };
+    f.data.set(`orbit-gateway/schedule-${old.key}`, old);
+    f.groups.set(99, {
+      id: 99,
+      project_id: 20,
+      status: "completed",
+      vm_power: "destroyed",
+    });
+    f.data.set("dependency-detect/state-tg-99", {
+      stageId: "completed",
+      status: "terminal",
+    });
+    f.data.set("dependency-detect/artifact-tg-99-script", {
+      payload: { detections: reports, plans },
+    });
+    const plan = await seedServicePlan(
+      f,
+      projectFindings(original, "new-service-scan", reports, plans),
+    );
+    await behavior.methods.project_work.execute({}, f.ctx);
+    assertEquals(f.data.get("orbit-gateway/findings-20"), plan);
+    assertEquals(f.posts(), 1);
+  } finally {
+    await f.close();
+  }
+});
+
+Deno.test("fresh scan supersedes only safe unattempted package intents while retaining their ledger", async () => {
+  const f = fixture();
+  try {
+    const oldFindings = await seedServicePlan(
+      f,
+      projectFindings(original, "old", reports, plans),
+    );
+    const old = await batchReceipt(original, oldFindings);
+    f.data.set(`orbit-gateway/schedule-${old.key}`, old);
+    f.data.set(`orbit-gateway/admission-${old.key}`, {
+      key: old.key,
+      projectId: 20,
+      mode: "package",
+      workItem: null,
+      released: false,
+      admittedAt: new Date().toISOString(),
+    });
+    await seedServicePlan(f, projectFindings(original, "new", reports, plans));
+    await behavior.methods.project_work.execute({}, f.ctx);
+    const retained = ScheduleReceiptSchema.parse(
+      f.data.get(`orbit-gateway/schedule-${old.key}`),
+    );
+    assertEquals(retained.completed, true);
+    assertEquals(retained.supersededBy, "new");
+    assertEquals(retained.request, old.request);
+    assertEquals(retained.targets, old.targets);
+    assertEquals(
+      (f.data.get(`orbit-gateway/admission-${old.key}`) as {
+        released: boolean;
+      }).released,
+      true,
+    );
+    assertEquals(f.posts(), 1);
+    assertEquals(f.starts(), 1);
+  } finally {
+    await f.close();
+  }
+});
+
+for (const change of ["head", "policy", "running", "partial", "failed"]) {
+  Deno.test(`Services batch admission refuses ${change} changes before group creation`, async () => {
+    const f = fixture();
+    try {
+      const findings = await seedServicePlan(
+        f,
+        projectFindings(original, "scan", reports, plans),
+      );
+      if (change === "policy") {
+        f.data.set("orbit-gateway/findings-20", {
+          ...findings,
+          policyIdentity: "wrong",
+        });
+      } else if (change === "head") {
+        const run = f.ctx.runModel;
+        f.ctx.runModel = async (args) => {
+          const result = await run(args);
+          if (args.method === "remote_ref") {
+            f.data.set(`${args.name}/remote-ref-refs-heads-main`, {
+              sha: "b".repeat(40),
+              ref: "refs/heads/main",
+            });
+          }
+          return result;
+        };
+      } else {
+        const key = [...f.data.keys()].find((key) =>
+          key.includes("dependencies-v1-project-")
+        )!;
+        const index = f.data.get(key) as {
+          last_attempt: Record<string, unknown>;
+        };
+        f.data.set(key, {
+          ...index,
+          last_attempt: {
+            ...index.last_attempt,
+            status: change,
+            finished_at: change === "running"
+              ? null
+              : index.last_attempt.finished_at,
+            error_code: change === "running" ? null : "source_refresh_failed",
+          },
+        });
+      }
+      await behavior.methods.project_work.execute({}, f.ctx);
+      assertEquals(f.posts(), 0);
+      assertEquals(f.starts(), 0);
+    } finally {
+      await f.close();
+    }
+  });
+}
 
 Deno.test("bounded schedule ticks rotate past parked projects", async () => {
   const f = fixture();
@@ -270,9 +459,11 @@ Deno.test("uncertain pending creates and broken active rows are surfaced without
 Deno.test("a stuck batch create is surfaced without creating per-finding siblings", async () => {
   const f = fixture();
   try {
-    const findings = await projectFindings(original, "scan", reports, plans),
+    const findings = await seedServicePlan(
+        f,
+        projectFindings(original, "scan", reports, plans),
+      ),
       queued = await batchReceipt(original, findings);
-    f.data.set("orbit-gateway/findings-20", findings);
     f.data.set(`orbit-gateway/schedule-${queued.key}`, {
       ...queued,
       attempted: true,
@@ -291,7 +482,7 @@ Deno.test("a stuck batch create is surfaced without creating per-finding sibling
   }
 });
 
-Deno.test("parked and failed routines make daily detection a recorded skip without a group", async () => {
+Deno.test("parked and failed routines do not block a VM-free detection attempt", async () => {
   for (
     const state of [{ stageId: "assistance", status: "active" }, {
       stageId: "failed",
@@ -312,16 +503,19 @@ Deno.test("parked and failed routines make daily detection a recorded skip witho
       };
       f.data.set(`orbit-gateway/schedule-${blocked.key}`, blocked);
       f.data.set("dependency-routine/state-tg-88", state);
-      const result = await behavior.methods.schedule_project.execute({
-        projectId: 20,
-        mode: "detect",
-      }, f.ctx);
-      assertEquals(result.dataHandles.length, 1);
-      const skip = [...f.data].find(([key]) =>
-        key.startsWith("orbit-gateway/scheduler-skip-")
-      )![1] as { blocker: string; reason: string };
-      assertEquals(skip.blocker, blocked.key);
-      assertEquals(skip.reason.includes("unfinished"), true);
+      await serviceDetection(
+        {
+          ...original,
+          worker: { ...original.worker, jsPackageManagers: { ".": "npm" } },
+        },
+        "separate-scan",
+        { ...f.ctx, signal: AbortSignal.abort() },
+        curlHttp(f.ctx.globalArgs),
+      );
+      const index = [...f.data].find(([key]) =>
+        key.includes("dependencies-v1-project-")
+      );
+      assertEquals(Boolean(index), true);
       assertEquals(f.posts(), 0);
       assertEquals(
         [...f.data.keys()].filter((key) =>
@@ -359,12 +553,17 @@ Deno.test("a cancelled backlog group with no VM retires its active factory recei
         .routine,
       [],
     );
-    await behavior.methods.schedule_project.execute({
-      projectId: 20,
-      mode: "detect",
-    }, f.ctx);
-    assertEquals(f.posts(), 2);
-    assertEquals(f.starts(), 2);
+    await serviceDetection(
+      {
+        ...original,
+        worker: { ...original.worker, jsPackageManagers: { ".": "npm" } },
+      },
+      "separate-scan",
+      { ...f.ctx, signal: AbortSignal.abort() },
+      curlHttp(f.ctx.globalArgs),
+    );
+    assertEquals(f.posts(), 1);
+    assertEquals(f.starts(), 1);
     assertEquals(
       [...f.data.keys()].some((key) =>
         key.startsWith("orbit-gateway/scheduler-skip-")

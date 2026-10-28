@@ -28,7 +28,7 @@ export function projectConfig(
 ) {
   return {
     type,
-    version: "2026.10.27.1",
+    version: "2026.10.28.1",
     globalArguments: z.object({}),
     resources: {
       exceptions: {

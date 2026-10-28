@@ -23,6 +23,7 @@ export const behavior = projectConfig("@nckrtl/project-operator-website", {
     "jsPaths": [
       ".",
     ],
+    "jsPackageManagers": { ".": "bun" },
     "policy": {
       ".": {
         "minimumReleaseAgeDays": 7,

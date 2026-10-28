@@ -1,4 +1,6 @@
+import { resolve } from "node:path";
 import { z } from "npm:zod@4";
+import { toolOptions } from "./tool_policy.ts";
 import { cleanEnv } from "./environment.ts";
 
 export class MaintenanceFailure extends Error {
@@ -123,16 +125,59 @@ export async function command(
   extraEnv: Record<string, string> = {},
 ): Promise<CommandResult> {
   try {
-    const result = await new Deno.Command(binary, {
+    signal?.throwIfAborted();
+    const options = toolOptions(
+      binary,
       args,
+      cleanEnv((key) => Deno.env.get(key), extraEnv),
+    );
+    const candidates = binary.includes("/")
+      ? [resolve(cwd, binary)]
+      : (options.env.PATH ?? "").split(":").map((p) => resolve(cwd, p, binary));
+    let executable: string | undefined;
+    for (const candidate of candidates) {
+      try {
+        const stat = await Deno.stat(candidate);
+        if (stat.isFile && ((stat.mode ?? 0) & 0o111)) {
+          executable = candidate;
+          break;
+        }
+      } catch (error) {
+        if (!(error instanceof Deno.errors.NotFound)) throw error;
+      }
+    }
+    if (!executable) {
+      throw new MaintenanceFailure(`Missing executable ${binary}`, 127);
+    }
+    // Services and task workers are Linux. A private session lets cancellation reap descendants too.
+    const child = new Deno.Command(signal ? "/usr/bin/setsid" : executable, {
+      args: signal
+        ? ["--wait", "--", executable, ...options.args]
+        : options.args,
       cwd,
-      signal,
       clearEnv: true,
-      env: cleanEnv((key) => Deno.env.get(key), extraEnv),
+      env: options.env,
       stdin: "null",
       stdout: "piped",
       stderr: "piped",
-    }).output();
+    }).spawn();
+    // A tool that ignores SIGTERM must not keep a scan or the orchestration lock alive.
+    const abort = () => {
+      try {
+        Deno.kill(-child.pid, "SIGKILL");
+      } catch { /* group not started or already exited */ }
+      try {
+        child.kill("SIGKILL");
+      } catch { /* already exited */ }
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
+    let result: Deno.CommandOutput;
+    try {
+      result = await child.output();
+    } finally {
+      signal?.removeEventListener("abort", abort);
+    }
     const stdout = new TextDecoder().decode(result.stdout);
     const stderr = new TextDecoder().decode(result.stderr);
     return { code: result.code, stdout, stderr };

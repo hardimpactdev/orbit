@@ -401,6 +401,7 @@ async function maintenanceRequest(args: StageArgs, g: GroupRow, http: Http, mode
     typeof instance.checkout_path !== "string" || !instance.checkout_path.startsWith("/")) throw new Error("maintenance workspace identity differs");
   const base = envelope(args.workspace)?.payload.startingCommit ?? instance.starting_commit;
   if (typeof base !== "string" || !/^[a-f0-9]{40}$/.test(base)) throw new Error("maintenance requires the immutable provision starting commit");
+  if (args.packageTarget?.sourceCommit && base !== args.packageTarget.sourceCommit) throw new Error("package checkout head differs from the scanned source; detect again");
   return { path: "swamp:maintenance", body: { cwd: instance.checkout_path, mode, base }, idempotencyKey: mode === "summary" ? `${args.key}.summary` : args.key };
 }
 

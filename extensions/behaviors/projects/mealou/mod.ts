@@ -12,6 +12,7 @@ export const behavior = projectConfig("@nckrtl/project-mealou", {
       ".",
       "mobile",
     ],
+    "jsPackageManagers": { ".": "npm", "mobile": "npm" },
     "policy": {
       ".": {
         "minimumReleaseAgeDays": 7,

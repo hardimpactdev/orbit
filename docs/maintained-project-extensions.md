@@ -34,7 +34,9 @@ their extensions preserve that absence rather than adding policy.
 
 Each routine runs weekly on Monday and detection runs daily, in UTC. Fires are
 staggered by ten minutes from Project 20. Read each workflow for its exact cron.
-An unfinished routine/detection in the same Project records a skip; other
-Projects continue. Scheduler issues and skips are queryable on orbit-gateway.
+An unfinished maintenance group blocks another routine or package in the same
+Project. Services detection remains independent of that VM admission guard and
+publishes results even at the fleet cap. Scheduler issues and skips are
+queryable on orbit-gateway.
 
 Horizon New Dawn is excluded: its upstream-parity extension has its own owner.

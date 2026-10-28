@@ -62,10 +62,17 @@ each admitted factory run; the minute admission workflow only reconciles schedul
 receipts and findings. The shared reservation cap limits new maintenance VMs,
 not the advancement of existing work. See [per-group workflows](per-group-workflows.md).
 
-A daily detection run uses a separate instance of the official
-factory: provision, detect on the task worker, finish without a PR.
-Detection failures or a changed checkout park for assistance. Detection never
-starts a repair turn or publishes changes.
+A daily detection run now scans a pinned default-branch checkout on Services.
+It creates no Orbit group, worker or VM and continues while package PRs wait
+for review. It writes a versioned Project/ref index and immutable reports,
+then leaves a complete verified plan for ordinary batch admission. See
+[Services detection and its release gate](service-dependency-detection.md).
+Every JS path pins its lockfile manager in `worker.jsPackageManagers`.
+
+## Historical VM detect groups
+
+The following recovery rules apply only to existing VM-era groups. New detect
+entries use Services. Deployment neither retries nor cancels historical groups.
 
 A failed scan with an unchanged checkout can be retried on its existing group
 and VM after its cause is fixed. The operator approves `detect-retry` and grants
@@ -105,14 +112,15 @@ cancel them before a replacement scan. Do not reset failed checks, rewrite
 running deliverables or invent a passing handoff receipt.
 
 
+## Routine and package deliverables
+
 Every generated child declares typed deliverables in shared `project_schedule.ts`:
 
 - Routine and package children have a `project-check` command deliverable. It
   runs the configured `check` from the repository root (`directory: .`), without
-  a failing-on-base requirement. Detection has no command or file deliverable.
+  a failing-on-base requirement. Services detection creates no child.
 - A review deliverable records workflow and worker evidence, the Gateway check,
-  the PR or no-change result, and worker departure. Detection records successful
-  scan reports and matching checkout snapshots instead of a project check or PR.
+  the PR or no-change result, and worker departure.
 - Each package child also declares `dependency-lock`, a file deliverable with
   `change: modified` across the selected paths: `composer.lock` for Composer, or
   `{bun.lock,package-lock.json,npm-shrinkwrap.json,pnpm-lock.yaml}` for JavaScript. The latter is Orbit's supported
