@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationCompletion;
+use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Operations\OperationFamilyExecution;
 use App\Domain\Operations\OperationGatewayCommand;
 use App\Domain\Operations\OperationGatewayCommands;
@@ -111,7 +112,8 @@ final class KitFamilyExecution implements OperationCompletion, OperationFamilyEx
 {
     public function context(Operation $operation): array
     {
-        return ['descriptors' => $operation->input['descriptors']];
+        return ['descriptors' => $operation->input['descriptors'],
+            ...(isset($operation->state['family_projection']) ? ['result' => $operation->state['family_projection']] : [])];
     }
 
     public function input(Operation $operation, array $run): array
@@ -134,7 +136,13 @@ final class KitFamilyExecution implements OperationCompletion, OperationFamilyEx
         return $receipt;
     }
 
-    public function assertCompletion(Operation $operation, OperationOutcome $outcome): void {}
+    public function assertCompletion(Operation $operation, OperationOutcome $outcome): void
+    {
+        $projection = $operation->state['family_projection'] ?? null;
+        if ($projection !== null && $outcome->result !== app(OperationExecutionContract::class)->result($operation, $projection)) {
+            throw new ResourceOperationException('operation.completion_unproven', 'The terminal projection does not match recorded deployment identity.', 409);
+        }
+    }
 
     public function cancellationBoundary(Operation $operation): ?array
     {
@@ -321,7 +329,6 @@ it('preserves empty strings and whitespace in nested executor inputs before exac
     $this->postJson($this->path.'/run', $run)->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
 });
 
-
 it('records and proves dotted descriptor step names', function (string $name): void {
     $this->spec['completion_contract']['step'] = $name;
     ($this->register)();
@@ -335,3 +342,15 @@ it('records and proves dotted descriptor step names', function (string $name): v
     $this->postJson($this->path.'/complete', ['worker' => 'worker', 'status' => 'succeeded', 'result' => $result])->assertOk();
     expect($this->operation->steps()->sole()->name)->toBe($name);
 })->with(['source_preparation.resolve', 'setup.install', 'before_activation.install']);
+
+it('exposes a filtered public projection and validates it on failed or cancelled completion', function (string $status): void {
+    $projection = ['deployment_id' => 42, 'release' => 'new-release', 'selected_release' => 'previous-release', 'commit' => 'admitted-sha'];
+    $this->spec['result_fields'] = [...$this->spec['result_fields'], ...array_keys($projection)];
+    ($this->register)();
+    $this->operation->update(['state' => ['family_projection' => [...$projection, 'unlisted' => 'drop this']], 'cancel_requested_at' => now()]);
+    $this->postJson($this->path.'/heartbeat', ['worker' => 'worker'])->assertOk()->assertJsonPath('data.execution_context.result', $projection);
+    $body = ['worker' => 'worker', 'status' => $status, 'result' => [...$projection, 'deployment_id' => 99], 'error_code' => 'deployment.failed'];
+    $this->postJson($this->path.'/complete', $body)->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
+    $this->postJson($this->path.'/complete', [...$body, 'result' => $projection])->assertOk()->assertJsonPath('data.result', $projection);
+    expect($this->command->runs)->toBe(0);
+})->with(['failed', 'cancelled']);

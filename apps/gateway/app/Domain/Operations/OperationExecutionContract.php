@@ -80,7 +80,7 @@ final readonly class OperationExecutionContract
         return $class === null ? null : app($class);
     }
 
-    /** @return array{descriptors: list<array{key: string, step: string, transport: string, name: string, input: array<string, mixed>, resumable: bool, required: bool}>} */
+    /** @return array{descriptors: list<array{key: string, step: string, transport: string, name: string, input: array<string, mixed>, resumable: bool, required: bool}>, result?: array<string, mixed>} */
     public function context(Operation $operation): array
     {
         $context = $this->execution($operation)?->context($operation) ?? ['descriptors' => []];
@@ -90,7 +90,8 @@ final readonly class OperationExecutionContract
             $this->secrets->references($operation, $descriptor['input'], $spec['secrets'] ?? []);
         }
 
-        return $context;
+        return ['descriptors' => $context['descriptors'],
+            ...(isset($context['result']) ? ['result' => $this->result($operation, $context['result'])] : [])];
     }
 
     /** @param RunInput $data

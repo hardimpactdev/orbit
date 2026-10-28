@@ -16,7 +16,7 @@ use App\Models\Operation;
  */
 interface OperationFamilyExecution
 {
-    /** @return array{descriptors: list<Descriptor>} */
+    /** @return array{descriptors: list<Descriptor>, result?: array<string, mixed>} */
     public function context(Operation $operation): array;
 
     /** @param RunInput $run
