@@ -351,6 +351,6 @@ MCP has an experimental Tasks primitive for long tool calls. An operation alread
 
 ### Production smoke operations
 
-The [production smoke API](/reference/deployments#dispatch-and-receipt) starts `instance.smoke` with the separate `instance_smoke` target and a required caller-bound key. It never takes the Instance deploy lock. The durable send step records intent before GitHub and is resumable only as a read after that intent. Delayed read steps release the worker. Observation ends 12 minutes after admission (Swamp’s 600-second budget plus 120 seconds for queue delay), after which unresolved evidence is retained as unknown; this transport limit does not replace Swamp's baseline deadline.
+The [production smoke API](/reference/deployments#dispatch-and-receipt) starts `instance.smoke` with the separate `instance_smoke` target and a required caller-bound key. It never takes the Instance deploy lock. The durable send step records intent before GitHub and is resumable only as a read after that intent. Delayed read steps release the worker. Observation ends 720 seconds after admission (Swamp’s 600-second budget plus 120 seconds for queue delay), after which unresolved evidence is retained as unknown; this transport limit does not replace Swamp's baseline deadline.
 
 Cancellation stops observation and reports unknown; it never resends or cancels the GitHub run. Operation failures describe control-plane errors, while the smoke result independently distinguishes verified failed tests from pending or unknown execution evidence.

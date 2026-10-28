@@ -10,13 +10,15 @@ use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandDeadline;
 use Generator;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use SensitiveParameter;
 use Throwable;
 
 /**
  * Reads GitHub Actions runs and artifacts of one repository with an installation token of the
- * Gateway GitHub App that holds only Actions read. Smoke dispatch requests a separate Actions-write token. Artifact archives are downloaded from the
+ * Gateway GitHub App that holds only Actions read. Smoke dispatch requests a separate Actions-write token.
+ * Artifact archives are downloaded from the
  * storage URL GitHub redirects to, without the token. Every failure is a
  * {@see GitHubActionsUnavailable} without detail, so no token or signed URL reaches an error.
  */
@@ -72,8 +74,10 @@ final readonly class GitHubActionsReader
             throw new GitHubActionsUnavailable;
         }
 
-        if ($permission === 'write' && (! is_array($installation['permissions'] ?? null) || ($installation['permissions']['actions'] ?? null) !== 'write')) {
-            throw new ResourceOperationException('instance.smoke_invalid', 'The Gateway operator must grant Actions write in the App settings and accept the installation update.');
+        if ($permission === 'write' && (! is_array($installation['permissions'] ?? null)
+            || ($installation['permissions']['actions'] ?? null) !== 'write')) {
+            throw new ResourceOperationException('instance.smoke_invalid',
+                'The Gateway operator must grant Actions write in the App settings and accept the installation update.');
         }
 
         $access = $this->json('/app/installations/'.$id.'/access_tokens', $jwt, [
@@ -82,7 +86,8 @@ final readonly class GitHubActionsReader
         $token = $access['token'] ?? null;
         $permissions = $access['permissions'] ?? null;
 
-        if (! is_string($token) || $token === '' || ! is_array($permissions) || ($permissions['actions'] ?? null) !== $permission) {
+        if (! is_string($token) || $token === '' || ! is_array($permissions)
+            || ($permissions['actions'] ?? null) !== $permission) {
             throw new GitHubActionsUnavailable;
         }
 
@@ -139,16 +144,17 @@ final readonly class GitHubActionsReader
         try {
             $response = Http::withToken($token)->withoutRedirecting()->timeout($this->deadline->cap(10))
                 ->connectTimeout(5)->withOptions(['stream' => true])->get($url);
+            if ($response->status() !== 302) {
+                $failure = $this->failure($response);
+                $response->toPsrResponse()->getBody()->close();
+                throw $failure;
+            }
             $location = $response->header('Location');
             $response->toPsrResponse()->getBody()->close();
-        } catch (ResourceOperationException $exception) {
+        } catch (ResourceOperationException|GitHubActionsUnavailable $exception) {
             throw $exception;
         } catch (Throwable) {
             throw new GitHubActionsUnavailable;
-        }
-
-        if ($response->status() !== 302) {
-            throw new GitHubActionsUnavailable($response->status());
         }
 
         $parts = parse_url($location);
@@ -218,6 +224,15 @@ final readonly class GitHubActionsReader
         return hash_final($hash);
     }
 
+    private function failure(Response $response): GitHubActionsUnavailable
+    {
+        $limited = $response->status() === 403
+            && ($response->header('x-ratelimit-remaining') === '0'
+                || str_contains(strtolower($response->toPsrResponse()->getBody()->read(4096)), 'secondary rate limit'));
+
+        return new GitHubActionsUnavailable($response->status(), rateLimited: $limited);
+    }
+
     /**
      * @param  array<string, mixed>|null  $payload
      * @return Generator<int, string>
@@ -243,7 +258,7 @@ final readonly class GitHubActionsReader
             $stream = $response->toPsrResponse()->getBody();
 
             if (! $response->successful()) {
-                throw new GitHubActionsUnavailable($response->status());
+                throw $this->failure($response);
             }
 
             $read = 0;

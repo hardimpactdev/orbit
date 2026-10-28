@@ -89,10 +89,12 @@ function smoke_fixture(object $test, string $mode = 'passed'): array
         $path.'/commits/main' => function () use ($mode, $test) {
             $test->smokeResolves = ($test->smokeResolves ?? 0) + 1;
 
-            return Http::response(['sha' => str_repeat($mode === 'prepare-retry' && $test->smokeResolves === 1 ? 'c' : 'b', 40)]);
+            return Http::response(['sha' => ($test->smokeConfig ?? null) === 'sha' ? 'main'
+                : str_repeat($mode === 'prepare-retry' && $test->smokeResolves === 1 ? 'c' : 'b', 40)]);
         },
-        $path.'/actions/workflows/production-smoke.yml' => fn () => Http::response(['id' => 42, 'path' => $body['workflow'],
-            'state' => 'active']),
+        $path.'/actions/workflows/production-smoke.yml' => fn () => Http::response(['id' => 42,
+            'path' => ($test->smokeConfig ?? null) === 'path' ? '.github/workflows/other.yml' : $body['workflow'],
+            'state' => ($test->smokeConfig ?? null) === 'inactive' ? 'disabled_manually' : 'active']),
         $path.'/actions/workflows/42/dispatches' => function ($request) use ($mode, $test) {
             $test->smokeSends++;
             $test->intentSeen[] = is_string(Operation::query()->latest('id')->first()->state['intent'] ?? null);
@@ -104,6 +106,14 @@ function smoke_fixture(object $test, string $mode = 'passed'): array
             return Http::response('', $mode === 'refused' ? 422 : 204);
         },
         $path.'/actions/workflows/42/runs?*' => function () use ($test, $mode, $run) {
+            if (isset($test->duringRead)) {
+                ($test->duringRead)();
+            }
+            if (in_array($mode, ['primary', 'secondary', 'unauthorized', 'forbidden'], true)
+                && $test->smokeReads++ === 0) {
+                return Http::response(['message' => $mode === 'secondary' ? 'You exceeded a secondary rate limit.' : 'Denied'],
+                    $mode === 'unauthorized' ? 401 : 403, $mode === 'primary' ? ['x-ratelimit-remaining' => '0'] : []);
+            }
             $rows = $mode === 'uncertain' || ($mode === 'later' && $test
                 ->smokeReads++ === 0) ? [] : ($mode === 'ambiguous' ? [$run, [...$run, 'id' => 92]] : [$run]);
 
@@ -149,6 +159,11 @@ it('dispatches once and retains verified attempt evidence with bounded redacted 
     expect($this->smokePayloads)->toBe([['ref' => 'main', 'inputs' => [
         'commit' => $body['commit'], 'deployment_id' => (string) $body['deployment_id'], 'base_url' => $body['base_url'],
     ]]]);
+    if ($mode === 'aggregate') {
+        foreach (['tests', 'failures', 'errors', 'skipped'] as $count) {
+            $receipt->assertJsonPath('data.smoke.'.$count, 0);
+        }
+    }
     if (str_starts_with($mode, 'clean-')) {
         $receipt->assertJsonPath('data.operation.error_code', 'instance.smoke_run_unsuccessful');
     }
@@ -238,7 +253,7 @@ it('retries a transient artifact download and keeps the matched run pending', fu
     $this->getJson($url.'/receipt?request_key=smoke.download')->assertOk()->assertJsonPath('data.smoke.state', 'passed');
     expect($this->smokeSends)->toBe(1);
     expect(Http::recorded(fn ($request) => str_ends_with($request->url(), '/access_tokens')
-        && $request['permissions'] === ['actions' => 'read']))->toHaveCount(3);
+        && $request['permissions'] === ['actions' => 'read']))->toHaveCount(1);
 });
 
 it('supersedes an older waiting smoke for a new selected deployment', function (): void {
@@ -357,3 +372,79 @@ it('refuses a receipt read against another Instance', function (): void {
     $this->getJson('/api/v1/instances/'.$other->id.'/smoke/receipt?request_key=smoke.instance')->assertConflict();
     expect($this->smokeSends)->toBe(0);
 });
+
+it('cancels a running older smoke at its read boundary and accepts the same new key', function (): void {
+    [$fixture, $body, $url] = smoke_fixture($this, 'uncertain');
+    $this->withHeader('Idempotency-Key', 'smoke.running')->postJson($url, $body)->assertAccepted();
+    $older = Operation::query()->sole();
+    app(OperationRunner::class)->run($older->id);
+    $fixture->deployment->current = 'fresh';
+    $next = InstanceDeployment::query()->create([
+        'instance_id' => $fixture->instance->id, 'release' => 'fresh', 'commit' => $body['commit'],
+        'status' => 'succeeded', 'started_at' => now(),
+    ]);
+    $newBody = [...$body, 'deployment_id' => $next->id, 'release' => 'fresh'];
+    $this->duringRead = function () use ($older, $url, $newBody): void {
+        expect($older->refresh()->status)->toBe(OperationStatus::Running);
+        $this->withHeader('Idempotency-Key', 'smoke.next')->postJson($url, $newBody)
+            ->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
+        expect($older->refresh()->cancel_requested_at)->not->toBeNull();
+    };
+
+    $this->travel(10)->seconds();
+    app(OperationRunner::class)->read($older->id);
+
+    expect($older->refresh()->status)->toBe(OperationStatus::Cancelled);
+    expect($older->lock_key)->toBeNull();
+    $this->getJson($url.'/receipt?request_key=smoke.running')->assertOk()
+        ->assertJsonPath('data.smoke.state', 'unknown');
+    $this->postJson($url, $newBody)->assertAccepted();
+    expect($this->smokeSends)->toBe(1);
+});
+
+it('keeps primary and secondary rate limits pending and reuses the read token', function (string $mode): void {
+    [$fixture, $body, $url] = smoke_fixture($this, $mode);
+    $this->withHeader('Idempotency-Key', 'smoke.rate')->postJson($url, $body)->assertAccepted();
+    $operation = Operation::query()->sole();
+
+    app(OperationRunner::class)->run($operation->id);
+
+    $this->getJson($url.'/receipt?request_key=smoke.rate')->assertOk()
+        ->assertJsonPath('data.smoke.state', 'pending')
+        ->assertJsonPath('data.operation.error_code', 'instance.smoke_github_unavailable');
+    $this->travel(10)->seconds();
+    app(OperationRunner::class)->read($operation->id);
+    $this->getJson($url.'/receipt?request_key=smoke.rate')->assertOk()->assertJsonPath('data.smoke.state', 'passed');
+    expect(Http::recorded(fn ($request) => str_ends_with($request->url(), '/access_tokens')
+        && $request['permissions'] === ['actions' => 'read']))->toHaveCount(1);
+    expect($this->smokeSends)->toBe(1);
+})->with(['primary', 'secondary']);
+
+it('reports an evidence auth refusal separately from invalid evidence', function (string $mode): void {
+    [$fixture, $body, $url] = smoke_fixture($this, $mode);
+    $this->withHeader('Idempotency-Key', 'smoke.auth')->postJson($url, $body)->assertAccepted();
+
+    app(OperationRunner::class)->run(Operation::query()->sole()->id);
+
+    $this->getJson($url.'/receipt?request_key=smoke.auth')->assertOk()
+        ->assertJsonPath('data.smoke.state', 'unknown')
+        ->assertJsonPath('data.operation.error_code', 'instance.smoke_github_auth');
+    expect(app('cache')->get('orbit:github:token:actions:acme/widgets'))->toBeNull();
+})->with(['unauthorized', 'forbidden']);
+
+it('refuses definite workflow configuration errors without retrying preparation', function (string $config): void {
+    [$fixture, $body, $url] = smoke_fixture($this);
+    $this->withHeader('Idempotency-Key', 'smoke.config')->postJson($url, $body)->assertAccepted();
+    $this->smokeConfig = $config;
+    $operation = Operation::query()->sole();
+
+    app(OperationRunner::class)->run($operation->id);
+
+    $this->getJson($url.'/receipt?request_key=smoke.config')->assertOk()
+        ->assertJsonPath('data.smoke.state', 'unknown')
+        ->assertJsonPath('data.operation.error_code', 'instance.smoke_invalid')
+        ->assertJsonPath('data.operation.status', 'failed');
+    expect($operation->refresh()->state['prepare_attempts'])->toBe(1);
+    expect($operation->state)->not->toHaveKey('intent');
+    expect($this->smokeSends)->toBe(0);
+})->with(['inactive', 'path', 'sha']);

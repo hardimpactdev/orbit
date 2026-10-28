@@ -9,7 +9,6 @@ use App\Actions\Operations\StartOperationAction;
 use App\Data\Instances\InstanceSmokeRequestData;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Operations\OperationKinds;
-use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\GitHub\GitHubActionsReader;
 use App\Infrastructure\GitHub\GitHubActionsUnavailable;
@@ -41,7 +40,7 @@ final readonly class StartInstanceSmokeAction
         $holder = Operation::query()->where('lock_key', 'instance_smoke:'.$instance->id)
             ->where('kind', OperationKinds::InstanceSmoke)->first();
         if ($holder !== null && ($holder->input['deployment_id'] ?? null) !== $data->deploymentId
-            && in_array($holder->status, [OperationStatus::Queued, OperationStatus::Waiting], true)) {
+            && ! $holder->status->terminal()) {
             $this->cancel->execute($holder);
         }
 

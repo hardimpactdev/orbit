@@ -8,6 +8,7 @@ use App\Actions\Instances\StartInstanceSmokeAction;
 use App\Data\Instances\InstanceSmokeRequestData;
 use App\Data\Instances\InstanceSmokeResultData;
 use App\Domain\GitHub\GitHubRepository;
+use App\Domain\Operations\OperationCancelled;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationRun;
 use App\Domain\Operations\OperationStepPlan;
@@ -80,6 +81,7 @@ final readonly class InstanceSmokeOperation implements OperationWaitingKind, Ope
             }
             throw new ResourceOperationException('instance.smoke_prepare_unavailable', 'Smoke preparation could not be read.', 503);
         }
+        $this->checkCancellation($run);
         $run->remember('intent', static fn (): string => now()->toIso8601String());
         try {
             $this->github->send($repository, $workflow['id'], $request, $token);
@@ -102,6 +104,7 @@ final readonly class InstanceSmokeOperation implements OperationWaitingKind, Ope
     public function read(OperationRun $run): mixed
     {
         $operation = $run->operation();
+        $this->checkCancellation($run);
         if ($operation->current_step === 'dispatch') {
             $this->dispatch($run);
 
@@ -126,14 +129,11 @@ final readonly class InstanceSmokeOperation implements OperationWaitingKind, Ope
                     InstanceSmokeRequestData::from($operation->input), $workflow,
                     $this->intent($operation));
             } catch (Throwable $exception) {
-                if (! $exception instanceof GitHubActionsUnavailable || ! $exception->retryable()) {
-                    $result->state = 'unknown';
-                }
-                $observation = new SmokeObservation($result, $result->state === 'unknown'
-                    ? 'instance.smoke_evidence_invalid' : 'instance.smoke_github_unavailable');
+                $observation = $this->github->unavailable($result, $exception, $this->repository($operation));
                 Log::warning('Production smoke evidence is unavailable.', ['operation' => $operation->id]);
             }
         }
+        $this->checkCancellation($run);
         $result = $observation->result;
         $code = $observation->errorCode;
         if ($result->state === 'pending' && $this->expired($operation)) {
@@ -149,6 +149,13 @@ final readonly class InstanceSmokeOperation implements OperationWaitingKind, Ope
         }
 
         return null;
+    }
+
+    private function checkCancellation(OperationRun $run): void
+    {
+        if ($run->cancelRequested()) {
+            throw new OperationCancelled;
+        }
     }
 
     public function stop(OperationRun $run): void {}

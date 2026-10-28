@@ -551,7 +551,7 @@ The production home exists before the first release is selected. Deployment and 
 
 ## Production smoke
 
-Swamp can opt a Project into production smoke after a successful production deploy. The Gateway exposes the selected release and dispatches the repository's own GitHub Actions browser-test workflow against its public HTTPS origin. This feature adds no schedule or opt-in and does not block deploys, roll back, repair, resume or merge. Swamp owns baseline admission, deadlines and acceptance policy. The [wire contract for production smoke](https://github.com/hardimpactdev/orbit-swamp/blob/4b99af2784625af3756751d9c68120a88d975d5b/docs/production-smoke-contract.md) defines the paired service fields.
+Swamp can opt a Project into production smoke after a successful production deploy. The Gateway exposes the selected release and dispatches the repository's own GitHub Actions browser-test workflow against its public HTTPS origin. This feature adds no schedule or opt-in and does not block deploys, roll back, repair, resume or merge. Swamp owns baseline admission, deadlines and acceptance policy. This page owns the Gateway wire contract. The private [Swamp implementation reference](https://github.com/hardimpactdev/orbit-swamp/blob/main/docs/production-smoke-contract.md) is supporting material.
 
 `GET /api/v1/instances/{instance}/smoke/context` and MCP `instance-smoke-context` require Gateway Node access. They return `instance_id`, `project_id`, `repository_url`, `production`, `base_urls`, `selected` and `retained_releases`. Context reads the actual selected retained release on the Node and matches a successful deploy or rollback history row. `selected` is null without matching evidence; otherwise it contains `deployment_id`, the full 40-character `commit` and `release`. A production Instance must be active on an active Node with an active app-prod role and no active app-dev role. URLs are HTTPS origins of active public Project-owned Routes targeting that Instance. A development Instance cannot admit smoke.
 
@@ -569,8 +569,44 @@ A pass requires a completed successful run and matching attempt-specific target 
 
 The Gateway reports evidence. Swamp alone enforces its original deadline, missing-result policy and fresh selection check; new selection or configuration never rewrites recorded evidence.
 
-A new admission for another deployment cancels an older queued or waiting smoke on that Instance and retains its receipt as unknown. A running observation or the same deployment still returns `409 operation.target_busy`; Swamp must retry the same request key after that holder yields, without treating refusal as a failed test. Preparing a send retries at most three times before intent exists and refreshes the workflow ref SHA on each attempt. A definite dispatch refusal reports unknown immediately with `instance.smoke_dispatch_refused`; an uncertain send is never repeated.
+A new admission for another deployment requests cancellation of any older non-terminal smoke on that Instance and retains its receipt as unknown. A running read honours cancellation at its next boundary. Until that holder yields, admission returns `409 operation.target_busy`; Swamp retries the identical key and body once within the tick. A busy refusal never means that tests failed. Preparing a send retries at most three times before intent exists and refreshes the workflow ref SHA on each attempt. A definite dispatch refusal reports unknown immediately with `instance.smoke_dispatch_refused`; an uncertain send is never repeated.
 
 Artifact transport outages remain pending until a later read or the observation deadline. Digest, archive and schema mismatches are terminal unknown with `instance.smoke_evidence_invalid`. The Gateway allows 60 seconds of clock skew when matching creation time.
 
 The repository workflow must name its run `Smoke <deployment_id> <commit>` and publish `production-smoke-<run_id>-<run_attempt>`. Its zip contains `storage/framework/testing/smoke-target.json` and `storage/framework/testing/smoke.xml`. Target JSON string fields are `commit`, `deployment_id`, `base_url`, `run_id` and `run_attempt`. JUnit must be UTF-8 without a document type or external entities. Output is stored once in the retained observation; step and Operation results contain only state metadata.
+
+### Wire contract and errors
+
+All three endpoints require Gateway Node access and use the normal `{data, meta}` envelope. POST requires `Idempotency-Key`. IDs and counts are integers, SHA values have 40 lowercase hex characters, and every field below is present, including nulls. `OperationData` is the [operation record](/reference/operations#the-record), including its bound input, target and error code.
+
+```typescript
+type Selection = { deployment_id: number; commit: string; release: string };
+type Context = {
+  instance_id: number; project_id: number; repository_url: string;
+  production: boolean; base_urls: string[];
+  selected: Selection | null; retained_releases: string[];
+};
+type Request = Selection & { base_url: string; workflow: string; ref: string };
+type Result = Request & {
+  state: "pending" | "passed" | "failed" | "unknown";
+  run_id: number | null; run_attempt: number | null; workflow_sha: string | null;
+  run_url: string | null; conclusion: string | null;
+  tests: number; failures: number; errors: number; skipped: number;
+  output: string; artifacts: { name: string; url: string }[];
+};
+type Receipt = {
+  request_key: string; found: boolean;
+  operation: OperationData | null; smoke: Result | null;
+};
+```
+
+Observation ends 720 seconds after admission: Swamp's 600-second budget plus 120 seconds of queue slack. GitHub rate-limit responses, including primary and secondary 403 limits, stay pending. Other 401/403 responses end unknown with `instance.smoke_github_auth`. The Gateway reuses the encrypted cached Actions-read credential across polls. Invalid JUnit reports expose zero counts. Inactive workflows, path mismatches and refs without a full SHA end immediately with `instance.smoke_invalid` and a safe reason.
+
+| Status or outcome | Code | Meaning |
+| --- | --- | --- |
+| 422 admission refusal | `instance.smoke_invalid` | Invalid target/configuration, missing repository/installation or Actions write |
+| 503 admission refusal | `instance.smoke_github_unavailable` | Retryable GitHub outage; no operation admitted |
+| 409 admission refusal | `operation.target_busy` | Prior holder has not yielded; retry the identical admission |
+| Unknown receipt | `instance.smoke_run_unsuccessful` | Clean JUnit with an unsuccessful GitHub conclusion |
+| Unknown receipt | `instance.smoke_github_auth` | GitHub denied a read without rate-limit evidence |
+| Unknown receipt | `instance.smoke_observation_expired` | The 720-second observation limit expired |

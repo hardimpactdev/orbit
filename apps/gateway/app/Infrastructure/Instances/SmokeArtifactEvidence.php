@@ -16,6 +16,7 @@ final readonly class SmokeArtifactEvidence
 
     public function verify(string $archive, InstanceSmokeResultData $result): InstanceSmokeResultData
     {
+        $result = clone $result;
         $zip = new ZipArchive;
         if ($zip->open($archive) !== true) {
             throw new GitHubActionsUnavailable(invalid: true);

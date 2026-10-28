@@ -11,8 +11,10 @@ use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Instances\Smoke\SmokeObservation;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\GitHub\GitHubActionsReader;
 use App\Infrastructure\GitHub\GitHubActionsUnavailable;
+use App\Infrastructure\GitHub\GitHubTokenCache;
 use App\Support\ValidatedData;
 use Illuminate\Support\Carbon;
 use Throwable;
@@ -24,6 +26,7 @@ final readonly class GitHubInstanceSmoke
         private GitHubApi $api,
         private GitHubAppStore $apps,
         private SmokeArtifactEvidence $evidence,
+        private GitHubTokenCache $tokens,
     ) {}
 
     /** @return array{id: int, sha: string} */
@@ -42,12 +45,18 @@ final readonly class GitHubInstanceSmoke
         $sha = $commit['sha'] ?? null;
         $workflow = $this->actions->json(
             $path.'/actions/workflows/'.rawurlencode(basename($request->workflow)),
-            $this->actions->token($repository),
+            $this->readToken($repository),
         );
-        if (! is_int($workflow['id'] ?? null) || $workflow['id'] < 1
-            || ($workflow['path'] ?? null) !== $request->workflow
-            || ($workflow['state'] ?? null) !== 'active'
-            || ! is_string($sha) || preg_match('/\A[0-9a-f]{40}\z/D', $sha) !== 1) {
+        if (($workflow['path'] ?? null) !== $request->workflow) {
+            throw new ResourceOperationException('instance.smoke_invalid', 'The workflow path does not match.');
+        }
+        if (($workflow['state'] ?? null) !== 'active') {
+            throw new ResourceOperationException('instance.smoke_invalid', 'The workflow is not active.');
+        }
+        if (! is_string($sha) || preg_match('/\A[0-9a-f]{40}\z/D', $sha) !== 1) {
+            throw new ResourceOperationException('instance.smoke_invalid', 'The workflow ref has no full commit SHA.');
+        }
+        if (! is_int($workflow['id'] ?? null) || $workflow['id'] < 1) {
             throw new GitHubActionsUnavailable(invalid: true);
         }
 
@@ -82,7 +91,7 @@ final readonly class GitHubInstanceSmoke
     ): SmokeObservation {
         $result = InstanceSmokeResultData::from([...$request->toArray(), 'workflow_sha' => $workflow['sha']]);
         $path = GitHubActionsReader::repositoryPath($repository);
-        $token = $this->actions->token($repository);
+        $token = $this->readToken($repository);
         $earliest = Carbon::parse($since)->subSeconds(60);
         $runs = $this->actions->json($path.'/actions/workflows/'.$workflow['id'].'/runs?'.http_build_query([
             'event' => 'workflow_dispatch', 'head_sha' => $workflow['sha'],
@@ -161,14 +170,44 @@ final readonly class GitHubInstanceSmoke
                 ? $this->unknown($result, $result->tests > 0 && $result->skipped === 0
                     ? 'instance.smoke_run_unsuccessful' : 'instance.smoke_evidence_invalid')
                 : new SmokeObservation($result);
-        } catch (GitHubActionsUnavailable $exception) {
-            return $exception->retryable()
-                ? new SmokeObservation($result, 'instance.smoke_github_unavailable')
-                : $this->unknown($result);
-        } catch (Throwable) {
-            return $this->unknown($result);
+        } catch (Throwable $exception) {
+            return $this->unavailable($result, $exception, $repository);
         } finally {
             fclose($file);
+        }
+    }
+
+    public function unavailable(
+        InstanceSmokeResultData $result,
+        Throwable $exception,
+        GitHubRepository $repository,
+    ): SmokeObservation {
+        if ($exception instanceof GitHubActionsUnavailable) {
+            if ($exception->retryable()) {
+                return new SmokeObservation($result, 'instance.smoke_github_unavailable');
+            }
+            if (in_array($exception->status, [401, 403], true)) {
+                $this->tokens->forget($repository);
+
+                return $this->unknown($result, 'instance.smoke_github_auth');
+            }
+        }
+
+        return $this->unknown($result);
+    }
+
+    private function readToken(GitHubRepository $repository): string
+    {
+        $credentials = $this->apps->credentials() ?? throw new GitHubActionsUnavailable(404);
+        try {
+            $installation = $this->tokens->installation($credentials->appId, $repository,
+                fn (): ?int => $this->api->repositoryInstallation($credentials, $repository))
+                ?? throw new GitHubActionsUnavailable(404);
+
+            return $this->tokens->token($credentials->appId, $installation, $repository, 'actions',
+                fn (): string => $this->actions->token($repository));
+        } catch (GitHubApiException $exception) {
+            throw new GitHubActionsUnavailable($exception->isTokenRefusal() ? $exception->getCode() : null);
         }
     }
 
