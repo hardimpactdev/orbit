@@ -15,6 +15,16 @@ covers:
 
 The Gateway is a Laravel application, so it reads its own settings from a `.env` file. This page covers that file. [Instance environment variables](/reference/environment-variables) covers the `.env` files that the Gateway manages for Instances.
 
+## Services dependency detection
+
+The orchestrator enables read-token requests for one Services peer during deployment.
+
+| Variable | Meaning |
+| --- | --- |
+| `ORBIT_DEPENDENCY_DETECTION_SERVICES_NODE_ID` | Gateway-owned Services Node ID, exposed as `dependency_detection.services_node_id`. Unset or invalid disables the dependency read-token route. Set `ORBIT_DEPENDENCY_DETECTION_SERVICES_NODE_ID=17` only after verifying Services' identity, then rebuild the config cache with `php artisan config:cache` as the Gateway account. |
+
+Deploy Gateway before Services. The [GitHub App](/reference/github-app#services-dependency-credentials) page defines this peer-only contract and its credential boundary. The orchestrator applies this setting during deployment; a merge does not enable it.
+
 ## Swamp task output
 
 The Gateway reads [Swamp run output](/reference/tasks#swamp-run-output) with these optional deployment settings. Without a reader token, the task panel shows unavailable.

@@ -680,6 +680,7 @@
               "GET /api/v1/github/app/callback",
               "GET /api/v1/github/app/register",
               "GET /api/v1/metrics/grafana/authorize",
+              "POST /api/v1/projects/{project}/dependency-read-token",
               "GET /api/v1/runtime-activations/app-instance/{instance}",
               "POST /api/v1/schedules/{schedule}/complete"
             ]

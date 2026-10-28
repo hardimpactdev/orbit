@@ -48,6 +48,7 @@ use App\Http\Controllers\Api\NodesController;
 use App\Http\Controllers\Api\OperationsController;
 use App\Http\Controllers\Api\ProcessesController;
 use App\Http\Controllers\Api\ProcessLogStreamsController;
+use App\Http\Controllers\Api\ProjectDependencyReadTokenController;
 use App\Http\Controllers\Api\ProjectDevelopmentDeployStepsController;
 use App\Http\Controllers\Api\ProjectExcludedNodesController;
 use App\Http\Controllers\Api\ProjectLifecycleStepsController;
@@ -82,6 +83,10 @@ use App\Http\Middleware\RequireWebSocketRuntimeSecret;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function (): void {
+    Route::middleware([RequireActiveWireGuardPeer::class, RequireNodeAccess::class])
+        ->withoutMiddleware(RecordCommandActivity::class)
+        ->post('projects/{project}/dependency-read-token', [ProjectDependencyReadTokenController::class, 'store'])
+        ->whereNumber('project')->name('project:dependency-read-token');
     Route::middleware([RequireActiveWireGuardPeer::class, RequireWebSocketRuntimeSecret::class])
         ->withoutMiddleware(RecordCommandActivity::class)
         ->prefix('websocket-registry')->group(function (): void {

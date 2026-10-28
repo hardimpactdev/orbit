@@ -651,7 +651,7 @@ TAGS = [
     ('internal', 'Node callbacks', 'Endpoints that managed Nodes and Caddy call; operators do not call them.'),
 ]
 TAG_BY_PREFIX = {p: t for p, t, _ in TAGS}
-INTERNAL = {'tasks:agents', 'tasks:agent-stream', 'agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
+INTERNAL = {'project:dependency-read-token', 'tasks:agents', 'tasks:agent-stream', 'agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
 DEFINITION_ROUTES = {
     'ProjectRuntimeDefinitionsController@processIndex': 'List process definitions',
     'ProjectRuntimeDefinitionsController@processStore': 'Create a process definition',
@@ -682,6 +682,7 @@ SUMMARIES = {
     'project:dev-deploy-step:create': 'Create a development deploy step',
     'project:dev-deploy-step:update': 'Update a development deploy step',
     'project:dev-deploy-step:destroy': 'Remove a development deploy step',
+    'project:dependency-read-token': 'Mint a short-lived, one-repository GitHub App read token for the configured Services peer only. Never persist the reply. Disabled until ORBIT_DEPENDENCY_DETECTION_SERVICES_NODE_ID is configured.',
     'project:list': 'List Projects', 'project:show': 'Show a Project', 'project:create': 'Create a Project', 'project:update': 'Update a Project', 'project:destroy': 'Remove a Project',
     'project:process-definition:list': 'List process definitions', 'project:process-definition:create': 'Create a process definition',
     'project:process-definition:show': 'Show a process definition', 'project:process-definition:update': 'Replace a process definition',
@@ -2043,6 +2044,10 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             'id': {'type': 'string', 'description': 'The stream ID.'},
             'closed': {'type': 'boolean', 'const': True, 'description': 'Always true.'},
         }, 'required': ['id', 'closed']}, 'The request succeeded.')
+    elif route['name'] == 'project:dependency-read-token':
+        responses['200'] = {'description': 'Ephemeral credential. Cache-Control: no-store. No Activity or Operation is created.', 'content': {'application/json': {'schema': {'type': 'object', 'required': ['data'], 'properties': {'data': {'type': 'object', 'additionalProperties': False, 'required': ['project_id', 'repository', 'clone_url', 'token', 'expires_at'], 'properties': {'project_id': {'type': 'integer', 'minimum': 1}, 'repository': {'type': 'string'}, 'clone_url': {'type': 'string', 'format': 'uri'}, 'token': {'type': 'string', 'description': 'Ephemeral credential; never persist or log.'}, 'expires_at': {'type': 'string', 'format': 'date-time'}}}}}}}}
+        responses['404'] = error_response('Project not found (`project.not_found`).')
+        responses['503'] = error_response('Token minting unavailable or unsafe reply (`dependency_token.unavailable`).')
     elif route['name'] == 'agent:realtime:auth':
         responses['200'] = {'description': 'The Pusher channel signature.', 'content': {'application/json': {'schema': {'type': 'object', 'properties': {
             'auth': {'type': 'string', 'description': 'Pusher channel signature.'},
@@ -2110,6 +2115,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['401'] = error_response('The request carries no agent secret (`agent.secret_required`).')
     if route['name'] in ('agent:realtime', 'agent:workspaces', 'agent:log-streams'):
         responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`), its agent secret does not match (`agent.secret_invalid`), or its Node is not eligible for an agent (`agent.node_ineligible`).')
+    elif route['name'] == 'project:dependency-read-token':
+        responses['403'] = error_response('Services-only authorization or GitHub installation/token refusal (`dependency_token.forbidden`, `dependency_token.refused`).')
     elif route['name'] == 'agent:realtime:auth':
         responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`), its agent secret does not match (`agent.secret_invalid`), its Node is not eligible for an agent (`agent.node_ineligible`), or it asked for another Node\'s channel (`agent.channel_forbidden`).')
     elif route['name'] not in ('gateway:status', 'gateway:trust'):

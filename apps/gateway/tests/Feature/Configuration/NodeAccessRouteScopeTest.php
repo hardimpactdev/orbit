@@ -227,6 +227,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'process:stop' => ServingNode::ProcessOwning,
         'process:update' => ServingNode::ProcessOwning,
         'project:create' => ServingNode::Gateway,
+        'project:dependency-read-token' => ServingNode::Gateway,
         'project:destroy' => ServingNode::ProjectOwning,
         'project:dev-deploy-step:create' => ServingNode::ProjectOwning,
         'project:dev-deploy-step:destroy' => ServingNode::ProjectOwning,
