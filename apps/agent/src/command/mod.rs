@@ -8,6 +8,7 @@
 
 pub mod binary_input;
 pub mod binary_output;
+pub mod effects;
 pub mod identity;
 pub mod lock;
 pub mod registry;
@@ -40,10 +41,17 @@ pub const COMMON_ERRORS: &[&str] = &[
     "agent.supervisor_not_ready",
     "agent.target_busy",
     "agent.lock_unavailable",
+    "agent.effect_key_invalid",
+    "agent.effect_conflict",
+    "agent.effect_unknown",
+    "agent.effect_receipt_unavailable",
+    "agent.effect_receipt_invalid",
+    "agent.effect_sanitization_required",
+    "agent.effect_unsanitized",
 ];
 
 /// A complete result line.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Outcome {
     Ok(Value),
     Refused {

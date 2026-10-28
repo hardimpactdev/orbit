@@ -168,6 +168,8 @@ it('keeps Node execution inside the agent transports across core and extensions'
         // Existing Tasks workspace execution and its journal are excluded from this port.
         'app/Infrastructure/AppDev/DevelopmentSshExecutor.php',
         'app/Infrastructure/RemotePrograms/SshProgramRunner.php',
+        // Adds target receipts around the existing fixed catalog runner.
+        'app/Infrastructure/RemotePrograms/KeyedRemoteProgramRunner.php',
         'app/Infrastructure/RemotePrograms/RemoteProgramCatalog.php',
         'app/Domain/Tasks/TaskWorkspaceLeaseRecovery.php',
         'app/Infrastructure/Tasks/GitHubTaskBaseBranchFetcher.php',

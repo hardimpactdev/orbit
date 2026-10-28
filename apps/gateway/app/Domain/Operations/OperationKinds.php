@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Operations;
 
-use Illuminate\Contracts\Container\Container;
 use App\Support\ValidatedData;
+use Illuminate\Contracts\Container\Container;
 use LogicException;
 
 /**
@@ -101,7 +101,7 @@ final readonly class OperationKinds
     }
 
     /** @param array<string, mixed> $definition
-     * @param list<string> $allowed
+     * @param  list<string>  $allowed
      */
     private static function assertKeys(string $kind, string $part, array $definition, array $allowed): void
     {
@@ -117,7 +117,7 @@ final readonly class OperationKinds
      */
     public static function supports(string $capability): bool
     {
-        return false;
+        return $capability === 'receipts';
     }
 
     public static function executor(string $kind): string
