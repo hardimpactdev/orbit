@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Deployment;
 
-use App\Data\Instances\InstanceDeploymentData;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
 use Illuminate\Support\Carbon;
@@ -63,17 +62,17 @@ final readonly class AutomaticDeployHistory
         return $last instanceof InstanceDeployment && $last->status === 'failed' && is_string($last->commit) ? $last : null;
     }
 
-    /** One observation supplies both rollback blocks and the version of the retained public history. */
+    /** One observation supplies rollback blocks and a version of stored history, independent of display names. */
     public function snapshot(): AutomaticDeployHistorySnapshot
     {
         $rows = InstanceDeployment::query()->where('instance_id', $this->instance->id)->orderBy('id')->get([
             'id', 'instance_id', 'kind', 'release', 'branch', 'commit', 'started_at', 'finished_at',
             'duration_seconds', 'status', 'failed_step', 'error_code', 'selected_release', 'triggered_by', 'caller_node_id',
         ]);
-        $public = $rows->map(static fn (InstanceDeployment $row): array => InstanceDeploymentData::fromModel($row)->toArray())->all();
+        $stored = $rows->map(static fn (InstanceDeployment $row): array => $row->getAttributes())->all();
 
         return new AutomaticDeployHistorySnapshot(
-            hash('sha256', json_encode($public, JSON_THROW_ON_ERROR)),
+            hash('sha256', json_encode($stored, JSON_THROW_ON_ERROR)),
             $rows->last()->id ?? 0,
             $this->rolledAwayFrom(array_values($rows->all())),
         );

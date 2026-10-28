@@ -420,7 +420,7 @@ The cutover release removes the PHP production policy loop. Development defaults
 
 Publication updates only the public projection in `auto_deploy_state`, preserves Gateway rollback blocks, and broadcasts the Instance DTO used by API, MCP, CLI, and web. The project owner waived the slice 1 shadow phase because Hauzer and Mealou have no users; its 14-day live window starts at this cutover.
 
-Publication uses a short database transaction without the deployment host lock. The history version hashes the retained public deployment rows without events, so finishing an existing deployment changes it even when the newest ID stays the same. The recorder writes the terminal history and rollback blocks in one transaction, with the Instance row locked and refreshed before changing policy state. It preserves a projection that publication already committed.
+Publication uses a short database transaction without the deployment host lock. The history version hashes the stored fields of retained deployment rows, including `caller_node_id`, without events or display names. Adding a deployment or finishing an existing deployment changes it, even when the newest ID stays the same. Renaming or removing a caller Node does not change it. The recorder writes the terminal history and rollback blocks in one transaction, with the Instance row locked and refreshed before changing policy state. It preserves a projection that publication already committed.
 
 It accepts only the cursor and history version Swamp observed, so a later manual action cannot be hidden by a stale publication. Resume and deployment effects remain Gateway-owned. Swamp owns selection, retries, gate caches, alert intents, and publication order; it must serialize ticks for each Instance.
 

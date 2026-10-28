@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Data\Instances;
 
 use App\Models\InstanceDeployment;
-use App\Models\Node;
 use DateTimeInterface;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
@@ -51,7 +50,7 @@ final class InstanceDeploymentData extends Data
             selectedRelease: $deployment->selected_release,
             triggeredBy: $deployment->triggered_by,
             callerNodeId: $deployment->caller_node_id,
-            callerNodeName: $deployment->caller_node_id === null ? null : Node::query()->find($deployment->caller_node_id)?->name,
+            callerNodeName: $deployment->callerNode?->name,
         );
     }
 }

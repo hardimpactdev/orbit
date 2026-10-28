@@ -26,6 +26,7 @@ use Illuminate\Support\Carbon;
  * @property string $kind `deploy` or `rollback`
  * @property list<array<string, mixed>>|null $events
  * @property-read Instance $instance
+ * @property-read Node|null $callerNode
  */
 final class InstanceDeployment extends Model
 {
@@ -58,6 +59,12 @@ final class InstanceDeployment extends Model
     public function instance(): BelongsTo
     {
         return $this->belongsTo(Instance::class, 'instance_id');
+    }
+
+    /** @return BelongsTo<Node, $this> */
+    public function callerNode(): BelongsTo
+    {
+        return $this->belongsTo(Node::class, 'caller_node_id');
     }
 
     /** @return array<string, string> */

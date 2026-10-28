@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\Operations\OperationStatus;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -45,6 +46,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Collection<int, OperationStep> $steps
+ * @property-read string|null $caller_node_name
  */
 final class Operation extends Model
 {
@@ -89,6 +91,18 @@ final class Operation extends Model
         $caller = $this->input['caller_node_id'] ?? null;
 
         return is_int($caller) ? $caller : null;
+    }
+
+    /** @param Builder<self> $query */
+    public function scopeWithCallerNodeName(Builder $query): void
+    {
+        $query->addSelect(['caller_node_name' => Node::query()->select('name')->whereColumn('nodes.id', 'operations.input->caller_node_id')]);
+    }
+
+    #[\Override]
+    public function resolveRouteBinding($value, $field = null): ?self
+    {
+        return self::query()->withCallerNodeName()->where($field ?? $this->getRouteKeyName(), $value)->first();
     }
 
     /** @return array<string, string> */
