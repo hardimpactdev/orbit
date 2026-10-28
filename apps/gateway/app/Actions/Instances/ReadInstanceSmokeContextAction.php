@@ -20,7 +20,7 @@ final readonly class ReadInstanceSmokeContextAction
 {
     public function __construct(private ProductionDeployment $deployment) {}
 
-    public function execute(Instance $instance): InstanceSmokeContextData
+    public function ownership(Instance $instance): InstanceSmokeContextData
     {
         $instance->refresh()->load('node.roles', 'project', 'routes');
         $roles = $instance->node->roles->where('status', LifecycleStatus::Active)->pluck('role');
@@ -31,9 +31,17 @@ final readonly class ReadInstanceSmokeContextAction
                 && $route->publication === RoutePublication::Public
                 && $route->project_id === $instance->project_id)
             ->map(static fn (Route $route): string => 'https://'.$route->domain)->unique()->sort()->values()->all();
+
+        return new InstanceSmokeContextData($instance->id, $instance->project_id, $instance->project->repository_url,
+            $production, array_values($urls), null, []);
+    }
+
+    public function execute(Instance $instance): InstanceSmokeContextData
+    {
+        $ownership = $this->ownership($instance);
         $retained = [];
         $selected = null;
-        if ($production) {
+        if ($ownership->production) {
             $retained = $this->deployment->releases($instance)->releases;
             $actual = $this->deployment->selected($instance);
             if ($actual !== null && in_array($actual->name, $retained, true)) {
@@ -49,7 +57,7 @@ final readonly class ReadInstanceSmokeContextAction
 
         return new InstanceSmokeContextData(
             $instance->id, $instance->project_id, $instance->project->repository_url,
-            $production, array_values($urls), $selected, $retained,
+            $ownership->production, $ownership->baseUrls, $selected, $retained,
         );
     }
 }

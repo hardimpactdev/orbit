@@ -425,6 +425,10 @@ Route::prefix('v1')->group(function (): void {
         Route::post('instances/{instance}/smoke', [InstanceSmokeController::class, 'store'])->name('instance:smoke');
         Route::get('instances/{instance}/smoke/receipt', [InstanceSmokeController::class, 'receipt'])->name('instance:smoke:receipt');
         Route::get('instances/{instance}/smoke/context', [InstanceSmokeController::class, 'context'])->name('instance:smoke:context');
+        Route::post('instances/{instance}/smoke/failure', [InstanceSmokeController::class, 'failure'])->name('instance:smoke:failure');
+        Route::get('instances/{instance}/smoke/failure/receipt', [InstanceSmokeController::class, 'failureReceipt'])->name('instance:smoke:failure:receipt');
+        Route::post('instances/{instance}/smoke/rollback', [InstanceSmokeController::class, 'rollback'])->name('instance:smoke:rollback');
+        Route::get('instances/{instance}/smoke/rollback/receipt', [InstanceSmokeController::class, 'rollbackReceipt'])->name('instance:smoke:rollback:receipt');
         Route::put('instances/{instance}/auto-deploy/policy', [InstanceAutomaticDeployPolicyController::class, 'update'])->name('instance:auto-deploy:policy:update');
         Route::post('instances/{instance}/auto-deploy/events', [InstanceAutomaticDeployPolicyController::class, 'store'])->name('instance:auto-deploy:event:create');
         Route::post('instances/{instance}/deploy/automatic', [InstanceDeploymentsController::class, 'automatic'])->name('instance:deploy:automatic');

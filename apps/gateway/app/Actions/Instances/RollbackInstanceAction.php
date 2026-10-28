@@ -18,6 +18,7 @@ use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\Instance;
+use Closure;
 use Throwable;
 
 /**
@@ -77,6 +78,8 @@ final readonly class RollbackInstanceAction
     }
 
     /**
+     * @param  (Closure(bool): void)|null  $guard  Checks smoke guards under the writer lock before effects and after success.
+     *
      * Runs the rollback's steps through `$steps`: the steps of an `instance.rollback` operation. The `rollback` step
      * finds the retained release, and the `activation` step selects it.
      */
@@ -85,13 +88,22 @@ final readonly class RollbackInstanceAction
         string $releaseName,
         DeploymentSteps $steps,
         DeploymentRequest $request,
+        ?Closure $guard = null,
     ): DeploymentResult {
         try {
             $this->configs->assertAvailable($instance->refresh());
 
             return $this->operations->run(
                 [$instance->id],
-                fn (): DeploymentResult => $this->deadline->within(900, fn (): DeploymentResult => $this->rollback($instance->refresh(), $releaseName, $request, $steps)),
+                fn (): DeploymentResult => $this->deadline->within(900, function () use ($instance, $releaseName, $request, $steps, $guard): DeploymentResult {
+                    $guard?->__invoke(false);
+                    $result = $this->rollback($instance->refresh(), $releaseName, $request, $steps);
+                    if ($result->succeeded) {
+                        $guard?->__invoke(true);
+                    }
+
+                    return $result;
+                }),
             );
         } catch (Throwable $exception) {
             return DeploymentResult::failed(

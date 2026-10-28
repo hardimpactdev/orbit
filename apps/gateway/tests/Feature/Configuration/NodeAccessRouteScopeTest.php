@@ -180,7 +180,12 @@ it('declares node access scope on every active-peer API route', function (): voi
         'instance:show' => ServingNode::InstanceOwning,
         'instance:smoke' => ServingNode::Gateway,
         'instance:smoke:context' => ServingNode::Gateway,
+        'instance:smoke:failure' => ServingNode::Gateway,
+        'instance:smoke:failure:receipt' => ServingNode::Gateway,
         'instance:smoke:receipt' => ServingNode::Gateway,
+        'instance:smoke:rollback' => ServingNode::Gateway,
+        'instance:smoke:rollback:receipt' => ServingNode::Gateway,
+
         'instance:teardown-step:create' => ServingNode::ProjectOwning,
         'instance:teardown-step:destroy' => ServingNode::ProjectOwning,
         'instance:teardown-step:list' => ServingNode::ProjectOwning,

@@ -5103,12 +5103,232 @@
       }
     },
     {
+      "name": "instance-smoke-failure",
+      "extension": null,
+      "title": "instance:smoke:failure",
+      "description": "Atomically records a verified executed failing smoke and permanent SHA block under the Instance writer lock. Requires Gateway access and Idempotency-Key. Does not pause or resume. See /reference/deployments#verified-smoke-failure-and-guarded-rollback.",
+      "method": "POST",
+      "path": "/api/v1/instances/{instance}/smoke/failure",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "header_inputs": [
+        "Idempotency-Key"
+      ],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Instance ID."
+          },
+          "Idempotency-Key": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Permanent smoke-failure.<instance>.<deployment> key, bound to caller, Instance and full body; identical retry returns the original block."
+          },
+          "deployment_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "commit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$(?![\\s\\S])"
+          },
+          "release": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$(?![\\s\\S])"
+          },
+          "smoke_request_key": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$(?![\\s\\S])"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance",
+          "Idempotency-Key",
+          "deployment_id",
+          "commit",
+          "release",
+          "smoke_request_key"
+        ]
+      }
+    },
+    {
+      "name": "instance-smoke-failure-receipt",
+      "extension": null,
+      "title": "instance:smoke:failure:receipt",
+      "description": "Reads the original caller-bound failure block by request_key. Missing evidence is null. Starts no work.",
+      "method": "GET",
+      "path": "/api/v1/instances/{instance}/smoke/failure/receipt",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [
+        "request_key"
+      ],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Instance ID."
+          },
+          "request_key": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$(?![\\s\\S])"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance",
+          "request_key"
+        ]
+      }
+    },
+    {
       "name": "instance-smoke-receipt",
       "extension": null,
       "title": "Read a production smoke receipt",
       "description": "Reads retained evidence for the original caller, Instance and key. Never dispatches. Missing, uncertain or ambiguous execution stays pending or unknown, never failed. Only JUnit failures or errors report failed; clean JUnit with an unsuccessful run is unknown. Swamp owns missing-result policy and baseline deadlines.",
       "method": "GET",
       "path": "/api/v1/instances/{instance}/smoke/receipt",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [
+        "request_key"
+      ],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Instance ID."
+          },
+          "request_key": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$(?![\\s\\S])"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance",
+          "request_key"
+        ]
+      }
+    },
+    {
+      "name": "instance-smoke-rollback",
+      "extension": null,
+      "title": "instance:smoke:rollback",
+      "description": "Starts the native instance.rollback with caller-bound required Idempotency-Key, recorded permanent failure block, exact expected selection and retained prior smoke-passed target. Rechecks under the writer lock before effects. Never resumes or changes data. See /reference/deployments#verified-smoke-failure-and-guarded-rollback.",
+      "method": "POST",
+      "path": "/api/v1/instances/{instance}/smoke/rollback",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "header_inputs": [
+        "Idempotency-Key"
+      ],
+      "starts_operation": true,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Instance ID."
+          },
+          "Idempotency-Key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "description": "A permanent key scoped to this operation kind, binding caller and command as well as target and input. The same request returns the existing operation with HTTP 202; a changed identity returns operation.idempotency_conflict (409)."
+          },
+          "failure_key": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$(?![\\s\\S])"
+          },
+          "expected": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "deployment_id": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "commit": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$(?![\\s\\S])"
+              },
+              "release": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$(?![\\s\\S])"
+              }
+            },
+            "required": [
+              "deployment_id",
+              "commit",
+              "release"
+            ]
+          },
+          "target": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "deployment_id": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "commit": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$(?![\\s\\S])"
+              },
+              "release": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$(?![\\s\\S])"
+              }
+            },
+            "required": [
+              "deployment_id",
+              "commit",
+              "release"
+            ]
+          },
+          "target_smoke_request_key": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$(?![\\s\\S])"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance",
+          "Idempotency-Key",
+          "failure_key",
+          "expected",
+          "target",
+          "target_smoke_request_key"
+        ]
+      }
+    },
+    {
+      "name": "instance-smoke-rollback-receipt",
+      "extension": null,
+      "title": "instance:smoke:rollback:receipt",
+      "description": "Reads the original caller-bound guarded rollback and its retained deployment, whose ID is new. A missing receipt starts no work; failed or cancelled rollback requires assistance with the original key.",
+      "method": "GET",
+      "path": "/api/v1/instances/{instance}/smoke/rollback/receipt",
       "path_inputs": [
         "instance"
       ],

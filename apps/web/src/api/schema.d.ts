@@ -2053,6 +2053,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/instances/{instance}/smoke/failure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * instance:smoke:failure
+         * @description Atomically records a verified executed failing smoke and permanent SHA block under the Instance writer lock. Requires Gateway access and Idempotency-Key. Does not pause or resume. See /reference/deployments#verified-smoke-failure-and-guarded-rollback.
+         */
+        post: operations["instance-smoke-failure"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/instances/{instance}/smoke/failure/receipt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * instance:smoke:failure:receipt
+         * @description Reads the original caller-bound failure block by request_key. Missing evidence is null. Starts no work.
+         */
+        get: operations["instance-smoke-failure-receipt"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/instances/{instance}/smoke/receipt": {
         parameters: {
             query?: never;
@@ -2065,6 +2105,46 @@ export interface paths {
          * @description Reads retained evidence for the original caller, Instance and key. Never dispatches. Missing, uncertain or ambiguous execution stays pending or unknown, never failed. Only JUnit failures or errors report failed; clean JUnit with an unsuccessful run is unknown. Swamp owns missing-result policy and baseline deadlines.
          */
         get: operations["instance-smoke-receipt"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/instances/{instance}/smoke/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * instance:smoke:rollback
+         * @description Starts the native instance.rollback with caller-bound required Idempotency-Key, recorded permanent failure block, exact expected selection and retained prior smoke-passed target. Rechecks under the writer lock before effects. Never resumes or changes data. See /reference/deployments#verified-smoke-failure-and-guarded-rollback.
+         */
+        post: operations["instance-smoke-rollback"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/instances/{instance}/smoke/rollback/receipt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * instance:smoke:rollback:receipt
+         * @description Reads the original caller-bound guarded rollback and its retained deployment, whose ID is new. A missing receipt starts no work; failed or cancelled rollback requires assistance with the original key.
+         */
+        get: operations["instance-smoke-rollback-receipt"];
         put?: never;
         post?: never;
         delete?: never;
@@ -5178,6 +5258,24 @@ export interface components {
             commit: string;
             release: string;
         };
+        InstanceSmokeBlock: {
+            request_key: string;
+            instance_id: number;
+            failure: components["schemas"]["InstanceSmokeFailure"];
+            /** @enum {boolean} */
+            blocked: true;
+        };
+        InstanceSmokeFailure: {
+            deployment_id: number;
+            commit: string;
+            release: string;
+            smoke_request_key: string;
+        };
+        InstanceSmokeBlockReceipt: {
+            request_key: string;
+            found: boolean;
+            block: components["schemas"]["InstanceSmokeBlock"] | null;
+        };
         InstanceSmokeReceipt: {
             request_key: string;
             found: boolean;
@@ -5208,6 +5306,19 @@ export interface components {
                 name: string;
                 url: string;
             }[];
+        };
+        InstanceSmokeRollbackReceipt: {
+            request_key: string;
+            found: boolean;
+            operation: components["schemas"]["Operation"] | null;
+            deployment: components["schemas"]["InstanceSmokeRollbackDeployment"] | null;
+        };
+        InstanceSmokeRollbackDeployment: {
+            deployment_id: number;
+            commit: string;
+            release: string;
+            /** @enum {string} */
+            status: "running" | "succeeded" | "failed";
         };
         WebSocketAppAttachment: {
             instance_id?: number;
@@ -13256,6 +13367,126 @@ export interface operations {
             };
         };
     };
+    "instance-smoke-failure": {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Permanent smoke-failure.<instance>.<deployment> key, bound to caller, Instance and full body; identical retry returns the original block. */
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Numeric Instance ID. */
+                instance: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    deployment_id: number;
+                    commit: string;
+                    release: string;
+                    smoke_request_key: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["InstanceSmokeBlock"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "instance-smoke-failure-receipt": {
+        parameters: {
+            query: {
+                request_key: string;
+            };
+            header?: never;
+            path: {
+                /** @description Numeric Instance ID. */
+                instance: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["InstanceSmokeBlockReceipt"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "instance-smoke-receipt": {
         parameters: {
             query: {
@@ -13278,6 +13509,143 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["InstanceSmokeReceipt"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "instance-smoke-rollback": {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A permanent key scoped to this operation kind, binding caller and command as well as target and input. The same request returns the existing operation with HTTP 202; a changed identity returns operation.idempotency_conflict (409). */
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Numeric Instance ID. */
+                instance: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    failure_key: string;
+                    expected: {
+                        deployment_id: number;
+                        commit: string;
+                        release: string;
+                    };
+                    target: {
+                        deployment_id: number;
+                        commit: string;
+                        release: string;
+                    };
+                    target_smoke_request_key: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Accepted. The operation is queued; follow it with `operation:show`. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Operation"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. The key already belongs to another target or input (`operation.idempotency_conflict`), or another operation holds the target (`operation.target_busy`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). A malformed Idempotency-Key also returns `validation.failed`. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "instance-smoke-rollback-receipt": {
+        parameters: {
+            query: {
+                request_key: string;
+            };
+            header?: never;
+            path: {
+                /** @description Numeric Instance ID. */
+                instance: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["InstanceSmokeRollbackReceipt"];
                         meta: components["schemas"]["Meta"];
                     };
                 };

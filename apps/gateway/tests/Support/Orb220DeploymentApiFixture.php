@@ -118,11 +118,19 @@ final class Orb220ProductionDeployment implements ProductionDeployment
 
     public bool $failRollback = false;
 
+    /** @var array<string, string> */
+    public array $commits = [];
+
+    /** @var list<string> */
+    public array $retainedReleases = ['fresh', 'initial'];
+
     /** Runs inside source preparation, such as a cancel request that lands while the deployment works. */
     public ?Closure $duringPrepare = null;
 
     /** Runs inside a rollback's release lookup, before activation. */
     public ?Closure $duringRetained = null;
+
+    public ?Closure $duringSelection = null;
 
     /** Runs inside activation, after `current` points at the new release. */
     public ?Closure $duringActivation = null;
@@ -191,6 +199,9 @@ final class Orb220ProductionDeployment implements ProductionDeployment
 
     public function selected(Instance $instance): ?DeploymentRelease
     {
+        if ($this->duringSelection !== null) {
+            ($this->duringSelection)();
+        }
         if ($this->readsAsRemoteCommand) {
             // A real read is a remote command, bounded by the command deadline.
             app(CommandDeadline::class)->cap(30.0);
@@ -217,7 +228,7 @@ final class Orb220ProductionDeployment implements ProductionDeployment
 
     public function releases(Instance $instance): DeploymentReleaseState
     {
-        return new DeploymentReleaseState(['fresh', 'initial'], 'initial');
+        return new DeploymentReleaseState($this->retainedReleases, $this->current);
     }
 
     public function prune(Instance $instance, DeploymentRelease $selected, ?DeploymentRelease $previous): array
@@ -230,7 +241,7 @@ final class Orb220ProductionDeployment implements ProductionDeployment
         return new DeploymentRelease(
             $name,
             "/home/deployment-stream/releases/{$name}",
-            $commit ?? str_repeat('a', 40),
+            $commit ?? ($this->commits[$name] ?? str_repeat('a', 40)),
         );
     }
 }

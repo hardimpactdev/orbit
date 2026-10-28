@@ -14201,6 +14201,226 @@
         ]
       }
     },
+    "/api/v1/instances/{instance}/smoke/failure": {
+      "post": {
+        "operationId": "instance-smoke-failure",
+        "summary": "instance:smoke:failure",
+        "tags": [
+          "Instances"
+        ],
+        "parameters": [
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Instance ID."
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "description": "Permanent smoke-failure.<instance>.<deployment> key, bound to caller, Instance and full body; identical retry returns the original block."
+          }
+        ],
+        "description": "Atomically records a verified executed failing smoke and permanent SHA block under the Instance writer lock. Requires Gateway access and Idempotency-Key. Does not pause or resume. See /reference/deployments#verified-smoke-failure-and-guarded-rollback.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "deployment_id": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "commit": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{40}$(?![\\s\\S])"
+                  },
+                  "release": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$(?![\\s\\S])"
+                  },
+                  "smoke_request_key": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$(?![\\s\\S])"
+                  }
+                },
+                "required": [
+                  "deployment_id",
+                  "commit",
+                  "release",
+                  "smoke_request_key"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/InstanceSmokeBlock"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/instances/12/smoke/failure\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"deployment_id\": 1, \"commit\": \"example\", \"release\": \"20260914T101500Z\", \"smoke_request_key\": \"example\"}'\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/instances/{instance}/smoke/failure/receipt": {
+      "get": {
+        "operationId": "instance-smoke-failure-receipt",
+        "summary": "instance:smoke:failure:receipt",
+        "tags": [
+          "Instances"
+        ],
+        "parameters": [
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Instance ID."
+          },
+          {
+            "name": "request_key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{1,128}$(?![\\s\\S])"
+            }
+          }
+        ],
+        "description": "Reads the original caller-bound failure block by request_key. Missing evidence is null. Starts no work.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/InstanceSmokeBlockReceipt"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/instances/12/smoke/failure/receipt?request_key=1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      }
+    },
     "/api/v1/instances/{instance}/smoke/receipt": {
       "get": {
         "operationId": "instance-smoke-receipt",
@@ -14279,6 +14499,277 @@
             "lang": "bash",
             "label": "curl",
             "source": "curl -sS \"https://gateway.orbit/api/v1/instances/12/smoke/receipt?request_key=1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/instances/{instance}/smoke/rollback": {
+      "post": {
+        "operationId": "instance-smoke-rollback",
+        "summary": "instance:smoke:rollback",
+        "tags": [
+          "Instances"
+        ],
+        "parameters": [
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Instance ID."
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]+$"
+            },
+            "description": "A permanent key scoped to this operation kind, binding caller and command as well as target and input. The same request returns the existing operation with HTTP 202; a changed identity returns operation.idempotency_conflict (409)."
+          }
+        ],
+        "description": "Starts the native instance.rollback with caller-bound required Idempotency-Key, recorded permanent failure block, exact expected selection and retained prior smoke-passed target. Rechecks under the writer lock before effects. Never resumes or changes data. See /reference/deployments#verified-smoke-failure-and-guarded-rollback.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "failure_key": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$(?![\\s\\S])"
+                  },
+                  "expected": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "deployment_id": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "commit": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{40}$(?![\\s\\S])"
+                      },
+                      "release": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$(?![\\s\\S])"
+                      }
+                    },
+                    "required": [
+                      "deployment_id",
+                      "commit",
+                      "release"
+                    ]
+                  },
+                  "target": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "deployment_id": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "commit": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{40}$(?![\\s\\S])"
+                      },
+                      "release": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$(?![\\s\\S])"
+                      }
+                    },
+                    "required": [
+                      "deployment_id",
+                      "commit",
+                      "release"
+                    ]
+                  },
+                  "target_smoke_request_key": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$(?![\\s\\S])"
+                  }
+                },
+                "required": [
+                  "failure_key",
+                  "expected",
+                  "target",
+                  "target_smoke_request_key"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-orbit-operation": "start",
+        "responses": {
+          "202": {
+            "description": "Accepted. The operation is queued; follow it with `operation:show`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Operation"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard. The key already belongs to another target or input (`operation.idempotency_conflict`), or another operation holds the target (`operation.target_busy`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). A malformed Idempotency-Key also returns `validation.failed`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/instances/12/smoke/rollback\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"failure_key\": \"example\", \"expected\": {\"deployment_id\": 1, \"commit\": \"example\", \"release\": \"20260914T101500Z\"}, \"target\": {\"deployment_id\": 1, \"commit\": \"example\", \"release\": \"20260914T101500Z\"}, \"target_smoke_request_key\": \"example\"}'\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/instances/{instance}/smoke/rollback/receipt": {
+      "get": {
+        "operationId": "instance-smoke-rollback-receipt",
+        "summary": "instance:smoke:rollback:receipt",
+        "tags": [
+          "Instances"
+        ],
+        "parameters": [
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Instance ID."
+          },
+          {
+            "name": "request_key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{1,128}$(?![\\s\\S])"
+            }
+          }
+        ],
+        "description": "Reads the original caller-bound guarded rollback and its retained deployment, whose ID is new. A missing receipt starts no work; failed or cancelled rollback requires assistance with the original key.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/InstanceSmokeRollbackReceipt"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/instances/12/smoke/rollback/receipt?request_key=1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
           }
         ]
       }
@@ -37735,7 +38226,8 @@
         "type": "object",
         "properties": {
           "instance_id": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": 1
           },
           "project_id": {
             "type": "integer"
@@ -37783,7 +38275,8 @@
         "type": "object",
         "properties": {
           "deployment_id": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": 1
           },
           "commit": {
             "type": "string"
@@ -37796,6 +38289,83 @@
           "deployment_id",
           "commit",
           "release"
+        ]
+      },
+      "InstanceSmokeBlock": {
+        "type": "object",
+        "properties": {
+          "request_key": {
+            "type": "string"
+          },
+          "instance_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "failure": {
+            "$ref": "#/components/schemas/InstanceSmokeFailure"
+          },
+          "blocked": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "request_key",
+          "instance_id",
+          "failure",
+          "blocked"
+        ]
+      },
+      "InstanceSmokeFailure": {
+        "type": "object",
+        "properties": {
+          "deployment_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "commit": {
+            "type": "string"
+          },
+          "release": {
+            "type": "string"
+          },
+          "smoke_request_key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "deployment_id",
+          "commit",
+          "release",
+          "smoke_request_key"
+        ]
+      },
+      "InstanceSmokeBlockReceipt": {
+        "type": "object",
+        "properties": {
+          "request_key": {
+            "type": "string"
+          },
+          "found": {
+            "type": "boolean"
+          },
+          "block": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/InstanceSmokeBlock"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "request_key",
+          "found",
+          "block"
         ]
       },
       "InstanceSmokeReceipt": {
@@ -37839,7 +38409,8 @@
         "type": "object",
         "properties": {
           "deployment_id": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": 1
           },
           "commit": {
             "type": "string"
@@ -37869,13 +38440,15 @@
             "type": [
               "integer",
               "null"
-            ]
+            ],
+            "minimum": 1
           },
           "run_attempt": {
             "type": [
               "integer",
               "null"
-            ]
+            ],
+            "minimum": 1
           },
           "workflow_sha": {
             "type": [
@@ -37953,6 +38526,72 @@
           "skipped",
           "output",
           "artifacts"
+        ]
+      },
+      "InstanceSmokeRollbackReceipt": {
+        "type": "object",
+        "properties": {
+          "request_key": {
+            "type": "string"
+          },
+          "found": {
+            "type": "boolean"
+          },
+          "operation": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Operation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deployment": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/InstanceSmokeRollbackDeployment"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "request_key",
+          "found",
+          "operation",
+          "deployment"
+        ]
+      },
+      "InstanceSmokeRollbackDeployment": {
+        "type": "object",
+        "properties": {
+          "deployment_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "commit": {
+            "type": "string"
+          },
+          "release": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "succeeded",
+              "failed"
+            ]
+          }
+        },
+        "required": [
+          "deployment_id",
+          "commit",
+          "release",
+          "status"
         ]
       },
       "WebSocketAppAttachment": {
