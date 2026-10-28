@@ -365,7 +365,9 @@ Only the configured Services peer (`dependency_detection.services_node_id`) can 
 
 ### Protected inputs
 
-A run may declare named secret sources for parameter paths. Operation input and Swamp carry only an owning-record reference; the Gateway verifies ownership before hydrating it for the existing transport. Secrets never enter Operation records or responses. Run fingerprints and stored input bind only the unhydrated reference, so a fresh credential mint cannot change replay identity. A null or different secret owner refuses execution. Each family supplies tagged resolvers for protected values and redaction strings. Script resolvers verify an admitted SHA-256 digest. Optional family execution hooks derive public context and exact inputs, recheck policy before execution, and project redacted receipts in the database. Nonresumable invocations refuse an uncertain retry with `operation.execution_uncertain`.
+A run may declare named secret sources for parameter paths. Operation input and Swamp carry only an owning-record reference; the Gateway verifies ownership before hydrating it for the existing transport. Secrets never enter Operation records or responses. Run fingerprints and stored input bind only the unhydrated reference, so a fresh credential mint cannot change replay identity. A null or different secret owner refuses execution.
+
+Each family supplies tagged resolvers for protected values and redaction strings. Script resolvers verify an admitted SHA-256 digest. Optional family execution hooks derive public context and exact inputs, recheck policy before execution, and project redacted receipts in the database. Nonresumable invocations refuse an uncertain retry with `operation.execution_uncertain`.
 
 ### Execution contracts
 
