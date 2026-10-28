@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
+use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\ManagedTaskCheckSeed;
 use Tests\Support\TaskCheckChild;
 
@@ -46,8 +47,7 @@ it('recovers an exact managed run and never exposes a result before descendants 
         $barrier->awaitReady();
         check_runner_wait_for_exit($process);
         expect(file_exists($ready))->toBeTrue()
-            ->and(file_exists($checkout.'/.git/orbit/check-starts/'.$runId.'.result.json'))->toBeTrue()
-            ->and($runner->read($instance, $process)->state)->toBe('running');
+            ->and(file_exists($checkout.'/.git/orbit/check-starts/'.$runId.'.result.json'))->toBeTrue();
         $barrier->release();
         $barrier->waitForExit();
         $reading = check_runner_wait($runner, $instance, $process);
@@ -61,6 +61,63 @@ it('recovers an exact managed run and never exposes a result before descendants 
         (new Process(['sudo', '-n', 'systemctl', 'reset-failed', 'orbit-task-check-'.$runId.'.service']))->run();
     }
 });
+
+it('drains an orphaned server after the exact managed check has finished', function (int $exit, bool $setup): void {
+    $checkout = managed_check_seed()->checkout($this->directory);
+    $instance = check_runner_instance($checkout);
+    $runner = check_runner($setup ? new LocalShellSshExecutor : managed_check_seed()->transport($checkout));
+    $runId = bin2hex(random_bytes(16));
+    $child = new TaskCheckChild($this->directory);
+    $command = 'trap "" TERM; '.$child->readyCommand().'; '.$child->waitCommand();
+    try {
+        $process = $runner->start($instance, 'bash -c '.escapeshellarg($command).' >/dev/null 2>&1 & exit '.$exit,
+            $setup ? [['name' => 'Prepare', 'command' => 'touch setup-file', 'timeout_seconds' => 10]] : [], runId: $runId);
+        $child->awaitReady();
+        check_runner_wait_for_exit($process);
+
+        $runner->read($instance, $process);
+        $child->waitForExit();
+        $reading = $runner->read($instance, $process);
+        expect($reading->state)->toBe('finished')
+            ->and($reading->exitCode)->toBe($exit)
+            ->and($reading->treeAfter)->toBe($runner->snapshot($instance)->tree)
+            ->and($reading->causalityUncertain)->toBeFalse();
+    } finally {
+        $child->release();
+        (new Process(['sudo', '-n', 'systemctl', 'stop', 'orbit-task-check-'.$runId.'.service']))->run();
+        (new Process(['sudo', '-n', 'systemctl', 'reset-failed', 'orbit-task-check-'.$runId.'.service']))->run();
+    }
+})->with(['passed command' => [0, false], 'failed command' => [7, false], 'setup changes the baseline tree' => [0, true]]);
+
+it('does not drain descendants when the completed result identity is unavailable', function (string $damage): void {
+    $checkout = managed_check_seed()->checkout($this->directory);
+    $instance = check_runner_instance($checkout);
+    $runner = check_runner(managed_check_seed()->transport($checkout));
+    $runId = bin2hex(random_bytes(16));
+    $child = new TaskCheckChild($this->directory);
+    $command = $child->readyCommand().'; '.$child->waitCommand();
+    try {
+        $process = $runner->start($instance, 'bash -c '.escapeshellarg($command).' >/dev/null 2>&1 &', runId: $runId);
+        $child->awaitReady();
+        check_runner_wait_for_exit($process);
+        $path = $checkout.'/.git/orbit/check-starts/'.$runId.'.result.json';
+        $result = json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
+        if ($damage === 'malformed') {
+            file_put_contents($path, '{');
+        } else {
+            $result[$damage] = $damage === 'checkout' ? $this->directory : 'another-run';
+            file_put_contents($path, json_encode($result, JSON_THROW_ON_ERROR));
+        }
+
+        expect($runner->read($instance, $process)->state)->toBe('running');
+        $child->release();
+        $child->waitForExit();
+    } finally {
+        $child->release();
+        (new Process(['sudo', '-n', 'systemctl', 'stop', 'orbit-task-check-'.$runId.'.service']))->run();
+        (new Process(['sudo', '-n', 'systemctl', 'reset-failed', 'orbit-task-check-'.$runId.'.service']))->run();
+    }
+})->with(['malformed', 'head_before', 'checkout']);
 
 it('keeps finished managed results bound to their run when a newer check completes', function (): void {
     $checkout = managed_check_seed()->checkout($this->directory);

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Infrastructure\Tasks\TaskUnitProgram;
+use Symfony\Component\Process\Process;
 use Tests\Support\TaskUnitStateFixture;
 
 it('waits for a queued start before recording its completion', function (string $mainCode, int $expected): void {
@@ -78,3 +79,36 @@ it('does not retire or rewrite a check with a pending job', function (): void {
     expect(file_exists($receipt.'.lock'))->toBeFalse();
     expect(file_exists($fixture->home.'/stops'))->toBeFalse();
 });
+
+it('keeps a completed result fenced without proof that its supervisor exited', function (?string $mainPid): void {
+    $fixture = new TaskUnitStateFixture;
+    $fixture->state = [...$fixture->state, 'ActiveState' => 'active', 'SubState' => 'running',
+        'Description' => 'Orbit task check '.$fixture->operation];
+    if ($mainPid !== null) {
+        $fixture->state['MainPID'] = $mainPid;
+    }
+    $checkout = $fixture->home.'/checkout';
+    new Process(['git', 'init', '--quiet', $checkout])->mustRun();
+    $directory = $checkout.'/.git/orbit';
+    mkdir($directory.'/check-starts', 0700, true);
+    $receipt = $directory.'/check-starts/'.$fixture->operation;
+    $fixture->write($receipt.'.json', ['run_id' => $fixture->operation, 'boot' => $fixture->boot,
+        'state' => 'started', 'pid' => 999999999, 'started' => '123', 'head' => 'head', 'tree' => 'tree']);
+    $fixture->write($receipt.'.result.json', ['head_before' => 'head', 'tree_before' => 'tree',
+        'exit_code' => 0, 'finished_at' => 123, 'checkout' => $checkout]);
+    file_put_contents($directory.'/check', TaskUnitProgram::read('tasks/check'));
+    $process = $fixture->process(['python3', '-I', '-c', <<<'PYTHON'
+        import importlib.machinery, importlib.util, sys
+        loader = importlib.machinery.SourceFileLoader('check', sys.argv[1])
+        check = importlib.util.module_from_spec(importlib.util.spec_from_loader('check', loader))
+        loader.exec_module(check)
+        # An unreadable /proc entry is not proof of death. Require the manager's MainPID=0.
+        check.process_started = lambda pid: None
+        check.status(999999999, '123', sys.argv[2])
+        PYTHON, $directory.'/check', $fixture->operation]);
+
+    $process->mustRun();
+
+    expect(json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR))->toBe(['state' => 'running']);
+    expect(file_exists($fixture->home.'/stops'))->toBeFalse();
+})->with(['live supervisor' => '123', 'missing evidence' => null]);
