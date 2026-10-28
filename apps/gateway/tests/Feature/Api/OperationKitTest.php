@@ -89,6 +89,24 @@ final class KitEchoCommand implements OperationGatewayCommand
     }
 }
 
+final class KitExactCommand implements OperationGatewayCommand
+{
+    public function schema(): array
+    {
+        return ['type' => 'object', 'properties' => ['environment' => ['type' => 'object', 'properties' => [
+            'ORBIT_SEED_PATH' => ['type' => 'string'], 'ORBIT_SEED_COMMIT' => ['type' => 'string'], 'PUBLIC_TEXT' => ['type' => 'string']],
+            'required' => ['ORBIT_SEED_PATH', 'ORBIT_SEED_COMMIT', 'PUBLIC_TEXT'], 'additionalProperties' => false]],
+            'required' => ['environment'], 'additionalProperties' => false];
+    }
+
+    public function run(Operation $operation, #[SensitiveParameter] array $input): array
+    {
+        expect($input)->toBe(['environment' => ['ORBIT_SEED_PATH' => '', 'ORBIT_SEED_COMMIT' => '', 'PUBLIC_TEXT' => "  exact text\n"]]);
+
+        return ['backend' => 'active'];
+    }
+}
+
 final class KitFamilyExecution implements OperationCompletion, OperationFamilyExecution
 {
     public function context(Operation $operation): array
@@ -285,4 +303,20 @@ it('marks the Gateway command and hydrated transport parameters as sensitive', f
         $parameter = new ReflectionParameter([$class, 'run'], 'input');
         expect($parameter->getAttributes(SensitiveParameter::class))->toHaveCount(1);
     }
+});
+
+it('preserves empty strings and whitespace in nested executor inputs before exact binding', function (): void {
+    app()->instance(OperationGatewayCommands::class, new OperationGatewayCommands(['test.exact' => KitExactCommand::class]));
+    $this->spec['runs'] = [['transport' => 'gateway', 'name' => 'test.exact']];
+    ($this->register)();
+    $input = ['environment' => ['ORBIT_SEED_PATH' => '', 'ORBIT_SEED_COMMIT' => '', 'PUBLIC_TEXT' => "  exact text\n"]];
+    $run = [...$this->run, 'name' => 'test.exact', 'input' => $input];
+    $admitted = $this->operation->input;
+    $admitted['descriptors'][0]['name'] = 'test.exact';
+    $admitted['descriptors'][0]['input'] = $input;
+    $this->operation->update(['input' => $admitted]);
+    $this->postJson($this->path.'/run', $run)->assertOk()->assertJsonPath('data.backend', 'active');
+    expect($this->operation->refresh()->state['executor_runs']['effect']['input'])->toBe($input);
+    $run['input']['environment']['ORBIT_SEED_PATH'] = null;
+    $this->postJson($this->path.'/run', $run)->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
 });
