@@ -25,12 +25,12 @@ final readonly class IntegrationSecretSource implements OperationSecretSource
     /** @return list<string> */
     public function targetTypes(): array
     {
-        return ['ai_router', 'analytics', 'metrics'];
+        return ['ai_router', 'analytics', 'metrics', 'node'];
     }
 
     public function ownerId(Operation $operation): ?int
     {
-        return isset(IntegrationIntent::data($operation)['effects']) && preg_match('/\A(?:ai_router|analytics|metrics)\./D', $operation->kind) === 1 ? $operation->node_id : null;
+        return isset(IntegrationIntent::data($operation)['effects']) && preg_match('/\A(?:ai_router|analytics|metrics|websocket)\./D', $operation->kind) === 1 ? $operation->node_id : null;
     }
 
     public function resolve(Operation $operation, int $id, string $key, string $parameter): OperationSecretValue

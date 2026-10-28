@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Metrics;
 
 use App\Domain\Operations\OperationFamilyExecution;
+use App\Domain\Operations\OperationFamilyChildren;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -12,7 +13,7 @@ use App\Models\Operation;
 use App\Support\ValidatedData;
 
 /** Verifies the complete fleet proof before the final Gateway receipt is allowed. */
-final readonly class MetricsFleetExecution implements OperationFamilyExecution
+final readonly class MetricsFleetExecution implements OperationFamilyExecution, OperationFamilyChildren
 {
     public function __construct(private MetricsChildIntent $children, private MetricsFleetChildren $intents) {}
 
@@ -22,10 +23,10 @@ final readonly class MetricsFleetExecution implements OperationFamilyExecution
             'input' => ['backend' => $operation->input['remove'] ? 'absent' : 'active'], 'resumable' => true, 'required' => true]]];
     }
 
-    /** @return list<array{key: string, kind: string, node_id: int, input: array<string, mixed>}> */
+    /** @return array{intent: array<string, mixed>, children: list<array{key: string, kind: string, node_id: int, input: array<string, mixed>}>} */
     public function childContext(Operation $operation): array
     {
-        return $this->intents->context($operation);
+        return ['intent' => $operation->input, 'children' => $this->intents->context($operation)];
     }
 
     public function input(Operation $operation, array $run): array

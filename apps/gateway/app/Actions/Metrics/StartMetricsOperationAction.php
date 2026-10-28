@@ -48,9 +48,9 @@ final readonly class StartMetricsOperationAction
         return $this->operations->execute('metrics.retire', 'metrics_retirement', $node->id, $node->id, [], $plan, 'integration');
     }
 
-    public function execute(Node $node, NodeRole $assignment, string $verb = 'reconcile', bool $purge = false, bool $unreachable = false): Operation
+    public function execute(Node $node, NodeRole|int $assignment, string $verb = 'reconcile', bool $purge = false, bool $unreachable = false, ?Operation $existing = null): Operation
     {
-        return DB::transaction(function () use ($node, $assignment, $verb, $purge, $unreachable): Operation {
+        return DB::transaction(function () use ($node, $assignment, $verb, $purge, $unreachable, $existing): Operation {
             $remove = $verb === 'disable';
             $gateway = $remove ? $this->gateways->find() : $this->gateways->resolve();
             $relocated = $remove && NodeRole::query()->where('role', RoleName::Metrics)->where('node_id', '!=', $node->id)->exists();
@@ -67,7 +67,7 @@ final readonly class StartMetricsOperationAction
                 }
             }
             $dns = NodeRole::query()->where('role', RoleName::Vpn)->where('status', LifecycleStatus::Active)->first();
-            $input = ['node_id' => $node->id, 'assignment_id' => $assignment->id, 'metrics_address' => $node->wireguard_ip,
+            $input = ['node_id' => $node->id, 'assignment_id' => $assignment instanceof NodeRole ? $assignment->id : $assignment, 'metrics_address' => $node->wireguard_ip,
                 'gateway_node_id' => $gateway?->id, 'gateway_address' => $gateway?->wireguard_ip, 'relocated' => $relocated, 'dns_node_id' => $dns?->node_id,
                 'fleet' => $candidates, 'fleet_node_ids' => array_column($candidates, 'node_id'),
                 'remove' => $remove, 'purge_data' => $purge, 'unreachable' => $unreachable,
@@ -75,6 +75,7 @@ final readonly class StartMetricsOperationAction
             $plan = new IntegrationPlan($node->id);
             $plan->receipt($remove ? 'absent' : 'active');
 
+            if ($existing !== null) { return $this->operations->prepare($existing, $input, $plan); }
             return $this->operations->execute('metrics.'.$verb, 'metrics', $node->id, $node->id, $input, $plan);
         });
     }

@@ -26,5 +26,7 @@ return (static function (): array {
         ];
     }
 
+    $kinds['ai_router.collector_converge']['admission'] = \App\Domain\Integrations\IntegrationChildAdmission::class;
+
     return $kinds;
 })();

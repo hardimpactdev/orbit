@@ -16,7 +16,7 @@ final readonly class IntegrationCertificateCommand implements OperationGatewayCo
     public function schema(): array
     {
         return ['type' => 'object', 'additionalProperties' => false, 'required' => ['slug'],
-            'properties' => ['slug' => ['type' => 'string', 'enum' => ['ai-router', 'analytics', 'metrics']]]];
+            'properties' => ['slug' => ['type' => 'string', 'enum' => ['ai-router', 'analytics', 'metrics', 'websocket']]]];
     }
 
     public function run(Operation $operation, array $input): array

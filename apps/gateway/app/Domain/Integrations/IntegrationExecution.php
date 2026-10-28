@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Integrations;
 
 use App\Domain\Operations\OperationFamilyExecution;
+use App\Domain\Operations\OperationFamilyChildren;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStepStatus;
@@ -17,14 +18,14 @@ use App\Support\ValidatedData;
  *
  * @phpstan-import-type Flow from IntegrationIntent
  */
-final readonly class IntegrationExecution implements OperationFamilyExecution
+final readonly class IntegrationExecution implements OperationFamilyExecution, OperationFamilyChildren
 {
     public function context(Operation $operation): array
     {
         return ['descriptors' => array_values(IntegrationIntent::effects($operation))];
     }
 
-    /** @return list<array{key: string, kind: string, node_id: int, input: array<string, mixed>}> */
+    /** @return array{intent: array<string, mixed>, children: list<array{key: string, kind: string, node_id: int, input: array<string, mixed>}>} */
     public function childContext(Operation $operation): array
     {
         $intents = [];
@@ -54,7 +55,13 @@ final readonly class IntegrationExecution implements OperationFamilyExecution
                     'node_id' => ValidatedData::integer($child['node_id']), 'input' => ValidatedData::object($child['input'])];
             }
         }
-        return $intents;
+        if ($this->recoveryAllowed($operation)) {
+            foreach (IntegrationIntent::flow($operation, 'failure_flow') as $entry) {
+                if ($entry['type'] === 'child') { $intents[] = ['key' => $entry['key'], 'kind' => $entry['kind'], 'node_id' => $entry['node_id'], 'input' => $entry['input']]; }
+                try { $this->assertEntry($operation, $entry); } catch (ResourceOperationException) { break; }
+            }
+        }
+        return ['intent' => IntegrationIntent::data($operation), 'children' => $intents];
     }
 
     public function input(Operation $operation, array $run): array
@@ -69,7 +76,9 @@ final readonly class IntegrationExecution implements OperationFamilyExecution
 
     public function beforeRun(Operation $operation, array $run): void
     {
-        foreach (IntegrationIntent::flow($operation) as $entry) {
+        $flow = IntegrationIntent::flow($operation);
+        if ($this->recoveryAllowed($operation) && ! in_array($run['key'], array_column($flow, 'key'), true)) { $flow = IntegrationIntent::flow($operation, 'failure_flow'); }
+        foreach ($flow as $entry) {
             if ($entry['type'] === 'run' && $entry['key'] === $run['key']) {
                 return;
             }
@@ -91,6 +100,18 @@ final readonly class IntegrationExecution implements OperationFamilyExecution
         foreach (IntegrationIntent::flow($operation) as $entry) {
             $this->assertEntry($operation, $entry);
         }
+    }
+
+    public function recoveryAllowed(Operation $operation): bool
+    {
+        $condition = IntegrationIntent::data($operation)['failure_when'] ?? null;
+        if (! is_array($condition) || ! isset(IntegrationIntent::data($operation)['failure_flow'])) { return false; }
+        $step = ValidatedData::string($condition['step']);
+        $result = ValidatedData::object($operation->state['steps'] ?? [])[$step] ?? null;
+        if (! is_array($result) || ($result[ValidatedData::string($condition['field'])] ?? null) !== $condition['equals']) { return false; }
+        try { $this->assertEntry($operation, ['type' => 'run', 'key' => $step]); } catch (ResourceOperationException) { return false; }
+        return $operation->steps()->where('status', OperationStepStatus::Failed)->exists()
+            || Operation::query()->where('parent_operation_id', $operation->id)->where('status', OperationStatus::Failed)->exists();
     }
 
     public function cancellationBoundary(Operation $operation): ?array

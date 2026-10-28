@@ -28,7 +28,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
-use App\Domain\WebSocket\WebSocketPublicationManager;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
 use App\Models\Activity;
@@ -893,9 +892,7 @@ it('releases every runtime on a confirmed dead websocket Node and completes pend
     remove_node_offline_probe($target);
     if ($hasRole) {
         remove_node_role_fixture($target, RoleName::WebSocket);
-        $publication = Mockery::mock(WebSocketPublicationManager::class);
-        $publication->shouldReceive('removeUnreachable')->once()->withArgs(fn (Node $node): bool => $node->is($target));
-        app()->instance(WebSocketPublicationManager::class, $publication);
+
     }
     foreach (['default', 'second'] as $slot) {
         WebSocketRuntime::query()->create([

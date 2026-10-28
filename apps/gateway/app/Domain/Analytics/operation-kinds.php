@@ -34,5 +34,18 @@ return (static function (): array {
             'result_fields' => ['backend', 'error_code']];
     }
 
+    foreach (['role_converge' => 'enable', 'role_remove' => 'disable'] as $roleKind => $base) {
+        $definition = $kinds['analytics.'.$base];
+        $definition['admission'] = \App\Domain\Integrations\IntegrationRoleAdmission::class;
+        $definition['execution'] = \App\Domain\Integrations\IntegrationRoleExecution::class;
+        $definition['completion'] = \App\Domain\Integrations\IntegrationRoleCompletion::class;
+        $definition['runs'][] = ['transport' => 'gateway', 'name' => 'integration.prepare-role', 'resumable' => true];
+        $definition['result_fields'][] = 'prepared';
+        $definition['children'] = array_map(static fn (array $child): array => [...$child, 'node_from' => str_replace('input.', 'intent.', $child['node_from'])], $definition['children']);
+        $kinds['analytics.'.$roleKind] = $definition;
+    }
+
+    $kinds['analytics.clickhouse_converge']['admission'] = \App\Domain\Integrations\IntegrationChildAdmission::class;
+
     return $kinds;
 })();

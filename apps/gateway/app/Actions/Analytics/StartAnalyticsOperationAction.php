@@ -39,12 +39,12 @@ final readonly class StartAnalyticsOperationAction
         private GatewayCertificateIssuer $certificates,
         private NodeFirewallRuleCatalog $firewall) {}
 
-    public function execute(Node $node, NodeRole $assignment, string $verb = 'enable', bool $unreachable = false, ?string $previousVersion = null): Operation
+    public function execute(Node $node, NodeRole|int $assignment, string $verb = 'enable', bool $unreachable = false, ?string $previousVersion = null, ?Operation $existing = null): Operation
     {
-        return DB::transaction(function () use ($node, $assignment, $verb, $unreachable, $previousVersion): Operation {
+        return DB::transaction(function () use ($node, $assignment, $verb, $unreachable, $previousVersion, $existing): Operation {
             $remove = $verb === 'disable';
             $plan = new IntegrationPlan($node->id);
-            $input = ['node_id' => $node->id, 'assignment_id' => $assignment->id, 'unreachable' => $unreachable, 'previous_version' => $previousVersion];
+            $input = ['node_id' => $node->id, 'assignment_id' => $assignment instanceof NodeRole ? $assignment->id : $assignment, 'unreachable' => $unreachable, 'previous_version' => $previousVersion];
             if ($remove) {
                 if (! $unreachable) {
                     $plan->child('analytics-withdraw', 'route.caddy_converge', $node->id, ['reason' => 'analytics removal']);
@@ -99,6 +99,7 @@ final readonly class StartAnalyticsOperationAction
             $plan->child('analytics-dns', 'route.private_dns_publish', $dns->node_id, ['reason' => 'analytics intent']);
             $plan->receipt($remove ? 'absent' : 'active');
 
+            if ($existing !== null) { return $this->operations->prepare($existing, $input, $plan); }
             return $this->operations->execute('analytics.'.$verb, 'analytics', $node->id, $node->id, $input, $plan);
         });
     }

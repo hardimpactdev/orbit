@@ -20,8 +20,8 @@ final class IntegrationIntentController extends Controller
 {
     public function show(HeartbeatExecutorRequest $request, Operation $operation, SwampOperationExecutor $executor): JsonResponse
     {
-        $operation = $executor->heartbeat($operation, $request->worker());
-        if ($operation->kind !== 'ai_router.collector_converge' || ! isset($operation->state['integration_intent'])) {
+        $operation = $executor->heartbeat($operation, $request->worker(), $request->peerNodeId());
+        if (($operation->kind !== 'ai_router.collector_converge' && preg_match('/\A(?:metrics|analytics|websocket)\.role_(?:converge|remove)\z/D', $operation->kind) !== 1) || ! isset($operation->state['integration_intent'])) {
             throw new ResourceOperationException('operation.execution_forbidden', 'This Operation has no prepared integration intent.', 422);
         }
 

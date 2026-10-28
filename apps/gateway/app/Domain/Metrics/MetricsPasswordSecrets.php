@@ -22,7 +22,7 @@ final readonly class MetricsPasswordSecrets implements OperationSecretSource
     /** @return list<string> */
     public function targetTypes(): array
     {
-        return ['metrics'];
+        return ['metrics_effect'];
     }
 
     public function ownerId(Operation $operation): ?int

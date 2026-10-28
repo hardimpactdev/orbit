@@ -31,9 +31,9 @@ final readonly class IntegrationIntent
     }
 
     /** @return list<Flow> */
-    public static function flow(Operation $operation): array
+    public static function flow(Operation $operation, string $field = 'flow'): array
     {
-        $raw = self::data($operation)['flow'];
+        $raw = self::data($operation)[$field];
         if (! is_array($raw) || ! array_is_list($raw)) {
             throw new InvalidArgumentException('The integration flow must be a list.');
         }

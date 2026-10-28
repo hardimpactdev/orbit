@@ -7,13 +7,14 @@ namespace Orbit\Extensions\AiRouter\Domain;
 use App\Domain\Integrations\IntegrationExecution;
 use App\Domain\Integrations\IntegrationIntent;
 use App\Domain\Operations\OperationFamilyExecution;
+use App\Domain\Operations\OperationFamilyChildren;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
-final readonly class AiRouterExecution implements OperationFamilyExecution
+final readonly class AiRouterExecution implements OperationFamilyExecution, OperationFamilyChildren
 {
     public function __construct(private IntegrationExecution $effects) {}
 
@@ -27,10 +28,10 @@ final readonly class AiRouterExecution implements OperationFamilyExecution
         return ['descriptors' => [$prepare, ...($this->prepared($operation) ? $this->effects->context($operation)['descriptors'] : [])]];
     }
 
-    /** @return list<array{key: string, kind: string, node_id: int, input: array<string, mixed>}> */
+    /** @return array{intent: array<string, mixed>, children: list<array{key: string, kind: string, node_id: int, input: array<string, mixed>}>} */
     public function childContext(Operation $operation): array
     {
-        if ($operation->input === [] && ! $this->prepared($operation)) { return []; }
+        if ($operation->input === [] && ! $this->prepared($operation)) { return ['intent' => [], 'children' => []]; }
         return $this->effects->childContext($operation);
     }
 
