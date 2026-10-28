@@ -34,6 +34,9 @@ final readonly class OperationSweeper
         $jobsGone = $this->dispatcher->waitingJobs() === 0;
 
         foreach (Operation::query()->where('status', OperationStatus::Running->value)->orderBy('id')->get() as $operation) {
+            if (app(OperationExecutors::class)->swamp($operation->kind)) {
+                continue;
+            }
             $requeued = false;
             // A held lease means an attempt still runs. A free one means its worker died or its code ended without
             // recording the outcome. The lease is released before the dispatch, so the next worker can take it at once.
@@ -50,6 +53,9 @@ final readonly class OperationSweeper
         $lostBefore = Carbon::now()->subSeconds(self::QueuedJobLostSeconds);
 
         foreach (Operation::query()->where('status', OperationStatus::Queued->value)->orderBy('id')->get() as $operation) {
+            if (app(OperationExecutors::class)->swamp($operation->kind)) {
+                continue;
+            }
             if (! $jobsGone || ($operation->dispatched_at !== null && $operation->dispatched_at->greaterThan($lostBefore))) {
                 continue;
             }

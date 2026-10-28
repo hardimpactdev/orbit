@@ -11,8 +11,6 @@ use App\Data\Firewall\StoreFirewallRuleData;
 use App\Data\Processes\AddProcessData;
 use App\Data\Schedules\AddScheduleData;
 use App\Domain\Firewall\FirewallAction;
-use App\Domain\Firewall\FirewallBackendStatus;
-use App\Domain\Firewall\FirewallManager;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Metrics\ExporterPreferenceRepository;
 use App\Domain\Metrics\MetricsFleetReconciler;
@@ -42,7 +40,6 @@ it('refuses macOS role, Metrics, Process, Schedule, and firewall changes before 
     $fleet->shouldNotReceive('retire');
     app()->instance(MetricsFleetReconciler::class, $fleet);
     $node = macos_boundary_node();
-    $firewall = new MacOsBoundaryFirewall;
 
     expect(fn () => app(AddNodeRoleAction::class)->execute($node, RoleName::AppDev))
         ->toThrow(function (ResourceOperationException $exception): void {
@@ -105,7 +102,7 @@ it('refuses macOS role, Metrics, Process, Schedule, and firewall changes before 
                 ->and($exception->status)->toBe(422);
         });
 
-    expect(fn () => (new StoreFirewallRuleAction($firewall))->execute($node, new StoreFirewallRuleData(
+    expect(fn () => app(StoreFirewallRuleAction::class)->execute($node, new StoreFirewallRuleData(
         name: 'web',
         action: FirewallAction::Allow,
         source: '192.0.2.0/24',
@@ -126,7 +123,7 @@ it('refuses macOS role, Metrics, Process, Schedule, and firewall changes before 
         'status' => LifecycleStatus::Active,
     ]);
 
-    expect(fn () => (new RemoveFirewallRuleAction($firewall))->execute($rule))
+    expect(fn () => app(RemoveFirewallRuleAction::class)->execute($rule))
         ->toThrow(function (FirewallOperationException $exception): void {
             expect($exception->errorCode)->toBe('firewall.platform_unsupported')
                 ->and($exception->status)->toBe(422);
@@ -137,7 +134,6 @@ it('refuses macOS role, Metrics, Process, Schedule, and firewall changes before 
         ->and(Schedule::query()->count())->toBe(0)
         ->and(FirewallRule::query()->count())->toBe(1)
         ->and($rule->fresh()?->status)->toBe(LifecycleStatus::Active)
-        ->and($firewall->calls)->toBe(0)
         ->and(app(ExporterPreferenceRepository::class)->get($node->id))->toBeNull();
 });
 
@@ -177,21 +173,3 @@ final class MacOsBoundaryConverger implements NodeConverger, RecoverableNodeConv
     }
 }
 
-final class MacOsBoundaryFirewall implements FirewallManager
-{
-    public int $calls = 0;
-
-    public function converge(FirewallRule $rule): FirewallBackendStatus
-    {
-        $this->calls++;
-
-        throw new RuntimeException('Firewall mutation must not start.');
-    }
-
-    public function remove(FirewallRule $rule): FirewallBackendStatus
-    {
-        $this->calls++;
-
-        throw new RuntimeException('Firewall mutation must not start.');
-    }
-}

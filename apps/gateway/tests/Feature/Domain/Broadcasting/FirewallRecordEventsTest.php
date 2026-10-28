@@ -8,28 +8,13 @@ use App\Data\Firewall\StoreFirewallRuleData;
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Firewall\FirewallAction;
-use App\Domain\Firewall\FirewallBackendStatus;
-use App\Domain\Firewall\FirewallManager;
+use App\Domain\Operations\SwampOperationExecutor;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use Illuminate\Support\Facades\Event;
 
-final class FirewallRecordEventsFakeManager implements FirewallManager
-{
-    public function converge(FirewallRule $rule): FirewallBackendStatus
-    {
-        return FirewallBackendStatus::Active;
-    }
-
-    public function remove(FirewallRule $rule): FirewallBackendStatus
-    {
-        return FirewallBackendStatus::Absent;
-    }
-}
-
 beforeEach(function (): void {
-    app()->instance(FirewallManager::class, new FirewallRecordEventsFakeManager);
     $this->node = Node::query()->create([
         'name' => 'app-dev',
         'status' => LifecycleStatus::Active,
@@ -52,13 +37,14 @@ describe('FirewallRule record events', function (): void {
             port: '8443',
         );
 
-        $result = new StoreFirewallRuleAction(app(FirewallManager::class))->execute($this->node, $data);
+        $operation = app(StoreFirewallRuleAction::class)->execute($this->node, $data);
+        $executor = app(SwampOperationExecutor::class);
+        $executor->complete($executor->claim('firewall.allow', 'test'), ['worker' => 'test', 'status' => 'succeeded']);
 
-        expect($result['created'])->toBeTrue();
         Event::assertDispatched(
             RecordBroadcast::class,
             fn (RecordBroadcast $event): bool => $event->type === RecordEventType::FirewallCreated
-                && $event->id === $result['rule']->id
+                && $event->id === $operation->input['rule_id']
                 && $event->data['name'] === 'private-web',
         );
     });
@@ -71,14 +57,17 @@ describe('FirewallRule record events', function (): void {
             protocol: 'tcp',
             port: '8443',
         );
-        new StoreFirewallRuleAction(app(FirewallManager::class))->execute($this->node, $data);
+        app(StoreFirewallRuleAction::class)->execute($this->node, $data);
+        $executor = app(SwampOperationExecutor::class);
+        $executor->complete($executor->claim('firewall.allow', 'first'), ['worker' => 'first', 'status' => 'succeeded']);
 
         Event::fake([RecordBroadcast::class]);
 
-        $result = new StoreFirewallRuleAction(app(FirewallManager::class))->execute($this->node, $data);
+        $operation = app(StoreFirewallRuleAction::class)->execute($this->node, $data);
+        $executor = app(SwampOperationExecutor::class);
+        $executor->complete($executor->claim('firewall.allow', 'test'), ['worker' => 'test', 'status' => 'succeeded']);
 
-        expect($result['created'])->toBeFalse();
-        Event::assertNotDispatched(RecordBroadcast::class);
+        Event::assertNotDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::FirewallCreated);
     });
 
     it('broadcasts firewall.deleted with a minimal snapshot when a rule is removed', function (): void {
@@ -94,7 +83,9 @@ describe('FirewallRule record events', function (): void {
 
         Event::fake([RecordBroadcast::class]);
 
-        new RemoveFirewallRuleAction(app(FirewallManager::class))->execute($rule);
+        app(RemoveFirewallRuleAction::class)->execute($rule);
+        $executor = app(SwampOperationExecutor::class);
+        $executor->complete($executor->claim('firewall.remove', 'test'), ['worker' => 'test', 'status' => 'succeeded']);
 
         Event::assertDispatched(
             RecordBroadcast::class,

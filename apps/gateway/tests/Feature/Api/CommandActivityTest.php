@@ -7,7 +7,6 @@ use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\NodeStateInspector;
 use App\Domain\Firewall\FirewallBackendStatus;
-use App\Domain\Firewall\FirewallManager;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
 use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
@@ -1704,7 +1703,6 @@ it('records definition commands against the Project instead of a Process or Sche
 });
 
 it('records pre-persistence firewall allow and deny failures against the path-bound node', function (): void {
-    app()->instance(FirewallManager::class, new CommandActivityFirewallFakeManager);
     $node = Node::query()->create([
         'name' => 'firewall-activity-target',
         'status' => LifecycleStatus::Active,
@@ -1740,7 +1738,7 @@ it('records pre-persistence firewall allow and deny failures against the path-bo
             'protocol' => 'tcp',
             'port' => '443',
         ])
-        ->assertCreated();
+        ->assertAccepted();
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
@@ -1832,19 +1830,6 @@ function command_activity_environment_fixture(): array
     $instance->update(['status' => 'active']);
 
     return [$caller, $instance->fresh(['node'])];
-}
-
-final class CommandActivityFirewallFakeManager implements FirewallManager
-{
-    public function converge(FirewallRule $rule): FirewallBackendStatus
-    {
-        return FirewallBackendStatus::Active;
-    }
-
-    public function remove(FirewallRule $rule): FirewallBackendStatus
-    {
-        return FirewallBackendStatus::Absent;
-    }
 }
 
 final readonly class CommandActivityEnvironmentAccess implements InstanceEnvironmentReader, InstanceEnvironmentWriter, InstanceOperationPreflight

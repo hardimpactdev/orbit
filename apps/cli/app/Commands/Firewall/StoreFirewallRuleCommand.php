@@ -4,15 +4,16 @@ declare(strict_types=1);
 
 namespace App\Commands\Firewall;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use App\Support\Console\ProgressState;
-use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Responses\Firewall\FirewallRuleResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 abstract class StoreFirewallRuleCommand extends FirewallCommand
 {
+    use FollowsOperations;
+
     abstract protected function request(
         int $nodeId,
         string $name,
@@ -61,35 +62,14 @@ abstract class StoreFirewallRuleCommand extends FirewallCommand
             return self::FAILURE;
         }
 
-        $rule = $this->sendWithProgress(
-            $connector,
-            $this->request($nodeId, $name, $source, $protocol, $port),
-            FirewallRuleResponse::class,
-            ['Apply firewall rule', 'Applying firewall rule', 'Applied firewall rule'],
-            static function (FirewallRuleResponse $response): ProgressState {
-                if ($response->backendStatus !== 'active') {
-                    throw new GatewayApiException('Gateway response does not confirm the firewall operation.',
-                        'gateway.invalid_response', requestId: $response->requestId);
-                }
-
-                return ProgressState::Success;
-            },
-        );
-
-        if (! $rule instanceof FirewallRuleResponse) {
+        $profile = $this->activeGatewayProfile($repository);
+        if ($profile === null) {
             return self::FAILURE;
         }
+        $operation = $this->send($connector, $this->request($nodeId, $name, $source, $protocol, $port), OperationResponse::class);
 
-        if ($this->option('json') === true) {
-            $this->writeJson($rule->toArray());
-
-            return self::SUCCESS;
-        }
-
-        $this->writeHumanMessage("Firewall rule [{$rule->name}] is active.");
-
-        $this->writeHumanMessage("Request ID: {$rule->requestId}");
-
-        return self::SUCCESS;
+        return $operation instanceof OperationResponse
+            ? $this->followOperation($connector, $profile, $operation, "Apply firewall rule [{$name}]", 'Firewall rule')
+            : self::FAILURE;
     }
 }

@@ -22,10 +22,10 @@ Route::middleware([
     Route::get('nodes/{node}/live-firewall-rules', [FirewallRulesController::class, 'live'])
         ->whereNumber('node')
         ->name('firewall:live:list');
-    Route::post('nodes/{node}/firewall-rules/allow', [FirewallRulesController::class, 'store'])
+    Route::post('nodes/{node}/firewall-rules/allow', [FirewallRulesController::class, 'allow'])
         ->defaults('firewall_action', 'allow')
         ->name('firewall:allow');
-    Route::post('nodes/{node}/firewall-rules/deny', [FirewallRulesController::class, 'store'])
+    Route::post('nodes/{node}/firewall-rules/deny', [FirewallRulesController::class, 'deny'])
         ->defaults('firewall_action', 'deny')
         ->name('firewall:deny');
     Route::delete(

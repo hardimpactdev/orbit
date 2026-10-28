@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Operations;
 
 use App\Domain\Operations\OperationDispatcher;
+use App\Domain\Operations\OperationExecutors;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationRunner;
@@ -48,7 +49,9 @@ final readonly class StartOperationAction
             return $existing;
         }
 
-        $this->assertAvailable();
+        if (! app(OperationExecutors::class)->swamp($kind)) {
+            $this->assertAvailable();
+        }
         $operation = $this->store->create($kind, $targetType, $targetId, $nodeId, $input, $triggeredBy, $requestId, $supersedes);
 
         if (! $operation->wasRecentlyCreated) {

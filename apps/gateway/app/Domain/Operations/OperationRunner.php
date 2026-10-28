@@ -54,7 +54,7 @@ final readonly class OperationRunner
         $this->lease->hold($operationId, function () use ($operationId, $read): void {
             $operation = Operation::query()->find($operationId);
 
-            if (! $operation instanceof Operation) {
+            if (! $operation instanceof Operation || app(OperationExecutors::class)->swamp($operation->kind)) {
                 return;
             }
 
