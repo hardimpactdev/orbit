@@ -1,0 +1,66 @@
+name: Automatic deployment policy
+on:
+  pull_request:
+    paths:
+      - 'extensions/behaviors/automatic-deploy/**'
+      - 'tests/automatic_deploy_test.ts'
+      - 'tests/_support/automatic_deploy.ts'
+      - 'workflows/workflow-automatic-production-deploy.yaml'
+      - 'docs/automatic-deploy.md'
+      - '.github/workflows/automatic-deploy.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'extensions/behaviors/automatic-deploy/**'
+      - 'tests/automatic_deploy_test.ts'
+      - 'tests/_support/automatic_deploy.ts'
+      - 'workflows/workflow-automatic-production-deploy.yaml'
+      - 'docs/automatic-deploy.md'
+      - '.github/workflows/automatic-deploy.yml'
+permissions:
+  contents: read
+jobs:
+  policy:
+    runs-on: [self-hosted, hardimpact]
+    timeout-minutes: 5
+    env:
+      SWAMP_NO_UPDATE_CHECK: '1'
+      SWAMP_NO_TELEMETRY: '1'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.8
+      - name: Check extension and tests
+        run: |
+          deno fmt --check extensions/behaviors/automatic-deploy tests/automatic_deploy_test.ts tests/_support/automatic_deploy.ts
+          deno lint extensions/behaviors/automatic-deploy tests/automatic_deploy_test.ts tests/_support/automatic_deploy.ts
+          deno check extensions/behaviors/automatic-deploy/mod.ts extensions/behaviors/automatic-deploy/mod_test.ts tests/automatic_deploy_test.ts
+      - name: Test frozen policy cases and Gateway boundary (one worker)
+        run: deno test --allow-read=. extensions/behaviors/automatic-deploy/mod_test.ts tests/automatic_deploy_test.ts
+      - name: Prepare isolated Swamp environment
+        shell: bash
+        run: |
+          printf 'SWAMP_HOME=%s\nSWAMP_CONFIG_DIR=%s\n' \
+            "$RUNNER_TEMP/automatic-deploy-swamp" \
+            "$RUNNER_TEMP/automatic-deploy-swamp-config" >> "$GITHUB_ENV"
+      - name: Validate workflow with pinned Swamp
+        shell: bash
+        env:
+          SWAMP_API_KEY: ${{ secrets.SWAMP_API_KEY }}
+          SWAMP_SIGNIN_TOKEN: ${{ secrets.SWAMP_SIGNIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$SWAMP_API_KEY" && test -n "$SWAMP_SIGNIN_TOKEN"
+          curl --fail --location --retry 3 \
+            https://github.com/swamp-club/swamp/releases/download/v20261022.021804.0-sha.983e2929/swamp-linux-x86_64 \
+            --output "$RUNNER_TEMP/swamp-autodeploy"
+          printf '%s  %s\n' 940416b92781dad1d48aff0e4f42b48bbcb29fd92aca9bb8ed126aff0f6d135d "$RUNNER_TEMP/swamp-autodeploy" | sha256sum --check
+          chmod +x "$RUNNER_TEMP/swamp-autodeploy"
+          "$RUNNER_TEMP/swamp-autodeploy" workflow validate automatic-production-deploy --json
+      - name: Clean isolated Swamp environment
+        if: always()
+        shell: bash
+        run: |
+          rm -rf -- "$RUNNER_TEMP/automatic-deploy-swamp" "$RUNNER_TEMP/automatic-deploy-swamp-config"
+          rm -f -- "$RUNNER_TEMP/swamp-autodeploy"

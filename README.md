@@ -311,3 +311,5 @@ in `logs/`.
 
 Known gap: the `apps/docs` check needs bun installs (`apps/web/tools/...`) that
 the worktree prep does not do yet; Project 46's setup steps do.
+
+Automatic production deployment policy is an unscheduled ADR 0238 trial. See [the policy, frozen-case coverage, and Gateway gaps](docs/automatic-deploy.md).

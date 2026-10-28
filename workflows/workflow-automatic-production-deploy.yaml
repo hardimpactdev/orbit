@@ -1,0 +1,18 @@
+id: 78efdd30-08ce-4ffb-a8eb-c7259c96ad24
+name: automatic-production-deploy
+description: ADR 0238 production policy trial. Unscheduled. Gateway gaps block execution; the native runner remains active.
+inputs:
+  properties:
+    instance: { type: integer, description: Production Instance ID }
+  required: [instance]
+jobs:
+  - name: policy
+    steps:
+      - name: tick
+        task:
+          type: model_method
+          modelType: '@nckrtl/automatic-deploy'
+          modelName: '${{ "automatic-deploy-" + string(inputs.instance) }}'
+          methodName: tick
+          inputs:
+            instance: '${{ inputs.instance }}'

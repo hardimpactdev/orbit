@@ -13,6 +13,9 @@ on:
       - 'models/@nckrtl/orbit-group-runs/**'
       - 'workflows/workflow-dependency-*.yaml'
       - 'tests/**'
+      # The automatic policy has its own isolated job.
+      - '!tests/automatic_deploy_test.ts'
+      - '!tests/_support/automatic_deploy.ts'
       - '.github/workflows/maintenance-worker.yml'
   push:
     branches: [main]
@@ -28,6 +31,9 @@ on:
       - 'models/@nckrtl/orbit-group-runs/**'
       - 'workflows/workflow-dependency-*.yaml'
       - 'tests/**'
+      # The automatic policy has its own isolated job.
+      - '!tests/automatic_deploy_test.ts'
+      - '!tests/_support/automatic_deploy.ts'
       - '.github/workflows/maintenance-worker.yml'
 permissions:
   contents: read
