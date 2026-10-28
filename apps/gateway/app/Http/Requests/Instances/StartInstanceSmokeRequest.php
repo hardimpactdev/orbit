@@ -38,7 +38,8 @@ final class StartInstanceSmokeRequest extends FormRequest
 
     protected function failedValidation(Validator $validator): never
     {
-        throw new ResourceOperationException('instance.smoke_invalid', 'Smoke requires a selected deployment, HTTPS Route origin, workflow path and ref.');
+        throw new ResourceOperationException('instance.smoke_invalid',
+            'Smoke requires a selected deployment, HTTPS Route origin, workflow path and ref.');
     }
 
     public function payload(): InstanceSmokeRequestData

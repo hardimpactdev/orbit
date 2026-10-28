@@ -2062,7 +2062,7 @@ export interface paths {
         };
         /**
          * Read a production smoke receipt
-         * @description Reads retained evidence for the original caller, Instance and key. Never dispatches. Missing, uncertain or ambiguous execution stays pending or unknown, never failed. Only verified execution or test failures report failed. Swamp owns missing-result policy and baseline deadlines.
+         * @description Reads retained evidence for the original caller, Instance and key. Never dispatches. Missing, uncertain or ambiguous execution stays pending or unknown, never failed. Only JUnit failures or errors report failed; clean JUnit with an unsuccessful run is unknown. Swamp owns missing-result policy and baseline deadlines.
          */
         get: operations["instance-smoke-receipt"];
         put?: never;

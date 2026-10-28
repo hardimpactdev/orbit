@@ -25,7 +25,8 @@ final class InstanceSmokeController extends Controller
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function context(Request $request, Instance $instance, ReadInstanceSmokeContextAction $action): JsonResponse
     {
-        return response()->json(['data' => $action->execute($instance)->toArray(), 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]]);
+        return response()->json(['data' => $action->execute($instance)->toArray(), 'meta' => ['request_id' => $request
+            ->attributes->getString('orbit.request_id')]]);
     }
 
     #[StartsOperation(OperationKinds::InstanceSmoke, requiresKey: true, bindCaller: true)]
@@ -36,15 +37,18 @@ final class InstanceSmokeController extends Controller
         assert($caller instanceof Node);
         $operation = $action->execute($instance, $caller, $request->payload(), $request->attributes->getString('orbit.request_id'));
 
-        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]], 202);
+        return response()->json(['data' => OperationData::fromModel($operation)->toArray(),
+            'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]], 202);
     }
 
     #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function receipt(InstanceSmokeReceiptRequest $request, Instance $instance, ReadInstanceSmokeReceiptAction $action): JsonResponse
+    public function receipt(InstanceSmokeReceiptRequest $request, Instance $instance,
+        ReadInstanceSmokeReceiptAction $action): JsonResponse
     {
         $caller = $request->user();
         assert($caller instanceof Node);
 
-        return response()->json(['data' => $action->execute($instance, $caller, $request->requestKey())->toArray(), 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]]);
+        return response()->json(['data' => $action->execute($instance, $caller, $request->requestKey())->toArray(),
+            'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]]);
     }
 }

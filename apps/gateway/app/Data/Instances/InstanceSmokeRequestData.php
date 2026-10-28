@@ -11,5 +11,6 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 #[MapName(SnakeCaseMapper::class)]
 final class InstanceSmokeRequestData extends Data
 {
-    public function __construct(public int $deploymentId, public string $commit, public string $release, public string $baseUrl, public string $workflow, public string $ref) {}
+    public function __construct(public int $deploymentId, public string $commit, public string $release,
+        public string $baseUrl, public string $workflow, public string $ref) {}
 }

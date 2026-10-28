@@ -2535,4 +2535,6 @@ The Gateway reads Swamp's own run history rather than recording a second run led
 
 ## Production smoke ownership
 
-Repository production-smoke browser tests run through GitHub Actions after explicit Swamp baseline admission. The [Gateway smoke API](/reference/deployments#production-smoke) supplies release context and verified execution evidence. It is separate from task workspace checks. Swamp decides what to do when execution evidence is missing or its baseline deadline expires. The Gateway reports pending or unknown for an uncertain send, missing or ambiguous run, or expired artifacts; those states never mean that tests failed. Only verified execution or test failure can report failed. No smoke state starts a task, repair, rollback or merge in this slice.
+Repository production-smoke browser tests run through GitHub Actions after explicit Swamp baseline admission. The [Gateway smoke API](/reference/deployments#production-smoke) supplies release context and verified execution evidence. It is separate from task workspace checks. Swamp decides what to do when execution evidence is missing or its baseline deadline expires. The Gateway reports pending or unknown for an uncertain send, missing or ambiguous run, or expired artifacts; those states never mean that tests failed.
+
+Only JUnit failures or errors report failed. A clean JUnit report with an unsuccessful GitHub conclusion is unknown; it cannot justify a rollback. No smoke state starts a task, repair, rollback or merge in this slice.

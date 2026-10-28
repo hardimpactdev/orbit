@@ -56,7 +56,7 @@ final readonly class GitHubActionsReader
         $credentials = $this->apps->credentials();
 
         if ($credentials === null) {
-            throw new GitHubActionsUnavailable;
+            throw new GitHubActionsUnavailable(404);
         }
 
         try {
@@ -102,7 +102,7 @@ final readonly class GitHubActionsReader
         $data = json_decode($this->body(self::Api.$path, $token, self::JsonBytes, $payload), true);
 
         if (! is_array($data)) {
-            throw new GitHubActionsUnavailable;
+            throw new GitHubActionsUnavailable(invalid: true);
         }
 
         return $data;
@@ -147,13 +147,17 @@ final readonly class GitHubActionsReader
             throw new GitHubActionsUnavailable;
         }
 
+        if ($response->status() !== 302) {
+            throw new GitHubActionsUnavailable($response->status());
+        }
+
         $parts = parse_url($location);
         $host = is_array($parts) ? ($parts['host'] ?? '') : '';
 
-        if ($response->status() !== 302 || ! is_array($parts) || ($parts['scheme'] ?? null) !== 'https'
+        if (! is_array($parts) || ($parts['scheme'] ?? null) !== 'https'
             || isset($parts['user']) || isset($parts['pass']) || isset($parts['port']) || isset($parts['fragment'])
             || preg_match('/\A[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:blob\.core\.windows\.net|githubusercontent\.com)\z/D', $host) !== 1) {
-            throw new GitHubActionsUnavailable;
+            throw new GitHubActionsUnavailable(invalid: true);
         }
 
         return $location;
@@ -239,7 +243,7 @@ final readonly class GitHubActionsReader
             $stream = $response->toPsrResponse()->getBody();
 
             if (! $response->successful()) {
-                throw new GitHubActionsUnavailable;
+                throw new GitHubActionsUnavailable($response->status());
             }
 
             $read = 0;
@@ -250,7 +254,7 @@ final readonly class GitHubActionsReader
                 $read += strlen($data);
 
                 if ($read > $limit) {
-                    throw new GitHubActionsUnavailable;
+                    throw new GitHubActionsUnavailable(invalid: true);
                 }
 
                 yield $data;

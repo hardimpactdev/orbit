@@ -21,10 +21,15 @@ final readonly class ReadInstanceSmokeReceiptAction
         if ($operation === null) {
             return new InstanceSmokeReceiptData($key, false, null, null);
         }
-        if ($operation->target_type !== 'instance_smoke' || $operation->target_id !== $instance->id || ($operation->input['caller_node_id'] ?? null) !== $caller->id) {
-            throw new ResourceOperationException('operation.idempotency_conflict', 'This smoke key belongs to another caller or Instance.', 409);
+        if ($operation->target_type !== 'instance_smoke' || $operation->target_id !== $instance->id || ($operation
+            ->input['caller_node_id'] ?? null) !== $caller->id) {
+            throw new ResourceOperationException('operation.idempotency_conflict',
+                'This smoke key belongs to another caller or Instance.', 409);
         }
-        $result = $operation->result ?? $operation->state['smoke'] ?? [];
+        $result = $operation->state['smoke'] ?? [];
+        if ($result === [] && $operation->status->terminal()) {
+            $result = ['state' => 'unknown'];
+        }
         $smoke = InstanceSmokeResultData::from([...$operation->input, ...(is_array($result) ? $result : [])]);
 
         return new InstanceSmokeReceiptData($key, true, OperationData::fromModel($operation), $smoke);
