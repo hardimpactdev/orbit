@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Deployment;
 
+use App\Data\Instances\InstanceDeploymentData;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
 use Illuminate\Support\Carbon;
@@ -50,6 +51,38 @@ final readonly class AutomaticDeployHistory
             ->first();
     }
 
+    /** The latest terminal automatic attempt after resume, only when it is an alertable failure. */
+    public function failedAlert(): ?InstanceDeployment
+    {
+        $last = InstanceDeployment::query()
+            ->where('instance_id', $this->instance->id)
+            ->where('kind', 'deploy')
+            ->where('triggered_by', self::Trigger)
+            ->where('status', '!=', 'running')
+            ->where(static fn ($query) => $query->whereNull('error_code')->orWhere('error_code', '!=', self::Paused))
+            ->where('id', '>', $this->instance->auto_deploy_resumed_after)
+            ->latest('id')
+            ->first();
+
+        return $last instanceof InstanceDeployment && $last->status === 'failed' && is_string($last->commit) ? $last : null;
+    }
+
+    /** One observation supplies both rollback blocks and the version of the retained public history. */
+    public function snapshot(): AutomaticDeployHistorySnapshot
+    {
+        $rows = InstanceDeployment::query()->where('instance_id', $this->instance->id)->orderBy('id')->get([
+            'id', 'instance_id', 'kind', 'release', 'branch', 'commit', 'started_at', 'finished_at',
+            'duration_seconds', 'status', 'failed_step', 'error_code', 'selected_release', 'triggered_by',
+        ]);
+        $public = $rows->map(static fn (InstanceDeployment $row): array => InstanceDeploymentData::fromModel($row)->toArray())->all();
+
+        return new AutomaticDeployHistorySnapshot(
+            hash('sha256', json_encode($public, JSON_THROW_ON_ERROR)),
+            $rows->last()->id ?? 0,
+            $this->rolledAwayFrom(array_values($rows->all())),
+        );
+    }
+
     /**
      * The commits that rollbacks moved away from: for each rollback in the retained history, the commit of the newest
      * succeeded deployment or rollback before it. They come from the rows, not from what a tick saw, so a rollback
@@ -59,13 +92,20 @@ final readonly class AutomaticDeployHistory
      */
     public function rolledAway(): array
     {
-        $live = null;
-        $commits = [];
-
-        foreach (InstanceDeployment::query()
+        return $this->rolledAwayFrom(array_values(InstanceDeployment::query()
             ->where('instance_id', $this->instance->id)
             ->orderBy('id')
-            ->get(['id', 'kind', 'status', 'commit']) as $deployment) {
+            ->get(['id', 'kind', 'status', 'commit'])->all()));
+    }
+
+    /** @param list<InstanceDeployment> $rows
+     * @return list<string>
+     */
+    private function rolledAwayFrom(array $rows): array
+    {
+        $live = null;
+        $commits = [];
+        foreach ($rows as $deployment) {
             if ($deployment->kind === InstanceDeployment::Rollback && is_string($live) && $live !== $deployment->commit) {
                 $commits[$live] = true;
             }

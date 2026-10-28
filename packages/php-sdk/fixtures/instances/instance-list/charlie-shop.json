@@ -124,7 +124,8 @@
                     "message": null,
                     "pause": null,
                     "resumed_after": 0,
-                    "blocked": []
+                    "blocked": [],
+                    "history_version": null
                 }
             },
             {
@@ -246,7 +247,8 @@
                     "message": null,
                     "pause": null,
                     "resumed_after": 0,
-                    "blocked": []
+                    "blocked": [],
+                    "history_version": null
                 }
             },
             {
@@ -368,7 +370,8 @@
                     "message": null,
                     "pause": null,
                     "resumed_after": 0,
-                    "blocked": []
+                    "blocked": [],
+                    "history_version": null
                 }
             },
             {
@@ -490,7 +493,8 @@
                     "message": null,
                     "pause": null,
                     "resumed_after": 0,
-                    "blocked": []
+                    "blocked": [],
+                    "history_version": null
                 }
             }
         ],

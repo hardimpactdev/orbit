@@ -13,7 +13,6 @@ use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
 use Illuminate\Validation\ValidationException;
-use ReflectionMethod;
 use Symfony\Component\HttpFoundation\Response;
 
 /** Checks a start key after access checks, before Form Requests or target creation. */
@@ -26,16 +25,14 @@ final readonly class HandleOperationIdempotency
     {
         $route = $request->route();
 
-        if (! $route instanceof Route || ! is_object($controller = $route->getController())) {
+        if (! $route instanceof Route) {
             return $next($request);
         }
 
-        $attribute = new ReflectionMethod($controller, $route->getActionMethod())->getAttributes(StartsOperation::class)[0] ?? null;
-
-        if ($attribute === null) {
+        $start = StartsOperation::forRoute($route);
+        if ($start === null) {
             return $next($request);
         }
-        $start = $attribute->newInstance();
         if (! $request->headers->has('Idempotency-Key')) {
             if ($start->requiresKey) {
                 throw ValidationException::withMessages(['Idempotency-Key' => ['Idempotency-Key is required.']]);

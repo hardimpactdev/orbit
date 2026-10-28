@@ -20,6 +20,7 @@ final class PublishAutomaticDeployPolicyRequest extends FormRequest
         return [
             'resumed_after' => ['required', 'integer', 'min:0'],
             'last_deployment_id' => ['required', 'integer', 'min:0'],
+            'history_version' => ['required', 'string', 'regex:/\A[0-9a-f]{64}\z/D'],
             'result' => ['required', 'string', Rule::enum(AutomaticDeployResult::class)],
             'commit' => ['present', 'nullable', 'string', 'regex:/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D'],
             'head' => ['present', 'nullable', 'string', 'regex:/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D'],
@@ -38,7 +39,7 @@ final class PublishAutomaticDeployPolicyRequest extends FormRequest
     public function validationData(): array
     {
         try {
-            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['resumed_after', 'last_deployment_id', 'result', 'commit', 'head', 'since', 'error_code', 'message', 'pause']);
+            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['resumed_after', 'last_deployment_id', 'history_version', 'result', 'commit', 'head', 'since', 'error_code', 'message', 'pause']);
         } catch (UnexpectedValueException) {
             throw ValidationException::withMessages(['body' => ['The request body must be a JSON object with supported keys.']]);
         }

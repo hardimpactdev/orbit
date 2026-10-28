@@ -9,7 +9,6 @@ use App\Domain\Operations\OperationKind;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationRun;
 use App\Domain\Operations\OperationStepPlan;
-use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
 use App\Models\Operation;
@@ -31,33 +30,21 @@ final readonly class AutomaticDeployEventOperation implements OperationKind
         $receipt = $run->step('delivery', function () use ($instance, $data, $operation): array {
             $result = $data->result === null ? null : AutomaticDeployResult::from($data->result);
             if ($data->event === 'activity') {
-                if ($result === null || ! $result->isNotable()) {
-                    return ['outcome' => 'skipped', 'reason' => 'not_notable'];
-                }
-                $activity = Activity::query()->create([
-                    'log_name' => 'deployments', 'description' => 'auto_deploy.'.$result->value,
-                    'subject_type' => Instance::MorphAlias, 'subject_id' => $instance->id,
-                    'properties' => ['instance_id' => $instance->id, 'commit' => $data->commit, 'operation_id' => $data->operationId, 'error_code' => $data->errorCode, 'message' => $data->message],
-                    'request_id' => $operation->request_id, 'command' => AutomaticDeployHistory::Trigger,
-                    'status' => $result->isError() ? 'failed' : 'completed', 'error_code' => $data->errorCode,
-                ]);
+                assert($result instanceof AutomaticDeployResult);
 
-                return ['activity_id' => $activity->id];
+                return $this->alerts->activity($instance, new AutomaticDeployOutcome($instance->id, $result, $data->commit, $data->operationId, $data->errorCode, $data->message), $operation->request_id);
             }
             if ($data->event === 'stalled') {
                 assert(is_string($data->commit) && is_string($data->since) && $result instanceof AutomaticDeployResult);
 
                 return $this->alerts->stalled($instance, $data->commit, $data->since, new AutomaticDeployOutcome($instance->id, $result, $data->commit, $data->operationId, $data->errorCode, $data->message));
             }
-            $deployment = InstanceDeployment::query()->where('instance_id', $instance->id)->find($data->deploymentId);
-            if ($deployment === null) {
-                return ['outcome' => 'skipped', 'reason' => 'deployment_missing'];
-            }
-            if ($data->event === 'failed' && $deployment->kind === 'deploy' && $deployment->triggered_by === AutomaticDeployHistory::Trigger && $deployment->status === 'failed' && $deployment->error_code !== AutomaticDeployHistory::Paused) {
-                return $this->alerts->failed($instance, $deployment);
-            }
-            if ($data->event === 'paused' && ($deployment->kind === InstanceDeployment::Rollback || $deployment->triggered_by !== AutomaticDeployHistory::Trigger)) {
-                return $this->alerts->paused($instance, $deployment);
+            $history = new AutomaticDeployHistory($instance->refresh());
+            $deployment = $data->event === 'failed' ? $history->failedAlert() : $history->pausedBy();
+            if ($deployment instanceof InstanceDeployment && $deployment->id === $data->deploymentId) {
+                return $data->event === 'failed'
+                    ? $this->alerts->failed($instance, $deployment)
+                    : $this->alerts->paused($instance, $deployment);
             }
 
             return ['outcome' => 'skipped', 'reason' => 'deployment_not_applicable'];

@@ -28,13 +28,11 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitCommitSha;
 use App\Domain\SourceControl\RemoteBranchHeads;
 use App\Infrastructure\GitHub\GitHubTokenCache;
-use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
 use App\Models\Operation;
 use Closure;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Str;
 use InvalidArgumentException;
 use Throwable;
 
@@ -62,7 +60,7 @@ use Throwable;
 final readonly class RunAutomaticDeploysAction
 {
     /** The `command` of the tick's Activity entries. */
-    public const string Command = 'orbit:auto-deploy';
+    public const string Command = AutomaticDeployHistory::Trigger;
 
     /** A commit that waits this long to deploy raises the stalled alert once. */
     public const int StallAlertMinutes = 30;
@@ -111,8 +109,8 @@ final readonly class RunAutomaticDeploysAction
             $outcome = $this->failed($instance, $exception);
         }
 
-        if ($state->result($outcome) && $outcome->result->isNotable()) {
-            $this->activity($instance, $outcome);
+        if ($state->result($outcome)) {
+            $this->alerts->activity($instance, $outcome);
         }
 
         if ($alerts) {
@@ -300,18 +298,10 @@ final readonly class RunAutomaticDeploysAction
     /** Raises the failed alert once for each commit whose automatic deployment failed since `auto_deploy` was set. */
     private function alertFailure(Instance $instance, AutomaticDeployState $state): void
     {
-        $last = InstanceDeployment::query()
-            ->where('instance_id', $instance->id)
-            ->where('kind', 'deploy')
-            ->where('triggered_by', AutomaticDeployHistory::Trigger)
-            ->where('status', '!=', 'running')
-            ->where(static fn ($query) => $query->whereNull('error_code')->orWhere('error_code', '!=', AutomaticDeployHistory::Paused))
-            ->where('id', '>', $instance->auto_deploy_resumed_after)
-            ->latest('id')
-            ->first();
+        $last = new AutomaticDeployHistory($instance)->failedAlert();
 
-        if ($last instanceof InstanceDeployment && $last->status === 'failed' && is_string($last->commit)
-            && $state->alertOnce(ReleaseAlertKind::InstanceDeployFailed->value, $last->commit)) {
+        if ($last instanceof InstanceDeployment
+            && $state->alertOnce(ReleaseAlertKind::InstanceDeployFailed->value, (string) $last->commit)) {
             $this->alerts->failed($instance, $last);
         }
     }
@@ -349,31 +339,6 @@ final readonly class RunAutomaticDeploysAction
     private function holder(Instance $instance): ?Operation
     {
         return Operation::query()->where('lock_key', OperationStore::lockKey(OperationKinds::InstanceTarget, $instance->id))->first();
-    }
-
-    private function activity(Instance $instance, AutomaticDeployOutcome $outcome): void
-    {
-        try {
-            Activity::query()->create([
-                'log_name' => 'deployments',
-                'description' => 'auto_deploy.'.$outcome->result->value,
-                'subject_type' => Instance::MorphAlias,
-                'subject_id' => $instance->id,
-                'properties' => [
-                    'instance_id' => $instance->id,
-                    'commit' => $outcome->commit,
-                    'operation_id' => $outcome->operationId,
-                    'error_code' => $outcome->errorCode,
-                    'message' => $outcome->message,
-                ],
-                'request_id' => (string) Str::uuid(),
-                'command' => self::Command,
-                'status' => $outcome->result->isError() ? 'failed' : 'completed',
-                'error_code' => $outcome->errorCode,
-            ]);
-        } catch (Throwable $exception) {
-            report($exception);
-        }
     }
 
     private function failed(Instance $instance, Throwable $exception, ?string $commit = null): AutomaticDeployOutcome

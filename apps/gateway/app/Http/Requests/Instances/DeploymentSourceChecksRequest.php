@@ -11,7 +11,7 @@ final class DeploymentSourceChecksRequest extends FormRequest
     /** @return array<string, list<string>> */
     public function rules(): array
     {
-        return ['commit' => ['required', 'string', 'regex:/\A[0-9a-f]{40}\z/D']];
+        return ['commit' => ['required', 'string', 'regex:/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D']];
     }
 
     public function commit(): string

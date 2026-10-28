@@ -23,6 +23,8 @@ use App\Models\Instance;
 
 final readonly class ReadDeploymentSourceAction
 {
+    private const int CandidateLimit = 20;
+
     public function __construct(private RemoteBranchHeads $heads, private GitHubAppStore $store, private GitHubApi $github) {}
 
     public function head(Instance $instance): DeploymentSourceHeadData
@@ -43,14 +45,24 @@ final readonly class ReadDeploymentSourceAction
                 $bySha[$row->sha] ??= $row;
             }
             $commits = [];
-            while ($candidate instanceof GitHubCommit && $candidate->sha !== $base && count($commits) < 20) {
+            $reachedBase = $candidate->sha === $base;
+            $truncated = false;
+            while ($candidate instanceof GitHubCommit && $candidate->sha !== $base && count($commits) < self::CandidateLimit) {
                 $descends = $this->github->compareCommits($token, $repository, $base, $candidate->sha)->headDescendsFromBase();
                 $commits[] = new DeploymentSourceCommitData($candidate->sha, $candidate->parents, $descends);
                 $parent = $candidate->firstParent();
-                $candidate = $parent === null ? null : ($bySha[$parent] ?? null);
+                if ($parent === $base) {
+                    $reachedBase = true;
+                    break;
+                }
+                if ($parent !== null && ! isset($bySha[$parent])) {
+                    $truncated = true;
+                    break;
+                }
+                $candidate = $parent === null ? null : $bySha[$parent];
             }
 
-            return new DeploymentSourceCommitsData($head, $commits);
+            return new DeploymentSourceCommitsData($head, $commits, $reachedBase, $truncated || (! $reachedBase && $candidate instanceof GitHubCommit && count($commits) === self::CandidateLimit));
         } catch (GitHubApiException $exception) {
             throw $this->unavailable($exception);
         }

@@ -1493,7 +1493,7 @@ export interface paths {
         get?: never;
         /**
          * instance:auto-deploy:policy:update
-         * @description Publishes the shared public automatic deployment projection only under Swamp ownership. The PHP-owned trial returns instance.auto_deploy_policy_owner. Requires Gateway Node access. A changed resume cursor or newest deployment ID returns instance.auto_deploy_observation_changed. Preserves Gateway rollback blocks. See /reference/deployments#one-policy-writer-during-the-trial.
+         * @description Publishes the shared public automatic deployment projection only under Swamp ownership. The PHP-owned trial returns instance.auto_deploy_policy_owner. Requires Gateway Node access. A changed resume cursor, newest deployment ID, or history_version returns instance.auto_deploy_observation_changed. Read history_version from the Instance projection; it changes when an existing deployment finishes. Preserves Gateway rollback blocks. See /reference/deployments#one-policy-writer-during-the-trial.
          */
         put: operations["instance-auto-deploy-policy-update"];
         post?: never;
@@ -1721,7 +1721,7 @@ export interface paths {
         };
         /**
          * instance:deployment-source:commits
-         * @description Reads at most 20 first-parent candidates from the GitHub deployment branch, stopping at base or the end of the bounded listing. Each candidate includes strict ancestry evidence relative to base. Requires Gateway Node access and GitHub App source access. Swamp owns commit selection.
+         * @description Reads at most 20 first-parent candidates from the GitHub deployment branch, stopping at base or the end of the bounded listing. Each candidate includes strict ancestry evidence relative to base. reached_base confirms the walk reached base; truncated reports the 20-candidate bound or a missing parent in the 100-row source listing. The flags let callers fail closed on incomplete history. Requires Gateway Node access and GitHub App source access. Swamp owns commit selection.
          */
         get: operations["instance-deployment-source-commits"];
         put?: never;
@@ -4937,6 +4937,7 @@ export interface components {
             pause?: components["schemas"]["InstanceAutoDeployPause"] | null;
             resumed_after?: number;
             blocked?: string[];
+            history_version?: string | null;
         };
         InstanceAutoDeployPause: {
             reason?: string;
@@ -5026,6 +5027,8 @@ export interface components {
         DeploymentSourceCommits: {
             head?: string;
             commits?: components["schemas"]["DeploymentSourceCommit"][];
+            reached_base?: boolean;
+            truncated?: boolean;
         };
         DeploymentSourceCommit: {
             sha?: string;
@@ -10995,6 +10998,7 @@ export interface operations {
                 "application/json": {
                     resumed_after: number;
                     last_deployment_id: number;
+                    history_version: string;
                     /** @enum {string} */
                     result: "up_to_date" | "started" | "deploying" | "busy" | "backing_off" | "failed" | "paused" | "not_deployed" | "gate_pending" | "gate_failed" | "no_green_commit" | "commit_failed";
                     commit: string | null;

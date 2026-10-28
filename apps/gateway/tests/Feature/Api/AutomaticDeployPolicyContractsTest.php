@@ -8,8 +8,12 @@ use App\Domain\GitHub\GitHubCheckRun;
 use App\Domain\GitHub\GitHubCommit;
 use App\Domain\GitHub\GitHubCommitComparison;
 use App\Domain\GitHub\GitHubComparisonStatus;
+use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
+use App\Domain\Instances\Deployment\DeploymentResult;
+use App\Domain\Instances\Deployment\InstanceDeploymentRecorder;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Operations\OperationRequestFingerprint;
 use App\Domain\Operations\OperationStepPlan;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\OperationSweeper;
@@ -19,14 +23,18 @@ use App\Domain\Releases\ReleaseAlertReceipt;
 use App\Domain\Releases\ReleaseAlertStep;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\RemoteBranchHeads;
+use App\Http\Requests\Operations\StartsOperation;
 use App\Models\Activity;
 use App\Models\InstanceDeployment;
 use App\Models\Node;
 use App\Models\Operation;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Route;
 use Mockery\MockInterface;
 use Tests\Feature\GitHub\GitHubTestSupport;
+use Tests\Support\Fleet\RecordingReleaseAlertNotifier;
 use Tests\Support\Orb220DeploymentApiFixture;
 
 beforeEach(function (): void {
@@ -42,7 +50,7 @@ beforeEach(function (): void {
 
 function policy_publication(object $test): array
 {
-    return ['resumed_after' => 0, 'last_deployment_id' => 0, 'result' => 'gate_pending', 'commit' => $test->sha,
+    return ['resumed_after' => 0, 'last_deployment_id' => 0, 'history_version' => new AutomaticDeployHistory($test->fixture->instance)->snapshot()->version, 'result' => 'gate_pending', 'commit' => $test->sha,
         'head' => $test->sha, 'since' => '2026-10-27T22:00:00+00:00', 'error_code' => null, 'message' => null, 'pause' => null];
 }
 
@@ -89,7 +97,7 @@ it('walks first parents with strict ancestry evidence and excludes the merge sid
     $github->shouldReceive('compareCommits')->once()->with('contents-token', Mockery::any(), $this->base, $head)->andReturn(new GitHubCommitComparison(GitHubComparisonStatus::Ahead, $this->base, $this->base));
     $github->shouldReceive('compareCommits')->once()->with('contents-token', Mockery::any(), $this->base, $this->sha)->andReturn(new GitHubCommitComparison(GitHubComparisonStatus::Diverged, $this->base, $side));
     $this->getJson($this->url.'/deployment-source/commits?base='.$this->base)->assertOk()
-        ->assertJsonPath('data.head', $head)->assertJsonCount(2, 'data.commits')
+        ->assertJsonPath('data.head', $head)->assertJsonCount(2, 'data.commits')->assertJsonPath('data.reached_base', true)->assertJsonPath('data.truncated', false)
         ->assertJsonPath('data.commits.0.sha', $head)->assertJsonPath('data.commits.0.descends_from_deployed', true)
         ->assertJsonPath('data.commits.1.sha', $this->sha)->assertJsonPath('data.commits.1.descends_from_deployed', false);
 });
@@ -184,7 +192,7 @@ it('publishes through the shared Instance projection with test-supplied cutover 
     $this->putJson($this->url.'/auto-deploy/policy', $body)->assertOk()->assertJsonPath('data.auto_deploy.result', 'paused')
         ->assertJsonPath('data.auto_deploy.pause.deployment_id', 19)->assertJsonPath('data.auto_deploy.blocked', [$this->base]);
     $this->getJson($this->url)->assertOk()->assertJsonPath('data.auto_deploy.since', $body['since']);
-    expect($this->fixture->instance->fresh()->auto_deploy_state)->not->toHaveKeys(['resumed_after', 'last_deployment_id', 'intent']);
+    expect($this->fixture->instance->fresh()->auto_deploy_state)->not->toHaveKeys(['resumed_after', 'last_deployment_id', 'history_version', 'intent']);
 });
 
 it('rejects publication after resume or history changes and rejects owner injection', function (string $change): void {
@@ -233,7 +241,7 @@ it('does not deliver alerts for missing or foreign deployment subjects', functio
     app()->instance(ReleaseAlertNotifier::class, $notifier);
     $id = $this->withHeader('Idempotency-Key', 'event.foreign')->postJson($this->url.'/auto-deploy/events', ['event' => 'failed', 'deployment_id' => 99999])->assertAccepted()->json('data.id');
     run_operation_jobs();
-    $this->getJson('/api/v1/operations/'.$id)->assertOk()->assertJsonPath('data.result.reason', 'deployment_missing');
+    $this->getJson('/api/v1/operations/'.$id)->assertOk()->assertJsonPath('data.result.reason', 'deployment_not_applicable');
 });
 
 it('requires stable event keys and validates inputs before admission', function (): void {
@@ -287,10 +295,10 @@ it('bounds source reads and stops at a missing first parent', function (): void 
     }
     $github->shouldReceive('repositoryReadToken')->twice()->andReturn('contents-token');
     $github->shouldReceive('branchCommits')->once()->andReturn($rows)->ordered();
-    $github->shouldReceive('branchCommits')->once()->andReturn([new GitHubCommit($this->sha, [$this->base])])->ordered();
+    $github->shouldReceive('branchCommits')->once()->andReturn([new GitHubCommit($this->sha, [str_repeat('e', 40)])])->ordered();
     $github->shouldReceive('compareCommits')->times(21)->andReturn(new GitHubCommitComparison(GitHubComparisonStatus::Ahead, $this->base, $this->base));
-    $this->getJson($this->url.'/deployment-source/commits?base='.$this->base)->assertOk()->assertJsonCount(20, 'data.commits');
-    $this->getJson($this->url.'/deployment-source/commits?base='.$this->base)->assertOk()->assertJsonCount(1, 'data.commits');
+    $this->getJson($this->url.'/deployment-source/commits?base='.$this->base)->assertOk()->assertJsonCount(20, 'data.commits')->assertJsonPath('data.reached_base', false)->assertJsonPath('data.truncated', true);
+    $this->getJson($this->url.'/deployment-source/commits?base='.$this->base)->assertOk()->assertJsonCount(1, 'data.commits')->assertJsonPath('data.reached_base', false)->assertJsonPath('data.truncated', true);
 });
 
 it('publishes deploying state while a deployment holds the host lock', function (): void {
@@ -306,4 +314,132 @@ it('publishes deploying state while a deployment holds the host lock', function 
     $body = [...policy_publication($this), 'result' => 'deploying'];
     $this->putJson($this->url.'/auto-deploy/policy', $body)->assertOk()->assertJsonPath('data.auto_deploy.result', 'deploying');
     expect($this->fixture->instance->fresh()->auto_deploy_state['result'])->toBe('deploying');
+});
+
+it('uses the native history subjects for policy alerts', function (string $event, string $kind, ?string $trigger, ?string $commit, bool $resumed, bool $delivers): void {
+    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
+    $this->fixture->instance->project->update(['repository_url' => 'https://github.com/acme/shop.git']);
+    $notifier = new RecordingReleaseAlertNotifier;
+    app()->instance(ReleaseAlertNotifier::class, $notifier);
+    $row = InstanceDeployment::query()->create([
+        'instance_id' => $this->fixture->instance->id, 'kind' => $kind, 'triggered_by' => $trigger,
+        'status' => 'failed', 'commit' => $commit, 'started_at' => now(), 'finished_at' => now(),
+    ]);
+    if ($resumed) {
+        $this->fixture->instance->update(['auto_deploy_resumed_after' => $row->id]);
+    }
+    $id = $this->withHeader('Idempotency-Key', 'subject')->postJson($this->url.'/auto-deploy/events', ['event' => $event, 'deployment_id' => $row->id])->assertAccepted()->json('data.id');
+    run_operation_jobs();
+    $response = $this->getJson('/api/v1/operations/'.$id)->assertOk()->assertJsonPath('data.status', 'succeeded');
+    expect($notifier->alerts)->toHaveCount($delivers ? 1 : 0);
+    if (! $delivers) {
+        $response->assertJsonPath('data.result.reason', 'deployment_not_applicable');
+    }
+})->with([
+    'old manual pause' => ['paused', 'deploy', 'operator', str_repeat('a', 40), true, false],
+    'old rollback pause' => ['paused', 'rollback', 'operator', str_repeat('a', 40), true, false],
+    'old automatic failure' => ['failed', 'deploy', 'orbit:auto-deploy', str_repeat('a', 40), true, false],
+    'failure without commit' => ['failed', 'deploy', 'orbit:auto-deploy', null, false, false],
+    'current manual pause' => ['paused', 'deploy', null, str_repeat('a', 40), false, true],
+    'current rollback pause' => ['paused', 'rollback', 'operator', str_repeat('a', 40), false, true],
+    'current automatic failure' => ['failed', 'deploy', 'orbit:auto-deploy', str_repeat('a', 40), false, true],
+]);
+
+it('does not alert an older failure after a newer terminal automatic success', function (): void {
+    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
+    $notifier = new RecordingReleaseAlertNotifier;
+    app()->instance(ReleaseAlertNotifier::class, $notifier);
+    $first = InstanceDeployment::query()->create(['instance_id' => $this->fixture->instance->id, 'kind' => 'deploy', 'triggered_by' => 'orbit:auto-deploy', 'status' => 'failed', 'commit' => $this->sha, 'started_at' => now()]);
+    InstanceDeployment::query()->create(['instance_id' => $this->fixture->instance->id, 'kind' => 'deploy', 'triggered_by' => 'orbit:auto-deploy', 'status' => 'succeeded', 'commit' => $this->base, 'started_at' => now()]);
+    $id = $this->withHeader('Idempotency-Key', 'older-failure')->postJson($this->url.'/auto-deploy/events', ['event' => 'failed', 'deployment_id' => $first->id])->assertAccepted()->json('data.id');
+    run_operation_jobs();
+    $this->getJson('/api/v1/operations/'.$id)->assertOk()->assertJsonPath('data.result.reason', 'deployment_not_applicable');
+    expect($notifier->alerts)->toBeEmpty();
+});
+
+it('uses the same notable Activity filter as the PHP policy', function (): void {
+    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
+    $id = $this->withHeader('Idempotency-Key', 'quiet')->postJson($this->url.'/auto-deploy/events', ['event' => 'activity', 'result' => 'up_to_date'])->assertAccepted()->json('data.id');
+    run_operation_jobs();
+    $this->getJson('/api/v1/operations/'.$id)->assertOk()->assertJsonPath('data.result.reason', 'not_notable');
+    expect(Activity::query()->where('log_name', 'deployments')->count())->toBe(0);
+});
+
+it('rejects a publication observed before an existing deployment finished', function (): void {
+    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
+    $recorder = app(InstanceDeploymentRecorder::class);
+    $row = $recorder->start($this->fixture->instance, 'orbit:auto-deploy');
+    $body = [...policy_publication($this), 'last_deployment_id' => $row->id, 'result' => 'deploying'];
+    $this->getJson($this->url)->assertOk()->assertJsonPath('data.auto_deploy.history_version', $body['history_version']);
+    $recorder->finish($row, DeploymentResult::checkedOut($this->sha), []);
+    expect(InstanceDeployment::query()->max('id'))->toBe($row->id);
+    $this->putJson($this->url.'/auto-deploy/policy', $body)->assertConflict()->assertJsonPath('error.code', 'instance.auto_deploy_observation_changed');
+    expect($this->fixture->instance->fresh()->auto_deploy_state)->toBeNull();
+    $body['history_version'] = $this->getJson($this->url)->assertOk()->json('data.auto_deploy.history_version');
+    $body['result'] = 'up_to_date';
+    $this->putJson($this->url.'/auto-deploy/policy', $body)->assertOk()->assertJsonPath('data.auto_deploy.result', 'up_to_date');
+});
+
+it('preserves a committed publication when a rollback records its terminal blocks', function (): void {
+    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
+    InstanceDeployment::query()->create(['instance_id' => $this->fixture->instance->id, 'kind' => 'deploy', 'status' => 'succeeded', 'commit' => $this->sha, 'started_at' => now()]);
+    $recorder = app(InstanceDeploymentRecorder::class);
+    $row = $recorder->start($this->fixture->instance, 'operator', 'rollback');
+    $body = [...policy_publication($this), 'last_deployment_id' => $row->id, 'result' => 'paused'];
+    $this->putJson($this->url.'/auto-deploy/policy', $body)->assertOk();
+    $recorder->finish($row, DeploymentResult::checkedOut($this->base), []);
+    $this->getJson($this->url)->assertOk()->assertJsonPath('data.auto_deploy.result', 'paused')->assertJsonPath('data.auto_deploy.blocked', [$this->sha]);
+});
+
+it('skips policy history reads and hides blocks when automatic deployment is off', function (): void {
+    $this->fixture->instance->update(['auto_deploy' => false, 'auto_deploy_state' => ['blocked' => [$this->sha]]]);
+    $reads = 0;
+    DB::listen(function (QueryExecuted $query) use (&$reads): void {
+        if (str_starts_with(strtolower($query->sql), 'select') && str_contains($query->sql, 'instance_deployments')) {
+            $reads++;
+        }
+    });
+    $this->getJson($this->url)->assertOk()->assertJsonPath('data.auto_deploy.blocked', [])->assertJsonPath('data.auto_deploy.history_version', null);
+    expect($reads)->toBe(0);
+});
+
+final class ReceiptAdmissionSettingsController
+{
+    #[StartsOperation('instance.deploy', bindCaller: false, maxJsonBytes: 1024)]
+    public function automatic(): void {}
+}
+
+it('derives receipt fingerprints from the live admission route attribute', function (): void {
+    $this->withHeader('Idempotency-Key', 'settings')->postJson($this->url.'/deploy/automatic', ['commit' => $this->sha])->assertAccepted();
+    $route = Route::getRoutes()->getByName('instance:deploy:automatic');
+    $route->setAction([...$route->getAction(), 'uses' => ReceiptAdmissionSettingsController::class.'@automatic', 'controller' => ReceiptAdmissionSettingsController::class.'@automatic']);
+    $route->flushController();
+    $start = StartsOperation::forRoute($route);
+    $fingerprint = app(OperationRequestFingerprint::class)->make($this->fixture->caller, $route->getName(), ['instance' => $this->fixture->instance], json_encode(['commit' => $this->sha], JSON_THROW_ON_ERROR), $start);
+    Operation::query()->sole()->update(['idempotency_fingerprint' => $fingerprint]);
+    $this->getJson($this->url.'/deploy/automatic/receipt?request_key=settings&commit='.$this->sha)->assertOk()->assertJsonPath('data.found', true);
+});
+
+it('accepts full SHA256 identities in source and receipt reads', function (): void {
+    $base = str_repeat('a', 64);
+    $head = str_repeat('b', 64);
+    $github = policy_source($this);
+    $github->shouldReceive('repositoryReadToken')->once()->andReturn('contents-token');
+    $github->shouldReceive('branchCommits')->once()->andReturn([new GitHubCommit($head, [$base])]);
+    $github->shouldReceive('compareCommits')->once()->with('contents-token', Mockery::any(), $base, $head)->andReturn(new GitHubCommitComparison(GitHubComparisonStatus::Ahead, $base, $base));
+    $github->shouldReceive('repositoryChecksToken')->once()->andReturn('checks-token');
+    $github->shouldReceive('checkRuns')->once()->with('checks-token', Mockery::any(), $head, 'Required checks')->andReturn([]);
+    $this->getJson($this->url.'/deployment-source/commits?base='.$base)->assertOk()->assertJsonPath('data.reached_base', true)->assertJsonPath('data.truncated', false);
+    $this->getJson($this->url.'/deployment-source/checks?commit='.$head)->assertOk();
+    $this->getJson($this->url.'/deploy/automatic/receipt?request_key=sha256&commit='.$head)->assertOk()->assertJsonPath('data.found', false);
+});
+
+it('distinguishes an already deployed head from a root that cannot reach the base', function (): void {
+    $github = policy_source($this);
+    $github->shouldReceive('repositoryReadToken')->twice()->andReturn('contents-token');
+    $github->shouldReceive('branchCommits')->once()->andReturn([new GitHubCommit($this->base, [])])->ordered();
+    $github->shouldReceive('branchCommits')->once()->andReturn([new GitHubCommit($this->sha, [])])->ordered();
+    $github->shouldReceive('compareCommits')->once()->andReturn(new GitHubCommitComparison(GitHubComparisonStatus::Diverged, $this->base, $this->base));
+    $this->getJson($this->url.'/deployment-source/commits?base='.$this->base)->assertOk()->assertJsonPath('data.reached_base', true)->assertJsonPath('data.truncated', false)->assertJsonCount(0, 'data.commits');
+    $this->getJson($this->url.'/deployment-source/commits?base='.$this->base)->assertOk()->assertJsonPath('data.reached_base', false)->assertJsonPath('data.truncated', false)->assertJsonCount(1, 'data.commits');
 });

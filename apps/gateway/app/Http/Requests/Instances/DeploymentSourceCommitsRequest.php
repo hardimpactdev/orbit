@@ -11,7 +11,7 @@ final class DeploymentSourceCommitsRequest extends FormRequest
     /** @return array<string, list<string>> */
     public function rules(): array
     {
-        return ['base' => ['required', 'string', 'regex:/\A[0-9a-f]{40}\z/D']];
+        return ['base' => ['required', 'string', 'regex:/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D']];
     }
 
     public function base(): string

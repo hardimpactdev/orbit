@@ -14,6 +14,7 @@ final class AutomaticDeployPublicationData extends Data
     public function __construct(
         public int $resumedAfter,
         public int $lastDeploymentId,
+        public string $historyVersion,
         public string $result,
         public ?string $commit,
         public ?string $head,
@@ -26,6 +27,6 @@ final class AutomaticDeployPublicationData extends Data
     /** @return array<string, mixed> */
     public function projection(): array
     {
-        return array_diff_key($this->toArray(), array_flip(['resumed_after', 'last_deployment_id']));
+        return array_diff_key($this->toArray(), array_flip(['resumed_after', 'last_deployment_id', 'history_version']));
     }
 }

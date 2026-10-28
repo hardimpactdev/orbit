@@ -10,6 +10,7 @@ use App\Domain\Broadcasting\RecordEventType;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Records one deployments row per `instance:deploy` or `instance:rollback` run:
@@ -49,28 +50,30 @@ final readonly class InstanceDeploymentRecorder
         $startedAt = $deployment->started_at;
         $finishedAt = Carbon::now();
 
-        $deployment->update([
-            'release' => $result->release?->name,
-            'commit' => $result->commit,
-            'status' => $result->succeeded ? 'succeeded' : 'failed',
-            'failed_step' => $result->failure?->boundary->value,
-            'error_code' => $result->failure?->errorCode,
-            'selected_release' => $result->selectedRelease?->name,
-            'finished_at' => $finishedAt,
-            'duration_seconds' => max(0, $finishedAt->diffInSeconds($startedAt)),
-            'events' => $events,
-        ]);
+        DB::transaction(function () use ($deployment, $result, $events, $startedAt, $finishedAt): void {
+            $deployment->update([
+                'release' => $result->release?->name,
+                'commit' => $result->commit,
+                'status' => $result->succeeded ? 'succeeded' : 'failed',
+                'failed_step' => $result->failure?->boundary->value,
+                'error_code' => $result->failure?->errorCode,
+                'selected_release' => $result->selectedRelease?->name,
+                'finished_at' => $finishedAt,
+                'duration_seconds' => max(0, $finishedAt->diffInSeconds($startedAt)),
+                'events' => $events,
+            ]);
 
-        $instance = $deployment->instance;
-        if ($instance->placedOnAppProd()) {
-            $state = AutomaticDeployState::of($instance->refresh());
-            foreach (new AutomaticDeployHistory($instance)->rolledAway() as $commit) {
-                $state->block($commit);
+            $instance = Instance::query()->lockForUpdate()->findOrFail($deployment->instance_id);
+            if ($instance->placedOnAppProd()) {
+                $state = AutomaticDeployState::of($instance);
+                foreach (new AutomaticDeployHistory($instance)->rolledAway() as $commit) {
+                    $state->block($commit);
+                }
+                $state->save($instance);
             }
-            $state->save($instance);
-        }
 
-        $this->prune($deployment->instance_id);
+            $this->prune($deployment->instance_id);
+        });
         $this->broadcast(RecordEventType::DeploymentUpdated, $deployment);
     }
 
