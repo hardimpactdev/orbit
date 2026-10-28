@@ -23,8 +23,10 @@ beforeEach(function (): void {
     config(['dependency_detection.services_node_id' => $services->id]);
     $this->withServerVariables(['REMOTE_ADDR' => $services->wireguard_ip]);
     $this->node = Node::query()->create(['name' => 'dev', 'public_ssh_host' => '192.0.2.3', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.3', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
-    $this->operation = Operation::query()->create(['kind' => 'certificate.converge', 'target_type' => 'node_certificate', 'target_id' => $this->node->id, 'node_id' => $this->node->id, 'status' => OperationStatus::Running, 'worker' => 'worker', 'sequence' => 1,
+    $this->operation = Operation::query()->create(['kind' => 'certificate.converge', 'target_type' => 'node_certificate', 'target_id' => $this->node->id, 'node_id' => $this->node->id, 'status' => OperationStatus::Queued, 'worker' => 'worker', 'sequence' => 1,
         'input' => ['scope' => 'route-7-router', 'domain' => 'private.test', 'version' => '0123456789abcdef', 'root_hash' => str_repeat('a', 64), 'user' => 'orbit', 'home' => '/home/orbit']]);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $this->operation->kind, 'worker' => 'worker'])->assertOk()->assertJsonPath('data.id', $this->operation->id);
+    $this->operation->refresh();
     $this->path = '/api/v1/operation-executor/'.$this->operation->id;
     $this->csr = "-----BEGIN CERTIFICATE REQUEST-----\npublic CSR\n-----END CERTIFICATE REQUEST-----\n";
     $this->agents = new FakeAgentCommandRunner()->answer('certificate.request-leaf', ['state' => 'request', 'request' => $this->csr])
@@ -94,4 +96,20 @@ it('keeps a leaf still named by a stored Caddy site', function (): void {
     $this->operation->update(['kind' => 'certificate.remove', 'input' => ['scope' => 'route-'.$route->id, 'home' => '/home/orbit']]);
     $this->postJson($this->path.'/run', ['worker' => 'worker', 'key' => 'certificate-remove', 'transport' => 'agent', 'name' => 'certificate.remove-leaf', 'input' => $this->operation->input])->assertConflict()->assertJsonPath('error.code', 'app-dev.certificate_in_use');
     expect($this->agents->calls)->toBe([]);
+});
+
+it('recovers and encodes the original public CSR from sanitized evidence without another request', function (): void {
+    $this->agents->answer('certificate.request-leaf', static fn (): array => throw new RuntimeException('Lost reply after key generation.'));
+    $descriptor = $this->postJson($this->path.'/heartbeat', ['worker' => 'worker'])->assertOk()->json('data.execution_context.descriptors.0');
+    $run = ['worker' => 'worker', ...array_intersect_key($descriptor, array_flip(['key', 'transport', 'name', 'input']))];
+    $this->postJson($this->path.'/run', $run)->assertStatus(502);
+    $effectKey = 'op-'.$this->operation->id.'.certificate-request';
+    $this->agents->answer('agent.effect-receipt', ['command' => 'certificate.request-leaf', 'effect_key' => $effectKey, 'state' => 'succeeded', 'result' => ['ok' => true, 'data' => ['state' => 'request', 'request' => $this->csr]], 'result_digest' => str_repeat('a', 64), 'sanitized' => true, 'exit_code' => 0, 'finished_at' => '2026-10-28T22:00:00Z']);
+    $receipt = $this->getJson($this->path.'/receipts/certificate-request')->assertOk()->json('data.result');
+    expect(base64_decode($receipt['request_base64'], true))->toBe($this->csr)->and($receipt)->not->toHaveKey('request');
+    ($this->runStep)('certificate-request');
+    ($this->runStep)('certificate-sign');
+    ($this->runStep)('certificate-publish');
+    ($this->runStep)('certificate-inspect');
+    expect(array_column($this->agents->calls, 'command'))->toBe(['certificate.request-leaf', 'agent.effect-receipt', 'certificate.publish-leaf', 'certificate.inspect-leaf']);
 });

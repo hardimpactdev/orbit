@@ -80,6 +80,6 @@ final readonly class AdmitClusterRouterOperationAction
     /** @return list<int> */
     private function dnsNodeIds(): array
     {
-        return Node::query()->whereHas('roles', static fn (Builder $query): Builder => $query->whereIn('role', [RoleName::Vpn, RoleName::Gateway]))->pluck('id')->map(StoredInteger::from(...))->values()->all();
+        return array_values(Node::query()->whereHas('roles', static fn (Builder $query): Builder => $query->whereIn('role', [RoleName::Vpn, RoleName::Gateway]))->pluck('id')->map(StoredInteger::from(...))->all());
     }
 }

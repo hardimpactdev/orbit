@@ -26,7 +26,9 @@ beforeEach(function (): void {
     $this->withServerVariables(['REMOTE_ADDR' => $services->wireguard_ip]);
     $this->node = Node::query()->create(['name' => 'dev', 'public_ssh_host' => '192.0.2.3', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.3', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
     $this->operation = Operation::query()->create(['kind' => 'route.caddy_converge', 'target_type' => 'node_caddy', 'target_id' => $this->node->id,
-        'node_id' => $this->node->id, 'status' => OperationStatus::Running, 'worker' => 'worker', 'sequence' => 1, 'input' => ['reason' => 'dev proof']]);
+        'node_id' => $this->node->id, 'status' => OperationStatus::Queued, 'worker' => 'worker', 'sequence' => 1, 'input' => ['reason' => 'dev proof']]);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $this->operation->kind, 'worker' => 'worker'])->assertOk()->assertJsonPath('data.id', $this->operation->id);
+    $this->operation->refresh();
     $this->path = '/api/v1/operation-executor/'.$this->operation->id;
     app()->instance(NodeCaddyfileRenderer::class, new NodeCaddyfileRenderer([]));
     $this->agents = new FakeAgentCommandRunner()->answer('caddy.publish', ['result' => 'published']);
@@ -105,4 +107,15 @@ it('withdraws a shared PHP pool even when no Route exists', function (): void {
     $this->postJson($this->path.'/run', $run)->assertOk()->assertJsonPath('data.withdrawn', true);
     expect($this->agents->calls)->toHaveCount(1)->and((array) $this->agents->calls[0]['input']['configurations'])->toBe([]);
     $this->postJson($this->path.'/run', ['worker' => 'worker', ...array_intersect_key($descriptors[2], array_flip(['key', 'transport', 'name', 'input']))])->assertOk()->assertJsonPath('data.ready', true);
+});
+
+it('recovers a sanitized Caddy target receipt without a second publication', function (): void {
+    $this->agents->answer('caddy.publish', static fn (): array => throw new RuntimeException('Lost reply after publication.'));
+    $run = ($this->publish)();
+    $this->postJson($this->path.'/run', $run)->assertStatus(502);
+    $effectKey = 'op-'.$this->operation->id.'.caddy-publish';
+    $this->agents->answer('agent.effect-receipt', ['command' => 'caddy.publish', 'effect_key' => $effectKey, 'state' => 'succeeded', 'result' => ['ok' => true, 'data' => ['result' => 'published']], 'result_digest' => str_repeat('a', 64), 'sanitized' => true, 'exit_code' => 0, 'finished_at' => '2026-10-28T22:00:00Z']);
+    $this->getJson($this->path.'/receipts/caddy-publish')->assertOk()->assertJsonPath('data.state', 'succeeded')->assertJsonPath('data.result.ready', true);
+    $this->getJson($this->path.'/receipts/caddy-publish')->assertOk()->assertJsonPath('data.result.ready', true);
+    expect(array_column($this->agents->calls, 'command'))->toBe(['caddy.publish', 'agent.effect-receipt']);
 });

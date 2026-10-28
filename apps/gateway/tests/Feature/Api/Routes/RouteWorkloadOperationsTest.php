@@ -33,7 +33,9 @@ beforeEach(function (): void {
     $this->route = Route::query()->create(['project_id' => $project->id, 'node_id' => $this->node->id, 'domain' => 'private.test', 'provenance' => 'explicit', 'publication' => RoutePublication::Private, 'status' => RouteStatus::Pending]);
     $this->route->targets()->create(['instance_id' => $this->instance->id, 'position' => 0]);
     $this->route->publishSites();
-    $this->operation = Operation::query()->create(['kind' => 'route.workload_prepare', 'target_type' => 'route_workload', 'target_id' => $this->route->id, 'node_id' => $this->node->id, 'status' => OperationStatus::Running, 'worker' => 'worker', 'sequence' => 1, 'input' => ['route_id' => $this->route->id, 'instance_id' => $this->instance->id]]);
+    $this->operation = Operation::query()->create(['kind' => 'route.workload_prepare', 'target_type' => 'route_workload', 'target_id' => $this->route->id, 'node_id' => $this->node->id, 'status' => OperationStatus::Queued, 'worker' => 'worker', 'sequence' => 1, 'input' => ['route_id' => $this->route->id, 'instance_id' => $this->instance->id]]);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $this->operation->kind, 'worker' => 'worker'])->assertOk()->assertJsonPath('data.id', $this->operation->id);
+    $this->operation->refresh();
     $this->path = '/api/v1/operation-executor/'.$this->operation->id;
     app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver
     {
