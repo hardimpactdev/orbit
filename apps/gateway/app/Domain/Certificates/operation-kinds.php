@@ -10,7 +10,7 @@ return [
         'executor' => 'swamp', 'completion' => CertificateOperationCompletion::class,
         'execution' => CertificateExecution::class,
         'runs' => [
-            ['transport' => 'agent', 'name' => 'certificate.request-leaf',
+            ['transport' => 'certificate-request', 'name' => 'certificate.request-leaf',
                 'input_fields' => ['scope', 'domain', 'version', 'root_hash', 'user', 'home'], 'input_values' => []],
             ['transport' => 'gateway', 'name' => 'certificate.sign-leaf', 'input_fields' => ['domain'], 'input_values' => []],
             ['transport' => 'agent', 'name' => 'certificate.publish-leaf', 'input_fields' => ['scope', 'domain', 'version', 'root_hash', 'user', 'home'], 'input_values' => [],

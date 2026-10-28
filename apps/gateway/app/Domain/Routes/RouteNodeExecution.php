@@ -28,6 +28,7 @@ final readonly class RouteNodeExecution implements OperationFamilyExecution
     public function input(Operation $operation, array $run): array
     {
         $spec = $this->spec($operation);
+
         return match ($run['name']) {
             $spec['prepare'] => ['reason' => $operation->input['reason']],
             $spec['command'] => $this->plan($operation),
@@ -35,7 +36,10 @@ final readonly class RouteNodeExecution implements OperationFamilyExecution
         };
     }
 
-    public function beforeRun(Operation $operation, array $run): void {}
+    public function beforeRun(Operation $operation, array $run): void
+    {
+        RouteExecutionProof::preceding($operation, $this->context($operation)['descriptors'], $run['key']);
+    }
 
     public function received(Operation $operation, array $run, array $receipt): array
     {

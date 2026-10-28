@@ -6,7 +6,11 @@ namespace App\Domain\Certificates;
 
 use App\Domain\Operations\OperationFamilyExecution;
 use App\Domain\Operations\OperationOutcome;
+use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AppDev\DevelopmentSite;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
+use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Arr;
 
@@ -17,7 +21,7 @@ final readonly class CertificateExecution implements OperationFamilyExecution
     {
         $commands = $operation->kind === 'certificate.remove'
             ? [['certificate-remove', 'agent', 'certificate.remove-leaf']]
-            : [['certificate-request', 'agent', 'certificate.request-leaf']];
+            : [['certificate-request', 'certificate-request', 'certificate.request-leaf']];
         $runs = $operation->state['executor_runs'] ?? [];
         $request = $runs['certificate-request']['result'] ?? [];
         if (($request['state'] ?? null) === 'request') {
@@ -42,6 +46,7 @@ final readonly class CertificateExecution implements OperationFamilyExecution
     public function input(Operation $operation, array $run): array
     {
         $leaf = Arr::only($operation->input, ['scope', 'domain', 'version', 'root_hash', 'user', 'home']);
+
         return match ($run['name']) {
             'certificate.request-leaf' => $leaf,
             'certificate.sign-leaf' => ['domain' => $operation->input['domain'],
@@ -54,18 +59,21 @@ final readonly class CertificateExecution implements OperationFamilyExecution
         };
     }
 
-    public function beforeRun(Operation $operation, array $run): void {}
+    public function beforeRun(Operation $operation, array $run): void
+    {
+        RouteExecutionProof::preceding($operation, $this->context($operation)['descriptors'], $run['key']);
+        if ($run['name'] === 'certificate.remove-leaf') {
+            $scope = $operation->input['scope'];
+            $node = Node::query()->findOrFail($operation->node_id);
+            if (app(DevelopmentSiteRepository::class)->forNode($node)->contains(
+                static fn (DevelopmentSite $site): bool => $site->loadsCertificate($scope))) {
+                throw new ResourceOperationException('app-dev.certificate_in_use', 'A stored Caddy site still uses this certificate.', 409);
+            }
+        }
+    }
 
     public function received(Operation $operation, array $run, array $receipt): array
     {
-        if ($run['name'] === 'certificate.request-leaf' && ($receipt['state'] ?? null) === 'request') {
-            $request = $receipt['request'] ?? null;
-            if (! is_string($request) || ! str_contains($request, '-----BEGIN CERTIFICATE REQUEST-----')) {
-                throw new ResourceOperationException('certificate.request_invalid', 'The Node returned no public signing request.', 409);
-            }
-            $receipt['request_base64'] = base64_encode($request);
-            unset($receipt['request']);
-        }
 
         return $receipt;
     }
