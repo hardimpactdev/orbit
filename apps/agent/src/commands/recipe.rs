@@ -11,6 +11,8 @@ pub mod services;
 pub mod sources;
 pub mod store;
 pub mod swamp;
+#[cfg(test)]
+mod test_process;
 pub mod types;
 
 use super::caddy::chown;

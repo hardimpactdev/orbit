@@ -105,6 +105,8 @@ Gateway project and shard jobs supply Bun 1.4.2 alongside Node/npm. The package-
 
 The Docs project job also supplies Bun 1.4.2 and installs the Gateway's locked runtime Composer dependencies with `--no-dev` and the web app's locked Bun dependencies. Gateway development tools are not needed for route discovery. Docs keeps its own development dependencies. Its [proof for merging generated files](/contributor-guide#merging-generated-files) runs the real generators in disposable clones, including in each full suite.
 
+The Linux Rust agent job has a 30-minute deadline for tool setup, checks, tests, and delivery builds. Its normal run takes about 18 minutes. This bound stops a stalled job from holding later main runs and Gateway releases for hours.
+
 ### Action pins and token permissions
 
 External actions use full commit SHAs, with the reviewed version in a trailing comment. Dependabot's `github-actions` entry updates these pins. Local actions and reusable workflows keep their repository paths.

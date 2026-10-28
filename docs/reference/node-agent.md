@@ -575,7 +575,9 @@ The native recipe runner waits directly for its command and treats SIGHUP, SIGIN
 
 Required and optional commands both stop the recipe on interruption. The handler flag still detects signals before execution and after a command exits normally. A numeric exit code such as 143 is a command failure, not proof of a signal.
 
-Recipe interruption tests run on a non-main thread in an isolated process. A socket barrier delays the agent handler while the test signals both process groups, so child exit precedes the handler flag update. The supervised fixture sends a Unix datagram after execution, including its process group. The test receives that event before it signals the worker and supervisor groups. Readiness has its own timeout and fails before any termination assertion. Separate cases check each supported signal before execution, after normal execution, and during required and optional commands.
+Recipe interruption tests run on a non-main thread in an isolated process. A socket barrier delays the agent handler on the main thread while the recipe runs on another thread, so child exit precedes the handler flag update. The delayed-handler cases target the main thread explicitly: a process-wide signal can select the recipe thread and deadlock a blocking test handler. A separate service-termination case signals both process groups with the real handler. A nested signal checks that interrupted socket I/O keeps the barrier closed.
+
+The supervised fixture sends a Unix datagram after execution, including its process group. The test receives that event before it signals the worker and supervisor groups. Fixture readiness, handler entry and release, command lifetime, and helper exit have deadlines. A deadline failure fails the test and kills its owned process groups. Separate cases check each supported signal before execution, after normal execution, and during required and optional commands.
 
 ## Releases
 

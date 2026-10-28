@@ -166,20 +166,17 @@ mod tests {
 
     #[test]
     fn deadline_kills_a_term_ignoring_command_without_reporting_interruption() {
-        let output = Command::new(std::env::current_exe().unwrap())
-            .args([
+        let mut worker = super::super::test_process::Worker::spawn(
+            Command::new(std::env::current_exe().unwrap()).args([
                 "--ignored",
                 "--exact",
                 "commands::recipe::native::tests::deadline_helper",
-            ])
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
+            ]),
         );
+        let status = worker
+            .wait(super::super::test_process::WAIT)
+            .expect("deadline fixture exceeded its exit deadline");
+        assert!(status.success(), "deadline fixture exited with {status}");
         // An already-expired budget starts no executable.
         let context = Context::new(Platform::Linux, Instant::now());
         let output = execute(&context, &Invocation::new(&["must-not-start"])).unwrap();

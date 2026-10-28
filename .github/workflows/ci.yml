@@ -663,6 +663,7 @@ jobs:
     needs: changes
     if: fromJSON(needs.changes.outputs.jobs).agent
     name: Rust agent
+    timeout-minutes: 30
     runs-on: ubuntu-26.04
     defaults:
       run:
