@@ -4,20 +4,22 @@ declare(strict_types=1);
 
 namespace App\Actions\DatabaseConnections;
 
+use App\Actions\DatabaseServers\RecordDatabaseOperationAction;
 use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\DatabaseServers\DatabaseCommands;
 use App\Domain\DatabaseServers\DatabaseRemovalLock;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\MysqlStatements;
 use App\Domain\DatabaseServers\PostgresStatements;
 use App\Domain\DatabaseServers\PostgresTestDatabases;
-use App\Domain\DatabaseServers\ValkeyAclLock;
-use App\Domain\DatabaseServers\ValkeyAclUser;
-use App\Domain\DatabaseServers\ValkeyServerAdmin;
+use App\Domain\DatabaseServers\PreparedDatabaseOperation;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
+use App\Models\DatabaseExecutionIntent;
 use App\Models\DatabaseServer;
-use Closure;
-use Throwable;
+use App\Models\Operation;
+use App\Support\ValidatedData;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Drops the database behind a connection on a Database server: the database, its test databases,
@@ -32,120 +34,100 @@ final readonly class DropServerDatabaseAction
     public function __construct(
         private DatabaseServerAdmin $admin,
         private MysqlStatements $statements,
-        private ValkeyServerAdmin $valkey,
         private PostgresTestDatabases $postgresTests,
         private DatabaseRemovalLock $removalLock,
+        private RecordDatabaseOperationAction $operations,
     ) {}
 
-    /** Keep the record removal inside the ACL lock when the caller removes the connection too. */
-    public function execute(DatabaseConnection $connection, ?Closure $afterDrop = null): void
+    public function execute(DatabaseConnection $connection): Operation
     {
-        $server = $connection->server;
-        if (! $server instanceof DatabaseServer || $server->driver !== DatabaseDriver::Redis) {
-            $this->executeMany([$connection], static fn (DatabaseConnection $dropped) => $afterDrop?->__invoke());
-
-            return;
-        }
-
-        ValkeyAclLock::run($server, function () use ($connection, $afterDrop): void {
-            $current = $connection->fresh(['server', 'users']);
-            if ($current === null) {
-                return;
-            }
-            $this->dropValkey($current);
-            $afterDrop?->__invoke();
-        });
+        return $this->executeMany([$connection])[0];
     }
 
-    /**
-     * Preflight every server before any drop. Drop all planned databases before their users.
-     *
+    /** Preflight the full set before admitting any drop.
      * @param  list<DatabaseConnection>  $connections
-     * @param  Closure(DatabaseConnection): mixed  $afterDrop
+     * @return list<Operation>
      */
-    public function executeMany(array $connections, Closure $afterDrop): void
+    public function executeMany(array $connections): array
     {
-        $serverIds = [];
-        foreach ($connections as $connection) {
-            if ($connection->server instanceof DatabaseServer && $connection->server->driver !== DatabaseDriver::Redis) {
-                $serverIds[] = $connection->server->id;
-            }
-        }
-        $this->removalLock->run($serverIds, fn () => $this->dropMany($connections, $afterDrop));
+        return DB::transaction(fn (): array => array_map($this->operations->start(...), $this->prepareMany($connections)));
     }
 
-    /**
-     * @param  list<DatabaseConnection>  $connections
-     * @param  Closure(DatabaseConnection): mixed  $afterDrop
+    /** @param list<DatabaseConnection> $connections
+     * @return list<PreparedDatabaseOperation>
      */
-    private function dropMany(array $connections, Closure $afterDrop): void
+    public function prepareMany(array $connections, ?int $ownerInstanceId = null): array
     {
+        $serverIds = array_values(array_filter(array_map(static fn (DatabaseConnection $connection): ?int => $connection->database_server_id, $connections)));
+
+        return $this->removalLock->run($serverIds, fn (): array => $this->prepareLocked($connections, $ownerInstanceId));
+    }
+
+    /** @param list<DatabaseConnection> $connections
+     * @return list<PreparedDatabaseOperation>
+     */
+    private function prepareLocked(array $connections, ?int $ownerInstanceId): array
+    {
+        $groups = [];
         $ids = array_map(static fn (DatabaseConnection $connection): int => $connection->id, $connections);
-        $plans = [];
         foreach ($connections as $connection) {
             $server = $connection->server;
-            if (! $server instanceof DatabaseServer || $server->driver === DatabaseDriver::Redis) {
-                continue;
+            if (! $server instanceof DatabaseServer) {
+                throw new ResourceOperationException('database.server_required', 'Only managed databases have a remote drop.', 422);
             }
-            $key = $server->id;
-            $plans[$key] ??= ['server' => $server, 'databases' => [], 'users' => []];
-            $plans[$key]['databases'] = [...$plans[$key]['databases'], ...$this->databases($connection, $server)];
-            $plans[$key]['users'] = [...$plans[$key]['users'], ...$this->unsharedUsers($connection, $server, $ids)];
+            $groups[$server->id] ??= ['server' => $server, 'connections' => [], 'databases' => [], 'users' => []];
+            $groups[$server->id]['connections'][] = $connection->id;
+            $groups[$server->id]['databases'] = [...$groups[$server->id]['databases'], ...$this->databases($connection, $server)];
+            $groups[$server->id]['users'] = [...$groups[$server->id]['users'], ...$this->unsharedUsers($connection, $server, $ids)];
         }
-        $postgres = new PostgresStatements;
-        try {
-            foreach ($plans as $plan) {
-                $this->assertNoBlockers($plan['server'], array_values(array_unique($plan['databases'])), array_values(array_unique($plan['users'])));
-            }
-            foreach ($plans as $plan) {
-                if ($plan['server']->driver === DatabaseDriver::Pgsql) {
-                    $this->admin->execute($plan['server'], $postgres->fenceDatabases(array_values(array_unique($plan['databases']))));
-                }
-            }
-            foreach ($plans as $plan) {
-                $this->assertNoBlockers($plan['server'], array_values(array_unique($plan['databases'])), array_values(array_unique($plan['users'])));
-            }
-            foreach ($plans as $plan) {
-                $databases = array_values(array_unique($plan['databases']));
-                $users = array_values(array_unique($plan['users']));
-                if ($plan['server']->driver === DatabaseDriver::Pgsql) {
-                    $this->refuseBlockers($this->admin->execute($plan['server'], $postgres->dropFencedDatabases($databases, $users)));
-
-                    continue;
-                }
-                $sql = '';
-                foreach ($databases as $database) {
-                    $sql .= $this->statements->dropDatabase($database);
-                }
-                foreach ($users as $username) {
-                    $sql .= $this->statements->dropUser($username);
-                }
-                if ($sql !== '') {
-                    $this->admin->execute($plan['server'], $sql);
-                }
-            }
-        } finally {
-            $restoreError = null;
-            foreach ($plans as $plan) {
-                if ($plan['server']->driver !== DatabaseDriver::Pgsql) {
-                    continue;
-                }
-                try {
-                    $this->admin->execute($plan['server'], $postgres->restoreDatabaseAdmission(array_values(array_unique($plan['databases']))));
-                } catch (Throwable $e) {
-                    $restoreError ??= $e;
-                }
-            }
-            if ($restoreError !== null) {
-                throw $restoreError;
+        foreach ($groups as $group) {
+            if ($group['server']->driver !== DatabaseDriver::Redis) {
+                $this->assertNoBlockers($group['server'], array_values(array_unique($group['databases'])), array_values(array_unique($group['users'])));
             }
         }
-        foreach ($connections as $connection) {
-            if ($connection->server?->driver === DatabaseDriver::Redis) {
-                $this->execute($connection, static fn () => $afterDrop($connection));
+        $operations = [];
+        foreach ($groups as $group) {
+            $server = $group['server'];
+            $databases = array_values(array_unique($group['databases']));
+            $users = array_values(array_unique($group['users']));
+            if ($server->driver === DatabaseDriver::Redis) {
+                $command = DatabaseCommands::valkey($server, 'remove', ['usernames' => array_values(array_diff($users, ['default', '']))], 'absent');
             } else {
-                $afterDrop($connection);
+                $sql = $server->driver === DatabaseDriver::Pgsql
+                    ? (new PostgresStatements)->dropFencedDatabases($databases, $users)
+                    : implode('', array_map($this->statements->dropDatabase(...), $databases)).implode('', array_map($this->statements->dropUser(...), $users));
+                $command = DatabaseCommands::sql($server, $sql, 'absent', expectEmpty: true, refusal: 'database.in_use');
             }
+            $command['finish_after_effect'] = true;
+            $commands = ['database-apply' => $command];
+            if ($server->driver === DatabaseDriver::Pgsql) {
+                $commands['restore-admission'] = [...DatabaseCommands::sql($server, (new PostgresStatements)->restoreDatabaseAdmission($databases)), 'cleanup' => true];
+            }
+            $operations[] = $this->operations->prepare('database.destroy', 'database_server', $server->id, $server->node_id,
+                ['owner_instance_id' => $ownerInstanceId, 'connection_id' => $group['connections'][0], 'connection_ids' => $group['connections'], 'driver' => $server->driver->value],
+                $commands, ['delete_connections' => $group['connections'], 'drop_users' => $users]);
+        }
+
+        return $operations;
+    }
+
+    public function assertUsersStillUnshared(Operation $operation, DatabaseExecutionIntent $intent): void
+    {
+        if (($operation->input['driver'] ?? null) !== 'mysql') {
+            return;
+        }
+        $ids = ValidatedData::integerList($operation->input['connection_ids'] ?? []);
+        $connections = DatabaseConnection::query()->whereIn('id', $ids)->with('users', 'server')->get();
+        $current = [];
+        foreach ($connections as $connection) {
+            $server = $connection->server;
+            if (! $server instanceof DatabaseServer) {
+                throw new ResourceOperationException('database.server_required', 'The removal server is missing.', 409);
+            }
+            $current = [...$current, ...$this->unsharedUsers($connection, $server, $ids)];
+        }
+        if (array_diff($intent->payload['projection']['drop_users'] ?? [], $current) !== []) {
+            throw new ResourceOperationException('database.user_shared', 'A planned removal user now belongs to another connection.', 409);
         }
     }
 
@@ -172,23 +154,14 @@ final readonly class DropServerDatabaseAction
         }
     }
 
-    private function dropValkey(DatabaseConnection $connection): void
-    {
-        $server = $connection->server;
-        if (! $server instanceof DatabaseServer) {
-            return;
-        }
-        foreach ($this->unsharedUsers($connection, $server) as $username) {
-            if ($username !== '' && $username !== ValkeyAclUser::ADMIN) {
-                $this->valkey->deleteUser($server, $username);
-            }
-        }
-    }
-
     /** @return list<string> */
     private function databases(DatabaseConnection $connection, DatabaseServer $server): array
     {
         $databases = is_string($connection->database) ? [$connection->database] : [];
+
+        if ($server->driver === DatabaseDriver::Redis) {
+            return [];
+        }
 
         if ($server->driver === DatabaseDriver::Pgsql && $connection->test_database !== null && $connection->test_processes !== null) {
             $databases = [...$databases, ...$this->postgresTests->names($connection->test_database, $connection->test_processes)];
