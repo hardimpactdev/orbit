@@ -99,7 +99,7 @@ $definitions = [
             ['transport' => 'route-caddy', 'name' => 'caddy.publish', 'input_fields' => [], 'resumable' => true, 'input_values' => []],
         ],
         'completion_contract' => ['step' => 'caddy-publish', 'transport' => 'route-caddy', 'name' => 'caddy.publish', 'result' => ['ready' => true]],
-        'result_fields' => ['prepared', 'version', 'result', 'ready', 'error_code'],
+        'result_fields' => ['prepared', 'version', 'result', 'ready', 'stage', 'error_code'],
     ],
 ];
 

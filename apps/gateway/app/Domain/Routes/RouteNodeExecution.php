@@ -63,7 +63,24 @@ final readonly class RouteNodeExecution implements OperationFamilyExecution
         return $receipt;
     }
 
-    public function assertCompletion(Operation $operation, OperationOutcome $outcome): void {}
+    public function assertCompletion(Operation $operation, OperationOutcome $outcome): void
+    {
+        if ($operation->kind !== 'route.caddy_converge') {
+            return;
+        }
+        $expected = null;
+        if ($outcome->status->value === 'failed') {
+            foreach (['prepare', 'caddy-publish'] as $key) {
+                $receipt = RouteExecutionProof::result($operation, $key);
+                if (($receipt['error_code'] ?? null) === $outcome->errorCode && in_array($receipt['stage'] ?? null, ['render', 'validate'], true)) {
+                    $expected = $receipt['stage'];
+                }
+            }
+        }
+        if (($outcome->result['stage'] ?? null) !== $expected) {
+            throw new ResourceOperationException('operation.completion_unproven', 'The Caddy failure stage needs its recorded refusal receipt.', 409);
+        }
+    }
 
     public function cancellationBoundary(Operation $operation): ?array
     {

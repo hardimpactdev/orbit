@@ -39,7 +39,7 @@ final readonly class PrepareCaddyCommand implements OperationGatewayCommand
             $current = Node::query()->findOrFail($node->id);
             $caddyfile = $this->renderer->render($current);
             if (! $caddyfile->buildable()) {
-                return ['error_code' => 'caddy.render_failed'];
+                return ['error_code' => 'caddy.render_failed', 'stage' => 'render'];
             }
             $operation->update(['state' => [...($operation->state ?? []), 'caddy_plan' => [
                 'content' => $caddyfile->content,

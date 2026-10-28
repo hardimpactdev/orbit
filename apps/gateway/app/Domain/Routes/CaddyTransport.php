@@ -6,6 +6,7 @@ namespace App\Domain\Routes;
 
 use App\Domain\Operations\OperationEffectTransport;
 use App\Domain\Operations\OperationTransportInput;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentEffectReceipts;
 use App\Infrastructure\AgentCommands\AgentSchemas;
@@ -18,7 +19,7 @@ use SensitiveParameter;
 /** The normal Caddy publish primitive, serialized with other whole-Node builds. */
 final readonly class CaddyTransport implements OperationEffectTransport, OperationTransportInput
 {
-    public function __construct(private AgentCommandRunner $agents, private NodeCaddyBuildLock $lock, private NodeCaddyfileRenderer $renderer, private AgentEffectReceipts $receipts) {}
+    public function __construct(private AgentCommandRunner $agents, private NodeCaddyBuildLock $lock, private NodeCaddyfileRenderer $renderer) {}
 
     public function schema(Operation $operation, array $run): array|bool
     {
@@ -40,7 +41,11 @@ final readonly class CaddyTransport implements OperationEffectTransport, Operati
                 return ['error_code' => 'caddy.plan_stale'];
             }
 
-            return $this->agents->run($node, 'caddy.publish', AgentEffectReceipts::input($run, $input));
+            try {
+                return $this->agents->run($node, 'caddy.publish', AgentEffectReceipts::input($run, $input));
+            } catch (AgentCommandRefused $refused) {
+                return $this->refusal($refused->errorCode, $refused->details['stage'] ?? null);
+            }
         });
     }
 
@@ -51,6 +56,19 @@ final readonly class CaddyTransport implements OperationEffectTransport, Operati
 
     public function receipt(Operation $operation, array $run, #[SensitiveParameter] array $input): array
     {
-        return $this->receipts->read(Node::query()->findOrFail($operation->node_id), 'caddy.publish', $run['effect_key']);
+        $raw = $this->agents->run(Node::query()->findOrFail($operation->node_id), 'agent.effect-receipt',
+            ['command' => 'caddy.publish', 'effect_key' => $run['effect_key'], 'owner' => null]);
+        $receipt = AgentEffectReceipts::decode($raw, $run['effect_key']);
+        if ($receipt['state'] === 'failed' && is_string($receipt['result']['error_code'] ?? null)) {
+            $receipt['result'] = $this->refusal($receipt['result']['error_code'], data_get($raw, 'result.error.details.stage'));
+        }
+
+        return $receipt;
+    }
+
+    /** @return array<string, mixed> */
+    private function refusal(string $code, mixed $stage): array
+    {
+        return ['error_code' => $code, ...($code === 'caddy.publication_failed' && $stage === 'validate' ? ['stage' => 'validate'] : [])];
     }
 }

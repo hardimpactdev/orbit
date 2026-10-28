@@ -22,6 +22,7 @@ use App\Domain\Routes\AnalyticsRouteParentCommand;
 use App\Domain\Routes\AnalyticsRouteParentExecution;
 use App\Domain\Routes\ClusterRouterParentCommand;
 use App\Domain\Routes\RouteKind;
+use App\Domain\Routes\RouteNodeEffectCommand;
 use App\Domain\Routes\RouteParentCommand;
 use App\Domain\Routes\RouteParentExecution;
 use App\Domain\Routes\RouteProjectionPlan;
@@ -253,14 +254,15 @@ it('binds Router baselines to owned Node children and forbids premature cutover'
     $cluster = Cluster::query()->create(['name' => 'Router proof']);
     $this->node->update(['cluster_id' => $cluster->id]);
     $old = Node::query()->create(['name' => 'old-router', 'public_ssh_host' => '192.0.2.5', 'user' => 'orbit', 'platform' => 'linux', 'cluster_id' => $cluster->id, 'wireguard_ip' => '10.44.0.5', 'status' => LifecycleStatus::Active]);
-    $oldRole = $old->roles()->create(['role' => RoleName::Router, 'cluster_id' => $cluster->id, 'status' => LifecycleStatus::Active]);
     $candidate = $this->node->roles()->create(['role' => RoleName::Router, 'cluster_id' => $cluster->id, 'status' => LifecycleStatus::Provisioning]);
+    $oldRole = $old->roles()->create(['role' => RoleName::Router, 'cluster_id' => $cluster->id, 'status' => LifecycleStatus::Active]);
     $operation = Operation::query()->create(['kind' => 'cluster.router_set', 'target_type' => 'cluster_router', 'target_id' => $cluster->id, 'node_id' => $this->node->id,
         'input' => ['cluster_id' => $cluster->id, 'candidate_role_id' => $candidate->id, 'old_role_id' => $oldRole->id], 'status' => 'queued', 'sequence' => 1]);
     $command = app(ClusterRouterParentCommand::class);
     $command->run($operation, ['action' => 'prepare']);
     $plan = $operation->fresh()->state['route_plan'];
-    expect($plan['stages']['baseline'][0]['input'])->toBe(['assignment_id' => $candidate->id])
+    expect($plan['old_role_ids'])->toBe([$oldRole->id])
+        ->and($plan['stages']['baseline'][0]['input'])->toBe(['assignment_id' => $candidate->id])
         ->and($plan['stages']['remove-old-baseline'][0]['input'])->toBe(['role' => 'router', 'purge_data' => false, 'offline' => false]);
     $command->run($operation, ['action' => 'open', 'stage' => 'baseline']);
     expect(fn () => $command->run($operation, ['action' => 'commit', 'stage' => 'baseline']))
@@ -411,4 +413,24 @@ it('refuses Router cleanup until the recorded DNS grace period elapses', functio
     expect($command->run($operation, ['action' => 'commit', 'stage' => 'await-old-dns-expiry']))->toBe(['ready' => true, 'stage' => 'await-old-dns-expiry']);
     expect($command->run($operation, ['action' => 'open', 'stage' => 'withdraw-old-sites'])['opened'])->toBeTrue()
         ->and($this->agents->calls)->toBe([]);
+});
+
+it('retires only the old Router LAN rule and keeps the new Router allowance outside the removal input', function (): void {
+    $cluster = Cluster::query()->create(['name' => 'Retire LAN']);
+    $this->node->update(['cluster_id' => $cluster->id, 'lan_ip' => '192.0.2.3']);
+    $this->route->update(['node_id' => null, 'cluster_id' => $cluster->id]);
+    $old = Node::query()->create(['name' => 'retiring-router', 'public_ssh_host' => '192.0.2.5', 'user' => 'orbit', 'platform' => 'linux',
+        'cluster_id' => $cluster->id, 'lan_ip' => '192.0.2.5', 'status' => LifecycleStatus::Active]);
+    $old->roles()->create(['role' => RoleName::Router, 'cluster_id' => $cluster->id, 'status' => LifecycleStatus::Removing]);
+    $current = Node::query()->create(['name' => 'serving-router', 'public_ssh_host' => '192.0.2.6', 'user' => 'orbit', 'platform' => 'linux',
+        'cluster_id' => $cluster->id, 'lan_ip' => '192.0.2.6', 'status' => LifecycleStatus::Active]);
+    $current->roles()->create(['role' => RoleName::Router, 'cluster_id' => $cluster->id, 'status' => LifecycleStatus::Active]);
+    $operation = Operation::query()->create(['kind' => 'route.router_lan_retire', 'target_type' => 'route_effect', 'target_id' => $this->route->id,
+        'node_id' => $this->node->id, 'input' => ['route_id' => $this->route->id, 'router_node_id' => $old->id], 'status' => 'running', 'sequence' => 1]);
+
+    app(RouteNodeEffectCommand::class)->run($operation, ['action' => 'prepare']);
+    expect($operation->fresh()->state['route_effect_plan'])->toBe(['command' => 'firewall.rules', 'input' => ['desired' => [], 'remove' => [[
+        'comment' => 'orbit:route-'.$this->route->id.'-lan', 'action' => 'allow', 'direction' => 'in', 'source' => '192.0.2.5',
+        'destination' => '192.0.2.3', 'port' => '443', 'protocol' => 'tcp', 'in_interface' => null, 'out_interface' => null, 'family' => 'v4',
+    ]], 'enable' => false]])->and($this->agents->calls)->toBe([]);
 });
