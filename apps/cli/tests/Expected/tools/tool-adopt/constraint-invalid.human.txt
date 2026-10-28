@@ -1,11 +1,3 @@
-Adopting Tool...
-
-┌  Adopt Tool
-│
-├  ● Adopting Tool
-│
-└  Operation failed.
-
-The version constraint is invalid.
+The Tool request cannot be admitted.
 step: adopt
 outcome: constraint_invalid

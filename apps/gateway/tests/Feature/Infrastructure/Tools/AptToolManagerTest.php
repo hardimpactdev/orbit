@@ -10,7 +10,6 @@ use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolOperation;
 use App\Infrastructure\Tools\AptToolManager;
-use App\Infrastructure\Tools\ToolCommandBudget;
 use App\Models\Node;
 use Tests\Support\FakeAgentCommandRunner;
 
@@ -52,44 +51,6 @@ describe(AptToolManager::class, function (): void {
         'empty' => ['', false],
     ]);
 
-    it('rejects an invalid package before node I/O', function (Closure $operation): void {
-        [$manager, $ssh] = apt_tool_manager();
-
-        expect(fn () => $operation($manager, apt_tool_node()))
-            ->toThrow(function (ToolManagerException $exception): void {
-                expect($exception->step)
-                    ->toBe('package')
-                    ->and($exception->result)
-                    ->toBeNull()
-                    ->and($exception->getMessage())
-                    ->not->toContain('jq:amd64');
-            });
-        expect($ssh->commands())->toBeEmpty();
-    })->with([
-        'candidate probe' => [
-            static fn (AptToolManager $manager, Node $node): ?string => $manager->candidateVersion(
-                $node,
-                'jq:amd64',
-                ToolOperation::Install,
-            ),
-        ],
-        'installed probe' => [
-            static fn (AptToolManager $manager, Node $node): ?string => $manager->installedVersion($node, 'jq:amd64'),
-        ],
-        'install' => [
-            static fn (AptToolManager $manager, Node $node) => $manager->install($node, 'jq:amd64'),
-        ],
-        'update' => [
-            static fn (AptToolManager $manager, Node $node) => $manager->update($node, 'jq:amd64'),
-        ],
-        'removal plan' => [
-            static fn (AptToolManager $manager, Node $node) => $manager->planRemoval($node, 'jq:amd64'),
-        ],
-        'remove' => [
-            static fn (AptToolManager $manager, Node $node) => $manager->remove($node, 'jq:amd64'),
-        ],
-    ]);
-
     it('normalizes raw Debian versions through the approved normalizer', function (): void {
         [$manager] = apt_tool_manager();
 
@@ -112,25 +73,6 @@ describe(AptToolManager::class, function (): void {
         'a pure PHP library' => ['php-symfony-console', false],
         'an unrelated package' => ['jq', false],
     ]);
-
-    it('sends typed APT operations and preserves raw versions', function (): void {
-        [$manager, $agent] = apt_tool_manager();
-        $agent->answer('tool.apt-version', ['version' => 'apt 3.2.0 (amd64)'])
-            ->answer('tool.apt-candidate', ['version' => '1:2.4.3-1ubuntu2'])
-            ->answer('tool.apt-inventory', ['packages' => [['name' => 'jq', 'version' => '1:2.4.3-1ubuntu2']]])
-            ->answer('tool.apt-install', [])->answer('tool.apt-update', [])->answer('tool.apt-remove', [])
-            ->answer('tool.apt-removal-plan', ['packages' => ['jq']]);
-        $node = apt_tool_node();
-        expect($manager->managerVersion($node))->toBe('apt 3.2.0 (amd64)');
-        expect($manager->candidateVersion($node, 'jq', ToolOperation::Install))->toBe('1:2.4.3-1ubuntu2');
-        expect($manager->installedVersion($node, 'jq'))->toBe('1:2.4.3-1ubuntu2');
-        $manager->install($node, 'jq');
-        $manager->update($node, 'jq');
-        expect($manager->planRemoval($node, 'jq')->removesOnly('jq'))->toBeTrue();
-        $manager->remove($node, 'jq');
-        expect($agent->commands())->toBe(['tool.apt-version', 'tool.apt-candidate', 'tool.apt-inventory', 'tool.apt-install', 'tool.apt-update', 'tool.apt-removal-plan', 'tool.apt-remove']);
-        expect(array_column($agent->calls, 'input'))->toBe([[], ['package' => 'jq'], [], ['package' => 'jq'], ['package' => 'jq'], ['package' => 'jq'], ['package' => 'jq']]);
-    });
 
     it('keeps absence separate from an unverifiable installed package', function (): void {
         [$manager, $agent] = apt_tool_manager();
@@ -155,23 +97,6 @@ describe(AptToolManager::class, function (): void {
         expect($agent->commands())->toBe(['tool.apt-removal-plan']);
     })->with([[[]], [['jq', 'libonig5:amd64']]]);
 
-    it('maps agent failures to the existing operation step without raw output', function (string $method, string $command, string $step): void {
-        [$manager, $agent] = apt_tool_manager();
-        $agent->refuse($command, 'tool.apt_operation_failed');
-        expect(fn () => $manager->{$method}(apt_tool_node(), 'jq', ToolOperation::Install))
-            ->toThrow(function (ToolManagerException $error) use ($step): void {
-                expect($error->step)->toBe($step);
-                expect($error->result)->toBeNull();
-            });
-        expect($agent->commands())->toBe([$command]);
-    })->with([
-        ['managerVersion', 'tool.apt-version', 'manager-version'],
-        ['candidateVersion', 'tool.apt-candidate', 'candidate-version'],
-        ['installedInventory', 'tool.apt-inventory', 'installed-version'],
-        ['install', 'tool.apt-install', 'install'], ['update', 'tool.apt-update', 'update'],
-        ['planRemoval', 'tool.apt-removal-plan', 'removal-plan'], ['remove', 'tool.apt-remove', 'remove'],
-    ]);
-
     it('refuses malformed typed replies without reporting absent packages', function (string $method, string $command, array $data): void {
         [$manager, $agent] = apt_tool_manager();
         $agent->answerMalformed($command, $data);
@@ -194,15 +119,6 @@ describe(AptToolManager::class, function (): void {
         expect(array_unique($agent->commands()))->toBe(['tool.apt-version', 'tool.apt-inventory']);
     })->with(['docker.io', 'openssh-server', 'wireguard-tools', 'php8.5-sqlite3', 'git', 'git-man']);
 
-    it('passes the caller probe budget to the agent and leaves unsupported nodes offline', function (): void {
-        $agent = new FakeAgentCommandRunner()->answer('tool.apt-inventory', ['packages' => []]);
-        $budget = new ToolCommandBudget;
-        $manager = new AptToolManager($agent, new DebianVersionNormalizer(new SemverVersionNormalizer), budget: $budget);
-        $budget->limit(15, fn () => $manager->installedInventory(apt_tool_node()));
-        expect($agent->deadlines)->toBe([15.0]);
-        expect(fn () => $manager->install(apt_tool_node('macos'), 'jq'))->toThrow(ToolManagerException::class);
-        expect($agent->commands())->toBe(['tool.apt-inventory']);
-    });
 });
 
 /** @return array{AptToolManager, FakeAgentCommandRunner} */

@@ -4,27 +4,28 @@ declare(strict_types=1);
 
 namespace App\Commands\Tools;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use App\Support\Console\ProgressOutcome;
-use App\Support\Console\ProgressState;
 use Laravel\Prompts\TextPrompt;
-use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Tools\InstallToolRequest;
 use Orbit\Sdk\Requests\Tools\ListToolManagersRequest;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Orbit\Sdk\Responses\Tools\ToolManagerResponse;
 use Orbit\Sdk\Responses\Tools\ToolManagersResponse;
-use Orbit\Sdk\Responses\Tools\ToolResponse;
 
 final class InstallToolCommand extends ToolCommand
 {
+    use FollowsOperations;
+
     #[\Override]
     protected $signature = 'tool:install
         {package? : Manager-native package coordinate}
         {--node= : Numeric target node ID}
         {--manager= : Tool manager name}
         {--constraint= : Optional SemVer safety constraint}
+        {--idempotency-key= : Reuse a stable operation start key}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -57,34 +58,15 @@ final class InstallToolCommand extends ToolCommand
             return self::FAILURE;
         }
 
-        $response = $this->sendWithProgress(
-            $connector,
-            new InstallToolRequest($nodeId, $manager, $package, $this->stringOption('constraint')),
-            ToolResponse::class,
-            ['Install Tool', 'Installing Tool', 'Installed Tool'],
-            static function (ToolResponse $response): ProgressState|ProgressOutcome {
-                if (! in_array($response->outcome, ['applied', 'unchanged'], strict: true)) {
-                    throw new GatewayApiException(
-                        'Gateway response is invalid.',
-                        'gateway.invalid_response',
-                        requestId: $response->requestId,
-                    );
-                }
-
-                return $response->outcome === 'unchanged'
-                    ? new ProgressOutcome(ProgressState::Skipped, 'Tool already installed')
-                    : ProgressState::Success;
-            },
-        );
-        if (! $response instanceof ToolResponse) {
+        $profile = $this->activeGatewayProfile($repository);
+        if ($profile === null) {
             return self::FAILURE;
         }
+        $operation = $this->send($connector, new InstallToolRequest($nodeId, $manager, $package, $this->stringOption('constraint'), $this->stringOption('idempotency-key')), OperationResponse::class);
 
-        $message = $response->outcome === 'applied'
-            ? "Tool [{$response->package}] installed with [{$response->manager}]."
-            : "Tool [{$response->package}] is already installed with [{$response->manager}].";
-
-        return $this->renderTool($response, $message);
+        return $operation instanceof OperationResponse
+            ? $this->followOperation($connector, $profile, $operation, "Install Tool [{$package}]", 'Tool')
+            : self::FAILURE;
     }
 
     private function promptForManager(GatewayConnector $connector, int $nodeId): ?string

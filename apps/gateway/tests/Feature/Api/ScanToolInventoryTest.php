@@ -6,8 +6,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerScopeLock;
-use App\Domain\Tools\ToolOperation;
-use App\Domain\Tools\ToolOperationLock;
 use App\Domain\Tools\ToolStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Ssh\SshExecutor;
@@ -45,19 +43,7 @@ beforeEach(function (): void {
             throw new RuntimeException('The scan locked a manager scope.');
         }
     });
-    app()->instance(ToolOperationLock::class, new class implements ToolOperationLock
-    {
-        public function run(
-            int $nodeId,
-            ToolManagerName $manager,
-            string $package,
-            ToolOperation $operation,
-            ?string $versionConstraint,
-            Closure $callback,
-        ): mixed {
-            throw new RuntimeException('The scan locked a tool operation.');
-        }
-    });
+
 });
 
 describe('tool inventory authorization and input', function (): void {

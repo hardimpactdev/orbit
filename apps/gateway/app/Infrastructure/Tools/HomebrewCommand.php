@@ -6,7 +6,9 @@ namespace App\Infrastructure\Tools;
 
 use App\Domain\Tools\InstalledToolInventory;
 use App\Domain\Tools\ToolAdoptionFact;
+use App\Domain\Tools\ToolInventoryReceipt;
 use App\Domain\Tools\ToolManagerException;
+use App\Domain\Tools\ToolManagerName;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
@@ -65,24 +67,7 @@ final readonly class HomebrewCommand
     /** @param array<string, mixed> $data */
     public function inventory(array $data): InstalledToolInventory
     {
-        if (! is_array($data['packages'] ?? null) || ! array_is_list($data['packages'])) {
-            throw new ToolManagerException('installed-version', 'The agent returned an invalid Homebrew inventory.');
-        }
-        $versions = [];
-        $unverifiable = [];
-        foreach ($data['packages'] as $entry) {
-            if (! is_array($entry) || ! is_string($entry['name'] ?? null) || ! is_array($entry['versions'] ?? null)
-                || ! array_is_list($entry['versions']) || ! array_all($entry['versions'], static fn (mixed $version): bool => is_string($version))
-                || ! is_bool($entry['unverifiable'] ?? null)) {
-                throw new ToolManagerException('installed-version', 'The agent returned an invalid Homebrew package observation.');
-            }
-            $versions[$entry['name']] = [...($versions[$entry['name']] ?? []), ...$entry['versions']];
-            if ($entry['unverifiable']) {
-                $unverifiable[] = $entry['name'];
-            }
-        }
-
-        return new InstalledToolInventory($versions, unverifiablePackages: $unverifiable);
+        return new ToolInventoryReceipt()->parse(ToolManagerName::Brew, $data);
     }
 
     /** @param array<string, mixed> $data */

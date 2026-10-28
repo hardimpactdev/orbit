@@ -45,12 +45,6 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
         return HomebrewPackageName::valid($package);
     }
 
-    public function materialize(Node $node): void
-    {
-        $this->guardSupportedNode($node);
-        $this->homebrew->verifyScope($node);
-    }
-
     public function managerVersion(Node $node): string
     {
         $this->guardSupportedNode($node);
@@ -96,33 +90,12 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
         return $this->versions->normalize($rawVersion);
     }
 
-    public function install(Node $node, string $package): void
-    {
-        $this->guardPackage($package);
-        $this->guardSupportedNode($node);
-        $this->agentCommand($node, 'tool.homebrew-cask-install', $this->packageInput($node, $package, needsBottle: true), 'install');
-    }
-
-    public function update(Node $node, string $package): void
-    {
-        $this->guardPackage($package);
-        $this->guardSupportedNode($node);
-        $this->agentCommand($node, 'tool.homebrew-cask-update', $this->packageInput($node, $package, needsBottle: true), 'update');
-    }
-
     public function planRemoval(Node $node, string $package): ToolRemovalPlan
     {
         $this->guardPackage($package);
         $this->guardSupportedNode($node);
 
         return new ToolRemovalPlan([$package]);
-    }
-
-    public function remove(Node $node, string $package): void
-    {
-        $this->guardPackage($package);
-        $this->guardSupportedNode($node);
-        $this->agentCommand($node, 'tool.homebrew-cask-remove', $this->packageInput($node, $package, needsBottle: true), 'remove');
     }
 
     private function guardMacCpu(Node $node): void

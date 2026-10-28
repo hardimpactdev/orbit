@@ -6,7 +6,7 @@
     "body": {
         "error": {
             "code": "tool.manager_unsupported",
-            "message": "The requested tool manager is not supported.",
+            "message": "The Tool request cannot be admitted.",
             "details": {
                 "step": "adopt",
                 "outcome": "manager_failed"

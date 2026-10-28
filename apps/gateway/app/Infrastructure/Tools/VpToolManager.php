@@ -9,6 +9,7 @@ use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\SupportsToolAdoption;
 use App\Domain\Tools\ToolAdoptionFact;
 use App\Domain\Tools\ToolInventoryPackage;
+use App\Domain\Tools\ToolInventoryReceipt;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
@@ -78,23 +79,6 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
         $length = strlen($package);
 
         return $length >= 1 && $length <= self::MAX_PACKAGE_LENGTH && preg_match(self::PACKAGE_PATTERN, $package) === 1;
-    }
-
-    public function materialize(Node $node): void
-    {
-        $this->guardNode($node);
-
-        if ($node->platform === 'macos') {
-            $this->existingBinary($node);
-
-            return;
-        }
-
-        try {
-            $this->agents->run($node, 'tool.materialize-vp', $this->materializeInput($node), $this->budget?->seconds());
-        } catch (AgentCommandRefused $exception) {
-            throw new ToolManagerException('materialize', 'The VP manager could not be materialized.', previous: $exception);
-        }
     }
 
     /** @return array<string, mixed> */
@@ -217,21 +201,9 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
 
     public function installedInventory(Node $node): InstalledToolInventory
     {
-        $versions = [];
-        $unverifiable = [];
-        foreach ($this->inventory($node)['packages'] as $entry) {
-            if (! $this->validatePackage($entry['name'])) {
-                continue;
-            }
-            if ($entry['version'] === null) {
-                $unverifiable[] = $entry['name'];
+        $inventory = $this->inventory($node);
 
-                continue;
-            }
-            $versions[$entry['name']][] = $entry['version'];
-        }
-
-        return new InstalledToolInventory($versions, unverifiablePackages: $unverifiable);
+        return new ToolInventoryReceipt()->parse(ToolManagerName::Vp, ['scan_complete' => $inventory['scan_complete'], 'packages' => $inventory['packages']], $this->validatePackage(...));
     }
 
     public function installedVersion(Node $node, string $package): ?string
@@ -263,16 +235,6 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
         return new ToolAdoptionFact($version, null);
     }
 
-    public function install(Node $node, string $package): void
-    {
-        $this->mutate($node, $package, 'install');
-    }
-
-    public function update(Node $node, string $package): void
-    {
-        $this->mutate($node, $package, 'update');
-    }
-
     public function planRemoval(Node $node, string $package): ToolRemovalPlan
     {
         $this->guardNode($node);
@@ -284,11 +246,6 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
         }
 
         return new ToolRemovalPlan($data['packages']);
-    }
-
-    public function remove(Node $node, string $package): void
-    {
-        $this->mutate($node, $package, 'remove');
     }
 
     private function guardNode(Node $node): void
@@ -313,13 +270,6 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
             step: 'package',
             message: 'The VP package coordinate is invalid.',
         );
-    }
-
-    private function mutate(Node $node, string $package, string $step): void
-    {
-        $this->guardNode($node);
-        $this->guardPackage($package);
-        $this->globalCommand($node, 'tool.vp-'.$step, ['package' => $package], $step);
     }
 
     /** @param array<string, mixed> $input */

@@ -6,7 +6,7 @@
     "body": {
         "error": {
             "code": "tool.state_invalid",
-            "message": "The tool is not in a state that adoption can repair.",
+            "message": "The Tool request cannot be admitted.",
             "details": {
                 "step": "adopt",
                 "outcome": "manager_failed",
