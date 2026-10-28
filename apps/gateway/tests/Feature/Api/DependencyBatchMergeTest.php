@@ -457,6 +457,7 @@ it('requires approved Composer dist and source hosts in both dependency sections
 ]);
 
 it('accepts only archives and source metadata attested by Packagist', function (string $host): void {
+    $this->content['composer.json'] = '{"require":{"acme/library":"^1.0"}}';
     $package = dependencyRegistryPackage();
     $package['dist']['url'] = 'https://'.$host.'/archive.zip';
     $this->registry['acme/library'] = $package;
@@ -476,16 +477,21 @@ it('refuses off-registry and local JavaScript lock sources', function (string $f
 })->with(['package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'bun.lock'])
     ->with(['https://evil.example/library.tgz', 'git+https://github.com/acme/library.git', 'file:../library', 'link:../library', 'https://registry.npmjs.org.evil.example/library.tgz', 'https://token@registry.npmjs.org/library.tgz']);
 
-it('accepts each supported registry lock format', function (string $file, string $content): void {
+it('accepts each supported registry lock format', function (string $file): void {
+    $this->content['package.json'] = '{"dependencies":{"library":"^1.0"}}';
+    $content = dependencyJsGraph($file, ['library' => '^1.0'], ['library' => ['1.0.0', []]]);
+    if ($file === 'bun.lock') {
+        $content = '// Bun text lock'."\n".substr($content, 0, -1).',}';
+    }
     dependencyContent($this, $file, $content);
     $this->withHeader('Idempotency-Key', 'registry-format')->postJson($this->url, $this->body)->assertAccepted();
-})->with([
-    ['package-lock.json', '{"lockfileVersion":3,"packages":{"node_modules/library":{"version":"1.0.0","integrity":"sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==","resolved":"https://registry.npmjs.org/library/-/library-1.0.0.tgz"}}}'],
-    ['package-lock.json', '{"lockfileVersion":1,"dependencies":{"library":{"version":"1.0.0","integrity":"sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==","resolved":"https://registry.npmjs.org/library/-/library-1.0.0.tgz"}}}'],
-    ['npm-shrinkwrap.json', '{"lockfileVersion":2,"packages":{},"dependencies":{"library":{"version":"1.0.0","integrity":"sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==","resolved":"https://registry.npmjs.org/library/-/library-1.0.0.tgz"}}}'],
-    ['pnpm-lock.yaml', "lockfileVersion: '9.0'\npackages:\n  library@1.0.0:\n    resolution:\n      integrity: sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\n"],
-    ['bun.lock', "{\n// Bun text lock\n\"lockfileVersion\":2,\"packages\":{\"library\":[\"library@1.0.0\",\"\",{},\"sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\"],},\n}"],
-]);
+})->with(['package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'bun.lock']);
+
+it('refuses npm v1 without a complete package graph', function (): void {
+    dependencyContent($this, 'package-lock.json', '{"lockfileVersion":1,"dependencies":{}}');
+    $this->withHeader('Idempotency-Key', 'old-format')->postJson($this->url, $this->body)
+        ->assertConflict()->assertJsonPath('error.code', 'dependency_merge.contents_forbidden');
+});
 
 it('refuses hidden npm v1 dependencies and local link records', function (string $content): void {
     dependencyContent($this, 'package-lock.json', $content);
@@ -558,6 +564,7 @@ it('refuses Composer mirror and transport instructions before any registry read'
 ]);
 
 it('accepts only Packagists notification URL', function (): void {
+    $this->content['composer.json'] = '{"require":{"acme/library":"^1.0"}}';
     $package = dependencyRegistryPackage();
     $package['notification-url'] = 'https://evil.example/downloads/';
     dependencyContent($this, 'composer.lock', json_encode(['packages' => [$package], 'packages-dev' => []]));
@@ -599,6 +606,7 @@ it('fails closed when Packagist metadata is unavailable or unreadable', function
 })->with(['unavailable', 'missing', 'json', 'shape', 'unknown-minifier']);
 
 it('expands Packagist P2 inheritance and unset fields before matching', function (): void {
+    $this->content['composer.json'] = '{"require":{"acme/library":"^1.0"}}';
     $package = dependencyRegistryPackage();
     unset($package['bin']);
     $this->registryResponse = ['minified' => 'composer/2.0', 'packages' => ['acme/library' => [dependencyRegistryPackage('1.0.1'), ['version' => '1.0.0', 'bin' => '__unset']]]];
@@ -627,8 +635,11 @@ it('binds npm installs to the final path name version URL and integrity', functi
 })->with(['name-swap', 'tarball-swap', 'version-swap', 'missing-integrity', 'invalid-integrity']);
 
 it('accepts a scoped nested npm package with its exact registry tarball', function (): void {
-    $package = ['name' => '@acme/library', 'version' => '1.0.0', 'resolved' => 'https://registry.npmjs.org/@acme/library/-/library-1.0.0.tgz', 'integrity' => dependencyIntegrity()];
-    dependencyContent($this, 'package-lock.json', json_encode(['lockfileVersion' => 3, 'packages' => ['node_modules/parent/node_modules/@acme/library' => $package]]));
+    $this->content['package.json'] = '{"dependencies":{"parent":"^1.0"}}';
+    $lock = json_decode(dependencyJsGraph('package-lock.json', ['parent' => '^1.0'], ['parent' => ['1.0.0', ['@acme/library' => '^1.0']], '@acme/library' => ['1.0.0', []]]), true);
+    $lock['packages']['node_modules/parent/node_modules/@acme/library'] = $lock['packages']['node_modules/@acme/library'];
+    unset($lock['packages']['node_modules/@acme/library']);
+    dependencyContent($this, 'package-lock.json', json_encode($lock));
     $this->withHeader('Idempotency-Key', 'scoped-npm')->postJson($this->url, $this->body)->assertAccepted();
 });
 
@@ -679,6 +690,7 @@ it('refuses major constraint changes with a hand-test error and no merge effect'
     Http::assertNotSent(fn ($request) => $request->method() === 'PUT');
 })->with([
     ['composer.json', '^1.0', '^2.0'], ['package.json', '^1.0', '^2.0'], ['package.json', '^1.0', 'v2'],
+    ['composer.json', '^0.1', '^0.2'], ['package.json', '^0.1', '^0.2'], ['package.json', '^0.4', '^0.9'], ['composer.json', '^0.0.1', '^0.0.2'], ['package.json', '^0.0.1', '^0.0.2'],
     ['composer.json', '>=1.0 <2.0', '^2.0'], ['package.json', '^1 || ^3', '^1 || ^2 || ^3'],
 ]);
 
@@ -688,17 +700,9 @@ it('refuses a locked top-level major even when its manifest constraint did not c
         $head = json_encode(['packages' => [dependencyRegistryPackage('2.0.0')], 'packages-dev' => []]);
         $base = json_encode(['packages' => [dependencyRegistryPackage()], 'packages-dev' => []]);
         $this->content['composer.json'] = '{"require":{"acme/library":"*"}}';
-    } elseif ($file === 'pnpm-lock.yaml') {
-        $head = "lockfileVersion: '9.0'\npackages:\n  library@2.0.0:\n    resolution: {integrity: ".dependencyIntegrity()."}\nimporters:\n  .:\n    dependencies:\n      library: {version: 2.0.0}\n";
-        $base = str_replace('2.0.0', '1.0.0', $head);
-        $this->content['package.json'] = '{"dependencies":{"library":"*"}}';
-    } elseif ($file === 'bun.lock') {
-        $head = json_encode(['lockfileVersion' => 2, 'packages' => ['library' => ['library@2.0.0', '', (object) [], dependencyIntegrity()]]]);
-        $base = str_replace('2.0.0', '1.0.0', $head);
-        $this->content['package.json'] = '{"dependencies":{"library":"*"}}';
     } else {
-        $head = json_encode(['lockfileVersion' => 3, 'packages' => ['node_modules/library' => ['version' => '2.0.0', 'resolved' => 'https://registry.npmjs.org/library/-/library-2.0.0.tgz', 'integrity' => dependencyIntegrity()]]]);
-        $base = str_replace('2.0.0', '1.0.0', $head);
+        $head = dependencyJsGraph($file, ['library' => '*'], ['library' => ['2.0.0', []]]);
+        $base = dependencyJsGraph($file, ['library' => '*'], ['library' => ['1.0.0', []]]);
         $this->content['package.json'] = '{"dependencies":{"library":"*"}}';
     }
     dependencyContent($this, $file, $head, $base);
@@ -719,6 +723,7 @@ it('refuses a removed lockfile explicitly before trying to read it', function ()
 });
 
 it('rechecks fresh Packagist evidence before the merge effect', function (): void {
+    $this->content['composer.json'] = '{"require":{"acme/library":"^1.0"}}';
     dependencyContent($this, 'composer.lock', json_encode(['packages' => [dependencyRegistryPackage()], 'packages-dev' => []]));
     [$id, $request] = dependencyMergeClaim($this);
     $this->registryStatus = 503;
@@ -730,7 +735,7 @@ it('rechecks fresh Packagist evidence before the merge effect', function (): voi
 it('allows a minor constraint update and npm registry dist tags', function (string $before, string $after): void {
     dependencyContent($this, 'package.json', json_encode(['dependencies' => ['library' => $after]]), json_encode(['dependencies' => ['library' => $before]]));
     $this->withHeader('Idempotency-Key', 'registry-spec')->postJson($this->url, $this->body)->assertAccepted();
-})->with([['^1.0', '^1.2'], ['~1.0.0', '~1.1.0'], ['latest', 'next'], ['^0.1', '^0.2']]);
+})->with([['^1.0', '^1.2'], ['~1.0.0', '~1.1.0'], ['latest', 'next'], ['^0.1.1', '^0.1.2'], ['~0.1.1', '~0.1.2']]);
 
 it('refuses removed dependency names and Composer development constraints', function (string $file, string $head, string $base): void {
     dependencyContent($this, $file, $head, $base);
@@ -753,9 +758,154 @@ it('refuses missing top-level lock evidence instead of skipping the major guard'
 it('permits a registry-attested transitive major while the top-level lock stays in its major', function (): void {
     $root = dependencyRegistryPackage();
     $root['name'] = 'acme/root';
+    $root['require'] = ['acme/library' => '^2.0'];
     $this->registry['acme/root'] = $root;
     $this->registry['acme/library'] = dependencyRegistryPackage('2.0.0');
     $this->content['composer.json'] = '{"require":{"acme/root":"^1.0"}}';
     dependencyContent($this, 'composer.lock', json_encode(['packages' => [$root, dependencyRegistryPackage('2.0.0')], 'packages-dev' => []]), json_encode(['packages' => [$root, dependencyRegistryPackage()], 'packages-dev' => []]));
     $this->withHeader('Idempotency-Key', 'transitive-major')->postJson($this->url, $this->body)->assertAccepted();
 });
+
+/** @param array<string,string> $roots @param array<string,array{string,array<string,string>}> $packages */
+function dependencyJsGraph(string $file, array $roots, array $packages): string
+{
+    if ($file === 'pnpm-lock.yaml') {
+        $entries = $snapshots = $root = [];
+        foreach ($packages as $name => [$version, $dependencies]) {
+            $entries[$name.'@'.$version] = ['resolution' => ['integrity' => dependencyIntegrity()]];
+            $snapshots[$name.'@'.$version] = $dependencies === [] ? (object) [] : ['dependencies' => (object) $dependencies];
+        }
+        foreach ($roots as $name => $constraint) {
+            $root[$name] = ['specifier' => $constraint, 'version' => $packages[$name][0]];
+        }
+
+        return Yaml::dump(['lockfileVersion' => '9.0', 'importers' => ['.' => ['dependencies' => (object) $root]], 'packages' => (object) $entries, 'snapshots' => (object) $snapshots], 8, 2, Yaml::DUMP_OBJECT_AS_MAP);
+    }
+    $entries = [];
+    foreach ($packages as $name => [$version, $dependencies]) {
+        $info = $dependencies === [] ? (object) [] : ['dependencies' => (object) $dependencies];
+        $entries[$file === 'bun.lock' ? $name : 'node_modules/'.$name] = $file === 'bun.lock'
+            ? [$name.'@'.$version, '', $info, dependencyIntegrity()]
+            : ['version' => $version, 'resolved' => 'https://registry.npmjs.org/'.$name.'/-/'.basename($name).'-'.$version.'.tgz', 'integrity' => dependencyIntegrity(), ...(array) $info];
+    }
+    $root = ['dependencies' => (object) $roots];
+    if ($file === 'bun.lock') {
+        return json_encode(['lockfileVersion' => 2, 'workspaces' => ['' => $root], 'packages' => (object) $entries], JSON_THROW_ON_ERROR);
+    }
+
+    return json_encode(['lockfileVersion' => 3, 'packages' => (object) ['' => $root, ...$entries]], JSON_THROW_ON_ERROR);
+}
+
+it('refuses an unreferenced lock package even with trusted sources and an unchanged base name', function (string $file): void {
+    if ($file === 'composer.lock') {
+        $this->content['composer.json'] = '{"require":{"acme/library":"^1.0"}}';
+        $orphan = dependencyRegistryPackage();
+        $orphan['name'] = 'acme/orphan';
+        $orphan['autoload'] = ['files' => ['force-green.php']];
+        $this->registry['acme/orphan'] = $orphan;
+        $clean = json_encode(['packages' => [dependencyRegistryPackage()], 'packages-dev' => []]);
+        $hostile = json_encode(['packages' => [dependencyRegistryPackage()], 'packages-dev' => [$orphan]]);
+    } else {
+        $this->content['package.json'] = '{"dependencies":{"library":"^1.0"}}';
+        $clean = dependencyJsGraph($file, ['library' => '^1.0'], ['library' => ['1.0.0', []]]);
+        $hostile = dependencyJsGraph($file, ['library' => '^1.0'], ['library' => ['1.0.0', []], 'orphan' => ['1.0.0', []]]);
+    }
+    dependencyContent($this, $file, $clean);
+    $this->withHeader('Idempotency-Key', 'reachable-control')->postJson($this->url, $this->body)->assertAccepted();
+    // The name restriction alone cannot reject this: it is also in the base lock.
+    dependencyContent($this, $file, $hostile);
+    $this->withHeader('Idempotency-Key', 'orphan')->postJson($this->url, $this->body)
+        ->assertConflict()->assertJsonPath('error.code', 'dependency_merge.contents_forbidden');
+    Http::assertNotSent(fn ($request) => $request->method() === 'PUT');
+})->with(['composer.lock', 'package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'bun.lock']);
+
+it('refuses newly introduced npm and Bun names even when a lock edge claims them', function (string $file): void {
+    $this->content['package.json'] = '{"dependencies":{"library":"^1.0"}}';
+    $base = dependencyJsGraph($file, ['library' => '^1.0'], ['library' => ['1.0.0', []]]);
+    $head = dependencyJsGraph($file, ['library' => '^1.0'], ['library' => ['1.0.0', ['injected' => '1.0.0']], 'injected' => ['1.0.0', []]]);
+    dependencyContent($this, $file, $head, $base);
+    $this->withHeader('Idempotency-Key', 'new-lock-name')->postJson($this->url, $this->body)
+        ->assertConflict()->assertJsonPath('error.code', 'dependency_merge.contents_forbidden');
+})->with(['package-lock.json', 'npm-shrinkwrap.json', 'bun.lock']);
+
+it('refuses pnpm snapshot name aliases even when they form a reachable graph', function (): void {
+    $this->content['package.json'] = '{"dependencies":{"library":"^1.0"}}';
+    $head = dependencyJsGraph('pnpm-lock.yaml', ['library' => '^1.0'], ['library' => ['1.0.0', ['lodash' => 'evil@1.0.0']], 'evil' => ['1.0.0', []]]);
+    dependencyContent($this, 'pnpm-lock.yaml', $head);
+    $this->withHeader('Idempotency-Key', 'snapshot-alias')->postJson($this->url, $this->body)
+        ->assertConflict()->assertJsonPath('error.code', 'dependency_merge.contents_forbidden');
+});
+
+it('walks Packagist-attested Composer provider and replacement edges', function (string $field): void {
+    $root = dependencyRegistryPackage();
+    $root['require'] = ['acme/virtual' => '^1.0'];
+    $provider = dependencyRegistryPackage();
+    $provider['name'] = 'acme/provider';
+    $provider[$field] = ['acme/virtual' => 'self.version'];
+    $this->registry['acme/library'] = $root;
+    $this->registry['acme/provider'] = $provider;
+    $this->content['composer.json'] = '{"require":{"acme/library":"^1.0"}}';
+    dependencyContent($this, 'composer.lock', json_encode(['packages' => [$root, $provider], 'packages-dev' => []]));
+    $this->withHeader('Idempotency-Key', 'provider')->postJson($this->url, $this->body)->assertAccepted();
+})->with(['provide', 'replace']);
+
+it('refuses unapproved Composer lock root instructions', function (string $key, mixed $value): void {
+    dependencyContent($this, 'composer.lock', json_encode(['packages' => [], 'packages-dev' => [], $key => $value]));
+    $this->withHeader('Idempotency-Key', 'lock-root')->postJson($this->url, $this->body)
+        ->assertConflict()->assertJsonPath('error.code', 'dependency_merge.contents_forbidden');
+})->with([
+    ['aliases', [['package' => 'acme/library', 'version' => '1.0.0', 'alias' => '2.0.0']]],
+    ['platform-overrides', ['php' => '99.0.0']], ['repositories', [['url' => 'https://evil.example']]], ['unknown', true],
+]);
+
+it('refuses numeric ranges becoming tags and archive-shaped tags', function (string $after): void {
+    dependencyContent($this, 'package.json', json_encode(['dependencies' => ['library' => $after]]), '{"dependencies":{"library":"^1.0.0"}}');
+    $this->withHeader('Idempotency-Key', 'range-tag')->postJson($this->url, $this->body)
+        ->assertConflict()->assertJsonPath('error.code', 'dependency_merge.contents_forbidden');
+})->with(['latest', 'x.tgz', 'x.tar.gz']);
+
+it('refuses npm names outside the registry name grammar', function (string $name): void {
+    $this->content['package.json'] = json_encode(['dependencies' => [$name => '^1.0']]);
+    dependencyContent($this, 'package-lock.json', dependencyJsGraph('package-lock.json', [$name => '^1.0'], [$name => ['1.0.0', []]]));
+    $this->withHeader('Idempotency-Key', 'npm-name')->postJson($this->url, $this->body)
+        ->assertConflict()->assertJsonPath('error.code', 'dependency_merge.contents_forbidden');
+})->with(['.', '..', '_private', '@acme/_private', '@_private/library', 'Capital']);
+
+it('refuses locked zero-major breaking changes for every format', function (string $file, string $before, string $after): void {
+    if ($file === 'composer.lock') {
+        $this->registry['acme/library'] = dependencyRegistryPackage($after);
+        $this->content['composer.json'] = '{"require":{"acme/library":"*"}}';
+        $head = json_encode(['packages' => [dependencyRegistryPackage($after)], 'packages-dev' => []]);
+        $base = json_encode(['packages' => [dependencyRegistryPackage($before)], 'packages-dev' => []]);
+    } else {
+        $this->content['package.json'] = '{"dependencies":{"library":"*"}}';
+        $head = dependencyJsGraph($file, ['library' => '*'], ['library' => [$after, []]]);
+        $base = dependencyJsGraph($file, ['library' => '*'], ['library' => [$before, []]]);
+    }
+    dependencyContent($this, $file, $head, $base);
+    $this->withHeader('Idempotency-Key', 'zero-breaking')->postJson($this->url, $this->body)
+        ->assertConflict()->assertJsonPath('error.code', 'dependency_merge.major_bump');
+})->with(['composer.lock', 'package-lock.json', 'pnpm-lock.yaml', 'bun.lock'])
+    ->with([['0.4.0', '0.9.0'], ['0.0.4', '0.0.9']]);
+
+it('refuses archive-shaped tags independently of the range-to-tag guard', function (string $tag): void {
+    dependencyContent($this, 'package.json', json_encode(['dependencies' => ['library' => $tag]]), '{"dependencies":{"library":"latest"}}');
+    $this->withHeader('Idempotency-Key', 'archive-tag')->postJson($this->url, $this->body)
+        ->assertConflict()->assertJsonPath('error.code', 'dependency_merge.contents_forbidden');
+})->with(['x.tgz', 'x.tar.gz']);
+
+it('checks the actual top-level Composer provider version for breaking changes', function (string $version, bool $accepted): void {
+    $base = dependencyRegistryPackage();
+    $base['provide'] = ['acme/virtual' => '*'];
+    $head = dependencyRegistryPackage($version);
+    $head['provide'] = ['acme/virtual' => '*'];
+    $this->registry['acme/library'] = $head;
+    $this->content['composer.json'] = '{"require":{"acme/virtual":"*"}}';
+    dependencyContent($this, 'composer.lock', json_encode(['packages' => [$head], 'packages-dev' => []]), json_encode(['packages' => [$base], 'packages-dev' => []]));
+    $response = $this->withHeader('Idempotency-Key', 'provider-version')->postJson($this->url, $this->body);
+    if ($accepted) {
+        $response->assertAccepted();
+    } else {
+        $response->assertConflict()->assertJsonPath('error.code', 'dependency_merge.major_bump');
+    }
+})->with([['1.1.0', true], ['2.0.0', false]]);
