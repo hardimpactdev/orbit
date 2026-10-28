@@ -3,7 +3,7 @@ title: "Operations"
 description: "How the Gateway runs a long operation as a queued record with named steps, how a client follows it, and how the Gateway recovers one that a lost worker interrupted."
 covers:
   - apps/gateway/app/{Domain/Operations/**,Actions/Operations/**,Data/Operations/**,Http/Requests/Operations/**}
-  - apps/gateway/app/{Jobs/RunOperation.php,Console/Commands/SweepOperationsCommand.php,Http/Controllers/Api/OperationsController.php,Models/Operation*.php}
+  - apps/gateway/app/{Jobs/RunOperation.php,Http/Controllers/Api/OperationsController.php,Models/Operation*.php}
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/gateway/database/migrations/2026_12_28_000000_add_operation_idempotency_keys.php
   - packages/php-sdk/src/{Requests,Responses}/Operations/**

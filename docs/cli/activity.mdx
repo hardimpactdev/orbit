@@ -8,7 +8,7 @@ covers:
   - apps/gateway/app/Http/Requests/Activities/**
   - apps/gateway/app/Actions/Activities/**
   - apps/gateway/app/Infrastructure/Activity/**
-  - apps/gateway/app/Console/Commands/FinalizeInterruptedActivitiesCommand.php
+  - apps/gateway/app/Actions/Observation/MaintainObservationStateAction.php
 ---
 
 The Gateway records an Activity for every request that can change something and for every request that fails. It keeps a sample of successful reads, as [What the Gateway records](#what-the-gateway-records) explains. The `activity` family lists records and shows one in full. Use it to answer what changed, who changed it, and whether it succeeded.
