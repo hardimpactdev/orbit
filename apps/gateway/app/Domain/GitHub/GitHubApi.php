@@ -76,6 +76,9 @@ interface GitHubApi
      */
     public function pullRequestsByHead(#[SensitiveParameter] string $token, GitHubRepository $repository, string $head): array;
 
+    /** @return list<string> Merged PR URLs whose merge commit is exactly this SHA. */
+    public function mergedPullRequestUrls(#[SensitiveParameter] string $token, GitHubRepository $repository, string $sha): array;
+
     /**
      * A token that only reads the check runs of this one repository, and expires after one hour.
      * It is separate from the pull request token because GitHub refuses a whole token request that

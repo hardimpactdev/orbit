@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Instances\Deployment;
 
 use App\Data\Instances\InstanceSmokeFailureData;
+use App\Data\Instances\InstanceSmokeRepairEntryData;
 use App\Models\Instance;
 use App\Support\ValidatedData;
 use Illuminate\Support\Carbon;
@@ -86,6 +87,22 @@ final class AutomaticDeployState
 
         return is_array($entry) && is_int($entry['caller_node_id'] ?? null) && is_string($entry['fingerprint'] ?? null) && is_array($entry['failure'] ?? null)
             ? ['caller_node_id' => $entry['caller_node_id'], 'fingerprint' => $entry['fingerprint'], 'failure' => ValidatedData::object($entry['failure'])] : null;
+    }
+
+    public function smokeRepair(string $key): ?InstanceSmokeRepairEntryData
+    {
+        $entries = $this->state['smoke_repairs'] ?? null;
+        $entry = is_array($entries) ? ($entries[$key] ?? null) : null;
+
+        return is_array($entry) ? InstanceSmokeRepairEntryData::from($entry) : null;
+    }
+
+    public function recordSmokeRepair(InstanceSmokeRepairEntryData $entry): void
+    {
+        $entries = $this->state['smoke_repairs'] ?? [];
+        $entries = is_array($entries) ? $entries : [];
+        $entries[$entry->repair->requestKey] = $entry->toArray();
+        $this->state['smoke_repairs'] = $entries;
     }
 
     /** @param array<string, mixed> $control */

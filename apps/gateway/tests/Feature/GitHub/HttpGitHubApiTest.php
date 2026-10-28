@@ -123,3 +123,25 @@ describe('HttpGitHubApi repository id', function (): void {
         'no id' => [200, [], []],
     ]);
 });
+
+describe('merged pull request context for production repair', function (): void {
+    it('returns only same-repository PRs merged as the deployed commit', function (): void {
+        Http::preventStrayRequests();
+        $sha = str_repeat('a', 40);
+        Http::fake(['https://api.github.com/repos/acme/shop/commits/'.$sha.'/pulls*' => Http::response([
+            ['number' => 11, 'html_url' => 'https://github.com/acme/shop/pull/11', 'merged_at' => '2026-10-28T12:00:00Z', 'merge_commit_sha' => $sha],
+            ['number' => 12, 'html_url' => 'https://github.com/acme/shop/pull/12', 'merged_at' => null, 'merge_commit_sha' => $sha],
+            ['number' => 13, 'html_url' => 'https://github.com/acme/shop/pull/13', 'merged_at' => '2026-10-28T12:00:00Z', 'merge_commit_sha' => str_repeat('b', 40)],
+        ])]);
+        expect(app(GitHubApi::class)->mergedPullRequestUrls('fixture-read', GitHubRepository::fromOrigin('https://github.com/acme/shop'), $sha))->toBe(['https://github.com/acme/shop/pull/11']);
+        Http::assertSentCount(1);
+    });
+
+    it('refuses foreign or incomplete associated PR evidence', function (string $kind): void {
+        Http::preventStrayRequests();
+        $sha = str_repeat('a', 40);
+        $row = ['number' => 11, 'html_url' => 'https://github.com/foreign/shop/pull/11', 'merged_at' => '2026-10-28T12:00:00Z', 'merge_commit_sha' => $sha];
+        Http::fake(['https://api.github.com/repos/acme/shop/commits/'.$sha.'/pulls*' => Http::response($kind === 'foreign' ? [$row] : array_fill(0, 100, $row))]);
+        expect(fn () => app(GitHubApi::class)->mergedPullRequestUrls('fixture-read', GitHubRepository::fromOrigin('https://github.com/acme/shop'), $sha))->toThrow(GitHubApiException::class);
+    })->with(['foreign', 'overflow']);
+});
