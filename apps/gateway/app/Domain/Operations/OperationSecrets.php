@@ -54,7 +54,8 @@ final readonly class OperationSecrets
                 || ! is_int($reference['id'] ?? null) || $reference['id'] < 1) {
                 $this->refuse();
             }
-            if ($this->source($name)->ownerId($operation) !== $reference['id']) {
+            $ownerId = $this->source($name)->ownerId($operation);
+            if ($ownerId === null || $ownerId !== $reference['id']) {
                 $this->refuse();
             }
             $references[$parameter] = ['$secret' => $name, 'id' => $reference['id']];

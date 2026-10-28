@@ -7,6 +7,7 @@ use App\Domain\Operations\OperationCompletion;
 use App\Domain\Operations\OperationFamilyExecution;
 use App\Domain\Operations\OperationGatewayCommand;
 use App\Domain\Operations\OperationGatewayCommands;
+use App\Domain\Operations\OperationGatewayTransport;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationSecretSource;
@@ -22,6 +23,10 @@ final class KitSecretSource implements OperationSecretSource
 {
     public int $resolves = 0;
 
+    public bool $missingOwner = false;
+
+    public bool $rotates = false;
+
     public ?ResourceOperationException $refusal = null;
 
     public function name(): string
@@ -31,7 +36,7 @@ final class KitSecretSource implements OperationSecretSource
 
     public function ownerId(Operation $operation): ?int
     {
-        return $operation->target_id;
+        return $this->missingOwner ? null : $operation->target_id;
     }
 
     public function resolve(Operation $operation, int $id, string $key, string $parameter): OperationSecretValue
@@ -41,7 +46,7 @@ final class KitSecretSource implements OperationSecretSource
             throw $this->refusal;
         }
 
-        return new OperationSecretValue('kit-private-token-value');
+        return new OperationSecretValue('kit-private-token-value'.($this->rotates ? '-'.$this->resolves : ''));
     }
 }
 
@@ -59,15 +64,15 @@ final class KitGatewayCommand implements OperationGatewayCommand
             'required' => ['token', 'port'], 'additionalProperties' => false];
     }
 
-    public function run(Operation $operation, array $input): array
+    public function run(Operation $operation, #[SensitiveParameter] array $input): array
     {
         $this->runs++;
-        expect($input)->toBe(['token' => 'kit-private-token-value', 'port' => 65431]);
+        expect($input['token'])->toMatch('/^kit-private-token-value(?:-[0-9]+)?$/')->and($input['port'])->toBe(65431);
         if ($this->loseReply) {
             throw new RuntimeException('transport exposed kit-private-token-value');
         }
 
-        return $this->refuse ? ['error_code' => 'test.refused'] : ['backend' => 'active', 'echo' => $input['token'], 'undeclared' => 'kit-private-token-value'];
+        return $this->refuse ? ['error_code' => 'test.refused'] : ['backend' => 'active', 'echo' => $input['token'], 'undeclared' => $input['token']];
     }
 }
 
@@ -78,7 +83,7 @@ final class KitEchoCommand implements OperationGatewayCommand
         return ['type' => 'object', 'additionalProperties' => false];
     }
 
-    public function run(Operation $operation, array $input): array
+    public function run(Operation $operation, #[SensitiveParameter] array $input): array
     {
         return ['echo' => 'kit-private-token-value', 'backend' => 'active'];
     }
@@ -251,3 +256,33 @@ it('redacts earlier successful failed or uncertain secrets in a later unprotecte
     $this->postJson($this->path.'/run', [...$this->run, 'key' => 'echo', 'name' => 'test.echo', 'input' => []])->assertOk()->assertJsonPath('data.echo', '[REDACTED]');
     expect(json_encode($this->operation->refresh()->state))->not->toContain('kit-private-token-value');
 })->with(['success', 'failed', 'uncertain']);
+
+it('binds run keys and receipts to references when each mint returns a new token', function (): void {
+    $this->source->rotates = true;
+    $this->command->loseReply = true;
+    $this->postJson($this->path.'/run', $this->run)->assertStatus(502);
+    $this->command->loseReply = false;
+    $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath('data.echo', '[REDACTED]');
+    $resolves = $this->source->resolves;
+    $this->postJson($this->path.'/run', $this->run)->assertOk();
+    expect($this->source->resolves)->toBe($resolves)->and($this->command->runs)->toBe(2);
+    $receipt = $this->operation->refresh()->state['executor_runs']['effect'];
+    expect($receipt['input'])->toBe($this->run['input'])
+        ->and($receipt['references']['token'])->toBe(['$secret' => 'project.test', 'id' => 27])
+        ->and($receipt['fingerprint'])->toBe(hash('sha256', json_encode(array_diff_key($this->run, ['worker' => true]), JSON_THROW_ON_ERROR)));
+    expect(json_encode($this->operation->toArray()))->not->toContain('kit-private-token-value');
+});
+
+it('refuses an unresolved secret owner before minting or running', function (): void {
+    $this->source->missingOwner = true;
+    $this->postJson($this->path.'/run', $this->run)->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
+    expect($this->source->resolves)->toBe(0)->and($this->command->runs)->toBe(0)
+        ->and($this->operation->refresh()->state)->toBeNull();
+});
+
+it('marks the Gateway command and hydrated transport parameters as sensitive', function (): void {
+    foreach ([OperationGatewayCommand::class, OperationGatewayTransport::class, KitGatewayCommand::class] as $class) {
+        $parameter = new ReflectionParameter([$class, 'run'], 'input');
+        expect($parameter->getAttributes(SensitiveParameter::class))->toHaveCount(1);
+    }
+});
