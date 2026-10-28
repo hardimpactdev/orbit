@@ -1,66 +1,18 @@
-name: Set up the recipe PHP build
-description: >-
-  Installs the machine software recipe's PHP build on a GitHub-hosted runner with bin/php-build, which runs
-  php.install-build, the installer that Nodes and images run too. It verifies the build on every runner. A self-hosted
-  runner is never changed; the job fails when its PHP differs from the recipe. See ADR 0216.
+name: Set up CI PHP
+description: Install PHP and Composer for fast builds and static checks without compiling the agent.
 inputs:
   coverage:
-    description: pcov loads PCOV and enables coverage; none keeps PCOV loaded with pcov.enabled=0
-    default: pcov
+    description: Coverage driver, or none.
+    default: none
 runs:
   using: composite
   steps:
-    - name: Install Rust for the PHP installer
-      if: runner.environment == 'github-hosted'
-      uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-
-    - name: Restore the PHP installer build cache
-      if: runner.environment == 'github-hosted'
-      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+    - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
       with:
-        workspaces: apps/agent
-
-    - name: Build the native PHP installer from this source
-      if: runner.environment == 'github-hosted'
-      shell: bash
-      working-directory: ${{ github.workspace }}/apps/agent
-      run: cargo build --release --locked
-
-    - name: Compute the PHP package cache key
-      id: key
-      if: runner.environment == 'github-hosted'
-      shell: bash
-      working-directory: ${{ github.workspace }}
-      run: |
-        printf 'key=%s\n' "$(python3 bin/php-build key)" >> "$GITHUB_OUTPUT"
-        sudo install -d -o "$(id -u)" -g "$(id -g)" /var/cache/orbit/php-packages
-
-    # The runner keeps the pinned files between runs. The installer tries Orbit's mirror release before Sury.
-    - name: Restore the PHP packages
-      if: runner.environment == 'github-hosted'
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      with:
-        path: /var/cache/orbit/php-packages
-        key: orbit-php-build-${{ steps.key.outputs.key }}
-
-    # A hosted runner image ships other PHP packages and the ondrej/php source; --purge-extras removes them here only.
-    - name: Install the recipe PHP build
-      if: runner.environment == 'github-hosted'
-      shell: bash
-      working-directory: ${{ github.workspace }}
-      env:
-        COVERAGE: ${{ inputs.coverage }}
-      # The installer as root uses only a root-owned cache; the restore above wrote it as the runner.
-      run: |
-        sudo chown -R root:root /var/cache/orbit/php-packages
-        sudo python3 bin/php-build install --profile=ci-runner --ci --purge-extras --coverage "$COVERAGE"
-        sudo chown -R "$(id -u):$(id -g)" /var/cache/orbit/php-packages
-
-    - name: Verify the recipe PHP build
-      shell: bash
-      working-directory: ${{ github.workspace }}
-      run: python3 bin/php-build verify --profile=ci-runner
-
+        php-version: '8.5'
+        extensions: bcmath, curl, dom, intl, mbstring, pcntl, pdo_sqlite, zip
+        coverage: ${{ inputs.coverage }}
+        tools: composer:2.10.3
     - name: Locate Composer download cache
       id: composer-cache
       shell: bash

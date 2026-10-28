@@ -86,7 +86,7 @@ Keep `docs/generated/context.json`, `docs/docs.json`, `docs/decisions/overview.m
 
 Run `bin/generated-merge --install` once in each clone before merging branches. `bin/bootstrap` also installs this local Git driver. It needs the normal Docs and Gateway Composer dependencies and the web app's Bun dependencies. Git does not distribute driver configuration with attributes; a fresh clone and a hosted merge service do not run it automatically. Prepare the merge locally with the driver, then publish the checked merge through the normal review workflow. No global Git configuration is changed.
 
-The Docs CI job installs the Gateway's locked runtime Composer dependencies with `--no-dev` and the web app's locked Bun dependencies before running tests. The merge proof needs Gateway route discovery and `openapi-typescript`, not Gateway test or analysis tools. The Docs project's own development dependencies remain installed.
+The Generated contracts CI job installs the Gateway's locked runtime Composer dependencies with `--no-dev` and the web app's locked Bun dependencies. It needs Gateway route discovery and `openapi-typescript`. Docs build installs runtime dependencies only and checks the index and documentation lint.
 
 For Orbit task workspaces whose Project setup list uses separate dependency steps instead of `bin/bootstrap`, the operator must add `orbit instance:setup-step:create generated-merge --project=PROJECT_ID --command='bin/generated-merge --install' --timeout=30` after this change merges. Replace `PROJECT_ID` with the Orbit Project ID. The baseline setup installs the driver before agent turns. Apply this live Project change only after merge; repository changes do not update the live setup list. The implementer uses the driver when a conflict fixup merges main.
 
@@ -110,15 +110,15 @@ Run the tests that cover your change with stock Pest: `vendor/bin/pest --compact
 
 Follow the [Feature delivery merge gate](/reference/implementation-loop#full-suites-gate-merges) for PR checks.
 
-Every CI run on `main`, a push, the nightly run and a manual dispatch, runs every project's full suite as a pull request does, with the Gateway suite in stock Pest shards. CI selects no tests.
+CI runs builds and static checks on pull requests, main pushes, task handoff pushes and manual dispatches. It runs no test suites or nightly test jobs. Every test file remains in the repository.
 
-The [CI reference](/reference/implementation-loop#ci) lists the rules. Orbit's task gate, `bin/review-check`, runs no tests. CI runs the full suites of each task handoff on the handoff commit. The [feature delivery reference](/reference/implementation-loop#the-candidate-gate) lists the gate's steps.
+The [CI reference](/reference/implementation-loop#ci) lists the rules. Orbit's task gate, `bin/review-check`, runs no tests. CI runs builds and static checks on the handoff commit. The [feature delivery reference](/reference/implementation-loop#the-candidate-gate) lists the gate's steps.
 
 The `test` script in each PHP project, and root `bin/test`, pass `--colors=never` to Pest. `bin/pest-plain` strips any ANSI control sequences that remain. The output has no ANSI escape codes and still ends with the `Tests:` summary. The scripts do not pass `--no-progress`, because parallel Pest then omits that summary. Keep the flag on the scripts.
 
 Test fixtures must work with the dependencies their CI job installs. For cross-project source fixtures, load the real source with the test project's dependency autoloader and include every adapter bootstrap file. Do not rely on another project's `vendor/` directory unless the job explicitly installs it.
 
-The Gateway's package-cache integration tests run real npm and Bun installs. Keep Node/npm and Bun available locally. CI supplies Bun 1.4.2 in the Gateway project and shard jobs.
+The Gateway's package-cache integration tests run real npm and Bun installs. Keep Node/npm and Bun available locally. CI supplies Bun 1.4.2 for the web build and generated contracts.
 
 Local SSH fixtures give task-runner login shells a disposable `HOME`, not the contributor's shell profiles. Guest-script fixtures redirect host paths, including `/usr/local/bin`, into their temporary root. Keep these boundaries when adding tests: a check must not depend on personal profile output or write host tool launchers.
 
@@ -132,7 +132,7 @@ Keep real subprocess coverage for remote programs that manage Git state or proce
 
 Keep a real-clock case where enforcing the timeout is the behavior under test. Start a readiness-timeout fixture with its normal startup budget, then set its short deadline after `Process::start()` returns; process launch must not expire before the readiness helper runs. Scheduler tests advance the framework clock instead of sleeping.
 
-In an Orbit task, the implementer runs only the tests that cover the change in each changed Composer project. The Gateway runs the Project check at handoff, and CI runs the full suites on the handoff commit. Outside an Orbit task, run these commands in each changed project, such as `apps/cli`:
+In an Orbit task, the implementer runs only the tests that cover the change in each changed Composer project. The Gateway runs the Project check at handoff, and CI runs builds and static checks on the handoff commit. Outside an Orbit task, run these commands in each changed project, such as `apps/cli`:
 
 ```bash
 composer test
@@ -147,7 +147,7 @@ Gateway tests run the shell programs that Orbit installs on Ubuntu Nodes. On mac
 
 Some tests run Node programs that use Linux kernel interfaces, such as `/proc/net/tcp` or `os.O_PATH`. On Linux, such as in CI, these tests run directly. On another system, such as macOS, they run on the Linux SSH host that `ORBIT_LINUX_TEST_HOST` names, such as an Ubuntu machine like the Nodes. The host needs the tools used by the delegated case and must accept `ssh` without a prompt.
 
-Ordinary cases need no sudo. Only deliberately selected `privileged` cases need a disposable host with sudo and the `caddy` account; the default test selection excludes them. See [Gateway tests and privilege](/reference/implementation-loop#gateway-tests-and-privilege). When `ORBIT_LINUX_TEST_HOST` is not set, these tests are skipped, and the skip message names the variable. CI runs them on Linux, so a skip on your machine does not hide them from review.
+Ordinary cases need no sudo. Only deliberately selected `privileged` cases need a disposable host with sudo and the `caddy` account; the default test selection excludes them. See [Gateway tests and privilege](/reference/implementation-loop#gateway-tests-and-privilege). When `ORBIT_LINUX_TEST_HOST` is not set, these tests are skipped, and the skip message names the variable. CI runs no test suites; record local verification separately.
 
 Each test process copies `apps/gateway` to the host with rsync once and reuses the copy. The copy holds only the files that Git would track, as `git ls-files --cached --others --exclude-standard` lists them, and `vendor/`. So ignored files such as keys, logs, caches, and databases stay local, and no `.env` file except `.env.example` leaves your machine. The copy lives in a mode 700 directory under `/tmp/orbit-gateway-linux-tests-<uid>`. The process removes its copy when it ends, also on Ctrl-C or `SIGTERM`. The host stops a test that runs longer than five minutes, or `ORBIT_LINUX_TEST_TIMEOUT` seconds. A later run removes the copies that a killed process left, after six hours.
 
@@ -179,7 +179,7 @@ Cover the SDK retry's default clock with one short test that uses real time. Inj
 
 The composition proof uses the real renderer at 50 ms with at least seven outer ticks, three inner phases, off-tick admission and resume, and proportionally scaled cadence bounds. A separate fast test pins the production interval to 300 ms. Terminal recordings keep the production interval. The proof for printing lines still observes five frames at 300 ms in each frame order.
 
-CLI and Docs tests have a stock PHPUnit limit of two seconds per test, for every test size and without exceptions. Unsized Gateway tests have a two-second local limit and a five-second CI limit. The Gateway shard and privileged steps pass PHPUnit's standard `--default-time-limit=5` through Pest because shared CI hosts can be CPU-saturated. An over-limit test fails the suite. Investigate failures at the applicable limit rather than adding retries, sleeps, skips, or per-test budgets. There is no whole-suite or CI-step duration gate.
+CLI and Docs tests have a stock PHPUnit limit of two seconds per test, for every test size and without exceptions. Unsized Gateway tests have a two-second local limit and a five-second CI limit. The retained CI test tooling supports PHPUnit's standard `--default-time-limit=5` through Pest for a shared runner. An over-limit test fails the suite. Investigate failures at the applicable limit rather than adding retries, sleeps, skips, or per-test budgets. There is no whole-suite or CI-step duration gate.
 
 Gateway permits a reviewed exception only when real elapsed time is the behaviour under test and a controllable clock or transport would lose that proof. Put only the approved cases in a dedicated native PHPUnit class with class-level `#[Large]` and a one-line justification beside the attribute. Use stock `timeoutForLargeTests`, not custom timeout or sizing machinery; keep unrelated tests unsized. The [Gateway test time-limit reference](/reference/implementation-loop#gateway-test-time-limits) lists the approved exceptions and enforcement settings.
 
@@ -193,7 +193,7 @@ Add regression tests for behavior changes and their important failure modes. A b
 
 Docs tests build a fresh Git repository for each isolated case. Fixture indexing and command assertions run in-process unless process or environment isolation is the behavior under test. Temporary Git repositories disable automatic garbage collection and maintenance before the first commit, so background Git processes cannot write pack files during fixture cleanup.
 
-The generated-merge end-to-end proof runs outside Pest: `cd apps/docs && composer merge:check`. Docs includes it in `composer check`, so CI runs it in the project quality step, not the test step. It invokes the real Git, Composer, PHP, and Bun tools; it is not a PHP test and has no two-second per-test limit. No part of this proof runs in a Pest setup hook.
+The generated-merge end-to-end proof runs outside Pest: `cd apps/docs && composer merge:check`. Docs includes it in local `composer check`. CI runs neither that check nor the proof. It invokes the real Git, Composer, PHP, and Bun tools; it is not a PHP test and has no two-second per-test limit. No part of this proof runs in a Pest setup hook.
 
 The check prepares one source-only Git snapshot from the current source files, including independent branch commits and expected combined trees. It creates private runtime-only Composer autoloaders, then gives each case a complete private copy with separate Git metadata and loaders. The snapshot must stay clean and have no generated-merge cache or generated bootstrap cache files. Preparation copies recorded output fixtures; each merge and freshness case still starts real generator processes cold. Both merge callbacks and independent freshness cases use the original installed, locked web CLI through Bun, with no bundling or minification for the check.
 
@@ -207,9 +207,9 @@ Run the merge generators in sequence. Give each independent freshness gate its o
 
 Use the [delivery-line commands](/reference/delivery-line) to prove a bug on current main, to validate a task-group payload, to check the current pull-request head, and to verify post-merge live state. They print one JSON object, exit nonzero on failure, and do not file, merge, deploy, or roll back.
 
-GitHub CI runs quality checks and the full test suites of the five Composer projects, including documentation lint. It also checks and tests the web app, the Pi server, and the Rust agent, lints the desktop app, and lints and tests the Gateway's [remote programs](/reference/remote-programs), as [CI](/reference/implementation-loop#ci) lists.
+GitHub CI runs Composer validation, changed-PHP syntax checks, CLI and web builds, the Docs build and generated-contract freshness, as [CI](/reference/implementation-loop#ci) lists. It builds agent delivery only when the published agent's `apps/agent` tree differs; otherwise it reuses the verified published artifacts.
 
-Root `composer check` runs `bin/review-check`. It runs `composer validate --strict` and `composer check` in each of the five Composer projects, several projects at once. It runs no test suite. It checks the working tree as it is, uncommitted changes included, and writes a report under `<git-common-dir>/orbit-checks/<HEAD>/`. For changed paths it also checks generated OpenAPI and MCP artifacts, Rust formatting, the web and Pi server profiles, and a PHP finding pack. Artifact failures name the regeneration command. A missing tool fails its check. Orbit's Project task check runs this gate at every task handoff, and CI runs the handoff's full suites. [The candidate gate](/reference/implementation-loop#the-candidate-gate) lists every check.
+Root `composer check` runs `bin/review-check`. It runs `composer validate --strict` and `composer check` in each of the five Composer projects, several projects at once. It runs no test suite. It checks the working tree as it is, uncommitted changes included, and writes a report under `<git-common-dir>/orbit-checks/<HEAD>/`. For changed paths it also checks generated OpenAPI and MCP artifacts, Rust formatting, the web and Pi server profiles, and a PHP finding pack. Artifact failures name the regeneration command. A missing tool fails its check. Orbit's Project task check runs this gate at every task handoff, and CI runs the handoff's builds and static checks. [The candidate gate](/reference/implementation-loop#the-candidate-gate) lists every check.
 
 The five projects share one tooling baseline: the same Composer script names and commands, the same `composer check` steps, and PHPStan level 9. `bin/tooling-baseline` fails when a project drifts from it, or when Pint skips a folder that Rector or PHPStan checks. CI and `bin/review-check` run it. To change a project's tooling on purpose, change the baseline in the same pull request and give the reason for any difference.
 
@@ -344,7 +344,7 @@ The command isolates Laravel's configuration-cache path in its private scratch d
 
 An ADR number closed on the base can pass at an older branch's head but fail in the merge result: the merge result is what lands on main.
 
-CI's Docs job in the project matrix checks out the immutable event SHA (`github.sha`) and runs `composer check` and the full Docs suite once. On pull requests, that SHA is the event's merge commit, not the moving `refs/pull/N/merge` ref or the PR head. `Required checks` requires this job on every event; there is no second Docs merge-ref job.
+CI's Docs build job checks out the immutable event SHA (`github.sha`), checks the generated context index and runs strict documentation lint. On pull requests, that SHA is the event's merge commit, not the moving `refs/pull/N/merge` ref or the PR head. `Required checks` requires this job on every event; there is no second Docs merge-ref job.
 
 The command never fetches. Make both refs available locally before running it. `--help` lists the flags and exit codes: 0 means lint passed, 1 means lint failed, and 2 means the preview could not be checked. Missing refs report `base_unavailable` or `head_unavailable`; conflicts report `merge_conflict` and never fall back to checking the head.
 

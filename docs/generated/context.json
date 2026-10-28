@@ -2221,9 +2221,6 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Activity",
-                "Cluster",
-                "Database server",
                 "Deployment",
                 "Extension",
                 "Gateway",
@@ -2232,8 +2229,6 @@
                 "Pi server",
                 "Process",
                 "Project",
-                "Role",
-                "Route",
                 "Schedule",
                 "Subtask",
                 "Task",
@@ -2241,9 +2236,7 @@
                 "Task workspace",
                 "Tool"
             ],
-            "governing_adrs": [
-                "2026"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/incus-topologies.md",
