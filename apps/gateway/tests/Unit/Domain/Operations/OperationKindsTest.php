@@ -28,7 +28,6 @@ describe(OperationKinds::class, function (): void {
     });
 });
 
-
 it('refuses unenforced kind run and completion guarantees while loading declarations', function (string $part, string $key): void {
     $definition = OperationKinds::definitions()['firewall.allow'];
     if ($part === 'kind') {
@@ -46,7 +45,10 @@ it('refuses unenforced kind run and completion guarantees while loading declarat
     ['runs', 'unknown_guard'],
 ]);
 
-
 it('reports optional capabilities unavailable until their enforcement ships', function (string $capability): void {
     expect(OperationKinds::supports($capability))->toBeFalse();
-})->with(['children', 'children_settled', 'list_of', 'receipts', 'unknown']);
+})->with(['children', 'children_settled', 'list_of', 'unknown']);
+
+it('reports the enforced target receipt capability', function (): void {
+    expect(OperationKinds::supports('receipts'))->toBeTrue();
+});
