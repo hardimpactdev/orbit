@@ -6,6 +6,7 @@ namespace Tests\Support;
 
 use App\Domain\Operations\SwampOperationExecutor;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Arr;
 use LogicException;
@@ -16,7 +17,8 @@ final class FirewallOperationProof
     public static function finish(string $kind, string $worker = 'test'): Operation
     {
         $executor = app(SwampOperationExecutor::class);
-        $operation = $executor->claim($kind, $worker) ?? throw new LogicException('Expected a queued firewall Operation.');
+        $peerNodeId = Node::query()->firstOrFail()->id;
+        $operation = $executor->claim($kind, $worker, $peerNodeId) ?? throw new LogicException('Expected a queued firewall Operation.');
         $remove = $kind === 'firewall.remove';
         $step = $remove ? 'ufw-remove' : 'ufw-converge';
         $result = ['backend' => $remove ? 'absent' : 'active'];
@@ -25,10 +27,10 @@ final class FirewallOperationProof
             'transport' => 'agent', 'name' => 'firewall.rule', 'input' => [
                 ...Arr::only($operation->input, ['name', 'action', 'source', 'port', 'protocol']),
                 'node_id' => $operation->node_id, 'operation' => $remove ? 'remove' : 'converge',
-            ]]);
+            ]], $peerNodeId);
         $executor->step($operation, ['worker' => $worker, 'key' => $step.':finish',
-            'name' => $step, 'status' => 'succeeded', 'result' => $receipt]);
+            'name' => $step, 'status' => 'succeeded', 'result' => $receipt], $peerNodeId);
 
-        return $executor->complete($operation, ['worker' => $worker, 'status' => 'succeeded', 'result' => $receipt]);
+        return $executor->complete($operation, ['worker' => $worker, 'status' => 'succeeded', 'result' => $receipt], $peerNodeId);
     }
 }

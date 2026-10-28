@@ -4,12 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Operations;
 
-use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
-use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
-use App\Models\Node;
 use App\Models\Operation;
 use App\Models\OperationStep;
 use App\Support\ValidatedData;
@@ -28,17 +24,17 @@ final readonly class SwampOperationExecutor
 {
     public const int LeaseSeconds = 120;
 
-    public function __construct(private OperationStore $store, private OperationExecutors $executors, private OperationExecutionContract $contract) {}
+    public function __construct(private OperationStore $store, private OperationExecutors $executors, private OperationExecutionContract $contract, private OperationSecrets $secrets, private OperationTransports $transports) {}
 
-    public function claim(string $kind, string $worker): ?Operation
+    public function claim(string $kind, string $worker, int $nodeId): ?Operation
     {
         if (! $this->executors->swamp($kind)) {
             throw new ResourceOperationException('operation.executor_invalid', 'This kind is not executed by Swamp.', 422);
         }
 
-        return DB::transaction(function () use ($kind, $worker): ?Operation {
+        return DB::transaction(function () use ($kind, $worker, $nodeId): ?Operation {
             $operation = Operation::query()->where('kind', $kind)->where('status', OperationStatus::Running->value)
-                ->where('worker', $worker)->first();
+                ->where('worker', $worker)->where('state->executor_lease_node_id', $nodeId)->first();
             $operation ??= Operation::query()->where('kind', $kind)
                 ->where(function ($query): void {
                     $query->where('status', OperationStatus::Queued->value)
@@ -52,7 +48,8 @@ final readonly class SwampOperationExecutor
             }
             $this->store->change($operation, [
                 'status' => OperationStatus::Running, 'worker' => $worker,
-                'attempts' => $operation->attempts + ($operation->worker === $worker ? 0 : 1),
+                'attempts' => $operation->attempts + ($operation->worker === $worker && ($operation->state['executor_lease_node_id'] ?? null) === $nodeId ? 0 : 1),
+                'state' => [...($operation->state ?? []), 'executor_lease_node_id' => $nodeId],
                 'started_at' => $operation->started_at ?? Carbon::now(),
                 'updated_at' => Carbon::now(),
             ]);
@@ -61,17 +58,17 @@ final readonly class SwampOperationExecutor
         });
     }
 
-    public function heartbeat(Operation $operation, string $worker): Operation
+    public function heartbeat(Operation $operation, string $worker, int $nodeId): Operation
     {
-        return $this->owned($operation, $worker, function (Operation $operation): void {
+        return $this->owned($operation, $worker, $nodeId, function (Operation $operation): void {
             $this->store->change($operation, ['updated_at' => Carbon::now()]);
         });
     }
 
     /** @param StepInput $data */
-    public function step(Operation $operation, array $data): Operation
+    public function step(Operation $operation, array $data, int $nodeId): Operation
     {
-        return $this->owned($operation, $data['worker'], function (Operation $operation) use ($data): void {
+        return $this->owned($operation, $data['worker'], $nodeId, function (Operation $operation) use ($data): void {
             $state = $operation->state ?? [];
             $fingerprint = hash('sha256', json_encode(array_diff_key($data, ['worker' => true]), JSON_THROW_ON_ERROR));
             $data['result'] = $this->contract->result($operation, $data['result'] ?? []);
@@ -119,21 +116,21 @@ final readonly class SwampOperationExecutor
     }
 
     /** @param CompletionInput $data */
-    public function complete(Operation $operation, array $data): Operation
+    public function complete(Operation $operation, array $data, int $nodeId): Operation
     {
-        return DB::transaction(function () use ($operation, $data): Operation {
+        return DB::transaction(function () use ($operation, $data, $nodeId): Operation {
             $operation->refresh();
             $receipt = ['status' => $data['status'], 'result' => $this->contract->result($operation, $data['result'] ?? []),
                 'error_code' => isset($data['error_code']) ? $this->contract->text($data['error_code']) : null];
             if ($operation->status->terminal()) {
-                if ($operation->worker !== $data['worker'] || ($operation->state['executor_completion'] ?? null) !== $receipt) {
+                if ($operation->worker !== $data['worker'] || ($operation->state['executor_lease_node_id'] ?? null) !== $nodeId || ($operation->state['executor_completion'] ?? null) !== $receipt) {
                     throw new ResourceOperationException('operation.completion_conflict', 'The Operation has another completion receipt.', 409);
                 }
 
                 return $operation;
             }
 
-            return $this->owned($operation, $data['worker'], function (Operation $operation) use ($receipt): void {
+            return $this->owned($operation, $data['worker'], $nodeId, function (Operation $operation) use ($receipt): void {
                 if ($operation->steps()->where('status', OperationStepStatus::Running->value)->exists()) {
                     throw new ResourceOperationException('operation.step_running', 'Finish the current step before completion.', 409);
                 }
@@ -145,10 +142,11 @@ final readonly class SwampOperationExecutor
                     'cancelled' => OperationOutcome::cancelled($receipt['result']),
                     default => OperationOutcome::failed(ValidatedData::string($receipt['error_code']), $receipt['result']),
                 };
+                $this->contract->execution($operation)?->assertCompletion($operation, $outcome);
                 $this->executors->completion($operation->kind)?->complete($operation, $outcome);
                 $this->store->change($operation, [
                     'status' => $outcome->status, 'result' => $outcome->result, 'error_code' => $outcome->errorCode,
-                    'failed_step' => $operation->steps()->where('status', OperationStepStatus::Failed->value)->value('name'),
+                    'failed_step' => $outcome->status === OperationStatus::Succeeded ? null : $operation->steps()->where('status', OperationStepStatus::Failed->value)->value('name'),
                     'current_step' => null, 'finished_at' => Carbon::now(), 'lock_key' => null,
                     'state' => [...($operation->state ?? []), 'executor_completion' => $receipt],
                 ]);
@@ -162,11 +160,11 @@ final readonly class SwampOperationExecutor
      * @param  RunInput  $data
      * @return array<string, mixed>
      */
-    public function run(Operation $operation, array $data): array
+    public function run(Operation $operation, array $data, int $nodeId): array
     {
         $result = null;
-        $held = app(OperationAttemptLease::class)->hold($operation->id, function () use ($operation, $data, &$result): void {
-            $result = $this->invoke($operation, $data);
+        $held = app(OperationAttemptLease::class)->hold($operation->id, function () use ($operation, $data, $nodeId, &$result): void {
+            $result = $this->invoke($operation, $data, $nodeId);
         });
         if (! $held || $result === null) {
             throw new ResourceOperationException('operation.execution_busy', 'A named invocation still runs for this Operation.', 409);
@@ -178,12 +176,15 @@ final readonly class SwampOperationExecutor
     /** @param RunInput $data
      * @return array<string, mixed>
      */
-    private function invoke(Operation $operation, array $data): array
+    private function invoke(Operation $operation, array $data, int $nodeId): array
     {
         $fingerprint = hash('sha256', json_encode(array_diff_key($data, ['worker' => true]), JSON_THROW_ON_ERROR));
         $receipt = null;
-        $this->owned($operation, $data['worker'], function (Operation $operation) use ($data, $fingerprint, &$receipt): void {
-            $this->contract->authorizeRun($operation, $data);
+        $spec = null;
+        $references = [];
+        $this->owned($operation, $data['worker'], $nodeId, function (Operation $operation) use ($data, $fingerprint, &$receipt, &$spec, &$references): void {
+            $spec = $this->contract->authorizeRun($operation, $data);
+            $references = $this->secrets->references($operation, $data['input'], $spec['secrets'] ?? []);
             $runs = ValidatedData::object($operation->state['executor_runs'] ?? []);
             $value = $runs[$data['key']] ?? null;
             $receipt = $value === null ? null : ValidatedData::object($value);
@@ -191,38 +192,67 @@ final readonly class SwampOperationExecutor
                 throw new ResourceOperationException('operation.idempotency_conflict', 'The execution key has another payload.', 409);
             }
             if ($receipt === null) {
-                $runs[$data['key']] = ['fingerprint' => $fingerprint, 'transport' => $data['transport'], 'name' => $data['name'], 'result' => null];
+                $runs[$data['key']] = ['fingerprint' => $fingerprint, 'transport' => $data['transport'], 'name' => $data['name'], 'input' => $data['input'], 'references' => $references, 'step' => $spec['step'] ?? null, 'started' => false, 'result' => null];
                 $this->store->change($operation, ['state' => [...($operation->state ?? []), 'executor_runs' => $runs]]);
             }
         });
         if ($receipt !== null && $receipt['result'] !== null) {
             return ValidatedData::object($receipt['result']);
         }
-        $node = Node::query()->whereKey($operation->node_id)->firstOrFail();
-        if ($data['transport'] === 'agent') {
-            $runner = app(AgentCommandRunner::class);
-            $invoke = static fn (): array => $runner->run($node, $data['name'], $data['input']);
+        if ($spec === null) {
+            throw new \LogicException('An invocation requires its authorized run contract.');
+        }
+        $result = null;
+        $values = [];
+        if ($receipt !== null && ($receipt['started'] ?? false) === true && ! ($spec['resumable'] ?? false)) {
+            return ['error_code' => $spec['uncertain_error_code'] ?? 'operation.execution_uncertain'];
         } else {
-            $runner = app(RemoteProgramRunner::class);
-            $program = app(RemoteProgramCatalog::class)->program($data['name']);
-            $invoke = static function () use ($runner, $node, $program, $data): array {
-                $remote = $runner->run($node, $program, $data['input']);
-
-                return ['outcome' => $remote->outcome, 'data' => $remote->data, 'log' => $remote->log];
-            };
+            $this->owned($operation, $data['worker'], $nodeId, function (Operation $operation) use ($data): void {
+                if ($this->contract->cancellationAllowsRun($operation)) {
+                    $this->contract->execution($operation)?->beforeRun($operation, $data);
+                }
+            });
+            if (! $this->contract->cancellationAllowsRun($operation)) {
+                $result = ['error_code' => 'operation.cancelled'];
+            } else {
+                $hydrated = $this->secrets->hydrate($operation, $data['key'], $data['input'], $spec['secrets'] ?? []);
+                $values = $hydrated['values'];
+                $input = $hydrated['input'];
+                $this->contract->validateHydratedInput($operation, $data, $spec, $input);
+                $transport = $this->transports->get($data['transport']);
+                $invoke = static fn (): array => $transport->run($operation, $data, $input);
+                $this->owned($operation, $data['worker'], $nodeId, function (Operation $operation) use ($data): void {
+                    if ($this->contract->cancellationAllowsRun($operation)) {
+                        $this->contract->execution($operation)?->beforeRun($operation, $data);
+                        $state = $operation->state ?? [];
+                        $runs = ValidatedData::object($state['executor_runs'] ?? []);
+                        $entry = ValidatedData::object($runs[$data['key']]);
+                        $runs[$data['key']] = [...$entry, 'started' => true];
+                        $this->store->change($operation, ['state' => [...$state, 'executor_runs' => $runs]]);
+                    }
+                });
+                try {
+                    $result = $this->contract->cancellationAllowsRun($operation) ? $invoke() : ['error_code' => 'operation.cancelled'];
+                } catch (AgentCommandRefused $exception) {
+                    $result = ['error_code' => $exception->errorCode];
+                } catch (ResourceOperationException $exception) {
+                    throw OperationSecrets::refusal($exception);
+                } catch (\Throwable) {
+                    // Do not report a transport exception carrying hydrated credentials.
+                    throw new ResourceOperationException('operation.execution_failed', 'The named invocation did not return a receipt.', 502);
+                }
+            }
         }
-        try {
-            $this->owned($operation, $data['worker'], static function (Operation $operation): void {});
-            $result = $operation->cancel_requested_at !== null ? ['error_code' => 'operation.cancelled'] : $invoke();
-        } catch (AgentCommandRefused $exception) {
-            $result = ['error_code' => $exception->errorCode];
-        }
-        $result = $this->contract->result($operation, $result);
-        $this->owned($operation, $data['worker'], function (Operation $operation) use ($data, $fingerprint, $result): void {
+        $result = ValidatedData::object($this->secrets->redact($result, $values));
+        $this->owned($operation, $data['worker'], $nodeId, function (Operation $operation) use ($data, $values, $nodeId, &$result): void {
+            $runs = ValidatedData::object($operation->state['executor_runs'] ?? []);
+            $result = $this->contract->execution($operation)?->received($operation, $data, $result) ?? $result;
+            $result = $this->contract->result($operation, $result, $values);
             $state = $operation->state ?? [];
-            $runs = ValidatedData::object($state['executor_runs'] ?? []);
-            $runs[$data['key']] = ['fingerprint' => $fingerprint, 'transport' => $data['transport'], 'name' => $data['name'], 'result' => $result];
+            $entry = ValidatedData::object($runs[$data['key']]);
+            $runs[$data['key']] = [...$entry, 'result' => $result];
             $state['executor_runs'] = $runs;
+            $state['executor_lease_node_id'] = $nodeId;
             $this->store->change($operation, ['state' => $state]);
         });
 
@@ -230,12 +260,12 @@ final readonly class SwampOperationExecutor
     }
 
     /** @param Closure(Operation): void $write */
-    private function owned(Operation $operation, string $worker, Closure $write): Operation
+    private function owned(Operation $operation, string $worker, int $nodeId, Closure $write): Operation
     {
-        return DB::transaction(function () use ($operation, $worker, $write): Operation {
+        return DB::transaction(function () use ($operation, $worker, $nodeId, $write): Operation {
             $operation->refresh();
             if (! $this->executors->swamp($operation->kind) || $operation->status !== OperationStatus::Running
-                || $operation->worker !== $worker || $operation->updated_at?->lessThanOrEqualTo(Carbon::now()->subSeconds(self::LeaseSeconds))) {
+                || $operation->worker !== $worker || ($operation->state['executor_lease_node_id'] ?? null) !== $nodeId || $operation->updated_at?->lessThanOrEqualTo(Carbon::now()->subSeconds(self::LeaseSeconds))) {
                 throw new ResourceOperationException('operation.lease_lost', 'Claim the Operation before writing it.', 409);
             }
             $write($operation);

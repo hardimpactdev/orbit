@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Operations;
 
 use Illuminate\Contracts\Container\Container;
+use App\Support\ValidatedData;
 use LogicException;
 
 /**
@@ -57,6 +58,11 @@ final readonly class OperationKinds
     public function __construct(private Container $container, ?array $kinds = null)
     {
         $this->kinds = $kinds ?? self::definitions();
+        foreach ($this->kinds as $kind => $definition) {
+            if (is_array($definition)) {
+                self::validateDefinition($kind, $definition);
+            }
+        }
     }
 
     /** @return array<string, class-string<OperationKind>|SwampDefinition> */
@@ -68,6 +74,9 @@ final readonly class OperationKinds
                 if (isset($kinds[$name])) {
                     throw new LogicException("Duplicate operation kind [{$name}].");
                 }
+                if (is_array($class)) {
+                    self::validateDefinition($name, ValidatedData::object($class));
+                }
                 $kinds[$name] = $class;
             }
         }
@@ -75,11 +84,53 @@ final readonly class OperationKinds
         return $kinds;
     }
 
+    /** @param array<string, mixed> $definition */
+    private static function validateDefinition(string $kind, array $definition): void
+    {
+        self::assertKeys($kind, 'kind', $definition, ['executor', 'completion', 'execution', 'runs', 'completion_contract', 'result_fields']);
+        if (($definition['executor'] ?? null) !== 'swamp' || ! is_array($definition['completion_contract'] ?? null) || ! is_array($definition['runs'] ?? null)) {
+            throw new LogicException("Operation kind [{$kind}] requires a supported Swamp contract.");
+        }
+        self::assertKeys($kind, 'completion_contract', ValidatedData::object($definition['completion_contract']), ['step', 'transport', 'name', 'result']);
+        foreach ($definition['runs'] as $run) {
+            if (! is_array($run)) {
+                throw new LogicException("Operation kind [{$kind}] requires named run contracts.");
+            }
+            self::assertKeys($kind, 'runs', ValidatedData::object($run), ['transport', 'name', 'input_fields', 'input_values', 'bind', 'secrets', 'resumable', 'uncertain_error_code', 'node_field', 'input_schema']);
+        }
+    }
+
+    /** @param array<string, mixed> $definition
+     * @param list<string> $allowed
+     */
+    private static function assertKeys(string $kind, string $part, array $definition, array $allowed): void
+    {
+        $unsupported = array_diff(array_keys($definition), $allowed);
+        if ($unsupported !== []) {
+            throw new LogicException("Operation kind [{$kind}] has unsupported {$part} keys: ".implode(', ', $unsupported).'.');
+        }
+    }
+
+    /**
+     * Optional capabilities: children (including children_succeeded), children_settled, list_of, receipts.
+     * Each remains unavailable until its enforcement ships. Unknown names are unavailable.
+     */
+    public static function supports(string $capability): bool
+    {
+        return false;
+    }
+
     public static function executor(string $kind): string
     {
         $definition = self::definitions()[$kind] ?? throw new LogicException("Unknown operation kind [{$kind}].");
 
         return is_string($definition) ? 'php' : $definition['executor'];
+    }
+
+    /** @return class-string<OperationKind>|SwampDefinition|null */
+    public function definition(string $kind): string|array|null
+    {
+        return $this->kinds[$kind] ?? null;
     }
 
     public function for(string $kind): OperationKind

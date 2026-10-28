@@ -15,19 +15,19 @@ use LogicException;
 /**
  * Server-owned capabilities and evidence for one admitted kind.
  *
- * @phpstan-type RunContract array{transport: string, name: string, input_fields: list<string>, input_values: array<string, mixed>, node_field?: string, input_schema?: array<string, mixed>}
- * @phpstan-type SwampDefinition array{executor: 'swamp', completion: class-string, runs: list<RunContract>, completion_contract: array{step: string, transport: string, name: string, result: array<string, mixed>}, result_fields: list<string>}
+ * @phpstan-type RunContract array{transport: string, name: string, input_fields?: list<string>, input_values?: array<string, mixed>, bind?: array<string, string>, secrets?: array<string, string>, resumable?: bool, uncertain_error_code?: string, node_field?: string, step?: string, required?: bool, input_schema?: array<string, mixed>}
+ * @phpstan-type SwampDefinition array{executor: 'swamp', completion: class-string, execution?: class-string<OperationFamilyExecution>, runs: list<RunContract>, completion_contract: array{step: string, transport: string, name: string, result: array<string, mixed>}, result_fields: list<string>}
  *
  * @phpstan-import-type RunInput from SwampOperationExecutor
  */
 final readonly class OperationExecutionContract
 {
-    public function __construct(private CommandActivityInputSanitizer $redactor) {}
+    public function __construct(private CommandActivityInputSanitizer $redactor, private OperationKinds $kinds, private OperationSecrets $secrets, private OperationTransports $transports) {}
 
     /** @return SwampDefinition */
     private function definition(Operation $operation): array
     {
-        $definition = OperationKinds::definitions()[$operation->kind] ?? null;
+        $definition = $this->kinds->definition($operation->kind);
         if (! is_array($definition)) {
             throw new LogicException('A Swamp kind requires an execution and completion contract.');
         }
@@ -35,42 +35,112 @@ final readonly class OperationExecutionContract
         return $definition;
     }
 
-    /** @param RunInput $data */
-    public function authorizeRun(Operation $operation, array $data): void
+    /** @param RunInput $data
+     * @return RunContract
+     */
+    public function authorizeRun(Operation $operation, array $data): array
     {
         foreach ($this->definition($operation)['runs'] as $run) {
             if ($run['transport'] !== $data['transport'] || $run['name'] !== $data['name']) {
                 continue;
             }
-            $expected = Arr::only($operation->input, $run['input_fields']);
-            $expected = [...$expected, ...$run['input_values']];
+            $execution = $this->execution($operation);
+            if ($execution !== null) {
+                $descriptors = $execution->context($operation)['descriptors'];
+                $descriptor = array_find($descriptors, static fn (array $entry): bool => $entry['key'] === $data['key'] && $entry['name'] === $data['name'] && $entry['transport'] === $data['transport']);
+                if ($descriptor === null) {
+                    continue;
+                }
+                $run['resumable'] = ($run['resumable'] ?? false) && $descriptor['resumable'];
+                $run['step'] = $descriptor['step'];
+                $run['required'] = $descriptor['required'];
+            }
+            $expected = $execution?->input($operation, $data) ?? [...Arr::only($operation->input, $run['input_fields'] ?? []), ...($run['input_values'] ?? [])];
+            foreach ($run['bind'] ?? [] as $parameter => $path) {
+                if (! str_starts_with($path, 'input.') || ! Arr::has($operation->input, substr($path, 6))) {
+                    throw new ResourceOperationException('operation.execution_forbidden', 'The admitted input binding is missing.', 422);
+                }
+                Arr::set($expected, $parameter, Arr::get($operation->input, substr($path, 6)));
+            }
             if (isset($run['node_field'])) {
                 $expected[$run['node_field']] = $operation->node_id;
             }
-            try {
-                if ($run['transport'] === 'agent') {
-                    AgentSchemas::assertInput($run['name'], $data['input']);
-                } elseif (! isset($run['input_schema']) || AgentSchemas::errors(json_decode(json_encode((object) $data['input'], JSON_THROW_ON_ERROR), flags: JSON_THROW_ON_ERROR), $run['input_schema']) !== []) {
-                    continue;
-                }
-            } catch (LogicException) {
-                continue;
-            }
-            if ($operation->node_id !== null && $this->same($expected, $data['input'])) {
-                return;
+            if (($data['transport'] === 'gateway' || $operation->node_id !== null) && $this->same($expected, $data['input'])) {
+                return $run;
             }
         }
 
         throw new ResourceOperationException('operation.execution_forbidden', 'The invocation does not match the Operation contract.', 422);
     }
 
+    public function execution(Operation $operation): ?OperationFamilyExecution
+    {
+        $class = $this->definition($operation)['execution'] ?? null;
+
+        return $class === null ? null : app($class);
+    }
+
+    /** @return array{descriptors: list<array{key: string, step: string, transport: string, name: string, input: array<string, mixed>, resumable: bool, required: bool}>, result?: array<string, mixed>} */
+    public function context(Operation $operation): array
+    {
+        $context = $this->execution($operation)?->context($operation) ?? ['descriptors' => []];
+        foreach ($context['descriptors'] as $descriptor) {
+            $this->authorizeRun($operation, ['worker' => $operation->worker ?? '', 'key' => $descriptor['key'],
+                'transport' => $descriptor['transport'], 'name' => $descriptor['name'], 'input' => $descriptor['input']]);
+        }
+
+        return ['descriptors' => $context['descriptors'],
+            ...(isset($context['result']) ? ['result' => $this->result($operation, $context['result'])] : [])];
+    }
+
+    /** @param RunInput $data
+     * @param  RunContract  $spec
+     * @param  array<string, mixed>  $input
+     */
+    public function validateHydratedInput(Operation $operation, array $data, array $spec, #[\SensitiveParameter] array $input): void
+    {
+        try {
+            $transport = $this->transports->get($data['transport']);
+            $schema = $transport->schema($operation, $data);
+            $wire = $transport instanceof OperationTransportInput
+                ? $transport->wireInput($operation, $data, $input)
+                : json_decode(json_encode((object) $input, JSON_THROW_ON_ERROR), flags: JSON_THROW_ON_ERROR);
+            if ($schema !== true && $schema !== [] && AgentSchemas::errors($wire, $schema) === []) {
+                return;
+            }
+        } catch (\Throwable) {
+            // Only the fixed refusal leaves this boundary, never hydrated values or schema details.
+        }
+        throw new ResourceOperationException('operation.execution_forbidden', 'The invocation does not match the command schema.', 422);
+    }
+
+    public function cancellationAllowsRun(Operation $operation): bool
+    {
+        if ($operation->cancel_requested_at === null) {
+            return true;
+        }
+        $boundary = $this->execution($operation)?->cancellationBoundary($operation);
+        if ($boundary === null) {
+            return false;
+        }
+        $runs = ValidatedData::object($operation->state['executor_runs'] ?? []);
+        $receipt = $runs[$boundary['key']] ?? null;
+        if (! is_array($receipt) || ($receipt['transport'] ?? null) !== $boundary['transport'] || ($receipt['name'] ?? null) !== $boundary['name']) {
+            return false;
+        }
+        $result = $receipt['result'] ?? null;
+
+        return is_array($result) && ! isset($result['error_code']) && $this->same(Arr::only($result, array_keys($boundary['result'])), $boundary['result']);
+    }
+
     /**
      * Keep only declared scalar leaves. Never retain an open object or a raw program log.
      *
      * @param  array<string, mixed>  $result
+     * @param  list<string>  $knownValues
      * @return array<string, mixed>
      */
-    public function result(Operation $operation, array $result): array
+    public function result(Operation $operation, array $result, #[\SensitiveParameter] array $knownValues = []): array
     {
         $safe = [];
         foreach ($this->definition($operation)['result_fields'] as $path) {
@@ -80,7 +150,7 @@ final readonly class OperationExecutionContract
             }
         }
 
-        return ValidatedData::object($this->redactor->sanitizeProperties($safe));
+        return ValidatedData::object($this->secrets->redact($this->redactor->sanitizeProperties($safe), $knownValues));
     }
 
     public function text(string $text): string
@@ -95,6 +165,13 @@ final readonly class OperationExecutionContract
      */
     public function assertStep(Operation $operation, string $name, array $result): void
     {
+        if ($this->execution($operation) !== null) {
+            $proven = array_any(ValidatedData::object($operation->state['executor_runs'] ?? []), fn ($receipt) => is_array($receipt) && ($receipt['step'] ?? null) === $name && is_array($receipt['result'] ?? null)
+                && ! isset($receipt['result']['error_code']) && $this->same($receipt['result'], $result));
+            if (! $proven) {
+                throw new ResourceOperationException('operation.completion_unproven', 'The descriptor step has no matching keyed transport receipt.', 409);
+            }
+        }
         $contract = $this->definition($operation)['completion_contract'];
         if ($name !== $contract['step']) {
             return;

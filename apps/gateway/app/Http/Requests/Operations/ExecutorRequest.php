@@ -21,14 +21,28 @@ abstract class ExecutorRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        $id = config('dependency_detection.services_node_id');
+        $services = config('dependency_detection.services_node_id');
+        $workers = config('operation_executor.worker_node_ids', []);
+        $ids = is_array($workers) ? [...$workers, $services] : [$services];
         $caller = $this->getUserResolver()();
-        if ((! is_int($id) && ! is_string($id)) || preg_match('/\A[1-9][0-9]*\z/D', (string) $id) !== 1
-            || ! $caller instanceof Node || (string) $caller->id !== (string) $id) {
-            throw new ResourceOperationException('operation.executor_forbidden', 'Services peer required.', 403);
+        $allowed = array_any($ids, static fn (mixed $id): bool => (is_int($id) || is_string($id))
+            && preg_match('/\A[1-9][0-9]*\z/D', (string) $id) === 1
+            && $caller instanceof Node && (string) $caller->id === (string) $id);
+        if (! $allowed) {
+            throw new ResourceOperationException('operation.executor_forbidden', 'A configured executor peer is required.', 403);
         }
 
         return true;
+    }
+
+    public function peerNodeId(): int
+    {
+        $caller = $this->getUserResolver()();
+        if (! $caller instanceof Node) {
+            throw new ResourceOperationException('operation.executor_forbidden', 'An authenticated executor peer is required.', 403);
+        }
+
+        return $caller->id;
     }
 
     public function worker(): string
