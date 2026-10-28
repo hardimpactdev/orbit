@@ -409,7 +409,7 @@ To switch policy back:
 
 1. Disable `auto_deploy` on the affected Instances.
 2. Wait until no automatic operation is running or queued.
-3. Revert this PR (code-only, no migrations).
+3. Revert [orbit#1555](https://github.com/hardimpactdev/orbit/pull/1555) (code-only, no migrations).
 4. Re-enable `auto_deploy` (PHP owns again).
 
 ### One policy writer during the trial
