@@ -8,7 +8,9 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\AppDev\VitePortAllocator;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Models\Node;
@@ -24,6 +26,10 @@ final readonly class ProcessOperationAdmission
 
     public function execute(Process $process, string $verb, bool $created = false, bool $preserveRecord = false, ?Node $caller = null, ?string $requestId = null): Operation
     {
+        if (! array_key_exists('process.'.$verb, OperationKinds::definitions())) {
+            throw new ResourceOperationException('operation.kind_unavailable', 'This Process kind requires the shared child and result contracts.', 409);
+        }
+
         return DB::transaction(function () use ($process, $verb, $created, $preserveRecord, $caller, $requestId): Operation {
             $input = $this->inputFor($process, $verb, $created, $preserveRecord, $caller);
             $operation = $this->operations->execute('process.'.$verb, 'process', $process->id, ValidatedData::integer($input['node_id']), $input, 'operator', $requestId);

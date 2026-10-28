@@ -23,7 +23,7 @@ it('records timer intent with a command reference and replays its UUID', functio
     $response = $this->withHeader('Idempotency-Key', 'schedule-proof')->postJson('/api/v1/schedules', $this->payload)->assertAccepted();
     $operation = Operation::query()->sole();
     expect($response->getContent())->not->toContain('private-schedule-command')
-        ->and($operation->input['command'])->toBe(['$secret' => 'schedule.command', 'id' => Schedule::query()->sole()->id])
+        ->and($operation->input['command'])->toBe(['$secret' => 'schedule.command', 'id' => $this->node->id])
         ->and($operation->input['desired'])->toBe('enabled')
         ->and(Schedule::query()->sole()->status->value)->toBe('provisioning');
     $this->postJson('/api/v1/schedules', $this->payload)->assertAccepted()->assertJsonPath('data.id', $operation->id);

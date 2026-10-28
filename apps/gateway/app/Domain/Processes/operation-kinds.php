@@ -2,9 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Domain\Operations\OperationKinds;
 use App\Domain\Processes\ProcessOperationCompletion;
 
 return (static function (): array {
+    if (! OperationKinds::supports('children') || ! OperationKinds::supports('list_of') || ! OperationKinds::supports('receipts')) {
+        return [];
+    }
     $kinds = [];
     $artifact = ['process_id', 'runtime', 'name'];
     foreach (['create', 'update', 'start', 'stop', 'restart', 'destroy'] as $verb) {
@@ -34,6 +38,10 @@ return (static function (): array {
                 'bind' => array_combine($fields, array_map(static fn (string $field): string => 'input.vite_plan.listener.'.$field, $fields))];
             $runs[] = ['transport' => 'agent', 'name' => 'process.control', 'input_fields' => [...$artifact, 'on_demand'], 'input_values' => ['operation' => 'stop']];
         }
+        foreach ($runs as &$run) {
+            $run['resumable'] = ! ($run['name'] === 'process.control' && ($run['input_values']['operation'] ?? null) === 'restart');
+        }
+        unset($run);
         $proof = static function (string $variant) use ($verb): array {
             [$step, $name] = match ($verb) {
                 'create', 'update' => $variant === 'docker' ? ['process-converge-container', 'process.converge-container'] : ['process-stage-unit', 'process.stage-unit'],

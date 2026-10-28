@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Domain\Schedules;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -19,6 +21,10 @@ final readonly class ScheduleOperationAdmission
 
     public function execute(Schedule $schedule, string $verb, bool $cascade = false, ?Node $caller = null, ?string $requestId = null, bool $created = false): Operation
     {
+        if (! array_key_exists('schedule.'.$verb, OperationKinds::definitions())) {
+            throw new ResourceOperationException('operation.kind_unavailable', 'This Schedule kind requires the shared receipt contract.', 409);
+        }
+
         return DB::transaction(function () use ($schedule, $verb, $cascade, $caller, $requestId, $created): Operation {
             $input = $this->inputFor($schedule, $verb, $cascade, $caller, $created);
             // UUID Schedules share their owner's target lock; Operation target IDs are integers.
@@ -43,7 +49,7 @@ final readonly class ScheduleOperationAdmission
         $input = ['id' => $schedule->id, 'node_id' => $target->node->id, 'caller_node_id' => $caller?->id, 'created' => $created];
         if ($verb === 'create') {
             $input += $this->specification->input($schedule, $target);
-            $input['command'] = ['$secret' => 'schedule.command', 'id' => $schedule->id];
+            $input['command'] = ['$secret' => 'schedule.command', 'id' => $schedule->target_id];
             $input['command_hash'] = hash('sha256', $schedule->command);
         } elseif ($verb === 'destroy') {
             $input += ['group' => $target->group, 'cascade' => $cascade];
