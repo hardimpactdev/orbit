@@ -84,6 +84,11 @@ final readonly class CachedGitHubApi implements GitHubApi
         return $this->github->pullRequestsByHead($token, $repository, $head);
     }
 
+    public function mergedPullRequestUrls(#[SensitiveParameter] string $token, GitHubRepository $repository, string $sha): array
+    {
+        return $this->github->mergedPullRequestUrls($token, $repository, $sha);
+    }
+
     public function repositoryChecksToken(GitHubAppCredentials $credentials, int $installationId, GitHubRepository $repository): string
     {
         return $this->tokens->token($credentials->appId, $installationId, $repository, 'checks', fn (): string => $this->github->repositoryChecksToken($credentials, $installationId, $repository));

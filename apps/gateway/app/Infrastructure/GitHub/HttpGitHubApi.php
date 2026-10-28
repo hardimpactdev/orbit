@@ -326,6 +326,28 @@ final readonly class HttpGitHubApi implements GitHubApi
         return $pullRequests;
     }
 
+    public function mergedPullRequestUrls(#[SensitiveParameter] string $token, GitHubRepository $repository, string $sha): array
+    {
+        $response = $this->send(fn (): Response => $this->request()->withToken($token)
+            ->get($this->repositoryPath($repository).'/commits/'.$sha.'/pulls', ['per_page' => 100]));
+        $rows = $response->json();
+        if (! $response->successful() || ! is_array($rows) || ! array_is_list($rows) || count($rows) >= 100) {
+            throw GitHubApiException::unavailable();
+        }
+        $urls = [];
+        foreach ($rows as $row) {
+            if (! is_array($row) || ! is_int($row['number'] ?? null) || ! is_string($row['html_url'] ?? null)
+                || $repository->pullRequestNumber($row['html_url']) !== $row['number']) {
+                throw GitHubApiException::unavailable();
+            }
+            if (is_string($row['merged_at'] ?? null) && ($row['merge_commit_sha'] ?? null) === $sha) {
+                $urls[] = $row['html_url'];
+            }
+        }
+
+        return array_values(array_unique($urls));
+    }
+
     public function repositoryChecksToken(
         GitHubAppCredentials $credentials,
         int $installationId,
