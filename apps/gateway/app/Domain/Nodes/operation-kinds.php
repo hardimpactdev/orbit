@@ -8,6 +8,7 @@ use App\Domain\Nodes\NodeBootstrapOperationCompletion;
 use App\Domain\Nodes\NodeChildAdmission;
 use App\Domain\Nodes\NodeFootprintOperationCompletion;
 use App\Domain\Nodes\NodeFootprintOperationExecution;
+use App\Domain\Nodes\NodeNetworkOperationExecution;
 use App\Domain\Nodes\NodePhpPackagesOperationCompletion;
 use App\Domain\Nodes\NodeRoleOperationCompletion;
 use App\Domain\Nodes\NodeRoleOperationExecution;
@@ -25,6 +26,7 @@ $bound = static fn (string $name, string $path, array $parameters): array => [
 ];
 
 $wireguard = [
+    'admission' => NodeChildAdmission::class,
     'executor' => 'swamp',
     'completion' => NodeWireGuardOperationCompletion::class,
     'execution' => NodeWireGuardOperationExecution::class,
@@ -135,6 +137,45 @@ $nodeKinds = [
     ],
 ];
 
+$nodeKinds['node.network_converge'] = [
+    'executor' => 'swamp', 'admission' => NodeChildAdmission::class,
+    'execution' => NodeNetworkOperationExecution::class,
+    'completion' => NodeWireGuardOperationCompletion::class,
+    'runs' => [
+        ['transport' => 'gateway', 'name' => 'node.prepare-network', 'input_fields' => ['roleless_operator'], 'resumable' => true],
+        ['transport' => 'gateway', 'name' => 'node.network-result', 'input_values' => [], 'resumable' => true],
+        ...array_map(static fn (string $name): array => [
+            'transport' => 'bootstrap-ssh', 'name' => $name,
+            'bind' => array_combine(
+                ['agent_pin', 'bootstrap_host', 'bootstrap_port', 'bootstrap_fingerprint', 'bootstrap_user', 'bootstrap_identity'],
+                array_map(static fn (string $field): string => 'input.'.$field,
+                    ['agent_pin', 'bootstrap_host', 'bootstrap_port', 'bootstrap_fingerprint', 'bootstrap_user', 'bootstrap_identity'])),
+            'secrets' => ['bootstrap_identity' => 'node.bootstrap_ssh_identity'],
+        ], ['wireguard.prepare-peer-key', 'wireguard.publish-peer', 'wireguard.rollback-peer']),
+        ['transport' => 'agent', 'name' => 'agent.status', 'input_values' => []],
+        ['transport' => 'agent', 'name' => 'firewall.rules', 'bind' => ['desired' => 'input._network.trust.desired',
+            'remove' => 'input._network.trust.remove', 'enable' => 'input._network.trust.enable']],
+    ],
+    'children' => [['kind' => 'node.wireguard_hub_converge', 'node_from' => 'input._network.hub_id']],
+    'completion_contract' => ['step' => 'network-result', 'transport' => 'gateway', 'name' => 'node.network-result',
+        'result' => ['network_proven' => true], 'children_succeeded' => ['node.wireguard_hub_converge']],
+    'result_fields' => ['prepared', 'network_proven', 'public_key', 'retained', 'architecture', 'matches', 'changed', 'outcome', 'error_code', 'failed_step'],
+];
+
+$nodeKinds['node.network_rollback'] = [
+    'executor' => 'swamp', 'admission' => NodeChildAdmission::class, 'completion' => NodeWireGuardOperationCompletion::class,
+    'runs' => [[
+        'transport' => 'bootstrap-ssh', 'name' => 'wireguard.rollback-peer',
+        'input_fields' => ['agent_pin', 'bootstrap_host', 'bootstrap_port', 'bootstrap_user', 'bootstrap_fingerprint', 'bootstrap_identity', 'command_input'],
+        'bind' => array_combine(['agent_pin', 'bootstrap_host', 'bootstrap_port', 'bootstrap_user', 'bootstrap_fingerprint', 'bootstrap_identity', 'command_input'],
+            array_map(static fn (string $field): string => 'input.'.$field,
+                ['agent_pin', 'bootstrap_host', 'bootstrap_port', 'bootstrap_user', 'bootstrap_fingerprint', 'bootstrap_identity', 'command_input'])),
+        'secrets' => ['bootstrap_identity' => 'node.bootstrap_ssh_identity'],
+    ]],
+    'completion_contract' => ['step' => 'network-rollback', 'transport' => 'bootstrap-ssh', 'name' => 'wireguard.rollback-peer', 'result' => []],
+    'result_fields' => ['error_code'],
+];
+
 $nodeRoleDefinition = [
     'executor' => 'swamp', 'execution' => NodeRoleOperationExecution::class, 'completion' => NodeRoleOperationCompletion::class,
     'admission' => NodeChildAdmission::class,
@@ -145,16 +186,17 @@ $nodeRoleDefinition = [
         ...array_map(static fn (string $name): array => ['transport' => 'agent', 'name' => $name], [
             'node.prepare-storage-root', 'caddy.install-package', 'caddy.order-after-vpn', 'firewall.rules', 'firewall.router-lan',
             'wireguard.gateway-dns', 'role.install-prerequisites', 'recipe.install-javascript', 'php.install-build',
-            'ci-runner.host', 'hibernation.prepare-directories',
+            'ci-runner.host', 'hibernation.prepare-directories', 'wireguard.commit-peer',
         ]),
     ],
     'children' => array_map(static fn (string $kind): array => ['kind' => $kind, 'node_from' => 'intent.node_ids'], [
-        'node.network_converge', 'node.role_relocate_source', 'node.role_relocate_target', 'node.converge', 'fleet.cli_converge', 'route.caddy_converge', 'route.private_dns_publish',
+        'node.network_converge', 'node.network_rollback', 'node.role_relocate_source', 'node.role_relocate_target', 'node.converge', 'fleet.cli_converge', 'route.caddy_converge', 'route.private_dns_publish',
         'tool.manager_converge', 'metrics.reconcile', 'metrics.role_converge', 'metrics.role_remove',
         'analytics.role_converge', 'analytics.role_remove', 'websocket.role_converge', 'websocket.role_remove',
     ]),
     'completion_contract' => ['step' => 'role-result', 'transport' => 'gateway', 'name' => 'node.role-result', 'result' => ['role_proven' => true]],
-    'result_fields' => ['prepared', 'role_proven', 'assignment_id', 'created', 'follow_up', 'failed_step', 'error_code', 'outcome', 'matches',
+    'compensations' => ['node.network_rollback'], 'cancellation_boundary' => 'role-network',
+    'result_fields' => ['role_rollback_required', 'prepared', 'role_proven', 'assignment_id', 'created', 'follow_up', 'failed_step', 'error_code', 'outcome', 'matches',
         'changed', 'configured', 'access_granted', 'version', 'transferred', 'role_wait_until'],
 ];
 
@@ -164,8 +206,12 @@ foreach (['node.role_add', 'node.role_converge', 'node.role_remove', 'node.role_
 
 $nodeKinds['node.role_relocate_source']['completion'] = NodeRoleRelocationSourceCompletion::class;
 
-if (! OperationKinds::supports('children') || ! OperationKinds::supports('children_settled') || ! OperationKinds::supports('list_of')) {
-    unset($nodeKinds['node.converge'], $nodeKinds['node.role_add'], $nodeKinds['node.role_converge'], $nodeKinds['node.role_remove'], $nodeKinds['node.role_relocate'], $nodeKinds['node.role_relocate_source'], $nodeKinds['node.role_relocate_target']);
+if (! OperationKinds::supports('children') || ! OperationKinds::supports('children_settled') || ! OperationKinds::supports('list_of') || ! OperationKinds::supports('compensations')) {
+    unset($nodeKinds['node.role_add'], $nodeKinds['node.role_converge'], $nodeKinds['node.role_remove'], $nodeKinds['node.role_relocate'], $nodeKinds['node.role_relocate_source'], $nodeKinds['node.role_relocate_target']);
+}
+
+if (! OperationKinds::supports('children_settled') || ! OperationKinds::supports('list_of')) {
+    unset($nodeKinds['node.converge']);
 }
 
 return $nodeKinds;

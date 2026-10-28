@@ -203,3 +203,68 @@ it('requires public SSH recovery only for the last online role outside Cluster o
         expect($plan[1])->toMatchArray(['name' => 'firewall.rules', 'result' => ['matches' => true], 'optional' => false]);
     }
 })->with(['last-online', 'other-role', 'offline', 'cluster']);
+
+function firstRoleNetworkProofOperation(): Operation
+{
+    $operation = roleProofOperation();
+    $network = ['type' => 'child', 'key' => 'role-network', 'kind' => 'node.network_converge', 'node_id' => $operation->node_id,
+        'input' => ['roleless_operator' => false], 'optional' => false];
+    $commit = ['type' => 'run', 'key' => 'role-network-commit', 'transport' => 'agent', 'name' => 'wireguard.commit-peer',
+        'input' => ['public_key' => base64_encode(str_repeat('a', 32))], 'result' => [], 'optional' => false];
+    $plan = [$network, ...$operation->input['_role_plan'], $commit];
+    $operation->update(['input' => [...$operation->input, '_role_plan' => $plan],
+        'state' => [...$operation->state, 'role_first_managed' => true, 'child_intents' => [
+            array_intersect_key($network, array_flip(['key', 'kind', 'node_id', 'input'])), ...$operation->state['child_intents'],
+            ['key' => 'role-network-rollback', 'kind' => 'node.network_rollback', 'node_id' => $operation->node_id, 'input' => []]]]]);
+    roleProofChild($operation, 'role-network')->update(['result' => ['network_proven' => true, 'retained' => true, 'public_key' => base64_encode(str_repeat('a', 32))]]);
+
+    return $operation;
+}
+
+it('keeps a first-role failure open until its peer compensation is proven', function (bool $rollbackFails): void {
+    $operation = firstRoleNetworkProofOperation();
+    roleProofChild($operation, 'role-runtime', 'failed', 'websocket.publication_failed');
+    $execution = app(NodeRoleOperationExecution::class);
+    expect(array_column($execution->childContext($operation)['children'], 'kind'))->toContain('node.network_rollback');
+    expect(fn () => $execution->result($operation))->toThrow(ResourceOperationException::class);
+    expect(fn () => $execution->assertCompletion($operation, OperationOutcome::failed('websocket.publication_failed', [])))
+        ->toThrow(ResourceOperationException::class);
+    roleProofChild($operation, 'role-network-rollback', $rollbackFails ? 'failed' : 'succeeded', $rollbackFails ? 'wireguard.peer_rollback_failed' : null);
+
+    $result = $execution->result($operation);
+
+    expect($result)->toMatchArray(['error_code' => $rollbackFails ? 'vpn.peer_rollback_failed' : 'websocket.publication_failed',
+        'failed_step' => $rollbackFails ? 'role-network-rollback' : 'role-runtime']);
+})->with([false, true]);
+
+it('projects cancellation from the compensation child without requiring another parent effect', function (): void {
+    $operation = firstRoleNetworkProofOperation();
+    $operation->update(['cancel_requested_at' => now()]);
+    $execution = app(NodeRoleOperationExecution::class);
+    expect($execution->context($operation)['result'])->toBe(['role_rollback_required' => true]);
+    roleProofChild($operation, 'role-network-rollback');
+
+    $result = $execution->context($operation)['result'];
+    unset($result['role_rollback_required']);
+    $execution->assertCompletion($operation, OperationOutcome::cancelled($result));
+
+    expect($result)->toMatchArray(['role_proven' => true, 'error_code' => 'operation.cancelled', 'failed_step' => 'operation']);
+});
+
+it('does not restore a peer transaction already committed after successful runtime proof', function (): void {
+    $operation = firstRoleNetworkProofOperation();
+    roleProofChild($operation, 'role-runtime');
+    $operation->update(['state' => [...$operation->state, 'executor_runs' => ['role-network-commit' => [
+        'transport' => 'agent', 'name' => 'wireguard.commit-peer', 'result' => []]]], 'cancel_requested_at' => now()]);
+
+    expect(array_column(app(NodeRoleOperationExecution::class)->childContext($operation)['children'], 'kind'))->not->toContain('node.network_rollback');
+});
+
+it('reports an occupied CI host as failure before removing its firewall', function (string $outcome): void {
+    $operation = roleProofOperation();
+    $operation->update(['input' => [...$operation->input, '_role_plan' => [['type' => 'run', 'key' => 'role-ci-runner',
+        'transport' => 'agent', 'name' => 'ci-runner.host', 'input' => ['action' => 'remove'], 'result' => ['outcome' => 'retained'], 'optional' => false]]]]);
+
+    expect(app(NodeRoleOperationExecution::class)->received($operation, ['key' => 'role-ci-runner', 'name' => 'ci-runner.host'], ['outcome' => $outcome]))
+        ->toBe(['error_code' => 'ci-runner.host_failed']);
+})->with(['occupied', 'drift', '']);

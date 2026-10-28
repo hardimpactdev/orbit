@@ -6,7 +6,10 @@ namespace App\Domain\Nodes;
 
 use App\Actions\Nodes\AdmitNodeRoleOperationAction;
 use App\Actions\Nodes\StartNodeConvergeAction;
+use App\Actions\Nodes\StartNodeNetworkOperationAction;
+use App\Actions\Nodes\StartNodeNetworkRollbackAction;
 use App\Actions\Nodes\StartNodePhpPackagesAction;
+use App\Actions\Nodes\StartNodeWireGuardHubOperationAction;
 use App\Domain\Operations\OperationChildAdmission;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
@@ -20,6 +23,24 @@ final readonly class NodeChildAdmission implements OperationChildAdmission
 
     public function admit(Operation $parent, array $intent): Operation
     {
+        if ($intent['kind'] === 'node.network_rollback') {
+            if ($intent['node_id'] !== $parent->node_id || $intent['input'] !== []) {
+                throw new ResourceOperationException('operation.child_forbidden', 'Peer rollback has no caller-selected payload.', 422);
+            }
+
+            return app(StartNodeNetworkRollbackAction::class)->execute($parent);
+        }
+        if ($intent['kind'] === 'node.network_converge') {
+            $roleless = $intent['input']['roleless_operator'] ?? null;
+            if (! is_bool($roleless)) {
+                throw new ResourceOperationException('operation.child_forbidden', 'The network child requires explicit DNS policy.', 422);
+            }
+
+            return app(StartNodeNetworkOperationAction::class)->execute(Node::query()->findOrFail($intent['node_id']), $roleless);
+        }
+        if ($intent['kind'] === 'node.wireguard_hub_converge') {
+            return app(StartNodeWireGuardHubOperationAction::class)->execute($parent, $intent);
+        }
         if (in_array($intent['kind'], ['node.role_relocate_source', 'node.role_relocate_target'], true)) {
             return $this->prepared($this->roles->relocationChild($parent, $intent));
         }

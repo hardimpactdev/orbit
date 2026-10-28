@@ -7,6 +7,12 @@ description: "Execution contracts for Node lifecycle Operations and their cross-
 
 The Gateway validates Node changes and records their intent. Swamp runs the steps. Each remote run targets its Operation's `node_id` and uses a declared command, bound input, and a recorded result. Reads remain in Orbit.
 
+## Network child
+
+The internal `node.network_converge` child records its public connection and host fingerprint before admission. It prepares the peer key through pinned bootstrap SSH, publishes the hub through a child on the VPN Node, then publishes and verifies the peer. An existing peer retains its native transaction until the owning role succeeds. A proven failure restores that transaction before final completion. A missing reply requires the original target receipt; it never authorizes an unkeyed retry. 
+
+First-role failure uses `node.network_rollback {}` as a compensation child under the same target hold. Its public connection and credential reference come from the proven network child. Cancellation admits only that declared compensation after the network child succeeds; the parent runs no further effect. These role kinds require the kit's `compensations` capability.
+
 ## Footprint children
 
 `node.converge` takes `{force_artifacts: bool, first_visit: bool}`. Its target is the managed Linux Node. The Gateway records the expected artifact digests and typed payloads before Swamp starts effects. A retry uses that snapshot. Matching artifacts need no effect unless owned drift or a recorded failed agent pin requires repair.

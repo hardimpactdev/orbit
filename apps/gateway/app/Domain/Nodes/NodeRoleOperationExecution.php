@@ -36,7 +36,17 @@ final readonly class NodeRoleOperationExecution implements OperationFamilyChildr
 
         $waitUntil = $this->withdrawalAt($operation);
 
-        return ['descriptors' => $descriptors, 'result' => $waitUntil === null ? [] : ['role_wait_until' => $waitUntil]];
+        $result = $waitUntil === null ? [] : ['role_wait_until' => $waitUntil];
+        if ($this->networkRollbackNeeded($operation)) {
+            $result['role_rollback_required'] = true;
+        }
+        if ($operation->cancel_requested_at !== null && ($operation->state['node_role_prepared'] ?? false) === true
+            && ! $operation->children()->whereNotIn('status', ['succeeded', 'failed', 'cancelled'])->exists()
+            && (! $this->networkRollbackNeeded($operation) || $operation->children()->where('child_key', 'role-network-rollback')->exists())) {
+            $result = [...$result, ...$this->cancelledResult($operation)];
+        }
+
+        return ['descriptors' => $descriptors, 'result' => $result];
     }
 
     public function childContext(Operation $parent): array
@@ -58,6 +68,15 @@ final readonly class NodeRoleOperationExecution implements OperationFamilyChildr
             }
             $nodes[] = $intent['node_id'];
             $intents[] = $intent;
+        }
+
+        if ($this->networkRollbackNeeded($parent)) {
+            $rollback = ['key' => 'role-network-rollback', 'kind' => 'node.network_rollback', 'node_id' => $parent->node_id, 'input' => []];
+            if (! array_any($recorded, static fn (mixed $entry): bool => is_array($entry) && OperationChildIntent::same($entry, $rollback))) {
+                throw $this->unproven();
+            }
+            $intents[] = $rollback;
+            $nodes[] = $parent->node_id;
         }
 
         return ['intent' => ['node_ids' => array_values(array_unique($nodes))], 'children' => $intents];
@@ -83,6 +102,13 @@ final readonly class NodeRoleOperationExecution implements OperationFamilyChildr
 
     public function received(Operation $operation, array $run, array $receipt): array
     {
+        if ($run['name'] === 'ci-runner.host') {
+            $step = array_find($this->plan($operation), static fn (array $step): bool => $step['key'] === $run['key']);
+            $expected = is_array($step) ? ValidatedData::object($step['result'] ?? []) : [];
+            if (isset($receipt['error_code']) || ($receipt['outcome'] ?? null) !== ($expected['outcome'] ?? null)) {
+                return ['error_code' => 'ci-runner.host_failed'];
+            }
+        }
         if ($run['name'] === 'node.grant-gateway-access' && ($receipt['access_granted'] ?? null) === true && ! isset($receipt['error_code'])) {
             app(GrantGatewayRoleAccessAction::class)->execute(Node::query()->findOrFail($operation->node_id));
         }
@@ -93,6 +119,13 @@ final readonly class NodeRoleOperationExecution implements OperationFamilyChildr
     public function assertCompletion(Operation $operation, OperationOutcome $outcome): void
     {
         if ($outcome->status !== OperationStatus::Succeeded) {
+            if ($this->networkRollbackNeeded($operation)) {
+                $expected = $operation->cancel_requested_at !== null ? $this->cancelledResult($operation) : $this->result($operation);
+                if (! OperationChildIntent::same($expected, $outcome->result ?? [])) {
+                    throw $this->unproven();
+                }
+            }
+
             return;
         }
         $result = $this->result($operation);
@@ -128,6 +161,10 @@ final readonly class NodeRoleOperationExecution implements OperationFamilyChildr
             }
             if ($proof['status'] === 'failed') {
                 if (($step['optional'] ?? false) !== true) {
+                    if ($this->networkRollbackNeeded($operation) && ! $this->networkRollbackSucceeded($operation)) {
+                        return [...$result, 'error_code' => 'vpn.peer_rollback_failed', 'failed_step' => 'role-network-rollback'];
+                    }
+
                     return [...$result, 'error_code' => $proof['error_code'], 'failed_step' => $step['key']];
                 }
                 $followUps[] = ValidatedData::string($step['key']).':'.$proof['error_code'];
@@ -138,6 +175,57 @@ final readonly class NodeRoleOperationExecution implements OperationFamilyChildr
         }
 
         return $result;
+    }
+
+    private function networkRollbackNeeded(Operation $operation): bool
+    {
+        if (($operation->state['role_first_managed'] ?? false) !== true) {
+            return false;
+        }
+        $child = $operation->children()->where('child_key', 'role-network')->first();
+        if ($child === null || $child->status !== OperationStatus::Succeeded) {
+            return false;
+        }
+        $this->children->verify($operation, $child);
+        if (($child->result['retained'] ?? null) !== true) {
+            return false;
+        }
+        $runs = ValidatedData::object($operation->state['executor_runs'] ?? []);
+        $commit = ValidatedData::object($runs['role-network-commit'] ?? []);
+        if (is_array($commit['result'] ?? null) && ! isset($commit['result']['error_code'])) {
+            return false;
+        }
+        if ($operation->cancel_requested_at !== null) {
+            return true;
+        }
+        foreach ($this->plan($operation) as $step) {
+            if ($this->proof($operation, $step)['status'] === 'failed' && ($step['optional'] ?? false) !== true) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function networkRollbackSucceeded(Operation $operation): bool
+    {
+        $child = $this->children->child($operation, 'role-network-rollback');
+        if ($child->kind !== 'node.network_rollback' || $child->node_id !== $operation->node_id || ! $child->status->terminal()) {
+            throw $this->unproven();
+        }
+
+        return $child->status === OperationStatus::Succeeded;
+    }
+
+    /** @return array<string,mixed> */
+    private function cancelledResult(Operation $operation): array
+    {
+        $intent = ValidatedData::object($operation->state['role_intent'] ?? []);
+        $restored = ! $this->networkRollbackNeeded($operation) || $this->networkRollbackSucceeded($operation);
+
+        return ['role_proven' => true, 'assignment_id' => $intent['assignment_id'], 'created' => $intent['created'],
+            'error_code' => $restored ? 'operation.cancelled' : 'vpn.peer_rollback_failed',
+            'failed_step' => $restored ? 'operation' : 'role-network-rollback'];
     }
 
     /** @return array<string,mixed> */

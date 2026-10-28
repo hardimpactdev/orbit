@@ -68,6 +68,14 @@ final readonly class PrepareNodeRoleCommand implements OperationGatewayCommand
                     'input' => ['roleless_operator' => false], 'optional' => false];
             }
             $steps = [...$steps, ...$this->plan->converge($node, $assignment, $account)];
+            if (($operation->state['role_first_managed'] ?? false) === true) {
+                if (! is_string($node->wireguard_public_key) || $node->ssh_host_fingerprint === null) {
+                    throw new ResourceOperationException('vpn.peer_key_missing', 'The first role requires the recorded membership peer.', 409);
+                }
+                $steps[] = ['type' => 'run', 'key' => 'role-network-commit', 'transport' => 'agent', 'name' => 'wireguard.commit-peer',
+                    'input' => ['public_key' => $node->wireguard_public_key], 'result' => [], 'optional' => false];
+
+            }
             if ($node->status === LifecycleStatus::Active) {
                 $steps[] = ['type' => 'child', 'key' => 'role-footprint', 'kind' => 'node.converge', 'node_id' => $node->id,
                     'input' => ['force_artifacts' => false, 'first_visit' => false], 'optional' => true];
@@ -143,6 +151,9 @@ final readonly class PrepareNodeRoleCommand implements OperationGatewayCommand
             if ($step['type'] === 'child') {
                 $intents[] = ['key' => $step['key'], 'kind' => $step['kind'], 'node_id' => $step['node_id'], 'input' => $step['input']];
             }
+        }
+        if (($operation->state['role_first_managed'] ?? false) === true) {
+            $intents[] = ['key' => 'role-network-rollback', 'kind' => 'node.network_rollback', 'node_id' => $operation->node_id, 'input' => []];
         }
         $this->store->change($operation, ['input' => [...$operation->input, '_role_plan' => $steps],
             'state' => [...($operation->state ?? []), 'node_role_prepared' => true, 'child_intents' => $intents]]);
