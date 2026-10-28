@@ -11,6 +11,9 @@ interface OperationSecretSource
 {
     public function name(): string;
 
+    /** @return list<string> Supported Operation target types. */
+    public function targetTypes(): array;
+
     public function ownerId(Operation $operation): ?int;
 
     public function resolve(Operation $operation, int $id, string $key, string $parameter): OperationSecretValue;

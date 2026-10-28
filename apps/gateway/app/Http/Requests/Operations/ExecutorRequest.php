@@ -35,6 +35,16 @@ abstract class ExecutorRequest extends FormRequest
         return true;
     }
 
+    public function peerNodeId(): int
+    {
+        $caller = $this->getUserResolver()();
+        if (! $caller instanceof Node) {
+            throw new ResourceOperationException('operation.executor_forbidden', 'An authenticated executor peer is required.', 403);
+        }
+
+        return $caller->id;
+    }
+
     public function worker(): string
     {
         return ValidatedData::string($this->validated('worker'));

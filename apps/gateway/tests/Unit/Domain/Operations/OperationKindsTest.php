@@ -21,9 +21,35 @@ describe(OperationKinds::class, function (): void {
 
     it('refuses a Swamp declaration on the PHP execution path', function (): void {
         $kinds = new OperationKinds(new Container, [
-            'test.remote' => ['executor' => 'swamp', 'completion' => stdClass::class],
+            'test.remote' => OperationKinds::definitions()['firewall.allow'],
         ]);
 
         expect(fn () => $kinds->for('test.remote'))->toThrow(LogicException::class, 'not executed by PHP');
     });
+});
+
+it('refuses unenforced kind run and completion guarantees while loading declarations', function (string $part, string $key): void {
+    $definition = OperationKinds::definitions()['firewall.allow'];
+    if ($part === 'kind') {
+        $definition[$key] = ['route.caddy_converge'];
+    } elseif ($part === 'runs') {
+        $definition['runs'][0][$key] = true;
+    } else {
+        $definition['completion_contract'][$key] = ['route.caddy_converge'];
+    }
+    expect(fn () => new OperationKinds(new Container, ['test.remote' => $definition]))
+        ->toThrow(LogicException::class, "unsupported {$part} keys: {$key}");
+})->with([
+    ['kind', 'children_succeeded'], ['kind', 'unknown_guarantee'],
+    ['completion_contract', 'children'], ['completion_contract', 'children_settled'],
+    ['runs', 'unknown_guard'],
+]);
+
+it('reports optional capabilities unavailable until their enforcement ships', function (string $capability): void {
+    expect(OperationKinds::supports($capability))->toBeFalse();
+})->with(['children_settled', 'list_of', 'unknown']);
+
+it('reports enforced child and target receipt capabilities', function (): void {
+    expect(OperationKinds::supports('children'))->toBeTrue()
+        ->and(OperationKinds::supports('receipts'))->toBeTrue();
 });

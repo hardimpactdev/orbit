@@ -6,6 +6,7 @@ namespace App\Domain\Operations;
 
 use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentGitHubToken;
 use JsonSerializable;
 use SensitiveParameter;
 
@@ -28,11 +29,14 @@ final readonly class OperationSecretValue implements JsonSerializable
     public function strings(): array
     {
         $collect = static function (mixed $value) use (&$collect): array {
+            if ($value instanceof AgentGitHubToken) {
+                return [$value->value, base64_encode('x-access-token:'.$value->value)];
+            }
             if ($value instanceof GitReadEnvironment) {
                 return $value->githubToken() === null ? [] : [$value->githubToken(), base64_encode('x-access-token:'.$value->githubToken())];
             }
-            if (is_string($value)) {
-                return [$value];
+            if (is_scalar($value)) {
+                return [(string) $value];
             }
             $strings = [];
             if (is_array($value)) {

@@ -11,7 +11,7 @@ return (static function (): array {
             'executor' => 'swamp',
             'completion' => FirewallOperationCompletion::class,
             'runs' => [[
-                'transport' => 'agent', 'name' => 'firewall.rule',
+                'transport' => 'agent', 'name' => 'firewall.rule', 'resumable' => true,
                 'input_fields' => ['name', 'action', 'source', 'port', 'protocol'],
                 'input_values' => ['operation' => $verb === 'remove' ? 'remove' : 'converge'],
                 'node_field' => 'node_id',

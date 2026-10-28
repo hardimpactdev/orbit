@@ -28,19 +28,40 @@ pub struct Entry {
 }
 
 fn parse<C: Command>(input: Value) -> Result<(), String> {
+    let (input, _) = super::effects::split::<C>(input)
+        .map_err(|_| "A valid effect_key is required.".to_string())?;
     serde_json::from_value::<C::Input>(input)
         .map(|_| ())
         .map_err(|error| error.to_string())
 }
 
 fn schemas<C: Command>() -> Value {
-    json!({
-        "input": schemars::schema_for!(C::Input),
-        "output": schemars::schema_for!(C::Output),
-    })
+    let mut input =
+        serde_json::to_value(schemars::schema_for!(C::Input)).expect("schema serializes");
+    if C::KEYED_EFFECT {
+        fn add(schema: &mut Value) {
+            if let Some(properties) = schema.get_mut("properties").and_then(Value::as_object_mut) {
+                properties.insert("effect_key".into(), json!({"type": "string", "pattern": "^op-[1-9][0-9]*\\.[a-z0-9_.:-]+$", "maxLength": 192}));
+            }
+            for key in ["oneOf", "anyOf", "allOf"] {
+                if let Some(branches) = schema.get_mut(key).and_then(Value::as_array_mut) {
+                    for branch in branches {
+                        add(branch);
+                    }
+                }
+            }
+        }
+        add(&mut input);
+    }
+
+    json!({"input": input, "output": schemars::schema_for!(C::Output)})
 }
 
 pub fn entry<C: Command>() -> Entry {
+    assert!(
+        !C::KEYED_EFFECT || C::MUTATES,
+        "keyed effects require a mutation"
+    );
     assert!(
         !C::MUTATES || C::OUTPUT_MAX_BYTES == 0,
         "binary output is read-only"
@@ -67,6 +88,11 @@ pub fn entry<C: Command>() -> Entry {
 }
 
 fn run<C: Command>(input: Value, context: &Context) -> Outcome {
+    let (input, key) = match super::effects::split::<C>(input) {
+        Ok(input) => input,
+        Err(error) => return error,
+    };
+    let raw = input.clone();
     let input: C::Input = match serde_json::from_value(input) {
         Ok(input) => input,
         Err(error) => {
@@ -77,7 +103,9 @@ fn run<C: Command>(input: Value, context: &Context) -> Outcome {
             )
         }
     };
-    with_locks::<C>(input, context, super::lock::lock_directory)
+    super::effects::execute::<C>(key, raw, context, || {
+        with_locks::<C>(input, context, super::lock::lock_directory)
+    })
 }
 
 /// Takes the target and resource locks of a mutation in `directory`, then runs it.

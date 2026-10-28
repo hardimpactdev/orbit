@@ -51,6 +51,8 @@ pub trait Command {
     /// A mutation runs under its own supervisor and takes the target and resource locks it declares; a read takes no
     /// lock.
     const MUTATES: bool;
+    /// Persist one receipt per effect key; an unfinished intent must never execute again.
+    const KEYED_EFFECT: bool = Self::MUTATES;
     /// The longest the command may run. The envelope's remaining deadline can shorten it.
     const TIMEOUT: Duration;
     /// A read may emit framed binary bytes before its result. Zero means JSON output only.
@@ -92,6 +94,7 @@ pub struct Context {
     pub platform: Platform,
     deadline: Instant,
     binary_input: std::sync::Mutex<Option<std::fs::File>>,
+    effect_masks: Option<Vec<String>>,
 }
 impl Context {
     pub fn new(platform: Platform, deadline: Instant) -> Self {
@@ -99,7 +102,16 @@ impl Context {
             platform,
             deadline,
             binary_input: std::sync::Mutex::new(None),
+            effect_masks: None,
         }
+    }
+    /// Protected invocation metadata. Never included in command input, fingerprints, or receipts.
+    pub fn with_effect_masks(mut self, masks: Vec<String>) -> Self {
+        self.effect_masks = Some(masks);
+        self
+    }
+    pub fn effect_masks(&self) -> Option<&[String]> {
+        self.effect_masks.as_deref()
     }
     /// The dispatcher supplies a complete, size-checked private input file.
     pub fn with_binary_input(self, file: std::fs::File) -> Self {
@@ -109,6 +121,15 @@ impl Context {
     /// A binary consumer takes its input once. No pathname crosses the command boundary.
     pub fn take_binary_input(&self) -> Option<std::fs::File> {
         self.binary_input.lock().ok()?.take()
+    }
+    /// The receipt layer hashes the bounded input through positional reads before execution.
+    pub fn clone_binary_input(&self) -> std::io::Result<Option<std::fs::File>> {
+        self.binary_input
+            .lock()
+            .map_err(|_| std::io::Error::other("binary input lock"))?
+            .as_ref()
+            .map(std::fs::File::try_clone)
+            .transpose()
     }
     pub fn deadline(&self) -> Instant {
         self.deadline

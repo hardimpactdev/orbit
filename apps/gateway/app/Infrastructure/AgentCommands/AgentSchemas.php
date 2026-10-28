@@ -40,7 +40,7 @@ final class AgentSchemas
     }
 
     /** @param array<string, mixed> $input */
-    public static function wireInput(array $input): mixed
+    public static function wireInput(#[\SensitiveParameter] array $input): mixed
     {
         return json_decode(json_encode((object) AgentInvocation::wire($input)[0], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), flags: JSON_THROW_ON_ERROR);
     }
