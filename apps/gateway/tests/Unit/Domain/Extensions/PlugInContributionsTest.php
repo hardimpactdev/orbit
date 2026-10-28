@@ -62,5 +62,5 @@ it('wires core footprint artifacts before extension artifacts in apply order', f
     $artifacts = new ReflectionProperty($footprint, 'artifacts')->getValue($footprint);
     $names = array_map(static fn (object $artifact): string => $artifact->name(), [...$artifacts]);
 
-    expect($names)->toBe(['agent', 'caddy-package', 'caddy', 'peer-dns', 'private-dns', 'route-residue', 'tmpfiles', 'ai-router']);
+    expect($names)->toBe(['agent', 'caddy-package', 'caddy', 'peer-dns', 'private-dns', 'route-residue', 'php-runtime', 'tmpfiles', 'ai-router']);
 });

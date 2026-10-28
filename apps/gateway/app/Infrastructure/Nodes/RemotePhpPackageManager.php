@@ -70,9 +70,7 @@ final readonly class RemotePhpPackageManager
         Collection $versions,
         RoleName $role,
     ): void {
-        $profile = $role === RoleName::AppProd && ! $node->roles->pluck('role')->contains(RoleName::AppDev)
-            ? 'app-prod'
-            : 'app-dev';
+        $profile = $role === RoleName::AppDev ? 'app-dev' : self::runtimeProfile($node);
 
         $this->install($node, $versions, $role, $profile);
     }
@@ -80,24 +78,25 @@ final readonly class RemotePhpPackageManager
     /** @param Collection<int, string> $versions */
     public function installForAppProd(Node $node, Collection $versions): void
     {
-        $profile = $node->roles->pluck('role')->contains(RoleName::AppDev) ? 'app-dev' : 'app-prod';
+        $profile = self::runtimeProfile($node);
 
         $this->install($node, $versions, RoleName::AppProd, $profile);
     }
 
     /**
-     * Installs the build for a dedicated production master. It restarts no PHP-FPM service: the production runtime
-     * restarts its own master.
+     * Installs the build without restarting masters, then publishes the shared runtime settings.
+     * A changed module gracefully reloads valid active masters; package changes wait for pool publication.
      *
      * @param  Collection<int, string>  $versions
      */
-    public function installPackagesOnlyForAppProd(Node $node, Collection $versions): void
+    public function installForProductionRuntime(Node $node, Collection $versions): void
     {
         if ($versions->isEmpty()) {
             return;
         }
 
         $this->runInstaller($node, array_values($versions->all()), self::APP_PROD_FAILURE_CONTRACT, RoleName::AppProd, $this->pcov($node), fpm: 'none', opentelemetry: $this->opentelemetry($node));
+        $this->configureRuntime($node, array_values($versions->all()), RoleName::AppProd, self::runtimeProfile($node));
     }
 
     public function packagesOnlyRecipeRevision(): string
@@ -166,11 +165,36 @@ final readonly class RemotePhpPackageManager
         $selected = array_values(array_unique($versions->all()));
         $this->runInstaller($node, $selected, $failure, $role, pcov: $this->pcov($node), fpm: 'shared', opentelemetry: $this->opentelemetry($node));
 
-        foreach ($selected as $version) {
-            AgentStep::run($this->agents ?? app(AgentCommandRunner::class), $node, 'php.configure-runtime',
+        $this->configureRuntime($node, $selected, $role, $profile);
+    }
+
+    public static function runtimeProfile(Node $node): string
+    {
+        return $node->roles->pluck('role')->contains(RoleName::AppDev) ? 'app-dev' : 'app-prod';
+    }
+
+    /** @param list<string> $versions */
+    public function configureForAppNode(Node $node, array $versions): bool
+    {
+        $profile = self::runtimeProfile($node);
+        $role = $profile === 'app-dev' ? RoleName::AppDev : RoleName::AppProd;
+
+        return $this->configureRuntime($node, $versions, $role, $profile);
+    }
+
+    /** @param list<string> $versions */
+    private function configureRuntime(Node $node, array $versions, RoleName $role, string $profile): bool
+    {
+        $failure = $role === RoleName::AppDev ? self::APP_DEV_FAILURE_CONTRACT : self::APP_PROD_FAILURE_CONTRACT;
+        $changed = false;
+        foreach (array_unique($versions) as $version) {
+            $result = AgentStep::run($this->agents ?? app(AgentCommandRunner::class), $node, 'php.configure-runtime',
                 $this->profileInput($version, $profile, $role),
                 step: $failure['install_step'], errorCode: $failure['install_error'], label: 'PHP runtime');
+            $changed = ($result['changed'] ?? false) === true || $changed;
         }
+
+        return $changed;
     }
 
     /**

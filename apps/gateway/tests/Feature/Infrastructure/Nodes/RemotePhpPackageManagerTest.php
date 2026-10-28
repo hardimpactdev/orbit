@@ -51,7 +51,7 @@ it('keeps PCOV and OpenTelemetry placement consistent across roles on one Node',
     $manager->installForAppDev($node, collect(['8.5']));
     $manager->installForInstance($node, collect(['8.5']), RoleName::AppProd);
     $manager->installForAppProd($node, collect(['8.5']));
-    $manager->installPackagesOnlyForAppProd($node, collect(['8.5']));
+    $manager->installForProductionRuntime($node, collect(['8.5']));
     $calls = collect($this->agents->calls)->where('command', 'php.install-build')->values();
     expect($calls)->toHaveCount(4);
     foreach ($calls as $call) {
@@ -61,15 +61,16 @@ it('keeps PCOV and OpenTelemetry placement consistent across roles on one Node',
     }
     expect($calls[3]['input']['fpm'])->toBe('none');
     $profiles = collect($this->agents->calls)->where('command', 'php.configure-runtime')->values();
-    expect($profiles)->toHaveCount(3)
-        ->and($profiles[2]['input']['runtime_ini'])->toContain('opcache.memory_consumption = '.($development ? '512' : '256'));
+    expect($profiles)->toHaveCount(4)
+        ->and($profiles[2]['input']['runtime_ini'])->toContain('opcache.memory_consumption = '.($development ? '512' : '256'))
+        ->and($profiles[3]['input']['runtime_ini'])->toContain('post_max_size = 64M', 'upload_max_filesize = 64M');
 })->with([true, false]);
 
 it('performs no work for an empty version set or an unsupported recipe version', function (): void {
     $node = php_package_node(RoleName::AppDev);
     $manager = new RemotePhpPackageManager;
     $manager->installForAppDev($node, collect());
-    $manager->installPackagesOnlyForAppProd($node, collect());
+    $manager->installForProductionRuntime($node, collect());
     expect(fn () => $manager->installForAppDev($node, collect(['8.6'])))
         ->toThrow(fn (RuntimeConvergenceException $e) => expect($e->errorCode)->toBe('app-dev.php_package_source_unavailable')->and($e->getMessage())->toContain('no PHP 8.6 build'));
     expect($this->agents->calls)->toBe([]);

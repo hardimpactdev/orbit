@@ -74,6 +74,19 @@
                 "input": null
             },
             {
+                "command": "php.configure-runtime",
+                "input": {
+                    "version": "8.4",
+                    "runtime_ini": "; priority=99\n; Managed by Orbit for the app-prod PHP-FPM runtime. Orbit rewrites this file during convergence.\n; OPcache shared memory is allocated once per FPM master, so sizing lives here.\n; Timestamp validation is a per-pool policy in /etc/php/*/fpm/pool.d.\npost_max_size = 64M\nupload_max_filesize = 64M\nopcache.enable = On\nopcache.memory_consumption = 256\nopcache.interned_strings_buffer = 32\nopcache.max_accelerated_files = 65407\nopcache.jit = disable\nopcache.jit_buffer_size = 0\n",
+                    "release": {
+                        "id": "ubuntu",
+                        "codenames": [
+                            "resolute"
+                        ]
+                    }
+                }
+            },
+            {
                 "command": "php.converge-production-runtime",
                 "input": {
                     "mode": "converge",
@@ -211,6 +224,19 @@
             {
                 "command": "php.install-build",
                 "input": null
+            },
+            {
+                "command": "php.configure-runtime",
+                "input": {
+                    "version": "8.4",
+                    "runtime_ini": "; priority=99\n; Managed by Orbit for the app-prod PHP-FPM runtime. Orbit rewrites this file during convergence.\n; OPcache shared memory is allocated once per FPM master, so sizing lives here.\n; Timestamp validation is a per-pool policy in /etc/php/*/fpm/pool.d.\npost_max_size = 64M\nupload_max_filesize = 64M\nopcache.enable = On\nopcache.memory_consumption = 256\nopcache.interned_strings_buffer = 32\nopcache.max_accelerated_files = 65407\nopcache.jit = disable\nopcache.jit_buffer_size = 0\n",
+                    "release": {
+                        "id": "ubuntu",
+                        "codenames": [
+                            "resolute"
+                        ]
+                    }
+                }
             },
             {
                 "command": "php.converge-production-runtime",

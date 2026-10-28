@@ -6,6 +6,7 @@ covers:
   - apps/gateway/app/Infrastructure/Instances/{RemoteProductionPhpRuntimeManager,RemoteProductionInstanceSourceLifecycle,ProductionPhpRuntimeConfigRenderer,ProductionPhpRuntimeConfiguration}.php
   - apps/gateway/app/Infrastructure/AppProd/{RemoteAppProdPhpFpmManager,RemoteAppProdSourceManager}.php
   - apps/gateway/app/Infrastructure/Nodes/{PhpFpmRuntimeIniRenderer,RemotePhpPackageManager}.php
+  - apps/gateway/app/Infrastructure/Fleet/Footprint/PhpRuntimeFootprintArtifact.php
   - apps/gateway/app/Infrastructure/AppDev/{DevelopmentPhpFpmConfigRenderer,RemoteAppDevPhpFpmManager}.php
   - apps/agent/src/commands/{php_runtime,php_doctor,php_profile,php_shared}.rs
 ---
@@ -96,7 +97,7 @@ PHP-FPM refuses to start while any pool names a missing `chdir`, so one such poo
 
 Instance removal runs this convergence for every development Instance, also when the Instance never became active or its Route was destroyed first. It runs after the Route target is cleared and before the checkout is deleted. At that point stored state renders no pool for the Instance, so the convergence removes the pool and reloads PHP-FPM while its directory still exists. See [Instance removal](/reference/instance-removal#runtime-cleanup).
 
-Orbit publishes one module per version at `/etc/php/<version>/mods-available/orbit-runtime.ini` and enables it for FPM only, as `/etc/php/<version>/fpm/conf.d/99-orbit-runtime.ini`. The CLI keeps stock settings. At each convergence, the native `php.configure-runtime` command compares the module with the installed file, repairs the link, and reloads a running service only when the module or its enablement changed and the installed pools pass `php-fpm<version> -t`. Otherwise the pool publication reloads it.
+Orbit publishes one module per version at `/etc/php/<version>/mods-available/orbit-runtime.ini` and enables it for FPM only, as `/etc/php/<version>/fpm/conf.d/99-orbit-runtime.ini`. The CLI keeps stock settings. At each convergence, the native `php.configure-runtime` command compares the module with the installed file, repairs the link, and gracefully reloads active shared and dedicated production masters only when the module or its enablement changed and their pools pass `php-fpm<version> -t`. A master with invalid pools stays running until pool publication repairs it. A failed publication restores the previous module and link and reloads the masters already changed.
 
 A development pool checks every file on every request, so a saved file is served at once:
 
@@ -130,6 +131,16 @@ A failed start restores the generated files and service state from before the ch
 The shared `/etc/orbit` directory stays `root:root` with mode `0711`, so production users can reach their Schedule scripts without listing the directory. `/etc/orbit/php-fpm` stays closed to application users.
 
 A `laravel-app` or `symfony-app` Instance serves PHP. A `monorepo` Instance serves PHP only when it has a Route and a Laravel source. A `laravel-package` can select a PHP version from its Composer constraint but is not classified as a Laravel application or served through PHP-FPM. Other types start no PHP-FPM master. Production source inspection applies the Instance's project type when it classifies the Composer and Artisan metadata. It [checks the production checkout](/reference/instance-cloning#destination-checks) as the production user, even when the SSH user's home is private.
+
+## Request and upload limits
+
+The managed FPM module sets `post_max_size = 64M` and `upload_max_filesize = 64M` for both `app-dev` and `app-prod`. Each PHP size is 64 MiB. The POST limit covers the complete request, including multipart overhead, so a file upload must fit inside that limit. Application validation can impose a smaller limit. The CLI keeps its stock settings, and Orbit leaves production `local.conf` tuning unchanged.
+
+Dedicated production services scan the same FPM `conf.d` directory before their generated `master.ini`, so they inherit these limits. Each master keeps its own OPcache settings. The agent requires both size settings to be positive, bounded PHP size quantities and verifies the effective values with `php-fpm -i` before activation.
+
+The `php-runtime` [Node footprint artifact](/reference/node-provisioning#converge-the-orbit-footprint) publishes the module for the recipe profile’s PHP versions and the versions selected by active Instances on app Nodes. Its digest covers the renderer, selected profile, and PHP versions. After a Gateway release supplies the new renderer and agent, `orbit node:converge <node>` applies it to existing Nodes and reloads valid active masters. The automatic fleet rollout runs the same convergence after release adoption and image promotion; a merge alone changes no running Node. Instance PHP convergence also publishes the module.
+
+Orbit routes these applications through Caddy to PHP-FPM. The managed Caddy site and reverse-proxy configuration adds no request-body size cap. This path uses neither nginx nor FrankenPHP.
 
 ## OPcache settings
 

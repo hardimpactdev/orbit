@@ -131,7 +131,7 @@ function prod_equivalence_render(Node $node, array $instances): array
         // Both the PHP build and runtime use typed agent commands.
         $runtime = static function (Closure $operation): array {
             $agents = new FakeAgentCommandRunner()
-                ->answer('php.install-build', PhpBuildAnswers::result())->answer('php.converge-production-runtime', ['published' => true])
+                ->answer('php.install-build', PhpBuildAnswers::result())->answer('php.configure-runtime', ['changed' => false, 'reloaded' => false])->answer('php.converge-production-runtime', ['published' => true])
                 ->answer('php.remove-production-runtime', ['removed' => true])
                 ->answer('php.refresh-production-cache', ['complete' => true]);
             $operation(new RemoteProductionPhpRuntimeManager(new ProductionPhpRuntimeConfigRenderer, $agents));

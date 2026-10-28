@@ -998,6 +998,8 @@ For each Node, the run takes the Node's role lock, the lock every role converge 
 
 A step that fails while the Node still answers SSH runs once more, because a dropped channel or a timeout is usually transient. When the Node does not answer a new probe, it is `unreachable`. A `self-update` that answered with its JSON verdict is not retried. A step that meets a busy lock (`node_role.node_busy`, `node.update_busy`, `self_update.busy`, `agent.converge_busy`, `agent.converge_lock_lost`, `node.lock_lost`, `tool.operation_locked`) leaves the Node `deferred`.
 
+The `php-runtime` artifact publishes the [PHP request and upload limits](/reference/php-runtime#request-and-upload-limits) on app Nodes and gracefully reloads valid active PHP-FPM masters. A Gateway release makes the new renderer and agent available; the footprint step applies them to existing Nodes.
+
 The `caddy-package` artifact uses the shared [Caddy package step](/reference/node-provisioning#package-sources). Its source rename changes that artifact's digest once. The next footprint run repeats the step without reinstalling a Caddy at or above the floor.
 
 When the baseline shows an owned issue, the footprint step re-applies the artifact that repairs it even though its digest matches: `agent` for an agent issue, `caddy` for Caddy drift.

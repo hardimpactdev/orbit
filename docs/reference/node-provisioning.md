@@ -369,6 +369,7 @@ The agent takes the Node's update lock, `/run/lock/orbit-self-update.lock`, befo
 | `peer-dns` | Active managed Linux peers with roles, excluding the VPN holder and the Gateway | The [split private DNS policy](/reference/private-dns#resolver-selection), without a tunnel restart. Its digest includes the routing domains and selected DNS server |
 | `private-dns` | The `vpn` Node, when it is not the Gateway's | The [private-DNS](/reference/private-dns) listener release, units, records, and catalog. It restarts the listener or dnsmasq only for a change |
 | `route-residue` | A Node that an [offline Route removal](/reference/routes#remove-a-route-from-an-unreachable-node) skipped | Caddy and PHP-FPM without the removed Route, then its certificates and firewall rules. A failure is `skipped` and retried later |
+| `php-runtime` | Every Linux Node with an active `app-dev` or `app-prod` role | The [managed PHP-FPM module](/reference/php-runtime#request-and-upload-limits) for the profile and active Instances. A change gracefully reloads valid active masters; `local.conf` stays unchanged |
 | `tmpfiles` | Every Linux Node with an active `app-dev` role | `/etc/tmpfiles.d/orbit.conf`, through the agent's `node.publish-tmpfiles`. The daily `systemd-tmpfiles-clean` run empties each `/tmp/orbit-*` and `/dev/shm/orbit-*` directory a day after its contents last changed. It removes no other path and restarts nothing |
 | `ai-router` | The [AI router](/reference/ai-router) collector's Node | The collector script. A changed script restarts the collector, a Node-owned Process |
 
@@ -380,7 +381,7 @@ The Caddy package digest covers the package program and the `CaddyRelease` floor
 
 The private-DNS digest covers the listener release, the publication code, and each private DNS record source that an extension contributes, with the classes it uses, such as the AI router state that decides the collector record. The other digests cover the inputs the agent unit renders from, the collector script, and the tmpfiles rule. The shared footprint boundary adds the agent pin to all of them.
 
-A user's sites and Routes do not change the code digests. The `peer-dns` digest includes the rendered private domains and server, so namespace changes also reach peers through convergence. Their own operations publish them, and Doctor reports their drift.
+A user's sites and Routes do not change the code digests. The PHP runtime digest includes the versions selected by active Instances, so a version outside the Node's recipe profile also receives the module. The `peer-dns` digest includes the rendered private domains and server, so namespace changes also reach peers through convergence. Their own operations publish them, and Doctor reports their drift.
 
 The `route-residue` digest also covers state: it covers the residues of offline Route removals, which are Orbit's own unfinished work, so the Node drifts until a converge removes them. The Gateway keeps the digests each Node last received, and a converge re-applies only the artifacts whose digest changed. Its native binary installers own their update locks; it starts no separate SSH lock holder.
 

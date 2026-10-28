@@ -56,7 +56,7 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
         $configuration = $this->renderer->render($identity, $metrics, applications: $applications);
         $initialConfiguration = $this->renderer->render($identity, $metrics, initialRelease: true, applications: $applications);
         if ($mode !== 'monitor') {
-            ($this->packages ?? new RemotePhpPackageManager(agents: $this->agents))->installPackagesOnlyForAppProd($instance->node->loadMissing('roles'), collect([$identity->version]));
+            ($this->packages ?? new RemotePhpPackageManager(agents: $this->agents))->installForProductionRuntime($instance->node->loadMissing('roles'), collect([$identity->version]));
         }
 
         AgentStep::run($this->agents, $instance->node, 'php.converge-production-runtime', [

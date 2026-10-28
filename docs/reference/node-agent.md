@@ -147,6 +147,8 @@ The Gateway runs every Node action through one runner, `AgentCommandRunner`. The
 
 A Gateway architecture check scans core and extension PHP for process, SSH, and agent transport dependencies. Only the command transports, Gateway control-plane processes, command rendering, and the excluded Tasks and private DNS paths may use those dependencies. New Node behavior must call `AgentCommandRunner`; adding another executor fails the check.
 
+The `php.configure-runtime` command accepts exactly the six managed OPcache directives and two positive, bounded PHP size quantities. It verifies all eight values with `php-fpm -i`, then reloads valid active masters when the module changes. See [request and upload limits](/reference/php-runtime#request-and-upload-limits).
+
 Development profile inspection and URL writing take the Node’s recorded managed username. Each command resolves the account and checks file ownership locally; the Gateway makes no separate account lookup for these actions.
 
 Standard input starts with one JSON envelope line. Standard output carries one JSON result. Redacted logs go to standard error.

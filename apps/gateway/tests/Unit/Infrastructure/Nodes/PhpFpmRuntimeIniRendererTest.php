@@ -26,6 +26,13 @@ it('renders a Debian module with the phpenmod priority header first', function (
         );
 })->with(['app-dev', 'app-prod']);
 
+it('sets exactly eight FPM runtime directives including bounded request and upload limits', function (string $profile): void {
+    $settings = parse_ini_string(new PhpFpmRuntimeIniRenderer()->render($profile), scanner_mode: INI_SCANNER_RAW);
+
+    expect($settings)->toHaveCount(8)
+        ->toMatchArray(['post_max_size' => '64M', 'upload_max_filesize' => '64M']);
+})->with(['app-dev', 'app-prod']);
+
 it('sizes shared memory for many development sites and a lean production service', function (): void {
     $renderer = new PhpFpmRuntimeIniRenderer;
 

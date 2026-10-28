@@ -23,6 +23,21 @@ pub struct Configured {
     pub changed: bool,
     pub reloaded: bool,
 }
+fn bounded_size(value: &str) -> bool {
+    let (number, multiplier) = match value.as_bytes().last() {
+        Some(b'K') => (&value[..value.len() - 1], 1024_u64),
+        Some(b'M') => (&value[..value.len() - 1], 1024_u64.pow(2)),
+        Some(b'G') => (&value[..value.len() - 1], 1024_u64.pow(3)),
+        _ => (value, 1),
+    };
+    !number.is_empty()
+        && number.bytes().all(|b| b.is_ascii_digit())
+        && number
+            .parse::<u64>()
+            .ok()
+            .and_then(|n| n.checked_mul(multiplier))
+            .is_some_and(|bytes| bytes > 0 && bytes <= i64::MAX as u64)
+}
 fn settings(input: &Input) -> Result<BTreeMap<String, String>, Error> {
     let bad = || Error::InputInvalid {};
     if !regex::Regex::new(r"\A[0-9]+\.[0-9]+\z")
@@ -49,6 +64,7 @@ fn settings(input: &Input) -> Result<BTreeMap<String, String>, Error> {
         let (key, value) = line.split_once('=').ok_or_else(bad)?;
         let (key, value) = (key.trim(), value.trim());
         let valid = match key {
+            "post_max_size" | "upload_max_filesize" => bounded_size(value),
             "opcache.enable" => value == "On",
             "opcache.jit" => value == "disable",
             "opcache.jit_buffer_size" => value == "0",
@@ -61,7 +77,7 @@ fn settings(input: &Input) -> Result<BTreeMap<String, String>, Error> {
             return Err(bad());
         }
     }
-    if settings.len() != 6 {
+    if settings.len() != 8 {
         return Err(bad());
     }
     Ok(settings)
@@ -124,6 +140,7 @@ pub fn configure(
     let correct_link = fs::canonicalize(&enabled).ok().as_ref() == Some(&available);
     let changed = before.file.as_deref() != Some(input.runtime_ini.as_bytes()) || !correct_link;
     let mut touched = false;
+    let mut reloaded_units = Vec::new();
     let action = (|| -> build::Result<Configured> {
         if changed {
             touched = true;
@@ -146,12 +163,25 @@ pub fn configure(
                 "An unmanaged INI overrides the Orbit PHP runtime module",
             ));
         }
-        let reloaded = changed
-            && build::invoke(host, &["systemctl", "is-active", "--quiet", &unit], false)?.code == 0
-            && build::invoke(host, &[&binary, "-t"], false)?.code == 0;
-        if reloaded {
-            build::invoke(host, &["systemctl", "reload-or-restart", &unit], true)?;
+        if changed {
+            let units = build::runtime::fpm_units(host, files, &input.version, build::Fpm::All)?;
+            for (name, configuration) in units.active {
+                let mut args = vec![binary.as_str(), "-t"];
+                let path = configuration.display().to_string();
+                if name != unit {
+                    args.extend(["--fpm-config", &path]);
+                }
+                if build::invoke(host, &args, false)?.code != 0 {
+                    continue;
+                }
+                reloaded_units.push((
+                    name.clone(),
+                    args.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>(),
+                ));
+                build::invoke(host, &["systemctl", "reload", &name], true)?;
+            }
         }
+        let reloaded = !reloaded_units.is_empty();
         build::invoke(host, &["systemctl", "enable", &unit], true)?;
         build::invoke(
             host,
@@ -183,12 +213,12 @@ pub fn configure(
             if let Some(link) = &before.link {
                 restored &= symlink(link, &enabled).is_ok();
             }
-            if build::invoke(host, &["systemctl", "is-active", "--quiet", &unit], false)
-                .is_ok_and(|r| r.code == 0)
-                && build::invoke(host, &[&binary, "-t"], false).is_ok_and(|r| r.code == 0)
-            {
-                restored &= build::invoke(host, &["systemctl", "reload-or-restart", &unit], false)
-                    .is_ok_and(|r| r.code == 0);
+            for (name, args) in &reloaded_units {
+                let args: Vec<_> = args.iter().map(String::as_str).collect();
+                let valid = build::invoke(host, &args, false).is_ok_and(|r| r.code == 0);
+                restored &= valid
+                    && build::invoke(host, &["systemctl", "reload", name], false)
+                        .is_ok_and(|r| r.code == 0);
             }
         }
         failed(error, restored)
