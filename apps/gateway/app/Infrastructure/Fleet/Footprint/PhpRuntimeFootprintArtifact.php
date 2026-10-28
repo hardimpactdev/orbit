@@ -38,6 +38,7 @@ final readonly class PhpRuntimeFootprintArtifact implements NodeFootprintArtifac
             'app/Infrastructure/Nodes/RemotePhpPackageManager.php',
             'app/Infrastructure/Nodes/PhpFpmRuntimeIniRenderer.php',
             'app/Infrastructure/MachineSoftware/RecipeLoader.php',
+            'app/Infrastructure/MachineSoftware/NodeRecipeProgram.php',
             'app/Domain/Nodes/UbuntuRelease.php',
         ])."\0".implode(',', $this->versions($node))."\0".new PhpFpmRuntimeIniRenderer()->render(RemotePhpPackageManager::runtimeProfile($node)));
     }

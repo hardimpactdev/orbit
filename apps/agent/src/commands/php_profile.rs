@@ -23,20 +23,21 @@ pub struct Configured {
     pub changed: bool,
     pub reloaded: bool,
 }
-fn bounded_size(value: &str) -> bool {
+fn size_bytes(value: &str) -> Option<u64> {
     let (number, multiplier) = match value.as_bytes().last() {
         Some(b'K') => (&value[..value.len() - 1], 1024_u64),
         Some(b'M') => (&value[..value.len() - 1], 1024_u64.pow(2)),
         Some(b'G') => (&value[..value.len() - 1], 1024_u64.pow(3)),
         _ => (value, 1),
     };
-    !number.is_empty()
-        && number.bytes().all(|b| b.is_ascii_digit())
-        && number
-            .parse::<u64>()
-            .ok()
-            .and_then(|n| n.checked_mul(multiplier))
-            .is_some_and(|bytes| bytes > 0 && bytes <= i64::MAX as u64)
+    if number.is_empty() || !number.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    number
+        .parse::<u64>()
+        .ok()
+        .and_then(|n| n.checked_mul(multiplier))
+        .filter(|bytes| *bytes > 0 && *bytes <= 1024_u64.pow(3))
 }
 fn settings(input: &Input) -> Result<BTreeMap<String, String>, Error> {
     let bad = || Error::InputInvalid {};
@@ -54,7 +55,7 @@ fn settings(input: &Input) -> Result<BTreeMap<String, String>, Error> {
     {
         return Err(bad());
     }
-    let mut settings = BTreeMap::new();
+    let mut settings = BTreeMap::<String, String>::new();
     for line in input
         .runtime_ini
         .lines()
@@ -64,7 +65,7 @@ fn settings(input: &Input) -> Result<BTreeMap<String, String>, Error> {
         let (key, value) = line.split_once('=').ok_or_else(bad)?;
         let (key, value) = (key.trim(), value.trim());
         let valid = match key {
-            "post_max_size" | "upload_max_filesize" => bounded_size(value),
+            "post_max_size" | "upload_max_filesize" => size_bytes(value).is_some(),
             "opcache.enable" => value == "On",
             "opcache.jit" => value == "disable",
             "opcache.jit_buffer_size" => value == "0",
@@ -78,6 +79,11 @@ fn settings(input: &Input) -> Result<BTreeMap<String, String>, Error> {
         }
     }
     if settings.len() != 8 {
+        return Err(bad());
+    }
+    if size_bytes(&settings["upload_max_filesize"]).ok_or_else(bad)?
+        > size_bytes(&settings["post_max_size"]).ok_or_else(bad)?
+    {
         return Err(bad());
     }
     Ok(settings)
@@ -100,6 +106,16 @@ pub fn configure(
         .unwrap_or(("unknown".into(), "unknown".into()));
     if id != input.release.id || !input.release.codenames.contains(&codename) {
         return Err(Error::PlatformUnsupported { id, codename });
+    }
+    let binary_path = files.path(&format!("/usr/sbin/php-fpm{}", input.version));
+    if !binary_path.try_exists().map_err(|error| Error::Failed {
+        reason: error.to_string(),
+        restored: true,
+    })? {
+        return Ok(Configured {
+            changed: false,
+            reloaded: false,
+        });
     }
     let available = files.path(&format!(
         "/etc/php/{}/mods-available/orbit-runtime.ini",
@@ -246,5 +262,64 @@ impl Command for Configure {
             &recipe::Files::system(),
             &input,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const DEVELOPMENT: &str =
+        include_str!("../../../gateway/tests/Fixtures/PhpRuntimeIni/app-dev.ini");
+    const PRODUCTION: &str =
+        include_str!("../../../gateway/tests/Fixtures/PhpRuntimeIni/app-prod.ini");
+
+    fn input(ini: &str) -> Input {
+        Input {
+            version: "8.5".into(),
+            runtime_ini: ini.into(),
+            release: build::Release {
+                id: "ubuntu".into(),
+                codenames: vec!["resolute".into()],
+            },
+        }
+    }
+
+    #[test]
+    fn accepts_the_actual_gateway_ini_fixtures_for_both_profiles() {
+        for ini in [DEVELOPMENT, PRODUCTION] {
+            let accepted = settings(&input(ini)).unwrap();
+            assert_eq!(accepted.len(), 8);
+            assert_eq!(accepted["post_max_size"], "64M");
+            assert_eq!(accepted["upload_max_filesize"], "64M");
+        }
+    }
+
+    #[test]
+    fn sizes_stop_at_one_gib_and_upload_cannot_exceed_post_in_any_unit() {
+        for (post, upload, valid) in [
+            ("1G", "1024M", true),
+            ("1048576K", "1073741824", true),
+            ("64M", "65536K", true),
+            ("1024", "1K", true),
+            ("1G", "1073741825", false),
+            ("1025M", "64M", false),
+            ("2G", "64M", false),
+            ("64M", "65537K", false),
+            ("1K", "1025", false),
+            ("1M", "1G", false),
+        ] {
+            let ini = DEVELOPMENT
+                .replace("post_max_size = 64M", &format!("post_max_size = {post}"))
+                .replace(
+                    "upload_max_filesize = 64M",
+                    &format!("upload_max_filesize = {upload}"),
+                );
+            assert_eq!(
+                settings(&input(&ini)).is_ok(),
+                valid,
+                "post={post}, upload={upload}"
+            );
+        }
     }
 }

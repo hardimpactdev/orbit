@@ -1,15 +1,30 @@
 use super::*;
 use crate::commands::php_profile::{self, Error, Input};
 
+fn fixture() -> Fixture {
+    let f = Fixture::new();
+    write(&f.files, "/usr/sbin/php-fpm8.5", "fake binary\n");
+    f
+}
+
 fn input() -> Input {
-    Input { version: "8.5".into(), runtime_ini: "; priority=99\npost_max_size = 64M\nupload_max_filesize = 64M\nopcache.enable = On\nopcache.memory_consumption = 512\nopcache.interned_strings_buffer = 64\nopcache.max_accelerated_files = 65407\nopcache.jit = disable\nopcache.jit_buffer_size = 0\n".into(),
-        release: Release { id: "ubuntu".into(), codenames: vec!["resolute".into()] } }
+    Input {
+        version: "8.5".into(),
+        runtime_ini: include_str!(
+            "../../../../../gateway/tests/Fixtures/PhpRuntimeIni/app-dev.ini"
+        )
+        .into(),
+        release: Release {
+            id: "ubuntu".into(),
+            codenames: vec!["resolute".into()],
+        },
+    }
 }
 
 #[test]
 fn shared_module_is_fpm_only_and_reloads_only_when_changed_and_valid() {
     for (active, valid) in [(true, true), (true, false), (false, true)] {
-        let mut f = Fixture::new();
+        let mut f = fixture();
         if active {
             f.host.active.insert(UNIT.into());
         }
@@ -49,7 +64,7 @@ fn invalid_settings_and_release_refuse_without_execution_or_changes() {
         "opcache.memory_consumption = 1\nopcache.memory_consumption = 1\n",
         "opcache.jit = tracing\n",
     ] {
-        let mut f = Fixture::new();
+        let mut f = fixture();
         let mut input = input();
         input.runtime_ini.push_str(invalid);
         assert!(matches!(
@@ -58,7 +73,7 @@ fn invalid_settings_and_release_refuse_without_execution_or_changes() {
         ));
         assert!(f.host.calls.is_empty());
     }
-    let mut f = Fixture::new();
+    let mut f = fixture();
     write(
         &f.files,
         "/etc/os-release",
@@ -84,11 +99,14 @@ fn request_sizes_must_be_positive_bounded_php_quantities_and_both_are_required()
             "1.5M",
             "64M; ignored",
             "64M\nother = 1",
+            "1025M",
+            "2G",
+            "1073741825",
             "9223372036854775808",
             "8589934592G",
             "18446744073709551616M",
         ] {
-            let mut f = Fixture::new();
+            let mut f = fixture();
             let mut input = input();
             input.runtime_ini = input
                 .runtime_ini
@@ -107,7 +125,7 @@ fn request_sizes_must_be_positive_bounded_php_quantities_and_both_are_required()
                 .exists());
         }
         for replacement in [String::new(), format!("{key} = 64M\n{key} = 64M\n")] {
-            let mut f = Fixture::new();
+            let mut f = fixture();
             let mut input = input();
             input.runtime_ini = input
                 .runtime_ini
@@ -124,7 +142,7 @@ fn request_sizes_must_be_positive_bounded_php_quantities_and_both_are_required()
 #[test]
 fn request_size_overrides_are_detected_before_reload_and_restore_the_module() {
     for (key, value) in [("post_max_size", "8M"), ("upload_max_filesize", "2M")] {
-        let mut f = Fixture::new();
+        let mut f = fixture();
         let available = f
             .files
             .path("/etc/php/8.5/mods-available/orbit-runtime.ini");
@@ -145,7 +163,7 @@ fn request_size_overrides_are_detected_before_reload_and_restore_the_module() {
 #[test]
 fn adding_request_limits_reloads_existing_shared_and_dedicated_masters_once() {
     for invalid in [None, Some(UNIT), Some(DEDICATED)] {
-        let mut f = Fixture::new();
+        let mut f = fixture();
         let previous = input()
             .runtime_ini
             .replace("post_max_size = 64M\n", "")
@@ -198,7 +216,7 @@ fn adding_request_limits_reloads_existing_shared_and_dedicated_masters_once() {
 
 #[test]
 fn failed_dedicated_reload_restores_and_reloads_every_master_already_touched() {
-    let mut f = Fixture::new();
+    let mut f = fixture();
     let available = write(
         &f.files,
         "/etc/php/8.5/mods-available/orbit-runtime.ini",
@@ -226,7 +244,7 @@ fn failed_dedicated_reload_restores_and_reloads_every_master_already_touched() {
 #[test]
 fn failed_publication_restores_previous_content_and_the_exact_previous_link() {
     for prior in [false, true] {
-        let mut f = Fixture::new();
+        let mut f = fixture();
         let available = f
             .files
             .path("/etc/php/8.5/mods-available/orbit-runtime.ini");
@@ -256,7 +274,7 @@ fn failed_publication_restores_previous_content_and_the_exact_previous_link() {
 
 #[test]
 fn unexpected_loaded_settings_pcov_and_occupied_module_link_refuse() {
-    let mut f = Fixture::new();
+    let mut f = fixture();
     let mut input = input();
     input.runtime_ini = input.runtime_ini.replace("512", "256");
     assert!(matches!(
@@ -285,4 +303,39 @@ fn unexpected_loaded_settings_pcov_and_occupied_module_link_refuse() {
     ));
     assert!(f.host.calls.is_empty());
     assert_eq!(fs::read_to_string(blocked).unwrap(), "keep\n");
+}
+
+#[test]
+fn absent_recipe_version_is_untouched_until_fpm_is_installed() {
+    let mut f = fixture();
+    let mut missing = input();
+    missing.version = "8.6".into();
+    let absent = php_profile::configure(&mut f.host, &f.files, &missing).unwrap();
+    assert!(!absent.changed && !absent.reloaded);
+    assert!(!f.files.path("/etc/php/8.6").exists());
+    let binary = f.files.path("/usr/sbin/php-fpm8.5");
+    fs::remove_file(&binary).unwrap();
+    let absent = php_profile::configure(&mut f.host, &f.files, &input()).unwrap();
+    assert!(!absent.changed && !absent.reloaded);
+    assert!(f.host.calls.is_empty());
+    assert!(!f
+        .files
+        .path("/etc/php/8.5/mods-available/orbit-runtime.ini")
+        .exists());
+    assert!(!f
+        .files
+        .path("/etc/php/8.5/fpm/conf.d/99-orbit-runtime.ini")
+        .is_symlink());
+    fs::write(binary, "installed later\n").unwrap();
+    f.host.active.insert(UNIT.into());
+    let installed = php_profile::configure(&mut f.host, &f.files, &input()).unwrap();
+    assert!(installed.changed && installed.reloaded);
+    assert_eq!(
+        fs::read_to_string(
+            f.files
+                .path("/etc/php/8.5/mods-available/orbit-runtime.ini")
+        )
+        .unwrap(),
+        input().runtime_ini
+    );
 }

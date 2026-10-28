@@ -11,6 +11,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Models\Node;
 use RuntimeException;
 
@@ -20,7 +21,7 @@ final readonly class NodeRecipeProgram
     /** The tools `recipe.install-javascript` installs. */
     public const array JavascriptTools = ['bun', 'node', 'pnpm', 'vp', 'vp-cli'];
 
-    public function __construct(private AgentCommandRunner $agents, private PhpBuildInstaller $php, private PrivateDnsManager $dns) {}
+    public function __construct(private AgentCommandRunner $agents, private PhpBuildInstaller $php, private PrivateDnsManager $dns, private RemotePhpPackageManager $runtimes) {}
 
     /** The recipe architecture of a Node; another architecture is refused. */
     public static function architecture(Node $node): string
@@ -148,6 +149,9 @@ final readonly class NodeRecipeProgram
                 default => 'The PHP packages were not changed.',
             };
             throw new ResourceOperationException('node.recipe_php_failed', 'Recipe convergence stopped at the PHP build: '.PhpBuildInstaller::describe($result).' '.$restored, 502);
+        }
+        if ($node->roles()->whereIn('role', [RoleName::AppDev, RoleName::AppProd])->where('status', LifecycleStatus::Active)->exists()) {
+            $this->runtimes->configureForAppNode($node, $versions);
         }
         $names = static fn (mixed $list): array => is_array($list) ? array_values(array_filter($list, is_string(...))) : [];
         $report['changed_packages'] = array_values(array_unique([...$names($report['changed_packages'] ?? null), ...$names($result->data['changed'] ?? null)]));

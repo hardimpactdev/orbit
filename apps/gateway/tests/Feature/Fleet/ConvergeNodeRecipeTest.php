@@ -677,3 +677,19 @@ it('refuses an Incus change while a task VM row can still resume or provision', 
         ->toThrow(ResourceOperationException::class, $vm->name.' ('.$state.')');
     expect(array_column($agents->calls, 'command'))->toBe(['recipe.inspect']);
 })->with(['provisioning', 'ready', 'parked', 'destroying', 'failed']);
+
+it('publishes runtime settings after recipe convergence installs PHP on an app Node', function (): void {
+    $node = FleetFixtures::node('recipe-runtime', [RoleName::AppProd]);
+    $agents = recipeAgents();
+    $agents->answer('php.configure-runtime', ['changed' => true, 'reloaded' => true]);
+    $recipe = new RecipeLoader()->load();
+    $program = app(NodeRecipeProgram::class);
+
+    $program->apply($node, $recipe, $program->tools($node, $recipe));
+
+    $commands = $agents->commands();
+    expect(array_search('php.install-build', $commands, true))->toBeLessThan(array_search('php.configure-runtime', $commands, true));
+    $profiles = collect($agents->calls)->where('command', 'php.configure-runtime')->values();
+    expect($profiles)->toHaveCount(1);
+    expect($profiles[0]['input']['runtime_ini'])->toContain('post_max_size = 64M', 'upload_max_filesize = 64M');
+});

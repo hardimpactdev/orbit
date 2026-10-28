@@ -32,6 +32,7 @@ final class PhpBuildAnswers
 
     public function register(FakeAgentCommandRunner $runner): self
     {
+        $runner->answer('php.configure-runtime', ['changed' => false, 'reloaded' => false]);
         foreach (['plan' => 'php.inspect-build', 'apply' => 'php.install-build'] as $mode => $command) {
             $runner->answer($command, function (array $input) use ($mode, $command): array {
                 $this->inputs[] = ['mode' => $mode, ...$input];

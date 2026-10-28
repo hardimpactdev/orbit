@@ -51,3 +51,8 @@ it('sizes shared memory for many development sites and a lean production service
 it('rejects unknown runtime profiles', function (): void {
     new PhpFpmRuntimeIniRenderer()->render('app-staging');
 })->throws(InvalidArgumentException::class);
+
+it('matches the runtime ini fixture shared with the Rust validator', function (string $profile): void {
+    expect(new PhpFpmRuntimeIniRenderer()->render($profile))
+        ->toBe(file_get_contents(__DIR__."/../../../Fixtures/PhpRuntimeIni/{$profile}.ini"));
+})->with(['app-dev', 'app-prod']);
