@@ -64,8 +64,8 @@ final class InstanceAutoDeployData extends Data
             commit: $enabled ? self::string($state['commit'] ?? null) : null,
             head: $enabled ? self::string($state['head'] ?? null) : null,
             since: $enabled ? self::string($state['since'] ?? null) : null,
-            errorCode: $enabled ? self::string($state['error_code'] ?? null) : null,
-            message: $enabled ? self::string($state['message'] ?? null) : null,
+            errorCode: $automatic->smokeHeld() ? 'instance.smoke_held' : ($enabled ? self::string($state['error_code'] ?? null) : null),
+            message: $automatic->smokeHeld() ? 'Production smoke holds automatic deployments until a verified pass.' : ($enabled ? self::string($state['message'] ?? null) : null),
             pause: $enabled && $active ? new InstanceAutoDeployPauseData($pause['reason'], $pause['deployment_id'], $pause['commit'], $pause['paused_at']) : null,
         );
     }

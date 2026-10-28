@@ -8,6 +8,7 @@ use App\Data\Instances\InstanceData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\GitHub\GitHubRepository;
+use App\Domain\Instances\Deployment\AutomaticDeployState;
 use App\Domain\Instances\Deployment\SharedPaths;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Projects\ProjectSourceAccess;
@@ -52,6 +53,11 @@ final readonly class UpdateInstanceAction
                 $locked->auto_deploy_resumed_after = is_int($resumedAfter) ? $resumedAfter : 0;
             } elseif ($autoDeploy === false) {
                 $locked->auto_deploy = false;
+            }
+            if ($autoDeploy !== null) {
+                $state = AutomaticDeployState::of($locked);
+                $state->operatorControl();
+                $locked->auto_deploy_state = $state->toArray();
             }
             $locked->save();
 

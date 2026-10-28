@@ -14,10 +14,12 @@ use App\Data\Instances\InstanceSmokeRollbackReceiptData;
 use App\Data\Instances\InstanceSmokeSelectionData;
 use App\Data\Operations\OperationData;
 use App\Domain\GitHub\GitHubRepository;
+use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Instances\Deployment\AutomaticDeployState;
 use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
@@ -80,9 +82,12 @@ final readonly class InstanceSmokeRecoveryAction
         return $this->lock->run([$instance->id], function () use ($instance, $caller, $data, $requestId): Operation {
             $this->guard($instance, $caller, $data);
             $this->rollback->plan($instance);
+            $queued = Operation::query()->where('lock_key', OperationStore::lockKey('instance', $instance->id))
+                ->where('kind', OperationKinds::InstanceDeploy)->where('status', 'queued')
+                ->whereIn('triggered_by', AutomaticDeployHistory::Triggers)->exists();
 
             return $this->operations->execute(OperationKinds::InstanceRollback, 'instance', $instance->id, $instance->node_id,
-                [...$data->toArray(), 'caller_node_id' => $caller->id], 'swamp:smoke', $requestId,
+                [...$data->toArray(), 'caller_node_id' => $caller->id, 'recovery_redeploy_required' => $queued], 'swamp:smoke', $requestId,
                 supersedes: [OperationKinds::InstanceDeploy]);
         });
     }
@@ -120,14 +125,14 @@ final readonly class InstanceSmokeRecoveryAction
         }
     }
 
-    public function rollbackReceipt(Instance $instance, Node $caller, string $key): InstanceSmokeRollbackReceiptData
+    public function rollbackReceipt(Instance $instance, Node $caller, string $key, bool $redeploy = false): InstanceSmokeRollbackReceiptData
     {
-        $operation = Operation::query()->where('kind', OperationKinds::InstanceRollback)->where('idempotency_key', $key)->first();
+        $operation = Operation::query()->where('kind', $redeploy ? OperationKinds::InstanceDeploy : OperationKinds::InstanceRollback)->where('idempotency_key', $key)->first();
         if ($operation === null) {
             return new InstanceSmokeRollbackReceiptData($key, false, null, null);
         }
         if ($operation->target_type !== 'instance' || $operation->target_id !== $instance->id
-            || $operation->callerNodeId() !== $caller->id || ! isset($operation->input['failure_key'])) {
+            || $operation->callerNodeId() !== $caller->id || ! isset($operation->input[$redeploy ? 'smoke_hold_key' : 'failure_key'])) {
             throw new ResourceOperationException('operation.idempotency_conflict', 'The rollback key belongs to another admission.', 409);
         }
         $deploymentId = $operation->state['deployment_id'] ?? null;
@@ -138,7 +143,7 @@ final readonly class InstanceSmokeRecoveryAction
         return new InstanceSmokeRollbackReceiptData($key, true, OperationData::fromModel($operation), $deployment);
     }
 
-    private function proof(Instance $instance, Node $caller, InstanceSmokeSelectionData $selection, string $key, bool $passed): void
+    public function proof(Instance $instance, Node $caller, InstanceSmokeSelectionData $selection, string $key, bool $passed): void
     {
         $code = $passed ? 'instance.smoke_rollback_invalid' : 'instance.smoke_failure_invalid';
         try {

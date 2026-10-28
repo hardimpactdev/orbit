@@ -88,6 +88,24 @@ final class AutomaticDeployState
             ? ['caller_node_id' => $entry['caller_node_id'], 'fingerprint' => $entry['fingerprint'], 'failure' => ValidatedData::object($entry['failure'])] : null;
     }
 
+    /** @param array<string, mixed> $control */
+    public function smokeControl(array $control): void
+    {
+        $this->state['smoke_control'] = $control;
+    }
+
+    public function smokeHeld(): bool
+    {
+        $control = $this->state['smoke_control'] ?? null;
+
+        return is_array($control) && is_array($control['hold'] ?? null);
+    }
+
+    public function operatorControl(): void
+    {
+        $this->state['operator_version'] = (is_int($this->state['operator_version'] ?? null) ? $this->state['operator_version'] : 0) + 1;
+    }
+
     /** @return list<string> */
     public function smokeBlocked(): array
     {

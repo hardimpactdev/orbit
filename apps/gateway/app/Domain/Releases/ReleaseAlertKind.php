@@ -18,6 +18,7 @@ enum ReleaseAlertKind: string
     case RolloutCliFallback = 'rollout_cli_fallback';
     case InstanceDeployFailed = 'instance_deploy_failed';
     case InstanceDeployStalled = 'instance_deploy_stalled';
+    case InstanceSmokeHeld = 'instance_smoke_held';
     case InstanceDeployPaused = 'instance_deploy_paused';
 
     public function label(): string
@@ -35,6 +36,7 @@ enum ReleaseAlertKind: string
             self::RolloutCliFallback => 'Rollout used an older CLI release',
             self::InstanceDeployFailed => 'Automatic deployment failed',
             self::InstanceDeployStalled => 'Automatic deployment stalled',
+            self::InstanceSmokeHeld => 'Production smoke held',
             self::InstanceDeployPaused => 'Automatic deployment paused',
         };
     }

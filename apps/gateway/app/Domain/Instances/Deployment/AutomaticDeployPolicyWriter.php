@@ -35,6 +35,9 @@ enum AutomaticDeployPolicyWriter: string
     /** Shared by discovery, admission, and the worker. Ownership is checked separately for cutover probing. */
     public function eligibilityRefusal(Instance $instance): ?string
     {
+        if (AutomaticDeployState::of($instance)->smokeHeld()) {
+            return 'instance.smoke_held';
+        }
         $instance->loadMissing('node.roles');
         if (! $instance->node->roles->contains(static fn (NodeRole $role): bool => $role->role === RoleName::AppProd && $role->status === LifecycleStatus::Active)) {
             return self::InactiveRole;
