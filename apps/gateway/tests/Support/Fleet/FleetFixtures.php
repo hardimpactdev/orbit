@@ -133,7 +133,7 @@ final class FleetFixtures
     }
 
     /**
-     * Binds a published CLI release, the alert recorder, and units, with the rollout on.
+     * Binds a published CLI release and the alert recorder, with the rollout on.
      *
      * @param  array<int, NodeFootprintArtifact>  $artifacts
      * @return array{catalog: FakeCliReleaseCatalog, alerts: RecordingReleaseAlertNotifier}

@@ -46,7 +46,7 @@ describe('fleet response fixtures', function (): void {
     });
 
     it('records a halted rollout, its resume past the failed Node, and a refused resume', function (): void {
-        ['units' => $units] = FleetFixtures::bind([new FakeFootprintArtifact('caddy', 'caddy-digest')]);
+        FleetFixtures::bind([new FakeFootprintArtifact('caddy', 'caddy-digest')]);
         FleetFixtures::node('app-dev', [RoleName::AppDev]);
         FleetFixtures::node('app-prod', [RoleName::AppProd]);
         app(FleetRolloutPlanAction::class)->execute();
@@ -61,7 +61,6 @@ describe('fleet response fixtures', function (): void {
             ResumeFleetRolloutRequest::class,
             'POST /api/v1/fleet/rollout/resume',
         );
-        expect($units->started)->toBe(1);
 
         $rollout->nodes()->where('node_name', 'app-prod')->update(['outcome' => FleetNodeOutcome::Converged, 'finished_at' => now()]);
         $rollout->update(['status' => FleetRolloutStatus::Completed, 'finished_at' => now()]);
