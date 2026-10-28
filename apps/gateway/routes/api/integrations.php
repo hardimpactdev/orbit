@@ -9,4 +9,4 @@ use Illuminate\Support\Facades\Route;
 
 Route::middleware([RequireActiveWireGuardPeer::class, RequireNodeAccess::class])
     ->post('operation-executor/{operation}/integrations/intent', [IntegrationIntentController::class, 'show'])
-    ->whereNumber('operation')->name('integration:execution-intent');
+    ->whereNumber('operation')->name('operation:executor:integration-intent');
