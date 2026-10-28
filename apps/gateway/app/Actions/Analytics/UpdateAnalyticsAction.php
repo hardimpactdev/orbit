@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace App\Actions\Analytics;
 
-use App\Models\Operation;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\NodeRole;
+use App\Models\Operation;
 
 final readonly class UpdateAnalyticsAction
 {
@@ -22,8 +22,6 @@ final readonly class UpdateAnalyticsAction
      * Pins another Plausible version and converges the role again, which replaces the `plausible`
      * Process. A failed convergence puts the earlier version back, so the next converge does not
      * retry a version that does not start.
-     *
-     * @return array{node_id: int, node_name: string, version: string, previous_version: string}
      */
     public function execute(string $version): Operation
     {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Metrics;
 
+use App\Actions\Operations\StartOperationAction;
 use App\Data\Metrics\MetricsCredentialsData;
 use App\Domain\Metrics\MetricsCredentialManager;
 use App\Domain\Metrics\MetricsCredentialOperationLock;
@@ -18,7 +19,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
-use App\Actions\Operations\StartOperationAction;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use SensitiveParameter;
@@ -117,6 +117,7 @@ final readonly class NativeMetricsCredentialManager implements MetricsCredential
     public function reset(): Operation
     {
         $node = $this->assignedNode();
+
         return $this->operations->run($node->id, function () use ($node): Operation {
             $scope = $this->scope($node);
             $this->activePassword($node);
@@ -125,6 +126,7 @@ final readonly class NativeMetricsCredentialManager implements MetricsCredential
                 $pending = Str::random(self::PasswordLength);
                 $this->settings->put($scope, self::PendingPasswordKey, $pending, SettingValueProtection::Secret);
             }
+
             return app(StartOperationAction::class)->execute('metrics.credentials_reset', 'metrics_credentials', $node->id, $node->id,
                 ['pending_sha256' => hash('sha256', $pending)], 'operator', null);
         });

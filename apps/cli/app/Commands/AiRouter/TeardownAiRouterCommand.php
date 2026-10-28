@@ -7,13 +7,13 @@ namespace App\Commands\AiRouter;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\AiRouter\TeardownAiRouterRequest;
-use Orbit\Sdk\Responses\AiRouter\AiRouterStatusResponse;
 
 final class TeardownAiRouterCommand extends AiRouterCommand
 {
     #[\Override]
     protected $signature = 'ai-router:teardown
         {--yes : Confirm the fleet teardown without a prompt}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -35,15 +35,6 @@ final class TeardownAiRouterCommand extends AiRouterCommand
             return self::FAILURE;
         }
 
-        $response = $this->sendWithProgress(
-            $connector,
-            new TeardownAiRouterRequest,
-            AiRouterStatusResponse::class,
-            ['Teardown ai-router', 'Stopping the collector', 'Tore down ai-router'],
-        );
-
-        return $response instanceof AiRouterStatusResponse
-            ? $this->renderStatus($response, 'ai-router fleet feature is torn down.')
-            : self::FAILURE;
+        return $this->integrationOperation($connector, $repository, new TeardownAiRouterRequest(is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null), 'Tear down AI router');
     }
 }

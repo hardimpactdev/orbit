@@ -4,36 +4,28 @@ declare(strict_types=1);
 
 namespace App\Actions\Analytics;
 
-use App\Actions\Routes\DestroyRouteAction;
-use App\Actions\Routes\PublishPublicRouteAction;
-use App\Data\Analytics\InstanceAnalyticsData;
+use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Operations\AwaitOperation;
+use App\Infrastructure\Routes\IngressSiteRepository;
 use App\Models\Instance;
+use App\Models\Operation;
 use App\Models\Route;
+use Illuminate\Support\Facades\DB;
 
 final readonly class DisableInstanceAnalyticsAction
 {
-    public function __construct(
-        private ShowInstanceAnalyticsAction $show,
-        private PublishPublicRouteAction $publication,
-        private DestroyRouteAction $remove,
-        private InstanceEnvironmentOperationLock $operations,
-    ) {}
+    public function __construct(private ShowInstanceAnalyticsAction $show, private StartInstanceAnalyticsOperationAction $intents,
+        private InstanceEnvironmentOperationLock $operations, private IngressSiteRepository $sites, private StartOperationAction $starts, private AwaitOperation $await) {}
 
-    public function execute(Instance $instance): InstanceAnalyticsData
+    public function execute(Instance $instance): Operation
     {
-        return $this->operations->run([$instance->id], function () use ($instance): InstanceAnalyticsData {
-            foreach ($this->show->trackingRoutes($instance) as $route) {
-                $this->removeRoute($route);
-            }
-
-            return $this->show->execute($instance);
-        });
+        return $this->operations->run([$instance->id], fn (): Operation => DB::transaction(fn (): Operation => $this->intents->execute($instance, [], array_values($this->show->trackingRoutes($instance)->all()), true)));
     }
 
-    /** An active public edge cannot be removed with its Route, so the host leaves the Ingress first. */
     public function removeRoute(Route $route): void
     {
-        $this->remove->executeTrackingRoute($this->publication->withdraw($route));
+        $node = $this->sites->routerNode($route);
+        $this->await->execute($this->starts->execute('route.analytics_remove', 'route', $route->id, $node->id, ['route_id' => $route->id], 'integration', null));
     }
 }

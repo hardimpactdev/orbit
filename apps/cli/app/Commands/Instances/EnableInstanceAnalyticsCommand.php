@@ -7,7 +7,6 @@ namespace App\Commands\Instances;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Analytics\EnableInstanceAnalyticsRequest;
-use Orbit\Sdk\Responses\Analytics\InstanceAnalyticsResponse;
 
 final class EnableInstanceAnalyticsCommand extends InstanceAnalyticsCommand
 {
@@ -15,6 +14,7 @@ final class EnableInstanceAnalyticsCommand extends InstanceAnalyticsCommand
     protected $signature = 'instance:analytics:enable
         {instance : Numeric instance ID}
         {--host=* : Tracking host; repeat for more. Defaults to analytics.<instance domain>}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -40,15 +40,6 @@ final class EnableInstanceAnalyticsCommand extends InstanceAnalyticsCommand
         }
 
         // The Gateway sets the exact host set: it adds the missing hosts and removes the others.
-        $response = $this->sendWithProgress(
-            $connector,
-            new EnableInstanceAnalyticsRequest($instanceId, $hosts),
-            InstanceAnalyticsResponse::class,
-            ['Enable analytics', 'Publishing tracking hosts', 'Published tracking hosts'],
-        );
-
-        return $response instanceof InstanceAnalyticsResponse
-            ? $this->renderAnalytics($response, 'Analytics tracking enabled.')
-            : self::FAILURE;
+        return $this->integrationOperation($connector, $repository, new EnableInstanceAnalyticsRequest($instanceId, $hosts, idempotencyKey: is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null), 'Enable Instance analytics');
     }
 }

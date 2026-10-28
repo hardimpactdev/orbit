@@ -13,10 +13,10 @@ final readonly class AiRouterCacheRenameCommand implements OperationGatewayComma
 
     public function schema(): array
     {
-        return ['type' => 'object', 'additionalProperties' => false, 'properties' => []];
+        return ['type' => 'object', 'additionalProperties' => false, 'properties' => new \stdClass];
     }
 
-    public function run(Operation $operation, array $input): array
+    public function run(Operation $operation, #[\SensitiveParameter] array $input): array
     {
         $this->cache->renameCollectorKeys('orbit:proxycli:', 'orbit:ai-router:');
 

@@ -20,7 +20,6 @@ use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Analytics\AnalyticsFootprint;
-use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\Sources\AnalyticsCaddySiteSource;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Nodes\AgentCaddyPackage;
@@ -28,6 +27,7 @@ use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Models\Process;
+use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Validates and records analytics intent. The storage Processes and their data stay operator-owned. */
@@ -36,7 +36,7 @@ final readonly class StartAnalyticsOperationAction
     public function __construct(private StartIntegrationOperationAction $operations, private IntegrationProcessIntent $processes,
         private ProcessOperationAdmission $processOperations, private AnalyticsRoleSettingsRepository $settings,
         private AnalyticsStorageProcessGuard $storage, private AnalyticsSecretManager $secrets,
-        private GatewayCertificateIssuer $certificates, private CaddySiteCertificates $certificateRecords,
+        private GatewayCertificateIssuer $certificates,
         private NodeFirewallRuleCatalog $firewall) {}
 
     public function execute(Node $node, NodeRole $assignment, string $verb = 'enable', bool $unreachable = false, ?string $previousVersion = null): Operation
@@ -62,7 +62,7 @@ final readonly class StartAnalyticsOperationAction
                 $missing = PlausibleClickhouseConfiguration::missingMounts($clickhouse->runtime_config['volumes'] ?? [], $clickhouse->name);
                 $recovering = $clickhouse->status === LifecycleStatus::Failed;
                 if ($missing !== []) {
-                    $clickhouse->update(['runtime_config' => [...$clickhouse->runtime_config, 'volumes' => [...($clickhouse->runtime_config['volumes'] ?? []), ...$missing]]]);
+                    $clickhouse->update(['runtime_config' => [...$clickhouse->runtime_config, 'volumes' => [...(is_array($clickhouse->runtime_config['volumes'] ?? null) ? $clickhouse->runtime_config['volumes'] : []), ...$missing]]]);
                 }
                 $clickhousePlan = new IntegrationPlan($clickhouse->owner_id);
                 $clickhousePlan->agent('analytics-clickhouse-files', 'analytics.configure-clickhouse', []);
@@ -87,7 +87,7 @@ final readonly class StartAnalyticsOperationAction
                 $plan->child('analytics-process', $intent['kind'], $node->id, $intent['input']);
                 $plan->agent('analytics-health', 'http.await-healthy', ['url' => 'http://'.$node->wireguard_ip.':'.PlausibleProcess::PORT.'/api/health', 'attempts' => 90, 'interval_seconds' => 2]);
                 $plan->agent('analytics-caddy-package', 'caddy.install-package', AgentCaddyPackage::input());
-                $certificate = $this->certificates->issue('analytics.orbit', $node->wireguard_ip);
+                $certificate = $this->certificates->issue('analytics.orbit', ValidatedData::string($node->wireguard_ip));
                 $plan->agent('analytics-certificate', 'caddy.install-certificate', [
                     'directory' => AnalyticsFootprint::CertificateCurrentDirectory, 'certificate_file' => 'analytics.pem', 'key_file' => 'analytics.key', 'service' => 'caddy',
                 ], ['certificate' => $this->read($certificate->certificatePath), 'key' => $this->read($certificate->privateKeyPath)]);
@@ -98,6 +98,7 @@ final readonly class StartAnalyticsOperationAction
             $input['dns_node_id'] = $dns->node_id;
             $plan->child('analytics-dns', 'route.private_dns_publish', $dns->node_id, ['reason' => 'analytics intent']);
             $plan->receipt($remove ? 'absent' : 'active');
+
             return $this->operations->execute('analytics.'.$verb, 'analytics', $node->id, $node->id, $input, $plan);
         });
     }
@@ -117,6 +118,7 @@ final readonly class StartAnalyticsOperationAction
         if (! is_string($value) || $value === '') {
             throw new ResourceOperationException('analytics.certificate_read_failed', 'The admitted certificate is unreadable.', 422);
         }
+
         return $value;
     }
 }

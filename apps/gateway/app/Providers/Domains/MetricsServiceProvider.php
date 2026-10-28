@@ -5,19 +5,25 @@ declare(strict_types=1);
 namespace App\Providers\Domains;
 
 use App\Domain\Metrics\MetricsAccessRevoker;
+use App\Domain\Metrics\MetricsCertificateSecrets;
 use App\Domain\Metrics\MetricsCredentialManager;
 use App\Domain\Metrics\MetricsCredentialOperationLock;
 use App\Domain\Metrics\MetricsCredentialRuntime;
 use App\Domain\Metrics\MetricsExporterProjection;
 use App\Domain\Metrics\MetricsFirewallExpectationProvider;
 use App\Domain\Metrics\MetricsFleetReconciler;
+use App\Domain\Metrics\MetricsPasswordSecrets;
 use App\Domain\Metrics\MetricsPublicationReport;
 use App\Domain\Metrics\MetricsReconcileDeferral;
+use App\Domain\Metrics\MetricsResetSecrets;
 use App\Domain\Metrics\MetricsRoleManager;
+use App\Domain\Metrics\MetricsRuntimeSecrets;
 use App\Domain\Metrics\MetricsStatusReader;
+use App\Domain\Operations\OperationSecretSource;
 use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\MetricsCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\ServiceMetricsCaddySiteSource;
+use App\Infrastructure\Metrics\MetricsReadCommands;
 use App\Infrastructure\Metrics\NativeMetricsAccessRevoker;
 use App\Infrastructure\Metrics\NativeMetricsCredentialManager;
 use App\Infrastructure\Metrics\NativeMetricsCredentialOperationLock;
@@ -35,7 +41,7 @@ final class MetricsServiceProvider extends ServiceProvider
 {
     /** @var array<class-string, class-string> */
     public array $bindings = [
-        MetricsCredentialRuntime::class => \App\Infrastructure\Metrics\MetricsReadCommands::class,
+        MetricsCredentialRuntime::class => MetricsReadCommands::class,
         MetricsCredentialManager::class => NativeMetricsCredentialManager::class,
         MetricsAccessRevoker::class => NativeMetricsAccessRevoker::class,
         MetricsExporterProjection::class => NativeMetricsExporterProjection::class,
@@ -48,7 +54,7 @@ final class MetricsServiceProvider extends ServiceProvider
 
     public function register(): void
     {
-        $this->app->tag([\App\Domain\Metrics\MetricsResetSecrets::class, \App\Domain\Metrics\MetricsRuntimeSecrets::class, \App\Domain\Metrics\MetricsPasswordSecrets::class, \App\Domain\Metrics\MetricsCertificateSecrets::class], \App\Domain\Operations\OperationSecretSource::class);
+        $this->app->tag([MetricsResetSecrets::class, MetricsRuntimeSecrets::class, MetricsPasswordSecrets::class, MetricsCertificateSecrets::class], OperationSecretSource::class);
         $this->app->tag([ServiceMetricsCaddySiteSource::class], NodeCaddySiteSource::class);
         $this->app->tag([MetricsCaddySiteSource::class], NodeCaddySiteSource::class);
         $this->app->scoped(

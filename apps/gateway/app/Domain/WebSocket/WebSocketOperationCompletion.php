@@ -11,6 +11,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Models\WebSocketRegistryOperation;
+use App\Support\ValidatedData;
 
 /** Proves the current boot set, including every serving end of a role move. */
 final readonly class WebSocketOperationCompletion implements OperationCompletion
@@ -22,7 +23,7 @@ final readonly class WebSocketOperationCompletion implements OperationCompletion
         if ($outcome->status !== OperationStatus::Succeeded) {
             return;
         }
-        $registry = WebSocketRegistryOperation::query()->findOrFail($operation->input['registry_operation_id']);
+        $registry = WebSocketRegistryOperation::query()->whereKey(ValidatedData::string($operation->input['registry_operation_id']))->firstOrFail();
         if ($this->status->execute($registry)['state'] !== 'applied') {
             throw new ResourceOperationException('websocket.registry_pending', 'Every current Reverb process must confirm the registry revision.', 409);
         }

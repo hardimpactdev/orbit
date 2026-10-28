@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Conn\Domain;
 
+use App\Domain\Operations\OperationGatewayCommand;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
-use App\Domain\Operations\OperationGatewayCommand;
 use Orbit\Extensions\Conn\Models\ConnPairing;
 use SensitiveParameter;
 

@@ -75,7 +75,7 @@ describe('websocket:app:create', function (): void {
 
         $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])
             ->assertStatus(202)
-            ->assertJsonPath('operation.state', 'pending');
+            ->assertJsonPath('data.status', 'queued');
 
         Sleep::assertNeverSlept();
     });
@@ -87,7 +87,7 @@ describe('websocket:app:create', function (): void {
 
         $app = WebSocketApp::query()->where('name', 'hauzer')->sole();
         $response
-            ->assertJsonPath('data', [
+            ->assertJsonPath('data.input.app', [
                 'id' => $app->id,
                 'name' => 'hauzer',
                 'app_id' => $app->app_id,
@@ -108,13 +108,13 @@ describe('websocket:app:create', function (): void {
             ->and($this->runtime->converged)->toBe([]);
     });
 
-    it('keeps the created app pending when runtime notification fails', function (): void {
+    it('keeps the created app queued while runtime reports are pending', function (): void {
         websocket_apps_activate_role($this->caller);
         $this->runtime->failConverge = true;
 
         $response = $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])
             ->assertStatus(202)
-            ->assertJsonPath('operation.state', 'pending');
+            ->assertJsonPath('data.status', 'queued');
 
         $app = WebSocketApp::query()->where('name', 'hauzer')->sole();
         expect($response->getContent())->not->toContain($app->secret)
@@ -164,7 +164,7 @@ describe('websocket:app:destroy', function (): void {
 
         $this->deleteJson('/api/v1/websocket-apps/hauzer')
             ->assertStatus(202)
-            ->assertJsonPath('data.name', 'hauzer');
+            ->assertJsonPath('data.input.app.name', 'hauzer');
 
         expect(WebSocketApp::query()->pluck('name')->all())->toBe(['gateway'])
             ->and($this->runtime->converged)->toBe([]);
@@ -180,7 +180,7 @@ describe('websocket:app:destroy', function (): void {
         expect(WebSocketApp::query()->count())->toBe(1);
     });
 
-    it('keeps deletion pending when runtime notification fails', function (): void {
+    it('keeps deletion queued while runtime reports are pending', function (): void {
         websocket_apps_activate_role($this->caller);
         $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])->assertStatus(202);
         $app = WebSocketApp::query()->where('name', 'hauzer')->sole();
@@ -188,7 +188,7 @@ describe('websocket:app:destroy', function (): void {
 
         $this->deleteJson('/api/v1/websocket-apps/hauzer')
             ->assertStatus(202)
-            ->assertJsonPath('operation.state', 'pending');
+            ->assertJsonPath('data.status', 'queued');
 
         expect(WebSocketApp::query()->whereKey($app->id)->exists())->toBeFalse()
             ->and(WebSocketApp::query()->pluck('name')->all())->toBe(['gateway'])
@@ -216,7 +216,7 @@ describe('instance:websocket:add and instance:websocket:remove', function (): vo
 
         $response = $this->putJson("/api/v1/instances/{$instance->id}/websocket-apps/hauzer")
             ->assertOk()
-            ->assertJsonPath('data', [
+            ->assertJsonPath('data.input.app', [
                 'instance_id' => $instance->id,
                 'name' => 'hauzer',
                 'keys' => [
@@ -455,12 +455,12 @@ it('rotates credentials and all attached stored environments once even when the 
     $before = $app->secret;
     $instance->node->update(['status' => LifecycleStatus::Failed]);
     $response = $this->withHeader('Idempotency-Key', 'rotate')->postJson('/api/v1/websocket-apps/hauzer/rotate')->assertStatus(202)
-        ->assertJsonPath('data.instance_rollout.instance_ids', [$instance->id]);
+        ->assertJsonPath('data.input.app.instance_rollout.instance_ids', [$instance->id]);
     $newSecret = $app->refresh()->secret;
     expect($newSecret)->not->toBe($before)->and($app->credential_generation)->toBe(2)
         ->and(websocket_apps_stored_env($instance)['REVERB_APP_SECRET'])->toBe($newSecret)
         ->and($response->getContent())->not->toContain($newSecret)->not->toContain($before);
-    $this->postJson('/api/v1/websocket-apps/hauzer/rotate')->assertStatus(202)->assertJsonPath('operation.id', $response->json('operation.id'));
+    $this->postJson('/api/v1/websocket-apps/hauzer/rotate')->assertStatus(202)->assertJsonPath('data.id', $response->json('data.id'));
     expect($app->refresh()->secret)->toBe($newSecret)->and($app->credential_generation)->toBe(2);
 });
 

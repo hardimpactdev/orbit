@@ -7,14 +7,11 @@ namespace Orbit\Extensions\AiRouter\Actions;
 use App\Domain\Extensions\ExtensionDependencies;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\ModelKeyIssuer;
-use App\Models\Node;
+use App\Models\Operation;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
-use App\Models\Operation;
-use Orbit\Extensions\AiRouter\Domain\AiRouterHostname;
 use Orbit\Extensions\AiRouter\Domain\AiRouterLifecycleLock;
-use Orbit\Extensions\AiRouter\Domain\AiRouterState;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterRenameCutover;
 
 /**
@@ -27,7 +24,6 @@ final readonly class DisableAiRouterAction
     public function __construct(
         private AiRouterLifecycleLock $lifecycle,
         private AiRouterRenameCutover $cutover,
-        private AiRouterState $state,
         private AdmitAiRouterOperationAction $operations,
         private ExtensionDependencies $extensions,
     ) {}

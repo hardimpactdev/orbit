@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Requests\Metrics;
 
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Responses\Metrics\MetricsMutationResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
@@ -22,7 +22,14 @@ final class DisableMetricsRequest extends GatewayRequest implements HasBody
     public function __construct(
         private readonly bool $force = false,
         private readonly bool $purgeData = false,
+        private readonly ?string $idempotencyKey = null,
     ) {}
+
+    /** @return array<string, string> */
+    protected function defaultHeaders(): array
+    {
+        return $this->idempotencyKey === null ? [] : ['Idempotency-Key' => $this->idempotencyKey];
+    }
 
     public function resolveEndpoint(): string
     {
@@ -35,11 +42,8 @@ final class DisableMetricsRequest extends GatewayRequest implements HasBody
         return ['force' => $this->force, 'purge_data' => $this->purgeData];
     }
 
-    public function createDtoFromResponse(#[SensitiveParameter] Response $response): MetricsMutationResponse
+    public function createDtoFromResponse(#[SensitiveParameter] Response $response): OperationResponse
     {
-        return MetricsMutationResponse::fromGatewayData(
-            $this->unwrapData($response),
-            $this->successRequestId($response),
-        );
+        return OperationResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
     }
 }

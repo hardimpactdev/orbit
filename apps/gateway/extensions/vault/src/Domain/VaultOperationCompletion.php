@@ -52,7 +52,7 @@ final readonly class VaultOperationCompletion implements OperationCompletion
             $fingerprints = $result['fingerprints'] ?? null;
             if (! is_array($sources) || ! is_array($ids) || ! is_array($revisions) || ! is_array($fingerprints)
                 || count($sources) !== count($ids) || count($sources) !== count($revisions) || count($sources) !== count($fingerprints)
-                || count(array_unique($sources)) !== count($sources)) {
+                || count(array_unique(ValidatedData::stringList($sources))) !== count($sources)) {
                 throw new VaultException('operation.completion_unproven', 'The published Vault ledger is incomplete.', 409);
             }
             VaultItem::query()->whereNotIn('source', $sources)->delete();

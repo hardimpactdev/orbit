@@ -13,7 +13,6 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
 use Orbit\Extensions\AiRouter\Domain\AiRouterCollectorEnvironment;
-use Orbit\Extensions\AiRouter\Domain\AiRouterHostnameRoute;
 use Orbit\Extensions\AiRouter\Domain\AiRouterLifecycleLock;
 use Orbit\Extensions\AiRouter\Domain\AiRouterPlacement;
 use Orbit\Extensions\AiRouter\Domain\AiRouterProcess;
@@ -35,7 +34,6 @@ final readonly class ConvergeAiRouterAction
         private AiRouterRenameCutover $cutover,
         private ProcessSpecification $specifications,
         private ProcessTargetResolver $targets,
-        private AiRouterHostnameRoute $routes,
     ) {}
 
     public function execute(bool $force = false, bool $deferCutover = false): ?Operation
@@ -48,6 +46,11 @@ final readonly class ConvergeAiRouterAction
             $slug = $this->state->cacheConnection();
             if ($nodeId === null || $slug === null) {
                 return null;
+            }
+            $existing = Operation::query()->where('node_id', $nodeId)->whereIn('kind', ['ai_router.setup', 'ai_router.collector_converge'])
+                ->whereIn('status', ['queued', 'running', 'waiting'])->first();
+            if ($existing !== null) {
+                return $existing;
             }
             $process = Process::query()->where('owner_type', Node::class)->where('owner_id', $nodeId)->where('name', AiRouterProcess::NAME)->first();
             $pending = $this->cutover->pending($nodeId);
@@ -69,6 +72,7 @@ final readonly class ConvergeAiRouterAction
                 && $source->source_revision === $this->delivery->pin($node)) {
                 return null;
             }
+
             return $this->operations->execute('ai_router.collector_converge', $force ? 'integration' : 'schedule');
         });
     }

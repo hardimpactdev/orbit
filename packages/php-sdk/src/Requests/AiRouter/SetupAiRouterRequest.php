@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Requests\AiRouter;
 
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Responses\AiRouter\AiRouterStatusResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
@@ -25,7 +25,14 @@ final class SetupAiRouterRequest extends GatewayRequest implements HasBody
         private readonly string $cliproxyUrl,
         #[SensitiveParameter]
         private readonly string $cliproxyManagementKey,
+        private readonly ?string $idempotencyKey = null,
     ) {}
+
+    /** @return array<string, string> */
+    protected function defaultHeaders(): array
+    {
+        return $this->idempotencyKey === null ? [] : ['Idempotency-Key' => $this->idempotencyKey];
+    }
 
     public function resolveEndpoint(): string
     {
@@ -45,11 +52,8 @@ final class SetupAiRouterRequest extends GatewayRequest implements HasBody
         ];
     }
 
-    public function createDtoFromResponse(#[SensitiveParameter] Response $response): AiRouterStatusResponse
+    public function createDtoFromResponse(#[SensitiveParameter] Response $response): OperationResponse
     {
-        return AiRouterStatusResponse::fromGatewayData(
-            $this->unwrapData($response),
-            $this->successRequestId($response),
-        );
+        return OperationResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
     }
 }

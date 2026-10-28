@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Analytics\AnalyticsOperationCompletion;
+use App\Domain\Analytics\InstanceAnalyticsOperationCompletion;
 use App\Domain\Integrations\IntegrationExecution;
 
 return (static function (): array {
@@ -14,6 +15,7 @@ return (static function (): array {
             $runs[] = ['transport' => 'agent', 'name' => $command,
                 ...($command === 'caddy.install-certificate' ? ['secrets' => ['certificate' => 'integration.payload', 'key' => 'integration.payload']] : [])];
         }
+        $runs = array_map(static fn (array $run): array => [...$run, 'resumable' => true], $runs);
         $kinds['analytics.'.$verb] = ['executor' => 'swamp', 'completion' => AnalyticsOperationCompletion::class, 'execution' => IntegrationExecution::class,
             'runs' => $runs,
             'children' => [
@@ -24,5 +26,13 @@ return (static function (): array {
             'completion_contract' => ['step' => 'integration-receipt', 'transport' => 'gateway', 'name' => 'integration.receipt', 'result' => ['backend' => $verb === 'disable' ? 'absent' : 'active']],
             'result_fields' => ['backend', 'changed', 'matches', 'healthy', 'recorded', 'removed', 'error_code']];
     }
+    foreach (['instance_enable', 'instance_disable'] as $verb) {
+        $kinds['analytics.'.$verb] = ['executor' => 'swamp', 'completion' => InstanceAnalyticsOperationCompletion::class, 'execution' => IntegrationExecution::class,
+            'runs' => [['transport' => 'gateway', 'name' => 'integration.receipt', 'resumable' => true]],
+            'children' => [['kind' => 'route.analytics_publish', 'node_from' => 'input.route_node_ids'], ['kind' => 'route.analytics_remove', 'node_from' => 'input.route_node_ids']],
+            'completion_contract' => ['step' => 'integration-receipt', 'transport' => 'gateway', 'name' => 'integration.receipt', 'result' => ['backend' => $verb === 'instance_disable' ? 'absent' : 'active']],
+            'result_fields' => ['backend', 'error_code']];
+    }
+
     return $kinds;
 })();

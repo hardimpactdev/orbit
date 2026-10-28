@@ -10,7 +10,7 @@ return (static function (): array {
         $kinds['vault.'.$action] = [
             'executor' => 'swamp',
             'completion' => VaultOperationCompletion::class,
-            'runs' => [[
+            'runs' => [['resumable' => true,
                 'transport' => 'remote_program', 'name' => 'vault.collection',
                 'input_fields' => ['configuration'], 'input_values' => ['action' => $action],
                 'secrets' => ['configuration' => 'vault.credentials'],

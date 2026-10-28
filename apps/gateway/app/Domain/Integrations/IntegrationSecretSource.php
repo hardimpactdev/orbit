@@ -22,9 +22,15 @@ final readonly class IntegrationSecretSource implements OperationSecretSource
         return 'integration.payload';
     }
 
+    /** @return list<string> */
+    public function targetTypes(): array
+    {
+        return ['ai_router', 'analytics', 'metrics'];
+    }
+
     public function ownerId(Operation $operation): ?int
     {
-        return isset($operation->input['effects']) && preg_match('/\A(?:ai_router|analytics|metrics)\./D', $operation->kind) === 1 ? $operation->target_id : null;
+        return isset(IntegrationIntent::data($operation)['effects']) && preg_match('/\A(?:ai_router|analytics|metrics)\./D', $operation->kind) === 1 ? $operation->node_id : null;
     }
 
     public function resolve(Operation $operation, int $id, string $key, string $parameter): OperationSecretValue
@@ -34,7 +40,7 @@ final readonly class IntegrationSecretSource implements OperationSecretSource
         }
         $stored = $this->settings->get(new SettingScope(SettingScopeType::Gateway), 'integration.operation.'.$operation->id);
         $values = $stored === null ? null : json_decode($stored, true, flags: JSON_THROW_ON_ERROR);
-        if (! is_array($values) || ! array_key_exists($parameter, $values[$key] ?? [])) {
+        if (! is_array($values) || ! is_array($values[$key] ?? null) || ! array_key_exists($parameter, $values[$key])) {
             throw new ResourceOperationException('operation.secret_unavailable', 'The admitted integration payload is unavailable.', 409);
         }
 

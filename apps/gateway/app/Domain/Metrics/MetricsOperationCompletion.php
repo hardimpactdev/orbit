@@ -16,7 +16,8 @@ final readonly class MetricsOperationCompletion implements OperationCompletion
 
     public function complete(Operation $operation, OperationOutcome $outcome): void
     {
-        if ($operation->node_id === null) {
+        if ($operation->node_id === null || $operation->getAttribute('parent_operation_id') !== null
+            || preg_match('/\Ametrics\.(?:node_exporter|cadvisor)_(?:converge|remove|restore)\z/D', $operation->kind) !== 1) {
             return;
         }
         if ($outcome->status === OperationStatus::Failed) {

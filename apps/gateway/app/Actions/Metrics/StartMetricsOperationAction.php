@@ -23,6 +23,31 @@ final readonly class StartMetricsOperationAction
     public function __construct(private StartIntegrationOperationAction $operations, private MetricsExporterProjection $exporters,
         private ServiceMetricsProjection $services, private MetricsGatewayResolver $gateways) {}
 
+    public function preference(Node $node, string $kind): Operation
+    {
+        $plan = new IntegrationPlan($node->id);
+        $plan->receipt('active');
+
+        return $this->operations->execute('metrics.'.$kind, 'metrics_preference', $node->id, $node->id,
+            ['preference_only' => true, 'node_id' => $node->id], $plan);
+    }
+
+    /** Retirement cleanup does not block removal or the remaining fleet's target update. */
+    public function retire(Node $node, Node $metrics): Operation
+    {
+        $plan = new IntegrationPlan($node->id);
+        $addresses = ['address' => $node->wireguard_ip, 'metrics_address' => $metrics->wireguard_ip];
+        foreach (['node_exporter', 'cadvisor'] as $component) {
+            $plan->child('retire-'.$component, 'metrics.'.$component.'_remove', $node->id, $addresses, true);
+        }
+        $service = $this->services->forNode($metrics, $node, false);
+        $plan->child('retire-services', 'metrics.service_converge', $node->id,
+            [...$addresses, 'instance_ids' => array_map(static fn ($instance): int => $instance->id, $service->instances), 'caddy' => false, 'fpm' => false], true);
+        $plan->receipt('absent');
+
+        return $this->operations->execute('metrics.retire', 'metrics_retirement', $node->id, $node->id, [], $plan, 'integration');
+    }
+
     public function execute(Node $node, NodeRole $assignment, string $verb = 'reconcile', bool $purge = false, bool $unreachable = false): Operation
     {
         return DB::transaction(function () use ($node, $assignment, $verb, $purge, $unreachable): Operation {
@@ -37,7 +62,7 @@ final readonly class StartMetricsOperationAction
                     }
                     $service = $this->services->forNode($node, $item->node, ! $remove);
                     $candidates[] = ['node_id' => $item->node->id, 'name' => $item->node->name, 'address' => $item->node->wireguard_ip,
-                        'selected' => ! $remove && $item->selection->selected, 'caddy' => $service->caddy, 'fpm' => $service->fpm,
+                        'selected' => ! $remove && $item->selection->selected, 'caddy' => $service->caddy, 'fpm' => $service->fpm, 'hosts' => $service->hosts,
                         'instance_ids' => array_map(static fn ($instance): int => $instance->id, $service->instances)];
                 }
             }
@@ -49,6 +74,7 @@ final readonly class StartMetricsOperationAction
                 'publication_cleanup' => $remove ? ($gateway === null ? 'uncleaned' : 'cleaned') : null];
             $plan = new IntegrationPlan($node->id);
             $plan->receipt($remove ? 'absent' : 'active');
+
             return $this->operations->execute('metrics.'.$verb, 'metrics', $node->id, $node->id, $input, $plan);
         });
     }

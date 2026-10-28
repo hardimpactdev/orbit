@@ -16,9 +16,9 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property int $node_id
  * @property int $conn_environment_id
- * @property string $pairing_link_id
+ * @property string|null $pairing_link_id
  * @property string $client_label
- * @property Carbon $expires_at
+ * @property Carbon|null $expires_at
  * @property string|null $credential
  * @property Carbon|null $issue_started_at
  * @property Carbon|null $revoked_at

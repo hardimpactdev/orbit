@@ -3,11 +3,15 @@
 declare(strict_types=1);
 
 use App\Domain\Operations\OperationStatus;
+use App\Models\DatabaseConnection;
+use App\Models\DatabaseUser;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Setting;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Orbit\Extensions\Vault\Domain\VaultConfiguration;
+use Orbit\Extensions\Vault\Domain\VaultCredentials;
 use Orbit\Extensions\Vault\Domain\VaultException;
 use Orbit\Extensions\Vault\Domain\VaultOperationSecrets;
 use Orbit\Extensions\Vault\Domain\VaultSettings;
@@ -61,3 +65,19 @@ it('refuses an untrusted origin before storing intent', function (string $url): 
     $this->putJson('/api/v1/vault', [...$this->payload, 'url' => $url])->assertUnprocessable();
     expect(Operation::query()->count())->toBe(0);
 })->with(['http://vault.orbit', 'https://example.test', 'https://vault.orbit/path', 'https://user:pass@vault.orbit']);
+
+it('reports incomplete and password-unknown credentials without contacting Vaultwarden', function (): void {
+    app(VaultSettings::class)->put(new VaultConfiguration(
+        new VaultCredentials('https://vault.orbit', 'fixture-client', 'fixture-secret', 'fixture-password', 'fixture-device'),
+        'fixture@example.test', 'fixture-org', 'Orbit', 'fixture-collection', 'Database'));
+    $connection = DatabaseConnection::query()->create(['slug' => 'complete', 'driver' => 'mysql', 'host' => '10.44.0.7', 'database' => 'complete', 'username' => 'owner', 'password' => 'fixture-db-password']);
+    $unknown = DatabaseUser::query()->create(['database_connection_id' => $connection->id, 'username' => 'legacy', 'privileges' => 'SELECT']);
+    $incomplete = DatabaseConnection::query()->create(['slug' => 'half', 'driver' => 'pgsql', 'host' => '10.44.0.7', 'database' => 'half']);
+    DatabaseConnection::query()->create(['slug' => 'cache', 'driver' => 'redis', 'host' => '10.44.0.7']);
+    $response = $this->getJson('/api/v1/vault')->assertOk()->assertJsonPath('data.skipped', [
+        ['source' => 'database-user:'.$unknown->id, 'slug' => 'complete', 'username' => 'legacy', 'reason' => 'password_unknown'],
+        ['source' => 'database-connection:'.$incomplete->id, 'slug' => 'half', 'username' => null, 'reason' => 'incomplete'],
+    ]);
+    expect($response->getContent())->not->toContain('fixture-db-password', 'fixture-secret', 'fixture-password');
+    Http::assertNothingSent();
+});

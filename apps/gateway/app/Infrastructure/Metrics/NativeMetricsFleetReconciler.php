@@ -17,17 +17,36 @@ use App\Models\NodeRole;
 final readonly class NativeMetricsFleetReconciler implements MetricsFleetReconciler
 {
     public function __construct(private StartMetricsOperationAction $operations, private ExporterDegradationRepository $degradations) {}
+
     public function reconcile(): void
     {
         $assignments = NodeRole::query()->where('role', RoleName::Metrics)->where('status', LifecycleStatus::Active)
             ->whereHas('node', static fn ($query) => $query->where('status', LifecycleStatus::Active))->with('node')->limit(2)->get();
-        if ($assignments->isEmpty()) { return; }
-        if ($assignments->count() !== 1) { throw new RoleAssignmentException('Active Metrics role assignment drift detected.'); }
+        if ($assignments->isEmpty()) {
+            return;
+        }
+        if ($assignments->count() !== 1) {
+            throw new RoleAssignmentException('Active Metrics role assignment drift detected.');
+        }
         $assignment = $assignments->sole();
         $this->operations->execute($assignment->node, $assignment);
     }
+
     public function retire(Node $node): void
     {
+        $assignments = NodeRole::query()->where('role', RoleName::Metrics)->where('status', LifecycleStatus::Active)->with('node')->limit(2)->get();
+        if ($assignments->isEmpty()) {
+            return;
+        }
+        if ($assignments->count() !== 1) {
+            throw new RoleAssignmentException('Active Metrics role assignment drift detected.');
+        }
+        $assignment = $assignments->sole();
+        try {
+            $this->operations->retire($node, $assignment->node);
+        } catch (\Throwable) {
+            // Cleanup on a retiring Node is best effort; remaining targets still converge.
+        }
         $this->degradations->forget($node->id);
         $this->reconcile();
     }

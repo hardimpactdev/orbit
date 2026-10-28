@@ -30,6 +30,12 @@ final readonly class VaultOperationSecrets implements OperationSecretSource
         return 'vault.credentials';
     }
 
+    /** @return list<string> */
+    public function targetTypes(): array
+    {
+        return ['vault'];
+    }
+
     public function ownerId(Operation $operation): ?int
     {
         return str_starts_with($operation->kind, 'vault.') && $operation->node_id === $operation->target_id ? $operation->target_id : null;
@@ -39,8 +45,11 @@ final readonly class VaultOperationSecrets implements OperationSecretSource
     {
         $configuration = $this->snapshot($operation, ['$secret' => $this->name(), 'id' => $id]);
         $redactions = [$configuration['client_secret'] ?? '', $configuration['master_password'] ?? ''];
-        foreach ($configuration['wanted'] ?? [] as $item) {
-            foreach ($item['cipher']['fields'] ?? [] as $field) {
+        foreach (is_array($configuration['wanted'] ?? null) ? $configuration['wanted'] : [] as $rawItem) {
+            $item = ValidatedData::object($rawItem);
+            $cipher = ValidatedData::object($item['cipher'] ?? []);
+            foreach (is_array($cipher['fields'] ?? null) ? $cipher['fields'] : [] as $rawField) {
+                $field = ValidatedData::object($rawField);
                 if (($field['hidden'] ?? false) === true && is_string($field['value'] ?? null)) {
                     $redactions[] = $field['value'];
                 }

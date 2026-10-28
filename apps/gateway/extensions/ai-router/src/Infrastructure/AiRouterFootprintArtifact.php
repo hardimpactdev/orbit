@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Extensions\AiRouter\Infrastructure;
 
 use App\Domain\Fleet\NodeFootprintArtifact;
+use App\Domain\Operations\AwaitOperation;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Node;
 use Orbit\Extensions\AiRouter\Actions\ConvergeAiRouterAction;
@@ -37,6 +38,12 @@ final readonly class AiRouterFootprintArtifact implements NodeFootprintArtifact
     public function apply(Node $node): bool
     {
         // A pending cutover belongs to the tick. Both entry points acquire the existing lifecycle lock.
-        return $this->converge->execute(force: true, deferCutover: true);
+        $operation = $this->converge->execute(force: true, deferCutover: true);
+        if ($operation === null) {
+            return false;
+        }
+        app(AwaitOperation::class)->execute($operation);
+
+        return true;
     }
 }

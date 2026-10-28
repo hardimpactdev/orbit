@@ -5,18 +5,20 @@ declare(strict_types=1);
 namespace App\Commands\Analytics;
 
 use App\Commands\GatewayCommand;
+use App\Commands\Integrations\FollowsIntegrationOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use App\Support\Console\ConsoleWriter;
 use Laravel\Prompts\TextPrompt;
 use Orbit\Sdk\Requests\Analytics\UpdateAnalyticsRequest;
-use Orbit\Sdk\Responses\Analytics\AnalyticsUpdateResponse;
 
 final class UpdateAnalyticsCommand extends GatewayCommand
 {
+    use FollowsIntegrationOperations;
+
     #[\Override]
     protected $signature = 'analytics:update
         {version? : Plausible Community Edition version, for example 3.2.1}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -49,36 +51,7 @@ final class UpdateAnalyticsCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $response = $this->sendWithProgress(
-            $connector,
-            new UpdateAnalyticsRequest($version),
-            AnalyticsUpdateResponse::class,
-            ['Update Plausible', 'Replacing the plausible Process', 'Updated Plausible'],
-        );
-
-        if (! $response instanceof AnalyticsUpdateResponse) {
-            return self::FAILURE;
-        }
-
-        if ($this->option('json') === true) {
-            $this->writeJson($response->toArray());
-
-            return self::SUCCESS;
-        }
-
-        ConsoleWriter::write($this->output, $this->humanRenderer()->detail(
-            $response->version === $response->previousVersion
-                ? "Plausible already runs {$response->version} on node [{$response->nodeName}]."
-                : "Plausible updated on node [{$response->nodeName}].",
-            [
-                'Node' => "{$response->nodeName} (#{$response->nodeId})",
-                'Version' => $response->version,
-                'Previous version' => $response->previousVersion,
-                'Request ID' => $response->requestId,
-            ],
-        ));
-
-        return self::SUCCESS;
+        return $this->integrationOperation($connector, $repository, new UpdateAnalyticsRequest($version, is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null), 'Update Plausible');
     }
 
     private static function versionError(string $version): ?string

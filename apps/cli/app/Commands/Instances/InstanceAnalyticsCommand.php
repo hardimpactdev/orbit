@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace App\Commands\Instances;
 
 use App\Commands\GatewayCommand;
+use App\Commands\Integrations\FollowsIntegrationOperations;
 use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Responses\Analytics\InstanceAnalyticsResponse;
 
 /** What the three `instance:analytics:*` commands share: one answer, rendered one way. */
 abstract class InstanceAnalyticsCommand extends GatewayCommand
 {
+    use FollowsIntegrationOperations;
+
     protected function renderAnalytics(InstanceAnalyticsResponse $response, string $headline): int
     {
         if ($this->option('json') === true) {

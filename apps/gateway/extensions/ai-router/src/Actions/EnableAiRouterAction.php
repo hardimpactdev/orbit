@@ -4,16 +4,13 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\AiRouter\Actions;
 
-use Illuminate\Validation\ValidationException;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Orbit\Extensions\AiRouter\Data\EnableAiRouterData;
-use Orbit\Extensions\AiRouter\Domain\AiRouterCollectorEnvironment;
-use Orbit\Extensions\AiRouter\Domain\AiRouterHostname;
 use Orbit\Extensions\AiRouter\Domain\AiRouterHostnameRoute;
 use Orbit\Extensions\AiRouter\Domain\AiRouterLifecycleLock;
 use Orbit\Extensions\AiRouter\Domain\AiRouterPlacement;
-use Orbit\Extensions\AiRouter\Domain\AiRouterSnapshotStore;
 use Orbit\Extensions\AiRouter\Domain\AiRouterState;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterRenameCutover;
 use SensitiveParameter;
@@ -59,6 +56,7 @@ final readonly class EnableAiRouterAction
             $readToken,
             $controlToken,
         );
+
         return $this->operations->execute('ai_router.setup');
     }
 }

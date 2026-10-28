@@ -4,17 +4,18 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Conn\Http\Controllers;
 
-use App\Http\Controllers\Controller;
 use App\Data\Operations\OperationData;
+use App\Http\Controllers\Controller;
+use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Requests\Operations\StartsOperation;
-use Orbit\Extensions\Conn\Data\IssuedConnPairingData;
-use Orbit\Extensions\Conn\Domain\T3PairingUrl;
 use App\Models\Node;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Orbit\Extensions\Conn\Actions\IssueConnPairingAction;
 use Orbit\Extensions\Conn\Actions\RevokeConnPairingsAction;
 use Orbit\Extensions\Conn\Data\ConnPairingData;
+use Orbit\Extensions\Conn\Data\IssuedConnPairingData;
+use Orbit\Extensions\Conn\Domain\T3PairingUrl;
 use Orbit\Extensions\Conn\Http\Requests\RevokeConnPairingsRequest;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
@@ -60,8 +61,11 @@ final class ConnPairingsController extends Controller
 
     public function show(Request $request, ConnEnvironment $environment, ConnPairing $pairing): JsonResponse
     {
-        $caller = $request->user();
-        abort_unless($caller instanceof Node && $pairing->node_id === $caller->id && $pairing->conn_environment_id === $environment->id, 404);
+        $caller = RequireActiveWireGuardPeer::activePeer($request);
+        if (! $caller instanceof Node) {
+            abort(404);
+        }
+        abort_unless($pairing->node_id === $caller->id && $pairing->conn_environment_id === $environment->id, 404);
         abort_unless($pairing->credential !== null && $pairing->revoked_at === null && $pairing->expires_at?->isFuture(), 409);
 
         return response()->json(['data' => IssuedConnPairingData::fromModel($pairing, T3PairingUrl::build($environment->url, $pairing->credential))->toArray(),

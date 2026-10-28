@@ -9,7 +9,7 @@ return (static function (): array {
     foreach (['app_create', 'app_destroy', 'app_rotate', 'sync'] as $verb) {
         $kinds['websocket.'.$verb] = [
             'executor' => 'swamp', 'completion' => WebSocketOperationCompletion::class,
-            'runs' => [[
+            'runs' => [['resumable' => true,
                 'transport' => 'remote_program', 'name' => 'websocket.registry-applied',
                 'input_fields' => ['registry_operation_id'], 'input_values' => [],
                 'input_schema' => ['type' => 'object', 'additionalProperties' => false,

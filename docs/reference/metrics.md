@@ -220,3 +220,5 @@ Prometheus stays unpublished. Grafana's datasource proxy reuses the publication 
 ## Operation execution
 
 Swamp applies exporter changes through the existing named `metrics.node-exporter` and `metrics.cadvisor` agent commands. Each Node effect has its own Operation and holds its recorded Node target. The Gateway binds the two WireGuard addresses and the exact converge or remove action before Swamp can run it. A successful completion requires the agent's successful change receipt. Replaying a lost reply keeps the same effect key; a resumed successful step does no new Node work. Exporter and cAdvisor ownership checks and rollback stay in the Node commands.
+
+Retiring a Node records `metrics.retire` with separate exporter, cAdvisor, and service cleanup children. Swamp tries every cleanup even when another fails. Retirement does not await that Operation; the remaining fleet projection still drops the retiring Node. PHP monitoring reads each pool after convergence and includes its fingerprint in the exporter configuration, so a changed pool reloads the exporter.

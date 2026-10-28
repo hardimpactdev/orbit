@@ -3,7 +3,7 @@ title: "Service metrics"
 description: "Caddy proxy traffic and dedicated production PHP-FPM capacity monitoring."
 covers:
   - apps/gateway/app/Infrastructure/Metrics/ServiceMetrics*.php
-  - apps/gateway/app/Infrastructure/Metrics/NativeServiceMetrics*.php
+  - apps/gateway/app/Domain/Metrics/MetricsServiceExecution.php
   - apps/gateway/app/Infrastructure/Metrics/PrometheusConfigRenderer.php
   - apps/gateway/app/Infrastructure/Caddy/Build/Sources/ServiceMetricsCaddySiteSource.php
   - apps/gateway/app/Infrastructure/Instances/ProductionPhpRuntimeConfigRenderer.php

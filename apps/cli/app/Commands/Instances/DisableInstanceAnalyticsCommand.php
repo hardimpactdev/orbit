@@ -7,7 +7,6 @@ namespace App\Commands\Instances;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Analytics\DisableInstanceAnalyticsRequest;
-use Orbit\Sdk\Responses\Analytics\InstanceAnalyticsResponse;
 
 final class DisableInstanceAnalyticsCommand extends InstanceAnalyticsCommand
 {
@@ -15,6 +14,7 @@ final class DisableInstanceAnalyticsCommand extends InstanceAnalyticsCommand
     protected $signature = 'instance:analytics:disable
         {instance : Numeric instance ID}
         {--yes : Confirm removing every tracking host}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -42,15 +42,6 @@ final class DisableInstanceAnalyticsCommand extends InstanceAnalyticsCommand
             return self::FAILURE;
         }
 
-        $response = $this->sendWithProgress(
-            $connector,
-            new DisableInstanceAnalyticsRequest($instanceId),
-            InstanceAnalyticsResponse::class,
-            ['Disable analytics', 'Removing tracking hosts', 'Removed tracking hosts'],
-        );
-
-        return $response instanceof InstanceAnalyticsResponse
-            ? $this->renderAnalytics($response, 'Analytics tracking disabled.')
-            : self::FAILURE;
+        return $this->integrationOperation($connector, $repository, new DisableInstanceAnalyticsRequest($instanceId, idempotencyKey: is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null), 'Disable Instance analytics');
     }
 }

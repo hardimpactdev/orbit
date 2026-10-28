@@ -2,7 +2,15 @@
 
 declare(strict_types=1);
 
+use App\Domain\Integrations\IntegrationExecution;
+use App\Domain\Metrics\MetricsFleetCompletion;
+use App\Domain\Metrics\MetricsFleetExecution;
+use App\Domain\Metrics\MetricsLeafExecution;
 use App\Domain\Metrics\MetricsOperationCompletion;
+use App\Domain\Metrics\MetricsPrimitiveExecution;
+use App\Domain\Metrics\MetricsResetCompletion;
+use App\Domain\Metrics\MetricsResetExecution;
+use App\Domain\Metrics\MetricsServiceExecution;
 
 return (static function (): array {
     $kinds = [];
@@ -11,7 +19,7 @@ return (static function (): array {
             $kinds['metrics.'.$component.'_'.$action] = [
                 'executor' => 'swamp',
                 'completion' => MetricsOperationCompletion::class,
-                'runs' => [[
+                'runs' => [['resumable' => true,
                     'transport' => 'agent', 'name' => $command,
                     'input_fields' => ['address', 'metrics_address'],
                     'input_values' => ['action' => ['operation' => $action]],
@@ -26,37 +34,42 @@ return (static function (): array {
         }
     }
 
-
     foreach (['node_exporter' => 'metrics.node-exporter', 'cadvisor' => 'metrics.cadvisor'] as $component => $command) {
         foreach (['snapshot', 'restore'] as $action) {
             $kinds['metrics.'.$component.'_'.$action] = ['executor' => 'swamp', 'completion' => MetricsOperationCompletion::class,
-                'execution' => \App\Domain\Metrics\MetricsLeafExecution::class,
-                'runs' => [['transport' => 'agent', 'name' => $command]],
+                'execution' => MetricsLeafExecution::class,
+                'runs' => [['resumable' => true, 'transport' => 'agent', 'name' => $command]],
                 'completion_contract' => ['step' => 'metrics-effect', 'transport' => 'agent', 'name' => $command, 'result' => $action === 'snapshot' ? [] : ['changed' => true]],
                 'result_fields' => ['configuration', 'service_active', 'firewall_source', 'changed', 'error_code']];
         }
     }
     foreach (['service_snapshot', 'service_converge', 'service_restore'] as $verb) {
         $kinds['metrics.'.$verb] = ['executor' => 'swamp', 'completion' => MetricsOperationCompletion::class,
-            'execution' => \App\Domain\Metrics\MetricsServiceExecution::class,
-            'runs' => array_map(static fn (string $name): array => ['transport' => 'agent', 'name' => $name], ['metrics.service-runtime', 'php.inspect-production-pool', 'php.converge-production-runtime']),
+            'execution' => MetricsServiceExecution::class,
+            'runs' => array_map(static fn (string $name): array => ['transport' => 'agent', 'name' => $name, 'resumable' => true], ['metrics.service-runtime', 'php.inspect-production-pool', 'php.converge-production-runtime']),
             'completion_contract' => ['step' => 'service-exporter', 'transport' => 'agent', 'name' => 'metrics.service-runtime', 'result' => $verb === 'service_snapshot' ? [] : ['applied' => true]],
             'result_fields' => ['config', 'unit', ['name' => 'rules', 'type' => 'list', 'items' => 'string', 'max' => 16], 'active', 'enabled', 'binary', 'fingerprint', 'applied', 'error_code']];
     }
     foreach (['runtime_converge', 'runtime_remove', 'runtime_verify', 'certificate_publish', 'certificate_remove', 'publication_firewall'] as $verb) {
-        $name = match ($verb) { 'runtime_converge', 'runtime_remove' => 'metrics.runtime', 'runtime_verify' => 'metrics.credentials', 'certificate_publish', 'certificate_remove' => 'metrics.certificate', 'publication_firewall' => 'metrics.publication-firewall' };
-        $secrets = match ($verb) { 'runtime_converge' => ['action' => 'metrics.runtime'], 'runtime_verify' => ['action' => 'metrics.password'], 'certificate_publish' => ['certificate' => 'metrics.certificate', 'key' => 'metrics.certificate'], default => [] };
-        $proof = match ($verb) { 'certificate_publish', 'certificate_remove' => ['applied' => true], 'runtime_verify' => ['verified' => true], default => ['changed' => true] };
+        $name = match ($verb) {
+            'runtime_converge', 'runtime_remove' => 'metrics.runtime', 'runtime_verify' => 'metrics.credentials', 'certificate_publish', 'certificate_remove' => 'metrics.certificate', 'publication_firewall' => 'metrics.publication-firewall'
+        };
+        $secrets = match ($verb) {
+            'runtime_converge' => ['action' => 'metrics.runtime'], 'runtime_verify' => ['action' => 'metrics.password'], 'certificate_publish' => ['certificate' => 'metrics.certificate', 'key' => 'metrics.certificate'], default => []
+        };
+        $proof = match ($verb) {
+            'certificate_publish', 'certificate_remove' => ['applied' => true], 'runtime_verify' => ['verified' => true], default => ['changed' => true]
+        };
         $kinds['metrics.'.$verb] = ['executor' => 'swamp', 'completion' => MetricsOperationCompletion::class,
-            'execution' => \App\Domain\Metrics\MetricsPrimitiveExecution::class,
-            'runs' => [['transport' => 'agent', 'name' => $name, 'secrets' => $secrets]],
+            'execution' => MetricsPrimitiveExecution::class,
+            'runs' => [['resumable' => true, 'transport' => 'agent', 'name' => $name, 'secrets' => $secrets]],
             'completion_contract' => ['step' => 'metrics-effect', 'transport' => 'agent', 'name' => $name, 'result' => $proof],
             'result_fields' => ['changed', 'verified', 'applied', 'error_code']];
     }
     foreach (['enable', 'disable', 'reconcile', 'exporter_enable', 'exporter_disable'] as $verb) {
-        $kinds['metrics.'.$verb] = ['executor' => 'swamp', 'completion' => \App\Domain\Metrics\MetricsFleetCompletion::class,
-            'execution' => \App\Domain\Metrics\MetricsFleetExecution::class,
-            'runs' => [['transport' => 'gateway', 'name' => 'integration.receipt']],
+        $kinds['metrics.'.$verb] = ['executor' => 'swamp', 'completion' => MetricsFleetCompletion::class,
+            'execution' => MetricsFleetExecution::class,
+            'runs' => [['resumable' => true, 'transport' => 'gateway', 'name' => 'integration.receipt']],
             'children' => [
                 ...array_map(static fn (string $kind): array => ['kind' => $kind, 'node_from' => 'input.fleet_node_ids'],
                     ['metrics.node_exporter_snapshot', 'metrics.node_exporter_converge', 'metrics.node_exporter_remove', 'metrics.node_exporter_restore', 'metrics.cadvisor_snapshot', 'metrics.cadvisor_converge', 'metrics.cadvisor_remove', 'metrics.cadvisor_restore', 'metrics.service_snapshot', 'metrics.service_converge', 'metrics.service_restore', 'route.caddy_converge']),
@@ -67,10 +80,19 @@ return (static function (): array {
             'completion_contract' => ['step' => 'integration-receipt', 'transport' => 'gateway', 'name' => 'integration.receipt', 'result' => ['backend' => $verb === 'disable' ? 'absent' : 'active']],
             'result_fields' => ['backend', 'error_code']];
     }
-    $kinds['metrics.credentials_reset'] = ['executor' => 'swamp', 'completion' => \App\Domain\Metrics\MetricsResetCompletion::class,
-        'execution' => \App\Domain\Metrics\MetricsResetExecution::class,
-        'runs' => [['transport' => 'agent', 'name' => 'metrics.credentials', 'secrets' => ['action' => 'metrics.reset']]],
+    $kinds['metrics.credentials_reset'] = ['executor' => 'swamp', 'completion' => MetricsResetCompletion::class,
+        'execution' => MetricsResetExecution::class,
+        'runs' => [['resumable' => true, 'transport' => 'agent', 'name' => 'metrics.credentials', 'secrets' => ['action' => 'metrics.reset']]],
         'completion_contract' => ['step' => 'credential-verify', 'transport' => 'agent', 'name' => 'metrics.credentials', 'result' => ['verified' => true]],
         'result_fields' => ['changed', 'verified', 'error_code']];
+
+    $kinds['metrics.retire'] = ['executor' => 'swamp', 'completion' => MetricsOperationCompletion::class,
+        'execution' => IntegrationExecution::class,
+        'runs' => [['resumable' => true, 'transport' => 'gateway', 'name' => 'integration.receipt']],
+        'children' => array_map(static fn (string $kind): array => ['kind' => $kind, 'node_from' => 'operation.node_id'],
+            ['metrics.node_exporter_remove', 'metrics.cadvisor_remove', 'metrics.service_converge']),
+        'completion_contract' => ['step' => 'integration-receipt', 'transport' => 'gateway', 'name' => 'integration.receipt', 'result' => ['backend' => 'absent']],
+        'result_fields' => ['backend', 'error_code']];
+
     return $kinds;
 })();

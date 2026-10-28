@@ -7,7 +7,6 @@ namespace App\Commands\AiRouter;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\AiRouter\SetupAiRouterRequest;
-use Orbit\Sdk\Responses\AiRouter\AiRouterStatusResponse;
 
 final class SetupAiRouterCommand extends AiRouterCommand
 {
@@ -17,6 +16,7 @@ final class SetupAiRouterCommand extends AiRouterCommand
         {--cache-connection= : Redis Database connection slug for shared Valkey}
         {--cliproxy-url= : CLIProxyAPI Management API origin}
         {--cliproxy-management-key-file= : File that contains only the management key}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -63,16 +63,7 @@ final class SetupAiRouterCommand extends AiRouterCommand
             return self::FAILURE;
         }
 
-        $response = $this->sendWithProgress(
-            $connector,
-            new SetupAiRouterRequest($nodeId, $cacheConnection, $cliproxyUrl, $key),
-            AiRouterStatusResponse::class,
-            ['Setup ai-router', 'Deploying the collector', 'Set up ai-router'],
-        );
-
-        return $response instanceof AiRouterStatusResponse
-            ? $this->renderStatus($response, 'ai-router is enabled.')
-            : self::FAILURE;
+        return $this->integrationOperation($connector, $repository, new SetupAiRouterRequest($nodeId, $cacheConnection, $cliproxyUrl, $key, is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null), 'Set up AI router');
     }
 
     private function managementKey(): ?string

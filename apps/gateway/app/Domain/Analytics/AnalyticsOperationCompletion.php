@@ -14,6 +14,7 @@ use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Models\Process;
+use App\Support\ValidatedData;
 
 final readonly class AnalyticsOperationCompletion implements OperationCompletion
 {
@@ -25,12 +26,13 @@ final readonly class AnalyticsOperationCompletion implements OperationCompletion
             return;
         }
         $node = Node::query()->findOrFail($operation->node_id);
-        $assignment = NodeRole::query()->find($operation->input['assignment_id']);
+        $assignment = NodeRole::query()->whereKey(ValidatedData::integer($operation->input['assignment_id']))->first();
         if ($outcome->status !== OperationStatus::Succeeded) {
             if (is_string($operation->input['previous_version'] ?? null)) {
                 $this->settings->storeVersion($node, $operation->input['previous_version']);
             }
             $assignment?->update(['status' => LifecycleStatus::Failed, 'failed_step' => 'analytics', 'error_code' => $outcome->errorCode]);
+
             return;
         }
         if ($operation->kind === 'analytics.disable') {

@@ -26,6 +26,9 @@ final class ConnPairingData extends Data
     public static function fromModel(ConnPairing $pairing): self
     {
         $pairing->loadMissing(['environment', 'node']);
+        if ($pairing->expires_at === null) {
+            throw new \LogicException('The pairing has not been issued.');
+        }
 
         return new self(
             id: $pairing->id,

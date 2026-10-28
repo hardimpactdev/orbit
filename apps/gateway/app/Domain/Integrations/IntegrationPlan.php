@@ -19,7 +19,7 @@ final class IntegrationPlan
     public function __construct(private readonly int $ownerId) {}
 
     /** @param array<string, mixed> $input
-     * @param array<string, mixed> $secrets
+     * @param  array<string, mixed>  $secrets
      */
     public function agent(string $key, string $command, array $input, #[\SensitiveParameter] array $secrets = []): void
     {
@@ -33,9 +33,9 @@ final class IntegrationPlan
     }
 
     /** @param array<string, mixed> $input */
-    public function child(string $key, string $kind, int $nodeId, array $input): void
+    public function child(string $key, string $kind, int $nodeId, array $input, bool $continueOnFailure = false): void
     {
-        $this->flow[] = ['type' => 'child', 'key' => $key, 'kind' => $kind, 'node_id' => $nodeId, 'input' => $input];
+        $this->flow[] = ['type' => 'child', 'key' => $key, 'kind' => $kind, 'node_id' => $nodeId, 'input' => $input, ...($continueOnFailure ? ['continue_on_failure' => true] : [])];
     }
 
     /** @param array<string, mixed> $input */
