@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Tools\ToolManagerChildAdmission;
 use App\Domain\Tools\ToolOperationCompletion;
 use App\Domain\Tools\ToolOperationExecution;
 
@@ -57,6 +58,8 @@ return (static function (): array {
                 ['name' => 'roots', 'type' => 'list', 'items' => 'string', 'max' => 4096]],
         ];
     }
+
+    $kinds['tool.manager_converge']['admission'] = ToolManagerChildAdmission::class;
 
     return $kinds;
 })();
