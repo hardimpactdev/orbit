@@ -43,6 +43,12 @@ Cross-node SQLite clone and seed use database-owned `database.sqlite_export` and
 
 Kind contracts, including runs, child Node relations, completion proof, and redacted results, live in `apps/gateway/app/Domain/DatabaseServers/operation-kinds.php`. Database workflow execution lives under `extensions/behaviors/operations/database/` in orbit-swamp.
 
+Database execution requires the kit's children and receipt capabilities. Until both are available, admission returns `operation.kind_unavailable`; the Gateway still loads other families and serves database reads. Child admission uses the recorded database intent's kind, target, Node and exact input. Swamp supplies only its key.
+
+A failed create can reuse its reserved credentials for 24 hours. Every retry repeats the name check. PostgreSQL permits existing names only when the reserved role owns them and repeats that guard in SQL before grants. MySQL uses strict `CREATE DATABASE`, so an existing database refuses creation, including a partially completed create without a successful receipt. Recovery of the same Operation uses its keyed receipt. Removal rechecks planned users before dispatch and refuses if another connection has begun sharing one.
+
+The Gateway deletes protected execution intents after their Operations and ancestors finish and the 24-hour retry window closes. Operation records and redacted receipts remain available. A retry after that window must resolve the reserved connection explicitly; it cannot recover expired credential SQL.
+
 ## Drivers and fields
 
 Each record has a unique slug: lowercase words joined by hyphens, at most 63 characters. Each driver takes its own fields.
