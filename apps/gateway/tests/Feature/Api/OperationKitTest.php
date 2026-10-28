@@ -2,6 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Domain\GitHub\GitReadEnvironment;
+use App\Domain\Operations\OperationTransport;
+use App\Domain\Operations\OperationTransportInput;
+use App\Domain\Operations\OperationTransports;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\OperationAgentTransport;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationCompletion;
 use App\Domain\Operations\OperationExecutionContract;
@@ -19,6 +25,37 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
+
+final readonly class KitAgentWrapper implements OperationTransport, OperationTransportInput
+{
+    public function __construct(private OperationAgentTransport $agent) {}
+
+    public function schema(Operation $operation, array $run): array|bool
+    {
+        return $this->agent->schema($operation, $run);
+    }
+
+    public function wireInput(Operation $operation, array $run, #[SensitiveParameter] array $input): mixed
+    {
+        return $this->agent->wireInput($operation, $run, $input);
+    }
+
+    public function run(Operation $operation, array $run, #[SensitiveParameter] array $input): array
+    {
+        return $this->agent->run($operation, $run, $input);
+    }
+}
+
+final readonly class KitNativeSource implements OperationSecretSource
+{
+    public function __construct(public mixed $value) {}
+    public function name(): string { return 'project.native'; }
+    public function ownerId(Operation $operation): ?int { return $operation->target_id; }
+    public function resolve(Operation $operation, int $id, string $key, string $parameter): OperationSecretValue
+    {
+        return new OperationSecretValue($this->value);
+    }
+}
 
 final class KitSecretSource implements OperationSecretSource
 {
@@ -354,3 +391,63 @@ it('exposes a filtered public projection and validates it on failed or cancelled
     $this->postJson($this->path.'/complete', [...$body, 'result' => $projection])->assertOk()->assertJsonPath('data.result', $projection);
     expect($this->command->runs)->toBe(0);
 })->with(['failed', 'cancelled']);
+
+
+it('validates registered agent wrappers using native Git wire input without weakening the schema', function (bool $valid): void {
+    app()->instance(KitNativeSource::class, new KitNativeSource(GitReadEnvironment::forGitHubToken('kit-private-token-value')));
+    app()->tag([KitNativeSource::class], OperationSecretSource::class);
+    app()->instance(OperationTransports::class, new OperationTransports(['deploy-agent' => KitAgentWrapper::class]));
+    $name = 'instance.prepare-production-source';
+    $input = ['repository' => 'https://github.com/example/project.git', 'user' => 'orbit', 'home' => '/home/orbit/project',
+        'instance' => 27, 'allow_existing' => true, 'git_read' => ['$secret' => 'project.native', 'id' => 27]];
+    if (! $valid) {
+        $input['unexpected'] = 'reject this even though admitted';
+    }
+    $run = [...$this->run, 'transport' => 'deploy-agent', 'name' => $name, 'input' => $input];
+    $admitted = $this->operation->input;
+    $admitted['descriptors'][0] = [...$admitted['descriptors'][0], 'transport' => 'deploy-agent', 'name' => $name, 'input' => $input];
+    $this->operation->update(['node_id' => Node::query()->where('name', 'gateway')->sole()->id, 'input' => $admitted]);
+    $this->spec['runs'] = [['transport' => 'deploy-agent', 'name' => $name, 'secrets' => ['git_read' => 'project.native']]];
+    ($this->register)();
+    $runner = Mockery::mock(AgentCommandRunner::class);
+    if ($valid) {
+        $runner->shouldReceive('run')->once()->withArgs(fn (Node $node, string $command, array $actual): bool => $node->id === $this->operation->node_id
+            && $command === $name && $actual['git_read'] instanceof GitReadEnvironment && $actual['git_read']->githubToken() === 'kit-private-token-value')->andReturn([]);
+    } else {
+        $runner->shouldNotReceive('run');
+    }
+    app()->instance(AgentCommandRunner::class, $runner);
+    $response = $this->postJson($this->path.'/run', $run)->assertStatus($valid ? 200 : 422);
+    if (! $valid) {
+        $response->assertJsonPath('error.code', 'operation.execution_forbidden');
+    } else {
+        $this->postJson($this->path.'/run', $run)->assertOk();
+        expect($this->operation->refresh()->state['executor_runs']['effect']['input'])->toBe($input);
+    }
+    expect(json_encode($this->operation->refresh()->toArray()))->not->toContain('kit-private-token-value');
+})->with([true, false]);
+
+it('keeps native object and list validation strict through an agent wrapper', function (bool $object): void {
+    app()->instance(KitNativeSource::class, new KitNativeSource($object ? (object) [] : []));
+    app()->tag([KitNativeSource::class], OperationSecretSource::class);
+    app()->instance(OperationTransports::class, new OperationTransports(['deploy-agent' => KitAgentWrapper::class]));
+    $name = 'instance.run-lifecycle-step';
+    $input = ['checkout' => '/home/orbit/project/current', 'program' => ['command' => 'true'], 'step' => 'setup.check',
+        'timeout_seconds' => 10, 'environment' => ['$secret' => 'project.native', 'id' => 27]];
+    $run = [...$this->run, 'transport' => 'deploy-agent', 'name' => $name, 'input' => $input];
+    $admitted = $this->operation->input;
+    $admitted['descriptors'][0] = [...$admitted['descriptors'][0], 'transport' => 'deploy-agent', 'name' => $name, 'input' => $input];
+    $this->operation->update(['node_id' => Node::query()->where('name', 'gateway')->sole()->id, 'input' => $admitted]);
+    $this->spec['runs'] = [['transport' => 'deploy-agent', 'name' => $name, 'secrets' => ['environment' => 'project.native']]];
+    $this->spec['result_fields'][] = 'exit_code';
+    ($this->register)();
+    $runner = Mockery::mock(AgentCommandRunner::class);
+    if ($object) {
+        $runner->shouldReceive('run')->once()->withArgs(fn (Node $node, string $command, array $actual): bool => $command === $name && $actual['environment'] instanceof stdClass)
+            ->andReturn(['exit_code' => 0, 'timed_out' => false, 'output' => [], 'truncated' => false]);
+    } else {
+        $runner->shouldNotReceive('run');
+    }
+    app()->instance(AgentCommandRunner::class, $runner);
+    $this->postJson($this->path.'/run', $run)->assertStatus($object ? 200 : 422)->assertJsonPath($object ? 'data.exit_code' : 'error.code', $object ? 0 : 'operation.execution_forbidden');
+})->with([true, false]);

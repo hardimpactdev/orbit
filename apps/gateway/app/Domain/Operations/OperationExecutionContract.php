@@ -101,8 +101,11 @@ final readonly class OperationExecutionContract
     public function validateHydratedInput(Operation $operation, array $data, array $spec, array $input): void
     {
         try {
-            $schema = $this->transports->get($data['transport'])->schema($operation, $data);
-            $wire = $data['transport'] === 'agent' ? AgentSchemas::wireInput($input) : json_decode(json_encode((object) $input, JSON_THROW_ON_ERROR), flags: JSON_THROW_ON_ERROR);
+            $transport = $this->transports->get($data['transport']);
+            $schema = $transport->schema($operation, $data);
+            $wire = $transport instanceof OperationTransportInput
+                ? $transport->wireInput($operation, $data, $input)
+                : json_decode(json_encode((object) $input, JSON_THROW_ON_ERROR), flags: JSON_THROW_ON_ERROR);
             if (AgentSchemas::errors($wire, $schema) === []) {
                 return;
             }

@@ -5,16 +5,22 @@ declare(strict_types=1);
 namespace App\Infrastructure\AgentCommands;
 
 use App\Domain\Operations\OperationTransport;
+use App\Domain\Operations\OperationTransportInput;
 use App\Models\Node;
 use App\Models\Operation;
 
-final readonly class OperationAgentTransport implements OperationTransport
+final readonly class OperationAgentTransport implements OperationTransport, OperationTransportInput
 {
     public function __construct(private AgentCommandRunner $runner) {}
 
     public function schema(Operation $operation, array $run): array|bool
     {
         return AgentSchemas::inputSchema($run['name']);
+    }
+
+    public function wireInput(Operation $operation, array $run, #[\SensitiveParameter] array $input): mixed
+    {
+        return AgentSchemas::wireInput($input);
     }
 
     public function run(Operation $operation, array $run, #[\SensitiveParameter] array $input): array
