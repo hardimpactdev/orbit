@@ -61,14 +61,26 @@ beforeEach(function (): void {
     $github = Mockery::mock(GitHubApi::class);
     $github->shouldReceive('repositoryInstallation')->andReturn(123);
     $github->shouldReceive('repositoryPullRequestReadToken')->andReturn('fixture-read');
+    $github->shouldReceive('repositoryReadToken')->andReturn('fixture-contents');
     $github->shouldReceive('repositoryChecksToken')->andReturn('fixture-checks');
     $github->shouldReceive('checkRuns')->andReturnUsing(fn () => $this->checks);
     app()->instance(GitHubApi::class, $github);
     $this->github = $github;
+    $this->content = ['composer.lock' => json_encode(['packages' => [], 'packages-dev' => []]), 'composer.json' => '{}', 'package.json' => '{}', 'package-lock.json' => '{"lockfileVersion":3,"packages":{}}'];
+    $this->baseContent = $this->content;
     $this->reads = 0;
     Http::preventStrayRequests();
     Http::fake(function ($request) {
         $path = parse_url($request->url(), PHP_URL_PATH);
+        if (str_starts_with($path, '/repos/acme/widgets/contents/')) {
+            $file = rawurldecode(basename($path));
+            $content = $request['ref'] === $this->head ? ($this->content[$file] ?? null) : ($this->baseContent[$file] ?? null);
+            if ($content === null) {
+                return Http::response(['message' => 'Not Found'], 404);
+            }
+
+            return Http::response($this->contentResponse ?? ['type' => 'file', 'path' => $file, 'encoding' => 'base64', 'content' => base64_encode($content), 'size' => strlen($content)]);
+        }
         if ($path === '/repos/acme/widgets/pulls/7' && ($this->disableDuringRead ?? false)) {
             config(['dependency_merge.projects' => []]);
         }
@@ -165,7 +177,7 @@ it('refuses paths outside dependency manifests including rename sources', functi
     ['.github/workflows/ci.yml', null], ['.github/workflows/production-smoke.yml', null],
     ['app/Http/Controllers/HomeController.php', null], ['tests/Browser/SmokeTest.php', null],
     ['composer.lock', '.github/workflows/ci.yml'], ['package.json', 'app/code.php'],
-    ['../composer.lock', null], ['nested/package.json', null],
+    ['../composer.lock', null], ['nested/package.json', null], ['bun.lockb', null], ['bun.lock', 'bun.lockb'],
 ]);
 
 it('fails closed on incomplete or ambiguous paged file evidence', function (string $change): void {
@@ -185,7 +197,7 @@ it('fails closed on incomplete or ambiguous paged file evidence', function (stri
 })->with(['missing-count', 'zero', 'cap', 'over-cap', 'short', 'truncated-page', 'extra-page', 'duplicate', 'rename-missing-source']);
 
 it('accepts only complete dependency file evidence including both rename paths', function (): void {
-    $this->files = [['filename' => 'composer.json', 'status' => 'modified'], ['filename' => 'bun.lock', 'status' => 'renamed', 'previous_filename' => 'bun.lockb']];
+    $this->files = [['filename' => 'composer.json', 'status' => 'modified'], ['filename' => 'package-lock.json', 'status' => 'renamed', 'previous_filename' => 'npm-shrinkwrap.json']];
     $this->pr['changed_files'] = 2;
     $this->withHeader('Idempotency-Key', 'allowed-files')->postJson($this->url, $this->body)->assertAccepted();
     Http::assertSent(fn ($request) => str_ends_with($request->url(), '/files?per_page=100&page=2'));
@@ -341,4 +353,166 @@ it('redacts both hydrated input frames when command execution throws', function 
     } finally {
         ini_set('zend.exception_ignore_args', $old);
     }
+});
+
+function dependencyContent(object $test, string $file, string $head, string $base = '{}'): void
+{
+    $test->files = [['filename' => $file, 'status' => 'modified']];
+    $test->content[$file] = $head;
+    $test->baseContent[$file] = $base;
+}
+
+it('refuses a green PR that changes executable or repository manifest instructions', function (string $file, string $field, mixed $before, mixed $after): void {
+    dependencyContent($this, $file, json_encode([$field => $after]), json_encode([$field => $before]));
+    $this->withHeader('Idempotency-Key', 'manifest')->postJson($this->url, $this->body)
+        ->assertConflict()->assertJsonPath('error.code', 'dependency_merge.contents_forbidden');
+    Http::assertNotSent(fn ($request) => $request->method() === 'PUT');
+})->with([
+    ['composer.json', 'scripts', ['lint:check' => 'pint --test', 'analyse' => 'phpstan', 'test:full' => 'pest', 'test:smoke' => 'pest --group=smoke'], ['lint:check' => 'true', 'analyse' => 'true', 'test:full' => 'true', 'test:smoke' => 'true']],
+    ['package.json', 'scripts', ['build' => 'vite build'], ['build' => 'true']],
+    ['composer.json', 'repositories', [], [['type' => 'vcs', 'url' => 'https://github.com/fork/framework']]],
+    ['composer.json', 'config', ['allow-plugins' => false], ['allow-plugins' => true]],
+    ['composer.json', 'autoload', ['files' => []], ['files' => ['vendor/evil.php']]],
+    ['composer.json', 'extra', ['laravel' => []], ['laravel' => ['providers' => ['Evil']]]],
+    ['package.json', 'overrides', ['vite' => '1.0.0'], ['vite' => 'npm:evil@1.0.0']],
+    ['package.json', 'resolutions', ['vite' => '1.0.0'], ['vite' => 'npm:evil@1.0.0']],
+    ['package.json', 'packageManager', 'npm@11.0.0', 'npm@12.0.0'],
+    ['composer.json', 'scripts', ['test:full' => 'pest'], null],
+    ['package.json', 'scripts', ['test' => 'node test.js'], (object) []],
+]);
+
+it('allows only dependency constraint map changes with unchanged build and test instructions', function (string $file, string $field): void {
+    $unchanged = ['scripts' => ['test' => 'real-test'], 'config' => ['allow-plugins' => false], 'extra' => ['first' => 1, 'second' => ['a', 'b']]];
+    dependencyContent($this, $file, json_encode([...$unchanged, $field => ['acme/library' => '^2.0']]), json_encode([$field => ['acme/library' => '^1.0'], ...array_reverse($unchanged, true)]));
+    $this->withHeader('Idempotency-Key', 'constraints')->postJson($this->url, $this->body)->assertAccepted();
+    Http::assertSent(fn ($request) => str_contains($request->url(), '/contents/'.$file.'?ref='.$this->head));
+    Http::assertSent(fn ($request) => str_contains($request->url(), '/contents/'.$file.'?ref='.str_repeat('b', 40)));
+})->with([
+    ['composer.json', 'require'], ['composer.json', 'require-dev'], ['package.json', 'dependencies'],
+    ['package.json', 'devDependencies'], ['package.json', 'optionalDependencies'], ['package.json', 'peerDependencies'],
+]);
+
+it('refuses malformed or ambiguous manifests at either revision', function (string $head, string $base): void {
+    dependencyContent($this, 'composer.json', $head, $base);
+    $this->withHeader('Idempotency-Key', 'bad-json')->postJson($this->url, $this->body)->assertConflict();
+    expect(Operation::query()->where('kind', 'tasks.dependency_merge')->count())->toBe(0);
+})->with([
+    ['{', '{}'], ['{}', '{'], ['[]', '{}'], ['{}', '[]'],
+    ['{"scripts":{},"scripts":{"test":"true"}}', '{}'],
+    ['{"require":[]}', '{}'], ['{"require":{"a/b":true}}', '{}'],
+]);
+
+it('refuses removed nondependency keys and ordered list changes', function (string $head, string $base): void {
+    dependencyContent($this, 'package.json', $head, $base);
+    $this->withHeader('Idempotency-Key', 'keys')->postJson($this->url, $this->body)
+        ->assertConflict()->assertJsonPath('error.code', 'dependency_merge.contents_forbidden');
+})->with([
+    ['{}', '{"scripts":{"test":"real-test"}}'],
+    ['{"files":["b","a"]}', '{"files":["a","b"]}'],
+    ['{"scripts":[]}', '{"scripts":{}}'],
+]);
+
+it('refuses unreadable or truncated GitHub content evidence', function (string $change): void {
+    dependencyContent($this, 'composer.json', '{}');
+    $this->contentResponse = ['type' => 'file', 'path' => 'composer.json', 'encoding' => 'base64', 'content' => base64_encode('{}'), 'size' => 2];
+    match ($change) {
+        'size' => $this->contentResponse['size'] = 99,
+        'encoding' => $this->contentResponse['encoding'] = 'none',
+        'base64' => $this->contentResponse['content'] = '%invalid%',
+        'symlink' => $this->contentResponse['type'] = 'symlink',
+        'path' => $this->contentResponse['path'] = 'other.json',
+    };
+    $this->withHeader('Idempotency-Key', 'content-evidence')->postJson($this->url, $this->body)
+        ->assertConflict()->assertJsonPath('error.code', 'dependency_merge.contents_unreadable');
+})->with(['size', 'encoding', 'base64', 'symlink', 'path']);
+
+it('refuses a manifest absent at the base instead of trusting new scripts', function (): void {
+    dependencyContent($this, 'composer.json', '{"scripts":{"test:full":"true"}}');
+    unset($this->baseContent['composer.json']);
+    $this->withHeader('Idempotency-Key', 'absent-base')->postJson($this->url, $this->body)
+        ->assertStatus(503)->assertJsonPath('error.code', 'dependency_merge.evidence_unavailable');
+});
+
+it('requires approved Composer dist and source hosts in both dependency sections', function (string $section, string $field, string $url): void {
+    $package = ['name' => 'acme/library', 'version' => '1.0.0', 'dist' => ['type' => 'zip', 'url' => 'https://api.github.com/repos/acme/library/zipball/'.str_repeat('a', 40)], 'source' => ['type' => 'git', 'url' => 'https://github.com/acme/library.git']];
+    $package[$field]['url'] = $url;
+    dependencyContent($this, 'composer.lock', json_encode(['packages' => $section === 'packages' ? [$package] : [], 'packages-dev' => $section === 'packages-dev' ? [$package] : []]));
+    $this->withHeader('Idempotency-Key', 'composer-source')->postJson($this->url, $this->body)
+        ->assertConflict()->assertJsonPath('error.code', 'dependency_merge.contents_forbidden');
+})->with([
+    ['packages', 'dist', 'https://evil.example/library.zip'], ['packages-dev', 'dist', 'https://evil.example/library.zip'],
+    ['packages', 'source', 'https://evil.example/library.git'], ['packages-dev', 'source', 'https://evil.example/library.git'],
+    ['packages', 'dist', 'git+https://api.github.com/acme/library'], ['packages', 'dist', 'file:../payload.zip'],
+    ['packages', 'source', 'link:../payload'], ['packages', 'source', 'git+https://github.com/acme/library.git'],
+    ['packages', 'dist', 'https://api.github.com.evil.example/archive.zip'], ['packages', 'dist', 'https://token@api.github.com/archive.zip'],
+    ['packages', 'dist', 'http://api.github.com/archive.zip'],
+]);
+
+it('accepts Composer registry archives and HTTPS source metadata', function (string $host): void {
+    dependencyContent($this, 'composer.lock', json_encode(['packages' => [['dist' => ['type' => 'zip', 'url' => 'https://'.$host.'/archive.zip'], 'source' => ['type' => 'git', 'url' => 'https://github.com/acme/library.git']]], 'packages-dev' => []]));
+    $this->withHeader('Idempotency-Key', 'composer-approved')->postJson($this->url, $this->body)->assertAccepted();
+})->with(['repo.packagist.org', 'api.github.com', 'codeload.github.com']);
+
+it('refuses off-registry and local JavaScript lock sources', function (string $file, string $source): void {
+    $content = match ($file) {
+        'package-lock.json', 'npm-shrinkwrap.json' => json_encode(['lockfileVersion' => 3, 'packages' => ['node_modules/library' => ['version' => '1.0.0', 'resolved' => $source]]]),
+        'pnpm-lock.yaml' => "lockfileVersion: '9.0'\npackages:\n  library@1.0.0:\n    resolution:\n      tarball: ".json_encode($source)."\n",
+        'bun.lock' => json_encode(['lockfileVersion' => 1, 'packages' => ['library' => ['library@1.0.0', $source, (object) [], 'sha512-fixture']]]),
+    };
+    dependencyContent($this, $file, $content);
+    $this->withHeader('Idempotency-Key', 'js-source')->postJson($this->url, $this->body)
+        ->assertConflict()->assertJsonPath('error.code', 'dependency_merge.contents_forbidden');
+})->with(['package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'bun.lock'])
+    ->with(['https://evil.example/library.tgz', 'git+https://github.com/acme/library.git', 'file:../library', 'link:../library', 'https://registry.npmjs.org.evil.example/library.tgz', 'https://token@registry.npmjs.org/library.tgz']);
+
+it('accepts each supported registry lock format', function (string $file, string $content): void {
+    dependencyContent($this, $file, $content);
+    $this->withHeader('Idempotency-Key', 'registry-format')->postJson($this->url, $this->body)->assertAccepted();
+})->with([
+    ['package-lock.json', '{"lockfileVersion":3,"packages":{"node_modules/library":{"resolved":"https://registry.npmjs.org/library/-/library-1.0.0.tgz"}}}'],
+    ['package-lock.json', '{"lockfileVersion":1,"dependencies":{"library":{"resolved":"https://registry.npmjs.org/library/-/library-1.0.0.tgz"}}}'],
+    ['npm-shrinkwrap.json', '{"lockfileVersion":2,"packages":{},"dependencies":{"library":{"resolved":"https://registry.npmjs.org/library/-/library-1.0.0.tgz"}}}'],
+    ['pnpm-lock.yaml', "lockfileVersion: '9.0'\npackages:\n  library@1.0.0:\n    resolution:\n      integrity: sha512-fixture\n"],
+    ['bun.lock', "{\n// Bun text lock\n\"lockfileVersion\":2,\"packages\":{\"library\":[\"library@1.0.0\",\"\",{},\"sha512-fixture\"],},\n}"],
+]);
+
+it('refuses hidden npm v1 dependencies and local link records', function (string $content): void {
+    dependencyContent($this, 'package-lock.json', $content);
+    $this->withHeader('Idempotency-Key', 'nested-source')->postJson($this->url, $this->body)->assertConflict();
+})->with([
+    '{"lockfileVersion":1,"dependencies":{"library":{"resolved":"https://registry.npmjs.org/library.tgz","dependencies":{"hidden":{"resolved":"https://evil.example/hidden.tgz"}}}}}',
+    '{"lockfileVersion":3,"packages":{"node_modules/library":{"link":true,"resolved":"https://registry.npmjs.org/library.tgz"}}}',
+    '{"lockfileVersion":3,"packages":{"node_modules/library":{"version":"git+https://github.com/acme/library","resolved":"https://registry.npmjs.org/library.tgz"}}}',
+    '{"lockfileVersion":3,"packages":{"node_modules/library":{}}}',
+]);
+
+it('refuses pnpm and Bun sources hidden in identities or dependency edges', function (string $file, string $content): void {
+    dependencyContent($this, $file, $content);
+    $this->withHeader('Idempotency-Key', 'source-edge')->postJson($this->url, $this->body)->assertConflict();
+})->with([
+    ['pnpm-lock.yaml', "lockfileVersion: '9.0'\npackages:\n  library@file:../library:\n    resolution: {integrity: sha512-fixture}\n"],
+    ['pnpm-lock.yaml', "lockfileVersion: '9.0'\npackages: {}\nimporters:\n  .:\n    dependencies:\n      library:\n        version: link:../library\n"],
+    ['pnpm-lock.yaml', "lockfileVersion: '9.0'\npackages: {}\nimporters:\n  .:\n    dependencies:\n      library:\n        version: https://evil.example/library.tgz\n"],
+    ['bun.lock', '{"lockfileVersion":1,"packages":{"library":["library@git+https://github.com/acme/library","",{},"sha512-fixture"]}}'],
+    ['bun.lock', '{"lockfileVersion":1,"packages":{"library":["library@1.0.0","",{"dependencies":{"hidden":"file:../hidden"}},"sha512-fixture"]}}'],
+]);
+
+it('refuses malformed and unsupported lock formats', function (string $file, string $content): void {
+    dependencyContent($this, $file, $content);
+    $this->withHeader('Idempotency-Key', 'invalid-lock')->postJson($this->url, $this->body)->assertConflict();
+})->with([
+    ['composer.lock', '{'], ['composer.lock', '{"packages":{},"packages-dev":[]}'],
+    ['package-lock.json', '{'], ['package-lock.json', '{"lockfileVersion":99,"packages":{}}'],
+    ['pnpm-lock.yaml', "packages: [\n"], ['pnpm-lock.yaml', "lockfileVersion: '9.0'\npackages: {123: {resolution: {integrity: sha512-fixture}}}\n"], ['pnpm-lock.yaml', "lockfileVersion: '9.0'\npackages: {}\npackages: {}\n"],
+    ['bun.lock', '{"lockfileVersion":1,"packages":{'], ['bun.lock', "#!/usr/bin/env bun\0binary"],
+    ['yarn.lock', '# yarn lockfile v1'],
+]);
+
+it('rechecks manifest content at the effect boundary after green admission', function (): void {
+    dependencyContent($this, 'composer.json', '{"scripts":{"test:full":"pest"}}', '{"scripts":{"test:full":"pest"}}');
+    [$id, $request] = dependencyMergeClaim($this);
+    $this->github->shouldReceive('repositorySquashToken')->andReturn('fixture-write-secret');
+    $this->github->shouldNotReceive('squashPullRequest');
+    $this->content['composer.json'] = '{"scripts":{"test:full":"true"}}';
+    $this->postJson('/api/v1/operation-executor/'.$id.'/run', $request)->assertOk()->assertJsonPath('data.error_code', 'dependency_merge.contents_forbidden');
 });

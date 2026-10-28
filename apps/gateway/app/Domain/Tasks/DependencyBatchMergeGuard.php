@@ -29,7 +29,7 @@ use Illuminate\Support\Arr;
 final readonly class DependencyBatchMergeGuard
 {
     public function __construct(private GitHubApi $github, private RepositoryPullRequestAccess $access,
-        private GitHubActionsReader $reader, private ReadInstanceSmokeContextAction $context) {}
+        private GitHubActionsReader $reader, private ReadInstanceSmokeContextAction $context, private DependencyBatchContents $contents) {}
 
     /** @return Intent */
     public function lineage(Task $group, int $publishId, string $head): array
@@ -107,7 +107,15 @@ final readonly class DependencyBatchMergeGuard
         }
         $this->check(($pr['state'] ?? null) === 'open' && ($pr['draft'] ?? null) === false && ($pr['mergeable'] ?? null) === true
             && in_array($pr['mergeable_state'] ?? null, ['clean', 'has_hooks'], true), 'dependency_merge.pr_not_ready');
-        $this->files($pr, $path.'/pulls/'.$intent['pr_number'].'/files', $read);
+        $files = $this->files($pr, $path.'/pulls/'.$intent['pr_number'].'/files', $read);
+        $base = Arr::get($pr, 'base.sha');
+        $this->check(is_string($base) && preg_match('/\A[0-9a-f]{40}\z/D', $base) === 1, 'dependency_merge.pr_changed');
+        $contentsToken = $this->access->readToken($repository);
+        foreach ($files as $file) {
+            $headContent = $this->content($path, $file, $intent['head_sha'], $contentsToken);
+            $baseContent = in_array($file, ['composer.json', 'package.json'], true) ? $this->content($path, $file, $base, $contentsToken) : null;
+            $this->contents->validate($file, $headContent, $baseContent);
+        }
         $actionsToken = $this->reader->token($repository);
         $workflows = $this->reader->json($path.'/actions/workflows?per_page=100', $actionsToken);
         $workflowRows = $this->rows($workflows, 'workflows');
@@ -152,20 +160,21 @@ final readonly class DependencyBatchMergeGuard
         return $pr;
     }
 
-    /** @param array<string, mixed> $pr */
-    private function files(array $pr, string $path, #[\SensitiveParameter] string $token): void
+    /** @param array<string, mixed> $pr
+     * @return list<string> */
+    private function files(array $pr, string $path, #[\SensitiveParameter] string $token): array
     {
         $count = $pr['changed_files'] ?? null;
         // GitHub returns at most 3,000 files. Never accept that ambiguous boundary.
         $this->check(is_int($count) && $count > 0 && $count < 3000, 'dependency_merge.files_unreadable');
-        $allowed = ['composer.json', 'composer.lock', 'package.json', 'package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lock', 'bun.lockb'];
+        $allowed = DependencyBatchContents::Files;
         $seen = [];
         for ($page = 1; ; $page++) {
             $rows = $this->reader->json($path.'?per_page=100&page='.$page, $token);
             $expected = min(100, max(0, $count - count($seen)));
             $this->check(array_is_list($rows) && count($rows) === $expected, 'dependency_merge.files_unreadable');
             if ($expected === 0) {
-                return;
+                return array_keys($seen);
             }
             foreach ($rows as $file) {
                 $this->check(is_array($file) && is_string($file['filename'] ?? null)
@@ -179,6 +188,19 @@ final readonly class DependencyBatchMergeGuard
                 $seen[$file['filename']] = true;
             }
         }
+    }
+
+    private function content(string $path, string $file, string $sha, #[\SensitiveParameter] string $token): string
+    {
+        $data = $this->reader->json($path.'/contents/'.rawurlencode($file).'?ref='.$sha, $token);
+        $this->check(($data['type'] ?? null) === 'file' && ($data['path'] ?? null) === $file
+            && ($data['encoding'] ?? null) === 'base64' && is_string($data['content'] ?? null)
+            && is_int($data['size'] ?? null), 'dependency_merge.contents_unreadable');
+        $decoded = base64_decode($data['content'], true);
+        $this->check($decoded !== false && strlen($decoded) === $data['size']
+            && base64_encode($decoded) === str_replace(["\r", "\n"], '', $data['content']), 'dependency_merge.contents_unreadable');
+
+        return $decoded;
     }
 
     /** @param array<array-key, mixed> $data
