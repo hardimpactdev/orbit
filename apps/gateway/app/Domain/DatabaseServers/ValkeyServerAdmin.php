@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\DatabaseServers;
 
 use App\Models\DatabaseServer;
-use SensitiveParameter;
 
 /**
  * Runs admin commands on a Valkey Database server. The Gateway connects to the Node's WireGuard address and the
@@ -35,43 +34,11 @@ interface ValkeyServerAdmin
     public function userExists(DatabaseServer $server, string $username): bool;
 
     /**
-     * Run `ACL SETUSER <username> reset on #<hash> resetchannels ~<pattern> ... -@all +<rule> ... -@admin -@dangerous
-     * -function -script` and `ACL SAVE`. When the save fails, it deletes the user again and fails.
-     *
-     * @param  list<string>  $patterns  Key patterns, without the `~`.
-     * @param  list<string>  $allow  Command categories or commands, without the `+`.
-     * @return string The user's rules as `ACL LIST` reports them, without the name and the password hash.
-     */
-    public function setUser(
-        DatabaseServer $server,
-        string $username,
-        #[SensitiveParameter]
-        string $password,
-        array $patterns,
-        array $allow,
-    ): string;
-
-    /** Run `ACL DELUSER` and `ACL SAVE`; restore the user on save failure. A missing user is fine. */
-    public function deleteUser(DatabaseServer $server, string $username): void;
-
-    /**
-     * Run `ACL SETUSER <name> reset <rules> #<hash>` for each user to set, `ACL DELUSER` for each name to delete, then
-     * `ACL SAVE`. A failure keeps the changes made before it, so a repeat continues from there.
-     *
-     * @param  list<ValkeyAclUser>  $set
-     * @param  list<string>  $delete
-     */
-    public function applyUsers(DatabaseServer $server, array $set, array $delete): void;
-
-    /**
      * The live users, keyed by name.
      *
      * @return array<string, ValkeyAclUser>
      */
     public function aclUsers(DatabaseServer $server): array;
-
-    /** Refuse other default clients, set its admin password, and persist it. */
-    public function closeDefaultUser(DatabaseServer $server): void;
 
     /** The ACL file that Valkey runs with, from `CONFIG GET aclfile`, or null without one. */
     public function aclFile(DatabaseServer $server): ?string;

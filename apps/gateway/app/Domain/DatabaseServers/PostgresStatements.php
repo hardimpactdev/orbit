@@ -40,6 +40,17 @@ final readonly class PostgresStatements
             .($locale === null ? '' : " TEMPLATE template0 ENCODING 'UTF8' LOCALE_PROVIDER builtin BUILTIN_LOCALE ".$this->literal($locale)).";\n";
     }
 
+    /** Refuse foreign ownership before create recovery or any grant changes. */
+    public function assertDatabaseOwner(string $database, string $username): string
+    {
+        $this->identifier($database);
+        $this->identifier($username);
+        $db = $this->literal($database);
+        $role = $this->literal($username);
+
+        return "DO \$orbit_owner\$ BEGIN IF EXISTS (SELECT FROM pg_database WHERE datname = {$db} AND datdba IS DISTINCT FROM (SELECT oid FROM pg_roles WHERE rolname = {$role})) THEN RAISE EXCEPTION 'database.name_conflict'; END IF; END \$orbit_owner\$;\n";
+    }
+
     /** Ownership is explicit; only this role's objects receive the default grants. */
     public function grantAll(string $database, string $username): string
     {

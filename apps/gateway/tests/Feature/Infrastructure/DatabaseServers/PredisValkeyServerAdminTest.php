@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Actions\DatabaseConnections\CreateServerDatabaseAction;
-use App\Actions\DatabaseServers\ConvergeValkeyServerAction;
 use App\Actions\Doctor\DatabaseServerDoctorProbe;
 use App\Data\DatabaseConnections\CreateServerDatabaseData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
@@ -25,7 +24,6 @@ use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Support\Sleep;
 use Predis\Client;
-use Predis\Connection\ConnectionException;
 use Symfony\Component\Process\Process as LocalProcess;
 use Tests\Support\FakeAgentCommandRunner;
 
@@ -155,10 +153,18 @@ function valkey_docker_client(DatabaseServer $server, string $username, string $
 /** A recorded ACL user, created as `database:create --server` creates it. */
 function valkey_docker_user(DatabaseServer $server, string $slug, array $patterns, array $allow): DatabaseConnection
 {
-    return app(CreateServerDatabaseAction::class)->execute(
+    $prepared = app(CreateServerDatabaseAction::class)->prepare(
         new CreateServerDatabaseData(slug: $slug, server: $server->slug, instanceId: null, patterns: $patterns, allow: $allow),
         'test',
     );
+    $connection = DatabaseConnection::query()->findOrFail($prepared->input['connection_id']);
+    $user = ValkeyAcl::users($server->refresh())[$slug];
+    $client = valkey_docker_client($server, 'default', $server->root_password);
+    $client->executeRaw(['ACL', 'SETUSER', $slug, 'reset', ...explode(' ', $user->rules), '#'.hash('sha256', $connection->password)]);
+    $client->executeRaw(['ACL', 'SAVE']);
+    $client->disconnect();
+
+    return $connection;
 }
 
 /** A free loopback port. The container keeps it across restarts, as a server keeps its published port. */
@@ -261,20 +267,6 @@ afterEach(function (): void {
 });
 
 describe('a Valkey Database server in Docker', function (): void {
-    it('matches the shared fixture to raw ACL LIST output from the CI image', function (): void {
-        foreach ($this->fixture['users'] as $user) {
-            $this->admin->setUser($this->server, $user['name'], $user['password'], $user['patterns'], $user['allow']);
-        }
-        $client = valkey_docker_client($this->server, 'default', $this->password);
-        $lines = $client->executeRaw(['ACL', 'LIST']);
-        sort($lines);
-        expect($lines)->toBe($this->fixture['closed']);
-
-        $client->executeRaw(['ACL', 'SETUSER', 'default', 'resetpass', 'nopass']);
-        $lines = $client->executeRaw(['ACL', 'LIST']);
-        $default = array_values(array_filter($lines, static fn (string $line): bool => str_starts_with($line, 'user default ')));
-        expect($default)->toBe([$this->fixture['open_default']]);
-    });
 
     it('logs in as default only with the admin password and gives a client without one nothing', function (): void {
         $wrong = $this->server->replicate()->fill(['root_password' => 'wrong-password']);
@@ -293,43 +285,6 @@ describe('a Valkey Database server in Docker', function (): void {
             ->and($default->hasOnlyPassword($this->password))->toBeTrue();
     });
 
-    it('creates a user in Orbit\'s frame, saves it to the ACL file, and deletes it', function (): void {
-        $rules = $this->admin->setUser(
-            $this->server,
-            'orbit-test-queue',
-            'queue-secret',
-            ['orbit-gateway:*', 'orbit-gateway-horizon:*'],
-            ['@connection', '@list', '@write', '@slow', 'eval'],
-        );
-
-        expect($rules)->toBe('on ~orbit-gateway:* ~orbit-gateway-horizon:* resetchannels -@all +@connection +@list +@write +@slow +eval -@admin -@dangerous -function -script')
-            ->and($this->admin->userExists($this->server, 'orbit-test-queue'))->toBeTrue()
-            ->and($this->admin->aclUsers($this->server)['orbit-test-queue']->rules)->toBe($rules)
-            ->and($this->admin->aclUsers($this->server)['orbit-test-queue']->hasOnlyPassword('queue-secret'))->toBeTrue();
-
-        $default = valkey_docker_client($this->server, 'default', $this->password);
-
-        // ACL LOAD reads the file again, so the user survives only when ACL SAVE wrote it.
-        expect((string) $default->executeRaw(['ACL', 'LOAD']))->toBe('OK')
-            ->and($this->admin->userExists($this->server, 'orbit-test-queue'))->toBeTrue();
-
-        $queue = valkey_docker_client($this->server, 'orbit-test-queue', 'queue-secret');
-
-        expect($queue->executeRaw(['RPUSH', 'orbit-gateway:orbit-test-jobs', 'job']))->toBe(1)
-            ->and((string) $queue->executeRaw(['RPUSH', 'other:orbit-test-jobs', 'job']))->toStartWith('NOPERM')
-            ->and((string) $queue->executeRaw(['KEYS', '*']))->toStartWith('NOPERM')
-            ->and((string) $queue->executeRaw(['FLUSHALL']))->toStartWith('NOPERM')
-            ->and((string) $queue->executeRaw(['FUNCTION', 'FLUSH']))->toStartWith('NOPERM')
-            ->and((string) $queue->executeRaw(['SCRIPT', 'FLUSH']))->toStartWith('NOPERM')
-            ->and((string) $queue->executeRaw(['CONFIG', 'GET', 'aclfile']))->toStartWith('NOPERM')
-            ->and((string) $queue->executeRaw(['ACL', 'LIST']))->toStartWith('NOPERM');
-
-        $this->admin->deleteUser($this->server, 'orbit-test-queue');
-        $this->admin->deleteUser($this->server, 'orbit-test-queue');
-
-        expect($this->admin->userExists($this->server, 'orbit-test-queue'))->toBeFalse();
-    });
-
     it('reports the recorded users as healthy through Doctor, with the exact rules that Valkey lists', function (): void {
         valkey_docker_user($this->server, 'gateway-queue', ['orbit-gateway:*', 'orbit-gateway-horizon:*'],
             ['@connection', '@transaction', '@keyspace', '@string', '@list', '@hash', '@set', '@sortedset', 'eval', 'time']);
@@ -345,99 +300,6 @@ describe('a Valkey Database server in Docker', function (): void {
             ->toBe(['database_server.acl_mismatch']);
     });
 
-    it('repairs live drift with the ACL commands and keeps the keys', function (): void {
-        $connection = valkey_docker_user($this->server, 'gateway-queue', ['orbit-gateway:*'], ['@connection', '@list']);
-        $default = valkey_docker_client($this->server, 'default', $this->password);
-        $default->executeRaw(['SET', 'orbit-gateway:kept', 'job']);
-        $default->executeRaw(['ACL', 'DELUSER', 'gateway-queue']);
-        $default->executeRaw(['ACL', 'SETUSER', 'manual', 'on', 'nopass', '~*', '+@all']);
-        $default->executeRaw(['ACL', 'SETUSER', 'default', '>second-admin-password', '-flushall']);
-        $default->disconnect();
-
-        app(ConvergeValkeyServerAction::class)->execute($this->server);
-        app(ConvergeValkeyServerAction::class)->execute($this->server);
-
-        $default = valkey_docker_client($this->server, 'default', $this->password);
-        expect((string) $default->executeRaw(['ACL', 'LOAD']))->toBe('OK')
-            ->and(ValkeyAcl::changes($this->server->refresh(), $this->admin->aclUsers($this->server)))->toBe(['set' => [], 'delete' => []])
-            ->and(array_keys($this->admin->aclUsers($this->server)))->toBe(['default', 'gateway-queue'])
-            ->and(valkey_docker_client($this->server, 'gateway-queue', (string) $connection->password)->executeRaw(['LLEN', 'orbit-gateway:jobs']))->toBe(0)
-            ->and($default->executeRaw(['GET', 'orbit-gateway:kept']))->toBe('job');
-    });
-
-    it('repairs default when it can log in but cannot inspect or restore the server', function (string $deny): void {
-        $connection = valkey_docker_user($this->server, 'gateway-queue', ['orbit-gateway:*'], ['@connection', '@list']);
-        $default = valkey_docker_client($this->server, 'default', $this->password);
-        $default->executeRaw(['ACL', 'SETUSER', 'default', $deny]);
-        $default->executeRaw(['ACL', 'SAVE']);
-        $default->disconnect();
-        expect($this->admin->acceptsAdminLogin($this->server))->toBeTrue();
-
-        app(ConvergeValkeyServerAction::class)->execute($this->server);
-
-        expect(ValkeyAcl::changes($this->server->refresh(), $this->admin->aclUsers($this->server)))->toBe(['set' => [], 'delete' => []])
-            ->and($this->admin->acceptsAnonymous($this->server))->toBeFalse()
-            ->and(valkey_docker_client($this->server, 'gateway-queue', (string) $connection->password)->executeRaw(['LLEN', 'orbit-gateway:jobs']))->toBe(0);
-    })->with(['CONFIG GET denied' => '-config|get', 'ACL LIST denied' => '-acl|list', 'ACL SETUSER denied' => '-acl|setuser']);
-
-    it('writes a lost ACL file again from the records and starts Valkey from it', function (): void {
-        $connection = valkey_docker_user($this->server, 'gateway-queue', ['orbit-gateway:*'], ['@connection', '@list', '@string']);
-        valkey_docker_client($this->server, 'gateway-queue', (string) $connection->password)->executeRaw(['SET', 'orbit-gateway:kept', 'job']);
-        valkey_docker(['exec', $this->container, 'rm', DatabaseServerProcess::VALKEY_ACL_FILE]);
-        valkey_docker(['restart', $this->container]);
-
-        expect(valkey_docker_stopped($this->container))->toBeTrue()
-            ->and($this->admin->acceptsAdminLogin($this->server))->toBeFalse();
-
-        app(ConvergeValkeyServerAction::class)->execute($this->server);
-
-        $queue = valkey_docker_client($this->server, 'gateway-queue', (string) $connection->password);
-        expect($queue->executeRaw(['GET', 'orbit-gateway:kept']))->toBe('job')
-            ->and($this->admin->acceptsAnonymous($this->server))->toBeFalse()
-            ->and(ValkeyAcl::changes($this->server->refresh(), $this->admin->aclUsers($this->server)))->toBe(['set' => [], 'delete' => []]);
-    });
-
-    it('refuses default clients then closes an open server durably without deleting keys or other users', function (): void {
-        $default = valkey_docker_client($this->server, 'default', $this->password);
-        $default->executeRaw(['ACL', 'SETUSER', 'default', 'nopass']);
-        $default->executeRaw(['ACL', 'SAVE']);
-        $default->executeRaw(['SET', 'orbit-test-preserved', 'job']);
-
-        expect(fn () => $this->admin->closeDefaultUser($this->server))->toThrow(ResourceOperationException::class, 'clients still use default');
-        expect($this->admin->acceptsAnonymous($this->server))->toBeTrue();
-        $default->disconnect();
-        $this->admin->closeDefaultUser($this->server);
-        expect($this->admin->acceptsAnonymous($this->server))->toBeFalse();
-        $this->admin->closeDefaultUser($this->server);
-        $default = valkey_docker_client($this->server, 'default', $this->password);
-        expect((string) $default->executeRaw(['ACL', 'LOAD']))->toBe('OK')
-            ->and($default->executeRaw(['GET', 'orbit-test-preserved']))->toBe('job')
-            ->and($this->admin->acceptsAnonymous($this->server))->toBeFalse();
-    });
-
-    it('revokes a session accepted before an interrupted close on retry', function (): void {
-        $default = valkey_docker_client($this->server, 'default', $this->password);
-        $default->executeRaw(['ACL', 'SETUSER', 'default', 'nopass']);
-        $anonymous = new Client(['host' => '127.0.0.1', 'port' => $this->server->port, 'timeout' => 5]);
-        expect((string) $anonymous->executeRaw(['PING']))->toBe('PONG');
-        $default->executeRaw(['ACL', 'SETUSER', 'default', 'resetpass', '#'.hash('sha256', $this->password)]);
-        $default->executeRaw(['ACL', 'SAVE']);
-        $default->disconnect();
-        // This already-authenticated session survives the password change, including a lost close reply.
-        expect($anonymous->executeRaw(['ACL', 'LIST']))->toBeArray();
-
-        $this->admin->closeDefaultUser($this->server);
-
-        try {
-            $reply = $anonymous->executeRaw(['ACL', 'LIST']);
-            expect((string) $reply)->toStartWith('NOAUTH');
-        } catch (ConnectionException) {
-            $anonymous->disconnect();
-            expect((string) $anonymous->executeRaw(['ACL', 'LIST']))->toStartWith('NOAUTH');
-        }
-        expect($this->admin->acceptsAnonymous($this->server))->toBeFalse();
-    });
-
     it('reads the effective persistence and database settings before adoption', function (): void {
         expect($this->admin->adoptionConfiguration($this->server))->toMatchArray([
             'dir' => '/data', 'appendonly' => 'yes', 'appenddirname' => 'appendonlydir',
@@ -445,76 +307,11 @@ describe('a Valkey Database server in Docker', function (): void {
         ]);
     });
 
-    it('restores an open default when ACL SAVE fails and allows a safe retry', function (): void {
-        $default = valkey_docker_client($this->server, 'default', $this->password);
-        $default->executeRaw(['ACL', 'SETUSER', 'default', 'nopass']);
-        $default->executeRaw(['ACL', 'SAVE']);
-        // Removing SAVE permission causes a real command failure without filesystem tricks.
-        $default->executeRaw(['ACL', 'SETUSER', 'default', '-acl|save']);
-        $default->disconnect();
-
-        expect(fn () => $this->admin->closeDefaultUser($this->server))->toThrow(ResourceOperationException::class);
-        expect($this->admin->acceptsAnonymous($this->server))->toBeTrue();
-
-        $default->executeRaw(['ACL', 'SETUSER', 'default', '+@all']);
-        $default->disconnect();
-        $this->admin->closeDefaultUser($this->server);
-
-        expect($this->admin->acceptsAnonymous($this->server))->toBeFalse();
-    });
-
-    it('removes a newly created user when saving it fails', function (): void {
-        $default = valkey_docker_client($this->server, 'default', $this->password);
-        $default->executeRaw(['ACL', 'SETUSER', 'default', '-acl|save']);
-
-        expect(fn () => $this->admin->setUser($this->server, 'orbit-test-queue', 'queue-secret', ['queue:*'], ['@list']))->toThrow(ResourceOperationException::class);
-        expect($this->admin->userExists($this->server, 'orbit-test-queue'))->toBeFalse();
-    });
-
-    it('restores a deleted user when saving fails and persists its deletion on retry', function (): void {
-        $this->admin->setUser($this->server, 'orbit-test-queue', 'queue-secret', ['queue:*'], ['@list']);
-        $default = valkey_docker_client($this->server, 'default', $this->password);
-        $default->executeRaw(['ACL', 'SETUSER', 'default', '-acl|save']);
-
-        expect(fn () => $this->admin->deleteUser($this->server, 'orbit-test-queue'))->toThrow(ResourceOperationException::class);
-        expect($this->admin->aclUsers($this->server)['orbit-test-queue']->hasOnlyPassword('queue-secret'))->toBeTrue();
-
-        $default->executeRaw(['ACL', 'SETUSER', 'default', '+@all']);
-        $this->admin->deleteUser($this->server, 'orbit-test-queue');
-        $default->executeRaw(['ACL', 'LOAD']);
-
-        expect($this->admin->userExists($this->server, 'orbit-test-queue'))->toBeFalse();
-    });
-
     it('reports the live database count and accepts only indexes below it', function (): void {
         expect($this->admin->databaseCount($this->server))->toBe(16);
         $default = valkey_docker_client($this->server, 'default', $this->password);
         expect((string) $default->executeRaw(['SELECT', '15']))->toBe('OK')
             ->and((string) $default->executeRaw(['SELECT', '16']))->toStartWith('ERR DB index is out of range');
-    });
-
-    it('runs the documented collector ACL through the Predis handshake and cache commands', function (): void {
-        $this->admin->setUser($this->server, 'orbit-test-queue', 'queue-secret', ['orbit:ai-router:*'], ['@connection', '@string', '@keyspace', 'eval']);
-        $client = valkey_docker_client($this->server, 'orbit-test-queue', 'queue-secret');
-
-        expect((string) $client->executeRaw(['SET', 'orbit:ai-router:test', 'snapshot', 'EX', '60']))->toBe('OK')
-            ->and($client->executeRaw(['GET', 'orbit:ai-router:test']))->toBe('snapshot')
-            ->and($client->executeRaw(['EVAL', "return redis.call('GET', KEYS[1])", '1', 'orbit:ai-router:test']))->toBe('snapshot')
-            ->and((string) $client->executeRaw(['GET', 'other:test']))->toStartWith('NOPERM');
-    });
-
-    it('returns a refused rule as database.acl_rules_invalid with the message of Valkey and no hash', function (): void {
-        try {
-            $this->admin->setUser($this->server, 'orbit-test-queue', 'queue-secret', ['orbit-gateway:*'], ['nosuchcommand']);
-            $this->fail('Valkey accepted an unknown command.');
-        } catch (ResourceOperationException $exception) {
-            expect($exception->errorCode)->toBe('database.acl_rules_invalid')
-                ->and($exception->status)->toBe(422)
-                ->and($exception->getMessage())->toBe("Valkey refused a key pattern or a rule: ERR Error in ACL SETUSER modifier '+nosuchcommand': Unknown command or category name in ACL.")
-                ->and($exception->getMessage())->not->toContain(hash('sha256', 'queue-secret'));
-        }
-
-        expect($this->admin->userExists($this->server, 'orbit-test-queue'))->toBeFalse();
     });
 
     it('returns a failed connection as database.server_command_failed without output', function (): void {
