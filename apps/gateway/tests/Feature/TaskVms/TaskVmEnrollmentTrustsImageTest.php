@@ -13,7 +13,6 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmState;
-use App\Domain\Tools\ToolManagerName;
 use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Nodes\NativeNodeConverger;
@@ -26,9 +25,6 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\Tools\ComposerToolManager;
-use App\Infrastructure\Tools\NativeToolManagerMaterializer;
-use App\Infrastructure\Tools\VpToolManager;
 use App\Infrastructure\WireGuard\WireGuardPeerConverger;
 use App\Models\Node;
 use App\Models\TaskVm;
@@ -113,11 +109,10 @@ it('trusts only a linked task VM image and still applies VM-specific infrastruct
     $storage->shouldReceive('prepare')->once();
     app()->instance(NodeStorageRootPreparer::class, $storage);
 
-    $agentPrograms = ['bootstrap' => 'node.bootstrap', 'caddy-package' => 'caddy.install-package', 'app-dev-prerequisites' => 'role.install-prerequisites', 'vp-manager' => 'tool.materialize-vp', 'composer-manager' => 'tool.materialize-composer'];
+    $agentPrograms = ['bootstrap' => 'node.bootstrap', 'caddy-package' => 'caddy.install-package', 'app-dev-prerequisites' => 'role.install-prerequisites'];
 
     app(NativeNodeConverger::class)->converge($node, new NodeProvisioningIdentity('orbit', 'orbit'), 'SHA256:pinned');
     app(DevelopmentRoleBaseline::class)->converge($node, $assignment);
-    app(NativeToolManagerMaterializer::class)->convergeWithFailureHandler($node, static function (): void {}, ToolManagerName::Composer, ToolManagerName::Vp);
 
     foreach ($agentPrograms as $name => $command) {
         expect(array_keys($agents->commands(), $command, true), $name)->toHaveCount($taskVm ? 0 : 1);
@@ -128,25 +123,7 @@ it('trusts only a linked task VM image and still applies VM-specific infrastruct
     if (! $taskVm) {
         Log::shouldNotHaveReceived('info', ['Task VM program skipped: its image ran it.', Mockery::any()]);
     }
-    // Explicit manager install/update operations must not inherit enrollment's image trust.
-    app(ComposerToolManager::class)->materialize($node);
-    app(VpToolManager::class)->materialize($node);
-    expect(array_keys($agents->commands(), 'tool.materialize-composer', true))->toHaveCount($taskVm ? 1 : 2);
-    expect(array_keys($agents->commands(), 'tool.materialize-vp', true))->toHaveCount($taskVm ? 1 : 2);
-    $agents->answer('tool.composer-install', []);
-    $agents->answer('tool.composer-update', []);
-    app(ComposerToolManager::class)->install($node, 'vendor/package');
-    app(ComposerToolManager::class)->update($node, 'vendor/package');
-    expect(array_slice($agents->calls, -2))->toBe([
-        ['node' => $node->name, 'command' => 'tool.composer-install', 'input' => ['package' => 'vendor/package']],
-        ['node' => $node->name, 'command' => 'tool.composer-update', 'input' => ['package' => 'vendor/package']],
-    ]);
-    app(VpToolManager::class)->install($node, '@vendor/package');
-    app(VpToolManager::class)->update($node, '@vendor/package');
-    expect(array_slice($agents->calls, -2))->toBe([
-        ['node' => $node->name, 'command' => 'tool.vp-install', 'input' => ['package' => '@vendor/package']],
-        ['node' => $node->name, 'command' => 'tool.vp-update', 'input' => ['package' => '@vendor/package']],
-    ]);
+
     expect($node->fresh()->ssh_host_fingerprint)->toBe('SHA256:pinned');
     // Hibernation directories are per-VM state, not part of the software skip.
     expect(array_values(array_filter($agents->calls, static fn (array $call): bool => $call['command'] === 'hibernation.prepare-directories')))->toBe([

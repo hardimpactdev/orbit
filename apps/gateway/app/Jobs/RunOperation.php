@@ -12,7 +12,7 @@ use Illuminate\Foundation\Queue\Queueable;
 /**
  * Runs one attempt of an operation on the `operations` queue (docs/reference/operations.md). A second copy of the job
  * for the same operation does nothing, because only one worker claims the queued operation. A lost worker is
- * recovered by `orbit:operations-sweep`, not by the queue's retry.
+ * recovered by the Swamp observation recovery schedule, not by the queue's retry.
  */
 final class RunOperation implements ShouldQueue
 {

@@ -64,14 +64,6 @@ describe(HomebrewToolManager::class, function (): void {
         'oversized' => [str_repeat('a', times: 256), false],
     ]);
 
-    it('materializes the protected Linux scope through the agent', function (): void {
-        [$manager, $ssh, $agent] = homebrew_tool_manager([]);
-        $agent->answer('tool.materialize-homebrew', []);
-        $manager->materialize(homebrew_tool_node(role: null));
-        expect($agent->calls)->toBe([['node' => 'homebrew-tool-node', 'command' => 'tool.materialize-homebrew', 'input' => ['user' => 'orbit']]]);
-        expect($ssh->commands)->toBe([]);
-    });
-
     it('maps native inventory refusals instead of reporting absent packages', function (string $code): void {
         [$manager, $ssh, $agent] = homebrew_tool_manager([]);
         $agent->refuse('tool.homebrew-formula-inventory', $code);
@@ -80,66 +72,6 @@ describe(HomebrewToolManager::class, function (): void {
         expect($ssh->commands)->toBe([]);
     })->with(['tool.homebrew_operation_failed', 'tool.homebrew_output_invalid']);
 
-    it('verifies the existing macOS prefix through the account command', function (): void {
-        [$manager, $ssh, $agent] = homebrew_tool_manager([]);
-        $manager->materialize(homebrew_tool_node('macos', null, 'arm64', 'mini'));
-        expect($agent->calls)->toBe([['node' => 'homebrew-tool-node', 'command' => 'tool.inspect-homebrew-scope', 'input' => []]])
-            ->and($ssh->commands)->toBe([]);
-    });
-
-    it('requires both typed scope fields before using Homebrew', function (array $scope): void {
-        [$manager, $ssh, $agent] = homebrew_tool_manager([]);
-        $agent->answerMalformed('tool.inspect-homebrew-scope', $scope);
-
-        expect(fn () => $manager->materialize(homebrew_tool_node('macos', null, 'arm64', 'mini')))
-            ->toThrow(fn (ToolManagerException $error) => expect($error->step)->toBe('manager-probe'));
-        expect($ssh->commands)->toBe([]);
-    })->with([
-        'missing home' => [['prefix' => '/opt/homebrew']],
-        'missing prefix' => [['home' => '/Users/mini']],
-        'invalid home type' => [['prefix' => '/opt/homebrew', 'home' => null]],
-        'invalid prefix type' => [['prefix' => false, 'home' => '/Users/mini']],
-    ]);
-
-    it('maps macOS scope refusals before reading packages', function (string $code, string $step): void {
-        [$manager, $ssh, $agent] = homebrew_tool_manager([]);
-        $agent->refuse('tool.inspect-homebrew-scope', $code);
-        expect(fn () => $manager->materialize(homebrew_tool_node('macos', null, 'arm64', 'mini')))
-            ->toThrow(function (ToolManagerException $error) use ($step): void {
-                expect($error->step)->toBe($step)->and($error->result)->toBeNull();
-            });
-        expect($agent->commands())->toBe(['tool.inspect-homebrew-scope'])
-            ->and($ssh->commands)->toBe([]);
-    })->with([
-        ['tool.homebrew_scope_absent', 'manager-absent'],
-        ['tool.homebrew_scope_conflict', 'manager-conflict'],
-        ['tool.homebrew_scope_unreadable', 'manager-probe'],
-    ]);
-
-    it('sends one typed command per formula operation', function (string $platform): void {
-        [$manager, $ssh, $agent] = homebrew_tool_manager([]);
-        $node = homebrew_tool_node($platform, architecture: 'arm64');
-        $input = ['package' => 'ripgrep'];
-        if ($platform === 'macos') {
-            $input['architecture'] = 'arm64';
-        }
-        $agent->answer('tool.homebrew-formula-candidate', ['version' => '14.1.1'])
-            ->answer('tool.homebrew-formula-install', [])
-            ->answer('tool.homebrew-formula-update', [])
-            ->answer('tool.homebrew-formula-remove', []);
-        expect($manager->candidateVersion($node, 'ripgrep', ToolOperation::Install))->toBe('14.1.1');
-        $manager->install($node, 'ripgrep');
-        $manager->update($node, 'ripgrep');
-        expect($manager->planRemoval($node, 'ripgrep')->packages)->toBe(['ripgrep']);
-        $manager->remove($node, 'ripgrep');
-        expect($agent->calls)->toBe([
-            ['node' => $node->name, 'command' => 'tool.homebrew-formula-candidate', 'input' => $input],
-            ['node' => $node->name, 'command' => 'tool.homebrew-formula-install', 'input' => $input],
-            ['node' => $node->name, 'command' => 'tool.homebrew-formula-update', 'input' => $input],
-            ['node' => $node->name, 'command' => 'tool.homebrew-formula-remove', 'input' => ['package' => 'ripgrep']],
-        ])->and($ssh->commands)->toBe([]);
-    })->with(['linux', 'macos']);
-
     it('keeps absent candidates separate from failed probes', function (): void {
         [$manager, , $agent] = homebrew_tool_manager([]);
         $agent->answer('tool.homebrew-formula-candidate', ['version' => null]);
@@ -147,35 +79,6 @@ describe(HomebrewToolManager::class, function (): void {
         $agent->refuse('tool.homebrew-formula-candidate', 'tool.homebrew_operation_failed');
         expect(fn () => $manager->candidateVersion(homebrew_tool_node(), 'missing', ToolOperation::Install))->toThrow(ToolManagerException::class);
     });
-
-    it('maps native formula refusals without retaining manager output', function (string $command, string $code, string $step): void {
-        [$manager, $ssh, $agent] = homebrew_tool_manager([]);
-        $agent->refuse('tool.homebrew-'.$command, $code);
-        $node = homebrew_tool_node();
-        $call = match ($command) {
-            'version' => fn () => $manager->managerVersion($node),
-            'formula-candidate' => fn () => $manager->candidateVersion($node, 'ripgrep', ToolOperation::Install),
-            'formula-adoption' => fn () => $manager->inspectForAdoption($node, 'ripgrep'),
-            'formula-install' => fn () => $manager->install($node, 'ripgrep'),
-            'formula-update' => fn () => $manager->update($node, 'ripgrep'),
-            'formula-remove' => fn () => $manager->remove($node, 'ripgrep'),
-        };
-        expect($call)->toThrow(function (ToolManagerException $error) use ($step): void {
-            expect($error->step)->toBe($step)->and($error->result)->toBeNull();
-        });
-        expect($ssh->commands)->toBe([]);
-    })->with([
-        ['version', 'tool.homebrew_version_unsupported', 'manager-version'],
-        ['formula-candidate', 'tool.homebrew_candidate_invalid', 'candidate-version'],
-        ['formula-install', 'tool.homebrew_bottle_unavailable', 'candidate-version'],
-        ['formula-install', 'tool.homebrew_scope_conflict', 'manager-conflict'],
-        ['formula-install', 'tool.homebrew_operation_failed', 'install'],
-        ['formula-update', 'tool.homebrew_operation_failed', 'update'],
-        ['formula-remove', 'tool.homebrew_operation_failed', 'remove'],
-        ['formula-adoption', 'tool.homebrew_scope_absent', 'manager-absent'],
-        ['formula-adoption', 'tool.homebrew_scope_unreadable', 'manager-probe'],
-        ['formula-adoption', 'tool.homebrew_output_invalid', 'installed-version'],
-    ]);
 
     it('preserves native adoption facts without executing Homebrew', function (?string $version, ?string $block): void {
         [$manager, $ssh, $agent] = homebrew_tool_manager([]);
@@ -189,15 +92,6 @@ describe(HomebrewToolManager::class, function (): void {
         ['14.1.1', 'unsupported_source'], [null, 'version_unreadable'],
         ['14.1.1', 'unsupported_artifact'], ['14.1.1', 'bottle_unavailable'],
     ]);
-
-    it('rejects unsupported input before calling the agent', function (): void {
-        [$manager, , $agent] = homebrew_tool_manager([]);
-        expect(fn () => $manager->candidateVersion(homebrew_tool_node(), 'ripgrep', ToolOperation::Remove))->toThrow(ToolManagerException::class);
-        expect(fn () => $manager->install(homebrew_tool_node('darwin'), 'ripgrep'))->toThrow(ToolManagerException::class);
-        expect(fn () => $manager->install(homebrew_tool_node(), 'other/tap/ripgrep'))->toThrow(ToolManagerException::class);
-        expect(fn () => $manager->install(homebrew_tool_node('macos', architecture: 'i386'), 'ripgrep'))->toThrow(ToolManagerException::class);
-        expect($agent->calls)->toBe([]);
-    });
 
     it('normalizes versions in the Gateway and keeps the native manager version', function (): void {
         [$manager, , $agent] = homebrew_tool_manager([]);

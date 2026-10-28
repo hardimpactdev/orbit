@@ -9,12 +9,12 @@ use App\Actions\Tools\InstallToolAction;
 use App\Actions\Tools\ListToolsAction;
 use App\Actions\Tools\RemoveToolAction;
 use App\Actions\Tools\UpdateToolAction;
+use App\Data\Operations\OperationData;
 use App\Data\Tools\ToolData;
-use App\Domain\Tools\ToolOperation;
-use App\Domain\Tools\ToolOutcome;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Operations\StartsOperation;
 use App\Http\Requests\Tools\AdoptToolRequest;
 use App\Http\Requests\Tools\ListToolsRequest;
 use App\Http\Requests\Tools\StoreToolRequest;
@@ -44,86 +44,28 @@ final class ToolsController extends Controller
         ]);
     }
 
+    #[StartsOperation('tool.install')]
     public function store(StoreToolRequest $request, InstallToolAction $action): JsonResponse
     {
-        $result = $action->execute($request->payload());
-        $tool = $result->tool;
-        $tool->loadMissing('manager');
-        $this->setToolActivity($tool, ToolOperation::Install, $result->outcome);
-
-        return response()->json(
-            [
-                'data' => ToolData::fromModel($tool, $result->outcome)->toArray(),
-                'meta' => $this->meta($request),
-            ],
-            $result->created ? 201 : 200,
-        );
+        return response()->json(['data' => OperationData::fromModel($action->execute($request->payload()))->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
+    #[StartsOperation('tool.adopt')]
     public function adopt(AdoptToolRequest $request, AdoptToolAction $action): JsonResponse
     {
-        $result = $action->execute($request->payload());
-        $tool = $result->tool;
-        $tool->loadMissing('manager');
-        $this->setToolActivity($tool, ToolOperation::Adopt, $result->outcome);
-
-        return response()->json(
-            [
-                'data' => ToolData::fromModel($tool, $result->outcome)->toArray(),
-                'meta' => $this->meta($request),
-            ],
-            $result->created ? 201 : 200,
-        );
+        return response()->json(['data' => OperationData::fromModel($action->execute($request->payload()))->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
-    public function update(
-        Request $request,
-        Tool $tool,
-        UpdateToolAction $action,
-    ): JsonResponse {
-        $tool->loadMissing('manager');
-        $request->attributes->set('orbit.tool_snapshot', $tool);
-        $result = $action->execute($tool);
-        $this->setToolActivity($result->tool, ToolOperation::Update, $result->outcome);
-
-        return response()->json([
-            'data' => ToolData::fromModel($result->tool, $result->outcome)->toArray(),
-            'meta' => $this->meta($request),
-        ]);
+    #[StartsOperation('tool.update')]
+    public function update(Request $request, string $tool, UpdateToolAction $action): JsonResponse
+    {
+        return response()->json(['data' => OperationData::fromModel($action->execute(Tool::query()->findOrFail($tool)))->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
-    public function destroy(
-        Request $request,
-        Tool $tool,
-        RemoveToolAction $action,
-    ): JsonResponse {
-        $tool->loadMissing('manager');
-        $request->attributes->set('orbit.tool_snapshot', $tool);
-        $result = $action->execute($tool);
-        $this->setToolActivity($result->tool, ToolOperation::Remove, $result->outcome);
-
-        return response()->json([
-            'data' => ToolData::fromModel($result->tool, $result->outcome, $result->status)->toArray(),
-            'meta' => $this->meta($request),
-        ]);
-    }
-
-    private function setToolActivity(
-        Tool $tool,
-        ToolOperation $operation,
-        ToolOutcome $outcome,
-    ): void {
-        $tool->loadMissing('manager');
-        $activityRequest = request();
-        $activityRequest->attributes->set('orbit.tool_snapshot', $tool);
-        $activityRequest->attributes->set('orbit.tool_activity', [
-            'node_id' => $tool->node_id,
-            'manager' => $tool->manager->name,
-            'package' => $tool->package,
-            'operation' => $operation->value,
-            'outcome' => $outcome->value,
-            'version_constraint' => $tool->version_constraint,
-        ]);
+    #[StartsOperation('tool.remove')]
+    public function destroy(Request $request, string $tool, RemoveToolAction $action): JsonResponse
+    {
+        return response()->json(['data' => OperationData::fromModel($action->execute(Tool::query()->findOrFail($tool)))->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
     /** @return array{request_id: string} */

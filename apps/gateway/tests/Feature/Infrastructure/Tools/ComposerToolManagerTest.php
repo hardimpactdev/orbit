@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tools\InstalledToolInventory;
 use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\ToolAdoptionFact;
 use App\Domain\Tools\ToolInventoryPackage;
@@ -12,7 +11,6 @@ use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolOperation;
-use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\Tools\ComposerToolManager;
 use App\Infrastructure\Tools\ToolCommandBudget;
 use App\Models\Node;
@@ -91,144 +89,6 @@ describe(ComposerToolManager::class, function (): void {
         'oversized' => [str_repeat('v', times: 128).'/'.str_repeat('p', times: 127), false],
     ]);
 
-    it('materializes Composer through the typed command with its enrolled account', function (): void {
-        [$manager, $agent] = composer_tool_manager();
-        $agent->answer('tool.materialize-composer', []);
-        $manager->materialize(composer_tool_node(role: null, roleStatus: null));
-        expect($agent->commands())->toBe(['tool.materialize-composer']);
-        expect($agent->calls[0]['input'])->toBe(['user' => 'orbit']);
-    });
-
-    it('rejects an unsupported node before remote I/O', function (Closure $operation): void {
-        [$manager, $agent] = composer_tool_manager();
-        $node = composer_tool_node(platform: 'darwin', role: RoleName::AppDev);
-
-        expect(fn () => $operation($manager, $node))
-            ->toThrow(function (ToolManagerException $exception): void {
-                expect($exception->step)->toBe('node');
-                expect($exception->result)->toBeNull();
-            });
-        expect($agent->commands())->toBeEmpty();
-    })->with([
-        'manager version' => [
-            static fn (ComposerToolManager $manager, Node $node): string => $manager->managerVersion($node),
-        ],
-        'candidate version' => [
-            static fn (ComposerToolManager $manager, Node $node): ?string => $manager->candidateVersion(
-                $node,
-                'laravel/installer',
-                ToolOperation::Install,
-            ),
-        ],
-        'installed version' => [
-            static fn (ComposerToolManager $manager, Node $node): ?string => $manager->installedVersion(
-                $node,
-                'laravel/installer',
-            ),
-        ],
-        'installed inventory' => [
-            static fn (ComposerToolManager $manager, Node $node): InstalledToolInventory => $manager->installedInventory(
-                $node,
-            ),
-        ],
-        'install' => [
-            static fn (ComposerToolManager $manager, Node $node) => $manager->install($node, 'laravel/installer'),
-        ],
-        'update' => [
-            static fn (ComposerToolManager $manager, Node $node) => $manager->update($node, 'laravel/installer'),
-        ],
-        'removal plan' => [
-            static fn (ComposerToolManager $manager, Node $node) => $manager->planRemoval($node, 'laravel/installer'),
-        ],
-        'remove' => [
-            static fn (ComposerToolManager $manager, Node $node) => $manager->remove($node, 'laravel/installer'),
-        ],
-    ]);
-
-    it('rejects an invalid package before remote I/O', function (Closure $operation): void {
-        [$manager, $agent] = composer_tool_manager();
-
-        expect(fn () => $operation($manager, composer_tool_node()))
-            ->toThrow(function (ToolManagerException $exception): void {
-                expect($exception->step)->toBe('package');
-                expect($exception->result)->toBeNull();
-                expect($exception->getMessage())->not->toContain('https://');
-            });
-        expect($agent->commands())->toBeEmpty();
-    })->with([
-        'candidate version' => [
-            static fn (ComposerToolManager $manager, Node $node): ?string => $manager->candidateVersion(
-                $node,
-                'https://example.com/package',
-                ToolOperation::Install,
-            ),
-        ],
-        'installed version' => [
-            static fn (ComposerToolManager $manager, Node $node): ?string => $manager->installedVersion(
-                $node,
-                'https://example.com/package',
-            ),
-        ],
-        'install' => [
-            static fn (ComposerToolManager $manager, Node $node) => $manager->install(
-                $node,
-                'https://example.com/package',
-            ),
-        ],
-        'update' => [
-            static fn (ComposerToolManager $manager, Node $node) => $manager->update(
-                $node,
-                'https://example.com/package',
-            ),
-        ],
-        'removal plan' => [
-            static fn (ComposerToolManager $manager, Node $node) => $manager->planRemoval(
-                $node,
-                'https://example.com/package',
-            ),
-        ],
-        'remove' => [
-            static fn (ComposerToolManager $manager, Node $node) => $manager->remove(
-                $node,
-                'https://example.com/package',
-            ),
-        ],
-    ]);
-
-    it('uses typed commands for the complete lifecycle ', function (): void {
-        [$manager, $agent] = composer_tool_manager();
-        $agent->answer('tool.composer-version', ['version' => 'Composer version 2.8.12']);
-        $agent->answer('tool.composer-inventory', ['packages' => [['name' => 'laravel/installer', 'version' => 'v5.16.0']]]);
-        $agent->answer('tool.composer-candidate', ['version' => 'v5.17.0']);
-        $agent->answer('tool.composer-install', []);
-        $agent->answer('tool.composer-update', []);
-        $agent->answer('tool.composer-removal-plan', ['packages' => ['laravel/installer']]);
-        $agent->answer('tool.composer-remove', []);
-        $node = composer_tool_node();
-
-        expect($manager->managerVersion($node))->toBe('Composer version 2.8.12');
-        expect($manager->installedVersion($node, 'laravel/installer'))->toBe('v5.16.0');
-        expect($manager->candidateVersion($node, 'laravel/installer', ToolOperation::Install))->toBe('v5.17.0');
-        expect($manager->candidateVersion($node, 'laravel/installer', ToolOperation::Update))->toBe('v5.17.0');
-        $manager->install($node, 'laravel/installer');
-        $manager->update($node, 'laravel/installer');
-        expect($manager->planRemoval($node, 'laravel/installer')->removesOnly('laravel/installer'))->toBeTrue();
-        $manager->remove($node, 'laravel/installer');
-
-        expect(array_map(static fn (array $call): array => [$call['command'], $call['input']], $agent->calls))->toBe([
-            ['tool.composer-version', []],
-            ['tool.composer-inventory', []],
-            ['tool.composer-candidate', ['package' => 'laravel/installer', 'operation' => 'install']],
-            ['tool.composer-candidate', ['package' => 'laravel/installer', 'operation' => 'update']],
-            ['tool.composer-install', ['package' => 'laravel/installer']],
-            ['tool.composer-update', ['package' => 'laravel/installer']],
-            ['tool.composer-removal-plan', ['package' => 'laravel/installer']],
-            ['tool.composer-remove', ['package' => 'laravel/installer']],
-        ]);
-        expect($manager->normalizeVersion('v5.17.0'))->toBe('5.17.0');
-        expect($manager->normalizeVersion('dev-main'))->toBeNull();
-    });
-
     it('rejects candidate selection for removal and adoption before I/O', function (ToolOperation $operation): void {
         [$manager, $agent] = composer_tool_manager();
         expect(fn () => $manager->candidateVersion(composer_tool_node(), 'vendor/package', $operation))->toThrow(ToolManagerException::class);
@@ -249,28 +109,6 @@ describe(ComposerToolManager::class, function (): void {
         $agent->answer('tool.composer-candidate', ['version' => null]);
         expect($manager->candidateVersion(composer_tool_node(), 'vendor/package', ToolOperation::Install))->toBeNull();
     });
-
-    it('maps agent refusals and transport failures to the operation without raw diagnostics', function (string $method, string $command, string $step, bool $transport): void {
-        [$manager, $agent] = composer_tool_manager();
-        if ($transport) {
-            $agent->answer($command, static fn (): array => throw new AgentRunnerFailure($command, 'transport', 'secret transport diagnostic'));
-        } else {
-            $agent->refuse($command, 'tool.composer_operation_failed');
-        }
-        expect(fn () => $manager->$method(composer_tool_node(), 'vendor/package', ToolOperation::Install))->toThrow(function (ToolManagerException $error) use ($step): void {
-            expect($error->step)->toBe($step);
-            expect($error->result)->toBeNull();
-            expect($error->getMessage())->not->toContain('secret');
-        });
-    })->with([
-        ['managerVersion', 'tool.composer-version', 'manager-version'],
-        ['candidateVersion', 'tool.composer-candidate', 'candidate-version'],
-        ['installedInventory', 'tool.composer-inventory', 'installed-version'],
-        ['install', 'tool.composer-install', 'install'],
-        ['update', 'tool.composer-update', 'update'],
-        ['planRemoval', 'tool.composer-removal-plan', 'removal-plan'],
-        ['remove', 'tool.composer-remove', 'remove'],
-    ])->with([false, true]);
 
     it('rejects malformed typed responses', function (string $method, string $command, array $output): void {
         [$manager, $agent] = composer_tool_manager();
@@ -315,14 +153,6 @@ describe(ComposerToolManager::class, function (): void {
         expect($manager->inspectForAdoption(composer_tool_node(role: null), 'symfony/console'))->toEqual(new ToolAdoptionFact('7.1.0', ToolInventoryPackage::BLOCK_DEPENDENCY));
         expect($manager->inspectForAdoption(composer_tool_node(role: null), 'vendor/absent'))->toEqual(new ToolAdoptionFact(null, null));
         expect($agent->commands())->toBe(array_merge(...array_fill(0, 3, ['tool.inspect-composer-scope', 'tool.composer-inventory'])));
-    });
-    it('retains the materialization failure step for an ownership conflict', function (): void {
-        [$manager, $agent] = composer_tool_manager();
-        $agent->refuse('tool.materialize-composer', 'tool.composer_scope_conflict');
-        expect(fn () => $manager->materialize(composer_tool_node()))->toThrow(function (ToolManagerException $error): void {
-            expect($error->step)->toBe('materialize');
-        });
-        expect($agent->commands())->toHaveCount(1);
     });
 
     it('maps Composer scope refusals before reading package inventory', function (string $code, string $step): void {

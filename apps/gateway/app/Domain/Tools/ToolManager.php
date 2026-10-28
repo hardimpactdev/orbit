@@ -14,8 +14,6 @@ interface ToolManager
 
     public function validatePackage(string $package): bool;
 
-    public function materialize(Node $node): void;
-
     public function managerVersion(Node $node): string;
 
     public function candidateVersion(Node $node, string $package, ToolOperation $operation): ?string;
@@ -27,11 +25,5 @@ interface ToolManager
 
     public function normalizeVersion(string $rawVersion): ?string;
 
-    public function install(Node $node, string $package): void;
-
-    public function update(Node $node, string $package): void;
-
     public function planRemoval(Node $node, string $package): ToolRemovalPlan;
-
-    public function remove(Node $node, string $package): void;
 }

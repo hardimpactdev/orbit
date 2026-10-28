@@ -8,7 +8,7 @@ covers:
   - apps/gateway/app/Http/Requests/Activities/**
   - apps/gateway/app/Actions/Activities/**
   - apps/gateway/app/Infrastructure/Activity/**
-  - apps/gateway/app/Console/Commands/FinalizeInterruptedActivitiesCommand.php
+  - apps/gateway/app/Actions/Observation/MaintainObservationStateAction.php
 ---
 
 The Gateway records an Activity for every request that can change something and for every request that fails. It keeps a sample of successful reads, as [What the Gateway records](#what-the-gateway-records) explains. The `activity` family lists records and shows one in full. Use it to answer what changed, who changed it, and whether it succeeded.
@@ -100,7 +100,7 @@ These routes record no Activity, for any method: the Node agent endpoints, the G
 A request can end before it records its outcome. PHP-FPM ends a Gateway request that passes its 600-second limit, the kernel can kill a worker that runs out of memory, and a Gateway deploy restarts its workers. The Gateway then ends the record as `failed` with the error code `activity.interrupted`. Its duration and exit code stay null.
 
 - After a fatal error in PHP, such as exhausted memory or an exceeded execution time, the Gateway ends the record when the request shuts down.
-- A killed worker runs no code. The Gateway scheduler runs `php artisan orbit:activity-finalize-interrupted` every five minutes, without overlap, as a job on the [Gateway queue](/reference/gateway-queue#scheduled-work). It ends every record still `running` 900 seconds after it started, at most 500 records per run, oldest first. PHP-FPM checks its 600-second limit every 200 seconds, so a request ends by about 800 seconds. The sweep therefore never ends a command that still works.
+- A killed worker runs no code. Swamp requests Activity finalization every five minutes through the Services-only [observation API](/reference/gateway-queue#scheduled-work). It ends every record still `running` 900 seconds after it started, at most 500 records per run, oldest first. PHP-FPM checks its 600-second limit every 200 seconds, so a request ends by about 800 seconds. The sweep therefore never ends a command that still works.
 - The sweep's overlap lock expires after 10 minutes, so a killed sweep blocks later runs for at most 10 minutes.
 - The sweep runs only while the Gateway scheduler, `php artisan schedule:work` in the Gateway checkout, is running. The Gateway install does not start the scheduler. Without it, a killed request stays `running`.
 

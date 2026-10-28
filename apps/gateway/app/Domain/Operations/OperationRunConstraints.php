@@ -6,16 +6,20 @@ namespace App\Domain\Operations;
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
+use Illuminate\Container\Attributes\Tag;
 use LogicException;
 
 final readonly class OperationRunConstraints
 {
+    /** @param iterable<OperationRunConstraint> $contributions */
+    public function __construct(#[Tag(OperationRunConstraint::class)] private iterable $contributions) {}
+
     /** @return array<string,OperationRunConstraint> */
     private function registered(): array
     {
         $checks = ['time_window' => new OperationTimeWindow];
-        foreach (app()->tagged(OperationRunConstraint::class) as $check) {
-            if (! $check instanceof OperationRunConstraint || isset($checks[$check->name()])) {
+        foreach ($this->contributions as $check) {
+            if (isset($checks[$check->name()])) {
                 throw new LogicException('Run constraints require unique named implementations.');
             }
             $checks[$check->name()] = $check;
