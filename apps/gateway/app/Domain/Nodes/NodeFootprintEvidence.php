@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Nodes;
 
 use App\Domain\Fleet\NodeFootprintPlan;
+use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
@@ -14,6 +15,8 @@ use App\Support\ValidatedData;
 /** Derives footprint results from transport receipts and stamped child Operations, never posted step claims. */
 final readonly class NodeFootprintEvidence
 {
+    public function __construct(private OperationChildren $children) {}
+
     /** @param iterable<Operation> $children
      * @return array{result: array<string, mixed>, recorded: array<string, string>, error_code: ?string}
      */
@@ -33,6 +36,7 @@ final readonly class NodeFootprintEvidence
         $firstCaddyFailure = false;
         $childByKey = [];
         foreach ($children as $child) {
+            $this->children->verify($operation, $child);
             if ($child->getAttribute('parent_operation_id') !== $operation->id) {
                 throw $this->unproven();
             }
@@ -83,7 +87,7 @@ final readonly class NodeFootprintEvidence
                     throw new ResourceOperationException('operation.children_pending', 'The footprint child has not settled.', 409);
                 }
                 if ($child->kind !== ($spec['kind'] ?? null) || $child->node_id !== ($spec['node_id'] ?? null)
-                    || $child->input !== ($spec['input'] ?? null)) {
+                    || ($child->child_admission['intent']['input'] ?? null) !== ($spec['input'] ?? null)) {
                     throw $this->unproven();
                 }
                 if ($child->status !== OperationStatus::Succeeded) {

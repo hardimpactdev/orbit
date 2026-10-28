@@ -5,11 +5,14 @@ declare(strict_types=1);
 use App\Domain\Nodes\NodeAccessOperationCompletion;
 use App\Domain\Nodes\NodeAccessOperationExecution;
 use App\Domain\Nodes\NodeBootstrapOperationCompletion;
+use App\Domain\Nodes\NodeChildAdmission;
 use App\Domain\Nodes\NodeFootprintOperationCompletion;
+use App\Domain\Nodes\NodeFootprintOperationExecution;
 use App\Domain\Nodes\NodePhpPackagesOperationCompletion;
 use App\Domain\Nodes\NodeSettingsOperationCompletion;
 use App\Domain\Nodes\NodeWireGuardOperationCompletion;
 use App\Domain\Nodes\NodeWireGuardOperationExecution;
+use App\Domain\Operations\OperationKinds;
 use App\Infrastructure\Nodes\AgentCaddyPackage;
 use App\Infrastructure\Nodes\BootstrapSshOperationTransport;
 
@@ -32,7 +35,7 @@ $wireguard = [
     'result_fields' => ['prepared', 'projected', 'error_code'],
 ];
 
-return [
+$nodeKinds = [
     'node.wireguard_key' => $wireguard,
     'node.wireguard_hub_converge' => $wireguard,
     'node.access_remove' => [
@@ -47,6 +50,7 @@ return [
         'result_fields' => ['access_removed', 'error_code'],
     ],
     'node.prepare_php_packages' => [
+        'admission' => NodeChildAdmission::class,
         'executor' => 'swamp',
         'completion' => NodePhpPackagesOperationCompletion::class,
         'runs' => [
@@ -60,6 +64,8 @@ return [
         'result_fields' => ['prepared', 'outcome', 'error_code'],
     ],
     'node.converge' => [
+        'admission' => NodeChildAdmission::class,
+        'execution' => NodeFootprintOperationExecution::class,
         'executor' => 'swamp',
         'completion' => NodeFootprintOperationCompletion::class,
         'runs' => [
@@ -125,3 +131,9 @@ return [
         'result_fields' => ['error_code'],
     ],
 ];
+
+if (! OperationKinds::supports('children') || ! OperationKinds::supports('children_settled') || ! OperationKinds::supports('list_of')) {
+    unset($nodeKinds['node.converge']);
+}
+
+return $nodeKinds;

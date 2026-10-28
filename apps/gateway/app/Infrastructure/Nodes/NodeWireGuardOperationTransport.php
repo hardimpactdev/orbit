@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Nodes;
 
 use App\Domain\Nodes\RoleName;
-use App\Domain\Operations\OperationTransport;
+use App\Domain\Operations\OperationEffectTransport;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\OperationAgentTransport;
@@ -16,7 +16,7 @@ use App\Models\Operation;
 use App\Support\ValidatedData;
 
 /** One fixed hub command, with a fresh peer render held under the existing fleet publication lock. */
-final readonly class NodeWireGuardOperationTransport implements OperationTransport
+final readonly class NodeWireGuardOperationTransport implements OperationEffectTransport
 {
     public function __construct(private OperationAgentTransport $agent, private NodeWireGuardProjectionLock $lock,
         private WireGuardServerConfigRenderer $renderer, private ProtectedFileWriter $files, private string $orbitHome) {}
@@ -29,6 +29,16 @@ final readonly class NodeWireGuardOperationTransport implements OperationTranspo
                 'configuration' => ['type' => 'object', 'additionalProperties' => false, 'required' => ['hub_id', 'address', 'port', 'private_key'],
                     'properties' => ['hub_id' => ['type' => 'integer'], 'address' => ['type' => 'string'], 'port' => ['type' => 'integer'], 'private_key' => ['type' => 'string']]]],
         ];
+    }
+
+    public function effectful(Operation $operation, array $run): bool
+    {
+        return $run['name'] === 'wireguard.project-hub';
+    }
+
+    public function receipt(Operation $operation, array $run, #[\SensitiveParameter] array $input): array
+    {
+        return $this->agent->receipt($operation, $run, []);
     }
 
     public function run(Operation $operation, array $run, #[\SensitiveParameter] array $input): array

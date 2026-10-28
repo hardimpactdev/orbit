@@ -6,9 +6,12 @@ use App\Domain\Nodes\NodeWireGuardKeyPolicy;
 use App\Domain\Nodes\NodeWireGuardOperationExecution;
 use App\Domain\Nodes\PrepareNodeWireGuardCommand;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\EffectReceiptMetadata;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentContract;
+use App\Infrastructure\AgentCommands\AgentEffectReceipts;
 use App\Infrastructure\AgentCommands\OperationAgentTransport;
 use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Nodes\NodeWireGuardOperationTransport;
@@ -45,10 +48,10 @@ it('renders current peers and publishes only to the Operation hub under the flee
 
         return $target->is($hub) && $name === 'wireguard.project-hub';
     })->andReturn(['raw' => $private, 'config' => $private]);
-    $transport = new NodeWireGuardOperationTransport(new OperationAgentTransport($runner), new NodeWireGuardProjectionLock($home),
+    $transport = new NodeWireGuardOperationTransport(new OperationAgentTransport($runner, app(AgentContract::class), new AgentEffectReceipts($runner)), new NodeWireGuardProjectionLock($home),
         new WireGuardServerConfigRenderer, new ProtectedFileWriter, $home);
     try {
-        expect($transport->run($operation, ['name' => 'wireguard.project-hub'], $input))->toBe(['projected' => true]);
+        expect($transport->run($operation, ['name' => 'wireguard.project-hub', 'effect_key' => 'op-7.hub-project', 'effect_metadata' => new EffectReceiptMetadata([$private])], $input))->toBe(['projected' => true]);
     } finally {
         new Filesystem()->deleteDirectory($home);
     }

@@ -6,6 +6,7 @@ namespace App\Actions\Nodes;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\ManagedNodeEligibility;
+use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Operation;
@@ -19,6 +20,10 @@ final readonly class StartNodeConvergeAction
     {
         if (! $this->eligibility->allows($node)) {
             throw new ResourceOperationException('node.converge_unsupported', 'Only an active, managed Linux Node has a Gateway-rendered footprint.', 422);
+        }
+
+        if (! OperationKinds::supports('children') || ! OperationKinds::supports('children_settled') || ! OperationKinds::supports('list_of')) {
+            throw new ResourceOperationException('operation.kind_unavailable', 'The Node footprint requires child and list-result support.', 503);
         }
 
         return $this->operations->execute('node.converge', 'node', $node->id, $node->id,

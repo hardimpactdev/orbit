@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Nodes\NodeFootprintEvidence;
+use App\Domain\Operations\OperationChildIntent;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 
@@ -19,8 +20,15 @@ function footprintEvidenceArtifact(string $name, bool $required = true, bool $re
 }
 function footprintEvidenceChild(string $artifact, string $kind, string $status = 'succeeded', array $result = [], ?string $error = null): Operation
 {
-    return (new Operation)->forceFill(['id' => 20, 'parent_operation_id' => 7, 'child_key' => 'footprint-'.$artifact,
+    $child = (new Operation)->forceFill(['id' => 20, 'parent_operation_id' => 7, 'child_key' => 'footprint-'.$artifact,
+        'target_type' => 'node', 'target_id' => 2, 'run_constraints' => [],
         'kind' => $kind, 'node_id' => 2, 'input' => [], 'status' => $status, 'result' => $result, 'error_code' => $error]);
+    $snapshot = ['intent' => ['key' => $child->child_key, 'kind' => $kind, 'node_id' => 2, 'input' => []],
+        'admitted' => ['parent_operation_id' => 7, 'key' => $child->child_key, 'kind' => $kind, 'node_id' => 2,
+            'target_type' => 'node', 'target_id' => 2, 'input' => [], 'run_constraints' => []]];
+    $child->forceFill(['child_admission' => $snapshot, 'child_fingerprint' => OperationChildIntent::fingerprint($snapshot)]);
+
+    return $child;
 }
 
 it('converts artifact maps to the exact list shape and retires an absent artifact', function (): void {
@@ -138,4 +146,12 @@ it('drops the private DNS digest when listener setup fails before child admissio
     $derived = app(NodeFootprintEvidence::class)->derive($operation, []);
     expect($derived['error_code'])->toBe('node.private_dns_listener_failed')
         ->and($derived['recorded'])->toBe([])->and($derived['result']['skipped'])->toBe([]);
+});
+
+it('refuses a failed child whose admission snapshot was never stamped', function (): void {
+    $operation = footprintEvidenceOperation([footprintEvidenceArtifact('caddy')], ['caddy' => ['kind' => 'route.caddy_converge', 'node_id' => 2, 'input' => []]]);
+    $child = footprintEvidenceChild('caddy', 'route.caddy_converge', 'failed', ['stage' => 'render'], 'caddy.render_failed');
+    $child->forceFill(['child_fingerprint' => null]);
+
+    expect(fn () => app(NodeFootprintEvidence::class)->derive($operation, [$child]))->toThrow(ResourceOperationException::class);
 });
