@@ -45,19 +45,6 @@ final readonly class HomebrewToolManager implements SupportsToolAdoption, ToolMa
         return HomebrewPackageName::valid($package);
     }
 
-    public function materialize(Node $node): void
-    {
-        $this->guardSupportedNode($node);
-
-        if ($node->platform === 'macos') {
-            $this->homebrew->verifyScope($node);
-
-            return;
-        }
-
-        $this->agentCommand($node, 'tool.materialize-homebrew', ['user' => $node->user], 'materialize');
-    }
-
     public function managerVersion(Node $node): string
     {
         $this->guardSupportedNode($node);
@@ -103,33 +90,12 @@ final readonly class HomebrewToolManager implements SupportsToolAdoption, ToolMa
         return $this->versions->normalize($rawVersion);
     }
 
-    public function install(Node $node, string $package): void
-    {
-        $this->guardPackage($package);
-        $this->guardSupportedNode($node);
-        $this->agentCommand($node, 'tool.homebrew-formula-install', $this->packageInput($node, $package, needsBottle: true), 'install');
-    }
-
-    public function update(Node $node, string $package): void
-    {
-        $this->guardPackage($package);
-        $this->guardSupportedNode($node);
-        $this->agentCommand($node, 'tool.homebrew-formula-update', $this->packageInput($node, $package, needsBottle: true), 'update');
-    }
-
     public function planRemoval(Node $node, string $package): ToolRemovalPlan
     {
         $this->guardPackage($package);
         $this->guardSupportedNode($node);
 
         return new ToolRemovalPlan([$package]);
-    }
-
-    public function remove(Node $node, string $package): void
-    {
-        $this->guardPackage($package);
-        $this->guardSupportedNode($node);
-        $this->agentCommand($node, 'tool.homebrew-formula-remove', $this->packageInput($node, $package, needsBottle: false), 'remove');
     }
 
     private function guardMacCpu(Node $node): void

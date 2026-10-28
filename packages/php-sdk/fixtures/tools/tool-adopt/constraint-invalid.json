@@ -6,7 +6,7 @@
     "body": {
         "error": {
             "code": "tool.constraint_invalid",
-            "message": "The version constraint is invalid.",
+            "message": "The Tool request cannot be admitted.",
             "details": {
                 "step": "adopt",
                 "outcome": "constraint_invalid"

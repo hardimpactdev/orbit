@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Requests\Tools;
 
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Responses\Tools\ToolResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
 
@@ -16,15 +16,22 @@ final class UpdateToolRequest extends GatewayRequest
 
     public function __construct(
         private readonly int $toolId,
+        private readonly ?string $idempotencyKey = null,
     ) {}
+
+    /** @return array<string, string> */
+    protected function defaultHeaders(): array
+    {
+        return $this->idempotencyKey === null ? [] : ['Idempotency-Key' => $this->idempotencyKey];
+    }
 
     public function resolveEndpoint(): string
     {
         return "/api/v1/tools/{$this->toolId}/update";
     }
 
-    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): ToolResponse
+    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): OperationResponse
     {
-        return ToolResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
+        return OperationResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
     }
 }

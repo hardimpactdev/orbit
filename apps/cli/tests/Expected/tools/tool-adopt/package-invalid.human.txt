@@ -1,11 +1,3 @@
-Adopting Tool...
-
-┌  Adopt Tool
-│
-├  ● Adopting Tool
-│
-└  Operation failed.
-
-The package coordinate is invalid.
+The Tool request cannot be admitted.
 step: adopt
 outcome: manager_failed

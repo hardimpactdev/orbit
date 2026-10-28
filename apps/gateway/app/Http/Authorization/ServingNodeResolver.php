@@ -450,6 +450,19 @@ final readonly class ServingNodeResolver
             return [Node::query()->findOrFail($tool->node_id)];
         }
 
+        if (is_string($tool) && ctype_digit($tool)) {
+            $record = Tool::query()->find((int) $tool);
+            if ($record !== null) {
+                return [Node::query()->findOrFail($record->node_id)];
+            }
+            $kind = $request->route()?->getName() === 'tool:remove' ? 'tool.remove' : 'tool.update';
+            $receipt = Operation::query()->where('kind', $kind)->where('idempotency_key', $request->header('Idempotency-Key'))->first();
+            if ($receipt !== null && ($receipt->input['tool_id'] ?? null) === (int) $tool) {
+                return [Node::query()->findOrFail($receipt->node_id)];
+            }
+            throw (new ModelNotFoundException)->setModel(Tool::class, [$tool]);
+        }
+
         $nodeId = $this->positiveInteger($request->input('node_id'));
 
         if ($nodeId === null) {

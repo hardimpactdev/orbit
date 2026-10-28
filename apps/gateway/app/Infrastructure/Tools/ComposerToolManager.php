@@ -9,6 +9,7 @@ use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\SupportsToolAdoption;
 use App\Domain\Tools\ToolAdoptionFact;
 use App\Domain\Tools\ToolInventoryPackage;
+use App\Domain\Tools\ToolInventoryReceipt;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
@@ -49,13 +50,6 @@ final readonly class ComposerToolManager implements SupportsToolAdoption, ToolMa
             && preg_match(self::PACKAGE_PATTERN, $package) === 1;
     }
 
-    public function materialize(Node $node): void
-    {
-        $this->guardSupportedNode($node);
-
-        $this->command($node, 'tool.materialize-composer', ['user' => $node->user], 'materialize');
-    }
-
     public function managerVersion(Node $node): string
     {
         $version = $this->version($node, 'tool.composer-version', [], 'manager-version');
@@ -80,26 +74,8 @@ final readonly class ComposerToolManager implements SupportsToolAdoption, ToolMa
     public function installedInventory(Node $node): InstalledToolInventory
     {
         $data = $this->command($node, 'tool.composer-inventory', [], 'installed-version');
-        if (! is_array($data['packages'] ?? null) || ! array_is_list($data['packages'])) {
-            throw new ToolManagerException('installed-version', 'The agent returned an invalid Composer inventory.');
-        }
-        $versions = [];
-        $unverifiable = [];
-        foreach ($data['packages'] as $entry) {
-            if (! is_array($entry) || ! is_string($entry['name'] ?? null) || ! array_key_exists('version', $entry) || ($entry['version'] !== null && ! is_string($entry['version']))) {
-                throw new ToolManagerException('installed-version', 'The agent returned an invalid Composer package observation.');
-            }
-            if (! $this->validatePackage($entry['name'])) {
-                continue;
-            }
-            if ($entry['version'] === null) {
-                $unverifiable[] = $entry['name'];
-            } else {
-                $versions[$entry['name']][] = $entry['version'];
-            }
-        }
 
-        return new InstalledToolInventory($versions, unverifiablePackages: $unverifiable);
+        return new ToolInventoryReceipt()->parse(ToolManagerName::Composer, $data, $this->validatePackage(...));
     }
 
     public function installedVersion(Node $node, string $package): ?string
@@ -132,16 +108,6 @@ final readonly class ComposerToolManager implements SupportsToolAdoption, ToolMa
         return $this->versions->normalize($rawVersion);
     }
 
-    public function install(Node $node, string $package): void
-    {
-        $this->mutate($node, $package, 'install');
-    }
-
-    public function update(Node $node, string $package): void
-    {
-        $this->mutate($node, $package, 'update');
-    }
-
     public function planRemoval(Node $node, string $package): ToolRemovalPlan
     {
         $this->guardPackage($package);
@@ -151,11 +117,6 @@ final readonly class ComposerToolManager implements SupportsToolAdoption, ToolMa
         }
 
         return new ToolRemovalPlan($data['packages']);
-    }
-
-    public function remove(Node $node, string $package): void
-    {
-        $this->mutate($node, $package, 'remove');
     }
 
     private function guardPackage(string $package): void
@@ -224,11 +185,5 @@ final readonly class ComposerToolManager implements SupportsToolAdoption, ToolMa
         }
 
         return $data['version'];
-    }
-
-    private function mutate(Node $node, string $package, string $step): void
-    {
-        $this->guardPackage($package);
-        $this->command($node, 'tool.composer-'.$step, ['package' => $package], $step);
     }
 }

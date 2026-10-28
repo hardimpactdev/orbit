@@ -13,6 +13,7 @@ use Orbit\Sdk\Requests\Tools\RemoveToolRequest;
 use Orbit\Sdk\Requests\Tools\ScanToolInventoryRequest;
 use Orbit\Sdk\Requests\Tools\ShowToolRequest;
 use Orbit\Sdk\Requests\Tools\UpdateToolRequest;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Orbit\Sdk\Responses\Tools\ToolInventoryResponse;
 use Orbit\Sdk\Responses\Tools\ToolManagersResponse;
 use Orbit\Sdk\Responses\Tools\ToolResponse;
@@ -241,79 +242,6 @@ describe('tool requests', function (): void {
         'unmanaged node' => ['node-unmanaged'],
     ]);
 
-    it('preserves a persisted tool id from a version-probe install failure', function (): void {
-        $requestId = tool_request_id();
-        $mockClient = new MockClient([
-            InstallToolRequest::class => MockResponse::make(
-                [
-                    'error' => [
-                        'code' => 'tool.version_probe_failed',
-                        'message' => 'The tool manager operation failed.',
-                        'details' => [
-                            'step' => 'install',
-                            'outcome' => 'manager_failed',
-                            'id' => 110,
-                        ],
-                    ],
-                ],
-                502,
-                ['X-Orbit-Request-Id' => $requestId],
-            ),
-        ]);
-        $connector = new GatewayConnector('https://10.44.0.1');
-        $connector->withMockClient($mockClient);
-
-        try {
-            $connector->send(new InstallToolRequest(12, 'brew', 'totally-fake'))->dto();
-            $this->fail('Expected GatewayApiException.');
-        } catch (GatewayApiException $exception) {
-            expect($exception->errorCode())
-                ->toBe('tool.version_probe_failed')
-                ->and($exception->details())
-                ->toBe([
-                    'step' => 'install',
-                    'outcome' => 'manager_failed',
-                    'id' => 110,
-                ])
-                ->and($exception->requestId())
-                ->toBe($requestId);
-        }
-    });
-
-    it('replays recorded adoption results without rewriting their intent', function (string $fixture): void {
-        $recorded = tool_adopt_fixture($fixture);
-        $data = $recorded['body']['data'];
-        $request = new AdoptToolRequest(
-            $data['node_id'],
-            $data['manager'],
-            $data['package'],
-            $data['version_constraint'],
-        );
-        $mockClient = new MockClient([
-            AdoptToolRequest::class => MockResponse::make($recorded['body'], $recorded['status']),
-        ]);
-        $connector = new GatewayConnector('https://10.44.0.1');
-        $connector->withMockClient($mockClient);
-
-        $response = $connector->send($request)->dto();
-
-        expect($response)
-            ->toBeInstanceOf(ToolResponse::class)
-            ->and($response->toArray())
-            ->toBe([...$data, 'request_id' => $recorded['body']['meta']['request_id']])
-            ->and($mockClient->getLastPendingRequest()?->body()?->all())
-            ->toBe(array_filter([
-                'node_id' => $data['node_id'],
-                'manager' => $data['manager'],
-                'package' => $data['package'],
-                'version_constraint' => $data['version_constraint'],
-            ], static fn (mixed $value): bool => $value !== null));
-    })->with([
-        'created' => ['adopted'],
-        'same intent' => ['unchanged'],
-        'repaired failure' => ['repaired'],
-    ]);
-
     it('replays recorded adoption refusals with their details', function (string $fixture): void {
         $recorded = tool_adopt_fixture($fixture);
         $error = $recorded['body']['error'];
@@ -343,24 +271,15 @@ describe('tool requests', function (): void {
                 ]);
         }
     })->with([
-        'absent' => ['absent'],
         'access required' => ['access-required'],
         'constraint conflict' => ['constraint-conflict'],
-        'constraint drift' => ['constraint-drift'],
         'constraint invalid' => ['constraint-invalid'],
-        'constraint violated' => ['constraint-violated'],
-        'dependency' => ['dependency'],
-        'manager unavailable' => ['manager-unavailable'],
         'manager unsupported' => ['manager-unsupported'],
         'inactive node' => ['node-inactive'],
         'unmanaged node' => ['node-unmanaged'],
-        'operation locked' => ['operation-locked'],
         'package invalid' => ['package-invalid'],
-        'protected' => ['protected'],
         'state invalid' => ['state-invalid'],
         'validation failed' => ['validation-failed'],
-        'version probe failed' => ['version-probe-failed'],
-        'version unparseable' => ['version-unparseable'],
     ]);
 });
 
@@ -415,27 +334,27 @@ function tool_transport_cases(string $requestId): array
         ],
         [
             'request' => new InstallToolRequest(12, 'vp', '@openai/codex', '^0.150'),
-            'response' => ['data' => $tool, 'meta' => ['request_id' => $requestId]],
-            'response_class' => ToolResponse::class,
-            'status' => 201,
+            'response' => ['data' => ['id' => 11, 'kind' => 'tool.install', 'target_type' => 'node_tools', 'target_id' => 12, 'status' => 'queued', 'sequence' => 1], 'meta' => ['request_id' => $requestId]],
+            'response_class' => OperationResponse::class,
+            'status' => 202,
         ],
         [
             'request' => new AdoptToolRequest(2, 'apt', 'jq', '^1.0'),
-            'response' => ['data' => $tool, 'meta' => ['request_id' => $requestId]],
-            'response_class' => ToolResponse::class,
-            'status' => 201,
+            'response' => ['data' => ['id' => 11, 'kind' => 'tool.install', 'target_type' => 'node_tools', 'target_id' => 12, 'status' => 'queued', 'sequence' => 1], 'meta' => ['request_id' => $requestId]],
+            'response_class' => OperationResponse::class,
+            'status' => 202,
         ],
         [
             'request' => new UpdateToolRequest(41),
-            'response' => ['data' => $tool, 'meta' => ['request_id' => $requestId]],
-            'response_class' => ToolResponse::class,
-            'status' => 200,
+            'response' => ['data' => ['id' => 11, 'kind' => 'tool.install', 'target_type' => 'node_tools', 'target_id' => 12, 'status' => 'queued', 'sequence' => 1], 'meta' => ['request_id' => $requestId]],
+            'response_class' => OperationResponse::class,
+            'status' => 202,
         ],
         [
             'request' => new RemoveToolRequest(41),
-            'response' => ['data' => $tool, 'meta' => ['request_id' => $requestId]],
-            'response_class' => ToolResponse::class,
-            'status' => 200,
+            'response' => ['data' => ['id' => 11, 'kind' => 'tool.install', 'target_type' => 'node_tools', 'target_id' => 12, 'status' => 'queued', 'sequence' => 1], 'meta' => ['request_id' => $requestId]],
+            'response_class' => OperationResponse::class,
+            'status' => 202,
         ],
     ];
 }

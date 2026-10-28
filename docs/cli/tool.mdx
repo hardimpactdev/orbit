@@ -22,7 +22,7 @@ The `tool` family manages packages on a Node. A Tool is one package that Orbit m
 | [`tool:update`](#orbit-toolupdate) | Update one Tool within its constraint. |
 | [`tool:remove`](#orbit-toolremove) | Remove one Tool and delete its record. |
 
-Every command accepts `--json`. `--node` takes a positive numeric Node ID. The CLI refuses any other value with `tool.node_id_invalid`.
+Every command accepts `--json`. Install, adopt, update, and remove follow a Swamp Operation. Human output shows its steps; JSON output is the final Operation receipt. These writes accept `--idempotency-key=KEY` to replay a start after a lost reply. Scan remains a direct read. `--node` takes a positive numeric Node ID. The CLI refuses any other value with `tool.node_id_invalid`.
 
 ## orbit tool:manager:list
 
@@ -47,21 +47,21 @@ orbit tool:scan --node=ID [--json]
 Take ownership of one supported installed package. The Gateway checks its live state again and records intent without reinstalling or updating it.
 
 ```bash
-orbit tool:adopt <package> --node=ID --manager=MANAGER [--constraint=CONSTRAINT] [--yes] [--json]
+orbit tool:adopt <package> --node=ID --manager=MANAGER [--constraint=CONSTRAINT] [--yes] [--idempotency-key=KEY] [--json]
 ```
 
 Use `brew` for a Core formula, `brew-cask` for a supported official macOS cask, `vp` for a package in the enrolled account's Vite+ global scope, or `apt` or `composer` on Linux. The optional SemVer constraint must accept the installed version. A repeated adoption with the same intent is unchanged. A missing or unsupported package or a conflicting constraint fails without creating a Tool. The HTTP body, outcomes, and error codes are in [Adopt a Tool](/reference/tools#adopt-a-tool).
 
 Without `--yes`, a terminal asks `Take ownership of package [name] (manager on Node #ID) and manage later updates and removal?` The question includes `, constraint <range>` when a constraint was supplied. The default is No. Noninteractive and JSON calls require `--yes`. Declining, Ctrl-C, or end of input exits with `input.cancelled` and sends no request. A call that cannot prompt exits with `input.confirmation_required` and sends no request.
 
-Human output uses the Tool detail. `applied` says the package was adopted, including a repair of a failed row. `unchanged` says this ownership already exists and the progress settles as `Ownership unchanged`. JSON output is that Tool object plus `request_id`. A refusal prints the Gateway code and message. Its `details` keep `step`, `outcome`, `id`, and `adoption_block` when the Gateway sent those safe tokens. Node access records stay out of the CLI error.
+The Operation result includes the observed installed version and `outcome`. `applied` records new ownership or repairs a failed row. `unchanged` keeps existing ownership and its recorded version. Use `tool:show` to read the managed Tool after completion. A refusal prints the Gateway code and message. Its `details` keep `step`, `outcome`, `id`, and `adoption_block` when the Gateway sent those safe tokens. Node access records stay out of the CLI error.
 
 ## orbit tool:install
 
 Install one package on a Node.
 
 ```bash
-orbit tool:install [package] --node=ID [--manager=MANAGER] [--constraint=CONSTRAINT] [--json]
+orbit tool:install [package] --node=ID [--manager=MANAGER] [--constraint=CONSTRAINT] [--idempotency-key=KEY] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -82,7 +82,7 @@ orbit tool:install ripgrep --node=12 --manager=brew
 
 Use `vp` for npm packages such as Codex and Claude Code, `composer` for `vendor/package` tools, `apt` for Ubuntu packages, and `brew` for a Homebrew Core formula with a compatible verified bottle. `brew-cask` manages supported official Homebrew casks on macOS.
 
-The result is `applied` for a new install. It is `unchanged` when the Tool already exists and its package is installed, such as on a retry or a repeated install. When an install fails after the Gateway created the Tool, the error names the Tool ID, so you can retry or remove it.
+The result is `applied` for a new install. It is `unchanged` when the Tool already exists and its package is installed, such as on a retry or a repeated install. A failed package phase retains the Tool for retry or removal. List Tools to find that record; the Operation holds the failure code and steps.
 
 ## orbit tool:list
 
@@ -105,7 +105,7 @@ orbit tool:show <tool> [--json]
 Update one Tool to the manager's current candidate.
 
 ```bash
-orbit tool:update <tool> [--json]
+orbit tool:update <tool> [--idempotency-key=KEY] [--json]
 ```
 
 The result is `applied` when the version changed and `unchanged` when it did not. It is `blocked_by_constraint` when the candidate falls outside the stored constraint. The Tool then stays as it is.
@@ -115,7 +115,7 @@ The result is `applied` when the version changed and `unchanged` when it did not
 Remove one Tool and delete its record.
 
 ```bash
-orbit tool:remove <tool> [--yes] [--json]
+orbit tool:remove <tool> [--yes] [--idempotency-key=KEY] [--json]
 ```
 
 | Option | Meaning |

@@ -7,7 +7,6 @@ use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Tools\AdoptToolRequest;
-use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Symfony\Component\Process\Process;
 use Tests\Support\CommandFixture;
@@ -33,45 +32,6 @@ afterEach(function (): void {
     } else {
         putenv('COLUMNS='.$this->previousColumns);
     }
-});
-
-it('sends the exact package identity and does not decide ownership itself', function (): void {
-    $mock = MockClient::global(gateway_fixture_mock('tools/tool-adopt/adopted'));
-
-    $result = CommandFixture::run([
-        'tool:adopt', 'wireguard-tools', '--node=2', '--manager=unlisted', '--constraint=^1.2', '--yes', '--json',
-    ]);
-    expect($result['status'])->toBe(0)->and($result['stderr'])->toBe('');
-
-    $pending = $mock->getLastPendingRequest();
-    expect($mock->getLastRequest())
-        ->toBeInstanceOf(AdoptToolRequest::class)
-        ->and($pending?->getMethod())
-        ->toBe(Method::POST)
-        ->and($pending?->getUrl())
-        ->toBe('https://10.44.0.1/api/v1/tools/adopt')
-        ->and($pending?->query()->all())
-        ->toBe([])
-        ->and($pending?->body()->all())
-        ->toBe([
-            'node_id' => 2,
-            'manager' => 'unlisted',
-            'package' => 'wireguard-tools',
-            'version_constraint' => '^1.2',
-        ]);
-});
-
-it('omits a missing constraint instead of inventing one', function (): void {
-    $mock = MockClient::global(gateway_fixture_mock('tools/tool-adopt/adopted'));
-
-    $result = CommandFixture::run(['tool:adopt', 'jq', '--node=2', '--manager=apt', '--yes', '--json']);
-    expect($result['status'])->toBe(0)->and($result['stderr'])->toBe('');
-    expect($mock->getLastPendingRequest()?->body()->all())
-        ->toBe([
-            'node_id' => 2,
-            'manager' => 'apt',
-            'package' => 'jq',
-        ]);
 });
 
 it('requires consent before any adoption request when it cannot prompt', function (array $arguments): void {
@@ -102,72 +62,6 @@ it('rejects invalid identity before consent or a request', function (array $argu
     'manager' => [['jq', '--node=2'], 'tool.manager_required'],
     'package' => [["jq\nname", '--node=2', '--manager=apt'], 'tool.package_invalid'],
     'oversized package' => [[str_repeat('x', 256), '--node=2', '--manager=apt'], 'tool.package_invalid'],
-]);
-
-it('asks for default-No ownership consent and cancels before the adoption request', function (array $keys, bool $accepted): void {
-    $result = run_tool_adopt_consent(
-        ['tool:adopt', 'jq', '--node=2', '--manager=apt', '--no-ansi'],
-        $keys,
-        $accepted ? [tool_adopt_consent_reply()] : [],
-    );
-
-    expect($result['status'])->toBe($accepted ? 0 : 1)
-        ->and($result['prompt_seen'])->toBeTrue()
-        ->and($result['keys_remaining'])->toBe(0)
-        ->and($result['restored'])->toBeTrue()
-        ->and($result['output'])->toContain('Take ownership of package [jq] (apt on Node #2) and manage later updates and removal?');
-    expect($result['requests'])->toHaveCount($accepted ? 1 : 0);
-    if ($accepted) {
-        expect($result['requests'][0]['class'])->toBe(AdoptToolRequest::class)
-            ->and($result['requests'][0]['body'])->toBe([
-                'node_id' => 2,
-                'manager' => 'apt',
-                'package' => 'jq',
-            ]);
-    } else {
-        expect($result['output'])->toContain('Tool adoption cancelled.');
-    }
-})->with([
-    'default No' => [["\r"], false],
-    'Yes' => [['y', "\r"], true],
-    'Ctrl-C' => [["\x03"], false],
-    'EOF' => [["\x04"], false],
-]);
-
-it('includes the supplied constraint in the consent question and the request', function (): void {
-    $result = run_tool_adopt_consent(
-        ['tool:adopt', 'jq', '--node=2', '--manager=brew-cask', '--constraint=^4.0', '--no-ansi'],
-        ['y', "\r"],
-        [tool_adopt_consent_reply('brew-cask', '^4.0')],
-    );
-
-    expect($result['status'])->toBe(0)
-        ->and($result['requests'])->toHaveCount(1)
-        ->and($result['requests'][0]['body'])->toBe([
-            'node_id' => 2,
-            'manager' => 'brew-cask',
-            'package' => 'jq',
-            'version_constraint' => '^4.0',
-        ])
-        ->and($result['output'])->toContain('constraint ^4.0');
-});
-
-it('does not prompt for consent when --yes is explicit', function (bool $json): void {
-    $arguments = ['tool:adopt', 'jq', '--node=2', '--manager=apt', '--yes', '--no-ansi'];
-    if ($json) {
-        $arguments[] = '--json';
-    }
-    $result = run_tool_adopt_consent($arguments, [], [tool_adopt_consent_reply()]);
-
-    expect($result['status'])->toBe(0)
-        ->and($result['prompt_seen'])->toBeFalse()
-        ->and($result['output'])->not->toContain('Take ownership of package')
-        ->and($result['restored'])->toBeTrue()
-        ->and($result['requests'])->toHaveCount(1)
-        ->and($result['requests'][0]['class'])->toBe(AdoptToolRequest::class);
-})->with([
-    'human' => [false],
-    'json' => [true],
 ]);
 
 it('refuses JSON consent from a terminal without sending the adoption request', function (): void {

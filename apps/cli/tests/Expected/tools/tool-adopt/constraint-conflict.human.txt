@@ -1,12 +1,4 @@
-Adopting Tool...
-
-┌  Adopt Tool
-│
-├  ● Adopting Tool
-│
-└  Operation failed.
-
-The stored tool constraint cannot be changed.
+The Tool request cannot be admitted.
 id: 1
 step: adopt
 outcome: manager_failed
