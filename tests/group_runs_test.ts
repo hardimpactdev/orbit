@@ -123,9 +123,8 @@ Deno.test("running, waiting and interrupted owners hold their generation until n
   assertEquals(f.launches(), 1);
 });
 
-Deno.test("discovery includes many groups in one pass and isolates an unavailable factory", async () => {
+Deno.test("discovery rotates four supervisors per pass and isolates an unavailable factory", async () => {
   const workItems = Array.from({ length: 120 }, (_, i) => `tg-${i + 1}`);
-  const seen: string[] = [];
   let result: Record<string, unknown> = {};
   const context = {
     definition: { name: "orbit-group-runs" },
@@ -135,16 +134,23 @@ Deno.test("discovery includes many groups in one pass and isolates an unavailabl
         { factory: "healthy", preapprovalModel: "healthy-driver" },
       ],
     },
-    queryData: (predicate: string) =>
-      Promise.resolve(
-        predicate.includes("schedule-")
-          ? ["tg-120"]
-          : [workItems.map((workItem) => ({ workItem, status: "active" }))],
-      ),
-    runModel: ({ definition }: { definition: string }) => {
-      seen.push(definition);
-      if (definition === "broken") throw new Error("one factory unavailable");
-      return Promise.resolve({ ok: true });
+    queryData: (predicate: string) => {
+      if (predicate.includes('"broken"')) {
+        throw new Error("one factory unavailable");
+      }
+      if (predicate.includes("schedule-")) return Promise.resolve(["tg-120"]);
+      if (predicate.includes('name == "groups"')) {
+        return Promise.resolve([result]);
+      }
+      if (predicate.includes('name.startsWith("state-")')) {
+        return Promise.resolve(
+          workItems.map((workItem) => ({ workItem, status: "active" })),
+        );
+      }
+      return Promise.resolve([]);
+    },
+    runModel: () => {
+      throw new Error("discovery must not materialize status or reports");
     },
     writeResource: (
       _spec: string,
@@ -157,12 +163,15 @@ Deno.test("discovery includes many groups in one pass and isolates an unavailabl
     logger: { warning() {} },
   };
   await discoverGroups(context);
-  assertEquals(seen, ["broken", "healthy"]);
-  assertEquals(
-    (result.groups as { workItem: string }[]).map((g) => g.workItem),
-    workItems.slice(0, -1),
-  );
-  assertEquals((result.errors as unknown[]).length, 1);
+  const visited = new Set<string>();
+  for (let pass = 0; pass < 30; pass++) {
+    const groups = result.groups as { workItem: string }[];
+    assert(groups.length <= 4);
+    groups.forEach((g) => visited.add(g.workItem));
+    assertEquals((result.errors as unknown[]).length, 1);
+    await discoverGroups(context);
+  }
+  assertEquals([...visited].sort(), workItems.slice(0, -1).sort());
 });
 
 Deno.test("per-group drivers retain and consume pre-approvals from the original named driver", async () => {
@@ -661,12 +670,13 @@ Deno.test("many conflicting factory memberships retain assistance identities wit
           name && records.has(name) ? [records.get(name)!] : [],
         );
       }
-      return Promise.resolve([[
+      if (!p.includes('name.startsWith("state-")')) return Promise.resolve([]);
+      return Promise.resolve([
         ...workItems.map((workItem) => ({ workItem, status: "active" })),
         ...(p.includes('"a"')
           ? [{ workItem: "tg-999", status: "active" }]
           : []),
-      ]]);
+      ]);
     },
     runModel: (call: { method: string }) => {
       assertEquals(
@@ -698,4 +708,142 @@ Deno.test("many conflicting factory memberships retain assistance identities wit
   await discoverGroups(ctx);
   assertEquals(records.get("conflict-tg-7")?.startedAt, identity);
   assertEquals(records.get("conflict-tg-7")?.factories, ["a", "b"]);
+});
+
+Deno.test("unchanged human waits stay idle; approval changes wake them; terminal groups stay out", async () => {
+  const { groupFingerprint } = await import(
+    "../extensions/behaviors/_lib/group_activity.ts"
+  );
+  let approval = "before",
+    fingerprint = "",
+    result: Record<string, unknown> = {};
+  const ctx = {
+    definition: { name: "orbit-group-runs" },
+    globalArgs: {
+      factories: [{ factory: "factory", preapprovalModel: "original" }],
+    },
+    queryData: (p: string) =>
+      Promise.resolve(
+        p.includes("modelName in")
+          ? [{ approval }]
+          : p.includes('name == "activity"')
+          ? [{ idle: true, fingerprint }]
+          : p.includes('name.startsWith("state-")')
+          ? [{ workItem: "tg-7", status: "active" }, {
+            workItem: "tg-8",
+            status: "terminal",
+          }]
+          : [],
+      ),
+    runModel: () => {
+      throw new Error("discovery must not run factory methods");
+    },
+    writeResource: (_s: string, _n: string, v: Record<string, unknown>) => {
+      result = v;
+      return Promise.resolve({ name: "groups" });
+    },
+    logger: { warning() {} },
+  };
+  fingerprint = await groupFingerprint(ctx, "factory", "tg-7", "original");
+  await discoverGroups(ctx);
+  assertEquals(result.groups, []);
+  approval = "after";
+  await discoverGroups(ctx);
+  assertEquals(result.groups, [{
+    workItem: "tg-7",
+    factory: "factory",
+    preapprovalModel: "original",
+  }]);
+});
+
+Deno.test("a late supervisor cannot launch another generation for a terminal factory", async () => {
+  const { behavior: group } = await import(
+    "../extensions/behaviors/orbit_group_run.ts"
+  );
+  const result = await group.methods.ensure.execute({ workItem: "tg-7" }, {
+    globalArgs: group.globalArguments.parse({
+      factory: "factory",
+      preapprovalModel: "original",
+    }),
+    definition: { name: "orbit-group-tg-7" },
+    repoDir: "/fixture",
+    queryData: () => Promise.resolve([{ status: "terminal" }]),
+    runModel: () => {
+      throw new Error("must not launch or recover");
+    },
+    writeResource: (_s: string, _n: string, v: Record<string, unknown>) => {
+      assertEquals(v, { runId: null });
+      return Promise.resolve({ name: "reconcile" });
+    },
+    logger: { info() {}, warning() {} },
+  });
+  assertEquals(result, { dataHandles: [{ name: "reconcile" }] });
+});
+
+Deno.test("existing owners hold all four slots across ticks; terminal owners release them", async () => {
+  const root = await Deno.makeTempDir();
+  const { join } = await import("jsr:@std/path@1.1.4");
+  const workflow = crypto.randomUUID();
+  const owners = Array.from(
+    { length: 4 },
+    (_, i) => ({
+      workItem: `tg-${i + 1}`,
+      runId: crypto.randomUUID(),
+      generation: 1,
+    }),
+  );
+  let completed = false, result: Record<string, unknown> = {};
+  try {
+    await Deno.mkdir(join(root, "workflows"), { recursive: true });
+    await Deno.writeTextFile(
+      join(root, "workflows/workflow-group-run.yaml"),
+      JSON.stringify({ id: workflow }),
+    );
+    const directory = join(root, ".swamp/workflow-runs", workflow);
+    await Deno.mkdir(directory, { recursive: true });
+    for (const o of owners) {
+      await Deno.writeTextFile(
+        join(directory, `workflow-run-${o.runId}.yaml`),
+        JSON.stringify({ status: "running" }),
+      );
+    }
+    const ctx = {
+      repoDir: root,
+      definition: { name: "orbit-group-runs" },
+      globalArgs: { factories: [{ factory: "f", preapprovalModel: "p" }] },
+      queryData: (p: string) =>
+        Promise.resolve(
+          p.includes("modelName.startsWith")
+            ? owners
+            : p.includes('name.startsWith("state-")')
+            ? Array.from(
+              { length: 5 },
+              (_, i) => ({
+                workItem: `tg-${i + 1}`,
+                status: completed && i === 0 ? "terminal" : "active",
+              }),
+            )
+            : [],
+        ),
+      runModel: () => Promise.resolve({ ok: true }),
+      logger: { warning() {} },
+      writeResource: (_s: string, _n: string, v: Record<string, unknown>) => {
+        result = v;
+        return Promise.resolve({ name: "groups" });
+      },
+    };
+    for (let i = 0; i < 3; i++) {
+      await discoverGroups(ctx);
+      assertEquals(result.groups, []);
+    }
+    completed = true;
+    await discoverGroups(ctx);
+    assertEquals(result.groups, [{
+      workItem: "tg-5",
+      factory: "f",
+      preapprovalModel: "p",
+    }]);
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
 });

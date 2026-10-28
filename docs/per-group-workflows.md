@@ -75,8 +75,9 @@ remaining children, cleanup, or assistance keep their receipt and capacity
 claim until that evidence is settled. It never calls `start` for an existing
 factory state.
 
-Discovery first calls native `swamp run doctor --fix` to settle dead owners that
-still appear to be running. Interrupted group work uses Swamp's guarded
+Discovery reads current factory state without materializing another status report.
+Run native `swamp run doctor --fix` once after an interrupted serve restart, before
+resuming schedules, to settle dead owners that still appear to be running. Interrupted group work uses Swamp's guarded
 checkpoint recovery and resumes with the same generation and owner. If recovery
 finished but resume was interrupted, the next pass resumes that suspended run. A
 native wait stays with its owner until Swamp settles it. A new bounded
@@ -288,3 +289,20 @@ pure contracts cover 119 discovered groups, forty concurrent drives above one
 invocation's aggregate call limit, lost launch requests and responses, delayed
 duplicates, generation admission, and saved pre-approvals. The existing worker
 contracts retain uncertain worker POST and run receipts.
+
+## Bounded runtime state
+
+Discovery keeps at most four active group owners, checking their saved native
+run records before admitting a successor, with a rotating cursor. Unknown owners
+retain their slots. Existing excess owners drain before new admission. It excludes completed receipts and terminal factories. A group parked
+at a human gate records a fingerprint of its factory state, evidence, artifacts,
+approvals and preapprovals. It gets no new drive until those inputs change.
+Running operations still get bounded polls; unknown failures remain retryable.
+The per-group ensure method also checks terminal factory state, so a delayed or
+manual supervisor cannot start a successor after completion.
+
+Driver resources retain one current version (plus one hour online to protect
+in-progress publication). A separate bounded native pruner runs every five minutes. Compaction additionally preserves
+exact versions and workflow runs reachable from live receipts and unfinished
+workflow records. See [Services compaction](services-compaction.md). No factory
+state, operation key, approval or effect receipt is reset.

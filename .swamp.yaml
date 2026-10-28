@@ -6,3 +6,10 @@ tools:
 defaultVault: default
 gitignoreManaged: true
 telemetryDisabled: true
+
+# Use the receipt-aware compactor; native global GC cannot follow our receipts.
+garbageCollection:
+  automatic: false
+  workflowRuns: 7d
+  evaluatedSnapshots: 7d
+  outputs: 7d

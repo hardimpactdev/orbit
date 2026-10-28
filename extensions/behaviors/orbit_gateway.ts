@@ -85,7 +85,7 @@ export function curlHttp(g: Pick<GlobalArgs, "gatewayUrl" | "caFile" | "timeoutS
 
 export const behavior = {
   type: "@nckrtl/orbit-gateway",
-  version: "2026.10.28.5",
+  version: "2026.10.28.6",
   globalArguments: GlobalArgsSchema,
   resources: {
     dependencyRefreshInput:{description:"Bounded credential-free PR refresh configuration",schema:z.object({runId:z.string(),rows:z.array(z.object({project:DependencyProjectSchema,index:IndexSchema})),http:z.object({gatewayUrl:z.string(),caFile:z.string(),timeoutSeconds:z.number()})}),lifetime:"infinite",garbageCollection:2},
@@ -95,39 +95,39 @@ export const behavior = {
     dependencyReport: { description: "Immutable orbit.dependencies.v1 source report", schema: ReportSchema, lifetime: "infinite", garbageCollection: Number.MAX_SAFE_INTEGER },
     schedule: {
       description: "Project schedule and admitted batch group-creation receipts",
-      schema: ScheduleReceiptSchema, lifetime: "infinite", garbageCollection: 10,
+      schema: ScheduleReceiptSchema, lifetime: "infinite", garbageCollection: 1,
     },
-    findings: {description:"Project scan findings, eligible targets and blocked reasons",schema:FindingsSchema,lifetime:"infinite",garbageCollection:20},
-    admission: {description:"Durable shared maintenance VM reservations",schema:AdmissionSchema,lifetime:"infinite",garbageCollection:20},
+    findings: {description:"Project scan findings, eligible targets and blocked reasons",schema:FindingsSchema,lifetime:"infinite",garbageCollection: 1},
+    admission: {description:"Durable shared maintenance VM reservations",schema:AdmissionSchema,lifetime:"infinite",garbageCollection: 1},
     schedulerIssue: {
       description: "A stuck schedule row and its latest reconciliation result",
-      schema: SchedulerIssueSchema, lifetime: "infinite", garbageCollection: 10,
+      schema: SchedulerIssueSchema, lifetime: "infinite", garbageCollection: 1,
     },
     schedulerSkip: {
       description: "A scheduled fire skipped because this Project already has unfinished work",
-      schema: SchedulerSkipSchema, lifetime: "infinite", garbageCollection: 10,
+      schema: SchedulerSkipSchema, lifetime: "infinite", garbageCollection: 1,
     },
     projectWork: {
       description: "Scheduled work items for the existing factory drivers",
       schema: z.object({ routine: z.array(z.string()), detect: z.array(z.string()), package: z.array(z.string()), nextOffset: z.number().int().nonnegative(), nextQueueOffset: z.number().int().nonnegative(), nextPendingOffset: z.number().int().nonnegative(), issues: z.array(SchedulerIssueSchema) }),
-      lifetime: "infinite", garbageCollection: 10,
+      lifetime: "infinite", garbageCollection: 1,
     },
     worker: {
       description: "Public per-group Swamp enrollment and Gateway worker operation receipt",
       schema: z.object({ group: z.number().int().positive(), generation: z.number().int().positive(), tokenName: z.string(), operationId: z.number().int().positive().nullable(), nextReadAt: z.string().nullable().optional(), startedAt: z.string().optional(), enrollmentAttempt: z.number().int().positive().optional(), ready: z.boolean(), revoked: z.boolean() }),
-      lifetime: "infinite", garbageCollection: 10,
+      lifetime: "infinite", garbageCollection: 1,
     },
     maintenance: {
       description: "Swamp workflow start intent and adopted run; no credentials",
       schema: z.object({ key: z.string(), inputs: z.record(z.string(), z.unknown()), runId: z.string().nullable(), createdAt: z.string() }),
-      lifetime: "infinite", garbageCollection: 10,
+      lifetime: "infinite", garbageCollection: 1,
     },
-    packageTarget: { description: "Immutable whole-project batch selection per admitted group", schema: PackageTargetSchema, lifetime: "infinite", garbageCollection: 10 },
+    packageTarget: { description: "Immutable whole-project batch selection per admitted group", schema: PackageTargetSchema, lifetime: "infinite", garbageCollection: 1 },
     job: {
       description: "One Gateway task operation per driver key, with its stage products",
       schema: JobSchema,
       lifetime: "infinite",
-      garbageCollection: 10,
+      garbageCollection: 1,
     },
     assistance: {
       description: "The child or exact post-child group request owned by this work item",
@@ -140,11 +140,12 @@ export const behavior = {
         groupRequest: z.object({ body: z.string(), stage: z.string(), cycle: z.number().int(), gateId: z.string(), era: z.string() }).nullable().optional(),
       }),
       lifetime: "infinite",
-      garbageCollection: 10,
+      garbageCollection: 1,
     },
   },
   methods: {
     prepare_dependency_refresh: {
+      outputLifetime: "7d",
       description:"Select due PR observations without holding the model lock during network access",
       arguments:z.object({runId:z.string()}),
       execute:async(args:{runId:string},context:StageContext)=>{
@@ -157,6 +158,7 @@ export const behavior = {
       },
     },
     publish_dependency_refresh: {
+      outputLifetime: "7d",
       description:"Publish credential-free evidence only if its index publication is still current",
       arguments:z.object({projectId:z.number().int().positive(),expectedPublicationId:z.string(),evidence:BatchEvidenceSchema}),
       execute:async(args:{projectId:number;expectedPublicationId:string;evidence:z.infer<typeof BatchEvidenceSchema>},context:StageContext)=>{
@@ -168,11 +170,13 @@ export const behavior = {
       },
     },
     prune_dependency_results: {
+      outputLifetime: "7d",
       description: "Prune seven-day dependency history while preserving referenced exact reports",
       arguments:z.object({}),
       execute:async(_args:Record<string,never>,context:RetentionContext)=>{await pruneDependencyResults(context);return {dataHandles:[]};},
     },
     prepare_dependency_scan: {
+      outputLifetime: "7d",
       description: "Read scan configuration without holding the gateway lock during scanning",
       arguments: z.object({projectId:z.number().int().positive(),runId:z.string().min(1).max(256)}),
       execute: async (args: {projectId:number;runId:string}, context: StageContext) => {
@@ -183,6 +187,7 @@ export const behavior = {
       },
     },
     publish_dependency: {
+      outputLifetime: "7d",
       description: "Publish one bounded dependency resource under the short gateway model lock",
       arguments: z.object({spec:z.enum(["dependencyIndex","dependencyReport","findings"]),name:z.string(),value:z.record(z.string(),z.unknown()),overrides:z.object({tags:z.record(z.string(),z.string())}).optional(),runId:z.string(),projectId:z.number().int().positive()}),
       execute: async (args: {spec:string;name:string;value:Record<string,unknown>;overrides?:{tags:Record<string,string>};runId:string;projectId:number}, context: StageContext) => {
@@ -200,6 +205,7 @@ export const behavior = {
       },
     },
     ensure_worker: {
+      outputLifetime: "7d",
       description: "Enroll or reconcile worker startup on one provisioned external group; never starts agents or task work",
       arguments: z.object({ group: z.number().int().positive() }),
       execute: async (args: { group: number }, context: StageContext) => {
@@ -247,6 +253,7 @@ export const behavior = {
       },
     },
     schedule_project: {
+      outputLifetime: "7d",
       description: "Scan a Project on Services without a VM, or schedule routine execution",
       arguments: z.object({ projectId: z.number().int().positive(), mode: z.enum(["routine", "detect"]), runId: z.string().min(1).max(256).optional() }),
       execute: async (args: { projectId: number; mode: "routine" | "detect"; runId?: string }, context: StageContext) => {
@@ -275,17 +282,20 @@ export const behavior = {
       },
     },
     project_work: {
+      outputLifetime: "7d",
       description: "Read official factory state, store detection findings and admit bounded project batches, and list scheduled driver work",
       arguments: z.object({}),
       execute: async (_args: Record<string, never>, context: StageContext) => projectWork(context),
     },
     detect: {
+      outputLifetime: "7d",
       description: "Read-only detection through the existing worker, check and no-change completion path",
       arguments: z.object({ workItem: z.string(), stage: z.enum(["provision", "script", "finish"]), key: z.string(),
         script: z.unknown().optional(), handoff: z.unknown().optional() }),
       execute: (args: StageArgs, context: StageContext) => executeStage({ ...args, routine: true, detection: true }, context),
     },
     reconcile_workers: {
+      outputLifetime: "7d",
       description: "Revoke enrollment for ended groups, including external cancellation",
       arguments: z.object({}),
       execute: async (_args: Record<string, never>, context: StageContext) => {
@@ -294,6 +304,7 @@ export const behavior = {
       },
     },
     admit_package: {
+      outputLifetime: "7d",
       description: "Admit one unused configured project group after its earlier packages merged and completed; never creates a group",
       arguments: PackageTargetSchema.strip(), // Swamp merges global args into method validation.
       execute: async (target: PackageTarget, context: StageContext & { runModel: (args: { definition: string; method: string; arguments: Record<string, unknown> }) => Promise<{ ok: boolean; error?: { message: string } }> }) => {
@@ -327,6 +338,7 @@ export const behavior = {
       },
     },
     package: {
+      outputLifetime: "7d",
       description: "One project batch through the existing routine stage client",
       arguments: z.object({ workItem: z.string(), stage: z.enum(["provision", "script", "repair", "handoff", "publish", "merged", "finish"]),
         key: z.string(), handoff: z.unknown().optional(), change: z.unknown().optional(), script: z.unknown().optional(), workspace: z.unknown().optional() }),
@@ -337,6 +349,7 @@ export const behavior = {
       },
     },
     assistance: {
+      outputLifetime: "7d",
       description: "Reconcile parked assistance; post-child group requests clear only after their exact factory approval",
       arguments: z.object({
         workItem: z.string().describe("tg-<task group id>"),
@@ -385,12 +398,14 @@ export const behavior = {
       },
     },
     routine: {
+      outputLifetime: "7d",
       description: "Routine project update: the tracked script, one repair turn, checks, publication and cleanup through existing keyed jobs",
       arguments: z.object({ workItem: z.string(), stage: z.enum(["provision", "script", "repair", "handoff", "publish", "merged", "finish"]),
         key: z.string(), handoff: z.unknown().optional(), change: z.unknown().optional(), script: z.unknown().optional(), workspace: z.unknown().optional() }),
       execute: (args: StageArgs, context: StageContext) => executeStage({ ...args, routine: true }, context),
     },
     stage: {
+      outputLifetime: "7d",
       description: "Ensure the Gateway operation of one stage entry: start it once, then report its result",
       arguments: z.object({
         workItem: z.string().describe("tg-<task group id>"),

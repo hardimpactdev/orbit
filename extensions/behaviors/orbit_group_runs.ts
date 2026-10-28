@@ -1,4 +1,5 @@
 import { z } from "npm:zod@4";
+import { currentOwners, groupFingerprint } from "./_lib/group_activity.ts";
 
 const FactorySchema = z.object({
   factory: z.string().min(1),
@@ -41,7 +42,7 @@ type Context = {
 
 export const behavior = {
   type: "@nckrtl/orbit-group-runs",
-  version: "2026.10.27.1",
+  version: "2026.10.28.1",
   globalArguments: z.object({
     factories: z.array(FactorySchema),
   }),
@@ -55,47 +56,39 @@ export const behavior = {
         startedAt: z.string(),
       }),
       lifetime: "infinite",
-      garbageCollection: 10,
+      garbageCollection: 1,
     },
     groups: {
       description:
-        "All active groups and discovery failures, without a fleet call budget",
+        "Four admitted owners, rotating discovery cursor and isolated failures",
       schema: z.object({
         groups: z.array(GroupSchema),
         conflicts: z.array(ConflictSchema),
         errors: z.array(z.object({ factory: z.string(), error: z.string() })),
+        nextOffset: z.number().int().nonnegative().optional(),
       }),
       lifetime: "infinite",
-      garbageCollection: 10,
+      garbageCollection: 1,
     },
   },
   methods: {
     discover: {
+      outputLifetime: "7d",
       description:
         "Read active official factory states for native per-group fan-out",
       arguments: z.object({}),
       execute: async (_args: Record<string, never>, ctx: Context) => {
-        // Native liveness checks settle runs whose owners died before saving a
-        // terminal status. This must precede generation reconciliation.
-        const doctor = await new Deno.Command(Deno.execPath(), {
-          args: ["run", "doctor", "--fix", "--repo-dir", ctx.repoDir, "--json"],
-          stdin: "null",
-          stdout: "piped",
-          stderr: "piped",
-        }).output();
-        if (!doctor.success) {
-          ctx.logger.warning(
-            "Swamp run doctor failed; uncertain owners remain held",
-          );
-        }
         return await discoverGroups(ctx);
       },
     },
   },
 };
 
-export async function discoverGroups(ctx: Omit<Context, "repoDir">) {
+export async function discoverGroups(
+  ctx: Omit<Context, "repoDir"> & { repoDir?: string },
+) {
   const groups: z.infer<typeof GroupSchema>[] = [];
+  const activeWorkItems = new Set<string>();
   const conflicts: z.infer<typeof ConflictSchema>[] = [];
   const errors: { factory: string; error: string }[] = [];
   const completed = new Set(
@@ -106,21 +99,12 @@ export async function discoverGroups(ctx: Omit<Context, "repoDir">) {
   );
   for (const factory of ctx.globalArgs.factories) {
     try {
-      // The official overview reads by stable factory ID, including runs
-      // saved before a factory rename. Never copy or reset factory state.
-      const result = await ctx.runModel({
-        definition: factory.factory,
-        method: "status",
-      });
-      if (!result.ok) {
-        throw new Error(result.error?.message ?? "factory status failed");
-      }
-      const overview = (await ctx.queryData(
+      const overview = await ctx.queryData(
         `modelName == ${
           JSON.stringify(factory.factory)
-        } && name == "status-_factory"`,
-        "attributes.runs",
-      ))[0] as { workItem: string; status: string }[];
+        } && name.startsWith("state-")`,
+        "attributes",
+      ) as { workItem: string; status: string }[];
       if (!Array.isArray(overview)) {
         throw new Error("factory overview is missing");
       }
@@ -128,6 +112,23 @@ export async function discoverGroups(ctx: Omit<Context, "repoDir">) {
         if (run.status !== "active" || completed.has(run.workItem)) {
           continue;
         }
+        activeWorkItems.add(run.workItem);
+        const activity = (await ctx.queryData(
+          `modelName == ${
+            JSON.stringify(`orbit-group-${run.workItem}`)
+          } && name == "activity"`,
+          "attributes",
+        ))[0] as { idle?: boolean; fingerprint?: string } | undefined;
+        if (
+          activity?.idle &&
+          activity.fingerprint ===
+            await groupFingerprint(
+              ctx,
+              factory.factory,
+              run.workItem,
+              factory.preapprovalModel,
+            )
+        ) continue;
         groups.push(
           GroupSchema.parse({ ...factory, workItem: run.workItem }),
         );
@@ -182,8 +183,24 @@ export async function discoverGroups(ctx: Omit<Context, "repoDir">) {
       }
     }
   }
+  const eligible = groups.filter((g) => counts.get(g.workItem) === 1);
+  const prior = (await ctx.queryData(
+    `modelName == ${JSON.stringify(ctx.definition.name)} && name == "groups"`,
+    "attributes",
+  ))[0] as { nextOffset?: number } | undefined;
+  const owners = await currentOwners(ctx, [...activeWorkItems]);
+  const offset = (prior?.nextOffset ?? 0) % Math.max(eligible.length, 1);
+  const ordered = [...eligible.slice(offset), ...eligible.slice(0, offset)];
+  const selected = [
+    ...ordered.filter((g) => owners.recover.has(g.workItem)).slice(0, 4),
+    ...ordered.filter((g) => !owners.busy.has(g.workItem)).slice(
+      0,
+      Math.max(0, 4 - owners.busy.size),
+    ),
+  ].slice(0, 4);
   const handle = await ctx.writeResource("groups", "groups", {
-    groups: groups.filter((g) => counts.get(g.workItem) === 1),
+    groups: selected,
+    nextOffset: (offset + selected.length) % Math.max(eligible.length, 1),
     conflicts,
     errors,
   });

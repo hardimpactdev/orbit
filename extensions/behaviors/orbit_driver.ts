@@ -472,25 +472,26 @@ async function step(ctx: Ctx, workItem: string, killAt?: string): Promise<{ stat
 
 export const behavior = {
   type: "@nckrtl/orbit-driver",
-  version: "2026.10.28.1",
+  version: "2026.10.28.2",
   globalArguments: GlobalArgsSchema,
   resources: {
     launch: {
       description: "Detached stage workflow launches per key",
       schema: z.object({ key: z.string(), workflow: z.string(), launches: z.number(), lastLaunchedAt: z.string(), log: z.string(), runId: z.string().optional(), pending: z.boolean().optional(), inputs: z.record(z.string(), z.unknown()).optional(), priorRunIds: z.array(z.string()).optional() }),
-      lifetime: "30d",
-      garbageCollection: 10,
+      lifetime: "infinite",
+      garbageCollection: 1,
     },
-    tick: { description: "What one tick did per work item", schema: TickSchema, lifetime: "30d", garbageCollection: 500 },
+    tick: { description: "What one tick did per work item", schema: TickSchema, lifetime: "30d", garbageCollection: 1 },
     preapproval: {
       description: "A human approval stored ahead of time for one exact work item, gate, stage and cycle",
       schema: PreapprovalSchema,
       lifetime: "infinite",
-      garbageCollection: 10,
+      garbageCollection: 1,
     },
   },
   methods: {
     preapprove: {
+      outputLifetime: "7d",
       description: "Store a human approval for a gate the run has not reached yet; the next tick that parks at exactly that gate, stage and cycle applies it",
       arguments: z.object({
         workItem: z.string(),
@@ -515,6 +516,7 @@ export const behavior = {
       },
     },
     tick: {
+      outputLifetime: "7d",
       description: "Take each work item one guarded step (dispatch, poll, record, or advance)",
       arguments: z.object({
         workItems: z.array(z.string()).nullish().describe("Default: every active run of the factory"),

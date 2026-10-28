@@ -12,6 +12,7 @@ import {
   RunFailuresSchema,
 } from "./_lib/group_runs.ts";
 import { workflowCommand } from "./_lib/swamp_maintenance.ts";
+import { groupFingerprint } from "./_lib/group_activity.ts";
 
 const GlobalArgsSchema = driver.globalArguments.extend({
   factory: z.string().min(1),
@@ -139,22 +140,29 @@ export async function settleGroupRun(
 
 export const behavior = {
   type: "@nckrtl/orbit-group-run",
-  version: "2026.10.27.1",
+  version: "2026.10.28.1",
   globalArguments: GlobalArgsSchema,
   resources: {
     ...driver.resources,
+    activity: {
+      description:
+        "Parked input identity; no new owner until its inputs change",
+      schema: z.object({ idle: z.boolean(), fingerprint: z.string() }),
+      lifetime: "infinite",
+      garbageCollection: 1,
+    },
     failures: {
       description:
         "Consecutive owner failures and fresh assistance state, counted once per generation",
       schema: RunFailuresSchema,
       lifetime: "infinite",
-      garbageCollection: 10,
+      garbageCollection: 1,
     },
     recovery: {
       description: "Reserved checkpoint attempts for the current native owner",
       schema: RecoverySchema,
       lifetime: "infinite",
-      garbageCollection: 10,
+      garbageCollection: 1,
     },
     retry: {
       description:
@@ -170,46 +178,62 @@ export const behavior = {
         note: z.string(),
       }),
       lifetime: "infinite",
-      garbageCollection: 10,
+      garbageCollection: 1,
     },
     intent: {
       description: "Next or current group generation, saved before launch",
       schema: GroupRunSchema,
       lifetime: "infinite",
-      garbageCollection: 10,
+      garbageCollection: 1,
     },
     owner: {
       description: "Only workflow run admitted to drive this group generation",
       schema: RequestSchema,
       lifetime: "infinite",
-      garbageCollection: 10,
+      garbageCollection: 1,
     },
     admission: {
       description: "Admission result pinned to this workflow step",
       schema: z.object({ admitted: z.boolean() }),
       lifetime: "30d",
-      garbageCollection: 10,
+      garbageCollection: 1,
     },
     result: {
       description:
         "Whether bounded group work reached a terminal factory stage",
       schema: z.object({ terminal: z.boolean() }),
       lifetime: "30d",
-      garbageCollection: 10,
+      garbageCollection: 1,
     },
     reconcile: {
       description:
         "Native owner run that may need checkpoint recovery or resume",
       schema: z.object({ runId: z.string().nullable() }),
       lifetime: "infinite",
-      garbageCollection: 10,
+      garbageCollection: 1,
     },
   },
   methods: {
     ensure: {
+      outputLifetime: "7d",
       description: "Ensure one owning run for this group, keyed by generation",
       arguments: z.object({ workItem: GroupRunSchema.shape.workItem }),
       execute: async (args: { workItem: string }, ctx: Context) => {
+        const state = (await ctx.queryData(
+          `modelName == ${JSON.stringify(ctx.globalArgs.factory)} && name == ${
+            JSON.stringify(`state-${args.workItem}`)
+          }`,
+          "attributes",
+        ))[0] as { status?: string } | undefined;
+        if (state?.status === "terminal") {
+          return {
+            dataHandles: [
+              await ctx.writeResource("reconcile", "reconcile", {
+                runId: null,
+              }),
+            ],
+          };
+        }
         const failure = await read<RunFailures>(ctx, "failures");
         const intent = await read<GroupRun>(ctx, "intent");
         if (failure?.parked && intent) {
@@ -277,6 +301,7 @@ export const behavior = {
       },
     },
     claim: {
+      outputLifetime: "7d",
       description: "Admit one workflow run before any group operation",
       arguments: RequestSchema,
       execute: async (request: z.infer<typeof RequestSchema>, ctx: Context) => {
@@ -293,6 +318,7 @@ export const behavior = {
       },
     },
     drive: {
+      outputLifetime: "7d",
       description: "Advance only the owning generation within its call budget",
       arguments: RequestSchema,
       execute: async (request: z.infer<typeof RequestSchema>, ctx: Context) => {
@@ -336,6 +362,15 @@ export const behavior = {
           }
           throw error;
         }
+        await ctx.writeResource("activity", "activity", {
+          idle: (item.waiting ?? "").startsWith("assistance:"),
+          fingerprint: await groupFingerprint(
+            ctx,
+            request.factory,
+            request.workItem,
+            ctx.globalArgs.preapprovalModel,
+          ),
+        });
         const handle = await ctx.writeResource("result", "result", {
           terminal: (item.waiting ?? "").startsWith("terminal ("),
         });
@@ -343,6 +378,7 @@ export const behavior = {
       },
     },
     retry: {
+      outputLifetime: "7d",
       description:
         "Explicitly retry a parked driver after inspection; changes no factory state or effect",
       arguments: z.object({
@@ -385,6 +421,7 @@ export const behavior = {
       },
     },
     checkpoint: {
+      outputLifetime: "7d",
       description:
         "Reserve and settle bounded recovery attempts under the owner lock",
       arguments: RequestSchema.extend({
@@ -441,6 +478,7 @@ export const behavior = {
       },
     },
     recover: {
+      outputLifetime: "7d",
       description:
         "Recover or resume the owner without holding its behavior lock",
       arguments: z.object({

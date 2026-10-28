@@ -169,6 +169,7 @@ class GroupWorkflowTest(unittest.TestCase):
             try:
                 def start():
                     nonlocal serve
+                    command("run", "doctor", "--fix")
                     serve = subprocess.Popen(["swamp", "serve", "--port", str(port), "--host", "127.0.0.1",
                                               "--auth-mode", "none", "--no-schedule", "--continuation-sweep-interval", "1s"],
                                              cwd=root, env=env, stdout=log, stderr=log)
