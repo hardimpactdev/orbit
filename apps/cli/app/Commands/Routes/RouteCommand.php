@@ -5,11 +5,35 @@ declare(strict_types=1);
 namespace App\Commands\Routes;
 
 use App\Commands\GatewayCommand;
+use App\Commands\Concerns\FollowsOperations;
+use App\Repositories\GatewayConfigRepository;
+use Orbit\Sdk\GatewayConnector;
+use Orbit\Sdk\GatewayRequest;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Responses\Routes\RouteResponse;
 
 abstract class RouteCommand extends GatewayCommand
 {
+    use FollowsOperations;
+
+    protected function startRouteOperation(GatewayConfigRepository $repository, GatewayConnector $connector, GatewayRequest $request, string $title): int
+    {
+        $profile = $this->activeGatewayProfile($repository);
+        if ($profile === null) {
+            return self::FAILURE;
+        }
+        $key = $this->option('idempotency-key');
+        if (is_string($key)) {
+            $request->headers()->add('Idempotency-Key', $key);
+        }
+        $operation = $this->send($connector, $request, OperationResponse::class);
+
+        return $operation instanceof OperationResponse
+            ? $this->followOperation($connector, $profile, $operation, $title, 'Route')
+            : self::FAILURE;
+    }
+
     protected function routeId(): ?int
     {
         return $this->positiveId('route', 'Route', 'route.id_invalid');

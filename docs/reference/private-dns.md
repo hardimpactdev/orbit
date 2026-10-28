@@ -20,6 +20,8 @@ Build step 1 adds only the [Router LAN DNS firewall families](/cli/firewall#rout
 
 Before later Cluster DNS enablement, the [firewall rollout](/cli/firewall#safe-dns-firewall-rollout) requires authorized narrowing of overlapping allowances, preservation of bridge-scoped Incus DNS, and authorized success plus unauthorized LAN denial over both transports. Disposable tests are not live acceptance. Exact outside-TLD Route NODATA, descendant forwarding, no-TLD behavior, bind-overlap refusal, and automatic member return remain later implementation gates, not claims made by the firewall step.
 
+The `route.private_dns_publish` Operation publishes Gateway-rendered records and the requester catalog on the serving Node. Its input is a reason, never DNS records or executable source. Swamp runs the fixed publication program. The Node footprint installs the socket-activated listener; publication updates data and confirms the loaded catalog. A failed activation restores the previous records, catalog, and service state.
+
 ## Resolver selection
 
 Managed Linux peers send only Orbit names to private DNS. The Gateway renders the private VPN domain, every Cluster TLD, every Node TLD, and every private Route domain outside those suffixes. It removes duplicates and suffixes already covered by another suffix. All other names use the machine's normal provider or DHCP resolver. A VPN DNS outage therefore leaves public resolution available while that resolver and network work.

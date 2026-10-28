@@ -7,14 +7,18 @@ namespace App\Commands\Clusters;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Clusters\UnsetClusterRouterRequest;
-use Orbit\Sdk\Responses\Clusters\ClusterResponse;
+use App\Commands\Concerns\FollowsOperations;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class UnsetClusterRouterCommand extends ClusterCommand
 {
+    use FollowsOperations;
+
     #[\Override]
     protected $signature = 'cluster:router:unset
         {cluster : Numeric Cluster ID}
         {--force : Skip the destructive confirmation prompt}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -40,17 +44,14 @@ final class UnsetClusterRouterCommand extends ClusterCommand
             return self::FAILURE;
         }
 
-        $cluster = $this->sendWithProgress(
-            $connector,
-            new UnsetClusterRouterRequest($clusterId, true),
-            ClusterResponse::class,
-            ['Clear Cluster Router', 'Clearing Cluster Router', 'Cleared Cluster Router'],
-        );
-
-        if (! $cluster instanceof ClusterResponse) {
+        $profile = $this->activeGatewayProfile($repository);
+        if ($profile === null) {
             return self::FAILURE;
         }
+        $operation = $this->send($connector, new UnsetClusterRouterRequest($clusterId, true, $this->stringOption('idempotency-key')), OperationResponse::class);
 
-        return $this->renderCluster($cluster, "Router cleared from Cluster [{$cluster->name}].");
+        return $operation instanceof OperationResponse
+            ? $this->followOperation($connector, $profile, $operation, 'Clear Cluster Router', 'Cluster Router')
+            : self::FAILURE;
     }
 }

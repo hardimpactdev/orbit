@@ -14,6 +14,7 @@ final class UnsetRouteTargetCommand extends RouteCommand
 {
     #[\Override]
     protected $signature = 'route:target:unset {route : Numeric Route ID} {--yes : Confirm target clearing without prompting}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -29,7 +30,7 @@ final class UnsetRouteTargetCommand extends RouteCommand
         if ($connector === null) {
             return self::FAILURE;
         }
-        if ($this->option('yes') !== true) {
+        if ($this->option('yes') !== true && $this->option('idempotency-key') === null) {
             $existing = $this->sendWithProgress(
                 $connector,
                 new ShowRouteRequest($id),
@@ -45,10 +46,6 @@ final class UnsetRouteTargetCommand extends RouteCommand
             }
         }
 
-        $route = $this->sendWithProgress($connector, new UnsetRouteTargetRequest($id), RouteResponse::class, ['Clear Route target', 'Clearing Route target', 'Cleared Route target']);
-
-        return $route instanceof RouteResponse
-            ? $this->renderRoute($route)
-            : self::FAILURE;
+        return $this->startRouteOperation($repository, $connector, new UnsetRouteTargetRequest($id), 'Clear Route target');
     }
 }

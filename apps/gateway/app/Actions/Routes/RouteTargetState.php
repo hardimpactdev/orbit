@@ -1,0 +1,287 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Actions\Routes;
+
+use App\Data\Routes\RouteTargetDispositionData;
+use App\Data\Routes\SetRouteTargetsData;
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
+use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Instances\Environment\InstanceEnvironmentRouteDomain;
+use App\Domain\Instances\Environment\InstanceRouteEnvironmentSynchronizer;
+use App\Domain\Instances\InstanceRemover;
+use App\Domain\Routes\RouteDomainProjector;
+use App\Domain\Routes\RouteStatus;
+use App\Domain\Routes\RouteTargetSetGuard;
+use App\Domain\Routes\RouteTargetSetStep;
+use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Shared\StoredInteger;
+use App\Domain\WebSocket\WebSocketRouteSelection;
+use App\Models\Instance;
+use App\Models\Route;
+use App\Models\RouteTarget;
+use Illuminate\Support\Facades\DB;
+use Throwable;
+
+/** Gateway-owned validation and Route state transitions. Contains no Node execution. */
+final readonly class RouteTargetState
+{
+    public function __construct(private RouteTargetSetGuard $guard) {}
+    public function isCompletedNoop(Route $route, SetRouteTargetsData $proposal): bool
+    {
+        if ($route->target_set_intent !== null) {
+            return false;
+        }
+
+        $current = $route
+            ->targets()
+            ->orderBy('position')
+            ->pluck('instance_id')
+            ->map(static fn (mixed $id): int => StoredInteger::from($id))
+            ->values()
+            ->all();
+
+        return $current === $proposal->targetIds;
+    }
+
+    public function reserve(Route $route, SetRouteTargetsData $proposal): void
+    {
+        if (is_array($route->target_set_intent)) {
+            return;
+        }
+
+        $route->update([
+            'target_set_intent' => $proposal->toIntent(),
+            'target_set_step' => RouteTargetSetStep::Reserved->value,
+            'failed_step' => null,
+            'error_code' => null,
+        ]);
+        $route->refresh();
+    }
+
+    public function commitAssociations(Route $route, SetRouteTargetsData $proposal): void
+    {
+        DB::transaction(function () use ($route, $proposal): void {
+            $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
+            $this->guard->assertProposal($locked, $proposal);
+            $vacatedRouteIds = $this->vacatedRouteIds($locked, $proposal);
+            $removeIds = [];
+            $reassignments = [];
+
+            foreach ($proposal->dispositions as $disposition) {
+                if ($disposition->remove) {
+                    $removeIds[] = $disposition->instanceId;
+                } elseif ($disposition->routeId !== null) {
+                    $reassignments[$disposition->instanceId] = $disposition->routeId;
+                }
+            }
+
+            foreach ($proposal->targetIds as $instanceId) {
+                $this->associateOnRoute($locked, $instanceId);
+            }
+
+            foreach ($reassignments as $instanceId => $destinationId) {
+                $this->reassignToRoute($instanceId, $destinationId);
+            }
+
+            $this->compactPositions($locked->id, [...$proposal->targetIds, ...$removeIds]);
+
+            foreach ($vacatedRouteIds as $vacatedRouteId) {
+                $this->compactPositions($vacatedRouteId);
+            }
+        });
+    }
+
+    public function associateOnRoute(Route $route, int $instanceId): void
+    {
+        $existing = RouteTarget::query()
+            ->where('instance_id', $instanceId)
+            ->lockForUpdate()
+            ->first();
+
+        if ($existing instanceof RouteTarget && $existing->route_id === $route->id) {
+            return;
+        }
+
+        $position = RouteTarget::query()->where('route_id', $route->id)->count();
+
+        if ($existing instanceof RouteTarget) {
+            $existing->update([
+                'route_id' => $route->id,
+                'position' => $position,
+            ]);
+
+            return;
+        }
+
+        RouteTarget::query()->create([
+            'route_id' => $route->id,
+            'instance_id' => $instanceId,
+            'position' => $position,
+        ]);
+    }
+
+    public function reassignToRoute(int $instanceId, int $destinationId): void
+    {
+        $existing = RouteTarget::query()
+            ->where('instance_id', $instanceId)
+            ->lockForUpdate()
+            ->first();
+
+        if (! $existing instanceof RouteTarget || $existing->route_id === $destinationId) {
+            return;
+        }
+
+        $destination = Route::query()->lockForUpdate()->findOrFail($destinationId);
+        $existing->update([
+            'route_id' => $destination->id,
+            'position' => RouteTarget::query()->where('route_id', $destination->id)->count(),
+        ]);
+
+        if ($destination->status === RouteStatus::Pending) {
+            $destination->update(['status' => RouteStatus::Active]);
+        }
+    }
+
+    public function compactPositions(int $routeId, ?array $orderedInstanceIds = null): void
+    {
+        if ($orderedInstanceIds !== null) {
+            $rows = RouteTarget::query()
+                ->where('route_id', $routeId)
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('instance_id');
+            $position = 0;
+
+            foreach ($orderedInstanceIds as $instanceId) {
+                $row = $rows->get($instanceId);
+
+                if (! $row instanceof RouteTarget) {
+                    continue;
+                }
+
+                if ($row->position !== $position) {
+                    $row->update(['position' => $position]);
+                }
+
+                $position++;
+            }
+
+            return;
+        }
+
+        $rows = RouteTarget::query()
+            ->where('route_id', $routeId)
+            ->lockForUpdate()
+            ->orderBy('position')
+            ->orderBy('id')
+            ->get()
+            ->values();
+
+        foreach ($rows as $position => $row) {
+            if ($row->position !== $position) {
+                $row->update(['position' => $position]);
+            }
+        }
+    }
+
+    public function vacatedRouteIds(Route $route, SetRouteTargetsData $proposal): array
+    {
+        $ids = [];
+
+        foreach ($proposal->targetIds as $instanceId) {
+            $association = RouteTarget::query()
+                ->where('instance_id', $instanceId)
+                ->where('route_id', '!=', $route->id)
+                ->first();
+
+            if ($association !== null) {
+                $ids[] = (int) $association->route_id;
+            }
+        }
+
+        return array_values(array_unique($ids));
+    }
+
+    public function preparedInstances(Route $route, SetRouteTargetsData $proposal): array
+    {
+        $prepared = [];
+
+        foreach ($this->guard->instances($proposal->targetIds) as $instance) {
+            $prepared[] = [$instance, $route];
+        }
+
+        foreach ($proposal->dispositions as $disposition) {
+            if ($disposition->remove || $disposition->routeId === null) {
+                continue;
+            }
+
+            $instance = $this->guard->instances([$disposition->instanceId])->first();
+            $destination = Route::query()->findOrFail($disposition->routeId);
+
+            if ($instance instanceof Instance) {
+                $prepared[] = [$instance, $destination];
+            }
+        }
+
+        return $prepared;
+    }
+
+    public function synchronizedInstances(Route $route, SetRouteTargetsData $proposal): array
+    {
+        $ids = $proposal->targetIds;
+
+        foreach ($proposal->dispositions as $disposition) {
+            if (! $disposition->remove) {
+                $ids[] = $disposition->instanceId;
+            }
+        }
+
+        return array_values($this->guard->instances(array_values(array_unique($ids)))->all());
+    }
+
+    public function complete(Route $route): void
+    {
+        $route->update([
+            'target_set_intent' => null,
+            'target_set_step' => RouteTargetSetStep::Completed->value,
+            'failed_step' => null,
+            'error_code' => null,
+        ]);
+    }
+
+    public function advance(Route $route, RouteTargetSetStep $step): void
+    {
+        $route->update([
+            'target_set_step' => $step->value,
+            'failed_step' => null,
+            'error_code' => null,
+        ]);
+        $route->refresh();
+    }
+
+    public function recordFailure(Route $route, string $step, string $errorCode): void
+    {
+        $route->update([
+            'failed_step' => $step,
+            'error_code' => $errorCode,
+        ]);
+    }
+
+    public function ownerIds(Route $route, SetRouteTargetsData $proposal): array
+    {
+        $ids = [
+            ...$route->targets->pluck('instance_id')->map(static fn (mixed $id): int => StoredInteger::from($id))->all(),
+            ...$proposal->targetIds,
+            ...array_map(
+                static fn (RouteTargetDispositionData $disposition): int => $disposition->instanceId,
+                $proposal->dispositions,
+            ),
+        ];
+        $ids = array_values(array_unique($ids));
+        sort($ids);
+
+        return $ids;
+    }
+}
