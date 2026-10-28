@@ -62,7 +62,7 @@ const BlockReceipt = z.object({
   found: z.boolean(),
   block: Block.nullable(),
 }).strict();
-const RollbackReceipt = z.object({
+export const RollbackReceipt = z.object({
   request_key: z.string(),
   found: z.boolean(),
   operation: RollbackOperation.nullable(),
@@ -303,7 +303,7 @@ export function failureMethod(
             failure_key: intent.key,
             expected: selectionOf(intent.failure),
             target,
-            target_smoke_request_key:
+            target_smoke_request_key: job.previous_good_key ??
               `smoke.${config.instance}.${target.deployment_id}`,
           });
           const rollbackKey = intent.key + ".rollback";

@@ -68,6 +68,7 @@ export const Job = z.object({
   operation_id: id.nullable(),
   result: Result.nullable(),
   previous_good: Selection.nullable().default(null),
+  previous_good_key: z.string().nullable().default(null),
   resend_used: z.boolean().default(false),
   refusal_retry_used: z.boolean().default(false),
   refusal: z.object({ status: z.number().int(), code: z.string() }).nullable()
@@ -88,6 +89,7 @@ export const State = z.object({
   selected: Selection.nullable(),
   job: Job.nullable(),
   known_good: Selection.nullable(),
+  known_good_key: z.string().nullable().default(null),
 });
 export const same = (a: unknown, b: unknown) =>
   JSON.stringify(a) === JSON.stringify(b);

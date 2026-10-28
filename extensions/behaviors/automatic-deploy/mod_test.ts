@@ -358,6 +358,7 @@ for (
   const code of [
     "deployment.paused",
     "instance.auto_deploy_role_inactive",
+    "instance.smoke_held",
     "instance.auto_deploy_policy_owner",
   ]
 ) {

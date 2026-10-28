@@ -1,3 +1,4 @@
+import { Lifecycle, lifecycleMethod } from "./recovery.ts";
 import { failureMethod, Recovery } from "./failure.ts";
 import { z } from "npm:zod@4.4.3";
 import { gatewayHttp, type Http } from "../automatic-deploy/gateway.ts";
@@ -77,9 +78,15 @@ export function productionSmoke(
 ) {
   return {
     type: "@nckrtl/production-smoke",
-    version: "2026.10.28.2",
+    version: "2026.10.28.3",
     globalArguments: Globals,
     resources: {
+      lifecycle: {
+        description: "Owned hold, retry backoff and restored smoke",
+        schema: Lifecycle,
+        lifetime: "infinite",
+        garbageCollection: 10,
+      },
       recovery: {
         description: "Failure recovery intent and receipts",
         schema: Recovery,
@@ -100,6 +107,7 @@ export function productionSmoke(
       },
     },
     methods: {
+      recover: lifecycleMethod(makeHttp, clock, budgetMs, recoveryEffects),
       failure: failureMethod(makeHttp, recoveryEffects, budgetMs),
       tick: {
         description:
@@ -352,6 +360,7 @@ export function productionSmoke(
                       : "superseded";
                   if (state.status === "passed") {
                     state.known_good = state.selected;
+                    state.known_good_key = state.job.key;
                   }
                 }
                 state.reason = state.status === "passed"
@@ -426,6 +435,7 @@ export function productionSmoke(
               operation_id: null,
               result: null,
               previous_good: state.known_good,
+              previous_good_key: state.known_good_key,
               resend_used: false,
               refusal_retry_used: false,
               refusal: null,
