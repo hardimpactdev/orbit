@@ -113,8 +113,9 @@ final readonly class DependencyBatchMergeGuard
         $contentsToken = $this->access->readToken($repository);
         foreach ($files as $file) {
             $headContent = $this->content($path, $file, $intent['head_sha'], $contentsToken);
-            $baseContent = in_array($file, ['composer.json', 'package.json'], true) ? $this->content($path, $file, $base, $contentsToken) : null;
-            $this->contents->validate($file, $headContent, $baseContent);
+            $baseContent = $this->content($path, $file, $base, $contentsToken);
+            $manifest = in_array($file, ['composer.json', 'package.json'], true) ? null : $this->content($path, $file === 'composer.lock' ? 'composer.json' : 'package.json', $intent['head_sha'], $contentsToken);
+            $this->contents->validate($file, $headContent, $baseContent, $manifest);
         }
         $actionsToken = $this->reader->token($repository);
         $workflows = $this->reader->json($path.'/actions/workflows?per_page=100', $actionsToken);
@@ -181,6 +182,7 @@ final readonly class DependencyBatchMergeGuard
                     && ! isset($seen[$file['filename']]), 'dependency_merge.files_unreadable');
                 $this->check(in_array($file['filename'], $allowed, true), 'dependency_merge.files_forbidden');
                 $this->check(in_array($file['status'] ?? null, ['added', 'modified', 'removed', 'renamed', 'copied', 'changed', 'unchanged'], true), 'dependency_merge.files_unreadable');
+                $this->check($file['status'] !== 'removed', 'dependency_merge.lock_removed');
                 if (in_array($file['status'], ['renamed', 'copied'], true) || array_key_exists('previous_filename', $file)) {
                     $this->check(is_string($file['previous_filename'] ?? null), 'dependency_merge.files_unreadable');
                     $this->check(in_array($file['previous_filename'], $allowed, true), 'dependency_merge.files_forbidden');

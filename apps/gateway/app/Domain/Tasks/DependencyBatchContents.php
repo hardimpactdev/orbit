@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Dependencies\PackagistDependencyMetadata;
 use JsonException;
 use stdClass;
 use Symfony\Component\Yaml\Exception\ParseException;
@@ -15,9 +16,11 @@ final readonly class DependencyBatchContents
 {
     public const array Files = ['composer.json', 'composer.lock', 'package.json', 'package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lock'];
 
-    private const string PackageVersion = '~\A(?:@[a-z0-9_.-]+/)?[a-z0-9_.-]+@[0-9]+\.[0-9]+\.[0-9]+(?:[-+][a-zA-Z0-9_.-]+)?\z~D';
+    private const string PackageVersion = '~\A((?:@[a-z0-9_.-]+/)?[a-z0-9_.-]+)@([0-9]+\.[0-9]+\.[0-9]+(?:[-+][a-zA-Z0-9_.-]+)?)\z~D';
 
-    public function validate(string $path, #[\SensitiveParameter] string $head, #[\SensitiveParameter] ?string $base = null): void
+    public function __construct(private PackagistDependencyMetadata $packagist, private DependencyBatchVersions $versions) {}
+
+    public function validate(string $path, #[\SensitiveParameter] string $head, #[\SensitiveParameter] ?string $base = null, #[\SensitiveParameter] ?string $manifest = null): void
     {
         try {
             if (in_array($path, ['composer.json', 'package.json'], true)) {
@@ -31,29 +34,36 @@ final readonly class DependencyBatchContents
                 $this->check($lock instanceof stdClass && in_array($lock->lockfileVersion ?? null, ['9.0', 9.0], true));
                 $this->references($lock);
                 foreach ($this->map($lock->packages ?? null) as $id => $package) {
-                    $this->check(is_string($id) && preg_match(self::PackageVersion, $id) === 1 && $package instanceof stdClass);
+                    $this->check(is_string($id) && preg_match(self::PackageVersion, $id, $identity) === 1 && $package instanceof stdClass);
+                    $name = $identity[1];
+                    $version = $identity[2];
+                    $this->check((! property_exists($package, 'name') || $package->name === $name) && (! property_exists($package, 'version') || $package->version === $version));
                     $resolution = $package->resolution ?? null;
                     $this->check($resolution instanceof stdClass);
-                    if (property_exists($resolution, 'tarball')) {
-                        $this->url($resolution->tarball, ['registry.npmjs.org']);
-                    } else {
-                        $this->check(is_string($resolution->integrity ?? null));
-                    }
-                    $this->check(! property_exists($resolution, 'repo') && ! property_exists($resolution, 'directory') && ! property_exists($resolution, 'type'));
+                    $this->keys($resolution, ['integrity']);
+                    $this->integrity($resolution->integrity ?? null);
                 }
             } elseif ($path === 'bun.lock') {
                 $lock = $this->json($this->jsonc($head));
                 $this->check(in_array($lock->lockfileVersion ?? null, [1, 2], true));
                 $this->references($lock);
-                foreach ($this->map($lock->packages ?? null) as $package) {
+                foreach ($this->map($lock->packages ?? null) as $key => $package) {
                     $this->check(is_array($package) && array_is_list($package) && count($package) === 4
-                        && is_string($package[0]) && preg_match(self::PackageVersion, $package[0]) === 1 && is_string($package[1]));
-                    if ($package[1] !== '') {
-                        $this->url($package[1], ['registry.npmjs.org']);
+                        && is_string($key) && is_string($package[0]) && preg_match(self::PackageVersion, $package[0], $idParts) === 1 && $package[1] === '');
+                    $identity = $idParts[1];
+                    $parts = explode('/', $key);
+                    $name = array_pop($parts);
+                    if ($parts !== [] && str_starts_with($parts[array_key_last($parts)], '@')) {
+                        $name = array_pop($parts).'/'.$name;
                     }
+                    $this->check($identity === $name);
+                    $this->integrity($package[3]);
                 }
             } else {
                 $this->forbidden();
+            }
+            if ($base !== null && $manifest !== null) {
+                $this->lockedMajors($path, $base, $head, $manifest);
             }
         } catch (JsonException|ParseException) {
             throw new ResourceOperationException('dependency_merge.contents_unreadable', 'Dependency content could not be decoded.', 409);
@@ -63,35 +73,51 @@ final readonly class DependencyBatchContents
     private function manifest(string $path, #[\SensitiveParameter] stdClass $base, #[\SensitiveParameter] stdClass $head): void
     {
         $fields = $path === 'composer.json' ? ['require', 'require-dev'] : ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'];
-        foreach ([$base, $head] as $manifest) {
-            foreach ($fields as $field) {
-                if (property_exists($manifest, $field)) {
-                    foreach ($this->map($manifest->{$field}) as $constraint) {
-                        $this->check(is_string($constraint));
-                    }
-                    unset($manifest->{$field});
-                }
+        foreach ($fields as $field) {
+            $before = property_exists($base, $field) ? $this->map($base->{$field}) : [];
+            $after = property_exists($head, $field) ? $this->map($head->{$field}) : [];
+            $oldKeys = array_keys($before);
+            $newKeys = array_keys($after);
+            sort($oldKeys);
+            sort($newKeys);
+            $this->check($oldKeys === $newKeys && property_exists($base, $field) === property_exists($head, $field));
+            foreach ($before as $name => $constraint) {
+                $this->check(is_string($constraint) && is_string($after[$name]));
+                $this->versions->constraintChange($constraint, $after[$name], $path === 'composer.json');
             }
+            unset($base->{$field}, $head->{$field});
         }
         $this->check($this->canonical($base) === $this->canonical($head));
     }
 
     private function composer(#[\SensitiveParameter] stdClass $lock): void
     {
+        $seen = [];
         foreach (['packages', 'packages-dev'] as $section) {
             $packages = $lock->{$section} ?? null;
             $this->check(is_array($packages) && array_is_list($packages));
             foreach ($packages as $package) {
                 $this->check($package instanceof stdClass);
+                $this->keys($package, ['name', 'version', 'source', 'dist', 'require', 'require-dev', 'conflict', 'replace', 'provide', 'suggest', 'type', 'target-dir', 'autoload', 'autoload-dev', 'include-path', 'notification-url', 'license', 'authors', 'description', 'homepage', 'keywords', 'support', 'funding', 'time', 'extra', 'bin', 'abandoned', 'default-branch']);
+                $this->check(is_string($package->name ?? null) && preg_match('~\A[a-z0-9][a-z0-9_.-]*/[a-z0-9][a-z0-9_.-]*\z~D', $package->name) === 1 && ! isset($seen[$package->name]) && is_string($package->version ?? null));
+                $seen[$package->name] = true;
+                $this->versions->lockedChange($package->version, $package->version);
+                $this->check(! property_exists($package, 'notification-url') || $package->{'notification-url'} === 'https://packagist.org/downloads/');
                 if (property_exists($package, 'dist')) {
                     $this->check($package->dist instanceof stdClass && in_array($package->dist->type ?? null, ['zip', 'tar'], true));
+                    $this->keys($package->dist, ['url', 'type', 'reference', 'shasum']);
                     $this->url($package->dist->url ?? null, ['repo.packagist.org', 'api.github.com', 'codeload.github.com']);
                 } else {
                     $this->check(($package->type ?? null) === 'metapackage');
                 }
                 if (property_exists($package, 'source')) {
                     $this->check($package->source instanceof stdClass && ($package->source->type ?? null) === 'git');
+                    $this->keys($package->source, ['url', 'type', 'reference']);
                     $this->url($package->source->url ?? null, ['github.com']);
+                }
+                $trusted = $this->packagist->version($package->name, $package->version);
+                foreach (['dist', 'source', 'type', 'autoload', 'extra', 'bin', 'require', 'require-dev', 'conflict', 'replace', 'provide', 'autoload-dev', 'target-dir', 'include-path'] as $field) {
+                    $this->check($this->canonical($package->{$field} ?? null) === $this->canonical($trusted->{$field} ?? null));
                 }
             }
         }
@@ -106,7 +132,8 @@ final readonly class DependencyBatchContents
                 $this->check($package instanceof stdClass);
                 if ($location !== '') {
                     $this->check(($package->link ?? false) === false);
-                    $this->url($package->resolved ?? null, ['registry.npmjs.org']);
+                    $this->check(is_string($location) && preg_match('~\A(?:node_modules/(?:@[a-z0-9_.-]+/)?[a-z0-9_.-]+/)*node_modules/((?:@[a-z0-9_.-]+/)?[a-z0-9_.-]+)\z~D', $location, $match) === 1);
+                    $this->npmPackage($match[1], $package);
                 }
             }
         }
@@ -117,13 +144,106 @@ final readonly class DependencyBatchContents
 
     private function npmDependencies(#[\SensitiveParameter] mixed $dependencies): void
     {
-        foreach ($this->map($dependencies) as $package) {
+        foreach ($this->map($dependencies) as $name => $package) {
             $this->check($package instanceof stdClass);
-            $this->url($package->resolved ?? null, ['registry.npmjs.org']);
+            $this->check(is_string($name));
+            $this->npmPackage($name, $package);
             if (property_exists($package, 'dependencies')) {
                 $this->npmDependencies($package->dependencies);
             }
         }
+    }
+
+    private function npmPackage(string $name, #[\SensitiveParameter] stdClass $package): void
+    {
+        $this->check(preg_match('~\A(?:@[a-z0-9_.-]+/)?[a-z0-9_.-]+\z~D', $name) === 1 && (! property_exists($package, 'name') || $package->name === $name)
+            && is_string($package->version ?? null));
+        $this->versions->lockedChange($package->version, $package->version);
+        $basename = basename($name);
+        $expected = 'https://registry.npmjs.org/'.$name.'/-/'.$basename.'-'.$package->version.'.tgz';
+        $this->check(($package->resolved ?? null) === $expected);
+        $this->integrity($package->integrity ?? null);
+    }
+
+    private function integrity(mixed $value): void
+    {
+        $this->check(is_string($value) && preg_match('~\A(sha512|sha256|sha1)-([A-Za-z0-9+/]+=*)\z~D', $value, $match) === 1);
+        $bytes = base64_decode($match[2], true);
+        $this->check($bytes !== false && base64_encode($bytes) === $match[2] && strlen($bytes) === strlen(hash($match[1], '', true)));
+    }
+
+    /** @param list<string> $allowed */
+    private function keys(#[\SensitiveParameter] stdClass $record, array $allowed): void
+    {
+        $this->check(array_diff(array_keys(get_object_vars($record)), $allowed) === []);
+    }
+
+    private function lockedMajors(string $path, #[\SensitiveParameter] string $base, #[\SensitiveParameter] string $head, #[\SensitiveParameter] string $manifest): void
+    {
+        $root = $this->json($manifest);
+        $names = [];
+        $required = [];
+        foreach ($path === 'composer.lock' ? ['require', 'require-dev'] : ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'] as $field) {
+            if (property_exists($root, $field)) {
+                $declared = $this->map($root->{$field});
+                $names += $declared;
+                if (in_array($field, ['require', 'require-dev', 'dependencies', 'devDependencies'], true)) {
+                    $required += $declared;
+                }
+            }
+        }
+        $before = $this->lockedVersions($path, $base);
+        $after = $this->lockedVersions($path, $head);
+        foreach ($names as $name => $_) {
+            $platform = $path === 'composer.lock' && is_string($name) && preg_match('~\A(?:php(?:-[a-z0-9]+)?|ext-[a-z0-9_-]+|lib-[a-z0-9_-]+|composer-(?:plugin|runtime)-api)\z~D', $name) === 1;
+            $this->check($platform || ! array_key_exists($name, $required) || isset($after[$name]));
+            if (isset($after[$name])) {
+                $this->check(isset($before[$name]));
+                $this->versions->lockedChange($before[$name], $after[$name]);
+            }
+        }
+    }
+
+    /** @return array<string,string> */
+    private function lockedVersions(string $path, #[\SensitiveParameter] string $contents): array
+    {
+        $lock = $path === 'pnpm-lock.yaml' ? Yaml::parse($contents, Yaml::PARSE_OBJECT_FOR_MAP | Yaml::PARSE_EXCEPTION_ON_INVALID_TYPE) : $this->json($path === 'bun.lock' ? $this->jsonc($contents) : $contents);
+        $this->check($lock instanceof stdClass);
+        $versions = [];
+        if ($path === 'composer.lock') {
+            foreach (array_merge($lock->packages ?? [], $lock->{'packages-dev'} ?? []) as $package) {
+                $this->check($package instanceof stdClass && is_string($package->name ?? null) && is_string($package->version ?? null));
+                $versions[$package->name] = $package->version;
+            }
+        } elseif ($path === 'pnpm-lock.yaml') {
+            $importer = $lock->importers->{'.'} ?? null;
+            foreach (['dependencies', 'devDependencies', 'optionalDependencies'] as $field) {
+                foreach ($this->map($importer->{$field} ?? new stdClass) as $name => $record) {
+                    $this->check(is_string($name) && $record instanceof stdClass && is_string($record->version ?? null));
+                    $versions[$name] = explode('(', $record->version)[0];
+                }
+            }
+        } elseif ($path === 'bun.lock') {
+            foreach ($this->map($lock->packages ?? null) as $name => $record) {
+                $this->check(is_string($name) && is_array($record) && is_string($record[0] ?? null) && preg_match(self::PackageVersion, $record[0], $identity) === 1);
+                $versions[$name] = $identity[2];
+            }
+        } else {
+            $records = ($lock->lockfileVersion ?? null) === 1 ? ($lock->dependencies ?? null) : ($lock->packages ?? null);
+            foreach ($this->map($records) as $location => $record) {
+                $name = $location;
+                if (($lock->lockfileVersion ?? null) !== 1) {
+                    if (! is_string($location) || preg_match('~\Anode_modules/((?:@[^/]+/)?[^/]+)\z~D', $location, $match) !== 1) {
+                        continue;
+                    }
+                    $name = $match[1];
+                }
+                $this->check(is_string($name) && $record instanceof stdClass && is_string($record->version ?? null));
+                $versions[$name] = $record->version;
+            }
+        }
+
+        return $versions;
     }
 
     /** Reject local and Git references wherever a JS lock can carry a dependency edge. */
