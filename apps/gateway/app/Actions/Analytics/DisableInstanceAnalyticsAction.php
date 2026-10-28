@@ -6,6 +6,7 @@ namespace App\Actions\Analytics;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Integrations\IntegrationOperationResult;
 use App\Domain\Operations\AwaitOperation;
 use App\Infrastructure\Routes\IngressSiteRepository;
 use App\Models\Instance;
@@ -26,6 +27,6 @@ final readonly class DisableInstanceAnalyticsAction
     public function removeRoute(Route $route): void
     {
         $node = $this->sites->routerNode($route);
-        $this->await->execute($this->starts->execute('route.analytics_remove', 'route', $route->id, $node->id, ['route_id' => $route->id], 'integration', null));
+        IntegrationOperationResult::requireSucceeded($this->await->execute($this->starts->execute('route.analytics_remove', 'route', $route->id, $node->id, ['route_id' => $route->id], 'integration', null)));
     }
 }

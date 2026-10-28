@@ -6,6 +6,7 @@ namespace Orbit\Extensions\AiRouter\Actions;
 
 use App\Actions\Integrations\StartIntegrationOperationAction;
 use App\Domain\Certificates\GatewayCertificateIssuer;
+use App\Domain\Integrations\IntegrationAvailability;
 use App\Domain\Integrations\IntegrationPlan;
 use App\Domain\Integrations\IntegrationProcessIntent;
 use App\Domain\Integrations\IntegrationSecretSource;
@@ -59,6 +60,10 @@ final readonly class AdmitAiRouterOperationAction
 
     private function build(string $kind, string $trigger, ?Operation $existing = null): Operation
     {
+        if ($existing === null) {
+            IntegrationAvailability::assertKind($kind);
+        }
+
         return DB::transaction(function () use ($kind, $trigger, $existing): Operation {
             if ($kind === 'ai_router.teardown' && $this->state->nodeId() === null) {
                 $gateway = app(NodeAccessAuthorizer::class)->activeGatewayId()

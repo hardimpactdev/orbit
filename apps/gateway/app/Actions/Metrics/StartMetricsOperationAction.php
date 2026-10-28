@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Metrics;
 
 use App\Actions\Integrations\StartIntegrationOperationAction;
+use App\Domain\Integrations\IntegrationAvailability;
 use App\Domain\Integrations\IntegrationPlan;
 use App\Domain\Metrics\MetricsExporterProjection;
 use App\Domain\Metrics\MetricsGatewayResolver;
@@ -35,6 +36,7 @@ final readonly class StartMetricsOperationAction
     /** Retirement cleanup does not block removal or the remaining fleet's target update. */
     public function retire(Node $node, Node $metrics): Operation
     {
+        IntegrationAvailability::assertKind('metrics.retire');
         $plan = new IntegrationPlan($node->id);
         $addresses = ['address' => $node->wireguard_ip, 'metrics_address' => $metrics->wireguard_ip];
         foreach (['node_exporter', 'cadvisor'] as $component) {
@@ -50,6 +52,10 @@ final readonly class StartMetricsOperationAction
 
     public function execute(Node $node, NodeRole|int $assignment, string $verb = 'reconcile', bool $purge = false, bool $unreachable = false, ?Operation $existing = null): Operation
     {
+        if ($existing === null) {
+            IntegrationAvailability::assertKind('metrics.'.$verb);
+        }
+
         return DB::transaction(function () use ($node, $assignment, $verb, $purge, $unreachable, $existing): Operation {
             $remove = $verb === 'disable';
             $gateway = $remove ? $this->gateways->find() : $this->gateways->resolve();
@@ -75,7 +81,10 @@ final readonly class StartMetricsOperationAction
             $plan = new IntegrationPlan($node->id);
             $plan->receipt($remove ? 'absent' : 'active');
 
-            if ($existing !== null) { return $this->operations->prepare($existing, $input, $plan); }
+            if ($existing !== null) {
+                return $this->operations->prepare($existing, $input, $plan);
+            }
+
             return $this->operations->execute('metrics.'.$verb, 'metrics', $node->id, $node->id, $input, $plan);
         });
     }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Extensions\AiRouter\Infrastructure;
 
 use App\Domain\Fleet\NodeFootprintArtifact;
+use App\Domain\Integrations\IntegrationOperationResult;
 use App\Domain\Operations\AwaitOperation;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Node;
@@ -42,7 +43,7 @@ final readonly class AiRouterFootprintArtifact implements NodeFootprintArtifact
         if ($operation === null) {
             return false;
         }
-        app(AwaitOperation::class)->execute($operation);
+        IntegrationOperationResult::requireSucceeded(app(AwaitOperation::class)->execute($operation));
 
         return true;
     }

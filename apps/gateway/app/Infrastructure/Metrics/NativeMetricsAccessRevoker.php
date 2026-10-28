@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Metrics;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Integrations\IntegrationOperationResult;
 use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Metrics\MetricsGatewayResolver;
 use App\Domain\Nodes\RoleName;
@@ -21,6 +22,6 @@ final readonly class NativeMetricsAccessRevoker implements MetricsAccessRevoker
             return;
         }
         $gateway = $this->gateways->resolve();
-        $this->await->execute($this->operations->execute('route.caddy_converge', 'node', $gateway->id, $gateway->id, ['reason' => 'metrics access revoked'], 'integration', null));
+        IntegrationOperationResult::requireSucceeded($this->await->execute($this->operations->execute('route.caddy_converge', 'node', $gateway->id, $gateway->id, ['reason' => 'metrics access revoked'], 'integration', null)));
     }
 }

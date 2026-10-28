@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Nodes\Roles;
 
 use App\Actions\Analytics\StartAnalyticsOperationAction;
+use App\Domain\Integrations\IntegrationOperationResult;
 use App\Domain\Nodes\RoleBaseline;
 use App\Domain\Operations\AwaitOperation;
 use App\Models\Node;
@@ -16,16 +17,16 @@ final readonly class AnalyticsRoleBaseline implements RoleBaseline
 
     public function converge(Node $node, NodeRole $assignment): void
     {
-        $this->await->execute($this->operations->execute($node, $assignment));
+        IntegrationOperationResult::requireSucceeded($this->await->execute($this->operations->execute($node, $assignment)));
     }
 
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void
     {
-        $this->await->execute($this->operations->execute($node, $assignment, 'disable'));
+        IntegrationOperationResult::requireSucceeded($this->await->execute($this->operations->execute($node, $assignment, 'disable')));
     }
 
     public function removeUnreachable(Node $node, NodeRole $assignment): void
     {
-        $this->await->execute($this->operations->execute($node, $assignment, 'disable', unreachable: true));
+        IntegrationOperationResult::requireSucceeded($this->await->execute($this->operations->execute($node, $assignment, 'disable', unreachable: true)));
     }
 }

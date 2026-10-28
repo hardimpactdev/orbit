@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\Integrations\IntegrationChildAdmission;
+use App\Domain\Operations\OperationKinds;
 use Orbit\Extensions\AiRouter\Domain\AiRouterExecution;
 use Orbit\Extensions\AiRouter\Domain\AiRouterOperationCompletion;
 
@@ -26,10 +28,15 @@ return (static function (): array {
         ];
     }
 
-    $kinds['ai_router.collector_converge']['admission'] = \App\Domain\Integrations\IntegrationChildAdmission::class;
+    $kinds['ai_router.collector_converge']['admission'] = IntegrationChildAdmission::class;
 
-    if (! \App\Domain\Operations\OperationKinds::supports('children')) {
-        foreach ($kinds as $name => $definition) { if (isset($definition['children'])) { unset($kinds[$name]); } }
+    if (! OperationKinds::supports('children')) {
+        foreach ($kinds as $name => $definition) {
+            if (isset($definition['children'])) {
+                unset($kinds[$name]);
+            }
+        }
     }
+
     return $kinds;
 })();

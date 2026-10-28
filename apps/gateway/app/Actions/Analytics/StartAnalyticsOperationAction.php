@@ -12,6 +12,7 @@ use App\Domain\Analytics\AnalyticsStorageProcessGuard;
 use App\Domain\Analytics\PlausibleClickhouseConfiguration;
 use App\Domain\Analytics\PlausibleProcess;
 use App\Domain\Certificates\GatewayCertificateIssuer;
+use App\Domain\Integrations\IntegrationAvailability;
 use App\Domain\Integrations\IntegrationPlan;
 use App\Domain\Integrations\IntegrationProcessIntent;
 use App\Domain\Nodes\RoleName;
@@ -41,6 +42,10 @@ final readonly class StartAnalyticsOperationAction
 
     public function execute(Node $node, NodeRole|int $assignment, string $verb = 'enable', bool $unreachable = false, ?string $previousVersion = null, ?Operation $existing = null): Operation
     {
+        if ($existing === null) {
+            IntegrationAvailability::assertKind('analytics.'.$verb);
+        }
+
         return DB::transaction(function () use ($node, $assignment, $verb, $unreachable, $previousVersion, $existing): Operation {
             $remove = $verb === 'disable';
             $plan = new IntegrationPlan($node->id);
@@ -99,7 +104,10 @@ final readonly class StartAnalyticsOperationAction
             $plan->child('analytics-dns', 'route.private_dns_publish', $dns->node_id, ['reason' => 'analytics intent']);
             $plan->receipt($remove ? 'absent' : 'active');
 
-            if ($existing !== null) { return $this->operations->prepare($existing, $input, $plan); }
+            if ($existing !== null) {
+                return $this->operations->prepare($existing, $input, $plan);
+            }
+
             return $this->operations->execute('analytics.'.$verb, 'analytics', $node->id, $node->id, $input, $plan);
         });
     }

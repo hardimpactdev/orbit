@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Integrations\IntegrationOperationResult;
 use App\Domain\Integrations\IntegrationRoleIntent;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketCredentialManager;
@@ -62,3 +63,8 @@ it('retires only the managed process online and every unreachable runtime offlin
         ->and(app(WebSocketDnsTarget::class)->isServing($this->source->id))->toBeFalse();
     expect(Setting::query()->where('scope_id', $this->source->id)->where('key', WebSocketFootprint::SettingKeyAppKeyLaravel)->exists())->toBeTrue();
 })->with([false, true]);
+
+it('never lets an internal caller continue after a failed or cancelled awaited Operation', function (string $status): void {
+    $operation = new Operation(['kind' => 'analytics.disable', 'status' => $status, 'error_code' => $status === 'failed' ? 'analytics.health_failed' : null]);
+    expect(fn () => IntegrationOperationResult::requireSucceeded($operation))->toThrow(ResourceOperationException::class);
+})->with(['failed', 'cancelled']);

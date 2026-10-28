@@ -6,6 +6,7 @@ namespace App\Infrastructure\Analytics;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Analytics\AnalyticsTrackingRouteProjector;
+use App\Domain\Integrations\IntegrationOperationResult;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\AwaitOperation;
 use App\Domain\Shared\LifecycleStatus;
@@ -35,7 +36,7 @@ final readonly class NativeAnalyticsTrackingRouteProjector implements AnalyticsT
     public function publishDns(): void
     {
         $dns = NodeRole::query()->where('role', RoleName::Vpn)->where('status', LifecycleStatus::Active)->sole();
-        $this->await->execute($this->operations->execute('route.private_dns_publish', 'node', $dns->node_id, $dns->node_id, ['reason' => 'analytics tracking intent'], 'integration', null));
+        IntegrationOperationResult::requireSucceeded($this->await->execute($this->operations->execute('route.private_dns_publish', 'node', $dns->node_id, $dns->node_id, ['reason' => 'analytics tracking intent'], 'integration', null)));
     }
 
     public function withdrawHost(Route $retired, Route $current): void
@@ -53,6 +54,6 @@ final readonly class NativeAnalyticsTrackingRouteProjector implements AnalyticsT
     private function start(string $kind, Route $route, array $input): void
     {
         $host = $this->sites->routerNode($route);
-        $this->await->execute($this->operations->execute($kind, 'route', $route->id, $host->id, $input, 'integration', null));
+        IntegrationOperationResult::requireSucceeded($this->await->execute($this->operations->execute($kind, 'route', $route->id, $host->id, $input, 'integration', null)));
     }
 }

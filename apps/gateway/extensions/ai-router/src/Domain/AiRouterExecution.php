@@ -75,7 +75,7 @@ final readonly class AiRouterExecution implements OperationFamilyChildren, Opera
                 $run = ValidatedData::object($operation->state['executor_runs'] ?? [])['collector-takeover-restore'] ?? null;
                 $restored = is_array($run) && is_array($run['result'] ?? null) && ($run['result']['restored'] ?? false) === true;
                 $republished = app(OperationChildren::class)->requireSucceeded($operation, 'collector-takeover-republish');
-                if ($restored !== true || $republished?->status !== OperationStatus::Succeeded) {
+                if ($restored !== true || $republished->status !== OperationStatus::Succeeded) {
                     throw new ResourceOperationException('operation.completion_unproven', 'The refused collector takeover has not been restored and republished.', 409);
                 }
             }
