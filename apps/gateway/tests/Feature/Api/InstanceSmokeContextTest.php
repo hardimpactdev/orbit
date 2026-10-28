@@ -11,9 +11,11 @@ use Tests\Support\ProductionSmokeRoute;
 it('reads the actual retained selection with successful history and project routes without dispatch', function (): void {
     $fixture = Orb220DeploymentApiFixture::create();
     $instance = $fixture->instance;
-    $history = InstanceDeployment::query()->create(['instance_id' => $instance->id, 'release' => 'initial', 'commit' => str_repeat('a', 40), 'kind' => 'rollback', 'status' => 'succeeded', 'started_at' => now()]);
+    $history = InstanceDeployment::query()->create(['instance_id' => $instance->id, 'release' => 'initial',
+        'commit' => str_repeat('a', 40), 'kind' => 'rollback', 'status' => 'succeeded', 'started_at' => now()]);
     ProductionSmokeRoute::create($instance);
-    $this->withServerVariables(['REMOTE_ADDR' => $fixture->caller->wireguard_ip])->getJson('/api/v1/instances/'.$instance->id.'/smoke/context')
+    $this->withServerVariables(['REMOTE_ADDR' => $fixture->caller->wireguard_ip])->getJson('/api/v1/instances/'.$instance
+        ->id.'/smoke/context')
         ->assertOk()->assertJsonPath('data.production', true)->assertJsonPath('data.base_urls', ['https://smoke.example.test'])
         ->assertJsonPath('data.selected', ['deployment_id' => $history->id, 'commit' => str_repeat('a', 40), 'release' => 'initial'])
         ->assertJsonPath('data.retained_releases', ['fresh', 'initial']);
@@ -22,10 +24,13 @@ it('reads the actual retained selection with successful history and project rout
 
 it('returns no selected receipt without matching success evidence', function (string $status, string $release, string $commit): void {
     $fixture = Orb220DeploymentApiFixture::create();
-    InstanceDeployment::query()->create(['instance_id' => $fixture->instance->id, 'release' => $release, 'commit' => $commit, 'status' => $status, 'started_at' => now()]);
-    $this->withServerVariables(['REMOTE_ADDR' => $fixture->caller->wireguard_ip])->getJson('/api/v1/instances/'.$fixture->instance->id.'/smoke/context')
+    InstanceDeployment::query()->create(['instance_id' => $fixture->instance->id, 'release' => $release, 'commit' => $commit,
+        'status' => $status, 'started_at' => now()]);
+    $this->withServerVariables(['REMOTE_ADDR' => $fixture->caller->wireguard_ip])->getJson('/api/v1/instances/'.$fixture
+        ->instance->id.'/smoke/context')
         ->assertOk()->assertJsonPath('data.selected', null);
-})->with([['failed', 'initial', str_repeat('a', 40)], ['succeeded', 'other', str_repeat('a', 40)], ['succeeded', 'initial', str_repeat('b', 40)]]);
+})->with([['failed', 'initial', str_repeat('a', 40)], ['succeeded', 'other', str_repeat('a', 40)], ['succeeded', 'initial',
+    str_repeat('b', 40)]]);
 
 it('reports non production when active development roles or instance state disqualify it', function (string $change): void {
     $fixture = Orb220DeploymentApiFixture::create();
@@ -36,8 +41,10 @@ it('reports non production when active development roles or instance state disqu
     } else {
         $fixture->instance->update(['status' => 'reserved']);
     }
-    $this->withServerVariables(['REMOTE_ADDR' => $fixture->caller->wireguard_ip])->getJson('/api/v1/instances/'.$fixture->instance->id.'/smoke/context')
-        ->assertOk()->assertJsonPath('data.production', false)->assertJsonPath('data.selected', null)->assertJsonPath('data.retained_releases', []);
+    $this->withServerVariables(['REMOTE_ADDR' => $fixture->caller->wireguard_ip])->getJson('/api/v1/instances/'.$fixture
+        ->instance->id.'/smoke/context')
+        ->assertOk()->assertJsonPath('data.production', false)->assertJsonPath('data.selected', null)
+        ->assertJsonPath('data.retained_releases', []);
 })->with(['role', 'node', 'instance']);
 
 it('requires gateway access and an authenticated peer for context', function (): void {
@@ -50,8 +57,10 @@ it('requires gateway access and an authenticated peer for context', function ():
 it('does not treat an unretained live release as a selected receipt', function (): void {
     $fixture = Orb220DeploymentApiFixture::create();
     $fixture->deployment->current = 'unretained';
-    InstanceDeployment::query()->create(['instance_id' => $fixture->instance->id, 'release' => 'unretained', 'commit' => str_repeat('a', 40), 'status' => 'succeeded', 'started_at' => now()]);
-    $this->withServerVariables(['REMOTE_ADDR' => $fixture->caller->wireguard_ip])->getJson('/api/v1/instances/'.$fixture->instance->id.'/smoke/context')
+    InstanceDeployment::query()->create(['instance_id' => $fixture->instance->id, 'release' => 'unretained',
+        'commit' => str_repeat('a', 40), 'status' => 'succeeded', 'started_at' => now()]);
+    $this->withServerVariables(['REMOTE_ADDR' => $fixture->caller->wireguard_ip])->getJson('/api/v1/instances/'.$fixture
+        ->instance->id.'/smoke/context')
         ->assertOk()->assertJsonPath('data.selected', null);
 });
 

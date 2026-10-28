@@ -38,13 +38,18 @@ final readonly class ReadInstanceSmokeContextAction
             $actual = $this->deployment->selected($instance);
             if ($actual !== null && in_array($actual->name, $retained, true)) {
                 $history = InstanceDeployment::query()->where('instance_id', $instance->id)->where('status', 'succeeded')
-                    ->whereIn('kind', ['deploy', 'rollback'])->where('release', $actual->name)->where('commit', $actual->commit)->latest('id')->first();
+                    ->whereIn('kind', ['deploy', 'rollback'])
+                    ->where('release', $actual->name)->where('commit', $actual->commit)
+                    ->latest('id')->first();
                 if ($history !== null && preg_match('/\A[0-9a-f]{40}\z/D', $actual->commit) === 1) {
                     $selected = new InstanceSmokeSelectionData($history->id, $actual->commit, $actual->name);
                 }
             }
         }
 
-        return new InstanceSmokeContextData($instance->id, $instance->project_id, $instance->project->repository_url, $production, array_values($urls), $selected, $retained);
+        return new InstanceSmokeContextData(
+            $instance->id, $instance->project_id, $instance->project->repository_url,
+            $production, array_values($urls), $selected, $retained,
+        );
     }
 }
