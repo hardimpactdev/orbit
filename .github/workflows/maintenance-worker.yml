@@ -2,6 +2,8 @@ name: Maintenance worker
 on:
   pull_request:
     paths:
+      - 'extensions/behaviors/production-smoke/**'
+      - 'workflows/workflow-production-smoke.yaml'
       - 'extensions/behaviors/orbit_gateway.ts'
       - 'extensions/behaviors/dependency_scanner.ts'
       - 'extensions/behaviors/orbit_driver.ts'
@@ -21,6 +23,8 @@ on:
   push:
     branches: [main]
     paths:
+      - 'extensions/behaviors/production-smoke/**'
+      - 'workflows/workflow-production-smoke.yaml'
       - 'extensions/behaviors/orbit_gateway.ts'
       - 'extensions/behaviors/dependency_scanner.ts'
       - 'extensions/behaviors/orbit_driver.ts'
@@ -67,6 +71,12 @@ jobs:
         run: |
           deno fmt --check extensions/behaviors/_lib/maintenance_worker.ts extensions/behaviors/_lib/swamp_maintenance.ts tests/maintenance_worker_test.ts tests/maintenance_resources_test.ts tests/worker_enrollment_entry_test.ts extensions/behaviors/_lib/group_runs.ts extensions/behaviors/orbit_group_run.ts extensions/behaviors/orbit_group_runs.ts tests/group_runs_test.ts extensions/behaviors/_lib/stage_launch.ts tests/stage_launch_test.ts
           deno lint extensions/behaviors/_lib/maintenance_worker.ts extensions/behaviors/_lib/swamp_maintenance.ts tests/maintenance_worker_test.ts tests/maintenance_resources_test.ts tests/worker_enrollment_entry_test.ts extensions/behaviors/_lib/group_runs.ts extensions/behaviors/orbit_group_run.ts extensions/behaviors/orbit_group_runs.ts tests/group_runs_test.ts extensions/behaviors/_lib/stage_launch.ts tests/stage_launch_test.ts
+      - name: Check smoke contracts
+        run: |
+          deno fmt --check extensions/behaviors/production-smoke tests/production_smoke_test.ts tests/fixtures/production-smoke
+          deno lint extensions/behaviors/production-smoke tests/production_smoke_test.ts tests/fixtures/production-smoke
+          deno check extensions/behaviors/production-smoke/mod.ts tests/production_smoke_test.ts
+          deno test --allow-read=. tests/production_smoke_test.ts
       - name: Test affected driver contracts (one worker)
         run: >-
           deno test --allow-all
@@ -117,6 +127,7 @@ jobs:
           unset SWAMP_API_KEY_FILE SWAMP_SERVER_TOKEN SWAMP_SERVER_TOKEN_FILE SWAMP_SERVE_URL SWAMP_SERVER_URL
           swamp extension pull @swamp/software-factory@2026.10.23.1 --json
           swamp extension pull @swamp/git@2026.10.16.1 --json
+          python3 -B -m unittest discover -s tests -p production_smoke_workflow_test.py -v
           python3 -m unittest tests/group_workflow_test.py
           python3 -B -m unittest tests/service_detection_native_test.py
           python3 -B -m unittest discover -s tests -p deploy_services_native_test.py -v

@@ -14,8 +14,20 @@ const MaintenancePaths = z.array(MaintenancePath).refine(
   "maintenance paths must be unique",
 );
 
+export const ProductionSmokeSchema = z.object({
+  instance: z.number().int().positive(),
+  baseUrl: z.string().url().refine((value) => {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.origin === value;
+  }, "smoke URL must be an HTTPS origin"),
+  workflow: z.string().regex(/^\.github\/workflows\/[A-Za-z0-9_-]+\.ya?ml$/),
+  ref: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.\/-]*$/),
+  timeoutSeconds: z.number().int().min(30).max(600).default(600),
+}).strict();
+
 export const DependencyProjectSchema = z.object({
   exceptions: ExceptionsSchema.default(emptyExceptions),
+  productionSmoke: ProductionSmokeSchema.optional(),
   projectId: z.number().int().positive(),
   repository: z.string().min(1),
   worker: z.object({

@@ -1,0 +1,39 @@
+id: 321ad876-e288-4c20-811e-28f2cce2a774
+name: production-smoke
+description: Observe one opted-in Project, optionally admit a baseline, then durably wait and read once.
+autoResume: true
+inputs:
+  type: object
+  properties:
+    projectId: { type: integer }
+    projectType: { type: string }
+    mode: { type: string, enum: [observe, baseline], default: observe }
+  required: [projectId, projectType]
+jobs:
+  - name: smoke
+    steps:
+      - name: observe
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/production-smoke'
+          behaviorName: '${{ "production-smoke-" + string(inputs.projectId) }}'
+          methodName: tick
+          globalArgs:
+            projectId: '${{ inputs.projectId }}'
+            projectType: '${{ inputs.projectType }}'
+          inputs: { mode: '${{ inputs.mode }}' }
+      - name: wait
+        dependsOn: [{ step: observe, condition: { type: succeeded } }]
+        guard: '${{ steps.observe.outputs.status != "pending" && steps.observe.outputs.status != "unknown" }}'
+        allowFailure: true
+        task:
+          type: wait_for_signal
+          timeout: 10
+          schema: { type: object, additionalProperties: false }
+      - name: result
+        dependsOn: [{ step: wait, condition: { type: completed } }]
+        task:
+          type: behavior
+          behavior: '${{ "production-smoke-" + string(inputs.projectId) }}'
+          methodName: tick
+          inputs: { mode: observe }
