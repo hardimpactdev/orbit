@@ -32,6 +32,8 @@ Node enrollment and role operations can request a `tool.manager_converge` child 
 
 The errors and outcomes below describe the completed Operation. Input, ownership and platform refusals still happen before admission. Scan returns its discovery report directly and creates no Tool intent.
 
+When the shared executor lacks Kit B child admission (`children`) or Kit C result schemas (`list_of`), Tools write kinds remain unregistered. Package writes and manager convergence refuse admission with `operation.kind_unavailable` (HTTP 503), without recording an Operation or running a Node command. Tool reads remain available.
+
 ## Where Tools run
 
 The Gateway manages Tools only on an active Node that it manages over SSH. That Node runs a supported platform, has a verified WireGuard address, and has a stored SSH host fingerprint. Ubuntu supports the existing managers. [macOS Nodes](/reference/node-provisioning#macos-nodes) support Homebrew formulae, casks, and Vite+ global packages in the enrolled account's existing installations. Any other Node gets `tool.node_inactive` or `tool.node_unmanaged` (HTTP 409) before the Gateway changes anything.

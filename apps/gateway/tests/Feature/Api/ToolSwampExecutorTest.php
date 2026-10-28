@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tools\ToolOperationAvailability;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Node;
 use App\Models\Operation;
@@ -10,6 +11,9 @@ use App\Models\Tool;
 use Tests\Support\FakeAgentCommandRunner;
 
 beforeEach(function (): void {
+    if (! ToolOperationAvailability::available()) {
+        $this->markTestSkipped('Tools require shared Kit B/C enforcement.');
+    }
     $this->gateway = toolExecutorNode('gateway', '10.44.0.2');
     $this->markAsGateway($this->gateway);
     $this->target = toolExecutorNode('dev', '10.44.0.3');
