@@ -6,12 +6,16 @@ use App\Domain\Operations\OperationChildAdmission;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tools\ToolOperationAvailability;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\Queue;
 
 beforeEach(function (): void {
+    if (! ToolOperationAvailability::available()) {
+        $this->markTestSkipped('Tools require shared Kit B/C enforcement.');
+    }
     Queue::fake();
     $agents = Mockery::mock(AgentCommandRunner::class);
     $agents->shouldNotReceive('run');

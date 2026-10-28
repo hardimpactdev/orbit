@@ -8,6 +8,7 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
+use App\Domain\Tools\ToolOperationAvailability;
 use App\Models\Node;
 use App\Models\Operation;
 use LogicException;
@@ -18,6 +19,8 @@ final readonly class ConvergeToolManagerAction
 
     public function execute(Node $node, ToolManagerName $manager, bool $imageProvidesManager = false): Operation
     {
+        ToolOperationAvailability::assertAvailable();
+
         $driver = $this->managers->find($manager->value);
         if ($driver === null || ! $driver->supportsNode($node)) {
             throw new LogicException('The requested Tool manager does not support this Node.');

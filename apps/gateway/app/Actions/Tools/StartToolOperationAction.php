@@ -15,6 +15,7 @@ use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\ToolNodeEligibility;
+use App\Domain\Tools\ToolOperationAvailability;
 use App\Domain\Tools\ToolOperationException;
 use App\Domain\Tools\ToolOutcome;
 use App\Domain\Tools\ToolStatus;
@@ -83,6 +84,8 @@ final readonly class StartToolOperationAction
                     && $tool->error_code === 'tool.version_probe_failed' && ! $tool->installed_version);
                 $variant = $intentOnly ? 'version' : ($verb === 'adopt' && in_array($managerName, ['brew', 'brew-cask'], true) ? 'adoption' : 'inventory');
 
+                ToolOperationAvailability::assertAvailable();
+
                 return $this->operations->execute('tool.'.$verb, 'node_tools', $nodeId, $nodeId, [
                     'node_id' => $nodeId, 'manager' => $managerName, 'package' => $package,
                     'platform' => $node->platform, 'architecture' => $node->architecture,
@@ -100,7 +103,7 @@ final readonly class StartToolOperationAction
             if (! str_starts_with($error->errorCode, 'tool.')) {
                 throw $error;
             }
-            $toolId = ($selected === null ? null : $selected->id) ?? Tool::query()->where('node_id', $nodeId)->where('package', $package)
+            $toolId = ($selected?->id) ?? Tool::query()->where('node_id', $nodeId)->where('package', $package)
                 ->whereHas('manager', static fn ($query) => $query->where('name', $managerName))->value('id');
             throw new ToolOperationException(
                 step: $verb, errorCode: $error->errorCode,
