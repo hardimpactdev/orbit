@@ -69,6 +69,7 @@ mod metrics_publication;
 mod metrics_runtime;
 mod node_bootstrap;
 mod node_dns_listener;
+mod node_gateway_dns;
 mod node_identity;
 pub mod os_release;
 mod package_cache;
@@ -137,6 +138,7 @@ pub fn all() -> Vec<Entry> {
         entry::<task_topology::Inspect>(),
         entry::<agent::Status>(),
         entry::<node_dns_listener::Install>(),
+        entry::<node_gateway_dns::Route>(),
         entry::<gateway_adoption::preparation::Check>(),
         entry::<gateway_adoption::preparation::Repository>(),
         entry::<gateway_adoption::preparation::Origin>(),
