@@ -12,7 +12,7 @@ runs:
         php-version: '8.5'
         extensions: bcmath, curl, dom, intl, mbstring, pcntl, pdo_sqlite, zip
         coverage: ${{ inputs.coverage }}
-        tools: composer:2.9.5
+        tools: composer:2.10.3
     - name: Locate Composer download cache
       id: composer-cache
       shell: bash
