@@ -3,7 +3,7 @@ import subprocess
 
 
 def unit_state(unit_name):
-    properties = ['LoadState', 'ActiveState', 'SubState', 'ControlGroup', 'Description', 'ExecMainCode', 'ExecMainStatus', 'Job']
+    properties = ['LoadState', 'ActiveState', 'SubState', 'ControlGroup', 'Description', 'MainPID', 'ExecMainCode', 'ExecMainStatus', 'Job']
     result = subprocess.run(['systemctl', 'show', unit_name, '--no-pager',
                              '--property=' + ','.join(properties)], capture_output=True, text=True)
     if result.returncode != 0:
@@ -43,5 +43,4 @@ def empty_terminal(unit_name, expected_description=None, state=None):
         except OSError:
             return None
     return state
-
 

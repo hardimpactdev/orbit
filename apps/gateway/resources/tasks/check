@@ -1104,8 +1104,33 @@ def managed_run_finished(data):
         # An old boot proves termination, never the check result or causal after-tree.
         return True
     unit = 'orbit-task-check-' + data['run_id'] + '.service'
-    if empty_terminal(unit, 'Orbit task check ' + data['run_id']) is None:
-        return False
+    description = 'Orbit task check ' + data['run_id']
+    state = unit_state(unit)
+    if empty_terminal(unit, description, state) is None:
+        # A completed command can leave servers behind. Drain only this owned unit, never a
+        # live supervisor or a run whose result/checkout identity cannot be established.
+        if (state is None or state.get('LoadState') != 'loaded' or state.get('Description') != description
+                or state.get('Job') != '' or state.get('MainPID') != '0'
+                or process_started(data['pid']) == data['started']):
+            return False
+        try:
+            with open(managed_result_path(data['run_id'])) as source:
+                result = json.load(source)
+            if (not isinstance(result, dict) or result.get('head_before') != data['head']
+                    or type(result.get('exit_code')) is not int
+                    or not isinstance(result.get('finished_at'), (int, float))
+                    or not isinstance(result.get('checkout'), str)):
+                return False
+            administration = git(result['checkout'], 'rev-parse', '--absolute-git-dir')
+            if os.path.realpath(os.path.join(administration, 'orbit')) != os.path.realpath(DIRECTORY):
+                return False
+        except (OSError, ValueError, subprocess.CalledProcessError):
+            return False
+        subprocess.run(['sudo', '-n', 'systemctl', 'kill', '--signal=KILL', unit],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # Signal delivery is not completion proof. A later status read can finish this drain.
+        if empty_terminal(unit, description) is None:
+            return False
     lock, path, current = start_record(data['run_id'])
     current['state'] = 'finished'
     write_start_record(path, current)
