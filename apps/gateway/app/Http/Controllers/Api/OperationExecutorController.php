@@ -13,6 +13,7 @@ use App\Http\Requests\Operations\ClaimExecutorRequest;
 use App\Http\Requests\Operations\CompleteExecutorRequest;
 use App\Http\Requests\Operations\ExecutorRequest;
 use App\Http\Requests\Operations\HeartbeatExecutorRequest;
+use App\Http\Requests\Operations\ReceiptExecutorRequest;
 use App\Http\Requests\Operations\RunExecutorRequest;
 use App\Http\Requests\Operations\StepExecutorRequest;
 use App\Models\Operation;
@@ -47,6 +48,11 @@ final class OperationExecutorController extends Controller
     public function run(RunExecutorRequest $request, Operation $operation, SwampOperationExecutor $executor): JsonResponse
     {
         return $this->respond($request, $executor->run($operation, $request->runInput(), $request->peerNodeId()));
+    }
+
+    public function effectReceipt(ReceiptExecutorRequest $request, Operation $operation, string $step, SwampOperationExecutor $executor): JsonResponse
+    {
+        return $this->respond($request, $executor->receipt($operation, $step, $request->peerNodeId()));
     }
 
     /** @param array<string, mixed>|null $data */
