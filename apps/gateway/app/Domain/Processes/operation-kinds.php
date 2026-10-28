@@ -3,7 +3,9 @@
 declare(strict_types=1);
 
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Processes\ProcessInstanceOperation;
 use App\Domain\Processes\ProcessOperationCompletion;
+use App\Domain\Processes\ProcessRuntimeChildAdmission;
 
 return (static function (): array {
     if (! OperationKinds::supports('children') || ! OperationKinds::supports('list_of') || ! OperationKinds::supports('receipts')) {
@@ -51,10 +53,21 @@ return (static function (): array {
 
             return ['step' => $step, 'transport' => 'agent', 'name' => $name, 'result' => [], ...($variant === 'vite' ? ['children_succeeded' => ['route.caddy_converge']] : [])];
         };
-        $kinds['process.'.$verb] = ['executor' => 'swamp', 'completion' => ProcessOperationCompletion::class,
+        $kinds['process.'.$verb] = ['executor' => 'swamp', 'completion' => ProcessOperationCompletion::class, 'admission' => ProcessRuntimeChildAdmission::class,
             'runs' => $runs, 'children' => in_array($verb, ['create', 'update', 'start', 'restart'], true) ? [['kind' => 'route.caddy_converge', 'node_from' => 'input.node_id']] : [],
             'completion_contract' => ['completion' => ['by' => 'variant', 'map' => ['systemd' => $proof('systemd'), 'docker' => $proof('docker'), 'vite' => $proof('vite')]]],
             'result_fields' => ['state', 'staged', 'previous', 'backup_left', 'available', 'owned', 'ready', 'error_code']];
+    }
+
+    foreach (['install_instance_definitions' => 'process.create', 'restart_instance' => 'process.restart'] as $verb => $childKind) {
+        $kinds['process.'.$verb] = [
+            'executor' => 'swamp', 'admission' => ProcessInstanceOperation::class, 'completion' => ProcessInstanceOperation::class,
+            'execution' => ProcessInstanceOperation::class,
+            'runs' => [['transport' => 'gateway', 'name' => 'process.instance_runtime_ready', 'resumable' => true, 'input_fields' => ['instance_id'], 'input_values' => []]],
+            'children' => [['kind' => $childKind, 'node_from' => 'operation.node_id']],
+            'completion_contract' => ['step' => 'runtime-ready', 'transport' => 'gateway', 'name' => 'process.instance_runtime_ready', 'result' => ['ready' => true]],
+            'result_fields' => ['ready', 'runtime_child_count', ...($verb === 'restart_instance' ? [['name' => 'process_ids', 'type' => 'list', 'items' => 'integer', 'max' => 4096]] : [])],
+        ];
     }
 
     return $kinds;
