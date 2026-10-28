@@ -68,6 +68,18 @@ The steps appear when a worker first starts the operation, all `pending`. A queu
 
 `result` depends on the kind. For `instance.deploy` and `instance.rollback` it is `{ deployment_id, release, selected_release, commit }`, where `deployment_id` is the [deployment history row](/reference/deployments#history) that holds the full log.
 
+### Swamp child Operations
+
+A Swamp parent admits children through its owning family's `OperationFamilyChildren::childContext()`. The context returns exact keyed intents `{key,kind,node_id,input}` from admitted input or prepared Gateway state. The parent kind declares allowed child kinds and Node relations. Each child kind registers an `OperationChildAdmission` adapter that calls its normal owning admission action. Swamp posts `{worker,key}` to `operation-executor/{parent}/children`; optional kind, Node and input fields are exact assertions only. Repeating a key returns the same child before repeating family admission.
+
+The Gateway stamps `parent_operation_id`, `child_key` and an admission fingerprint. `OperationChildren::requireSucceeded(parent,key)` verifies the child's exact recorded target, input and constraints before returning its result. Parents cannot finish while any admitted child is nonterminal. A `children_succeeded` completion contract requires matching successful children, including each eligible keyed intent. Unsupported guarantees fail when the kind loads; families check `OperationKinds::supports()` before registration.
+
+A same-target child inherits the ancestor's target hold, including chains such as `node.add -> node.role_add -> node.converge`. Child completion releases only its own hold. An unrelated start remains busy until the ancestor ends. A child on another target acquires the normal hold for that target.
+
+`POST operation-executor/{parent}/wait` takes `{worker,keys:[child keys]}`. The Gateway records exact child IDs and fingerprints, releases the parent worker lease and keeps the target hold. The workflow ends. Claim only resumes that parent when those same children are terminal. Claim accepts optional `operation_id` for an exact queued child. `GET operation-executor/{parent}/children` returns bounded receipts for that parent’s children to executor peers. These routes use the same peer and Gateway-access gate as other executor routes.
+
+Owning admission may add a server-only `run_constraints` map. Children retain inherited constraints unchanged. The named `time_window` constraint takes `{timezone,start,end}`, with an IANA timezone and distinct `HH:mm` times; start is inclusive and end is exclusive. Midnight crossing is supported. The Gateway checks constraints before hydration and immediately before dispatch. Families contribute other constraints through tagged `OperationRunConstraint` implementations.
+
 ### Kinds and targets
 
 Use the kind and target type to start or find the work of a command.
@@ -383,10 +395,10 @@ Firewall `allow`, `deny` and `remove` use Swamp. Their normal commands validate 
 Protected sources resolve only during invocation hydration. Step, completion and context reads never mint credentials for redaction. Known values are redacted in the run before projection, storage or return; Swamp reuses those redacted results. Later messages retain ordinary secret-pattern filtering. Transport schema and wire failures return a fixed refusal, and a permissive `true` schema is refused.
 
 
-Kind loading rejects unsupported kind, run and completion-contract keys. A family cannot declare a guarantee before the shared executor enforces it. Child declarations and child completion guarantees therefore remain invalid until the child-operation kit supplies their checks.
+Kind loading rejects unsupported kind, run and completion-contract keys. A family cannot declare a guarantee before the shared executor enforces it. Child declarations and `children_succeeded` use the checks above. `children_settled` remains invalid until its checks ship.
 
 
-An uncertain executor response leaves the keyed result unset for a proven recovered receipt. It never projects uncertainty as a completed effect. A successful outcome clears `failed_step` while retaining any failed best-effort step rows. The Gateway requires redaction strings for each non-null protected value, including typed credentials and scalars. Empty transport schemas are refused. `OperationKinds::supports()` reports optional child, object-list and receipt capabilities; unsupported guarantees remain unavailable at admission. This receipt implementation enables only the `receipts` capability.
+An uncertain executor response leaves the keyed result unset for a proven recovered receipt. It never projects uncertainty as a completed effect. A successful outcome clears `failed_step` while retaining any failed best-effort step rows. The Gateway requires redaction strings for each non-null protected value, including typed credentials and scalars. Empty transport schemas are refused. `OperationKinds::supports()` reports optional child, object-list and receipt capabilities; unsupported guarantees remain unavailable at admission. The `children` and `receipts` capabilities are enabled. `children_settled`, `list_of` and `secret_outputs` remain unavailable.
 ### Target effect receipts
 
 Remote executor runs use `effect_key` equal to `op-<operation id>.<step key>`. The Gateway adds the key after authorizing the original input. Fingerprints and stored inputs always use the unhydrated request. Native commands persist their intent and result in the shared agent receipt store. Existing fixed RemotePrograms use `KeyedRemoteProgramRunner`, which reserves and completes receipts through that same store.

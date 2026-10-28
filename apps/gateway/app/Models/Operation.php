@@ -8,6 +8,7 @@ use App\Domain\Operations\OperationStatus;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
@@ -18,6 +19,11 @@ use Illuminate\Support\Carbon;
  * Gateway.
  *
  * @property int $id
+ * @property int|null $parent_operation_id
+ * @property string|null $child_key
+ * @property array<string,mixed>|null $child_admission
+ * @property string|null $child_fingerprint
+ * @property array<string,array<string,mixed>>|null $run_constraints
  * @property string $kind
  * @property string|null $idempotency_key Never prune a keyed operation when ADR 0218 adds retention.
  * @property string|null $idempotency_fingerprint
@@ -86,6 +92,18 @@ final class Operation extends Model
         return $this->hasMany(OperationStep::class)->orderBy('position');
     }
 
+    /** @return HasMany<Operation,$this> */
+    public function children(): HasMany
+    {
+        return $this->hasMany(self::class, 'parent_operation_id')->orderBy('id');
+    }
+
+    /** @return BelongsTo<Operation,$this> */
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'parent_operation_id');
+    }
+
     public function callerNodeId(): ?int
     {
         $caller = $this->input['caller_node_id'] ?? null;
@@ -110,6 +128,9 @@ final class Operation extends Model
     {
         return [
             'target_id' => 'integer',
+            'parent_operation_id' => 'integer',
+            'child_admission' => 'array',
+            'run_constraints' => 'array',
             'node_id' => 'integer',
             'input' => 'array',
             'state' => 'array',

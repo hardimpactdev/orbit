@@ -40,15 +40,23 @@ it('refuses unenforced kind run and completion guarantees while loading declarat
     expect(fn () => new OperationKinds(new Container, ['test.remote' => $definition]))
         ->toThrow(LogicException::class, "unsupported {$part} keys: {$key}");
 })->with([
-    ['kind', 'children'], ['kind', 'children_succeeded'], ['kind', 'unknown_guarantee'],
-    ['completion_contract', 'children'], ['completion_contract', 'children_succeeded'], ['completion_contract', 'children_settled'],
+    ['kind', 'children_succeeded'], ['kind', 'unknown_guarantee'],
+    ['completion_contract', 'children'], ['completion_contract', 'children_settled'],
     ['runs', 'unknown_guard'],
 ]);
 
 it('reports optional capabilities unavailable until their enforcement ships', function (string $capability): void {
     expect(OperationKinds::supports($capability))->toBeFalse();
-})->with(['children', 'children_settled', 'list_of', 'unknown']);
+})->with(['children_settled', 'list_of', 'unknown']);
 
-it('reports the enforced target receipt capability', function (): void {
-    expect(OperationKinds::supports('receipts'))->toBeTrue();
+it('reports enforced child and target receipt capabilities', function (): void {
+    expect(OperationKinds::supports('children'))->toBeTrue()
+        ->and(OperationKinds::supports('receipts'))->toBeTrue();
+});
+
+it('rejects a child-only completion contract that proves no child', function (): void {
+    $definition = OperationKinds::definitions()['firewall.allow'];
+    $definition['completion_contract'] = ['children_succeeded' => []];
+    expect(fn () => new OperationKinds(new Container, ['test.empty' => $definition]))
+        ->toThrow(LogicException::class, 'complete enforced completion proof');
 });

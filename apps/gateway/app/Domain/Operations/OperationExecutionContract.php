@@ -16,7 +16,7 @@ use LogicException;
  * Server-owned capabilities and evidence for one admitted kind.
  *
  * @phpstan-type RunContract array{transport: string, name: string, input_fields?: list<string>, input_values?: array<string, mixed>, bind?: array<string, string>, secrets?: array<string, string>, resumable?: bool, uncertain_error_code?: string, node_field?: string, step?: string, required?: bool, input_schema?: array<string, mixed>}
- * @phpstan-type SwampDefinition array{executor: 'swamp', completion: class-string, execution?: class-string<OperationFamilyExecution>, runs: list<RunContract>, completion_contract: array{step: string, transport: string, name: string, result: array<string, mixed>}, result_fields: list<string>}
+ * @phpstan-type SwampDefinition array{executor: 'swamp', completion: class-string, execution?: class-string<OperationFamilyExecution>, runs: list<RunContract>, completion_contract: array{step?: string, transport?: string, name?: string, result?: array<string, mixed>, children_succeeded?:list<string>}, result_fields: list<string>, admission?:class-string<OperationChildAdmission>, children?:list<array{kind:string,node_from:string,bind?:array<string,string>}>}
  *
  * @phpstan-import-type RunInput from SwampOperationExecutor
  */
@@ -173,7 +173,7 @@ final readonly class OperationExecutionContract
             }
         }
         $contract = $this->definition($operation)['completion_contract'];
-        if ($name !== $contract['step']) {
+        if (! isset($contract['step'], $contract['transport'], $contract['name'], $contract['result']) || $name !== $contract['step']) {
             return;
         }
         foreach (ValidatedData::object($operation->state['executor_runs'] ?? []) as $run) {
@@ -195,6 +195,12 @@ final readonly class OperationExecutionContract
     public function assertCompletion(Operation $operation, array $result): void
     {
         $contract = $this->definition($operation)['completion_contract'];
+        if (isset($contract['children_succeeded'])) {
+            app(OperationChildren::class)->assertSucceeded($operation, $contract['children_succeeded']);
+        }
+        if (! isset($contract['step'])) {
+            return;
+        }
         $steps = ValidatedData::object($operation->state['steps'] ?? []);
         $stepResult = $steps[$contract['step']] ?? null;
         if (! is_array($stepResult) || ! $this->same($stepResult, $result)
