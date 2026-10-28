@@ -19,12 +19,15 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationTransport;
 use App\Domain\Operations\OperationTransportInput;
 use App\Domain\Operations\OperationTransports;
+use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentGitHubToken;
 use App\Infrastructure\AgentCommands\AgentSchemas;
 use App\Infrastructure\AgentCommands\NativeAgentCommandRunner;
 use App\Infrastructure\AgentCommands\OperationAgentTransport;
+use App\Infrastructure\RemotePrograms\SshProgramRunner;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
@@ -77,8 +80,10 @@ final class KitInvalidTransport implements OperationTransport, OperationTranspor
     }
 }
 
-final readonly class KitNativeSource implements OperationSecretSource
+final class KitNativeSource implements OperationSecretSource
 {
+    public int $resolves = 0;
+
     /** @param list<string> $redactions */
     public function __construct(public mixed $value, public array $redactions = []) {}
 
@@ -99,6 +104,8 @@ final readonly class KitNativeSource implements OperationSecretSource
 
     public function resolve(Operation $operation, int $id, string $key, string $parameter): OperationSecretValue
     {
+        $this->resolves++;
+
         return new OperationSecretValue($this->value, $this->redactions);
     }
 }
@@ -439,8 +446,9 @@ it('exposes a filtered public projection and validates it on failed or cancelled
     expect($this->command->runs)->toBe(0);
 })->with(['failed', 'cancelled']);
 
-it('validates registered agent wrappers using native Git wire input without weakening the schema', function (bool $valid): void {
-    app()->instance(KitNativeSource::class, new KitNativeSource(GitReadEnvironment::forGitHubToken('kit-private-token-value')));
+it('validates registered agent wrappers using native Git wire input without weakening the schema', function (bool $valid, bool $authenticated): void {
+    $source = new KitNativeSource($authenticated ? GitReadEnvironment::forGitHubToken('kit-private-token-value') : GitReadEnvironment::none());
+    app()->instance(KitNativeSource::class, $source);
     app()->tag([KitNativeSource::class], OperationSecretSource::class);
     app()->instance(OperationTransports::class, new OperationTransports(['deploy-agent' => KitAgentWrapper::class]));
     $name = 'instance.prepare-production-source';
@@ -458,7 +466,7 @@ it('validates registered agent wrappers using native Git wire input without weak
     $runner = Mockery::mock(AgentCommandRunner::class);
     if ($valid) {
         $runner->shouldReceive('run')->once()->withArgs(fn (Node $node, string $command, array $actual): bool => $node->id === $this->operation->node_id
-            && $command === $name && $actual['git_read'] instanceof GitReadEnvironment && $actual['git_read']->githubToken() === 'kit-private-token-value')->andReturn([]);
+            && $command === $name && $actual['git_read'] instanceof GitReadEnvironment && $actual['git_read']->githubToken() === ($authenticated ? 'kit-private-token-value' : null))->andReturn([]);
     } else {
         $runner->shouldNotReceive('run');
     }
@@ -469,12 +477,14 @@ it('validates registered agent wrappers using native Git wire input without weak
     } else {
         $this->postJson($this->path.'/run', $run)->assertOk();
         expect($this->operation->refresh()->state['executor_runs']['effect']['input'])->toBe($input);
+        $this->postJson($this->path.'/heartbeat', ['worker' => 'worker'])->assertOk();
+        expect($source->resolves)->toBe(1);
     }
     expect(json_encode($this->operation->refresh()->toArray()))->not->toContain('kit-private-token-value');
-})->with([true, false]);
+})->with([[true, true], [true, false], [false, true]]);
 
 it('keeps native object and list validation strict through an agent wrapper', function (bool $object): void {
-    app()->instance(KitNativeSource::class, new KitNativeSource($object ? (object) [] : [], ['kit-native-map-redaction']));
+    app()->instance(KitNativeSource::class, new KitNativeSource($object ? (object) [] : []));
     app()->tag([KitNativeSource::class], OperationSecretSource::class);
     app()->instance(OperationTransports::class, new OperationTransports(['deploy-agent' => KitAgentWrapper::class]));
     $name = 'instance.run-lifecycle-step';
@@ -497,6 +507,33 @@ it('keeps native object and list validation strict through an agent wrapper', fu
     app()->instance(AgentCommandRunner::class, $runner);
     $this->postJson($this->path.'/run', $run)->assertStatus($object ? 200 : 422)->assertJsonPath($object ? 'data.exit_code' : 'error.code', $object ? 0 : 'operation.execution_forbidden');
 })->with([true, false]);
+
+it('passes empty npmrc and rendered environment content through native command schemas', function (string $case): void {
+    $source = new KitNativeSource('');
+    app()->instance(KitNativeSource::class, $source);
+    app()->tag([KitNativeSource::class], OperationSecretSource::class);
+    app()->instance(OperationTransports::class, new OperationTransports(['deploy-agent' => KitAgentWrapper::class]));
+    $parameter = $case === 'npmrc' ? 'npmrc' : 'content';
+    $name = $case === 'npmrc' ? 'tool.install-vp-environment' : 'instance.write-environment';
+    $input = $case === 'npmrc'
+        ? ['environment' => ['store' => '/home/orbit/.vp', 'node_version' => '24.1.0', 'package_manager' => 'pnpm', 'package_manager_version' => '10.0.0']]
+        : ['mode' => 'write', 'base' => '/home/orbit/project/current', 'user' => 'orbit', 'maximum' => 65536, 'require_home' => false];
+    $input[$parameter] = ['$secret' => 'project.native', 'id' => 27];
+    $run = [...$this->run, 'transport' => 'deploy-agent', 'name' => $name, 'input' => $input];
+    $admitted = $this->operation->input;
+    $admitted['descriptors'][0] = [...$admitted['descriptors'][0], 'transport' => 'deploy-agent', 'name' => $name, 'input' => $input];
+    $this->operation->update(['node_id' => Node::query()->where('name', 'gateway')->sole()->id, 'input' => $admitted]);
+    $this->spec['runs'] = [['transport' => 'deploy-agent', 'name' => $name, 'secrets' => [$parameter => 'project.native']]];
+    ($this->register)();
+    $runner = Mockery::mock(AgentCommandRunner::class);
+    $runner->shouldReceive('run')->once()->withArgs(fn (Node $node, string $command, array $actual): bool => $command === $name && $actual[$parameter] === '')->andReturn([]);
+    app()->instance(AgentCommandRunner::class, $runner);
+    $this->postJson($this->path.'/run', $run)->assertOk();
+    $this->postJson($this->path.'/run', $run)->assertOk();
+    $this->postJson($this->path.'/heartbeat', ['worker' => 'worker'])->assertOk();
+    expect($source->resolves)->toBe(1)
+        ->and($this->operation->refresh()->state['executor_runs']['effect']['input'])->toBe($input);
+})->with(['npmrc', 'rendered environment']);
 
 it('defaults a started run without a receipt to uncertain without a second mint or effect', function (): void {
     $this->command->loseReply = true;
@@ -549,38 +586,52 @@ it('marks all hydrated-value and redaction parameters as sensitive', function ()
         [AgentCommandRunner::class, 'run', 'input'],
         [NativeAgentCommandRunner::class, 'run', 'input'],
         [NativeAgentCommandRunner::class, 'runWith', 'input'],
-        [\App\Domain\RemotePrograms\RemoteProgramRunner::class, 'run', 'input'],
-        [\App\Infrastructure\RemotePrograms\SshProgramRunner::class, 'run', 'input'],
+        [RemoteProgramRunner::class, 'run', 'input'],
+        [SshProgramRunner::class, 'run', 'input'],
     ] as [$class, $method, $name]) {
         expect((new ReflectionParameter([$class, $method], $name))->getAttributes(SensitiveParameter::class))->toHaveCount(1);
     }
 });
 
-
 it('collects typed agent tokens and scalar protected values for redaction', function (): void {
     $token = 'ghs_kit_secret_token';
-    $value = new OperationSecretValue(new \App\Infrastructure\AgentCommands\AgentGitHubToken($token));
+    $value = new OperationSecretValue(new AgentGitHubToken($token));
     expect($value->strings())->toContain($token, base64_encode('x-access-token:'.$token));
     $values = (new OperationSecretValue(['pin' => 123456, 'ratio' => 12.5, 'enabled' => true]))->strings();
     expect($values)->toContain('123456', '12.5', '1');
-    $secrets = app(\App\Domain\Operations\OperationSecrets::class);
+    $secrets = app(OperationSecrets::class);
     expect($secrets->redact(['pin' => 123456, 'text' => 'pin 123456', 'ratio' => 12.5], $values))
         ->toBe(['pin' => '[REDACTED]', 'text' => 'pin [REDACTED]', 'ratio' => '[REDACTED]']);
 });
 
-it('refuses protected non-null values without redaction strings', function (string $case): void {
-    $value = match ($case) { 'object' => new stdClass, 'list' => [], 'empty' => '', default => null };
+it('hydrates recognized empty protected values without masks or changing their types', function (string $case): void {
+    $value = match ($case) {
+        'map' => new stdClass, 'list' => [], 'string' => '', 'git' => GitReadEnvironment::none(), default => null
+    };
+    $source = new KitNativeSource($value);
+    app()->instance(KitNativeSource::class, $source);
+    app()->tag([KitNativeSource::class], OperationSecretSource::class);
+    $hydrated = app(OperationSecrets::class)->hydrate($this->operation, 'protected',
+        ['payload' => ['$secret' => 'project.native', 'id' => 27]], ['payload' => 'project.native']);
+    expect($hydrated)->toBe(['input' => ['payload' => $value], 'values' => []])->and($source->resolves)->toBe(1);
+})->with(['map', 'list', 'string', 'git', 'null']);
+
+it('refuses unrecognized opaque protected values without masks', function (string $case): void {
+    $value = match ($case) {
+        'object' => (object) ['token' => 'opaque-private-value'],
+        'opaque-container' => new ArrayObject(['token' => 'opaque-private-value']),
+        'empty-unknown-object' => new ArrayObject,
+        'nested-opaque' => [new ArrayObject(['token' => 'opaque-private-value'])],
+        'plain-object-subclass' => new class extends stdClass
+        {
+            private string $token = 'opaque-private-value';
+        },
+    };
     app()->instance(KitNativeSource::class, new KitNativeSource($value));
     app()->tag([KitNativeSource::class], OperationSecretSource::class);
-    $hydrate = fn () => app(\App\Domain\Operations\OperationSecrets::class)->hydrate($this->operation, 'protected',
-        ['payload' => ['$secret' => 'project.native', 'id' => 27]], ['payload' => 'project.native']);
-    if ($case === 'null') {
-        expect($hydrate())->toBe(['input' => ['payload' => null], 'values' => []]);
-    } else {
-        expect($hydrate)->toThrow(ResourceOperationException::class);
-    }
-})->with(['object', 'list', 'empty', 'null']);
-
+    expect(fn () => app(OperationSecrets::class)->hydrate($this->operation, 'protected',
+        ['payload' => ['$secret' => 'project.native', 'id' => 27]], ['payload' => 'project.native']))->toThrow(ResourceOperationException::class);
+})->with(['object', 'opaque-container', 'empty-unknown-object', 'nested-opaque', 'plain-object-subclass']);
 
 it('retains failed optional step rows while clearing failed_step on successful completion', function (): void {
     $input = $this->operation->input;

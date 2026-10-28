@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\EffectReceiptMetadata;
 use App\Domain\Operations\OperationCompletion;
+use App\Domain\Operations\OperationConnectionSecretSource;
 use App\Domain\Operations\OperationEffectTransport;
 use App\Domain\Operations\OperationFamilyExecution;
 use App\Domain\Operations\OperationKinds;
@@ -47,6 +48,44 @@ final class ReceiptTestSecret implements OperationSecretSource
         $this->resolves++;
 
         return new OperationSecretValue('receipt-private-value'.($this->rotates ? '-'.$this->resolves : ''));
+    }
+}
+
+final class ReceiptConnectionSecret implements OperationConnectionSecretSource
+{
+    public int $resolves = 0;
+
+    public int $connections = 0;
+
+    public bool $missingOwner = false;
+
+    public function name(): string
+    {
+        return 'receipt.connection';
+    }
+
+    public function targetTypes(): array
+    {
+        return ['node'];
+    }
+
+    public function ownerId(Operation $operation): ?int
+    {
+        return $this->missingOwner ? null : $operation->target_id;
+    }
+
+    public function resolve(Operation $operation, int $id, string $key, string $parameter): OperationSecretValue
+    {
+        $this->resolves++;
+
+        return new OperationSecretValue('connection-private-key-value');
+    }
+
+    public function resolveConnection(Operation $operation, int $id): OperationSecretValue
+    {
+        $this->connections++;
+
+        return new OperationSecretValue('connection-private-key-value');
     }
 }
 
@@ -106,9 +145,11 @@ final class ReceiptTestTransport implements OperationEffectTransport
 
     public bool $loseReply = true;
 
+    public ?string $connectionParameter = null;
+
     public function schema(Operation $operation, array $run): array|bool
     {
-        return ['type' => 'object', 'properties' => ['token' => ['type' => 'string']], 'required' => ['token'], 'additionalProperties' => false];
+        return ['type' => 'object', 'properties' => ['token' => ['type' => 'string'], 'auth' => ['type' => 'string']], 'required' => ['token'], 'additionalProperties' => false];
     }
 
     public function effectful(Operation $operation, array $run): bool
@@ -136,6 +177,10 @@ final class ReceiptTestTransport implements OperationEffectTransport
     public function receipt(Operation $operation, array $run, #[SensitiveParameter] array $input): array
     {
         $this->reads++;
+        if ($this->connectionParameter !== null) {
+            $credential = app(OperationSecrets::class)->connection($operation, $run, $this->connectionParameter);
+            expect($credential->value)->toBe('connection-private-key-value');
+        }
         expect($input)->toBe($run['input']);
         expect($run['effect_key'])->toBe('op-'.$operation->id.'.effect');
         $receipt = $this->receipt;
@@ -316,3 +361,58 @@ it('processes the same raw safe fields before redaction for live replies and rec
     expect($this->operation->state['projections'])->toBe(1);
     expect($this->source->resolves)->toBe(1);
 });
+
+function receiptConnectionFixture($test): ReceiptConnectionSecret
+{
+    $source = new ReceiptConnectionSecret;
+    app()->instance(ReceiptConnectionSecret::class, $source);
+    app()->tag([ReceiptConnectionSecret::class], OperationSecretSource::class);
+    $kind = app(OperationKinds::class)->definition('test.receipts');
+    $kind['runs'][0]['secrets']['auth'] = 'receipt.connection';
+    app()->instance(OperationKinds::class, new OperationKinds(app(), [...OperationKinds::definitions(), 'test.receipts' => $kind]));
+    $test->run['input']['auth'] = ['$secret' => 'receipt.connection', 'id' => $test->target->id];
+    $input = $test->operation->input;
+    $input['descriptors'][0]['input'] = $test->run['input'];
+    $test->operation->update(['input' => $input]);
+    $test->transport->connectionParameter = 'auth';
+
+    return $source;
+}
+
+it('reads only an explicitly non-minting connection credential while recovering a bootstrap receipt', function (): void {
+    $connection = receiptConnectionFixture($this);
+    $this->source->rotates = true;
+    $this->postJson($this->path.'/run', $this->run)->assertStatus(502);
+    $this->getJson($this->path.'/receipts/effect')->assertOk()->assertJsonPath('data.state', 'succeeded');
+    $this->getJson($this->path.'/receipts/effect')->assertOk();
+    expect($connection->resolves)->toBe(1)->and($connection->connections)->toBe(1)
+        ->and($this->source->resolves)->toBe(1)->and($this->transport->runs)->toBe(1);
+    expect(json_encode($this->operation->refresh()->toArray()))->not->toContain('connection-private-key-value', 'receipt-private-value');
+    expect($this->operation->state['executor_runs']['effect']['input'])->toBe($this->run['input']);
+});
+
+it('refuses an ordinary payload source or unlisted parameter as receipt connection authentication', function (string $parameter): void {
+    $connection = receiptConnectionFixture($this);
+    $this->postJson($this->path.'/run', $this->run)->assertStatus(502);
+    $this->transport->connectionParameter = $parameter;
+    $this->getJson($this->path.'/receipts/effect')->assertStatus(502)->assertJsonPath('error.code', 'operation.receipt_unavailable');
+    expect($this->source->resolves)->toBe(1)->and($connection->resolves)->toBe(1)->and($connection->connections)->toBe(0);
+})->with(['token', 'undeclared']);
+
+it('reuses A owner target-type and exact-input checks before connection credential reads', function (string $case): void {
+    $connection = receiptConnectionFixture($this);
+    if ($case === 'null owner') {
+        $connection->missingOwner = true;
+    } elseif ($case === 'target type') {
+        $this->operation->update(['target_type' => 'project']);
+    } else {
+        $this->run['input']['auth']['id'] = $this->services->id;
+        if ($case === 'foreign owner') {
+            $input = $this->operation->input;
+            $input['descriptors'][0]['input'] = $this->run['input'];
+            $this->operation->update(['input' => $input]);
+        }
+    }
+    expect(fn () => app(OperationSecrets::class)->connection($this->operation, $this->run, 'auth'))->toThrow(ResourceOperationException::class);
+    expect($connection->connections)->toBe(0)->and($connection->resolves)->toBe(0)->and($this->source->resolves)->toBe(0);
+})->with(['null owner', 'target type', 'foreign owner', 'changed input']);
