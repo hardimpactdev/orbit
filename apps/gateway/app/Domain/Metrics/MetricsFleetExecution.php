@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Metrics;
 
-use App\Domain\Operations\OperationFamilyExecution;
 use App\Domain\Operations\OperationFamilyChildren;
+use App\Domain\Operations\OperationFamilyExecution;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -13,14 +13,14 @@ use App\Models\Operation;
 use App\Support\ValidatedData;
 
 /** Verifies the complete fleet proof before the final Gateway receipt is allowed. */
-final readonly class MetricsFleetExecution implements OperationFamilyExecution, OperationFamilyChildren
+final readonly class MetricsFleetExecution implements OperationFamilyChildren, OperationFamilyExecution
 {
     public function __construct(private MetricsChildIntent $children, private MetricsFleetChildren $intents) {}
 
     public function context(Operation $operation): array
     {
         return ['descriptors' => [['key' => 'integration-receipt', 'step' => 'integration-receipt', 'transport' => 'gateway', 'name' => 'integration.receipt',
-            'input' => ['backend' => $operation->input['remove'] ? 'absent' : 'active'], 'resumable' => true, 'required' => true]]];
+            'input' => ['backend' => ($operation->input['remove'] ?? false) ? 'absent' : 'active'], 'resumable' => true, 'required' => true]]];
     }
 
     /** @return array{intent: array<string, mixed>, children: list<array{key: string, kind: string, node_id: int, input: array<string, mixed>}>} */
@@ -97,6 +97,7 @@ final readonly class MetricsFleetExecution implements OperationFamilyExecution, 
                 if ($apply->status === OperationStatus::Failed) {
                     $key = 'service-restore-'.$node['node_id'];
                     $this->requireChild($operation, $key, 'metrics.service_restore', $node['node_id'], [...$serviceInput, 'source_operation_id' => $snapshot->id, 'source_key' => 'service-snapshot-'.$node['node_id'], 'restore_key' => $key], false);
+                    $this->requireChild($operation, 'service-caddy-restore-'.$node['node_id'], 'route.caddy_converge', $node['node_id'], ['reason' => 'metrics service rollback'], false);
 
                     continue;
                 }
@@ -137,7 +138,7 @@ final readonly class MetricsFleetExecution implements OperationFamilyExecution, 
     private function requireChild(Operation $operation, string $key, string $kind, int $nodeId, array $input, bool $success = true): Operation
     {
         $child = $this->children->find($operation, $key);
-        if (! $child instanceof Operation || $child->kind !== $kind || $child->node_id !== $nodeId || $child->input !== $input || ! $child->status->terminal() || ($success && $child->status !== OperationStatus::Succeeded)) {
+        if (! $child instanceof Operation || $child->kind !== $kind || $child->node_id !== $nodeId || ($child->child_admission['intent']['input'] ?? null) !== $input || ! $child->status->terminal() || ($success && $child->status !== OperationStatus::Succeeded)) {
             $this->unproven();
         }
 
