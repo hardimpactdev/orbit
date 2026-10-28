@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Integrations\IntegrationOperationResult;
 use App\Domain\Integrations\IntegrationRoleIntent;
+use App\Domain\Metrics\MetricsReconcileAdmission;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketPublicationStateCommand;
@@ -68,3 +69,15 @@ it('never lets an internal caller continue after a failed or cancelled awaited O
     $operation = new Operation(['kind' => 'analytics.disable', 'status' => $status, 'error_code' => $status === 'failed' ? 'analytics.health_failed' : null]);
     expect(fn () => IntegrationOperationResult::requireSucceeded($operation))->toThrow(ResourceOperationException::class);
 })->with(['failed', 'cancelled']);
+
+it('binds empty Metrics reconciliation children to the single active Metrics serving Node', function (): void {
+    $admission = app(MetricsReconcileAdmission::class);
+    $intent = ['key' => 'metrics-hook', 'kind' => 'metrics.reconcile', 'node_id' => $this->source->id, 'input' => []];
+    expect(fn () => $admission->admit($this->parent, $intent))->toThrow(ResourceOperationException::class);
+    $assignment = $this->source->roles()->create(['role' => 'metrics', 'status' => 'active']);
+    expect(fn () => $admission->admit($this->parent, [...$intent, 'node_id' => $this->target->id]))->toThrow(ResourceOperationException::class);
+    expect(fn () => $admission->admit($this->parent, [...$intent, 'input' => ['fleet' => []]]))->toThrow(ResourceOperationException::class);
+    $assignment->update(['status' => 'removing']);
+    expect(fn () => $admission->admit($this->parent, $intent))->toThrow(ResourceOperationException::class);
+    expect(Operation::query()->count())->toBe(1);
+});

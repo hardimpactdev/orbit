@@ -2,15 +2,22 @@
 
 declare(strict_types=1);
 
+use App\Domain\Integrations\IntegrationChildAdmission;
 use App\Domain\Integrations\IntegrationExecution;
+use App\Domain\Integrations\IntegrationRoleAdmission;
+use App\Domain\Integrations\IntegrationRoleCompletion;
+use App\Domain\Integrations\IntegrationRoleExecution;
 use App\Domain\Metrics\MetricsFleetCompletion;
 use App\Domain\Metrics\MetricsFleetExecution;
 use App\Domain\Metrics\MetricsLeafExecution;
 use App\Domain\Metrics\MetricsOperationCompletion;
 use App\Domain\Metrics\MetricsPrimitiveExecution;
+use App\Domain\Metrics\MetricsReconcileAdmission;
 use App\Domain\Metrics\MetricsResetCompletion;
 use App\Domain\Metrics\MetricsResetExecution;
 use App\Domain\Metrics\MetricsServiceExecution;
+use App\Domain\Operations\OperationKinds;
+use App\Support\ValidatedData;
 
 return (static function (): array {
     $kinds = [];
@@ -80,6 +87,7 @@ return (static function (): array {
             'completion_contract' => ['step' => 'integration-receipt', 'transport' => 'gateway', 'name' => 'integration.receipt', 'result' => ['backend' => $verb === 'disable' ? 'absent' : 'active']],
             'result_fields' => ['backend', 'error_code']];
     }
+    $kinds['metrics.reconcile']['admission'] = MetricsReconcileAdmission::class;
     $kinds['metrics.credentials_reset'] = ['executor' => 'swamp', 'completion' => MetricsResetCompletion::class,
         'execution' => MetricsResetExecution::class,
         'runs' => [['resumable' => true, 'transport' => 'agent', 'name' => 'metrics.credentials', 'secrets' => ['action' => 'metrics.reset']]],
@@ -96,28 +104,33 @@ return (static function (): array {
 
     foreach ($kinds as $name => $definition) {
         if (preg_match('/\Ametrics\.(?:node_exporter|cadvisor|service|runtime|certificate)_/D', $name) === 1 || $name === 'metrics.publication_firewall') {
-            $kinds[$name]['admission'] = \App\Domain\Integrations\IntegrationChildAdmission::class;
+            $kinds[$name]['admission'] = IntegrationChildAdmission::class;
         }
     }
     foreach (['role_converge' => 'enable', 'role_remove' => 'disable'] as $roleKind => $base) {
         $definition = $kinds['metrics.'.$base];
-        $definition['admission'] = \App\Domain\Integrations\IntegrationRoleAdmission::class;
-        $definition['execution'] = \App\Domain\Integrations\IntegrationRoleExecution::class;
-        $definition['completion'] = \App\Domain\Integrations\IntegrationRoleCompletion::class;
+        $definition['admission'] = IntegrationRoleAdmission::class;
+        $definition['execution'] = IntegrationRoleExecution::class;
+        $definition['completion'] = IntegrationRoleCompletion::class;
         $definition['runs'][] = ['transport' => 'gateway', 'name' => 'integration.prepare-role', 'resumable' => true];
         $definition['result_fields'][] = 'prepared';
         $children = [];
         foreach ($definition['children'] as $raw) {
-            $child = \App\Support\ValidatedData::object($raw);
-            $children[] = [...$child, 'node_from' => str_replace('input.', 'intent.', \App\Support\ValidatedData::string($child['node_from']))];
+            $child = ValidatedData::object($raw);
+            $children[] = [...$child, 'node_from' => str_replace('input.', 'intent.', ValidatedData::string($child['node_from']))];
         }
         $definition['children'] = $children;
         $kinds['metrics.'.$roleKind] = $definition;
     }
 
     foreach ($kinds as $name => $definition) {
-        if (isset($definition['children']) && ! \App\Domain\Operations\OperationKinds::supports('children')) { unset($kinds[$name]); }
-        if (! \App\Domain\Operations\OperationKinds::supports('list_of') && ($name !== 'metrics.credentials_reset' && ! preg_match('/\Ametrics\.(?:node_exporter|cadvisor)_(?:converge|remove|snapshot|restore)\z/D', $name))) { unset($kinds[$name]); }
+        if (isset($definition['children']) && ! OperationKinds::supports('children')) {
+            unset($kinds[$name]);
+        }
+        if (! OperationKinds::supports('list_of') && ($name !== 'metrics.credentials_reset' && ! preg_match('/\Ametrics\.(?:node_exporter|cadvisor)_(?:converge|remove|snapshot|restore)\z/D', $name))) {
+            unset($kinds[$name]);
+        }
     }
+
     return $kinds;
 })();
