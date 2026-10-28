@@ -2898,6 +2898,23 @@ export interface paths {
         patch: operations["project-update"];
         trace?: never;
     };
+    "/api/v1/projects/{project}/dependency-read-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mint a short-lived, one-repository GitHub App read token for the configured Services peer only. Never persist the reply. Disabled until ORBIT_DEPENDENCY_DETECTION_SERVICES_NODE_ID is configured. */
+        post: operations["project-dependency-read-token"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project}/dev-deploy-steps": {
         parameters: {
             query?: never;
@@ -16491,6 +16508,80 @@ export interface operations {
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "project-dependency-read-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Project ID. */
+                project: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Ephemeral credential. Cache-Control: no-store. No Activity or Operation is created. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            project_id: number;
+                            repository: string;
+                            /** Format: uri */
+                            clone_url: string;
+                            /** @description Ephemeral credential; never persist or log. */
+                            token: string;
+                            /** Format: date-time */
+                            expires_at: string;
+                        };
+                    };
+                };
+            };
+            /** @description Services-only authorization or GitHub installation/token refusal (`dependency_token.forbidden`, `dependency_token.refused`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Project not found (`project.not_found`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Token minting unavailable or unsafe reply (`dependency_token.unavailable`). */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
