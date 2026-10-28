@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tools\ToolOperationAvailability;
 use App\Domain\Tools\ToolStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Node;
@@ -11,6 +12,9 @@ use App\Models\Tool;
 use Illuminate\Support\Facades\Queue;
 
 beforeEach(function (): void {
+    if (! ToolOperationAvailability::available()) {
+        $this->markTestSkipped('Tools require shared Kit B/C enforcement.');
+    }
     $this->gateway = toolOperationNode('gateway', '10.44.0.2');
     $this->markAsGateway($this->gateway);
     $this->node = toolOperationNode('dev', '10.44.0.3');
