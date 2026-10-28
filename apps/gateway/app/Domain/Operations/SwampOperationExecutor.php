@@ -199,13 +199,21 @@ final readonly class SwampOperationExecutor
             return ValidatedData::object($receipt['result']);
         }
         $node = Node::query()->whereKey($operation->node_id)->firstOrFail();
+        if ($data['transport'] === 'agent') {
+            $runner = app(AgentCommandRunner::class);
+            $invoke = static fn (): array => $runner->run($node, $data['name'], $data['input']);
+        } else {
+            $runner = app(RemoteProgramRunner::class);
+            $program = app(RemoteProgramCatalog::class)->program($data['name']);
+            $invoke = static function () use ($runner, $node, $program, $data): array {
+                $remote = $runner->run($node, $program, $data['input']);
+
+                return ['outcome' => $remote->outcome, 'data' => $remote->data, 'log' => $remote->log];
+            };
+        }
         try {
-            if ($data['transport'] === 'agent') {
-                $result = app(AgentCommandRunner::class)->run($node, $data['name'], $data['input']);
-            } else {
-                $remote = app(RemoteProgramRunner::class)->run($node, app(RemoteProgramCatalog::class)->program($data['name']), $data['input']);
-                $result = ['outcome' => $remote->outcome, 'data' => $remote->data, 'log' => $remote->log];
-            }
+            $this->owned($operation, $data['worker'], static function (Operation $operation): void {});
+            $result = $operation->cancel_requested_at !== null ? ['error_code' => 'operation.cancelled'] : $invoke();
         } catch (AgentCommandRefused $exception) {
             $result = ['error_code' => $exception->errorCode];
         }

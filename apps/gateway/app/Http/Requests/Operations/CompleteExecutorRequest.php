@@ -13,7 +13,7 @@ final class CompleteExecutorRequest extends ExecutorRequest
             'worker' => ['required', 'string', 'max:128', 'regex:/\A[A-Za-z0-9._:-]+\z/D'],
             'status' => ['required', 'in:succeeded,failed,cancelled'],
             'result' => ['sometimes', 'array'],
-            'error_code' => ['required_if:status,failed', 'nullable', 'string', 'max:100'],
+            'error_code' => ['required_if:status,failed', 'nullable', 'string', 'max:100', 'regex:/\A[a-z0-9_.-]+\z/D'],
         ];
     }
 }

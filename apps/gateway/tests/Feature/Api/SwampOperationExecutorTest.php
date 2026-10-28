@@ -292,7 +292,7 @@ it('drops undeclared run and completion fields and redacts retained fields and s
     expect($operation->steps()->sole()->output)->toContain('[REDACTED]');
 });
 
-it('redacts retained result fields and failed step and completion errors', function (): void {
+it('redacts retained result fields while keeping stable failure codes', function (): void {
     [, $id] = firewallAdmission($this);
     asExecutor($this);
     $runner = Mockery::mock(AgentCommandRunner::class);
@@ -301,12 +301,46 @@ it('redacts retained result fields and failed step and completion errors', funct
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'firewall.allow', 'worker' => 'run-1'])->assertOk();
     $this->postJson("/api/v1/operation-executor/{$id}/run", executorRunInput($id))->assertOk()->assertJsonPath('data.error_code', 'token=[REDACTED]')->assertJsonMissingPath('data.backend');
     $this->postJson("/api/v1/operation-executor/{$id}/step", ['worker' => 'run-1', 'key' => 'failed', 'name' => 'ufw-converge', 'status' => 'failed',
-        'result' => ['error_code' => 'password=step-result-secret'], 'error_code' => 'token=step-error-secret'])->assertOk();
+        'result' => ['error_code' => 'password=step-result-secret'], 'error_code' => 'firewall.command_failed'])->assertOk();
     $this->postJson("/api/v1/operation-executor/{$id}/complete", ['worker' => 'run-1', 'status' => 'failed',
-        'result' => ['error_code' => 'password=completion-result-secret'], 'error_code' => 'token=completion-error-secret'])->assertOk()->assertJsonPath('data.error_code', 'token=[REDACTED]');
+        'result' => ['error_code' => 'password=completion-result-secret'], 'error_code' => 'firewall.command_failed'])->assertOk()->assertJsonPath('data.error_code', 'firewall.command_failed');
     $operation = Operation::findOrFail($id);
     $stored = json_encode([$operation->toArray(), $operation->steps()->get()->toArray(), FirewallRule::query()->sole()->toArray()], JSON_THROW_ON_ERROR);
     foreach (['run-secret-value', 'nested-secret', 'step-result-secret', 'step-error-secret', 'completion-result-secret', 'completion-error-secret'] as $secret) {
         expect($stored)->not->toContain($secret);
     }
 });
+
+it('rejects noncanonical error codes in step and completion requests', function (string $error): void {
+    [, $id] = firewallAdmission($this);
+    asExecutor($this);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'firewall.allow', 'worker' => 'run-1'])->assertOk();
+    $body = ['worker' => 'run-1', 'status' => 'failed', 'error_code' => $error];
+    $this->postJson("/api/v1/operation-executor/{$id}/step", [...$body, 'key' => 'error', 'name' => 'ufw-converge'])
+        ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    $this->postJson("/api/v1/operation-executor/{$id}/complete", $body)
+        ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    expect(Operation::findOrFail($id)->status)->toBe(OperationStatus::Running);
+})->with(['token=secret', 'UPPER.code', 'two words', 'line'."\n".'break', 'error/code']);
+
+it('rechecks status and cancellation after preparing transport and before invoking the Node', function (string $change): void {
+    [, $id] = firewallAdmission($this);
+    asExecutor($this);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'firewall.allow', 'worker' => 'run-1'])->assertOk();
+    $runner = Mockery::mock(AgentCommandRunner::class);
+    $runner->shouldNotReceive('run');
+    app()->bind(AgentCommandRunner::class, function () use ($id, $change, $runner) {
+        Operation::query()->whereKey($id)->update($change === 'cancel_requested'
+            ? ['cancel_requested_at' => now()] : ['status' => OperationStatus::Cancelled->value]);
+
+        return $runner;
+    });
+    $response = $this->postJson("/api/v1/operation-executor/{$id}/run", executorRunInput($id));
+    if ($change === 'cancel_requested') {
+        $response->assertOk()->assertJsonPath('data.error_code', 'operation.cancelled');
+        // A saved refusal stays refused on retry, without another Node command.
+        $this->postJson("/api/v1/operation-executor/{$id}/run", executorRunInput($id))->assertOk()->assertJsonPath('data.error_code', 'operation.cancelled');
+    } else {
+        $response->assertConflict()->assertJsonPath('error.code', 'operation.lease_lost');
+    }
+})->with(['cancel_requested', 'terminal']);

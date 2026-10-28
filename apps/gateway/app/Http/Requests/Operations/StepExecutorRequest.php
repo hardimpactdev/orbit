@@ -16,7 +16,7 @@ final class StepExecutorRequest extends ExecutorRequest
             'status' => ['required', 'in:running,succeeded,failed'],
             'output' => ['sometimes', 'string', 'max:8192'],
             'result' => ['sometimes', 'array'],
-            'error_code' => ['required_if:status,failed', 'nullable', 'string', 'max:100'],
+            'error_code' => ['required_if:status,failed', 'nullable', 'string', 'max:100', 'regex:/\A[a-z0-9_.-]+\z/D'],
         ];
     }
 }
