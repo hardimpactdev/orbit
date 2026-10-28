@@ -221,13 +221,14 @@ describe('park', function (): void {
         [, $vm] = tvm_park_waiting();
         $vm->update(['state' => TaskVmState::Parked, 'error_code' => 'task_vm.host_command_failed', 'error_message' => 'earlier']);
 
+        $this->provider->observations = [new VmObservation(true, null), new VmObservation(false, null)];
         app()->call([new ParkTaskVm($vm->id), 'handle']);
-        expect($this->provider->calls)->toBe(['stop'])
+        expect($this->provider->calls)->toBe(['observe', 'stop', 'observe'])
             ->and($vm->fresh()?->error_code)->toBeNull();
 
         $vm->update(['state' => TaskVmState::Ready]);
         app()->call([new ParkTaskVm($vm->id), 'handle']);
-        expect($this->provider->calls)->toBe(['stop']);
+        expect($this->provider->calls)->toBe(['observe', 'stop', 'observe']);
     });
 
     it('keeps a VM parked with the error when it cannot be stopped', function (): void {

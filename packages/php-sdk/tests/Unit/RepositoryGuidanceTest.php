@@ -100,6 +100,7 @@ use Orbit\Sdk\Requests\Tasks\ListTaskCommentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupCommentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskQuestionsRequest;
+use Orbit\Sdk\Requests\Tasks\ParkTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ProvisionTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\PublishTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ScriptTaskGroupRequest;
@@ -306,6 +307,7 @@ describe('repository guidance bootstrap', function (): void {
             CreateTaskGroupRequest::class,
             UpdateTaskGroupRequest::class,
             ProvisionTaskGroupRequest::class,
+            ParkTaskGroupRequest::class,
             CheckTaskGroupRequest::class,
             ScriptTaskGroupRequest::class,
             TurnTaskGroupRequest::class,
@@ -578,7 +580,7 @@ describe('repository guidance bootstrap', function (): void {
 
         expect($publicContract)
             ->toContain('- Reverb apps: create, list, show, destroy, rotate, registry sync, and operation show; add and remove an app on an Instance.')
-            ->toContain('- Tasks: enable, disable, status, group list, show, create, update, provision, check, script, analyze, turn, publish, cancel, and complete, subtask create, update, destroy, and cancel, subtask comment create and list, group assistance comment create and list, question list and close, and agent thread list and show.')
+            ->toContain('- Tasks: enable, disable, status, group list, show, create, update, provision, check, script, analyze, turn, publish, park, cancel, and complete, subtask create, update, destroy, and cancel, subtask comment create and list, group assistance comment create and list, question list and close, and agent thread list and show.')
             ->toContain('- Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.')
             ->toContain('- Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.')
             ->toContain('- ai-router: setup, teardown, status, provider list, provider show, account enable and disable, and model list.')

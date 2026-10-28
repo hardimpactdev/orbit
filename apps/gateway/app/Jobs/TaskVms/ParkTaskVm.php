@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Jobs\TaskVms;
 
+use App\Actions\TaskVms\StopTaskVmAction;
+use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmState;
+use App\Models\Operation;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -39,8 +42,13 @@ final class ParkTaskVm implements ShouldBeUnique, ShouldQueue
             return;
         }
 
-        $provider->stop($vm);
-        $vm->update(['error_code' => null, 'error_message' => null]);
+        app(TaskExecutionLock::class)->synchronized((int) $vm->group_id, static function () use ($vm, $provider): void {
+            $vm->refresh();
+            if ($vm->state === TaskVmState::Parked && ! Operation::query()->where('target_type', 'task_group')->where('target_id', $vm->group_id)
+                ->whereNotIn('status', ['succeeded', 'failed', 'cancelled'])->exists()) {
+                new StopTaskVmAction($provider)->execute($vm);
+            }
+        });
     }
 
     public function failed(Throwable $exception): void

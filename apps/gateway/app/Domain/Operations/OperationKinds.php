@@ -9,6 +9,7 @@ use App\Domain\Instances\Deployment\InstanceDeployOperation;
 use App\Domain\Instances\Deployment\InstanceRollbackOperation;
 use App\Domain\Tasks\TaskAnalysisOperation;
 use App\Domain\Tasks\TaskCheckOperation;
+use App\Domain\Tasks\TaskParkOperation;
 use App\Domain\Tasks\TaskProvisionOperation;
 use App\Domain\Tasks\TaskPublishOperation;
 use App\Domain\Tasks\TaskScriptOperation;
@@ -46,6 +47,8 @@ final readonly class OperationKinds
 
     public const string TasksWorker = 'tasks.worker';
 
+    public const string TasksPark = 'tasks.park';
+
     /** The target type of every kind that changes an Instance, so they hold the same target. */
     public const string InstanceTarget = 'instance';
 
@@ -64,6 +67,7 @@ final readonly class OperationKinds
         self::TasksProvision => TaskProvisionOperation::class,
         self::TasksTurn => TaskTurnOperation::class,
         self::TasksWorker => TaskWorkerOperation::class,
+        self::TasksPark => TaskParkOperation::class,
     ];
 
     /** @param array<string, class-string<OperationKind>> $kinds */

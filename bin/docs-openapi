@@ -725,6 +725,7 @@ SUMMARIES = {
     'tasks:publish': 'Publish a checked Task group commit',
     'tasks:check': 'Run a Task group check',
     'tasks:turn': 'Run one agent turn',
+    'tasks:park': 'Starts keyed tasks.park for an idle external group with an open published PR. Requires Gateway access, an empty body, and Idempotency-Key. Refuses preview, assistance, open children, workspace leases or mismatched workspace ownership with tasks.park_refused (409). Moves the group to waiting_for_review and preserves its workspace. Succeeds only after the provider confirms stopped power; missing, transitional or still-running guests fail. Result contains group_id, task_vm_id, instance_id, status and power. Retry a lost reply with the same key. See /reference/tasks#park-an-external-group-for-review.',
     'tasks:worker': 'Start a Task group Swamp worker', 'tasks:provision': 'Provision a Task group workspace', 'tasks:complete': 'Complete a Task group', 'tasks:cancel': 'Cancel a Task group',
 }
 DESCRIPTIONS = {
@@ -1278,6 +1279,8 @@ def prop_schema(p):
         elif re.match(r'^(?:list|array)<array<string,\s*string(?:\|bool)?>>$', doc):
             value = {'type': ['string', 'boolean']} if '|bool' in doc else {'type': 'string'}
             sch = {'type': 'array', 'items': {'type': 'object', 'additionalProperties': value}}
+        elif doc == 'array<string, mixed>|list<never>':
+            sch = {'oneOf': [{'type': 'object', 'additionalProperties': True}, {'type': 'array', 'maxItems': 0}]}
         elif doc.startswith('array<string'):
             sch = {'type': 'object', 'additionalProperties': True}
         elif doc.startswith(('list<', 'array<int')):

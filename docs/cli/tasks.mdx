@@ -467,3 +467,7 @@ orbit tasks:publish 42 --check=17 --title="Deliver the feature" --body="Adds the
 ```
 
 The optional `group` argument is the numeric task group ID. `--check` supplies the eligible handoff check ID. Supply `--title` and `--body` together to publish a pull request, or omit both to push only. `--idempotency-key` reuses an operation start. The command follows the operation with the shared display and supports `--json`.
+
+## `orbit tasks:park`
+
+Stop an external task group's VM while its published PR waits for review. Run `orbit tasks:park GROUP --idempotency-key=KEY`. The command follows the operation through the normal operation display; `--json` returns the final operation. Ctrl-C stops following, not parking. Omitting GROUP uses the standard task-group selector. Parking preserves the workspace and requires no destructive confirmation. See [external review parking](/reference/tasks#park-an-external-group-for-review) for admission, confirmed power and recovery.

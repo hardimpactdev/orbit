@@ -54,6 +54,18 @@ function run_task_contract(string $fixture, string $command, array $arguments, i
 }
 
 describe('tasks contract', function (): void {
+    it('renders review parking success and refusal from the Gateway contract', function (): void {
+        Sleep::fake(syncWithCarbon: true);
+        try {
+            foreach (['human.txt' => [], 'json' => ['--json' => true]] as $extension => $mode) {
+                run_contract(['tasks-park-queued', 'tasks-park-succeeded', 'realtime/realtime-show/unconfigured'], 'tasks:park', ['group' => '1', '--idempotency-key' => 'review.fixture', ...$mode], 'tasks/tasks-park/succeeded.'.$extension, 0);
+                run_contract('tasks-park-refused', 'tasks:park', ['group' => '1', '--idempotency-key' => 'review.refused', ...$mode], 'tasks/tasks-park/refused.'.$extension, 1);
+            }
+        } finally {
+            Sleep::fake(false);
+        }
+    });
+
     it('renders a refused check', function (): void {
         run_task_contract('tasks/tasks-publish/not-orchestrated', 'tasks:publish', ['group' => '1', '--check' => '1'], 1);
         run_task_contract('tasks/tasks-check/not-orchestrated', 'tasks:check', ['group' => '1', '--subtask' => '2', '--phase' => 'baseline'], 1);

@@ -20,7 +20,7 @@ final class OperationData extends Data
         public string $kind,
         public string $targetType,
         public int $targetId,
-        /** @var array<string, mixed> */
+        /** @var array<string, mixed>|list<never> */
         public array $input,
         public string $status,
         public int $sequence,

@@ -24,6 +24,7 @@ final class OperationStepLabels
             'send_turn' => ['Send turn', 'Sending turn', 'Sent turn'],
             'turn' => ['Wait for turn', 'Waiting for turn', 'Turn ended'],
             'turn_result' => ['Record turn', 'Recording turn', 'Recorded turn'],
+            'park' => ['Park task VM', 'Parking task VM', 'Parked task VM'],
             'provision' => ['Claim task VM', 'Claiming task VM', 'Claimed task VM'],
             'workspace' => ['Create workspace', 'Creating workspace', 'Created workspace'],
             'workspace_lease' => ['Acquire workspace', 'Acquiring workspace', 'Acquired workspace'],

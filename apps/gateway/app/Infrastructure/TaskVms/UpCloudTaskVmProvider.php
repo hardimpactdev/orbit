@@ -57,6 +57,10 @@ final readonly class UpCloudTaskVmProvider implements TaskVmProvider
     {
         $server = $this->server($vm);
 
+        if ($server !== null && ! in_array($server->state, ['started', 'stopped'], true)) {
+            throw new TaskVmException('task_vm.not_settled', 'The task VM power state is not settled.');
+        }
+
         return $server === null ? null : new VmObservation($server->state === 'started', $server->address);
     }
 

@@ -567,6 +567,7 @@
               "GET /api/v1/task-groups/{group}/comments",
               "POST /api/v1/task-groups/{group}/comments",
               "POST /api/v1/task-groups/{group}/complete",
+              "POST /api/v1/task-groups/{group}/park",
               "POST /api/v1/task-groups/{group}/provision",
               "POST /api/v1/task-groups/{group}/publish",
               "POST /api/v1/task-groups/{group}/script",

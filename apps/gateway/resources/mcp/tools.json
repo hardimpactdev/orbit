@@ -10231,6 +10231,44 @@
       }
     },
     {
+      "name": "tasks-park",
+      "extension": "tasks",
+      "title": "Starts keyed tasks.park for an idle external group with an open published PR. Requires Gateway access, an empty body, and Idempotency-Key. Refuses preview, assistance, open children, workspace leases or mismatched workspace ownership with tasks.park_refused (409). Moves the group to waiting_for_review and preserves its workspace. Succeeds only after the provider confirms stopped power; missing, transitional or still-running guests fail. Result contains group_id, task_vm_id, instance_id, status and power. Retry a lost reply with the same key. See /reference/tasks#park-an-external-group-for-review.",
+      "description": "Park an external task group VM while its PR waits for review.",
+      "method": "POST",
+      "path": "/api/v1/task-groups/{group}/park",
+      "path_inputs": [
+        "group"
+      ],
+      "query_inputs": [],
+      "header_inputs": [
+        "Idempotency-Key"
+      ],
+      "starts_operation": true,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          },
+          "Idempotency-Key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "description": "A permanent key scoped to this operation kind, target and input. The same request returns the existing operation with HTTP 202; a changed identity returns operation.idempotency_conflict (409)."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group",
+          "Idempotency-Key"
+        ]
+      }
+    },
+    {
       "name": "tasks-provision",
       "extension": "tasks",
       "title": "Provision a Task group workspace",
