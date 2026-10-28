@@ -179,10 +179,14 @@ it('enforces the CLI target allowlist redaction and completion proof through the
     expect($agents->calls)->toBe([]);
     $this->postJson($path.'/complete', ['worker' => 'cli-proof', 'status' => 'succeeded', 'result' => []])->assertConflict();
     $this->postJson($path.'/step', ['worker' => 'cli-proof', 'key' => 'cli-install:start', 'name' => 'cli-install', 'status' => 'running'])->assertOk();
-    $install = $this->postJson($path.'/run', $body)->assertOk()->json('data');
+    $response = $this->postJson($path.'/run', $body);
+    $this->assertSame(200, $response->status(), $response->getContent());
+    $install = $response->json('data');
     expect(json_encode($install))->not->toContain($secret, 'credential');
     $this->postJson($path.'/step', ['worker' => 'cli-proof', 'key' => 'cli-install:finish', 'name' => 'cli-install', 'status' => 'succeeded', 'result' => $install, 'output' => $secret])->assertOk();
-    $final = $this->postJson($path.'/run', ['worker' => 'cli-proof', 'key' => 'cli-converge', 'transport' => 'gateway', 'name' => 'fleet.cli-converge-result', 'input' => []])->assertOk()->json('data');
+    $response = $this->postJson($path.'/run', ['worker' => 'cli-proof', 'key' => 'cli-converge', 'transport' => 'gateway', 'name' => 'fleet.cli-converge-result', 'input' => []]);
+    $this->assertSame(200, $response->status(), $response->getContent());
+    $final = $response->json('data');
     $this->postJson($path.'/step', ['worker' => 'cli-proof', 'key' => 'cli-converge:finish', 'name' => 'cli-converge', 'status' => 'succeeded', 'result' => $final])->assertOk();
     $this->postJson($path.'/complete', ['worker' => 'cli-proof', 'status' => 'succeeded', 'result' => $final])->assertOk();
     expect(json_encode($operation->refresh()->toArray()))->not->toContain($secret)

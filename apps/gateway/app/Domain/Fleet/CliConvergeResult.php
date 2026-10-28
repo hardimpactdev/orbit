@@ -22,7 +22,7 @@ final readonly class CliConvergeResult implements OperationCompletion, Operation
 
     public function schema(): array
     {
-        return ['type' => 'object', 'properties' => (object) [], 'additionalProperties' => false];
+        return ['type' => 'object', 'properties' => [], 'additionalProperties' => false];
     }
 
     public function run(Operation $operation, #[\SensitiveParameter] array $input): array
