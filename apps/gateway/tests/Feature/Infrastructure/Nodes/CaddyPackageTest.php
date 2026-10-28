@@ -38,9 +38,7 @@ describe('Caddy release floor', function (): void {
 
 describe('Caddy package', function (): void {
     it('installs the package only for the roles that serve through Caddy', function (RoleName $role, bool $needed): void {
-        $agents = new FakeAgentCommandRunner;
-
-        expect((new RolePrerequisites($agents, new AgentCaddyPackage($agents)))->needsCaddy(new Node, $role))->toBe($needed);
+        expect((new RolePrerequisites)->needsCaddy(new Node, $role))->toBe($needed);
     })->with([
         'router' => [RoleName::Router, true],
         'app development' => [RoleName::AppDev, true],

@@ -14,7 +14,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\NodeRole;
 use App\Models\Operation;
-use App\Models\Process;
 use App\Support\ValidatedData;
 
 /** Finalizes assignment state only. Integration children keep its credentials and Settings. */
@@ -50,7 +49,9 @@ final readonly class NodeRoleOperationCompletion implements OperationCompletion
                     || $current->processIds !== ($captured['process_ids'] ?? null)) {
                     throw new ResourceOperationException('node_role.dependencies_changed', 'Role dependencies changed during removal.', 409);
                 }
-                Process::query()->whereIn('id', $current->processIds)->delete();
+                if ($current->processIds !== []) {
+                    throw new ResourceOperationException('node_role.dependencies_unproven', 'Process runtime removal must be proven before its role can be finalized.', 409);
+                }
                 $this->settings->remove($assignment->node_id, $assignment->role,
                     ($operation->input['purge_data'] ?? false) === true, ($operation->state['role_offline'] ?? false) === true);
                 $assignment->delete();

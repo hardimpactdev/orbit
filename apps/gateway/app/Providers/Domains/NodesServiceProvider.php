@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Providers\Domains;
 
-use App\Domain\Nodes\GatewayPrivateDnsRoute;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Metrics\NodeMetricsReader;
 use App\Domain\Nodes\NodeAgentRuntime;
@@ -12,7 +11,6 @@ use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningLock;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencyInspector;
-use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleFollowUpReport;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
@@ -26,7 +24,6 @@ use App\Infrastructure\Nodes\EloquentNodeRoleDependencyInspector;
 use App\Infrastructure\Nodes\Metrics\GrafanaPrometheusNodeMetricsReader;
 use App\Infrastructure\Nodes\NativeNodeConverger;
 use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
-use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
 use App\Infrastructure\Nodes\NodeAgentHashSource;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
 use App\Infrastructure\Nodes\NodeBootstrapSshIdentitySource;
@@ -35,7 +32,6 @@ use App\Infrastructure\Nodes\NodeOperationAgentInstaller;
 use App\Infrastructure\Nodes\NodeVpnConfigurationSource;
 use App\Infrastructure\Nodes\NodeWireGuardOperationTransport;
 use App\Infrastructure\Nodes\NodeWireGuardProjectionLock;
-use App\Infrastructure\Nodes\Roles\GatewayRoleBaseline;
 use App\Infrastructure\Nodes\Roles\NativeNodeRoleFirewallManager;
 use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Infrastructure\Nodes\SshNodeReachabilityProbe;
@@ -54,9 +50,7 @@ final class NodesServiceProvider extends ServiceProvider
         NodeReachabilityProbe::class => SshNodeReachabilityProbe::class,
         NodeMetricsReader::class => GrafanaPrometheusNodeMetricsReader::class,
         NodeRoleDependencyInspector::class => EloquentNodeRoleDependencyInspector::class,
-        NodeRoleDependentCleaner::class => NativeNodeRoleDependentCleaner::class,
         NodeRoleFirewallManager::class => NativeNodeRoleFirewallManager::class,
-        GatewayPrivateDnsRoute::class => GatewayRoleBaseline::class,
         NodeAgentRuntime::class => NodeAgentSshExecutor::class,
     ];
 

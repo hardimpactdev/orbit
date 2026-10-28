@@ -91,3 +91,16 @@ it('prepares a database role without changing routing or role-independent Tools'
     expect(array_column($plan, 'name'))->toBe(['role.install-prerequisites']);
     expect($planner->remove($node, $node->roles->sole(), true, false))->toBe([]);
 });
+
+it('orders CI prerequisites before the host and firewall and retains data unless purge is explicit', function (): void {
+    $node = FleetFixtures::node('role-plan-ci', [RoleName::CiRunner]);
+    $assignment = $node->roles->sole();
+    $planner = app(NodeRoleBaselinePlan::class);
+    $plan = $planner->converge($node, $assignment, new ManagedUserAccount('orbit', 'orbit', '/home/orbit'));
+
+    expect(array_column($plan, 'key'))->toBe(['role-prerequisites', 'role-ci-runner', 'role-firewall']);
+    expect($plan[0]['input']['packages'])->toContain('incus', 'incus-base', 'incus-client')->not->toContain('docker.io', 'caddy');
+    expect($planner->remove($node, $assignment, false, false)[0])->toMatchArray(['name' => 'ci-runner.host', 'input' => ['action' => 'remove'], 'result' => ['outcome' => 'retained']]);
+    expect($planner->remove($node, $assignment, true, false)[0])->toMatchArray(['input' => ['action' => 'purge'], 'result' => ['outcome' => 'removed']]);
+    expect($planner->remove($node, $assignment, false, true))->toBe([]);
+});

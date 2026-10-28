@@ -4,15 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
-/**
- * Carries a convergence step that failed without failing the role out to the role response.
- *
- * `RoleBaseline::converge()` returns nothing, so a step that must not fail the role, such as the
- * Gateway machine's private DNS route, would otherwise reach the operator only through the log and
- * Doctor. The baseline records the follow-up here, and the role response returns it as `follow_up`.
- *
- * The recorder is shared for one request and is deliberately not readonly.
- */
+/** Collects optional follow-ups from completed role Operations for retained Gateway callers. */
 final class NodeRoleFollowUpReport
 {
     /** @var list<string> */

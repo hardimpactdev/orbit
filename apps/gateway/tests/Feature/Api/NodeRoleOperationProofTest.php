@@ -268,3 +268,18 @@ it('reports an occupied CI host as failure before removing its firewall', functi
     expect(app(NodeRoleOperationExecution::class)->received($operation, ['key' => 'role-ci-runner', 'name' => 'ci-runner.host'], ['outcome' => $outcome]))
         ->toBe(['error_code' => 'ci-runner.host_failed']);
 })->with(['occupied', 'drift', '']);
+
+it('never deletes captured Process intent without runtime removal proof', function (): void {
+    $operation = roleRemovalProofOperation();
+    roleProofChild($operation, 'role-runtime');
+    $operation->update(['state' => [...$operation->state, 'role_dependencies' => ['instance_ids' => [], 'workspace_ids' => [], 'process_ids' => [123], 'summaries' => []]]]);
+    $inspector = Mockery::mock(NodeRoleDependencyInspector::class);
+    $inspector->shouldReceive('inspect')->once()->andReturn(new NodeRoleDependencySet([], [], [123], []));
+    app()->instance(NodeRoleDependencyInspector::class, $inspector);
+
+    expect(fn () => app(NodeRoleOperationCompletion::class)->complete($operation, OperationOutcome::succeeded(app(NodeRoleOperationExecution::class)->result($operation))))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('node_role.dependencies_unproven'));
+
+    $this->assertDatabaseHas('node_roles', ['id' => $operation->state['role_intent']['assignment_id'], 'status' => 'removing']);
+    $this->assertDatabaseHas('settings', ['scope_type' => 'node', 'scope_id' => $operation->node_id, 'key' => 'websocket.reverb.laravel_app_key']);
+});
