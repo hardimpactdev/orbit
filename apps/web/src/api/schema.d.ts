@@ -3839,6 +3839,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/task-groups/{group}/park": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Starts keyed tasks.park for an idle external group with an open published PR. Requires Gateway access, an empty body, and Idempotency-Key. Refuses preview, assistance, open children, workspace leases or mismatched workspace ownership with tasks.park_refused (409). Moves the group to waiting_for_review and preserves its workspace. Succeeds only after the provider confirms stopped power; missing, transitional or still-running guests fail. Result contains group_id, task_vm_id, instance_id, status and power. Retry a lost reply with the same key. See /reference/tasks#park-an-external-group-for-review.
+         * @description Park an external task group VM while its PR waits for review.
+         */
+        post: operations["tasks-park"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/task-groups/{group}/provision": {
         parameters: {
             query?: never;
@@ -5000,7 +5020,7 @@ export interface components {
             target_id?: number;
             input?: {
                 [key: string]: unknown;
-            };
+            } | unknown[];
             status?: string;
             sequence?: number;
             current_step?: string | null;
@@ -21054,6 +21074,84 @@ export interface operations {
             };
             /** @description A running agent or check could not be stopped (`tasks.subtask_interrupt_failed`). The completion receipt is kept for retry; the group and its open subtasks remain open. */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-park": {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A permanent key scoped to this operation kind, target and input. The same request returns the existing operation with HTTP 202; a changed identity returns operation.idempotency_conflict (409). */
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Numeric Task group ID. */
+                group: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Accepted. The operation is queued; follow it with `operation:show`. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Operation"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). The key already belongs to another target or input (`operation.idempotency_conflict`), or another operation holds the target (`operation.target_busy`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). A malformed Idempotency-Key also returns `validation.failed`. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
