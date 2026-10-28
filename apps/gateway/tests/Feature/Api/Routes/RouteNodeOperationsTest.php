@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\RemotePrograms\ProgramResult;
+use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
@@ -118,4 +120,28 @@ it('recovers a sanitized Caddy target receipt without a second publication', fun
     $this->getJson($this->path.'/receipts/caddy-publish')->assertOk()->assertJsonPath('data.state', 'succeeded')->assertJsonPath('data.result.ready', true);
     $this->getJson($this->path.'/receipts/caddy-publish')->assertOk()->assertJsonPath('data.result.ready', true);
     expect(array_column($this->agents->calls, 'command'))->toBe(['caddy.publish', 'agent.effect-receipt']);
+});
+
+it('recovers private DNS publication through the keyed program receipt without replaying the program', function (): void {
+    $this->node->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
+    $this->operation->update(['kind' => 'route.private_dns_publish']);
+    $prepare = [...$this->prepare, 'name' => 'route.private-dns-prepare'];
+    $this->postJson($this->path.'/run', $prepare)->assertOk();
+    $descriptor = $this->postJson($this->path.'/heartbeat', ['worker' => 'worker'])->assertOk()->json('data.execution_context.descriptors.1');
+    $run = ['worker' => 'worker', ...array_intersect_key($descriptor, array_flip(['key', 'transport', 'name', 'input']))];
+    $effectKey = 'op-'.$this->operation->id.'.private-dns-publish';
+    $programResult = ['outcome' => 'published', 'data' => ['ready' => true, 'digest' => str_repeat('d', 64)], 'log' => 'diagnostic program log'];
+    $receipt = ['command' => 'remote_program.route.publish-dns', 'effect_key' => $effectKey, 'state' => 'succeeded', 'result' => ['ok' => true, 'data' => $programResult], 'result_digest' => str_repeat('a', 64), 'sanitized' => true, 'exit_code' => 0, 'finished_at' => '2026-10-28T22:00:00Z'];
+    $this->agents->answer('agent.effect-reserve', ['reserved' => true, 'receipt' => [...$receipt, 'state' => 'running', 'result' => null, 'result_digest' => null, 'exit_code' => null, 'finished_at' => null, 'sanitized' => false]])
+        ->answer('agent.effect-complete', static fn (): array => throw new RuntimeException('Lost program receipt reply.'))
+        ->answer('agent.effect-receipt', $receipt);
+    $remote = Mockery::mock(RemoteProgramRunner::class);
+    $remote->shouldReceive('run')->once()->andReturn(new ProgramResult('published', $programResult['data'], $programResult['log']));
+    app()->instance(RemoteProgramRunner::class, $remote);
+    $this->postJson($this->path.'/run', $run)->assertStatus(502);
+    $response = $this->getJson($this->path.'/receipts/private-dns-publish')->assertOk()->assertJsonPath('data.result.ready', true);
+    expect($response->json('data.result'))->not->toHaveKey('log');
+    $this->getJson($this->path.'/receipts/private-dns-publish')->assertOk();
+    expect(array_column($this->agents->calls, 'command'))->toBe(['agent.effect-reserve', 'agent.effect-complete', 'agent.effect-receipt'])
+        ->and(json_encode($this->operation->fresh()->state))->not->toContain('diagnostic program log');
 });

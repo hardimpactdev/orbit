@@ -8,6 +8,7 @@ use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 
 /** Hydrates the exact stored configuration map, including the empty object that withdraws every stale pool. */
 final readonly class PhpPoolInputSource implements OperationSecretSource
@@ -39,6 +40,9 @@ final readonly class PhpPoolInputSource implements OperationSecretSource
             throw new ResourceOperationException('operation.execution_forbidden', 'The PHP pool render does not belong to this Operation.', 422);
         }
 
-        return new OperationSecretValue((object) $configurations);
+        return new OperationSecretValue((object) $configurations, [
+            json_encode((object) $configurations, JSON_THROW_ON_ERROR),
+            ...array_values(array_map(ValidatedData::string(...), $configurations)),
+        ]);
     }
 }
