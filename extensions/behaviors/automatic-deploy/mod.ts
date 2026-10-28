@@ -47,7 +47,7 @@ export function automaticDeploy(
 ) {
   return {
     type: "@nckrtl/automatic-deploy",
-    version: "2026.10.28.5",
+    version: "2026.10.28.6",
     globalArguments: z.object({
       gatewayUrl: z.string().url().default("https://gateway.orbit"),
       caFile: z.string().default(
@@ -125,7 +125,16 @@ export function automaticDeploy(
               );
               if (!decision || !observed) continue;
               await deliver(decision.state);
-              await client.publish(instance, decision.projection, observed);
+              try {
+                await client.publish(instance, decision.projection, observed);
+              } catch (error) {
+                // Admission may already have added history. Keep its durable receipt;
+                // the next tick reads the newer history instead of publishing stale state.
+                if (
+                  !(error instanceof PolicyError) ||
+                  error.code !== "instance.auto_deploy_observation_changed"
+                ) throw error;
+              }
               if (decision.state.result === "failed") {
                 throw new PolicyError(
                   decision.state.error_code ?? "deployment.automatic_failed",

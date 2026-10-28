@@ -301,6 +301,36 @@ Deno.test("worker loss without a row clears admission and holds only until manua
   assertEquals(await f.tick(), "started");
   assertEquals(f.state.effect_hold, null);
 });
+
+for (
+  const code of [
+    "deployment.paused",
+    "instance.auto_deploy_role_inactive",
+    "instance.auto_deploy_policy_owner",
+  ]
+) {
+  Deno.test(`first-attempt ${code} before deployment clears intent without an effect hold`, async () => {
+    const f = new PolicyFixture();
+    await f.tick();
+    const op = f.gateway.observation.holder!;
+    Object.assign(op, { status: "failed", attempts: 1, error_code: code });
+    f.gateway.observation.holder = null;
+    assertEquals(await f.tick(), "started");
+    assertEquals(f.state.effect_hold, null);
+    assertEquals(f.state.intent?.key, `auto.7.${B}.2`);
+  });
+  Deno.test(`resumed ${code} without effect evidence still holds`, async () => {
+    const f = new PolicyFixture();
+    await f.tick();
+    const op = f.gateway.observation.holder!;
+    Object.assign(op, { status: "failed", attempts: 2, error_code: code });
+    f.gateway.observation.holder = null;
+    assertEquals(await f.tick(), "failed");
+    assertEquals(f.state.intent, null);
+    assertEquals(f.state.effect_hold?.operation_id, op.id);
+    assertEquals(f.gateway.starts.length, 1);
+  });
+}
 Deno.test("manual deploy and resume before observing worker loss still resolve that receipt", async () => {
   const f = new PolicyFixture();
   await f.tick();

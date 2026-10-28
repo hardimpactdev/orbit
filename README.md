@@ -312,4 +312,4 @@ in `logs/`.
 Known gap: the `apps/docs` check needs bun installs (`apps/web/tools/...`) that
 the worktree prep does not do yet; Project 46's setup steps do.
 
-Swamp runs the production automatic-deploy policy after the ADR 0238 Gateway cutover. Its staggered schedule discovers every enabled production Instance and waits for Gateway ownership before admitting work. See [running the policy and resolving holds](docs/automatic-deploy.md).
+Swamp runs the production automatic-deploy policy after the ADR 0238 Gateway cutover. Its schedule runs every minute at second 30 UTC and discovers every enabled production Instance and waits for Gateway ownership before admitting work. See [running the policy and resolving holds](docs/automatic-deploy.md).

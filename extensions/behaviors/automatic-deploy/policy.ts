@@ -155,9 +155,7 @@ export const StateSchema = z.object({
 export type State = z.infer<typeof StateSchema>;
 export type Alert = z.infer<typeof AlertSchema>;
 export const DecisionSchema = z.object({
-  ready: z.boolean(),
   error_code: nullable,
-  gateway_gaps: z.array(z.string()),
   projection: z.object({
     enabled: z.boolean(),
     gate: nullable,
@@ -350,8 +348,15 @@ export async function tick(
     const row = history.find((r) => r.id === receipt.result?.deployment_id);
     const evidence = row && row.status !== "running" &&
       row.commit === intent.commit && automatic(row);
+    const noEffect = receipt.status === "failed" && receipt.attempts === 1 &&
+      !receipt.result?.deployment_id && [
+      "deployment.paused",
+      "instance.auto_deploy_role_inactive",
+      "instance.auto_deploy_policy_owner",
+    ].includes(receipt.error_code ?? "");
     state.intent = null;
     if (
+      !noEffect &&
       (!evidence || receipt.error_code === "operation.worker_lost") &&
       manual <= intent.manual_after
     ) {

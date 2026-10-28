@@ -261,7 +261,6 @@ Deno.test("P25 unreadable gate fails tick without a start", async () => {
     assertEquals(f.state.error_code, "instance.auto_deploy_gate_unavailable");
     assertEquals(f.state.message, "The Gateway read failed.");
     assertEquals(f.gateway.starts, []);
-    assertEquals(f.decision.ready, false);
   }
 });
 Deno.test("P26 unsupported source access fails without reading checks", async () => {

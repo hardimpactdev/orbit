@@ -7,7 +7,7 @@ import {
 import {
   type Check,
   type Commit,
-  DecisionSchema,
+  type Decision,
   type Gateway,
   type Observation,
   type Operation,
@@ -268,7 +268,7 @@ export class FakeGateway implements Gateway {
 export class PolicyFixture {
   gateway = new FakeGateway();
   stored = new Map<string, Record<string, unknown>>();
-  decisions: Record<string, unknown>[] = [];
+  decisions: Decision[] = [];
   stateWrites = 0;
   get state() {
     return StateSchema.parse(this.stored.get("state-7") ?? {});
@@ -295,49 +295,31 @@ export class PolicyFixture {
       readResource: (name: string) =>
         Promise.resolve(this.stored.get(name) ?? null),
       writeResource: async (
-        spec: "state" | "decision",
+        spec: "state",
         name: string,
         data: Record<string, unknown>,
       ) => {
-        (spec === "decision" ? DecisionSchema : StateSchema)
-          .parse(data);
+        StateSchema.parse(data);
         const handle = await write(spec, name, data);
         this.stored.set(name, structuredClone(data));
-        if (spec === "decision") this.decisions.push(structuredClone(data));
-        else this.stateWrites++;
+        this.stateWrites++;
         return handle;
       },
     });
-    try {
-      const decision = await tick(
-        7,
-        this.state,
-        this.gateway,
-        async (state) => {
-          if (
-            JSON.stringify(state) !== JSON.stringify(this.stored.get("state-7"))
-          ) await ctx.writeResource("state", "state-7", state);
-        },
-        this.gateway.now,
-      );
-      if (decision) {
-        await ctx.writeResource("decision", "decision-7", {
-          ready: decision.state.result !== "failed",
-          error_code: decision.state.error_code,
-          gateway_gaps: [],
-          projection: decision.projection,
-          alerts: decision.alerts,
-          activity: decision.activity,
-        });
-      }
-    } catch (error) {
-      if (
-        !(error instanceof PolicyError) || this.decision?.ready !== false ||
-        this.state.result !== "failed"
-      ) {
-        throw error;
-      }
-    }
+    const decision = await tick(
+      7,
+      this.state,
+      this.gateway,
+      async (state) => {
+        if (
+          JSON.stringify(state) !== JSON.stringify(this.stored.get("state-7"))
+        ) {
+          await ctx.writeResource("state", "state-7", state);
+        }
+      },
+      this.gateway.now,
+    );
+    if (decision) this.decisions.push(structuredClone(decision));
     return this.state.result;
   }
 }

@@ -123,6 +123,29 @@ function fixture() {
         operations.set(event.id, event);
         response = event;
       } else if (method === "PUT" && path.endsWith("/policy")) {
+        const publication = body as Record<string, unknown>;
+        if (
+          publication.history_version !==
+            instance.auto_deploy.history_version ||
+          publication.resumed_after !== instance.auto_deploy.resumed_after ||
+          publication.last_deployment_id !==
+            Math.max(0, ...rows.map((r) => r.id))
+        ) return refusal("instance.auto_deploy_observation_changed");
+        Object.assign(
+          instance.auto_deploy,
+          Object.fromEntries(
+            [
+              "result",
+              "commit",
+              "head",
+              "since",
+              "error_code",
+              "message",
+              "pause",
+            ]
+              .map((key) => [key, publication[key]]),
+          ),
+        );
         response = instance;
       } else if (method === "POST" && path.endsWith("/automatic/resolve")) {
         response = {
@@ -241,7 +264,6 @@ Deno.test("live default discovers production, guards ownership, saves intent, ad
   ]);
   const writes = f.requests.filter((r) => r.method !== "GET");
   assertEquals(writes.map((r) => [r.method, r.path]), [
-    ["PUT", "/api/v1/instances/7/auto-deploy/policy"],
     ["POST", "/api/v1/instances/7/deploy/automatic"],
     ["POST", "/api/v1/instances/7/auto-deploy/events"],
     ["PUT", "/api/v1/instances/7/auto-deploy/policy"],
@@ -294,6 +316,129 @@ Deno.test("first live tick imports the public projection and preserves a stable 
   assertEquals(f.state().since, since);
   assertEquals(f.state().events, []);
   assertEquals(deployPosts(f), []);
+  await f.run();
+  assertEquals(f.requests.filter((r) => r.method === "PUT"), []);
+});
+
+Deno.test("history written after deploy admission rejects final PUT without failing the run or replaying admission", async () => {
+  const f = fixture();
+  f.intercept((method, path) => {
+    if (method === "POST" && path.endsWith("/deploy/automatic")) {
+      f.instance.auto_deploy.history_version = "a".repeat(64);
+      f.setRows([
+        f.fake.observation.history[0],
+        {
+          ...f.fake.observation.history[0],
+          id: 2,
+          status: "running",
+          commit: B,
+          triggered_by: trigger,
+          finished_at: null,
+        },
+      ]);
+    }
+    return undefined;
+  });
+  await f.run();
+  assertEquals(f.state().intent?.operation_id, 100);
+  assertEquals(f.state().result, "started");
+  const stale = f.requests.find((r) => r.method === "PUT")!.body as Record<
+    string,
+    unknown
+  >;
+  assertEquals(stale.history_version, "f".repeat(64));
+  assertEquals(f.instance.auto_deploy.result, "gate_pending");
+  await f.run();
+  assertEquals(f.state().result, "deploying");
+  assertEquals(deployPosts(f).length, 1);
+  const fresh = f.requests.filter((r) => r.method === "PUT").at(-1)!
+    .body as Record<string, unknown>;
+  assertEquals(fresh.history_version, "a".repeat(64));
+  assertEquals(fresh.last_deployment_id, 2);
+});
+
+Deno.test("final publication conflict does not hide a failed policy decision", async () => {
+  const f = fixture();
+  f.intercept((method, path) => {
+    if (method === "PUT") {
+      return refusal("instance.auto_deploy_observation_changed");
+    }
+    if (path.endsWith("/head")) return { status: 500, body: {} };
+    return undefined;
+  });
+  await assertRejects(() => f.run(), AggregateError);
+  assertEquals(f.state().result, "failed");
+  assertEquals(deployPosts(f), []);
+});
+
+Deno.test("other final publication errors remain failed runs with the admission receipt kept", async () => {
+  const f = fixture();
+  f.intercept((method) =>
+    method === "PUT" ? { status: 500, body: {} } : undefined
+  );
+  await assertRejects(() => f.run(), AggregateError);
+  assertEquals(f.state().intent?.operation_id, 100);
+  assertEquals(deployPosts(f).length, 1);
+});
+
+for (const status of ["queued", "running"]) {
+  Deno.test(`manual ${status} operation with input [] remains a readable busy holder`, async () => {
+    const f = fixture();
+    f.intercept((_method, path) =>
+      path.startsWith("/api/v1/operations?") &&
+        path.endsWith(`status=${status}`)
+        ? {
+          status: 200,
+          body: {
+            data: [{
+              ...f.operation,
+              input: [],
+              status,
+              triggered_by: "manual",
+            }],
+          },
+        }
+        : undefined
+    );
+    await f.run();
+    assertEquals(f.state().result, "busy");
+    assertEquals(deployPosts(f), []);
+  });
+}
+
+Deno.test("target_busy follows a manual operation with input []", async () => {
+  const f = fixture();
+  f.operations.set(900, {
+    ...f.operation,
+    id: 900,
+    input: [],
+    triggered_by: "manual",
+  });
+  f.intercept((_method, path) =>
+    path.endsWith("/deploy/automatic")
+      ? {
+        status: 409,
+        body: {
+          error: {
+            code: "operation.target_busy",
+            message: "Busy",
+            details: { operation_id: 900 },
+          },
+        },
+      }
+      : undefined
+  );
+  await f.run();
+  assertEquals(f.state().result, "busy");
+  assertEquals(f.state().operation_id, 900);
+  assertEquals(f.state().intent, null);
+});
+
+Deno.test("non-empty operation input arrays remain unreadable", async () => {
+  const f = fixture();
+  f.operations.set(900, { ...f.operation, id: 900, input: [B] });
+  const error = await assertRejects(() => f.client.operation(900), PolicyError);
+  assertEquals(error.code, "gateway.read_unavailable");
 });
 Deno.test("discovery covers all enabled app-prod Instances; a filter only narrows it", async () => {
   const f = fixture();
@@ -427,6 +572,7 @@ Deno.test("changed publication version and unreadable ownership probe stop befor
     }]
   ) {
     const f = fixture();
+    Object.assign(f.instance.auto_deploy, { result: null, since: null });
     f.intercept((method) => method === "PUT" ? response : undefined);
     await assertRejects(() => f.run(), AggregateError);
     assertEquals(deployPosts(f), []);

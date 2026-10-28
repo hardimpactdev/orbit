@@ -31,10 +31,13 @@ const OperationSchema = z.object({
   kind: z.string(),
   status: z.string(),
   attempts: z.number().int().nonnegative(),
-  input: z.object({
-    commit: z.string().nullable().optional(),
-    caller_node_id: z.number().optional(),
-  }).passthrough(),
+  input: z.preprocess(
+    (value) => Array.isArray(value) && value.length === 0 ? {} : value,
+    z.object({
+      commit: z.string().nullable().optional(),
+      caller_node_id: z.number().optional(),
+    }).passthrough(),
+  ),
   triggered_by: z.string().nullable(),
   result: z.object({ deployment_id: z.number().optional() }).passthrough()
     .nullable(),
@@ -173,7 +176,7 @@ export class GatewayClient implements Gateway {
     ].sort((a, b) => a - b);
   }
   async guard(instance: number, observation: Observation): Promise<void> {
-    if (observation.policyOwner === "gateway") {
+    if (observation.policyOwner !== "swamp") {
       throw new PolicyError(
         "instance.auto_deploy_policy_owner",
         "PHP owns production policy.",
@@ -432,6 +435,21 @@ export class GatewayClient implements Gateway {
     observed: Observation,
   ): Promise<void> {
     const p = projection;
+    const fields = [
+      "result",
+      "commit",
+      "head",
+      "since",
+      "error_code",
+      "message",
+      "pause",
+    ] as const;
+    if (
+      observed.publication &&
+      fields.every((key) =>
+        JSON.stringify(p[key]) === JSON.stringify(observed.publication![key])
+      )
+    ) return;
     await this.request(
       "PUT",
       `/api/v1/instances/${instance}/auto-deploy/policy`,
