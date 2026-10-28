@@ -12,6 +12,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ReservedPrivateHostname;
 use App\Domain\Routes\RouteAssociationGuard;
 use App\Domain\Routes\RouteDomain;
+use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RouteReconciliationGuard;
 use App\Domain\Routes\RouteStatus;
@@ -20,9 +21,11 @@ use App\Domain\Routes\RouteWebRoot;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
 use App\Domain\WebSocket\WebSocketRouteSelection;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Route;
+use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Normal API admission. Route intent and its Operation commit together. */
@@ -105,18 +108,20 @@ final readonly class AdmitRouteOperationAction
     public function setTarget(Route $route, int $instanceId, ?Node $caller = null, ?string $requestId = null): Operation
     {
         return DB::transaction(function () use ($route, $instanceId, $caller, $requestId): Operation {
+            $previous = $route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->values()->all();
             $updated = app(SetRouteTargetAction::class)->execute($route, $instanceId);
 
-            return $this->start('route.target_set', $updated, ['mode' => 'target', 'instance_id' => $instanceId], $caller, $requestId);
+            return $this->start('route.target_set', $updated, ['mode' => 'target', 'instance_id' => $instanceId, 'previous_target_instance_ids' => $previous], $caller, $requestId);
         });
     }
 
     public function clearTarget(Route $route, ?Node $caller = null, ?string $requestId = null): Operation
     {
         return DB::transaction(function () use ($route, $caller, $requestId): Operation {
+            $previous = $route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->values()->all();
             $updated = app(ClearRouteTargetAction::class)->execute($route);
 
-            return $this->start('route.target_unset', $updated, ['mode' => 'state_only'], $caller, $requestId);
+            return $this->start('route.target_unset', $updated, ['mode' => 'state_only', 'previous_target_instance_ids' => $previous], $caller, $requestId);
         });
     }
 
@@ -141,7 +146,14 @@ final readonly class AdmitRouteOperationAction
     public function start(string $kind, Route $route, array $input, ?Node $caller = null, ?string $requestId = null): Operation
     {
         $route->loadMissing(['targets.instance.node', 'cluster.routerAssignment.node', 'cluster.ingressAssignment.node', 'customProxy.node']);
-        $workloads = $route->targets->map(static fn ($target): int => $target->instance->node_id)->all();
+        $currentIds = $route->targets->pluck('instance_id')->map(StoredInteger::from(...))->values()->all();
+        $proposedIds = $this->instanceIds($input['targets'] ?? $currentIds);
+        $previousIds = $this->instanceIds($input['previous_target_instance_ids'] ?? $currentIds);
+        $removedIds = array_values(array_map(static fn (array $disposition): int => StoredInteger::from($disposition['instance_id']),
+            array_filter(RouteExecutionProof::objects($input['dispositions'] ?? []), static fn (array $disposition): bool => ($disposition['remove'] ?? false) === true)));
+        $placements = Instance::query()->whereKey(array_values(array_unique([...$proposedIds, ...$previousIds, ...$removedIds])))->orderBy('id')->get()
+            ->map(static fn (Instance $instance): array => ['instance_id' => $instance->id, 'node_id' => $instance->node_id, 'production' => $instance->placedOnAppProd()])->values()->all();
+        $workloads = array_values(array_unique(array_column($placements, 'node_id')));
         $routerId = $route->cluster?->routerAssignment?->node_id;
         $proxyId = $route->customProxy?->node_id;
         $nodeId = $workloads[0] ?? $route->node_id ?? $routerId ?? $proxyId;
@@ -150,7 +162,7 @@ final readonly class AdmitRouteOperationAction
         }
         $nodes = array_values(array_unique(array_filter([...$workloads, $nodeId, $route->cluster?->routerAssignment?->node_id,
             $route->cluster?->ingressAssignment?->node_id,
-            ...Node::query()->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Vpn))->pluck('id')->all()], is_int(...))));
+            ...Node::query()->whereHas('roles', static fn ($q) => $q->whereIn('role', [RoleName::Vpn, RoleName::Gateway]))->pluck('id')->all()], is_int(...))));
 
         $accessNodes = [$nodeId];
         if ($route->isCustomProxy() && $route->cluster_id !== null) {
@@ -166,6 +178,17 @@ final readonly class AdmitRouteOperationAction
             ['route_id' => $route->id, 'node_ids' => $nodes,
                 'public_process' => $route->isCustomProxy() && $route->cluster_id !== null,
                 'access_node_ids' => $accessNodes,
-                'caller_node_id' => $caller?->id, ...$input], 'operator', $requestId);
+                'caller_node_id' => $caller?->id, ...$input, 'target_instance_ids' => $proposedIds,
+                'previous_target_instance_ids' => $previousIds, 'removed_instance_ids' => $removedIds, 'instance_placements' => $placements], 'operator', $requestId);
+    }
+
+    /** @return list<int> */
+    private function instanceIds(mixed $value): array
+    {
+        if (! is_array($value) || ! array_is_list($value)) {
+            throw new ResourceOperationException('route.target_conflict', 'Route intent requires an ordered Instance list.', 409);
+        }
+
+        return array_map(ValidatedData::integer(...), $value);
     }
 }

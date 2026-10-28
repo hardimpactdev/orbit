@@ -17,6 +17,12 @@ final readonly class CertificateLeafSource implements OperationSecretSource
         return 'certificate.leaf';
     }
 
+    /** @return list<string> */
+    public function targetTypes(): array
+    {
+        return ['node_certificate'];
+    }
+
     public function ownerId(Operation $operation): ?int
     {
         return $operation->kind === 'certificate.converge' ? $operation->id : null;

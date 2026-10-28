@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Routes;
 
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
+use App\Domain\Operations\EffectReceiptMetadata;
 use App\Domain\Operations\OperationEffectTransport;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
@@ -37,7 +38,7 @@ final readonly class PrivateDnsTransport implements OperationEffectTransport
             if ($input['records'] !== $this->renderer->render() || $input['catalog'] !== $catalog) {
                 return ['error_code' => 'private_dns.plan_stale'];
             }
-            $result = $this->programs->run($node, $this->catalog->program('route.publish-dns', user: 'root'), $input, $run['effect_key']);
+            $result = $this->programs->run($node, $this->catalog->program('route.publish-dns', user: 'root'), $input, $run['effect_key'], effect: EffectReceiptMetadata::fromRun($run));
 
             return ['outcome' => $result->outcome, 'data' => $result->data];
         });
@@ -51,7 +52,7 @@ final readonly class PrivateDnsTransport implements OperationEffectTransport
     public function receipt(Operation $operation, array $run, #[SensitiveParameter] array $input): array
     {
         $receipt = $this->programs->receipt(Node::query()->findOrFail($operation->node_id), $this->catalog->program('route.publish-dns', user: 'root'), $run['effect_key']);
-        if (is_array($receipt['result'] ?? null)) {
+        if (is_array($receipt['result'] ?? null) && ! isset($receipt['result']['error_code'])) {
             $result = $receipt['result'];
             $receipt['result'] = ['outcome' => $result['outcome'], 'data' => $result['data']];
         }

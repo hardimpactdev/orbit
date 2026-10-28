@@ -10,6 +10,8 @@ import json
 import os
 from pathlib import Path
 import shutil
+import socket
+import struct
 import subprocess
 import tempfile
 import time
@@ -21,6 +23,7 @@ CATALOG = Path('/var/lib/orbit/private-dns/catalog.json')
 LOCK = Path('/run/lock/orbit-dnsmasq.lock')
 LISTENER = 'orbit-private-dns.service'
 SOCKET = 'orbit-private-dns.socket'
+SOCKET_UNIT = Path('/etc/systemd/system') / SOCKET
 
 
 def command(*args):
@@ -30,6 +33,23 @@ def command(*args):
 
 def active(unit):
     return command('systemctl', 'is-active', '--quiet', unit)
+
+
+def answers():
+    # The Node footprint owns this fixed unit and its listen address.
+    endpoint = next((line.split('=', 1)[1] for line in SOCKET_UNIT.read_text().splitlines()
+                     if line.startswith('ListenDatagram=')), '')
+    address, port = endpoint.rsplit(':', 1)
+    transaction = os.urandom(2)
+    query = transaction + struct.pack('!HHHHH', 0x0100, 1, 0, 0, 0)
+    query += b'\x0borbit-probe\x07invalid\x00' + struct.pack('!HH', 1, 1)
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as client:
+        client.settimeout(1)
+        client.connect((address, int(port)))
+        client.send(query)
+        response = client.recv(4096)
+    # A DNS refusal is also a valid response for an unregistered local requester.
+    return len(response) >= 12 and response[:2] == transaction and bool(response[2] & 0x80)
 
 
 def replace(path, contents, mode=0o644):
@@ -70,8 +90,10 @@ def publish(payload):
     digest = hashlib.sha256(catalog).hexdigest()
     old_records, old_catalog = snapshot(RECORDS), snapshot(CATALOG)
     was_backend, was_listener = active('dnsmasq'), active(LISTENER)
+    was_socket = active(SOCKET)
+    was_enabled = command('systemctl', 'is-enabled', '--quiet', SOCKET)
     # Listener release installation belongs to the Node footprint. Publishing data never deploys code.
-    if not active(SOCKET):
+    if not SOCKET_UNIT.is_file():
         return 'refused', {'error_code': 'private_dns.listener_not_ready'}
     with tempfile.TemporaryDirectory(prefix='orbit-dns-validate-', dir='/var/tmp') as temporary:
         temporary = Path(temporary)
@@ -95,6 +117,9 @@ def publish(payload):
             if changed_records or not was_backend:
                 if not command('systemctl', 'restart', 'dnsmasq'):
                     raise RuntimeError('backend activation failed')
+            if not was_socket:
+                if not command('systemctl', 'enable', SOCKET) or not command('systemctl', 'start', SOCKET):
+                    raise RuntimeError('socket activation failed')
             confirmation = Path(str(CATALOG) + '.loaded')
             loaded = confirmation.read_text().strip() if confirmation.exists() else ''
             if loaded != digest or not was_listener:
@@ -110,15 +135,19 @@ def publish(payload):
                     raise RuntimeError('listener did not confirm its catalog')
             if not active('dnsmasq') or not active(SOCKET) or not active(LISTENER):
                 raise RuntimeError('DNS services are not active')
+            if not answers():
+                raise RuntimeError('listener did not answer')
             return 'published', {'ready': True, 'digest': digest}
-        except (OSError, RuntimeError):
+        except (OSError, RuntimeError, ValueError):
             try:
                 if changed:
                     restore(RECORDS, old_records)
                     restore(CATALOG, old_catalog)
                 backend = command('systemctl', 'restart' if was_backend else 'stop', 'dnsmasq')
                 listener = command('systemctl', 'restart' if was_listener else 'stop', LISTENER)
-                if not backend or not listener:
+                restored_socket = was_socket or command('systemctl', 'stop', SOCKET)
+                restored_enabled = was_enabled or command('systemctl', 'disable', SOCKET)
+                if not backend or not listener or not restored_socket or not restored_enabled:
                     return 'refused', {'error_code': 'private_dns.recovery_failed'}
             except OSError:
                 return 'refused', {'error_code': 'private_dns.recovery_failed'}

@@ -31,7 +31,7 @@ final readonly class CertificateRequestTransport implements OperationEffectTrans
 
     public function run(Operation $operation, array $run, #[SensitiveParameter] array $input): array
     {
-        return $this->publicResult($this->agents->run(Node::query()->findOrFail($operation->node_id), 'certificate.request-leaf', [...$input, 'effect_key' => $run['effect_key']]));
+        return $this->publicResult($this->agents->run(Node::query()->findOrFail($operation->node_id), 'certificate.request-leaf', AgentEffectReceipts::input($run, $input)));
     }
 
     public function effectful(Operation $operation, array $run): bool

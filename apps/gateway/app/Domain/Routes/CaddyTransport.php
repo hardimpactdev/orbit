@@ -40,7 +40,7 @@ final readonly class CaddyTransport implements OperationEffectTransport, Operati
                 return ['error_code' => 'caddy.plan_stale'];
             }
 
-            return $this->agents->run($node, 'caddy.publish', [...$input, 'effect_key' => $run['effect_key']]);
+            return $this->agents->run($node, 'caddy.publish', AgentEffectReceipts::input($run, $input));
         });
     }
 

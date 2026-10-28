@@ -704,20 +704,23 @@ A Process can run on a service Node outside any Cluster. Selecting an Ingress in
 
 LAN address selection uses the recorded /24, not Cluster membership; the source firewall check and connection probe confirm the path before activation. Requiring a listener on the selected address avoids silently rewriting Docker publications. Arbitrary remote URLs, wildcard bindings, a Router hop, and a private certificate on the service Node add exposure or complexity without helping this HTTP path.
 
-Swamp Route composition uses Node-bound children. `route.caddy_converge` takes
-`{reason}` and renders the whole Caddyfile from Gateway state. A stale saved
-render refuses before publication. The Node build lock covers the fresh check
-and dispatch, so an older render cannot replace a newer serving configuration.
+Swamp Route composition uses Node-bound children. `route.caddy_converge` takes `{reason}` and renders the whole Caddyfile from Gateway state. A stale saved render refuses before publication. The Node build lock covers the fresh check and dispatch, so an older render cannot replace a newer serving configuration.
 
-Instance removal calls `route.withdraw_instance` with `{instance_id}` before it
-removes source files. This converges shared PHP-FPM pools even when the Instance
-has no Route. After source removal, `route.cleanup_instance` withdraws Caddy
-before removing the unused Instance certificate and runtime. A certificate still
-named by a stored site stays on the Node.
+Instance removal calls `route.withdraw_instance` with `{instance_id}` before it removes source files. This converges shared PHP-FPM pools even when the Instance has no Route. After source removal, `route.cleanup_instance` withdraws Caddy before removing the unused Instance certificate and runtime. A certificate still named by a stored site stays on the Node.
 
-`route.offline_residue_clean` takes `{removed_node_id: int|null}` on the serving
-Node. A Node ID scopes cleanup through the removed Node's preserved Route
-associations. `null` selects historical orphan residue whose Route no longer
-exists. Successful cleanup removes only the captured residue rows that have not
-changed during execution. Its `removed` result is a redacted list of artifact
-names.
+`route.offline_residue_clean` takes `{removed_node_id: int|null}` on the serving Node. A Node ID scopes cleanup through the removed Node's preserved Route associations. `null` selects retained residue whose Route row is absent. Successful cleanup removes only the captured residue rows that have not changed during execution. Its `removed` result is a redacted list of artifact names.
+
+
+### Route child contracts
+
+Route publication records child intent from stored Route targets and Node placement. Development workload preparation uses `route.workload_prepare` with `{route_id, instance_id}` on the workload Node. The Gateway binds checkout roots, inspects the shared PHP pools, selects packages from that inspection, and requires pool publication proof. A changed stored-site render refuses before a Node effect.
+
+Production publication uses the Instance family's `instance.prepare_php_runtime` with `{instance_id}` on the production Node. A pending Route with a web root supplies its application pool through the owning Route relation. Environment changes use `instance.sync_environment` with `{instance_id, route_domain: candidate|authoritative}`. URL-only work uses the child key `synchronize-web-root-urls.<instance_id>`.
+
+The Gateway captures `target_instance_ids`, `previous_target_instance_ids`, and `removed_instance_ids` at admission. A target disposition retains its previous ownership proof after associations change. A replacement also records `candidate_route_id`. Secret environment values remain Gateway references.
+
+Analytics publication uses `route.analytics_publish` with `{route_id}`. Host relocation uses `route.analytics_host_prepare` and `route.analytics_host_withdraw`, also with `{route_id}`. These Operations use the stored serving Node. Host preparation issues the private Router leaf before the site is published. Public Ingress keeps Caddy automatic HTTPS. `route.analytics_remove` withdraws the stored edge and tracking Route.
+
+A child `route.destroy` request uses `{route_id, offline: false}`. The shared child admission boundary calls `AdmitRouteOperationAction::destroy` when the parent requests the child. This runs the Route guards and captures its intent before the child becomes runnable. An AI takeover requests destruction after its collector health proof.
+
+`route.private_dns_publish` uses the listener release and socket unit installed by Node convergence. It validates and replaces the catalog before enabling and starting an inactive socket. Publication requires the loaded catalog digest and a DNS reply. A failed first publication restores the previous data and inactive socket state. An existing socket stays open during publication and recovery.

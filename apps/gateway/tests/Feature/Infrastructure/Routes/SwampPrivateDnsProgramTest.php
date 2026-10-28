@@ -9,6 +9,6 @@ it('publishes private DNS atomically and restores data and service state on refu
     $process->setTimeout(2);
     $process->run();
 
-    expect($process->getErrorOutput())->toContain('Ran 8 tests', 'OK');
+    expect($process->getErrorOutput())->toContain('Ran 11 tests', 'OK');
     expect($process->getExitCode())->toBe(0);
 });
