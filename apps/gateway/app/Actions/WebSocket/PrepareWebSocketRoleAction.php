@@ -97,7 +97,9 @@ final readonly class PrepareWebSocketRoleAction
                 $input['failure_flow'] = array_splice($plan->flow, $count);
                 $input['failure_when'] = ['step' => 'websocket-runtime', 'field' => 'applied', 'equals' => true];
                 foreach ($plan->effects as $key => $effect) {
-                    if (str_starts_with($key, 'websocket-rollback-')) { $plan->effects[$key]['required'] = false; }
+                    if (str_starts_with($key, 'websocket-rollback-')) {
+                        $plan->effects[$key]['required'] = false;
+                    }
                 }
             }
 
@@ -108,7 +110,10 @@ final readonly class PrepareWebSocketRoleAction
     private function read(string $path): string
     {
         $value = file_get_contents($path);
-        if (! is_string($value) || $value === '') { throw new ResourceOperationException('websocket.certificate_read_failed', 'The recorded WebSocket certificate is unreadable.', 422); }
+        if (! is_string($value) || $value === '') {
+            throw new ResourceOperationException('websocket.certificate_read_failed', 'The recorded WebSocket certificate is unreadable.', 422);
+        }
+
         return $value;
     }
 }

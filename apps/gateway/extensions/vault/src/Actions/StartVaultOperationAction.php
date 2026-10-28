@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Extensions\Vault\Actions;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Integrations\IntegrationAvailability;
 use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Models\Operation;
 use Illuminate\Support\Facades\Config;
@@ -23,7 +24,8 @@ final readonly class StartVaultOperationAction
     {
         $nodeId = $this->nodes->activeGatewayId() ?? throw new VaultException('vault.gateway_missing', 'Vault needs one active Gateway Node.', 409);
 
-        \App\Domain\Integrations\IntegrationAvailability::assertKind('vault.'.$action);
+        IntegrationAvailability::assertKind('vault.'.$action);
+
         return DB::transaction(function () use ($nodeId, $action, $configuration, $trigger): Operation {
             $operation = $this->operations->execute('vault.'.$action, 'vault', $nodeId, $nodeId,
                 ['configuration' => ['$secret' => 'vault.credentials', 'id' => $nodeId]], $trigger, null);

@@ -14,6 +14,7 @@ use App\Support\ValidatedData;
 final readonly class IntegrationRoleAdmission implements OperationChildAdmission
 {
     public function __construct(private StartOperationAction $operations) {}
+
     public function admit(Operation $parent, array $intent): Operation
     {
         $kind = ValidatedData::string($intent['kind']);
@@ -24,6 +25,7 @@ final readonly class IntegrationRoleAdmission implements OperationChildAdmission
             throw new ResourceOperationException('operation.execution_forbidden', 'The child has another integration role contract.', 422);
         }
         $nodeId = ValidatedData::integer($intent['node_id']);
+
         return $this->operations->execute($kind, 'node', $nodeId, $nodeId, $input, 'integration', null);
     }
 }

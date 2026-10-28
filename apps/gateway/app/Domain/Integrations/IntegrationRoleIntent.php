@@ -15,7 +15,9 @@ final readonly class IntegrationRoleIntent
     public function get(Operation $operation): array
     {
         $parentId = $operation->getAttribute('parent_operation_id');
-        if (! is_int($parentId)) { $this->refuse(); }
+        if (! is_int($parentId)) {
+            $this->refuse();
+        }
         $parent = Operation::query()->findOrFail($parentId);
         $intent = ValidatedData::object($parent->state['role_intent'] ?? []);
         $role = ValidatedData::string($intent['role'] ?? null);
@@ -26,7 +28,10 @@ final readonly class IntegrationRoleIntent
         $configuration = ValidatedData::object($intent['role_configuration'] ?? []);
         $scope = ValidatedData::object($configuration[$expected === $source ? 'source_settings' : 'target_settings'] ?? []);
         if ($operation->kind !== $role.($remove ? '.role_remove' : '.role_converge') || $operation->node_id !== $expected
-            || ($scope['scope_type'] ?? null) !== 'node' || ($scope['scope_id'] ?? null) !== $expected) { $this->refuse(); }
+            || ($scope['scope_type'] ?? null) !== 'node' || ($scope['scope_id'] ?? null) !== $expected) {
+            $this->refuse();
+        }
+
         return ['assignment_id' => ValidatedData::integer($intent['assignment_id']), 'role' => $role,
             'source_node_id' => $source, 'target_node_id' => $target, 'created' => IntegrationIntent::boolean($intent['created'])];
     }

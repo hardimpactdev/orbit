@@ -31,11 +31,7 @@ return (static function (): array {
     $kinds['ai_router.collector_converge']['admission'] = IntegrationChildAdmission::class;
 
     if (! OperationKinds::supports('children')) {
-        foreach ($kinds as $name => $definition) {
-            if (isset($definition['children'])) {
-                unset($kinds[$name]);
-            }
-        }
+        return [];
     }
 
     return $kinds;

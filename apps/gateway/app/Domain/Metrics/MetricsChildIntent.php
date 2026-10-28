@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Metrics;
 
+use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
@@ -14,8 +15,11 @@ final readonly class MetricsChildIntent
 {
     public function find(Operation $parent, string $key): ?Operation
     {
-        if (! $parent->children()->where('child_key', $key)->exists()) { return null; }
-        return app(\App\Domain\Operations\OperationChildren::class)->child($parent, $key);
+        if (! $parent->children()->where('child_key', $key)->exists()) {
+            return null;
+        }
+
+        return app(OperationChildren::class)->child($parent, $key);
     }
 
     public function snapshot(Operation $operation): Operation
@@ -32,8 +36,11 @@ final readonly class MetricsChildIntent
         }
 
         $parent = Operation::query()->findOrFail($parentId);
-        $proven = app(\App\Domain\Operations\OperationChildren::class)->requireSucceeded($parent, ValidatedData::string($operation->input['source_key']));
-        if ($proven->id !== $source->id) { throw new ResourceOperationException('operation.child_unproven', 'The restore names another proven snapshot.', 409); }
+        $proven = app(OperationChildren::class)->requireSucceeded($parent, ValidatedData::string($operation->input['source_key']));
+        if ($proven->id !== $source->id) {
+            throw new ResourceOperationException('operation.child_unproven', 'The restore names another proven snapshot.', 409);
+        }
+
         return $proven;
     }
 }

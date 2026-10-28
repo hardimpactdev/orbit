@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Extensions\Conn\Actions;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Integrations\IntegrationAvailability;
 use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
@@ -18,7 +19,7 @@ final readonly class RevokeConnPairingsAction
 
     public function execute(Node $node, ConnEnvironment $environment): Operation
     {
-        \App\Domain\Integrations\IntegrationAvailability::assertKind('conn.pairing_revoke');
+        IntegrationAvailability::assertKind('conn.pairing_revoke');
         $gateway = $this->nodes->activeGatewayId() ?? throw new ResourceOperationException('conn.gateway_missing', 'Pairing needs one active Gateway Node.', 409);
         $ids = ConnPairing::query()->where('node_id', $node->id)->where('conn_environment_id', $environment->id)
             ->whereNull('revoked_at')->orderBy('id')->pluck('id')->all();

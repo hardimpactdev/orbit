@@ -33,6 +33,7 @@ final class ConnPairing extends Model
     #[\Override]
     protected $fillable = ['node_id', 'conn_environment_id', 'pairing_link_id', 'client_label', 'expires_at', 'revoked_at', 'credential', 'issue_started_at'];
 
+    #[\Override]
     protected $hidden = ['credential'];
 
     /** @return BelongsTo<Node, $this> */

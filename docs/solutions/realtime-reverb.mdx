@@ -4,7 +4,7 @@ description: "Turn on realtime events with the websocket role, what its converge
 covers:
   - apps/gateway/app/Domain/WebSocket/**
   - apps/gateway/app/Infrastructure/WebSocket/**
-  - apps/gateway/app/Infrastructure/Nodes/Roles/WebSocketRoleBaseline.php
+  - apps/gateway/app/Actions/WebSocket/PrepareWebSocketRoleAction.php
   - apps/gateway/app/Infrastructure/Caddy/Build/Sources/WebSocketCaddySiteSource.php
 ---
 
@@ -30,7 +30,7 @@ orbit node:role:add gateway websocket
 
 The `websocket` role is a singleton. It conflicts with no other role, so it can share a Node with `gateway` and `vpn`. No Project, Instance, Route, or `.env` edit is involved.
 
-The Gateway runs the Node-side runtime, certificate, and readiness work through typed [Node agent commands](/reference/node-agent#commands). It keeps the Reverb registry and publication intent.
+Swamp runs the Node-side runtime, certificate, and readiness work through typed [Node agent commands](/reference/node-agent#commands). The Gateway keeps the Reverb registry and publication intent. The Node parent composes `websocket.role_converge` and `websocket.role_remove` children and finalizes the assignment and Settings only after their proof.
 
 ### What the converge does
 

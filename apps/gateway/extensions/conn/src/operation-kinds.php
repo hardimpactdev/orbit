@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Operations\OperationKinds;
 use Orbit\Extensions\Conn\Domain\ConnOperationCompletion;
 
 return (static function (): array {
@@ -23,7 +24,9 @@ return (static function (): array {
         ];
     }
 
-    if (! \App\Domain\Operations\OperationKinds::supports('secret_outputs')) { unset($kinds['conn.pairing_create']); }
+    if (! OperationKinds::supports('secret_outputs')) {
+        unset($kinds['conn.pairing_create']);
+    }
 
     return $kinds;
 })();

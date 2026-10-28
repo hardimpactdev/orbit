@@ -138,7 +138,7 @@ final readonly class MetricsFleetExecution implements OperationFamilyChildren, O
     private function requireChild(Operation $operation, string $key, string $kind, int $nodeId, array $input, bool $success = true): Operation
     {
         $child = $this->children->find($operation, $key);
-        if (! $child instanceof Operation || $child->kind !== $kind || $child->node_id !== $nodeId || ($child->child_admission['intent']['input'] ?? null) !== $input || ! $child->status->terminal() || ($success && $child->status !== OperationStatus::Succeeded)) {
+        if (! $child instanceof Operation || $child->kind !== $kind || $child->node_id !== $nodeId || (ValidatedData::object($child->child_admission['intent'] ?? [])['input'] ?? null) !== $input || ! $child->status->terminal() || ($success && $child->status !== OperationStatus::Succeeded)) {
             $this->unproven();
         }
 

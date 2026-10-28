@@ -199,7 +199,7 @@ final readonly class IntegrationExecution implements OperationFamilyChildren, Op
             $children = app(OperationChildren::class);
             $child = ($entry['continue_on_failure'] ?? false) ? $children->child($operation, $entry['key']) : $children->requireSucceeded($operation, $entry['key']);
             if ($child->kind !== $entry['kind'] || $child->node_id !== $entry['node_id']
-                || ($child->child_admission['intent']['input'] ?? null) !== $entry['input'] || (($entry['continue_on_failure'] ?? false) ? ! $child->status->terminal() : $child->status !== OperationStatus::Succeeded)) {
+                || (ValidatedData::object($child->child_admission['intent'] ?? [])['input'] ?? null) !== $entry['input'] || (($entry['continue_on_failure'] ?? false) ? ! $child->status->terminal() : $child->status !== OperationStatus::Succeeded)) {
                 throw new ResourceOperationException('operation.completion_unproven', 'The integration child has not completed its admitted intent.', 409);
             }
 
