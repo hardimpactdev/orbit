@@ -104,7 +104,7 @@ Actions use pinned commits. Build and check jobs have read-only tokens. The CLI 
 
 ### One PHP build in CI
 
-The shared PHP action installs PHP 8.5 and Composer 2.9.5 through the pinned PHP setup action. It does not compile the Rust agent or install the Node software recipe. Nodes and images continue to use the [machine software recipe](/reference/compute-drivers). Composer download caches stay separate from generated files and tool result caches.
+The shared PHP action installs PHP 8.5 and Composer 2.10.3 through the pinned PHP setup action. It does not compile the Rust agent or install the Node software recipe. Nodes and images continue to use the [machine software recipe](/reference/compute-drivers). Composer download caches stay separate from generated files and tool result caches.
 
 ### Gateway shards
 
