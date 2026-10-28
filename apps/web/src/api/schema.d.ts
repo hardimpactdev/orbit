@@ -2013,6 +2013,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/instances/{instance}/smoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start production smoke
+         * @description Starts instance.smoke with a required caller-bound key, full Request and separate instance_smoke target. Requires an active production Instance and its Route, selected deployment and accepted Actions write permission. Records send intent before GitHub and never repeats an uncertain send. See /reference/deployments#production-smoke.
+         */
+        post: operations["instance-smoke"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/instances/{instance}/smoke/context": {
         parameters: {
             query?: never;
@@ -2020,8 +2040,31 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** instance:smoke:context */
+        /**
+         * Read production smoke context
+         * @description Reads actual retained release selection, successful deployment history and active Project Route origins. Requires Gateway access; never dispatches.
+         */
         get: operations["instance-smoke-context"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/instances/{instance}/smoke/receipt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a production smoke receipt
+         * @description Reads retained evidence for the original caller, Instance and key. Never dispatches. Missing, uncertain or ambiguous execution stays pending or unknown, never failed. Only verified execution or test failures report failed. Swamp owns missing-result policy and baseline deadlines.
+         */
+        get: operations["instance-smoke-receipt"];
         put?: never;
         post?: never;
         delete?: never;
@@ -5105,18 +5148,49 @@ export interface components {
             selected_release?: string | null;
         };
         InstanceSmokeContext: {
-            instance_id?: number;
-            project_id?: number;
-            repository_url?: string;
-            production?: boolean;
-            base_urls?: string[];
-            selected?: components["schemas"]["InstanceSmokeSelection"] | null;
-            retained_releases?: string[];
+            instance_id: number;
+            project_id: number;
+            repository_url: string;
+            production: boolean;
+            base_urls: string[];
+            selected: components["schemas"]["InstanceSmokeSelection"] | null;
+            retained_releases: string[];
         };
         InstanceSmokeSelection: {
-            deployment_id?: number;
-            commit?: string;
-            release?: string;
+            deployment_id: number;
+            commit: string;
+            release: string;
+        };
+        InstanceSmokeReceipt: {
+            request_key: string;
+            found: boolean;
+            operation: components["schemas"]["Operation"] | null;
+            smoke: components["schemas"]["InstanceSmokeResult"] | null;
+        };
+        InstanceSmokeResult: {
+            deployment_id: number;
+            commit: string;
+            release: string;
+            base_url: string;
+            workflow: string;
+            ref: string;
+            /** @enum {string} */
+            state: "pending" | "passed" | "failed" | "unknown";
+            run_id: number | null;
+            run_attempt: number | null;
+            workflow_sha: string | null;
+            run_url: string | null;
+            conclusion: string | null;
+            tests: number;
+            failures: number;
+            errors: number;
+            skipped: number;
+            /** @description Redacted UTF-8 output, at most 64 KiB. */
+            output: string;
+            artifacts: {
+                name: string;
+                url: string;
+            }[];
         };
         WebSocketAppAttachment: {
             instance_id?: number;
@@ -13036,6 +13110,91 @@ export interface operations {
             };
         };
     };
+    "instance-smoke": {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A permanent key scoped to this operation kind, binding caller and command as well as target and input. The same request returns the existing operation with HTTP 202; a changed identity returns operation.idempotency_conflict (409). */
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Numeric Instance ID. */
+                instance: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    deployment_id: number;
+                    commit: string;
+                    release: string;
+                    base_url: string;
+                    workflow: string;
+                    ref: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Accepted. The operation is queued; follow it with `operation:show`. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Operation"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. The key already belongs to another target or input (`operation.idempotency_conflict`), or another operation holds the target (`operation.target_busy`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). A malformed Idempotency-Key also returns `validation.failed`. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "instance-smoke-context": {
         parameters: {
             query?: never;
@@ -13056,6 +13215,52 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["InstanceSmokeContext"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "instance-smoke-receipt": {
+        parameters: {
+            query: {
+                request_key: string;
+            };
+            header?: never;
+            path: {
+                /** @description Numeric Instance ID. */
+                instance: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["InstanceSmokeReceipt"];
                         meta: components["schemas"]["Meta"];
                     };
                 };

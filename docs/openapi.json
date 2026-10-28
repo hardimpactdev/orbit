@@ -13967,10 +13967,171 @@
         ]
       }
     },
+    "/api/v1/instances/{instance}/smoke": {
+      "post": {
+        "operationId": "instance-smoke",
+        "summary": "Start production smoke",
+        "tags": [
+          "Instances"
+        ],
+        "parameters": [
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Instance ID."
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]+$"
+            },
+            "description": "A permanent key scoped to this operation kind, binding caller and command as well as target and input. The same request returns the existing operation with HTTP 202; a changed identity returns operation.idempotency_conflict (409)."
+          }
+        ],
+        "description": "Starts instance.smoke with a required caller-bound key, full Request and separate instance_smoke target. Requires an active production Instance and its Route, selected deployment and accepted Actions write permission. Records send intent before GitHub and never repeats an uncertain send. See /reference/deployments#production-smoke.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "deployment_id": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "commit": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{40}$(?![\\s\\S])"
+                  },
+                  "release": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$(?![\\s\\S])"
+                  },
+                  "base_url": {
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  "workflow": {
+                    "type": "string",
+                    "pattern": "^\\.github/workflows/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,127}\\.ya?ml$(?![\\s\\S])"
+                  },
+                  "ref": {
+                    "type": "string",
+                    "maxLength": 255
+                  }
+                },
+                "required": [
+                  "deployment_id",
+                  "commit",
+                  "release",
+                  "base_url",
+                  "workflow",
+                  "ref"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-orbit-operation": "start",
+        "responses": {
+          "202": {
+            "description": "Accepted. The operation is queued; follow it with `operation:show`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Operation"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard. The key already belongs to another target or input (`operation.idempotency_conflict`), or another operation holds the target (`operation.target_busy`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). A malformed Idempotency-Key also returns `validation.failed`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/instances/12/smoke\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"deployment_id\": 1, \"commit\": \"example\", \"release\": \"20260914T101500Z\", \"base_url\": \"example\", \"workflow\": \"example\", \"ref\": \"example\"}'\n"
+          }
+        ]
+      }
+    },
     "/api/v1/instances/{instance}/smoke/context": {
       "get": {
         "operationId": "instance-smoke-context",
-        "summary": "instance:smoke:context",
+        "summary": "Read production smoke context",
         "tags": [
           "Instances"
         ],
@@ -13986,6 +14147,7 @@
             "description": "Numeric Instance ID."
           }
         ],
+        "description": "Reads actual retained release selection, successful deployment history and active Project Route origins. Requires Gateway access; never dispatches.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -14035,6 +14197,88 @@
             "lang": "bash",
             "label": "curl",
             "source": "curl -sS \"https://gateway.orbit/api/v1/instances/12/smoke/context\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/instances/{instance}/smoke/receipt": {
+      "get": {
+        "operationId": "instance-smoke-receipt",
+        "summary": "Read a production smoke receipt",
+        "tags": [
+          "Instances"
+        ],
+        "parameters": [
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Instance ID."
+          },
+          {
+            "name": "request_key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{1,128}$(?![\\s\\S])"
+            }
+          }
+        ],
+        "description": "Reads retained evidence for the original caller, Instance and key. Never dispatches. Missing, uncertain or ambiguous execution stays pending or unknown, never failed. Only verified execution or test failures report failed. Swamp owns missing-result policy and baseline deadlines.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/InstanceSmokeReceipt"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/instances/12/smoke/receipt?request_key=1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
           }
         ]
       }
@@ -37396,7 +37640,16 @@
               "type": "string"
             }
           }
-        }
+        },
+        "required": [
+          "instance_id",
+          "project_id",
+          "repository_url",
+          "production",
+          "base_urls",
+          "selected",
+          "retained_releases"
+        ]
       },
       "InstanceSmokeSelection": {
         "type": "object",
@@ -37410,7 +37663,169 @@
           "release": {
             "type": "string"
           }
-        }
+        },
+        "required": [
+          "deployment_id",
+          "commit",
+          "release"
+        ]
+      },
+      "InstanceSmokeReceipt": {
+        "type": "object",
+        "properties": {
+          "request_key": {
+            "type": "string"
+          },
+          "found": {
+            "type": "boolean"
+          },
+          "operation": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Operation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "smoke": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/InstanceSmokeResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "request_key",
+          "found",
+          "operation",
+          "smoke"
+        ]
+      },
+      "InstanceSmokeResult": {
+        "type": "object",
+        "properties": {
+          "deployment_id": {
+            "type": "integer"
+          },
+          "commit": {
+            "type": "string"
+          },
+          "release": {
+            "type": "string"
+          },
+          "base_url": {
+            "type": "string"
+          },
+          "workflow": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "passed",
+              "failed",
+              "unknown"
+            ]
+          },
+          "run_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "run_attempt": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "workflow_sha": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "run_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "conclusion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tests": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "failures": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "errors": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "skipped": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "output": {
+            "type": "string",
+            "description": "Redacted UTF-8 output, at most 64 KiB."
+          },
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "name",
+                "url"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "deployment_id",
+          "commit",
+          "release",
+          "base_url",
+          "workflow",
+          "ref",
+          "state",
+          "run_id",
+          "run_attempt",
+          "workflow_sha",
+          "run_url",
+          "conclusion",
+          "tests",
+          "failures",
+          "errors",
+          "skipped",
+          "output",
+          "artifacts"
+        ]
       },
       "WebSocketAppAttachment": {
         "type": "object",

@@ -1,0 +1,136 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Infrastructure\Instances;
+
+use App\Data\Instances\InstanceSmokeRequestData;
+use App\Data\Instances\InstanceSmokeResultData;
+use App\Domain\GitHub\GitHubApi;
+use App\Domain\GitHub\GitHubAppStore;
+use App\Domain\GitHub\GitHubRepository;
+use App\Infrastructure\GitHub\GitHubActionsReader;
+use App\Infrastructure\GitHub\GitHubActionsUnavailable;
+use App\Support\ValidatedData;
+use Illuminate\Support\Carbon;
+use Throwable;
+
+final readonly class GitHubInstanceSmoke
+{
+    public function __construct(private GitHubActionsReader $actions, private GitHubApi $api, private GitHubAppStore $apps, private SmokeArtifactEvidence $evidence) {}
+
+    /** @return array{id: int, sha: string} */
+    public function resolve(GitHubRepository $repository, InstanceSmokeRequestData $request): array
+    {
+        $credentials = $this->apps->credentials() ?? throw new GitHubActionsUnavailable;
+        $installation = $this->api->repositoryInstallation($credentials, $repository) ?? throw new GitHubActionsUnavailable;
+        $token = $this->api->repositoryReadToken($credentials, $installation, $repository);
+        $commit = $this->actions->json(GitHubActionsReader::repositoryPath($repository).'/commits/'.rawurlencode($request->ref), $token);
+        $sha = $commit['sha'] ?? null;
+        $workflow = $this->actions->json(GitHubActionsReader::repositoryPath($repository).'/actions/workflows/'.rawurlencode(basename($request->workflow)), $this->actions->token($repository));
+        if (! is_int($workflow['id'] ?? null) || $workflow['id'] < 1 || ($workflow['path'] ?? null) !== $request->workflow || ($workflow['state'] ?? null) !== 'active' || ! is_string($sha) || preg_match('/\A[0-9a-f]{40}\z/D', $sha) !== 1) {
+            throw new GitHubActionsUnavailable;
+        }
+
+        return ['id' => $workflow['id'], 'sha' => $sha];
+    }
+
+    public function send(GitHubRepository $repository, int $workflowId, InstanceSmokeRequestData $request, #[\SensitiveParameter] string $token): void
+    {
+        $this->actions->body(GitHubActionsReader::Api.GitHubActionsReader::repositoryPath($repository).'/actions/workflows/'.$workflowId.'/dispatches', $token, 1024,
+            ['ref' => $request->ref, 'inputs' => ['commit' => $request->commit, 'deployment_id' => (string) $request->deploymentId, 'base_url' => $request->baseUrl]]);
+    }
+
+    /** @param array{id: int, sha: string} $workflow */
+    public function observe(GitHubRepository $repository, InstanceSmokeRequestData $request, array $workflow, string $since): InstanceSmokeResultData
+    {
+        $result = InstanceSmokeResultData::from([...$request->toArray(), 'workflow_sha' => $workflow['sha']]);
+        $path = GitHubActionsReader::repositoryPath($repository);
+        $token = $this->actions->token($repository);
+        $runs = $this->actions->json($path.'/actions/workflows/'.$workflow['id'].'/runs?'.http_build_query(['event' => 'workflow_dispatch', 'head_sha' => $workflow['sha'], 'created' => '>='.$since, 'per_page' => 100]), $token);
+        $rows = $this->rows($runs, 'workflow_runs');
+        $matches = array_values(array_filter($rows, static fn (array $row): bool => ($row['event'] ?? null) === 'workflow_dispatch' && ($row['workflow_id'] ?? null) === $workflow['id']
+            && ($row['head_sha'] ?? null) === $workflow['sha'] && ($row['display_title'] ?? null) === 'Smoke '.$request->deploymentId.' '.$request->commit
+            && is_string($row['created_at'] ?? null) && Carbon::parse($row['created_at'])->greaterThanOrEqualTo(Carbon::parse($since))));
+        if ($matches === []) {
+            return $result;
+        }
+        $result->state = 'unknown';
+        if (count($matches) !== 1) {
+            return $result;
+        }
+        $run = $matches[0];
+        $id = $run['id'] ?? null;
+        $attempt = $run['run_attempt'] ?? null;
+        if (! is_int($id) || $id < 1 || ! is_int($attempt) || $attempt < 1) {
+            return $result;
+        }
+        $run = $this->actions->json($path.'/actions/runs/'.$id.'/attempts/'.$attempt, $token);
+        if (($run['id'] ?? null) !== $id || ($run['run_attempt'] ?? null) !== $attempt || ($run['workflow_id'] ?? null) !== $workflow['id']
+            || ($run['event'] ?? null) !== 'workflow_dispatch' || ($run['head_sha'] ?? null) !== $workflow['sha'] || ($run['path'] ?? null) !== $request->workflow
+            || ($run['head_branch'] ?? null) !== preg_replace('~^refs/(heads|tags)/~', '', $request->ref)
+            || ! $this->sameRepository($run['repository'] ?? null, $repository)
+            || ! $this->sameRepository($run['head_repository'] ?? null, $repository)) {
+            return $result;
+        }
+        $result->runId = $id;
+        $result->runAttempt = $attempt;
+        $result->runUrl = 'https://github.com/'.$repository->owner.'/'.$repository->name.'/actions/runs/'.$id;
+        $result->conclusion = is_string($run['conclusion'] ?? null) ? $run['conclusion'] : null;
+        if (($run['status'] ?? null) !== 'completed') {
+            $result->state = 'pending';
+
+            return $result;
+        }
+        $listing = $this->actions->json($path.'/actions/runs/'.$id.'/artifacts?per_page=100', $token);
+        $artifacts = array_values(array_filter($this->rows($listing, 'artifacts'), static fn (array $a): bool => ($a['name'] ?? null) === 'production-smoke-'.$id.'-'.$attempt && ($a['expired'] ?? null) === false));
+        if (count($artifacts) !== 1) {
+            return $result;
+        }
+        $artifact = $artifacts[0];
+        if (! is_int($artifact['id'] ?? null) || ! is_int($artifact['size_in_bytes'] ?? null) || $artifact['size_in_bytes'] < 1 || $artifact['size_in_bytes'] > 8 * 1024 * 1024 || ! is_string($artifact['digest'] ?? null)) {
+            return $result;
+        }
+        $file = tmpfile();
+        if ($file === false) {
+            throw new GitHubActionsUnavailable;
+        }
+        try {
+            $name = stream_get_meta_data($file)['uri'] ?? null;
+            if (! is_string($name)) {
+                throw new GitHubActionsUnavailable;
+            }
+            $digest = $this->actions->download($this->actions->archiveLocation($repository, $artifact['id'], $token), $name, 8 * 1024 * 1024, 10.0);
+            if (! hash_equals('sha256:'.$digest, $artifact['digest'])) {
+                return $result;
+            }
+            $result = $this->evidence->verify($name, $result);
+            $result->artifacts = [['name' => $artifact['name'], 'url' => $result->runUrl.'/artifacts/'.$artifact['id']]];
+
+            return $result;
+        } catch (Throwable) {
+            return $result;
+        } finally {
+            fclose($file);
+        }
+    }
+
+    private function sameRepository(mixed $value, GitHubRepository $repository): bool
+    {
+        return is_array($value) && is_string($value['full_name'] ?? null) && strcasecmp($value['full_name'], $repository->owner.'/'.$repository->name) === 0;
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $listing
+     * @return list<array<string, mixed>>
+     */
+    private function rows(array $listing, string $key): array
+    {
+        $rows = $listing[$key] ?? null;
+        if (! is_array($rows) || ! array_is_list($rows) || count($rows) > 100 || ($listing['total_count'] ?? null) !== count($rows)) {
+            throw new GitHubActionsUnavailable;
+        }
+
+        return array_map(ValidatedData::object(...), $rows);
+    }
+}
