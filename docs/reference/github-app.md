@@ -206,7 +206,7 @@ One answer costs these reads:
 
 Each answer also mints one `contents: read` token, and one `checks: read` token when a candidate needs it. No new App permission is needed. When the deployed commit is the branch head, the answer needs only the installation, one token, and the commit list.
 
-The [automatic deployment tick](/reference/deployments#automatic-deployments) asks the same question for a production Instance, with the Project's `merge_check` as the required check. It asks only when the branch head changed, while the head's check is unfinished, or 5 minutes after it failed. The same walk reports the state of the head's own check, so the tick tells a pending check from a failed one without another read.
+The Swamp [automatic deployment policy](/reference/deployments#automatic-deployments) asks the same question for a production Instance through Gateway evidence reads, with the Project's `merge_check` as the required check. It asks only when the branch head changed, while the head's check is unfinished, or 5 minutes after it failed. The same walk reports the state of the head's own check, so the tick tells a pending check from a failed one without another read.
 
 The Gateway reads the branch through its full ref, so a tag with the same name is never read instead. When none of the 20 newest candidates qualifies, there is no answer until a newer commit turns green. Every failure fails closed: an App that is not registered or not installed, a refused token, an unknown commit, a check run list that changes or ends before its `total_count`, or a malformed record means no answer for that attempt.
 
@@ -285,7 +285,7 @@ The App already publishes Orbit's task pull requests, so it reviews and merges w
 
 ### Keep the tokens of scheduled reads
 
-The automatic deployment tick reads branch heads and gates every minute. It keeps a repository's installation id for an hour and its `contents: read` and `checks: read` tokens for 50 minutes, encrypted with the application key in the Gateway cache. A token lives one hour, so a cached token never expires in use. A failed read drops the repository's entries, and the next read mints them again. Every other read still creates its token at the moment of use.
+Swamp reads production branch heads and gates through Gateway source contracts. The native development-default tick reads heads every minute. It keeps a repository's installation id for an hour and its `contents: read` and `checks: read` tokens for 50 minutes, encrypted with the application key in the Gateway cache. A token lives one hour, so a cached token never expires in use. A failed read drops the repository's entries, and the next read mints them again. Every other read still creates its token at the moment of use.
 
 ### No webhooks
 

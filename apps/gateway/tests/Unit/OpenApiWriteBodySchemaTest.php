@@ -6,6 +6,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Http\Requests\DatabaseConnections\UpdateDatabaseConnectionRequest;
 use App\Http\Requests\Instances\AutomaticDeployInstanceRequest;
 use App\Http\Requests\Instances\DeployInstanceRequest;
+use App\Http\Requests\Instances\ResolveAutomaticDeployAdmissionRequest;
 use App\Http\Requests\Instances\StoreInstanceDeployStepRequest;
 use App\Http\Requests\Instances\UpdateInstanceDeployStepRequest;
 use App\Http\Requests\Instances\UpdateInstanceRequest;
@@ -78,6 +79,7 @@ it('publishes validated write body fields in OpenAPI and MCP', function (string 
     }
 })->with([
     'manual pinned deploy' => ['instance-deploy', DeployInstanceRequest::class, ['commit' => 'string'], []],
+    'resolve automatic admission' => ['instance-deploy-automatic-resolve', ResolveAutomaticDeployAdmissionRequest::class, ['commit' => 'string', 'request_key' => 'string', 'caller_node_id' => 'integer'], ['commit', 'request_key']],
     'trusted automatic deploy' => ['instance-deploy-automatic', AutomaticDeployInstanceRequest::class, ['commit' => 'string'], ['commit']],
     'instance deployment settings' => ['instance-update', UpdateInstanceRequest::class, ['branch' => 'string', 'shared_paths' => ['array', 'null'], 'auto_deploy' => 'boolean'], []],
     'create deploy step' => ['instance-deploy-step-create', StoreInstanceDeployStepRequest::class, [

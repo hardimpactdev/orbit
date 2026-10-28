@@ -182,9 +182,9 @@ The automatic receipt stores the authenticated caller Node ID and pinned commit 
 
 Under the Instance lock, the automatic operation rechecks enablement, manual pause and rolled-away blocks before effects.
 
-A manual deploy or rollback row pauses it regardless of whether that attempt is running, failed or succeeded. A rollback records its rolled-away block when its outcome is recorded, before history pruning, so resume and history pruning cannot lose it while the native policy runner is idle. `auto_deploy=true` resumes after the newest manual row and keeps the block. A paused operation ends with `deployment.paused`; a rolled-away commit ends with `deployment.commit_blocked`. A manual action that has already started and still holds the Instance makes a new start busy. A rollback may supersede an unclaimed queued deploy under the existing rules.
+A manual deploy or rollback row pauses it regardless of whether that attempt is running, failed or succeeded. A rollback records its rolled-away block when its outcome is recorded, before history pruning, so resume and history pruning cannot lose it while Swamp is idle. `auto_deploy=true` resumes after the newest manual row and keeps the block. A paused operation ends with `deployment.paused`; a rolled-away commit ends with `deployment.commit_blocked`. A manual action that has already started and still holds the Instance makes a new start busy. A rollback may supersede an unclaimed queued deploy under the existing rules.
 
-These primitives retain the existing operation receipt, history, output, recovery, target exclusion and cooperative cancellation. The native automatic deploy runner continues to own its current policy. No Swamp workflow is installed by these commands.
+These primitives retain the existing operation receipt, history, output, recovery, target exclusion and cooperative cancellation. Swamp owns production policy; PHP retains development defaults. These commands do not install a Swamp workflow.
 
 ### The deploy operation
 
@@ -292,9 +292,9 @@ After PHP refresh, a rollback restarts the same active, opted-in Instance Proces
 
 ## Automatic deployments
 
-The Gateway runs `orbit:auto-deploy` every minute, a job on the [Gateway queue](/reference/gateway-queue#scheduled-work). The command `orbit:deploy-development-defaults` is its old name and still works. One tick serves every [development default](#development-defaults) and every production Instance with `auto_deploy` on.
+Swamp runs the production automatic-deploy policy and discovers enabled production Instances from the Gateway. The Gateway retains effects, locks, authorization, and history. Its `orbit:auto-deploy` scheduler runs every minute only for [development defaults](#development-defaults), on the [Gateway queue](/reference/gateway-queue#scheduled-work). The command also accepts the alias `orbit:deploy-development-defaults`.
 
-For each Instance, the tick reads the branch head on the Gateway with `git ls-remote` and the Project's [read credential](/reference/instance-setup#credentialed-git). It keeps the GitHub App installation that covers the repository for up to 60 minutes. It keeps the read tokens for up to 50 minutes, encrypted with the application key. So a quiet minute costs one `ls-remote` and no GitHub API call. A failed read drops the cached installation and tokens.
+Each policy tick reads the branch head through the Gateway with `git ls-remote` and the Project's [read credential](/reference/instance-setup#credentialed-git). Production policy uses the [Gateway source contracts](#swamp-policy-contracts); development defaults call the same credentialed reader locally. It keeps the GitHub App installation that covers the repository for up to 60 minutes. It keeps the read tokens for up to 50 minutes, encrypted with the application key. So a quiet minute costs one `ls-remote` and no GitHub API call. A failed read drops the cached installation and tokens.
 
 - When the Instance already runs the commit the tick would deploy, the tick starts nothing and writes no history row.
 - Otherwise it starts an [`instance.deploy` operation](#the-deploy-operation) pinned to that commit, with `triggered_by` `orbit:auto-deploy`. No Node name contains a colon, so the marker cannot be a caller.
@@ -310,7 +310,7 @@ A default deploys its default branch's head. Its deployed commit is its `seed_co
 
 ### Production Instances
 
-A production Instance deploys automatically after you turn it on:
+Swamp decides when a production Instance deploys after you turn automatic deployment on:
 
 ```bash
 orbit instance:update <instance> --auto-deploy=true
@@ -372,7 +372,7 @@ A rollback or manual deployment can also end between the tick's read of the hist
 
 ## Swamp policy contracts
 
-The [ADR 0238 trial](/decisions/0238-trial-two-swamp-slices-before-a-wider-move) exposes policy evidence through the Gateway. Swamp never reads GitHub, the database, or a notifier directly. These API/MCP contracts require Gateway Node access. They add no human CLI command.
+The [ADR 0238 trial](/decisions/0238-trial-two-swamp-slices-before-a-wider-move) exposes policy evidence through the Gateway. Swamp never reads GitHub, the database, or a notifier directly. These contracts require Gateway Node access. Policy starts stay on API/MCP; receipt resolution also has an operator CLI command.
 
 | Request | Evidence or effect |
 | --- | --- |
@@ -387,15 +387,31 @@ The source listing contains at most 100 reachable commits, and the walk returns 
 
 The commits and checks reads require the Project's GitHub App access. They return `instance.auto_deploy_gate_unreadable` for another source provider and `instance.auto_deploy_gate_unavailable` when the upstream read fails. They expose evidence, not a green-commit decision. Swamp applies the policy and checks that the walk's head matches its fresh head. A moved branch does not silently change a selected commit.
 
-Instance list/show and broadcasts expose `auto_deploy.resumed_after`, `auto_deploy.blocked`, and `auto_deploy.history_version`. The cursor is set only by `instance:update --auto-deploy=true`. The block list combines durable rollback blocks and retained rolled-away history without waiting for a tick. When automatic deployment is off, blocks are empty and the history version is null; these reads make no policy-history query. No block-write contract is needed: Gateway rollback history already preserves these blocks before pruning. Swamp keeps its retry and gate state itself. Deployment list/show expose `kind` (`deploy` or `rollback`); automatic versus manual origin remains `triggered_by`.
+Instance list/show and broadcasts expose `auto_deploy.policy_owner`, `auto_deploy.resumed_after`, `auto_deploy.blocked`, and `auto_deploy.history_version`. The cursor is set only by `instance:update --auto-deploy=true`. The block list combines durable rollback blocks and retained rolled-away history without waiting for a tick. When automatic deployment is off, blocks are empty and the history version is null; these reads make no policy-history query. No block-write contract is needed: Gateway rollback history already preserves these blocks before pruning. Swamp keeps its retry and gate state itself. Deployment list/show expose `kind` (`deploy` or `rollback`); automatic versus manual origin remains `triggered_by`.
 
 A found automatic receipt is the original operation, including its bound caller in `input.caller_node_id`, status, result, and error. Follow that operation and read fresh deployment history before deciding what happened. A missing receipt means only that no admission is recorded at the read: an earlier request might still be in flight. It never authorizes a retry. A worker-lost outcome or a terminal operation without required effect evidence stays unresolved. Keyed operations are retained. Neither lookup nor outcome resolution starts work.
 
+### Clear an unresolved admission hold
+
+Pause new decisions with `orbit instance:update <instance> --auto-deploy=false`. Read the exact receipt using the original Swamp caller, Instance, commit, and request key. Never resend the automatic POST to discover its outcome.
+
+Use `POST /api/v1/instances/{instance}/deploy/automatic/resolve` (MCP `instance-deploy-automatic-resolve`) with `request_key` and `commit`. By default it resolves the authenticated Node's key. A Node with Gateway access may pass `caller_node_id` to resolve for the original caller. The CLI is `orbit instance:deploy:automatic:resolve <instance> <request_key> <commit> --caller-node=<original-node-id>`; omit the flag for your own key. Activity records the acting Node and the original caller. Admission and resolution serialize under the same Instance database lock.
+
+If admission is absent, this writes a retained cancelled operation with `operation.admission_fenced`, zero attempts, no target lock, and no deployment. Its unique request identity fences a delayed admission: every later POST with that key returns the cancelled receipt. Swamp may resolve its own stale keys automatically. No operator action is needed for normal lost-response recovery. Repeating resolution returns the same receipt. A different caller, Instance, or commit conflicts.
+
+If admission already exists, resolution returns its receipt without cancelling or rewriting it. Follow an active operation until it ends. Swamp clears its intent on the zero-attempt fenced receipt and may use a fresh key on its next tick. Other holds clear only from terminal effect evidence; resolution never starts a replacement deploy.
+
+A terminal worker-lost receipt without effect evidence still needs investigation: stop the old host writer, inspect the live release, then reconcile through a manual deploy or rollback before resuming. Do not clear Swamp storage by hand. After reconciliation, resume with `orbit instance:update <instance> --auto-deploy=true`; the rollback block remains. A missing receipt alone never permits resume or a new request key.
+
+To switch policy back, stop Swamp scheduling, settle every admitted operation and unresolved hold, then ship a reviewed Orbit change that restores the PHP production policy and its `gateway` binding together. Reconstruct policy from retained history before restarting PHP scheduling. A repeat alert is acceptable; a duplicate deploy is not. Keep one writer. There is no automatic fallback.
+
 ### One policy writer during the trial
 
-PHP remains the active production policy writer. Policy publication and event admission return `instance.auto_deploy_policy_owner` while the code-owned writer is `gateway`. There is no environment flag or runtime switch. These guarded contracts prepare step 3b without changing the runner or sending duplicate alerts. The same ownership check runs again in the event worker.
+Swamp decides production automatic deployments. The code-owned writer is `swamp`; Instance list/show exposes it as `auto_deploy.policy_owner`. Swamp discovers enabled production Instances through the Gateway and does nothing when the owner is `gateway`. Automatic admission, publication, and event admission refuse with `instance.auto_deploy_policy_owner` under PHP ownership. The deploy and event workers check ownership again before effects. There is no environment flag or runtime switch.
 
-Step 3b must change the code-owned writer to `swamp` in the same release that removes the PHP production policy loop and enables Swamp scheduling. Drain policy work and transfer the last policy and alert deduplication state before switching. Development defaults keep their PHP owner. Publication then updates only the public projection in `auto_deploy_state`, preserves Gateway rollback blocks, and broadcasts the same Instance DTO used by API, MCP, CLI, and web.
+The cutover release removes the PHP production policy loop. Development defaults retain their PHP scheduler. Deploy Swamp first: it stays idle until the Gateway reports Swamp ownership. Drain old PHP policy work before activating the Gateway release. Swamp reconstructs policy and retries from the public projection and Gateway history. Alert deduplication starts in Swamp: the owner accepts one possible repeat alert at cutover. Orbit exposes no stored alert-key contract.
+
+Publication updates only the public projection in `auto_deploy_state`, preserves Gateway rollback blocks, and broadcasts the Instance DTO used by API, MCP, CLI, and web. The project owner waived the slice 1 shadow phase because Hauzer and Mealou have no users; its 14-day live window starts at this cutover.
 
 Publication uses a short database transaction without the deployment host lock. The history version hashes the retained public deployment rows without events, so finishing an existing deployment changes it even when the newest ID stays the same. The recorder writes the terminal history and rollback blocks in one transaction, with the Instance row locked and refreshed before changing policy state. It preserves a projection that publication already committed.
 
@@ -472,7 +488,7 @@ A manual deployment means "deploy what the branch holds now". So it takes no com
 
 ### Poll, do not wait for a webhook
 
-The Gateway reads the branch head every minute instead of receiving a GitHub push webhook. A webhook would need a public endpoint and a webhook secret on a Gateway that otherwise answers only WireGuard peers. The tick reuses the paths that development defaults and automatic Gateway releases already use. A quiet minute costs one `git ls-remote`, and a pending check costs a few GitHub API reads, well within the App's rate limit. The price is up to one minute of delay.
+Automatic policy reads branch heads through the Gateway instead of receiving a GitHub push webhook. A webhook would need a public endpoint and a webhook secret on a Gateway that otherwise answers only WireGuard peers. Swamp uses the source-read contracts; PHP development defaults and automatic Gateway releases retain their native readers. A quiet minute costs one `git ls-remote`, and a pending check costs a few GitHub API reads, well within the App's rate limit. The price is up to one minute of delay.
 
 Conditional requests with an ETag were rejected: a quiet minute already makes no GitHub API call, and the cache keeps token requests rare.
 

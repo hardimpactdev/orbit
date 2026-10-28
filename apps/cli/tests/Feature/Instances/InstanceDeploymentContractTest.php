@@ -42,3 +42,9 @@ describe('instance deployment contract', function (): void {
         run_contract('instances/instance-deployment-show/default', 'instance:deployment:show', ['deployment' => '1', '--json' => true], 'instances/instance-deployment-show/default.json', 0);
     });
 });
+
+it('renders automatic admission resolution from the Gateway fixture', function (): void {
+    $args = ['instance' => '1', 'request_key' => 'lost.key', 'commit' => str_repeat('b', 40)];
+    run_contract('instances/instance-deploy-automatic-resolve/fenced', 'instance:deploy:automatic:resolve', $args, 'instances/instance-deploy-automatic-resolve/fenced.human.txt', 0);
+    run_contract('instances/instance-deploy-automatic-resolve/fenced', 'instance:deploy:automatic:resolve', [...$args, '--json' => true], 'instances/instance-deploy-automatic-resolve/fenced.json', 0);
+});

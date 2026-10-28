@@ -153,6 +153,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'instance:deploy-step:update' => ServingNode::InstanceOwning,
         'instance:deploy:automatic' => ServingNode::Gateway,
         'instance:deploy:automatic:receipt' => ServingNode::Gateway,
+        'instance:deploy:automatic:resolve' => ServingNode::Gateway,
         'instance:deployment-source:checks' => ServingNode::Gateway,
         'instance:deployment-source:commits' => ServingNode::Gateway,
         'instance:deployment-source:head' => ServingNode::Gateway,

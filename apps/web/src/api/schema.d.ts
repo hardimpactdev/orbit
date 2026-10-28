@@ -1474,7 +1474,7 @@ export interface paths {
         put?: never;
         /**
          * instance:auto-deploy:event:create
-         * @description Admits a keyed instance.policy_event operation for a notable Activity entry or a Gateway release alert. Requires Gateway Node access and Idempotency-Key. The PHP-owned trial returns instance.auto_deploy_policy_owner. Delivery cannot resume after worker loss. Read its operation receipt rather than admitting a replacement. See /reference/deployments#swamp-policy-contracts.
+         * @description Admits a keyed instance.policy_event operation for a notable Activity entry or a Gateway release alert. Requires Gateway Node access and Idempotency-Key. Returns instance.auto_deploy_policy_owner under PHP ownership. Delivery cannot resume after worker loss. Read its operation receipt rather than admitting a replacement. See /reference/deployments#swamp-policy-contracts.
          */
         post: operations["instance-auto-deploy-event-create"];
         delete?: never;
@@ -1493,7 +1493,7 @@ export interface paths {
         get?: never;
         /**
          * instance:auto-deploy:policy:update
-         * @description Publishes the shared public automatic deployment projection only under Swamp ownership. The PHP-owned trial returns instance.auto_deploy_policy_owner. Requires Gateway Node access. A changed resume cursor, newest deployment ID, or history_version returns instance.auto_deploy_observation_changed. Read history_version from the Instance projection; it changes when an existing deployment finishes. Preserves Gateway rollback blocks. See /reference/deployments#one-policy-writer-during-the-trial.
+         * @description Publishes the shared public automatic deployment projection only under Swamp ownership. Returns instance.auto_deploy_policy_owner under PHP ownership. Requires Gateway Node access. A changed resume cursor, newest deployment ID, or history_version returns instance.auto_deploy_observation_changed. Read history_version from the Instance projection; it changes when an existing deployment finishes. Preserves Gateway rollback blocks. See /reference/deployments#one-policy-writer-during-the-trial.
          */
         put: operations["instance-auto-deploy-policy-update"];
         post?: never;
@@ -1686,6 +1686,26 @@ export interface paths {
         get: operations["instance-deploy-automatic-receipt"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/instances/{instance}/deploy/automatic/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * instance:deploy:automatic:resolve
+         * @description Fences an absent automatic admission with a retained cancelled receipt (operation.admission_fenced, zero attempts). Requires Gateway access, request_key, Instance, and commit. caller_node_id optionally names the original caller; omission uses the authenticated Node. A delayed admission replays this receipt instead of deploying. Returns an existing receipt unchanged if admission won the race. Activity records the acting Node and original caller. Never starts or cancels a deploy. See /reference/deployments#clear-an-unresolved-admission-hold.
+         */
+        post: operations["instance-deploy-automatic-resolve"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4926,6 +4946,7 @@ export interface components {
         };
         InstanceAutoDeploy: {
             enabled?: boolean;
+            policy_owner?: string;
             gate?: string | null;
             warning?: string | null;
             result?: string | null;
@@ -11864,6 +11885,78 @@ export interface operations {
             };
             /** @description No record matches the path parameters. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "instance-deploy-automatic-resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Instance ID. */
+                instance: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Original full commit SHA */
+                    commit: string;
+                    /** @description Original automatic request key */
+                    request_key: string;
+                    caller_node_id?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AutomaticDeployReceipt"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

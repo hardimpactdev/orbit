@@ -10132,7 +10132,7 @@
             "description": "A permanent key scoped to this operation kind, binding caller and command as well as target and input. The same request returns the existing operation with HTTP 202; a changed identity returns operation.idempotency_conflict (409)."
           }
         ],
-        "description": "Admits a keyed instance.policy_event operation for a notable Activity entry or a Gateway release alert. Requires Gateway Node access and Idempotency-Key. The PHP-owned trial returns instance.auto_deploy_policy_owner. Delivery cannot resume after worker loss. Read its operation receipt rather than admitting a replacement. See /reference/deployments#swamp-policy-contracts.",
+        "description": "Admits a keyed instance.policy_event operation for a notable Activity entry or a Gateway release alert. Requires Gateway Node access and Idempotency-Key. Returns instance.auto_deploy_policy_owner under PHP ownership. Delivery cannot resume after worker loss. Read its operation receipt rather than admitting a replacement. See /reference/deployments#swamp-policy-contracts.",
         "requestBody": {
           "required": true,
           "content": {
@@ -10326,7 +10326,7 @@
             "description": "Numeric Instance ID."
           }
         ],
-        "description": "Publishes the shared public automatic deployment projection only under Swamp ownership. The PHP-owned trial returns instance.auto_deploy_policy_owner. Requires Gateway Node access. A changed resume cursor, newest deployment ID, or history_version returns instance.auto_deploy_observation_changed. Read history_version from the Instance projection; it changes when an existing deployment finishes. Preserves Gateway rollback blocks. See /reference/deployments#one-policy-writer-during-the-trial.",
+        "description": "Publishes the shared public automatic deployment projection only under Swamp ownership. Returns instance.auto_deploy_policy_owner under PHP ownership. Requires Gateway Node access. A changed resume cursor, newest deployment ID, or history_version returns instance.auto_deploy_observation_changed. Read history_version from the Instance projection; it changes when an existing deployment finishes. Preserves Gateway rollback blocks. See /reference/deployments#one-policy-writer-during-the-trial.",
         "requestBody": {
           "required": true,
           "content": {
@@ -11922,6 +11922,135 @@
             "lang": "bash",
             "label": "curl",
             "source": "curl -sS \"https://gateway.orbit/api/v1/instances/12/deploy/automatic/receipt?commit=1&request_key=1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/instances/{instance}/deploy/automatic/resolve": {
+      "post": {
+        "operationId": "instance-deploy-automatic-resolve",
+        "summary": "instance:deploy:automatic:resolve",
+        "tags": [
+          "Instances"
+        ],
+        "parameters": [
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Instance ID."
+          }
+        ],
+        "description": "Fences an absent automatic admission with a retained cancelled receipt (operation.admission_fenced, zero attempts). Requires Gateway access, request_key, Instance, and commit. caller_node_id optionally names the original caller; omission uses the authenticated Node. A delayed admission replays this receipt instead of deploying. Returns an existing receipt unchanged if admission won the race. Activity records the acting Node and original caller. Never starts or cancels a deploy. See /reference/deployments#clear-an-unresolved-admission-hold.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "commit": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{40}(?:[0-9a-f]{24})?$(?![\\s\\S])",
+                    "description": "Original full commit SHA"
+                  },
+                  "request_key": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$(?![\\s\\S])",
+                    "description": "Original automatic request key"
+                  },
+                  "caller_node_id": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "commit",
+                  "request_key"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AutomaticDeployReceipt"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/instances/12/deploy/automatic/resolve\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"commit\": \"example\", \"request_key\": \"example\", \"caller_node_id\": 1}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\ResolveAutomaticDeployAdmissionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ResolveAutomaticDeployAdmissionRequest(instanceId: 4, requestKey: 'value', commit: 'value'))->dto();\n"
           }
         ]
       }
@@ -36509,6 +36638,9 @@
         "properties": {
           "enabled": {
             "type": "boolean"
+          },
+          "policy_owner": {
+            "type": "string"
           },
           "gate": {
             "type": [

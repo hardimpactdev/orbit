@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 240 concrete public Gateway API operations:
+The SDK models exactly 241 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.

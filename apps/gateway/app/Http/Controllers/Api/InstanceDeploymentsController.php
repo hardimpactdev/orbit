@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Actions\Instances\ListInstanceDeploymentsAction;
 use App\Actions\Instances\ReadAutomaticDeployReceiptAction;
+use App\Actions\Instances\ResolveAutomaticDeployAdmissionAction;
 use App\Actions\Instances\StartInstanceDeployAction;
 use App\Data\Instances\InstanceDeploymentData;
 use App\Data\Operations\OperationData;
@@ -17,6 +18,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Instances\AutomaticDeployInstanceRequest;
 use App\Http\Requests\Instances\AutomaticDeployReceiptRequest;
 use App\Http\Requests\Instances\DeployInstanceRequest;
+use App\Http\Requests\Instances\ResolveAutomaticDeployAdmissionRequest;
 use App\Http\Requests\Operations\StartsOperation;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
@@ -96,6 +98,18 @@ final class InstanceDeploymentsController extends Controller
         assert($caller instanceof Node);
 
         return response()->json(['data' => $action->execute($instance, $caller, $request->requestKey(), $request->commit())->toArray(), 'meta' => $this->meta($request)]);
+    }
+
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function resolve(ResolveAutomaticDeployAdmissionRequest $request, Instance $instance, ResolveAutomaticDeployAdmissionAction $action): JsonResponse
+    {
+        $caller = $request->originalCaller();
+        request()->attributes->set('orbit.automatic_deploy_resolution', ['caller_node_id' => $caller->id]);
+
+        return response()->json([
+            'data' => $action->execute($instance, $caller, $request->requestKey(), $request->commit(), $request->attributes->getString('orbit.request_id'))->toArray(),
+            'meta' => $this->meta($request),
+        ]);
     }
 
     /** @return array{request_id: string} */

@@ -114,6 +114,7 @@
                 "shared_paths": [],
                 "auto_deploy": {
                     "enabled": false,
+                    "policy_owner": "swamp",
                     "gate": null,
                     "warning": null,
                     "result": null,
@@ -237,6 +238,7 @@
                 "shared_paths": [],
                 "auto_deploy": {
                     "enabled": false,
+                    "policy_owner": "swamp",
                     "gate": null,
                     "warning": null,
                     "result": null,
@@ -360,6 +362,7 @@
                 "shared_paths": [],
                 "auto_deploy": {
                     "enabled": false,
+                    "policy_owner": "swamp",
                     "gate": null,
                     "warning": null,
                     "result": null,
@@ -483,6 +486,7 @@
                 "shared_paths": [],
                 "auto_deploy": {
                     "enabled": false,
+                    "policy_owner": "swamp",
                     "gate": null,
                     "warning": null,
                     "result": null,

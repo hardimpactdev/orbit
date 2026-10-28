@@ -10,6 +10,7 @@ use Orbit\Sdk\Requests\Deployments\DeployInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\DestroyInstanceDeployStepRequest;
 use Orbit\Sdk\Requests\Deployments\ListInstanceDeployStepsRequest;
 use Orbit\Sdk\Requests\Deployments\ListInstanceReleasesRequest;
+use Orbit\Sdk\Requests\Deployments\ResolveAutomaticDeployAdmissionRequest;
 use Orbit\Sdk\Requests\Deployments\RollbackInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\UpdateInstanceDeployStepRequest;
 use Orbit\Sdk\Requests\Instances\UpdateInstanceRequest;
@@ -219,4 +220,27 @@ it('transports pinned manual and trusted automatic starts without a client trigg
     expect($automatic->resolveEndpoint())->toBe('/api/v1/instances/17/deploy/automatic');
     expect($automatic->body()->all())->toBe(['commit' => $sha]);
     expect($automatic->headers()->get('Idempotency-Key'))->toBe('automatic.key');
+});
+
+it('transports automatic resolution identity and maps the fenced receipt', function (): void {
+    $sha = str_repeat('b', 40);
+    $class = ResolveAutomaticDeployAdmissionRequest::class;
+    $request = new $class(17, 'lost.key', $sha, 8);
+    $mock = new MockClient([$class => MockResponse::make([
+        'data' => ['request_key' => 'lost.key', 'found' => true, 'deployment' => null, 'operation' => [
+            'id' => 51, 'kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => 17,
+            'status' => 'cancelled', 'sequence' => 1, 'error_code' => 'operation.admission_fenced',
+            'attempts' => 0, 'input' => ['commit' => $sha, 'caller_node_id' => 8],
+        ]], 'meta' => ['request_id' => deployment_request_id()],
+    ])]);
+
+    $receipt = deployment_connector($mock)->send($request)->dto();
+
+    expect($request->getMethod())->toBe(Method::POST)
+        ->and($request->resolveEndpoint())->toBe('/api/v1/instances/17/deploy/automatic/resolve')
+        ->and($mock->getLastPendingRequest()->body()->all())->toBe(['request_key' => 'lost.key', 'commit' => $sha, 'caller_node_id' => 8])
+        ->and($receipt->operation->errorCode)->toBe('operation.admission_fenced')
+        ->and($receipt->operation->attempts)->toBe(0)
+        ->and($receipt->requestId)->toBe(deployment_request_id());
+    expect(new $class(17, 'lost.key', $sha)->body()->all())->not->toHaveKey('caller_node_id');
 });

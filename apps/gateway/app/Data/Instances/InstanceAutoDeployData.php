@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Data\Instances;
 
 use App\Domain\Instances\Deployment\AutomaticDeployHistory;
+use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
 use App\Domain\Instances\Deployment\AutomaticDeployState;
 use App\Models\Instance;
 use Spatie\LaravelData\Attributes\MapOutputName;
@@ -21,6 +22,7 @@ final class InstanceAutoDeployData extends Data
 {
     public function __construct(
         public bool $enabled,
+        public string $policyOwner,
         public ?string $gate,
         public ?string $warning,
         public ?string $result,
@@ -53,6 +55,7 @@ final class InstanceAutoDeployData extends Data
             blocked: $history === null ? [] : array_values(array_unique([...$automatic->blocked(), ...$history->rolledAway])),
             historyVersion: $history?->version,
             enabled: $enabled,
+            policyOwner: $developmentDefault ? AutomaticDeployPolicyWriter::Gateway->value : app(AutomaticDeployPolicyWriter::class)->value,
             gate: $gate,
             warning: $enabled && ! $developmentDefault && $gate === null
                 ? 'The Project has no merge_check, so every new commit on the branch deploys without a check.'

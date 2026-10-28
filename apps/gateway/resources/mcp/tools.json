@@ -3402,7 +3402,7 @@
       "name": "instance-auto-deploy-event-create",
       "extension": null,
       "title": "instance:auto-deploy:event:create",
-      "description": "Admits a keyed instance.policy_event operation for a notable Activity entry or a Gateway release alert. Requires Gateway Node access and Idempotency-Key. The PHP-owned trial returns instance.auto_deploy_policy_owner. Delivery cannot resume after worker loss. Read its operation receipt rather than admitting a replacement. See /reference/deployments#swamp-policy-contracts.",
+      "description": "Admits a keyed instance.policy_event operation for a notable Activity entry or a Gateway release alert. Requires Gateway Node access and Idempotency-Key. Returns instance.auto_deploy_policy_owner under PHP ownership. Delivery cannot resume after worker loss. Read its operation receipt rather than admitting a replacement. See /reference/deployments#swamp-policy-contracts.",
       "method": "POST",
       "path": "/api/v1/instances/{instance}/auto-deploy/events",
       "path_inputs": [
@@ -3515,7 +3515,7 @@
       "name": "instance-auto-deploy-policy-update",
       "extension": null,
       "title": "instance:auto-deploy:policy:update",
-      "description": "Publishes the shared public automatic deployment projection only under Swamp ownership. The PHP-owned trial returns instance.auto_deploy_policy_owner. Requires Gateway Node access. A changed resume cursor, newest deployment ID, or history_version returns instance.auto_deploy_observation_changed. Read history_version from the Instance projection; it changes when an existing deployment finishes. Preserves Gateway rollback blocks. See /reference/deployments#one-policy-writer-during-the-trial.",
+      "description": "Publishes the shared public automatic deployment projection only under Swamp ownership. Returns instance.auto_deploy_policy_owner under PHP ownership. Requires Gateway Node access. A changed resume cursor, newest deployment ID, or history_version returns instance.auto_deploy_observation_changed. Read history_version from the Instance projection; it changes when an existing deployment finishes. Preserves Gateway rollback blocks. See /reference/deployments#one-policy-writer-during-the-trial.",
       "method": "PUT",
       "path": "/api/v1/instances/{instance}/auto-deploy/policy",
       "path_inputs": [
@@ -4033,6 +4033,49 @@
           "request_key": {
             "type": "string",
             "pattern": "^[A-Za-z0-9._:-]{1,128}$(?![\\s\\S])"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance",
+          "commit",
+          "request_key"
+        ]
+      }
+    },
+    {
+      "name": "instance-deploy-automatic-resolve",
+      "extension": null,
+      "title": "instance:deploy:automatic:resolve",
+      "description": "Fences an absent automatic admission with a retained cancelled receipt (operation.admission_fenced, zero attempts). Requires Gateway access, request_key, Instance, and commit. caller_node_id optionally names the original caller; omission uses the authenticated Node. A delayed admission replays this receipt instead of deploying. Returns an existing receipt unchanged if admission won the race. Activity records the acting Node and original caller. Never starts or cancels a deploy. See /reference/deployments#clear-an-unresolved-admission-hold.",
+      "method": "POST",
+      "path": "/api/v1/instances/{instance}/deploy/automatic/resolve",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Instance ID."
+          },
+          "commit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}(?:[0-9a-f]{24})?$(?![\\s\\S])",
+            "description": "Original full commit SHA"
+          },
+          "request_key": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$(?![\\s\\S])",
+            "description": "Original automatic request key"
+          },
+          "caller_node_id": {
+            "type": "integer",
+            "minimum": 1
           }
         },
         "additionalProperties": false,

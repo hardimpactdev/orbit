@@ -197,6 +197,16 @@ final readonly class RecordCommandActivity
     /** @param  array<string, mixed>  $updates */
     private function persist(Activity $activity, Request $request, array $updates): void
     {
+        $resolution = $request->attributes->get('orbit.automatic_deploy_resolution');
+
+        if (is_array($resolution)) {
+            $properties = is_array($updates['properties'] ?? null) ? $updates['properties'] : ($activity->properties?->toArray() ?? []);
+            $updates['properties'] = [
+                ...$properties,
+                'automatic_deploy_resolution' => $this->inputSanitizer->sanitizeProperties($resolution),
+            ];
+        }
+
         $activity->fill($updates);
 
         if (! $activity->exists && $activity->status === 'succeeded' && ! $this->samplesRead($activity, $request)) {

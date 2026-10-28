@@ -14,7 +14,7 @@ In progress.
 
 Principle: [Lean](/mission#principles). Move work only when measured savings justify its cost. The trial proposes a narrow exception to [One way, one name](/mission#principles): Swamp owns these two slices while the Gateway operation engine and agent runner keep their other users. Each migrated behavior has one active owner. There is no runtime fallback or duplicate writer.
 
-The project owner accepted the thresholds on 2026-10-27 and amended the code gate and cutover requirements on 2026-10-28. Slice 1 (automatic production deploys) may continue. This record authorizes no live rollout. The current [deployment](/reference/deployments), [Tool](/reference/tools), and [Node command](/reference/node-agent#commands) contracts remain in force until a slice ships.
+The project owner accepted the thresholds on 2026-10-27 and amended the code gate and cutover requirements on 2026-10-28. Slice 1 (automatic production deploys) may continue. On 2026-10-28 the project owner authorized direct production cutover for slice 1 and waived its shadow phase because Hauzer and Mealou have no users. The 14-day live reliability window starts when this cutover release becomes active. Other slices retain the shadow requirement. The current [deployment](/reference/deployments), [Tool](/reference/tools), and [Node command](/reference/node-agent#commands) contracts remain in force until a slice ships.
 
 ## Context
 
@@ -54,7 +54,7 @@ Before coding, name eight policy flows for effort and case accounting: selection
 
 ### Slice 1 progress as of 2026-10-28
 
-Three prerequisite PRs are merged. [Orbit #1546](https://github.com/hardimpactdev/orbit/pull/1546) adds pinned-commit deploys, the trusted automatic trigger, and frozen parity cases. [orbit-swamp #46](https://github.com/hardimpactdev/orbit-swamp/pull/46) adds the policy workflow with 73 passing tests. It remains inert. [Orbit #1548](https://github.com/hardimpactdev/orbit/pull/1548) adds Gateway contracts G01–G06 for source evidence, resume and block state, deployment kind, event delivery, publication, and receipt lookup. The Orbit policy writer remains active. Cutover and live acceptance are pending.
+Three prerequisite PRs are merged. [Orbit #1546](https://github.com/hardimpactdev/orbit/pull/1546) adds pinned-commit deploys, the trusted automatic trigger, and frozen parity cases. [orbit-swamp #46](https://github.com/hardimpactdev/orbit-swamp/pull/46) adds the policy workflow with 73 passing tests. It remains inert. [Orbit #1548](https://github.com/hardimpactdev/orbit/pull/1548) adds Gateway contracts G01–G06 for source evidence, resume and block state, deployment kind, event delivery, publication, and receipt lookup. The slice 1 cutover removes the PHP production policy and binds the Gateway writer to Swamp. Development defaults remain on PHP. Live acceptance is pending the 14-day window. The owner accepts one possible repeat alert at cutover; Orbit adds no contract for stored alert keys. The adapter is delivered in [orbit-swamp #48](https://github.com/hardimpactdev/orbit-swamp/pull/48).
 
 The measurements below come from the PR bodies and the implementation report for Orbit #1546. Its final line counts come from the merged diff. Line counts are physical lines, including comments and blanks. Each pair below is added/removed. Correction rows are commit deltas, not final PR totals.
 
@@ -70,6 +70,24 @@ The measurements below come from the PR bodies and the implementation report for
 Orbit #1546 reports 24m 39s on 2026-10-27, from 21:42:00 to 22:06:39 UTC, or about 29m 42s including review runs. The first-head figures precede two fix commits: web schema regeneration, then contract-test fixes and removal of the automatic-deploy CLI command. The final line counts include both fixes. They come from `git diff --shortstat 6291bb03..f9059e10` scoped by area. Generated files cover OpenAPI, MCP, web types, navigation, and documentation context. Source includes the generator. Tests include Rust test files. Docs include the CLI reference and SDK guidance. The complete diff has 1,060 additions and 84 removals across 38 files. No separate timing for the fix commits was reported.
 
 The total for orbit-swamp #46 is 37 minutes and 33 seconds across its three measured intervals. Orbit #1548 reports 23m 13s for implementation and 21m 41s for review fixes. Both totals exclude external review gaps. Owner time was not measured. These are implementation measurements, not proof that the slice passes its gates. Slice 1 alone offers little Orbit CI saving. Savings are expected as more slices reuse the Gateway contracts.
+
+### Slice 1 cutover measurements
+
+This Orbit cutover is measured against `40561b4aec9288032476ea8114653b0fe91f3374`. Counts are physical diff lines, including comments and blanks. Source includes the Gateway, CLI, SDK, and OpenAPI generator. Tests exclude fixtures and expected renderings. Documentation includes SDK guidance. Generated files include OpenAPI, MCP, web types, navigation, and documentation context.
+
+| Area | Removed | Added | Net removed |
+| --- | --- | --- | --- |
+| Source | 406 | 373 | 33 |
+| Tests | 669 | 203 | 466 |
+| Documentation | 21 | 66 | -45 |
+| Generated | 6 | 277 | -271 |
+| Fixtures and expected renderings | 0 | 61 | -61 |
+
+Source detail: Gateway 403 removed and 191 added; CLI and SDK 1 removed and 168 added; generator 2 removed and 14 added. Fenced receipts, original-caller resolution, and Activity auditing are reusable Gateway boundary infrastructure. This cutover reuses the source, publication, event, and receipt contracts from #1548.
+
+The only whole-file removal is `apps/gateway/tests/Feature/Domain/AutoDeployTest.php`, 652 lines. The retained `RunAutomaticDeploysAction.php` removes 229 lines and adds 9; `AutomaticDeployState.php` removes 134 and adds 2; `AutomaticDeployHistory.php` removes 22 and adds 11. These classes retain development defaults, rollback evidence, public projection, and alert subjects. The command and scheduler remain because development defaults still use them. Production policy tests move to orbit-swamp; shared deploy, rollback, and history tests stay in Orbit.
+
+Implementation agent wall-clock: 31m 37s, from 2026-10-28 10:32:15 UTC through final local verification. Independent review ran on the working diff; its time was not separately instrumented. Owner time was not measured. The cutover figures exclude the prerequisite PR deltas above and orbit-swamp #48. They do not establish cumulative slice savings or passed trial gates. No CI saving or live reliability result is claimed; the live window starts when the cutover release is active.
 
 ### Slice 2: the tool command group
 
@@ -137,9 +155,9 @@ For net code, report Orbit removed and added lines and orbit-swamp removed and a
 
 For CI, sum affected job durations for runner-minutes. Report their elapsed span and the whole workflow's wall-clock. For Tools, report release binary bytes per target, compressed delivery bytes, build-step time, removed dependencies, and remaining build users. Report zero build saving if none is measured.
 
-Before every slice's cutover, run Swamp against real data in read-only shadow mode for a set window. Record each decision it would take without effects. The active Orbit writer keeps ownership. Compare the shadow decisions with that writer's real decisions. Explain or fix every mismatch before cutover. For slice 1, propose at least three days and at least ten policy decisions across at least two production Instances. Extend a quiet window until the counts are met.
+Except for the project owner's slice 1 waiver on 2026-10-28, before each slice's cutover run Swamp against real data in read-only shadow mode for a set window. Record each decision it would take without effects. The active Orbit writer keeps ownership. Compare the shadow decisions with that writer's real decisions. Explain or fix every mismatch before cutover. The waived slice 1 proposal was at least three days and ten policy decisions across two production Instances. Other slices still require shadow evidence and must extend a quiet window until their counts are met.
 
-For reliability, measure before and after for 14 consecutive live days and at least 30 production deploy attempts across at least three Instances. The 14-day live window after the change starts at cutover, after shadow mode ends. Also measure 100 Tool installs, 25 updates, and 25 removals across apt, Composer, formulae, casks, and Vite+. Extend a quiet window until the counts are met. A run is stuck beyond its existing deadline plus five minutes. Prove worker-loss and cancel cases in a disposable environment too.
+For reliability, measure before and after for 14 consecutive live days and at least 30 production deploy attempts across at least three Instances. The 14-day live window after the change starts at cutover. Slice 1 starts directly at the production cutover under the owner's shadow waiver; other slices start after shadow mode ends. Also measure 100 Tool installs, 25 updates, and 25 removals across apt, Composer, formulae, casks, and Vite+. Extend a quiet window until the counts are met. A run is stuck beyond its existing deadline plus five minutes. Prove worker-loss and cancel cases in a disposable environment too.
 
 Most work is done by agents. Agent wall-clock time is the sum of agent run time across threads and task groups, including runs that overlap. Record the project owner's review and coordination time separately. Both measures cover design, implementation, tests, docs, deployment, and repairs in both repos. Report shared setup separately and include it in the full projection. Agent wall-clock time is recorded and projected but has no gate.
 

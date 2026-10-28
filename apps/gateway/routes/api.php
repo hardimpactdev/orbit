@@ -414,6 +414,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('instances/{instance}/deployment-source/head', [InstanceDeploymentSourceController::class, 'head'])->name('instance:deployment-source:head');
         Route::get('instances/{instance}/deployment-source/commits', [InstanceDeploymentSourceController::class, 'commits'])->name('instance:deployment-source:commits');
         Route::get('instances/{instance}/deployment-source/checks', [InstanceDeploymentSourceController::class, 'checks'])->name('instance:deployment-source:checks');
+        Route::post('instances/{instance}/deploy/automatic/resolve', [InstanceDeploymentsController::class, 'resolve'])->name('instance:deploy:automatic:resolve');
         Route::get('instances/{instance}/deploy/automatic/receipt', [InstanceDeploymentsController::class, 'receipt'])->name('instance:deploy:automatic:receipt');
         Route::put('instances/{instance}/auto-deploy/policy', [InstanceAutomaticDeployPolicyController::class, 'update'])->name('instance:auto-deploy:policy:update');
         Route::post('instances/{instance}/auto-deploy/events', [InstanceAutomaticDeployPolicyController::class, 'store'])->name('instance:auto-deploy:event:create');

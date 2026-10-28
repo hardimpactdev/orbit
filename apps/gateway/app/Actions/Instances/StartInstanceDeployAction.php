@@ -6,6 +6,7 @@ namespace App\Actions\Instances;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\Deployment\AutomaticDeployHistory;
+use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitCommitSha;
@@ -13,6 +14,7 @@ use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Starts the `instance.deploy` operation (docs/reference/deployments.md#the-deploy-operation). It refuses an Instance
@@ -24,6 +26,7 @@ final readonly class StartInstanceDeployAction
     public function __construct(
         private DeployInstanceAction $deploy,
         private StartOperationAction $operations,
+        private AutomaticDeployPolicyWriter $writer,
     ) {}
 
     public function execute(Instance $instance, string $triggeredBy, ?string $requestId, ?string $commit = null, ?int $callerNodeId = null): Operation
@@ -56,11 +59,11 @@ final readonly class StartInstanceDeployAction
     /** The HTTP boundary requires Gateway Node access before admitting automatic origin. */
     public function automatic(Instance $instance, Node $caller, ?string $requestId, string $commit): Operation
     {
-        $instance->refresh();
-        if (! $instance->placedOnAppProd() || ! $instance->auto_deploy) {
-            throw new ResourceOperationException(AutomaticDeployHistory::Paused, 'Automatic deployment is not enabled for this production Instance.', 409);
-        }
+        return DB::transaction(function () use ($instance, $caller, $requestId, $commit): Operation {
+            $instance = Instance::query()->lockForUpdate()->findOrFail($instance->id);
+            $this->writer->assertSwamp($instance);
 
-        return $this->pinned($instance, AutomaticDeployHistory::Trigger, $requestId, $commit, $caller->id);
+            return $this->pinned($instance, AutomaticDeployHistory::Trigger, $requestId, $commit, $caller->id);
+        });
     }
 }

@@ -17,7 +17,7 @@ enum AutomaticDeployPolicyWriter: string
     public function assertSwamp(Instance $instance): void
     {
         if ($this !== self::Swamp) {
-            throw new ResourceOperationException('instance.auto_deploy_policy_owner', 'The Gateway PHP runner owns production automatic deployment until ADR 0238 step 3b.', 409);
+            throw new ResourceOperationException('instance.auto_deploy_policy_owner', 'The Gateway PHP runner owns production automatic deployment.', 409);
         }
         if (! $instance->placedOnAppProd() || ! $instance->auto_deploy || $instance->status !== InstanceState::Active) {
             throw new ResourceOperationException('deployment.paused', 'Automatic deployment is not enabled for this active production Instance.', 409);

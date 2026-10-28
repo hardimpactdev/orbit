@@ -14,7 +14,7 @@ final class AutoDeployCommand extends Command
     protected $signature = 'orbit:auto-deploy';
 
     #[\Override]
-    protected $description = 'Start a deployment for each Instance whose branch has a new commit to deploy automatically.';
+    protected $description = 'Deploy development defaults whose branch has a new commit.';
 
     /** @var list<string> */
     #[\Override]
