@@ -216,3 +216,7 @@ Volumes and the password survive a removal, so re-enabling is safe. Data deletio
 ### Node metrics through Grafana
 
 Prometheus stays unpublished. Grafana's datasource proxy reuses the publication and the password that already exist. A new Prometheus host name is a rejected alternative. A Gateway endpoint that reads Prometheus over SSH is also rejected, because it adds an SSH round trip to each refresh.
+
+## Operation execution
+
+Swamp applies exporter changes through the existing named `metrics.node-exporter` and `metrics.cadvisor` agent commands. Each Node effect has its own Operation and holds its recorded Node target. The Gateway binds the two WireGuard addresses and the exact converge or remove action before Swamp can run it. A successful completion requires the agent's successful change receipt. Replaying a lost reply keeps the same effect key; a resumed successful step does no new Node work. Exporter and cAdvisor ownership checks and rollback stay in the Node commands.

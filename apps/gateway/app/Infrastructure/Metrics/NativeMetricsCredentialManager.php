@@ -17,6 +17,8 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Operation;
+use App\Actions\Operations\StartOperationAction;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use SensitiveParameter;
@@ -112,49 +114,19 @@ final readonly class NativeMetricsCredentialManager implements MetricsCredential
         return $this->data($this->activePassword($this->assignedNode()));
     }
 
-    public function reset(): MetricsCredentialsData
+    public function reset(): Operation
     {
         $node = $this->assignedNode();
-
-        return $this->operations->run($node->id, function () use ($node): MetricsCredentialsData {
+        return $this->operations->run($node->id, function () use ($node): Operation {
             $scope = $this->scope($node);
-            $active = $this->activePassword($node);
+            $this->activePassword($node);
             $pending = $this->settings->get($scope, self::PendingPasswordKey);
-            $isRetry = is_string($pending) && $pending !== '';
-
-            if (! $isRetry) {
+            if (! is_string($pending) || $pending === '') {
                 $pending = Str::random(self::PasswordLength);
-                $this->settings->put(
-                    $scope,
-                    self::PendingPasswordKey,
-                    $pending,
-                    SettingValueProtection::Secret,
-                );
+                $this->settings->put($scope, self::PendingPasswordKey, $pending, SettingValueProtection::Secret);
             }
-
-            if (! $isRetry || ! $this->runtime->verify($node, $pending)) {
-                $this->runtime->apply($node, $active, $pending);
-
-                if (! $this->runtime->verify($node, $pending)) {
-                    throw new ResourceOperationException(
-                        'metrics.credentials_reset_unverified',
-                        'Grafana did not verify the pending credential.',
-                        502,
-                    );
-                }
-            }
-
-            DB::transaction(function () use ($scope, $pending): void {
-                $this->settings->put(
-                    $scope,
-                    self::ActivePasswordKey,
-                    $pending,
-                    SettingValueProtection::Secret,
-                );
-                $this->settings->delete($scope, self::PendingPasswordKey);
-            });
-
-            return $this->data($pending);
+            return app(StartOperationAction::class)->execute('metrics.credentials_reset', 'metrics_credentials', $node->id, $node->id,
+                ['pending_sha256' => hash('sha256', $pending)], 'operator', null);
         });
     }
 

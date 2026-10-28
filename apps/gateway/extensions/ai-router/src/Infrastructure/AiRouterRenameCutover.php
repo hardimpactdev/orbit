@@ -15,13 +15,6 @@ use RuntimeException;
 /** One-time removal inputs, never runtime aliases. Removed after live cutover in ADR 0212 step 4. */
 final readonly class AiRouterRenameCutover
 {
-    public function __construct(
-        private DestroyProcessAction $processes,
-        private AiRouterCache $cache,
-        private AiRouterSourceRemoval $source,
-        private AiRouterCertificatePublisher $certificates,
-    ) {}
-
     public function assertComplete(): void
     {
         if ($this->pending()) {
@@ -36,26 +29,4 @@ final readonly class AiRouterRenameCutover
         return ($nodeId === null ? $query : $query->where('node_id', $nodeId))->exists();
     }
 
-    public function retire(Node $node): void
-    {
-        $id = DB::table('ai_router_cutovers')->where('node_id', $node->id)->value('process_id');
-        $process = Process::query()->where('id', $id)->first();
-        if ($process !== null) {
-            if ($process->owner_type !== Node::class || $process->owner_id !== $node->id || $process->name !== 'cli-proxy-api-collector') {
-                throw new RuntimeException('The retired collector no longer matches its recorded owner.');
-            }
-            // Normal Process removal stops and deletes the owned unit under its existing runtime lease.
-            $this->processes->execute($process, removedByOwningRole: true);
-        }
-        $this->cache->renameCollectorKeys('orbit:proxycli:', 'orbit:ai-router:');
-    }
-
-    public function complete(Node $node): void
-    {
-        $this->source->remove($node, retired: true);
-        if (! $this->certificates->remove($node, '/etc/caddy/orbit-proxycli-cert-current')->succeeded()) {
-            throw new RuntimeException('Could not remove the retired collector files.');
-        }
-        DB::table('ai_router_cutovers')->where('node_id', $node->id)->delete();
-    }
 }

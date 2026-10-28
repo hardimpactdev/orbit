@@ -148,7 +148,7 @@ To withdraw public Reverb, remove the attachment, confirm the Caddy rebuild succ
 
 [orbit-reverb](https://github.com/hardimpactdev/orbit-reverb) contains the integration with Orbit. It has no separately versioned manager package. It uses Reverb's application provider and stock Pusher protocol. The server's protected environment holds its registry address and restricted machine credentials. It holds no static app list.
 
-The Gateway owns the encrypted app secrets and a versioned registry. After commit, a revision-only webhook prompts each process to fetch the full snapshot. A 30-second reconciliation check repairs missed notifications. HTTP receipt confirms only delivery; a separate process report confirms application.
+The Gateway owns the encrypted app secrets and a versioned registry. After commit, each process fetches the full snapshot through its existing 30-second reconciliation check. A process report confirms application. Swamp waits for fresh reports without restarting Reverb.
 
 Each process registers a fresh boot identity before loading the registry. A report from an old boot cannot certify a replacement. Confirmation includes every serving process, including both ends of a role move. An absent or stale report keeps the operation pending. Each entry in operation `processes` includes the latest safe registry `error` code, or null after recovery or a new boot. The Gateway does not store connection measurements.
 
@@ -192,7 +192,7 @@ Reverb already keeps apps apart by key and secret. One server per Project would 
 
 ### One durable registry with stock protocol handling
 
-The Gateway is the credential authority. A full snapshot gives cold starts and reconciliation the same path. Revision-only webhooks carry no app secrets and reduce normal update latency. Periodic reconciliation repairs a lost notification without a second queue or registry store.
+The Gateway is the credential authority. A full snapshot gives cold starts and reconciliation the same path. Periodic reconciliation applies each saved revision without a second queue or registry store. Registry Operations can take one reconciliation interval before the process reports application.
 
 An SSH-delivered file would reuse existing transport but add per-Node secret copies and delivery state. A Redis snapshot would add a second durable credential authority. The integration uses Reverb's provider, route, and event extension points. It keeps stock Pusher behavior and makes no vendor patch.
 
@@ -218,3 +218,7 @@ The first release provisions one process per Node. Multiple workers on one Node 
 ### Reverb shares the application domain
 
 The public app Route already owns DNS, TLS, and firewall publication. Reserving its Pusher prefixes avoids another hostname. The attachment stores its Route selection so rotation cannot reset the host to the private endpoint. Reverb accepts configured keys independently of HTTP Host, so Caddy checks the selected key and app ID before proxying. Route collision inspection makes the reserved paths explicit.
+
+## Operation execution
+
+Registry writes store their change and a normal Operation, then return HTTP 202. Swamp waits for the registry's fresh process reports through a named probe on the recorded Gateway Node. Reverb's existing 30-second registry reconciliation applies the saved revision; registry writes do not restart a process. Completion checks the current boot reports again before it succeeds. A missing, stale, or replaced process keeps the Operation pending. The dedicated registry operation URL remains a read of the saved revision and current reports.

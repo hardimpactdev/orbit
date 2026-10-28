@@ -6,7 +6,6 @@ namespace App\Actions\WebSocket;
 
 use App\Domain\Nodes\RoleName;
 use App\Infrastructure\WebSocket\WebSocketDnsTarget;
-use App\Infrastructure\WebSocket\WebSocketRegistryNotifier;
 use App\Models\NodeRole;
 use App\Models\WebSocketApp;
 use App\Models\WebSocketRegistryOperation;
@@ -15,15 +14,7 @@ use Illuminate\Support\Facades\DB;
 
 final readonly class ReadWebSocketApplyStatusAction
 {
-    public function __construct(private WebSocketRegistryNotifier $notifier, private WebSocketDnsTarget $dns) {}
-
-    /** @return array<string, mixed> */
-    public function notifyAndRead(WebSocketRegistryOperation $operation): array
-    {
-        $this->notifier->notify($operation->epoch, $operation->revision);
-
-        return $this->execute($operation);
-    }
+    public function __construct(private WebSocketDnsTarget $dns) {}
 
     /** @return array<string, mixed> */
     public function execute(WebSocketRegistryOperation $operation): array

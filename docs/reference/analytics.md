@@ -188,3 +188,7 @@ Orbit publishes the tracking endpoint, but the operator creates the site in Plau
 ### Stats read on the Gateway
 
 The browser never holds the Stats API key, and it cannot ask for another Instance's site. One Gateway-scoped key serves every Instance, because Plausible scopes each read by site domain. A failed read never shows zeros, because a missing key must not look like an empty site.
+
+## Operation execution
+
+Analytics enable, update and removal record Operations. Swamp configures ClickHouse on its own Node, converges the managed Processes, proves Plausible health, and publishes the dashboard. Caddy and private DNS changes use child Operations owned by Routes. The Gateway retains storage validation, Process intent, encrypted credentials and version settings. A failed update restores the previous version setting. Removal keeps both storage Processes and their data.

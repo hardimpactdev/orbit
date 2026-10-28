@@ -22,8 +22,8 @@ final readonly class NativeMetricsStatusReader implements MetricsStatusReader
 {
     public function __construct(
         private MetricsExporterProjection $projection,
-        private MetricsRuntimeLifecycle $runtime,
-        private MetricsExporterLifecycle $exporters,
+        private MetricsReadCommands $runtime,
+        private MetricsReadCommands $exporters,
         private ExporterDegradationRepository $degradations,
         private MetricsReconcileDegradationRepository $reconcileDegradation = new MetricsReconcileDegradationRepository,
     ) {}

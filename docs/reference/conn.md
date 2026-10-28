@@ -207,3 +207,9 @@ Each device type has its own section for the same reason: a phone and a desktop 
 The Gateway stores the versions apart from the document, in `section_meta` on the profile. A profile from before sections has no entry, so every section of it is at version 0, and the first patch of a section sends version 0.
 
 `PUT` stays for clients that only know workspaces. It replaces just the sections it sends, so such a client cannot erase the appearance or device settings that a newer client wrote.
+
+## Pairing Operations
+
+Pairing creation and revocation return HTTP 202 with a normal Operation. Swamp executes the fixed Conn command through the Gateway executor. The Gateway resolves the stored environment session after checking the Operation's owner. A successful pairing stores its one-time credential encrypted on the pairing record through the executor's secret-output contract. Operation receipts contain safe identifiers and a stored-secret reference only.
+
+After creation succeeds, the calling Node reads `GET /api/v1/conn/environments/{environment}/pairings/{pairing}` to receive its pairing URL. Another Node cannot read that credential. Listing pairings never includes it. Revocation removes it. A Gateway restart in the uncertain issue window never mints a second pairing link automatically; the Operation fails with `conn.pairing_outcome_unknown`, and an explicit new create uses a new pairing identity.

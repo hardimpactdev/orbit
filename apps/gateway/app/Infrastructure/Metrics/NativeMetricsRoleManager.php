@@ -4,8 +4,13 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Metrics;
 
-use App\Actions\Nodes\AddNodeRoleAction;
-use App\Actions\Nodes\RemoveNodeRoleAction;
+use App\Actions\Nodes\AssignRoleAction;
+use App\Actions\Metrics\StartMetricsOperationAction;
+use App\Models\NodeRole;
+use App\Models\Operation;
+use App\Domain\Nodes\NodeRoleDependencyInspector;
+use App\Domain\Nodes\NodeRoleValidationException;
+use Illuminate\Support\Facades\DB;
 use App\Data\Metrics\MetricsMutationData;
 use App\Domain\Metrics\ExporterPreference;
 use App\Domain\Metrics\ExporterPreferenceRepository;
@@ -22,15 +27,14 @@ use App\Models\Node;
 final readonly class NativeMetricsRoleManager implements MetricsRoleManager
 {
     public function __construct(
-        private AddNodeRoleAction $add,
-        private RemoveNodeRoleAction $remove,
+        private AssignRoleAction $assign,
+        private StartMetricsOperationAction $operations,
         private ExporterPreferenceRepository $preferences,
-        private MetricsFleetReconciler $fleet,
-        private MetricsPublicationReport $report,
         private ManagedNodeEligibility $eligibility,
+        private NodeRoleDependencyInspector $dependencies,
     ) {}
 
-    public function enable(int $nodeId): MetricsMutationData
+    public function enable(int $nodeId): Operation
     {
         if (Node::query()->whereHas('roles', static fn ($query) => $query->where(
             'role',
@@ -40,14 +44,15 @@ final readonly class NativeMetricsRoleManager implements MetricsRoleManager
                 'The metrics role is already assigned; remove it before enabling it on another node.',
             );
         }
-        $node = Node::query()->findOrFail($nodeId);
+        $node = $this->activeNode($nodeId);
         $this->guardLinuxPlatform($node);
-        $result = $this->add->execute($node, RoleName::Metrics, true);
-
-        return new MetricsMutationData($nodeId, $result['assignment']->status->value);
+        return DB::transaction(function () use ($node): Operation {
+            $assignment = $this->assign->execute($node, RoleName::Metrics);
+            return $this->operations->execute($node, $assignment, 'enable');
+        });
     }
 
-    public function remove(bool $force, bool $purge): MetricsMutationData
+    public function remove(bool $force, bool $purge): Operation
     {
         $nodes = Node::query()
             ->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Metrics->value))
@@ -64,15 +69,18 @@ final readonly class NativeMetricsRoleManager implements MetricsRoleManager
         }
 
         $node = $nodes->sole();
-        $this->remove->execute($node, RoleName::Metrics, $force, $purge);
-
-        // The baseline records what it did to the publication. Reading the
-        // Gateway state again here would report a guess, and the guess is
-        // wrong whenever that state moved between the two reads.
-        return new MetricsMutationData($node->id, 'removed', $this->report->take());
+        $preview = $this->dependencies->inspect($node, RoleName::Metrics);
+        if (! $force) {
+            throw new NodeRoleValidationException('Use --force to remove this node role.', ['field' => 'force', 'reason' => 'destructive_consent_required', 'role' => 'metrics', 'dependents' => $preview->summaries]);
+        }
+        return DB::transaction(function () use ($node, $purge): Operation {
+            $assignment = $node->roles()->where('role', RoleName::Metrics)->sole();
+            $assignment->update(['status' => LifecycleStatus::Removing]);
+            return $this->operations->execute($node, $assignment, 'disable', $purge);
+        });
     }
 
-    public function enableExporter(int $nodeId): MetricsMutationData
+    public function enableExporter(int $nodeId): Operation
     {
         $node = $this->activeNode($nodeId);
         $this->guardLinuxPlatform($node);
@@ -86,12 +94,10 @@ final readonly class NativeMetricsRoleManager implements MetricsRoleManager
         }
 
         $this->preferences->put($nodeId, ExporterPreference::Enabled);
-        $this->fleet->reconcile();
-
-        return new MetricsMutationData($nodeId, 'enabled');
+        return $this->reconcile('exporter_enable');
     }
 
-    public function disableExporter(int $nodeId): MetricsMutationData
+    public function disableExporter(int $nodeId): Operation
     {
         $node = $this->activeNode($nodeId);
         $this->guardLinuxPlatform($node);
@@ -99,9 +105,17 @@ final readonly class NativeMetricsRoleManager implements MetricsRoleManager
             throw new RoleAssignmentException('The metrics node exporter cannot be disabled.');
         }
         $this->preferences->put($nodeId, ExporterPreference::Disabled);
-        $this->fleet->reconcile();
+        return $this->reconcile('exporter_disable');
+    }
 
-        return new MetricsMutationData($nodeId, 'disabled');
+    private function reconcile(string $kind): Operation
+    {
+        $assignments = NodeRole::query()->where('role', RoleName::Metrics)->where('status', LifecycleStatus::Active)->with('node')->limit(2)->get();
+        if ($assignments->count() !== 1) {
+            throw new ResourceOperationException('metrics.assignment_missing', 'Exactly one active Metrics assignment is required.', 409);
+        }
+        $assignment = $assignments->sole();
+        return $this->operations->execute($assignment->node, $assignment, $kind);
     }
 
     private function activeNode(int $nodeId): Node

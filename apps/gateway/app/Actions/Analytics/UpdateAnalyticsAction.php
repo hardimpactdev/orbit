@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Analytics;
 
-use App\Actions\Nodes\AddNodeRoleAction;
+use App\Models\Operation;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
@@ -15,7 +15,7 @@ final readonly class UpdateAnalyticsAction
 {
     public function __construct(
         private AnalyticsRoleSettingsRepository $settings,
-        private AddNodeRoleAction $roles,
+        private StartAnalyticsOperationAction $operations,
     ) {}
 
     /**
@@ -25,7 +25,7 @@ final readonly class UpdateAnalyticsAction
      *
      * @return array{node_id: int, node_name: string, version: string, previous_version: string}
      */
-    public function execute(string $version): array
+    public function execute(string $version): Operation
     {
         $assignment = NodeRole::query()
             ->where('role', RoleName::Analytics->value)
@@ -44,23 +44,12 @@ final readonly class UpdateAnalyticsAction
         $node = $assignment->node;
         $previous = $this->settings->version($node);
 
-        if ($previous !== $version) {
-            $this->settings->storeVersion($node, $version);
-
-            try {
-                $this->roles->execute($node, RoleName::Analytics, convergeExisting: true);
-            } catch (\Throwable $exception) {
-                $this->settings->storeVersion($node, $previous);
-
-                throw $exception;
-            }
+        $this->settings->storeVersion($node, $version);
+        try {
+            return $this->operations->execute($node, $assignment, 'update', previousVersion: $previous);
+        } catch (\Throwable $exception) {
+            $this->settings->storeVersion($node, $previous);
+            throw $exception;
         }
-
-        return [
-            'node_id' => $node->id,
-            'node_name' => $node->name,
-            'version' => $version,
-            'previous_version' => $previous,
-        ];
     }
 }

@@ -30,6 +30,7 @@ final class ConnServiceProvider extends ExtensionServiceProvider
 
     public function register(): void
     {
+        $this->contribute(\App\Domain\Operations\OperationSecretSource::class, \Orbit\Extensions\Conn\Domain\ConnOperationSecrets::class);
         $this->contribute(ActivityInputRedaction::class, ConnActivityInputRedaction::class);
     }
 
