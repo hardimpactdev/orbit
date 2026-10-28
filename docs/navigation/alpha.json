@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Contributing",
+      "order": 11,
+      "pages": [
+        "reference/alpha"
+      ]
+    }
+  ]
+}

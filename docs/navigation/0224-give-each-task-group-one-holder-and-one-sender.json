@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 14,
+      "pages": [
+        "decisions/0224-give-each-task-group-one-holder-and-one-sender"
+      ]
+    }
+  ]
+}

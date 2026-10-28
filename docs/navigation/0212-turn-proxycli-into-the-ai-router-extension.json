@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 6,
+      "pages": [
+        "decisions/0212-turn-proxycli-into-the-ai-router-extension"
+      ]
+    }
+  ]
+}

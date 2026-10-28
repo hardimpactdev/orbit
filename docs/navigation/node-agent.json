@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Fleet",
+      "order": 14,
+      "pages": [
+        "reference/node-agent"
+      ]
+    }
+  ]
+}

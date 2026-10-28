@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "CLI",
+      "group": "Fleet",
+      "order": 3,
+      "pages": [
+        "cli/firewall"
+      ]
+    }
+  ]
+}

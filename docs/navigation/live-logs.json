@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Applications",
+      "order": 23,
+      "pages": [
+        "reference/live-logs"
+      ]
+    }
+  ]
+}

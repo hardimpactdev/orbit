@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "CLI",
+      "group": "Operations",
+      "order": 5,
+      "pages": [
+        "cli/realtime"
+      ]
+    }
+  ]
+}

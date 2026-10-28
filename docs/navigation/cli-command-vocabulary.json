@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Contributing",
+      "order": 8,
+      "pages": [
+        "reference/cli-command-vocabulary"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Fleet",
+      "order": 7,
+      "pages": [
+        "reference/node-settings"
+      ]
+    }
+  ]
+}

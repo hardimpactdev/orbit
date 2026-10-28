@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 15,
+      "pages": [
+        "decisions/0226-split-private-dns-on-managed-peers"
+      ]
+    }
+  ]
+}

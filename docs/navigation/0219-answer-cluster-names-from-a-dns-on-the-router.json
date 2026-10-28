@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 11,
+      "pages": [
+        "decisions/0219-answer-cluster-names-from-a-dns-on-the-router"
+      ]
+    }
+  ]
+}

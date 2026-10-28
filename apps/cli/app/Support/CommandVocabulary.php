@@ -22,54 +22,28 @@ final readonly class CommandVocabulary
         'update',
     ];
 
-    /**
-     * @var array<string, list<string>>
-     */
-    public const array FAMILY_ACTIONS = [
-        'database' => ['close', 'describe', 'query', 'schema', 'tables'],
-        'dns' => ['resolve'],
-        'doctor' => ['doctor'],
-        'env' => ['import', 'sync'],
-        'firewall' => ['allow', 'deny'],
-        'fleet' => ['resume', 'status'],
-        'gateway' => ['deploy', 'resume', 'rollback', 'smoke', 'status', 'trust', 'use'],
-        'instance' => [
-            'clone',
-            'deploy',
-            'logs',
-            'register',
-            'rename',
-            'resolve',
-            'rollback',
-            'scan',
-            'setup',
-            'transfer',
-        ],
-        'metrics' => ['status'],
-        'node' => ['converge', 'relocate', 'rename'],
-        'operation' => ['cancel'],
-        'process' => ['logs', 'restart', 'start', 'stop'],
-        'ai-router' => ['setup', 'status', 'teardown'],
-        'project' => ['archive', 'download', 'read', 'restore', 'restore-version', 'search', 'upload', 'versions', 'write'],
-        'profile' => ['profile'],
-        'realtime' => ['tail'],
-        'schedule' => ['logs', 'run'],
-        'self-update' => ['self-update'],
-        'tasks' => ['analyze', 'cancel', 'check', 'close', 'complete', 'park', 'provision', 'publish', 'turn', 'status'],
-        'tool' => ['adopt', 'scan'],
-        'vault' => ['setup', 'status', 'sync', 'teardown'],
-        'websocket' => ['rotate', 'sync'],
-    ];
+    /** @return array<string, array{actions: list<string>, noun_endings: list<string>, route_exceptions: list<string>}> */
+    private static function familiesVocabulary(): array
+    {
+        $families = [];
+        foreach (glob(__DIR__.'/CommandVocabulary/*.php') ?: [] as $file) {
+            $families[basename($file, '.php')] = require $file;
+        }
 
-    /** @var list<string> */
-    public const array NOUN_ENDING_COMMANDS = [
-        'analytics:credentials',
-        'metrics:credentials',
-        'node:metrics',
-        'node:settings',
-        'node:wireguard-key',
-        'tasks:agents',
-    ];
+        return $families;
+    }
+
+    /** @return array<string, list<string>> */
+    public static function familyActions(): array
+    {
+        return array_filter(array_map(static fn (array $family): array => $family['actions'], self::familiesVocabulary()));
+    }
+
+    /** @return list<string> */
+    public static function nounEndingCommands(): array
+    {
+        return array_merge(...array_column(self::familiesVocabulary(), 'noun_endings'));
+    }
 
     public static function lastSegment(string $name): string
     {
@@ -106,7 +80,7 @@ final readonly class CommandVocabulary
 
     public static function allowsCommand(string $name): bool
     {
-        if (in_array($name, self::NOUN_ENDING_COMMANDS, true)) {
+        if (in_array($name, self::nounEndingCommands(), true)) {
             return true;
         }
 
@@ -116,7 +90,7 @@ final readonly class CommandVocabulary
             return true;
         }
 
-        return in_array($segment, self::FAMILY_ACTIONS[self::family($name)] ?? [], true);
+        return in_array($segment, self::familyActions()[self::family($name)] ?? [], true);
     }
 
     /**
@@ -124,7 +98,7 @@ final readonly class CommandVocabulary
      */
     public static function routeRequiresMatchingCommand(string $routeName, array $commandNames): bool
     {
-        if (in_array($routeName, ['instance:resolve', 'instance:dependencies:show', 'project:document:destroy', 'project:document:version:list'], true)) {
+        if (in_array($routeName, array_merge(...array_column(self::familiesVocabulary(), 'route_exceptions')), true)) {
             return false;
         }
 

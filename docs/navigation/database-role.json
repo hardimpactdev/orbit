@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Fleet",
+      "order": 13,
+      "pages": [
+        "reference/database-role"
+      ]
+    }
+  ]
+}

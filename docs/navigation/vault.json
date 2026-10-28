@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "CLI",
+      "group": "Applications",
+      "order": 6,
+      "pages": [
+        "cli/vault"
+      ]
+    }
+  ]
+}

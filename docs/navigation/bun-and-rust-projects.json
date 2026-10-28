@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Contributing",
+      "order": 2,
+      "pages": [
+        "reference/bun-and-rust-projects"
+      ]
+    }
+  ]
+}

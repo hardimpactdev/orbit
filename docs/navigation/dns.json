@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "CLI",
+      "group": "Fleet",
+      "order": 8,
+      "pages": [
+        "cli/dns"
+      ]
+    }
+  ]
+}

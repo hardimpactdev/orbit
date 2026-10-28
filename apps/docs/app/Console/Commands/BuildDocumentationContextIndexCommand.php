@@ -10,10 +10,10 @@ use Illuminate\Console\Command;
 final class BuildDocumentationContextIndexCommand extends Command
 {
     #[\Override]
-    protected $signature = 'orbit:docs-index {--check : Fail when the committed context index is stale}';
+    protected $signature = 'orbit:docs-index {--check : Fail when the built context index is stale}';
 
     #[\Override]
-    protected $description = 'Build or verify the committed Orbit documentation context index.';
+    protected $description = 'Build or verify the built Orbit documentation context index.';
 
     public function handle(DocumentationContextIndexBuilder $builder): int
     {

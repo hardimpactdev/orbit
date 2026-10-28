@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Solutions",
+      "order": 0,
+      "pages": [
+        "solutions/doctor-incus-proof"
+      ]
+    }
+  ]
+}

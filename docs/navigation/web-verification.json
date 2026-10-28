@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Contributing",
+      "order": 10,
+      "pages": [
+        "reference/web-verification"
+      ]
+    }
+  ]
+}

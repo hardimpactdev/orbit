@@ -9,9 +9,9 @@
     "scripts": {
         "dev": "vp dev",
         "demo": "VITE_ORBIT_DEMO=1 vp dev",
-        "build": "tsc && vp build",
+        "build": "bun run types && tsc && vp build",
         "preview": "vp preview",
-        "check": "vp check",
+        "check": "bun run types && vp check",
         "test": "bun run test:unit && bun run test:browser",
         "test:unit": "vp test run --project unit --project verification",
         "test:browser": "vp test run --project browser",

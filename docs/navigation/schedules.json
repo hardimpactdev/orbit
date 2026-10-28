@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Applications",
+      "order": 12,
+      "pages": [
+        "reference/schedules"
+      ]
+    }
+  ]
+}

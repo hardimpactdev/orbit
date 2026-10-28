@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "CLI",
+      "group": "Operations",
+      "order": 7,
+      "pages": [
+        "cli/fleet"
+      ]
+    }
+  ]
+}

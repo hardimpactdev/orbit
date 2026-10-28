@@ -3,7 +3,11 @@
     "name": "nckrtl/orbit-gateway",
     "type": "project",
     "description": "The Orbit infrastructure control plane.",
-    "keywords": ["infrastructure", "laravel", "orbit"],
+    "keywords": [
+        "infrastructure",
+        "laravel",
+        "orbit"
+    ],
     "license": "MIT",
     "require": {
         "php": "^8.5",
@@ -96,6 +100,12 @@
         ],
         "pre-package-uninstall": [
             "Illuminate\\Foundation\\ComposerScripts::prePackageUninstall"
+        ],
+        "post-install-cmd": [
+            "../../bin/build-api"
+        ],
+        "post-update-cmd": [
+            "../../bin/build-api"
         ]
     },
     "extra": {

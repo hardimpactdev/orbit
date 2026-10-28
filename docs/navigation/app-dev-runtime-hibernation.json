@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Applications",
+      "order": 13,
+      "pages": [
+        "reference/app-dev-runtime-hibernation"
+      ]
+    }
+  ]
+}

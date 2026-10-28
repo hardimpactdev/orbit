@@ -59,7 +59,7 @@ class BootstrapTest(RepositoryFixture):
         (root / 'bin/bootstrap').write_bytes((BIN / 'bootstrap').read_bytes())
         for project in PROJECTS:
             (root / project).mkdir(parents=True)
-        for name in ('gateway-app-key', 'worktree-cache', 'generated-merge'):
+        for name in ('gateway-app-key', 'worktree-cache'):
             script = root / 'bin' / name
             script.write_text('#!/bin/sh\nexit 0\n')
             script.chmod(0o755)
@@ -103,11 +103,10 @@ if sys.argv[1] == 'install':
         """A repository with the real bootstrap and its helpers, and a Composer that records each call."""
         root = Path(self.temporary.name) / 'bootstrap'
         (root / 'bin').mkdir(parents=True)
-        for name in ('bootstrap', 'gateway-app-key', 'generated-merge'):
+        for name in ('bootstrap', 'gateway-app-key'):
             (root / 'bin' / name).write_bytes((BIN / name).read_bytes())
             (root / 'bin' / name).chmod(0o755)
-        # The real bootstrap installs a clone-local merge driver. Give it a
-        # private repository, rather than letting Git find the parent checkout.
+        # Keep bootstrap Git reads inside the disposable fixture.
         git(root, 'init', '-b', 'main')
         for project in PROJECTS:
             (root / project).mkdir(parents=True)
@@ -135,9 +134,8 @@ if sys.argv[1] == 'install':
         root = self.bootstrap_fixture()
         result = self.bootstrap(root)
         self.assertEqual(0, result.returncode, result.stderr)
-        driver = git(root, 'config', '--local', '--get', 'merge.orbit-generated.driver')
-        self.assertIn(str(root / 'bin/generated-merge'), driver)
-        self.assertIn('--merge %O %A %B %P %X %Y', driver)
+        driver = subprocess.run(['git', 'config', '--local', '--get', 'merge.orbit-generated.driver'], cwd=root)
+        self.assertEqual(1, driver.returncode)
         lines = self.calls.read_text().splitlines()
         self.assertEqual(['composer install --no-interaction --prefer-dist'] * 5 + ['worktree-cache '], lines[:6])
         # Without test impact analysis, the stock full suite is the only test command.
@@ -504,6 +502,9 @@ fi
         (fixture / 'packages').symlink_to(repository / 'packages', target_is_directory=True)
         script = fixture / 'bin/docs-openapi'
         shutil.copyfile(repository / 'bin/docs-openapi', script)
+        shutil.copyfile(repository / 'bin/docs-navigation', fixture / 'bin/docs-navigation')
+        shutil.copyfile(repository / 'docs/site.json', fixture / 'docs/site.json')
+        shutil.copytree(repository / 'docs/navigation', fixture / 'docs/navigation')
         shutil.copyfile(repository / 'docs/docs.json', fixture / 'docs/docs.json')
         document = fixture / 'docs/openapi.json'
         document.write_text('{"stale": true}\n')

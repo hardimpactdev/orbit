@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Applications",
+      "order": 8,
+      "pages": [
+        "reference/postgresql-migration"
+      ]
+    }
+  ]
+}

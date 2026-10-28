@@ -1,0 +1,20 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Fleet",
+      "order": 29,
+      "pages": [
+        "reference/self-update"
+      ]
+    },
+    {
+      "tab": "CLI",
+      "group": "Operations",
+      "order": 2,
+      "pages": [
+        "cli/self-update"
+      ]
+    }
+  ]
+}

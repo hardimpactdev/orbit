@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Solutions",
+      "order": 1,
+      "pages": [
+        "solutions/test-impact-declaration-data"
+      ]
+    }
+  ]
+}

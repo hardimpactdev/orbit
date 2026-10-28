@@ -36,10 +36,10 @@ ALL = set().union(*JOB_PROJECTS.values())
 RULES = [
     # Docs' merge proof runs the real generators; E2E's bootstrap/gate tests
     # use real Composer projects. docs-openapi reads Gateway, CLI and SDK sources.
-    ('apps/cli/*', {'cli', 'docs', 'e2e', 'api-reference'}),
-    ('apps/gateway/*', {'gateway', 'docs', 'e2e', 'api-reference'}),
+    ('apps/cli/*', {'cli', 'docs', 'e2e', 'api-reference', 'web'}),
+    ('apps/gateway/*', {'gateway', 'docs', 'e2e', 'api-reference', 'web'}),
     # CLI CommandSurfaceTest checks its commands against the named Gateway routes.
-    ('apps/gateway/routes/api.php', {'cli'}),
+    ('apps/gateway/routes/*', {'cli'}),
     ('apps/docs/*', {'docs', 'e2e', 'api-reference'}),
     # Docs' strict covers: lint reads tracked paths in every documented project.
     ('apps/e2e/*', {'e2e', 'docs'}),

@@ -104,7 +104,16 @@ it('does not confuse model names method calls comments or data with process exec
 it('keeps Node execution inside the agent transports across core and extensions', function (): void {
     $allowed = [
         // The shared process and SSH transports, their wiring, and the one command runner.
-        'app/Providers/ApplicationServiceProvider.php',
+        'app/Providers/Domains/SshServiceProvider.php',
+        'app/Providers/Domains/AppDevServiceProvider.php',
+        'app/Providers/Domains/GatewayServiceProvider.php',
+        'app/Providers/Domains/CertificatesServiceProvider.php',
+        'app/Providers/Domains/ProcessesServiceProvider.php',
+        'app/Providers/Domains/SourceControlServiceProvider.php',
+        'app/Providers/Domains/AgentViewServiceProvider.php',
+        'app/Providers/Domains/RemoteProgramsServiceProvider.php',
+        'app/Providers/Domains/FleetServiceProvider.php',
+        'app/Providers/Domains/AgentCommandsServiceProvider.php',
         'app/Providers/GatewayReleasesServiceProvider.php',
         'app/Infrastructure/Processes/ProcessRunner.php',
         'app/Infrastructure/Processes/NativeProcessRunner.php',

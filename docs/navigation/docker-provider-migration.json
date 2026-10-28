@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Fleet",
+      "order": 25,
+      "pages": [
+        "reference/docker-provider-migration"
+      ]
+    }
+  ]
+}

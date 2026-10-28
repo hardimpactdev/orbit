@@ -1,0 +1,20 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Fleet",
+      "order": 20,
+      "pages": [
+        "reference/ai-router"
+      ]
+    },
+    {
+      "tab": "CLI",
+      "group": "Operations",
+      "order": 9,
+      "pages": [
+        "cli/ai-router"
+      ]
+    }
+  ]
+}

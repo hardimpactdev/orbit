@@ -12,3 +12,10 @@ __pycache__/
 !/docs/generated/context.json
 
 node_modules/
+
+# Built from the checked-out sources; family PRs never commit these outputs.
+/docs/openapi.json
+/apps/gateway/resources/mcp/tools.json
+/apps/web/src/api/schema.d.ts
+/docs/generated/context.json
+/docs/docs.json

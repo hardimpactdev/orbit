@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Fleet",
+      "order": 17,
+      "pages": [
+        "reference/service-metrics"
+      ]
+    }
+  ]
+}

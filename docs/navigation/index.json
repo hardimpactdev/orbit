@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Start here",
+      "order": 0,
+      "pages": [
+        "index"
+      ]
+    }
+  ]
+}

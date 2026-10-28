@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Fleet",
+      "order": 10,
+      "pages": [
+        "reference/private-dns"
+      ]
+    }
+  ]
+}

@@ -45,7 +45,7 @@ In an Orbit task, run the tests that cover the change in each changed project: s
 
 For dependency updates and advisories, follow [Dependencies](docs/contributor-guide.md#dependencies). Run `composer audit:dependencies` from the root.
 
-For documentation changes, follow `writing-documentation` and run `composer docs-lint`. Include generated context updates when `composer docs-build` changes `docs/generated/context.json`.
+For documentation changes, follow `writing-documentation` and run `composer docs-lint`. Generated API contracts, context, web types, and `docs/docs.json` are ignored build outputs. Never commit them. Follow the family-owned registration paths in [Parallel command families](docs/contributor-guide.md#parallel-command-families); family conversion PRs leave shared loaders and build workflows alone.
 
 Use Incus machines allocated to the task. Preserve other work and follow resource cleanup safeguards. A known correctness failure on main holds unrelated merges until a reviewed fix is verified on main.
 

@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Solutions",
+      "order": 6,
+      "pages": [
+        "solutions/realtime-reverb"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "CLI",
+      "group": "Applications",
+      "order": 5,
+      "pages": [
+        "cli/websocket"
+      ]
+    }
+  ]
+}

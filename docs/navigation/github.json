@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "CLI",
+      "group": "Fleet",
+      "order": 5,
+      "pages": [
+        "cli/github"
+      ]
+    }
+  ]
+}

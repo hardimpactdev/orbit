@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Applications",
+      "order": 28,
+      "pages": [
+        "reference/instance-removal"
+      ]
+    }
+  ]
+}

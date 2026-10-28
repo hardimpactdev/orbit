@@ -1,0 +1,20 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Fleet",
+      "order": 23,
+      "pages": [
+        "reference/tasks"
+      ]
+    },
+    {
+      "tab": "CLI",
+      "group": "Operations",
+      "order": 8,
+      "pages": [
+        "cli/tasks"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Applications",
+      "order": 0,
+      "pages": [
+        "domains/applications"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Fleet",
+      "order": 30,
+      "pages": [
+        "reference/events"
+      ]
+    }
+  ]
+}

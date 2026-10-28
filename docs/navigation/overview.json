@@ -1,0 +1,28 @@
+{
+  "navigation": [
+    {
+      "tab": "CLI",
+      "group": "Using the CLI",
+      "order": 0,
+      "pages": [
+        "cli/overview"
+      ]
+    },
+    {
+      "tab": "API",
+      "group": "Using the API",
+      "order": 0,
+      "pages": [
+        "api/overview"
+      ]
+    },
+    {
+      "tab": "Decisions",
+      "group": "About",
+      "order": 0,
+      "pages": [
+        "decisions/overview"
+      ]
+    }
+  ]
+}

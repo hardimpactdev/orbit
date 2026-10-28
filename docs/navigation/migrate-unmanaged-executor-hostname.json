@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Solutions",
+      "order": 4,
+      "pages": [
+        "solutions/migrate-unmanaged-executor-hostname"
+      ]
+    }
+  ]
+}

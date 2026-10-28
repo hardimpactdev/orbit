@@ -275,7 +275,10 @@ describe('command vocabulary', function (): void {
 
     it('requires a matching command for every named Gateway API route that matches a CLI family', function (): void {
         $commands = orbitProductCommandNames();
-        $contents = file_get_contents(base_path('../gateway/routes/api.php'));
+        $contents = implode("\n", array_map(
+            file_get_contents(...),
+            glob(base_path('../gateway/routes/api/*.php')) ?: [],
+        ));
 
         expect($contents)->toBeString();
 
@@ -302,14 +305,14 @@ describe('command vocabulary', function (): void {
             sort($actions);
 
             return $actions;
-        }, CommandVocabulary::FAMILY_ACTIONS);
+        }, CommandVocabulary::familyActions());
 
         ksort($documentedActions);
         ksort($vocabularyActions);
 
         expect($documentedActions)->toBe($vocabularyActions)
             ->and(array_keys(cli_command_vocabulary_rows($page, '## Noun-ending commands')))
-            ->toEqualCanonicalizing(CommandVocabulary::NOUN_ENDING_COMMANDS);
+            ->toEqualCanonicalizing(CommandVocabulary::nounEndingCommands());
     });
 
     it('documents only commands the CLI registers', function (): void {

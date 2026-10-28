@@ -5,7 +5,7 @@ description: "Prepare architecture and documentation, build a feature, and submi
 covers:
   - .agents/skills/reviewing-pull-requests/references/test-*.md
   - "{composer.json,vet.json,.gitattributes}"
-  - bin/{bootstrap,gateway-app-key,test,pest-plain,review-check,bug-repro,task-group-check,pr-head-check,deploy-verify,docs-merge-check,generated-merge,dependency-audit}
+  - bin/{bootstrap,gateway-app-key,test,pest-plain,review-check,bug-repro,task-group-check,pr-head-check,deploy-verify,docs-merge-check,build-api,docs-navigation,dependency-audit}
   - "{apps/*,packages/php-sdk}/{composer,vet}.json"
   - "{apps/*,packages/php-sdk}/phpstan.neon"
   - apps/gateway/{database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,tests/{Support/{LinuxHost,TestToolchain,LocalShellSshExecutor,WithCommittedSqliteDatabase}.php,Feature/Database/SchemaBaselineTest.php}}
@@ -78,29 +78,29 @@ composer docs-build
 composer docs-lint
 ```
 
-Commit `docs/generated/context.json` when `docs-build` changes it. A new page also needs a place in the `docs/docs.json` navigation; `composer docs-nav` fails for a page that exists only on disk. For Mintlify page or navigation changes, also run `npx mint validate` and `npx mint broken-links` from `docs/`.
+The context index, OpenAPI, MCP catalogue, web API types, and Mintlify configuration are build outputs. Git ignores `docs/generated/context.json`, `docs/openapi.json`, `apps/gateway/resources/mcp/tools.json`, `apps/web/src/api/schema.d.ts`, and `docs/docs.json`. Do not add them to a pull request. A Gateway Composer install builds OpenAPI and the MCP catalogue through `bin/build-api`, including the release preparation install. This needs PHP, Composer, Python 3, and the complete repository sources. The Gateway serves the built MCP manifest from its release directory. Web checks and builds generate their TypeScript types from that OpenAPI document.
 
-### Merging generated files
+Run `bin/build-api` after API changes. Run `composer docs-build` before documentation checks. CI runs these generation steps before the checks that consume the outputs. A fresh local web checkout needs `composer install --working-dir=apps/gateway` before `bun run build` in `apps/web`.
 
-Keep `docs/generated/context.json`, `docs/docs.json`, `docs/decisions/overview.mdx`, `docs/openapi.json`, `apps/web/src/api/schema.d.ts`, and `apps/gateway/resources/mcp/tools.json` committed. The Gateway and web app need their runtime contracts, and the documentation checks need reproducible snapshots. Do not resolve their conflicts by taking one branch or using a text union: that can drop another PR's API or produce invalid JSON.
+### Parallel command families
 
-Run `bin/generated-merge --install` once in each clone before merging branches. `bin/bootstrap` also installs this local Git driver. It needs the normal Docs and Gateway Composer dependencies and the web app's Bun dependencies. Git does not distribute driver configuration with attributes; a fresh clone and a hosted merge service do not run it automatically. Prepare the merge locally with the driver, then publish the checked merge through the normal review workflow. No global Git configuration is changed.
+Each family owns its registrations. The shared loaders include files in filename order. A family conversion pull request may change its implementation, tests, SDK classes, documentation pages, and these registration files:
 
-The Generated contracts CI job installs the Gateway's locked runtime Composer dependencies with `--no-dev` and the web app's locked Bun dependencies. It needs Gateway route discovery and `openapi-typescript`. Docs build installs runtime dependencies only and checks the index and documentation lint.
+| Registration | Family-owned path |
+| --- | --- |
+| Gateway bindings and tagged contributions | `apps/gateway/app/Providers/Domains/<Domain>ServiceProvider.php` |
+| Gateway API routes | `apps/gateway/routes/api/<family>.php` |
+| Operation declarations | `apps/gateway/app/Domain/<Domain>/operation-kinds.php` |
+| CLI vocabulary | `apps/cli/app/Support/CommandVocabulary/<family>.php` |
+| Documentation navigation and new redirects | `docs/navigation/<page-or-family>.json` |
 
-For Orbit task workspaces whose Project setup list uses separate dependency steps instead of `bin/bootstrap`, the operator must add `orbit instance:setup-step:create generated-merge --project=PROJECT_ID --command='bin/generated-merge --install' --timeout=30` after this change merges. Replace `PROJECT_ID` with the Orbit Project ID. The baseline setup installs the driver before agent turns. Apply this live Project change only after merge; repository changes do not update the live setup list. The implementer uses the driver when a conflict fixup merges main.
+A domain provider extends Laravel's `ServiceProvider`. Bootstrap discovers it without an entry in `bootstrap/providers.php`. The route loader supplies `/api/v1`; each family file declares its own middleware. Keep each tagged contribution in its owning provider. Existing optional extensions retain their extension providers and routes.
 
-The driver merges the maintained parts of `docs/docs.json` by navigation identity and ADR overview rows by decision number. Conflicting edits to the same value still fail. It builds a private merge preview of the source files, regenerates the context index, OpenAPI document, web types, and MCP manifest there, and returns the requested artifact to Git. Source conflicts or missing build tools leave the merge unresolved. It does not fetch, change the source checkout, or run Git hooks.
+An operation manifest returns a map from kind name to an `OperationKind` class for PHP execution, or to `['executor' => 'swamp', 'completion' => CompletionClass::class]` for Swamp execution. Keep new kind constants in the owning domain. The registry rejects duplicate kind names. The CLI fragment returns `actions`, `noun_endings`, and `route_exceptions` lists.
 
-Regeneration is cached once per ordered pair of commit SHAs, driver version, and installed dependency locks in the checkout's private Git directory. Before building, it refuses changes to either branch's Docs or Gateway `composer.lock` or web `bun.lock` since their common ancestor, since installed packages may predate those changes.
+A navigation fragment contains a `navigation` list of entries with `tab`, `group`, `order`, and `pages`. Use an existing tab and group, or add a group in the fragment. `order` places pages within the group; filenames break ties. A fragment may also contain `redirects`. Site settings live in `docs/site.json`; API navigation comes from OpenAPI. Existing pages have separate fragments, so two families can add pages without editing a common index.
 
-Before sharing installed dependencies, it also compares the merged tree's locks with the dependency checkout. A lock change or mismatch fails clearly: install the merged locked dependencies and run the generators explicitly instead of using old vendor packages. Source conflicts and dependency failures are not cached. Cache hits reuse the completed validation of those immutable commits.
-
-The private source merge uses the maintained-index driver only for navigation and ADR rows. Git's no-op driver handles derived snapshots, which the generators replace before publishing the cache. The generators run in sequence on the calling thread: Markdown context index, OpenAPI document, MCP tools, then web types. Web types use the web app's installed OpenAPI TypeScript CLI on Bun, the web app's runtime. Every generator must succeed before the complete output is published.
-
-`bin/docs-merge-check` previews GitHub's ordinary text merge without custom drivers; it reports the local driver result separately on a conflict, never turning that conflict into a successful GitHub preview.
-
-This keeps the existing file layout and deployment contracts. Dropping build outputs would need deployment changes and would not solve the committed runtime artifacts; splitting indexes would still leave the API contracts. Regeneration is smaller and avoids combining stale snapshots. All existing read-only freshness and `--check` gates remain required after a merge; the driver does not replace them. Use a normal two-parent merge with locally available commit refs. For a rebase, squash application, or a merge with conflicting source edits, resolve the sources first and run the generators explicitly.
+Family conversion pull requests leave the shared loaders, `ApplicationServiceProvider.php`, `CommandVocabulary.php`, `OperationKinds.php`, `docs/site.json`, and build workflows alone. Changes to these contracts belong in a separate shared-infrastructure pull request. Family pull requests never update generated files or install a merge driver.
 
 ## 3. Implement and verify
 
@@ -192,10 +192,6 @@ When a test must observe native cURL options, inject its option-setting callable
 Add regression tests for behavior changes and their important failure modes. A bug fix adds a test that fails before the fix and passes after it. Confirm that the tests that exercise the new behavior ran.
 
 Docs tests build a fresh Git repository for each isolated case. Fixture indexing and command assertions run in-process unless process or environment isolation is the behavior under test. Temporary Git repositories disable automatic garbage collection and maintenance before the first commit, so background Git processes cannot write pack files during fixture cleanup.
-
-The generated-merge end-to-end proof runs outside Pest: `cd apps/docs && composer merge:check`. Docs includes it in local `composer check`. CI runs neither that check nor the proof. It invokes the real Git, Composer, PHP, and Bun tools; it is not a PHP test and has no two-second per-test limit. No part of this proof runs in a Pest setup hook.
-
-The check prepares one source-only Git snapshot from the current source files, including independent branch commits and expected combined trees. It creates private runtime-only Composer autoloaders, then gives each case a complete private copy with separate Git metadata and loaders. The snapshot must stay clean and have no generated-merge cache or generated bootstrap cache files. Preparation copies recorded output fixtures; each merge and freshness case still starts real generator processes cold. Both merge callbacks and independent freshness cases use the original installed, locked web CLI through Bun, with no bundling or minification for the check.
 
 The disposable route corpus keeps real core controllers, Laravel route discovery, and the explicitly registered Conn extension provider, but only the endpoints and form requests needed by the merge proofs and the generator's request-schema checks. Disable unrelated third-party provider discovery in the private applications; those providers are not inputs to these proofs. Register the real Docs application provider and Librarian provider explicitly for context generation and independent linting. This avoids copying unrelated application history and evaluating unused request constants. Keep every Python case in the external quality check.
 
@@ -327,7 +323,7 @@ Coverage declarations are optional, but docs-lint checks that their globs are sa
 
 ### Checks that need no network
 
-`composer docs-lint` checks structure, links, ADR format, blocked wording, and the freshness of the committed context index. It also enforces the ADR lifecycle. A number in the retirement table on the [decisions overview](/decisions/overview) must have no matching file in `docs/decisions`. Matching uses the full slug recorded in `apps/docs/config/adr-retired-slugs.php`, so the Tasks 0114 slug clash is allowed. Every row in that table must have a redirect from that exact ADR path.
+`composer docs-lint` checks structure, links, ADR format, blocked wording, and the freshness of the built context index. It also enforces the ADR lifecycle. A number in the retirement table on the [decisions overview](/decisions/overview) must have no matching file in `docs/decisions`. Matching uses the full slug recorded in `apps/docs/config/adr-retired-slugs.php`, so the Tasks 0114 slug clash is allowed. Every row in that table must have a redirect from that exact ADR path.
 
 Every ADR numbered 0180 or higher must say `In progress.` in its Status section and include a `Principle:` line. A lower number follows the same two rules only when the retirement table does not list its number. The open gaps are 0007 and 0020. Older ADRs still in Records with other statuses are listed in a committed allowlist that can only shrink.
 
@@ -356,6 +352,6 @@ Advisories appear upstream at any time. An audit in `composer check` or in `Requ
 
 Vet runs without a trust baseline. A baseline makes each routine update a manual approval, and the release age already holds back a compromised release while it is found and pulled.
 
-### A committed context index
+### A generated context index
 
-`docs/generated/context.json` maps pages to concepts and components. Agents use it to load the right pages without reading all the code. Generation is an explicit write, and lint only checks that the committed index is current.
+`docs/generated/context.json` maps pages to concepts and components. Agents use it to load the right pages without reading all the code. Generation is an explicit write, and lint only checks that the built index is current.
