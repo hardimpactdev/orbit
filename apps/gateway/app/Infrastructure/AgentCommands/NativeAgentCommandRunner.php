@@ -82,7 +82,7 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
      * @param  array<string, mixed>  $input
      * @return array<string, mixed>
      */
-    private function runWith(AgentTransport $transport, Node|AgentGuest $node, string $command, array $input, ?float $deadlineSeconds, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
+    private function runWith(AgentTransport $transport, Node|AgentGuest $node, string $command, #[\SensitiveParameter] array $input, ?float $deadlineSeconds, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
     {
         $spec = $this->contract->command($command);
         if (($spec->inputMaxBytes > 0) !== ($binaryInput !== null) || ($binaryInput !== null && $binaryInput->bytes > $spec->inputMaxBytes)) {

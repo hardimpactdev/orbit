@@ -57,7 +57,7 @@ final class KitInvalidTransport implements OperationTransport, OperationTranspor
 
     public function schema(Operation $operation, array $run): array|bool
     {
-        return $this->mode === 'permissive' ? true : ['type' => 'object', 'additionalProperties' => false];
+        return $this->mode === 'permissive' ? true : ($this->mode === 'empty' ? [] : ['type' => 'object', 'additionalProperties' => false]);
     }
 
     public function wireInput(Operation $operation, array $run, #[SensitiveParameter] array $input): mixed
@@ -79,7 +79,8 @@ final class KitInvalidTransport implements OperationTransport, OperationTranspor
 
 final readonly class KitNativeSource implements OperationSecretSource
 {
-    public function __construct(public mixed $value) {}
+    /** @param list<string> $redactions */
+    public function __construct(public mixed $value, public array $redactions = []) {}
 
     public function name(): string
     {
@@ -98,7 +99,7 @@ final readonly class KitNativeSource implements OperationSecretSource
 
     public function resolve(Operation $operation, int $id, string $key, string $parameter): OperationSecretValue
     {
-        return new OperationSecretValue($this->value);
+        return new OperationSecretValue($this->value, $this->redactions);
     }
 }
 
@@ -473,7 +474,7 @@ it('validates registered agent wrappers using native Git wire input without weak
 })->with([true, false]);
 
 it('keeps native object and list validation strict through an agent wrapper', function (bool $object): void {
-    app()->instance(KitNativeSource::class, new KitNativeSource($object ? (object) [] : []));
+    app()->instance(KitNativeSource::class, new KitNativeSource($object ? (object) [] : [], ['kit-native-map-redaction']));
     app()->tag([KitNativeSource::class], OperationSecretSource::class);
     app()->instance(OperationTransports::class, new OperationTransports(['deploy-agent' => KitAgentWrapper::class]));
     $name = 'instance.run-lifecycle-step';
@@ -502,7 +503,12 @@ it('defaults a started run without a receipt to uncertain without a second mint 
     $this->postJson($this->path.'/run', $this->run)->assertStatus(502);
     $this->command->loseReply = false;
     $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath('data.error_code', 'operation.execution_uncertain');
-    expect($this->command->runs)->toBe(1)->and($this->source->resolves)->toBe(1);
+    $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath('data.error_code', 'operation.execution_uncertain');
+    $state = $this->operation->refresh()->state;
+    expect($this->command->runs)->toBe(1)->and($this->source->resolves)->toBe(1)
+        ->and($state['executor_runs']['effect']['started'])->toBeTrue()
+        ->and($state['executor_runs']['effect']['result'])->toBeNull()
+        ->and($state)->not->toHaveKey('projection_count');
 });
 
 it('refuses equal numeric secret owners across different target types before resolution', function (): void {
@@ -532,7 +538,7 @@ it('refuses permissive transport schemas and hides wire-conversion type errors',
     expect($response->getContent())->not->toContain('kit-private-token-value');
     expect($transport->runs)->toBe(0)
         ->and($this->operation->refresh()->state['executor_runs']['effect']['started'])->toBeFalse();
-})->with(['permissive', 'type-error']);
+})->with(['permissive', 'empty', 'type-error']);
 
 it('marks all hydrated-value and redaction parameters as sensitive', function (): void {
     foreach ([
@@ -542,7 +548,49 @@ it('marks all hydrated-value and redaction parameters as sensitive', function ()
         [AgentSchemas::class, 'wireInput', 'input'],
         [AgentCommandRunner::class, 'run', 'input'],
         [NativeAgentCommandRunner::class, 'run', 'input'],
+        [NativeAgentCommandRunner::class, 'runWith', 'input'],
+        [\App\Domain\RemotePrograms\RemoteProgramRunner::class, 'run', 'input'],
+        [\App\Infrastructure\RemotePrograms\SshProgramRunner::class, 'run', 'input'],
     ] as [$class, $method, $name]) {
         expect((new ReflectionParameter([$class, $method], $name))->getAttributes(SensitiveParameter::class))->toHaveCount(1);
     }
+});
+
+
+it('collects typed agent tokens and scalar protected values for redaction', function (): void {
+    $token = 'ghs_kit_secret_token';
+    $value = new OperationSecretValue(new \App\Infrastructure\AgentCommands\AgentGitHubToken($token));
+    expect($value->strings())->toContain($token, base64_encode('x-access-token:'.$token));
+    $values = (new OperationSecretValue(['pin' => 123456, 'ratio' => 12.5, 'enabled' => true]))->strings();
+    expect($values)->toContain('123456', '12.5', '1');
+    $secrets = app(\App\Domain\Operations\OperationSecrets::class);
+    expect($secrets->redact(['pin' => 123456, 'text' => 'pin 123456', 'ratio' => 12.5], $values))
+        ->toBe(['pin' => '[REDACTED]', 'text' => 'pin [REDACTED]', 'ratio' => '[REDACTED]']);
+});
+
+it('refuses protected non-null values without redaction strings', function (string $case): void {
+    $value = match ($case) { 'object' => new stdClass, 'list' => [], 'empty' => '', default => null };
+    app()->instance(KitNativeSource::class, new KitNativeSource($value));
+    app()->tag([KitNativeSource::class], OperationSecretSource::class);
+    $hydrate = fn () => app(\App\Domain\Operations\OperationSecrets::class)->hydrate($this->operation, 'protected',
+        ['payload' => ['$secret' => 'project.native', 'id' => 27]], ['payload' => 'project.native']);
+    if ($case === 'null') {
+        expect($hydrate())->toBe(['input' => ['payload' => null], 'values' => []]);
+    } else {
+        expect($hydrate)->toThrow(ResourceOperationException::class);
+    }
+})->with(['object', 'list', 'empty', 'null']);
+
+
+it('retains failed optional step rows while clearing failed_step on successful completion', function (): void {
+    $input = $this->operation->input;
+    $input['descriptors'][] = [...$input['descriptors'][0], 'key' => 'optional', 'step' => 'cleanup.optional', 'required' => false];
+    $this->operation->update(['input' => $input]);
+    $this->postJson($this->path.'/step', ['worker' => 'worker', 'key' => 'warning', 'name' => 'cleanup.optional', 'status' => 'failed', 'error_code' => 'cleanup.warning'])->assertOk();
+    $this->postJson($this->path.'/run', $this->run)->assertOk();
+    $result = ['backend' => 'active', 'echo' => '[REDACTED]'];
+    $this->postJson($this->path.'/step', ['worker' => 'worker', 'key' => 'success', 'name' => 'effect', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    $this->postJson($this->path.'/complete', ['worker' => 'worker', 'status' => 'succeeded', 'result' => $result])->assertOk()->assertJsonPath('data.failed_step', null);
+    expect($this->operation->refresh()->failed_step)->toBeNull()
+        ->and($this->operation->steps()->where('name', 'cleanup.optional')->sole()->status->value)->toBe('failed');
 });

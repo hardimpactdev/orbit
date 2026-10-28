@@ -146,7 +146,7 @@ final readonly class SwampOperationExecutor
                 $this->executors->completion($operation->kind)?->complete($operation, $outcome);
                 $this->store->change($operation, [
                     'status' => $outcome->status, 'result' => $outcome->result, 'error_code' => $outcome->errorCode,
-                    'failed_step' => $operation->steps()->where('status', OperationStepStatus::Failed->value)->value('name'),
+                    'failed_step' => $outcome->status === OperationStatus::Succeeded ? null : $operation->steps()->where('status', OperationStepStatus::Failed->value)->value('name'),
                     'current_step' => null, 'finished_at' => Carbon::now(), 'lock_key' => null,
                     'state' => [...($operation->state ?? []), 'executor_completion' => $receipt],
                 ]);
@@ -205,7 +205,7 @@ final readonly class SwampOperationExecutor
         $result = null;
         $values = [];
         if ($receipt !== null && ($receipt['started'] ?? false) === true && ! ($spec['resumable'] ?? false)) {
-            $result = ['error_code' => $spec['uncertain_error_code'] ?? 'operation.execution_uncertain'];
+            return ['error_code' => $spec['uncertain_error_code'] ?? 'operation.execution_uncertain'];
         } else {
             $this->owned($operation, $data['worker'], $nodeId, function (Operation $operation) use ($data): void {
                 if ($this->contract->cancellationAllowsRun($operation)) {

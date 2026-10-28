@@ -384,3 +384,6 @@ Protected sources resolve only during invocation hydration. Step, completion and
 
 
 Kind loading rejects unsupported kind, run and completion-contract keys. A family cannot declare a guarantee before the shared executor enforces it. Child declarations and child completion guarantees therefore remain invalid until the child-operation kit supplies their checks.
+
+
+An uncertain executor response leaves the keyed result unset for a proven recovered receipt. It never projects uncertainty as a completed effect. A successful outcome clears `failed_step` while retaining any failed best-effort step rows. The Gateway requires redaction strings for each non-null protected value, including typed credentials and scalars. Empty transport schemas are refused. `OperationKinds::supports()` reports optional child, object-list and receipt capabilities; unsupported guarantees remain unavailable at admission.

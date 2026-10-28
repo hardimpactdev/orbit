@@ -111,6 +111,15 @@ final readonly class OperationKinds
         }
     }
 
+    /**
+     * Optional capabilities: children (including children_succeeded), children_settled, list_of, receipts.
+     * Each remains unavailable until its enforcement ships. Unknown names are unavailable.
+     */
+    public static function supports(string $capability): bool
+    {
+        return false;
+    }
+
     public static function executor(string $kind): string
     {
         $definition = self::definitions()[$kind] ?? throw new LogicException("Unknown operation kind [{$kind}].");

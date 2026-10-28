@@ -45,3 +45,8 @@ it('refuses unenforced kind run and completion guarantees while loading declarat
     ['completion_contract', 'children'], ['completion_contract', 'children_succeeded'], ['completion_contract', 'children_settled'],
     ['runs', 'unknown_guard'],
 ]);
+
+
+it('reports optional capabilities unavailable until their enforcement ships', function (string $capability): void {
+    expect(OperationKinds::supports($capability))->toBeFalse();
+})->with(['children', 'children_settled', 'list_of', 'receipts', 'unknown']);

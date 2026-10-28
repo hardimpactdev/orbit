@@ -34,8 +34,12 @@ final readonly class OperationSecrets
             } catch (\Throwable) {
                 $this->refuse();
             }
+            $redactions = $value->strings();
+            if ($value->value !== null && $redactions === []) {
+                $this->refuse();
+            }
             Arr::set($input, $parameter, $value->value);
-            $values = [...$values, ...$value->strings()];
+            $values = [...$values, ...$redactions];
         }
 
         return ['input' => $input, 'values' => $values];
@@ -93,6 +97,9 @@ final readonly class OperationSecrets
     /** @param list<string> $values */
     public function redact(mixed $value, #[\SensitiveParameter] array $values): mixed
     {
+        if (is_scalar($value) && ! is_string($value) && in_array((string) $value, $values, true)) {
+            return '[REDACTED]';
+        }
         if (is_string($value)) {
             usort($values, static fn (string $a, string $b): int => strlen($b) <=> strlen($a));
 

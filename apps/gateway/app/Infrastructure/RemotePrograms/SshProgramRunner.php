@@ -46,7 +46,7 @@ final readonly class SshProgramRunner implements RemoteProgramRunner
     public function run(
         Node $node,
         RemoteProgram $program,
-        array $input = [],
+        #[SensitiveParameter] array $input = [],
         #[SensitiveParameter] ?GitReadEnvironment $gitRead = null,
         ?float $timeoutSeconds = null,
         ?Closure $cancelled = null,

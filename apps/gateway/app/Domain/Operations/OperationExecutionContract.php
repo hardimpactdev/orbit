@@ -105,7 +105,7 @@ final readonly class OperationExecutionContract
             $wire = $transport instanceof OperationTransportInput
                 ? $transport->wireInput($operation, $data, $input)
                 : json_decode(json_encode((object) $input, JSON_THROW_ON_ERROR), flags: JSON_THROW_ON_ERROR);
-            if ($schema !== true && AgentSchemas::errors($wire, $schema) === []) {
+            if ($schema !== true && $schema !== [] && AgentSchemas::errors($wire, $schema) === []) {
                 return;
             }
         } catch (\Throwable) {
