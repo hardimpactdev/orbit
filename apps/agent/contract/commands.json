@@ -11,7 +11,14 @@
     "agent.supervisor_failed",
     "agent.supervisor_not_ready",
     "agent.target_busy",
-    "agent.lock_unavailable"
+    "agent.lock_unavailable",
+    "agent.effect_key_invalid",
+    "agent.effect_conflict",
+    "agent.effect_unknown",
+    "agent.effect_receipt_unavailable",
+    "agent.effect_receipt_invalid",
+    "agent.effect_sanitization_required",
+    "agent.effect_unsanitized"
   ],
   "commands": [
     {
@@ -82,6 +89,21 @@
       "errors": [
         "node.private_dns_listener_invalid",
         "node.private_dns_listener_failed"
+      ]
+    },
+    {
+      "name": "wireguard.gateway-dns",
+      "summary": "Publish or remove the Gateway's suffix-only private DNS resolver route.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "node.gateway_dns_invalid",
+        "node.gateway_dns_busy",
+        "vpn.dns_resolver_failed"
       ]
     },
     {
@@ -4815,6 +4837,39 @@
         "schedule.failed",
         "schedule.run_active"
       ]
+    },
+    {
+      "name": "agent.effect-receipt",
+      "summary": "Read a keyed effect receipt without executing the command.",
+      "mutates": false,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "root",
+        "macos": "account"
+      },
+      "errors": []
+    },
+    {
+      "name": "agent.effect-reserve",
+      "summary": "Reserve one named remote program without executing it.",
+      "mutates": true,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": []
+    },
+    {
+      "name": "agent.effect-complete",
+      "summary": "Save the result of a reserved named remote program.",
+      "mutates": true,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": []
     },
     {
       "name": "schedule.logs",

@@ -15,7 +15,7 @@ interface OperationTransport
      */
     public function schema(Operation $operation, array $run): array|bool;
 
-    /** @param array{worker: string, key: string, transport: string, name: string, input: array<string, mixed>} $run
+    /** @param array{worker: string, key: string, transport: string, name: string, input: array<string, mixed>, effect_key: string} $run
      * @param  array<string, mixed>  $input  Hydrated in request memory; never retain or return it.
      * @return array<string, mixed>
      */

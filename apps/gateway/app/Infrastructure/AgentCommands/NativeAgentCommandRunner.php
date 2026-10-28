@@ -82,7 +82,7 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
      * @param  array<string, mixed>  $input
      * @return array<string, mixed>
      */
-    private function runWith(AgentTransport $transport, Node|AgentGuest $node, string $command, array $input, ?float $deadlineSeconds, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
+    private function runWith(AgentTransport $transport, Node|AgentGuest $node, string $command, #[\SensitiveParameter] array $input, ?float $deadlineSeconds, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
     {
         $spec = $this->contract->command($command);
         if (($spec->inputMaxBytes > 0) !== ($binaryInput !== null) || ($binaryInput !== null && $binaryInput->bytes > $spec->inputMaxBytes)) {
@@ -212,8 +212,8 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
             'command',
             $spec->name,
         ];
-        [$input, $credential] = AgentInvocation::wire($input);
-        $envelope = AgentInvocation::envelope($pin, $budget, $input, $binaryInput?->bytes);
+        [$input, $credential, $effect] = AgentInvocation::wire($input);
+        $envelope = AgentInvocation::envelope($pin, $budget, $input, $binaryInput?->bytes, $effect);
         $decoder = $output === null ? null : new AgentOutputDecoder($spec->name, $output, $spec->outputMaxBytes);
         $consume = null;
         if ($decoder !== null) {

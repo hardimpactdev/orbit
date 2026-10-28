@@ -14,8 +14,9 @@ final class RunExecutorRequest extends ExecutorRequest
     {
         return [
             'worker' => ['required', 'string', 'max:128', 'regex:/\A[A-Za-z0-9._:-]+\z/D'],
-            'key' => ['required', 'string', 'max:128'],
+            'key' => ['required', 'string', 'max:128', 'regex:/\A[a-z0-9_.:-]+\z/D'],
             'node_id' => ['prohibited'],
+            'effect_key' => ['prohibited'],
             'transport' => ['required', 'string', 'max:64', 'regex:/\A[a-z][a-z0-9_-]*\z/D'],
             'name' => ['required', 'string', 'max:100', 'regex:/\A[a-z][a-z0-9_-]*\.[a-z][a-z0-9_-]*\z/D'],
             'input' => ['present', 'array'],

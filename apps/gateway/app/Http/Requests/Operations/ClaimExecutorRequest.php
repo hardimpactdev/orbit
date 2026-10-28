@@ -12,6 +12,7 @@ final class ClaimExecutorRequest extends ExecutorRequest
         return [
             'worker' => ['required', 'string', 'max:128', 'regex:/\A[A-Za-z0-9._:-]+\z/D'],
             'kind' => ['required', 'string', 'max:100'],
+            'operation_id' => ['sometimes', 'integer', 'min:1'],
         ];
     }
 }
