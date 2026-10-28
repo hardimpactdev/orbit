@@ -41,12 +41,16 @@ it('refuses unenforced kind run and completion guarantees while loading declarat
     expect(fn () => new OperationKinds(new Container, ['test.remote' => $definition]))
         ->toThrow(LogicException::class, "unsupported {$part} keys: {$key}");
 })->with([
-    ['kind', 'children'], ['kind', 'children_succeeded'], ['kind', 'unknown_guarantee'],
-    ['completion_contract', 'children'], ['completion_contract', 'children_succeeded'], ['completion_contract', 'children_settled'],
+    ['kind', 'children_succeeded'], ['kind', 'unknown_guarantee'],
+    ['completion_contract', 'children'], ['completion_contract', 'children_settled'],
     ['runs', 'unknown_guard'],
 ]);
 
 
 it('reports optional capabilities unavailable until their enforcement ships', function (string $capability): void {
     expect(OperationKinds::supports($capability))->toBeFalse();
-})->with(['children', 'children_settled', 'list_of', 'receipts', 'unknown']);
+})->with(['children_settled', 'list_of', 'receipts', 'unknown']);
+
+it('reports enforced child capabilities', function (): void {
+    expect(OperationKinds::supports('children'))->toBeTrue();
+});

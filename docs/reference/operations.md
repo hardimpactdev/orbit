@@ -68,6 +68,18 @@ The steps appear when a worker first starts the operation, all `pending`. A queu
 
 `result` depends on the kind. For `instance.deploy` and `instance.rollback` it is `{ deployment_id, release, selected_release, commit }`, where `deployment_id` is the [deployment history row](/reference/deployments#history) that holds the full log.
 
+### Swamp child Operations
+
+A Swamp parent admits children through its owning family's `OperationFamilyChildren::childContext()`. The context returns exact keyed intents `{key,kind,node_id,input}` from admitted input or prepared Gateway state. The parent kind declares allowed child kinds and Node relations. Each child kind registers an `OperationChildAdmission` adapter that calls its normal owning admission action. Swamp posts `{worker,key}` to `operation-executor/{parent}/children`; optional kind, Node and input fields are exact assertions only. Repeating a key returns the same child before repeating family admission.
+
+The Gateway stamps `parent_operation_id`, `child_key` and an admission fingerprint. `OperationChildren::requireSucceeded(parent,key)` verifies the child's exact recorded target, input and constraints before returning its result. Parents cannot finish while any admitted child is nonterminal. A `children_succeeded` completion contract requires matching successful children, including each eligible keyed intent. Unsupported guarantees fail when the kind loads; families check `OperationKinds::supports()` before registration.
+
+A same-target child inherits the ancestor's target hold, including chains such as `node.add -> node.role_add -> node.converge`. Child completion releases only its own hold. An unrelated start remains busy until the ancestor ends. A child on another target acquires the normal hold for that target.
+
+`POST operation-executor/{parent}/wait` takes `{worker,keys:[child keys]}`. The Gateway records exact child IDs and fingerprints, releases the parent worker lease and keeps the target hold. The workflow ends. Claim only resumes that parent when those same children are terminal. Claim accepts optional `operation_id` for an exact queued child. `GET operation-executor/{parent}/children` returns parent-scoped bounded child receipts to executor peers. These routes use the same peer and Gateway-access gate as other executor routes.
+
+Owning admission may add a server-only `run_constraints` map. Children retain inherited constraints unchanged. The named `time_window` constraint takes `{timezone,start,end}`, with an IANA timezone and distinct `HH:mm` times; start is inclusive and end is exclusive. Midnight crossing is supported. The Gateway checks constraints before hydration and immediately before dispatch. Families contribute other constraints through tagged `OperationRunConstraint` implementations.
+
 ### Kinds and targets
 
 Use the kind and target type to start or find the work of a command.

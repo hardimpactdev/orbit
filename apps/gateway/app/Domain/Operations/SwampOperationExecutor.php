@@ -26,30 +26,39 @@ final readonly class SwampOperationExecutor
 
     public function __construct(private OperationStore $store, private OperationExecutors $executors, private OperationExecutionContract $contract, private OperationSecrets $secrets, private OperationTransports $transports) {}
 
-    public function claim(string $kind, string $worker, int $nodeId): ?Operation
+    public function claim(string $kind, string $worker, int $nodeId, ?int $operationId = null): ?Operation
     {
         if (! $this->executors->swamp($kind)) {
             throw new ResourceOperationException('operation.executor_invalid', 'This kind is not executed by Swamp.', 422);
         }
 
-        return DB::transaction(function () use ($kind, $worker, $nodeId): ?Operation {
-            $operation = Operation::query()->where('kind', $kind)->where('status', OperationStatus::Running->value)
+        return DB::transaction(function () use ($kind, $worker, $nodeId, $operationId): ?Operation {
+            $operation = Operation::query()->where('kind', $kind)->when($operationId !== null, fn ($query) => $query->whereKey($operationId))->where('status', OperationStatus::Running->value)
                 ->where('worker', $worker)->where('state->executor_lease_node_id', $nodeId)->first();
-            $operation ??= Operation::query()->where('kind', $kind)
-                ->where(function ($query): void {
-                    $query->where('status', OperationStatus::Queued->value)
-                        ->orWhere(function ($query): void {
-                            $query->where('status', OperationStatus::Running->value)
-                                ->where('updated_at', '<=', Carbon::now()->subSeconds(self::LeaseSeconds));
-                        });
-                })->orderBy('id')->first();
+            if ($operation === null) {
+                $candidates = Operation::query()->where('kind', $kind)
+                    ->when($operationId !== null, fn ($query) => $query->whereKey($operationId))
+                    ->where(function ($query): void {
+                        $query->whereIn('status', [OperationStatus::Queued->value, OperationStatus::Waiting->value])
+                            ->orWhere(function ($query): void {
+                                $query->where('status', OperationStatus::Running->value)
+                                    ->where('updated_at', '<=', Carbon::now()->subSeconds(self::LeaseSeconds));
+                            });
+                    })->orderBy('id')->lockForUpdate()->get();
+                $operation = $candidates->first(fn (Operation $candidate): bool => $candidate->status !== OperationStatus::Waiting || app(OperationChildren::class)->ready($candidate));
+            }
             if ($operation === null) {
                 return null;
+            }
+            $state = [...($operation->state ?? []), 'executor_lease_node_id' => $nodeId];
+            if ($operation->status === OperationStatus::Waiting) {
+                $state['executor_reentry'] = $state['executor_wait'];
+                unset($state['executor_wait']);
             }
             $this->store->change($operation, [
                 'status' => OperationStatus::Running, 'worker' => $worker,
                 'attempts' => $operation->attempts + ($operation->worker === $worker && ($operation->state['executor_lease_node_id'] ?? null) === $nodeId ? 0 : 1),
-                'state' => [...($operation->state ?? []), 'executor_lease_node_id' => $nodeId],
+                'state' => $state,
                 'started_at' => $operation->started_at ?? Carbon::now(),
                 'updated_at' => Carbon::now(),
             ]);
@@ -62,6 +71,51 @@ final readonly class SwampOperationExecutor
     {
         return $this->owned($operation, $worker, $nodeId, function (Operation $operation): void {
             $this->store->change($operation, ['updated_at' => Carbon::now()]);
+        });
+    }
+
+    /** @param array<string,mixed> $data
+     * @return array{operation:Operation,created:bool}
+     */
+    public function child(Operation $parent, array $data, int $nodeId): array
+    {
+        $result = null;
+        $this->owned($parent, ValidatedData::string($data['worker']), $nodeId, function (Operation $parent) use ($data, &$result): void {
+            $result = app(OperationChildren::class)->admit($parent, $data);
+        });
+
+        return $result ?? throw new \LogicException('Child admission requires an owned parent.');
+    }
+
+    /** @param list<string> $keys */
+    public function wait(Operation $parent, string $worker, array $keys, int $nodeId): Operation
+    {
+        sort($keys);
+
+        return DB::transaction(function () use ($parent, $worker, $keys, $nodeId): Operation {
+            $parent->refresh();
+            $children = app(OperationChildren::class);
+            $tuples = $children->waitFor($parent, $keys);
+            if ($parent->status === OperationStatus::Waiting) {
+                $wait = $parent->state['executor_wait'] ?? null;
+                if (! is_array($wait) || ($wait['worker'] ?? null) !== $worker || ($wait['node_id'] ?? null) !== $nodeId) {
+                    throw new ResourceOperationException('operation.lease_lost', 'Claim the Operation before waiting.', 409);
+                }
+                if (($wait['children'] ?? null) !== $tuples) {
+                    throw new ResourceOperationException('operation.idempotency_conflict', 'The parent is waiting on other children.', 409);
+                }
+
+                return $parent;
+            }
+
+            return $this->owned($parent, $worker, $nodeId, function (Operation $parent) use ($worker, $nodeId, $tuples): void {
+                if ($parent->steps()->where('status', OperationStepStatus::Running->value)->exists()) {
+                    throw new ResourceOperationException('operation.step_running', 'Finish the current step before waiting.', 409);
+                }
+                $this->store->change($parent, ['status' => OperationStatus::Waiting, 'worker' => null,
+                    'state' => [...($parent->state ?? []), 'executor_lease_node_id' => null,
+                        'executor_wait' => ['worker' => $worker, 'node_id' => $nodeId, 'children' => $tuples]]]);
+            });
         });
     }
 
@@ -133,6 +187,11 @@ final readonly class SwampOperationExecutor
             return $this->owned($operation, $data['worker'], $nodeId, function (Operation $operation) use ($receipt): void {
                 if ($operation->steps()->where('status', OperationStepStatus::Running->value)->exists()) {
                     throw new ResourceOperationException('operation.step_running', 'Finish the current step before completion.', 409);
+                }
+                $children = app(OperationChildren::class);
+                $children->assertNoPending($operation);
+                if ($operation->parent_operation_id !== null) {
+                    $children->child(Operation::query()->findOrFail($operation->parent_operation_id), (string) $operation->child_key);
                 }
                 if ($receipt['status'] === 'succeeded') {
                     $this->contract->assertCompletion($operation, $receipt['result']);
@@ -209,6 +268,7 @@ final readonly class SwampOperationExecutor
         } else {
             $this->owned($operation, $data['worker'], $nodeId, function (Operation $operation) use ($data): void {
                 if ($this->contract->cancellationAllowsRun($operation)) {
+                    app(OperationChildren::class)->assertRun($operation);
                     $this->contract->execution($operation)?->beforeRun($operation, $data);
                 }
             });
@@ -223,6 +283,7 @@ final readonly class SwampOperationExecutor
                 $invoke = static fn (): array => $transport->run($operation, $data, $input);
                 $this->owned($operation, $data['worker'], $nodeId, function (Operation $operation) use ($data): void {
                     if ($this->contract->cancellationAllowsRun($operation)) {
+                        app(OperationChildren::class)->assertRun($operation);
                         $this->contract->execution($operation)?->beforeRun($operation, $data);
                         $state = $operation->state ?? [];
                         $runs = ValidatedData::object($state['executor_runs'] ?? []);
@@ -263,7 +324,7 @@ final readonly class SwampOperationExecutor
     private function owned(Operation $operation, string $worker, int $nodeId, Closure $write): Operation
     {
         return DB::transaction(function () use ($operation, $worker, $nodeId, $write): Operation {
-            $operation->refresh();
+            $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
             if (! $this->executors->swamp($operation->kind) || $operation->status !== OperationStatus::Running
                 || $operation->worker !== $worker || ($operation->state['executor_lease_node_id'] ?? null) !== $nodeId || $operation->updated_at?->lessThanOrEqualTo(Carbon::now()->subSeconds(self::LeaseSeconds))) {
                 throw new ResourceOperationException('operation.lease_lost', 'Claim the Operation before writing it.', 409);
