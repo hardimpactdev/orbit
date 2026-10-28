@@ -20,6 +20,7 @@ final readonly class IssueConnPairingAction
 
     public function execute(Node $node, ConnEnvironment $environment): Operation
     {
+        \App\Domain\Integrations\IntegrationAvailability::assertKind('conn.pairing_create');
         if (! $environment->admin_session_expires_at->isFuture()) {
             throw new ResourceOperationException('conn.session_expired', "The Gateway's admin session on {$environment->label} expired. Restart that T3 server so it registers again.", 409);
         }

@@ -31,6 +31,7 @@ final readonly class IntegrationRolePrepareCommand implements OperationGatewayCo
                 purge: $remove && ($operation->input['purge_data'] ?? false) === true, unreachable: $offline, existing: $operation),
             'analytics' => app(StartAnalyticsOperationAction::class)->execute($node, $intent['assignment_id'], $remove ? 'disable' : 'enable', unreachable: $offline, existing: $operation),
             'websocket' => app(PrepareWebSocketRoleAction::class)->execute($operation, $intent),
+            default => throw new \App\Domain\Shared\ResourceOperationException('operation.execution_forbidden', 'The retained role is not an integration.', 422),
         };
         return ['prepared' => true];
     }

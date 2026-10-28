@@ -23,5 +23,7 @@ return (static function (): array {
         ];
     }
 
+    if (! \App\Domain\Operations\OperationKinds::supports('secret_outputs')) { unset($kinds['conn.pairing_create']); }
+
     return $kinds;
 })();

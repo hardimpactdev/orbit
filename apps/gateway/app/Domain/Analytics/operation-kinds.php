@@ -41,11 +41,19 @@ return (static function (): array {
         $definition['completion'] = \App\Domain\Integrations\IntegrationRoleCompletion::class;
         $definition['runs'][] = ['transport' => 'gateway', 'name' => 'integration.prepare-role', 'resumable' => true];
         $definition['result_fields'][] = 'prepared';
-        $definition['children'] = array_map(static fn (array $child): array => [...$child, 'node_from' => str_replace('input.', 'intent.', $child['node_from'])], $definition['children']);
+        $children = [];
+        foreach ($definition['children'] as $raw) {
+            $child = \App\Support\ValidatedData::object($raw);
+            $children[] = [...$child, 'node_from' => str_replace('input.', 'intent.', \App\Support\ValidatedData::string($child['node_from']))];
+        }
+        $definition['children'] = $children;
         $kinds['analytics.'.$roleKind] = $definition;
     }
 
     $kinds['analytics.clickhouse_converge']['admission'] = \App\Domain\Integrations\IntegrationChildAdmission::class;
 
+    foreach ($kinds as $name => $definition) {
+        if (isset($definition['children']) && ! \App\Domain\Operations\OperationKinds::supports('children')) { unset($kinds[$name]); }
+    }
     return $kinds;
 })();

@@ -6,6 +6,7 @@ namespace App\Infrastructure\Metrics;
 
 use App\Actions\Metrics\StartMetricsOperationAction;
 use App\Actions\Nodes\AssignRoleAction;
+use App\Domain\Integrations\IntegrationAvailability;
 use App\Domain\Metrics\ExporterPreference;
 use App\Domain\Metrics\ExporterPreferenceRepository;
 use App\Domain\Metrics\MetricsRoleManager;
@@ -94,9 +95,11 @@ final readonly class NativeMetricsRoleManager implements MetricsRoleManager
             );
         }
 
-        $this->preferences->put($nodeId, ExporterPreference::Enabled);
-
-        return $this->reconcile('exporter_enable', $node);
+        IntegrationAvailability::assertKind('metrics.exporter_enable');
+        return DB::transaction(function () use ($nodeId, $node): Operation {
+            $this->preferences->put($nodeId, ExporterPreference::Enabled);
+            return $this->reconcile('exporter_enable', $node);
+        });
     }
 
     public function disableExporter(int $nodeId): Operation
@@ -106,9 +109,11 @@ final readonly class NativeMetricsRoleManager implements MetricsRoleManager
         if ($node->roles()->where('role', RoleName::Metrics->value)->exists()) {
             throw new RoleAssignmentException('The metrics node exporter cannot be disabled.');
         }
-        $this->preferences->put($nodeId, ExporterPreference::Disabled);
-
-        return $this->reconcile('exporter_disable', $node);
+        IntegrationAvailability::assertKind('metrics.exporter_disable');
+        return DB::transaction(function () use ($nodeId, $node): Operation {
+            $this->preferences->put($nodeId, ExporterPreference::Disabled);
+            return $this->reconcile('exporter_disable', $node);
+        });
     }
 
     private function reconcile(string $kind, Node $changed): Operation

@@ -106,9 +106,18 @@ return (static function (): array {
         $definition['completion'] = \App\Domain\Integrations\IntegrationRoleCompletion::class;
         $definition['runs'][] = ['transport' => 'gateway', 'name' => 'integration.prepare-role', 'resumable' => true];
         $definition['result_fields'][] = 'prepared';
-        $definition['children'] = array_map(static fn (array $child): array => [...$child, 'node_from' => str_replace('input.', 'intent.', $child['node_from'])], $definition['children']);
+        $children = [];
+        foreach ($definition['children'] as $raw) {
+            $child = \App\Support\ValidatedData::object($raw);
+            $children[] = [...$child, 'node_from' => str_replace('input.', 'intent.', \App\Support\ValidatedData::string($child['node_from']))];
+        }
+        $definition['children'] = $children;
         $kinds['metrics.'.$roleKind] = $definition;
     }
 
+    foreach ($kinds as $name => $definition) {
+        if (isset($definition['children']) && ! \App\Domain\Operations\OperationKinds::supports('children')) { unset($kinds[$name]); }
+        if (! \App\Domain\Operations\OperationKinds::supports('list_of') && ($name !== 'metrics.credentials_reset' && ! preg_match('/\Ametrics\.(?:node_exporter|cadvisor)_(?:converge|remove|snapshot|restore)\z/D', $name))) { unset($kinds[$name]); }
+    }
     return $kinds;
 })();

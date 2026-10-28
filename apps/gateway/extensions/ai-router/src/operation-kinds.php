@@ -28,5 +28,8 @@ return (static function (): array {
 
     $kinds['ai_router.collector_converge']['admission'] = \App\Domain\Integrations\IntegrationChildAdmission::class;
 
+    if (! \App\Domain\Operations\OperationKinds::supports('children')) {
+        foreach ($kinds as $name => $definition) { if (isset($definition['children'])) { unset($kinds[$name]); } }
+    }
     return $kinds;
 })();

@@ -7,6 +7,7 @@ namespace Orbit\Extensions\AiRouter\Domain;
 use App\Domain\Integrations\IntegrationExecution;
 use App\Domain\Integrations\IntegrationIntent;
 use App\Domain\Operations\OperationFamilyExecution;
+use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationFamilyChildren;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
@@ -62,11 +63,12 @@ final readonly class AiRouterExecution implements OperationFamilyExecution, Oper
             throw new ResourceOperationException('operation.completion_unproven', 'The collector preparation has no proven receipt.', 409);
         }
         if ($outcome->status === OperationStatus::Failed && isset(IntegrationIntent::data($operation)['failure_recovery'])) {
-            $publication = Operation::query()->where('parent_operation_id', $operation->id)->where('child_key', 'collector-publication')->first();
+            try { $publication = app(OperationChildren::class)->child($operation, 'collector-publication'); }
+            catch (ResourceOperationException) { $publication = null; }
             if ($publication?->status !== OperationStatus::Succeeded) {
                 $run = ValidatedData::object($operation->state['executor_runs'] ?? [])['collector-takeover-restore'] ?? null;
                 $restored = is_array($run) && is_array($run['result'] ?? null) && ($run['result']['restored'] ?? false) === true;
-                $republished = Operation::query()->where('parent_operation_id', $operation->id)->where('child_key', 'collector-takeover-republish')->first();
+                $republished = app(OperationChildren::class)->requireSucceeded($operation, 'collector-takeover-republish');
                 if ($restored !== true || $republished?->status !== OperationStatus::Succeeded) {
                     throw new ResourceOperationException('operation.completion_unproven', 'The refused collector takeover has not been restored and republished.', 409);
                 }

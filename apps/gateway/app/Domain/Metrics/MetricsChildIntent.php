@@ -14,7 +14,8 @@ final readonly class MetricsChildIntent
 {
     public function find(Operation $parent, string $key): ?Operation
     {
-        return Operation::query()->where('parent_operation_id', $parent->id)->where('child_key', $key)->first();
+        if (! $parent->children()->where('child_key', $key)->exists()) { return null; }
+        return app(\App\Domain\Operations\OperationChildren::class)->child($parent, $key);
     }
 
     public function snapshot(Operation $operation): Operation
@@ -30,6 +31,9 @@ final readonly class MetricsChildIntent
             throw new ResourceOperationException('operation.execution_forbidden', 'The restore and snapshot must belong to the same parent.', 422);
         }
 
-        return $source;
+        $parent = Operation::query()->findOrFail($parentId);
+        $proven = app(\App\Domain\Operations\OperationChildren::class)->requireSucceeded($parent, ValidatedData::string($operation->input['source_key']));
+        if ($proven->id !== $source->id) { throw new ResourceOperationException('operation.child_unproven', 'The restore names another proven snapshot.', 409); }
+        return $proven;
     }
 }

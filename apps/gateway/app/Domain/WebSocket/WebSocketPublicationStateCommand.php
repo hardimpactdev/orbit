@@ -27,6 +27,7 @@ final readonly class WebSocketPublicationStateCommand implements OperationGatewa
             'certificate-withdraw' => $this->certificates->forget($nodeId, 'websocket'),
             'serving' => $this->dns->markServing($nodeId),
             'retired' => $this->retire($nodeId, ($operation->input['offline'] ?? false) === true),
+            default => throw new \App\Domain\Shared\ResourceOperationException('operation.execution_forbidden', 'The publication action is outside its contract.', 422),
         };
         return ['recorded' => true];
     }

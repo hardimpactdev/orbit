@@ -27,6 +27,7 @@ final readonly class StartIntegrationOperationAction
     /** @param array<string, mixed> $input */
     public function execute(string $kind, string $target, int $targetId, int $nodeId, array $input, IntegrationPlan $plan, string $trigger = 'operator'): Operation
     {
+        \App\Domain\Integrations\IntegrationAvailability::assertKind($kind);
         return DB::transaction(function () use ($kind, $target, $targetId, $nodeId, $input, $plan, $trigger): Operation {
             $operation = $this->operations->execute($kind, $target, $targetId, $nodeId,
                 [...$input, 'effects' => $plan->effects, 'flow' => $plan->flow], $trigger, null);

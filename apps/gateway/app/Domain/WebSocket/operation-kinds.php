@@ -41,5 +41,8 @@ return (static function (): array {
             'completion_contract' => ['step' => 'integration-receipt', 'transport' => 'gateway', 'name' => 'integration.receipt', 'result' => ['backend' => $verb === 'role_remove' ? 'absent' : 'active']],
             'result_fields' => ['prepared', 'backend', 'changed', 'removed', 'recorded', 'applied', 'verified', 'active', 'error_code']];
     }
+    if (! \App\Domain\Operations\OperationKinds::supports('children')) {
+        foreach ($kinds as $name => $definition) { if (isset($definition['children'])) { unset($kinds[$name]); } }
+    }
     return $kinds;
 })();

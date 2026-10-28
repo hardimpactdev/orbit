@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Integrations;
 
 use App\Domain\Operations\OperationFamilyExecution;
+use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationFamilyChildren;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
@@ -94,9 +95,17 @@ final readonly class IntegrationExecution implements OperationFamilyExecution, O
 
     public function assertCompletion(Operation $operation, OperationOutcome $outcome): void
     {
-        if ($outcome->status !== OperationStatus::Succeeded) {
-            return;
+        if ($outcome->status === OperationStatus::Failed && $this->recoveryAllowed($operation)) {
+            $recovery = IntegrationIntent::flow($operation, 'failure_flow');
+            if ($outcome->errorCode === 'websocket.rollback_failed') {
+                if (! $this->hasProvenFailure($operation, $recovery)) {
+                    throw new ResourceOperationException('operation.completion_unproven', 'The rollback failure has no recorded refusal.', 409);
+                }
+            } else {
+                foreach ($recovery as $entry) { $this->assertEntry($operation, $entry); }
+            }
         }
+        if ($outcome->status !== OperationStatus::Succeeded) { return; }
         foreach (IntegrationIntent::flow($operation) as $entry) {
             $this->assertEntry($operation, $entry);
         }
@@ -110,8 +119,27 @@ final readonly class IntegrationExecution implements OperationFamilyExecution, O
         $result = ValidatedData::object($operation->state['steps'] ?? [])[$step] ?? null;
         if (! is_array($result) || ($result[ValidatedData::string($condition['field'])] ?? null) !== $condition['equals']) { return false; }
         try { $this->assertEntry($operation, ['type' => 'run', 'key' => $step]); } catch (ResourceOperationException) { return false; }
-        return $operation->steps()->where('status', OperationStepStatus::Failed)->exists()
-            || Operation::query()->where('parent_operation_id', $operation->id)->where('status', OperationStatus::Failed)->exists();
+        return $this->hasProvenFailure($operation, IntegrationIntent::flow($operation));
+    }
+
+    /** @param list<Flow> $flow */
+    private function hasProvenFailure(Operation $operation, array $flow): bool
+    {
+        $runs = ValidatedData::object($operation->state['executor_runs'] ?? []);
+        foreach ($flow as $entry) {
+            if ($entry['type'] === 'child') {
+                try { $child = app(OperationChildren::class)->child($operation, $entry['key']); }
+                catch (ResourceOperationException) { continue; }
+                if ($child->status === OperationStatus::Failed) { return true; }
+                continue;
+            }
+            $descriptor = IntegrationIntent::effects($operation)[$entry['key']];
+            $run = $runs[$entry['key']] ?? null;
+            $error = is_array($run) && is_array($run['result'] ?? null) ? ($run['result']['error_code'] ?? null) : null;
+            if (is_string($error) && ! in_array($error, ['operation.cancelled', 'node.lock_lost', 'operation.lease_lost'], true)
+                && $run['name'] === $descriptor['name'] && $run['transport'] === $descriptor['transport']) { return true; }
+        }
+        return false;
     }
 
     public function cancellationBoundary(Operation $operation): ?array
@@ -133,7 +161,8 @@ final readonly class IntegrationExecution implements OperationFamilyExecution, O
             }
         }
         if ($entry['type'] === 'child') {
-            $child = Operation::query()->where('parent_operation_id', $operation->id)->where('child_key', $entry['key'])->first();
+            $children = app(OperationChildren::class);
+            $child = ($entry['continue_on_failure'] ?? false) ? $children->child($operation, $entry['key']) : $children->requireSucceeded($operation, $entry['key']);
             if (! $child instanceof Operation || $child->kind !== $entry['kind'] || $child->node_id !== $entry['node_id']
                 || array_intersect_key($child->input, $entry['input']) !== $entry['input'] || (($entry['continue_on_failure'] ?? false) ? ! $child->status->terminal() : $child->status !== OperationStatus::Succeeded)) {
                 throw new ResourceOperationException('operation.completion_unproven', 'The integration child has not completed its admitted intent.', 409);
@@ -146,6 +175,11 @@ final readonly class IntegrationExecution implements OperationFamilyExecution, O
         $result = ValidatedData::object($operation->state['steps'] ?? [])[$descriptor['step']] ?? null;
         if (! is_array($saved) || ($saved['transport'] ?? null) !== $descriptor['transport'] || ($saved['name'] ?? null) !== $descriptor['name']
             || ! is_array($saved['result'] ?? null) || isset($saved['result']['error_code'])
+            || (match ($descriptor['name']) {
+                'http.await-healthy' => ($saved['result']['healthy'] ?? null) !== true,
+                'websocket.runtime-active' => ($saved['result']['active'] ?? null) !== true,
+                default => false,
+            })
             || $saved['result'] !== $result || ! $operation->steps()->where('name', $descriptor['step'])->where('status', OperationStepStatus::Succeeded->value)->exists()) {
             throw new ResourceOperationException('operation.completion_unproven', 'The integration effect has no successful recorded receipt.', 409);
         }

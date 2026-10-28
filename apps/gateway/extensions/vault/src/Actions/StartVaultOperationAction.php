@@ -23,6 +23,7 @@ final readonly class StartVaultOperationAction
     {
         $nodeId = $this->nodes->activeGatewayId() ?? throw new VaultException('vault.gateway_missing', 'Vault needs one active Gateway Node.', 409);
 
+        \App\Domain\Integrations\IntegrationAvailability::assertKind('vault.'.$action);
         return DB::transaction(function () use ($nodeId, $action, $configuration, $trigger): Operation {
             $operation = $this->operations->execute('vault.'.$action, 'vault', $nodeId, $nodeId,
                 ['configuration' => ['$secret' => 'vault.credentials', 'id' => $nodeId]], $trigger, null);
