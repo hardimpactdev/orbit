@@ -35,7 +35,7 @@ final readonly class OperationSecrets
                 $this->refuse();
             }
             $redactions = $value->strings();
-            if ($value->value !== null && $redactions === []) {
+            if ($redactions === [] && $value->requiresRedaction()) {
                 $this->refuse();
             }
             Arr::set($input, $parameter, $value->value);
