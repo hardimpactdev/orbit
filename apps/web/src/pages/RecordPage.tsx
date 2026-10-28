@@ -686,6 +686,7 @@ export function DeploymentPage() {
                         { name: "Error code", value: deployment.error_code },
                         { name: "Selected release", value: deployment.selected_release },
                         { name: "Triggered by", value: deployment.triggered_by },
+                        { name: "Caller Node ID", value: deployment.caller_node_id },
                     ]}
                 />
                 <LogPane

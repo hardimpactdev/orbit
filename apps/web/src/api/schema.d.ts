@@ -1663,7 +1663,7 @@ export interface paths {
         put?: never;
         /**
          * Start an automatic pinned deploy
-         * @description Starts the existing instance.deploy operation for exactly the required full commit SHA. Requires Gateway Node access, an enabled production Instance, and Idempotency-Key. Derives automatic origin from the authorized command and records the caller Node ID. Replays bind caller, command, Instance and commit. Rechecks pause and rollback blocks under the Instance lock before effects. Branch membership is checked on the first-parent chain during queued source preparation; refusal ends with deployment.commit_not_on_branch. Follow with operation:show. See /reference/deployments#pinned-commits-and-automatic-callers.
+         * @description Starts the existing instance.deploy operation for exactly the required full commit SHA. Requires Gateway Node access, an enabled production Instance, and Idempotency-Key. Records swamp:auto-deploy from the authorized automatic command and caller_node_id from the authenticated Gateway peer. Deployment and operation reads expose both fields; clients cannot supply them. Replays bind caller, command, Instance and commit. Rechecks pause and rollback blocks under the Instance lock before effects. Branch membership is checked on the first-parent chain during queued source preparation; refusal ends with deployment.commit_not_on_branch. Follow with operation:show. See /reference/deployments#pinned-commits-and-automatic-callers.
          */
         post: operations["instance-deploy-automatic"];
         delete?: never;
@@ -4676,6 +4676,7 @@ export interface components {
             error_code?: string | null;
             selected_release?: string | null;
             triggered_by?: string | null;
+            caller_node_id?: number | null;
         };
         DoctorReport: {
             healthy?: boolean;
@@ -5012,6 +5013,7 @@ export interface components {
             cancel_requested?: boolean;
             attempts?: number;
             triggered_by?: string | null;
+            caller_node_id?: number | null;
             created_at?: string | null;
             started_at?: string | null;
             finished_at?: string | null;

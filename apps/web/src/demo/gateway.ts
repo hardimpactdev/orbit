@@ -1169,6 +1169,7 @@ export function createDemoGateway() {
             cancel_requested: false,
             attempts: 0,
             triggered_by: "demo",
+            caller_node_id: null,
             created_at: new Date().toISOString(),
             started_at: null,
             finished_at: null,

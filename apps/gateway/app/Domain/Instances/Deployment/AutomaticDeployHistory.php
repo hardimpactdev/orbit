@@ -12,8 +12,13 @@ use Illuminate\Support\Carbon;
 /** Gateway pause and rollback evidence, plus retry history for development defaults. */
 final readonly class AutomaticDeployHistory
 {
-    /** The `triggered_by` of an automatic deployment. It contains a colon, so no Node name can take it. */
+    /** The PHP runner's label, retained for development defaults and existing history. */
     public const string Trigger = 'orbit:auto-deploy';
+
+    /** Automatic labels contain a colon, which a manual caller's Node name cannot contain. */
+    public const string SwampTrigger = 'swamp:auto-deploy';
+
+    public const array Triggers = [self::Trigger, self::SwampTrigger];
 
     /** The error code of an automatic deployment that a pause stopped before it deployed anything. */
     public const string Paused = 'deployment.paused';
@@ -36,7 +41,7 @@ final readonly class AutomaticDeployHistory
             ->where('id', '>', $this->instance->auto_deploy_resumed_after)
             ->where(static fn ($query) => $query
                 ->where('kind', InstanceDeployment::Rollback)
-                ->orWhere('triggered_by', '!=', self::Trigger)
+                ->orWhereNotIn('triggered_by', self::Triggers)
                 ->orWhereNull('triggered_by'))
             ->latest('id')
             ->first();
@@ -48,7 +53,7 @@ final readonly class AutomaticDeployHistory
         $last = InstanceDeployment::query()
             ->where('instance_id', $this->instance->id)
             ->where('kind', 'deploy')
-            ->where('triggered_by', self::Trigger)
+            ->whereIn('triggered_by', self::Triggers)
             ->where('status', '!=', 'running')
             ->where(static fn ($query) => $query->whereNull('error_code')->orWhere('error_code', '!=', self::Paused))
             ->where('id', '>', $this->instance->auto_deploy_resumed_after)
@@ -63,7 +68,7 @@ final readonly class AutomaticDeployHistory
     {
         $rows = InstanceDeployment::query()->where('instance_id', $this->instance->id)->orderBy('id')->get([
             'id', 'instance_id', 'kind', 'release', 'branch', 'commit', 'started_at', 'finished_at',
-            'duration_seconds', 'status', 'failed_step', 'error_code', 'selected_release', 'triggered_by',
+            'duration_seconds', 'status', 'failed_step', 'error_code', 'selected_release', 'triggered_by', 'caller_node_id',
         ]);
         $public = $rows->map(static fn (InstanceDeployment $row): array => InstanceDeploymentData::fromModel($row)->toArray())->all();
 
@@ -145,14 +150,14 @@ final readonly class AutomaticDeployHistory
         $manual = InstanceDeployment::query()
             ->where('instance_id', $this->instance->id)
             ->where('kind', 'deploy')
-            ->where(static fn ($query) => $query->where('triggered_by', '!=', self::Trigger)->orWhereNull('triggered_by'))
+            ->where(static fn ($query) => $query->whereNotIn('triggered_by', self::Triggers)->orWhereNull('triggered_by'))
             ->max('id');
         $failures = [];
 
         foreach (InstanceDeployment::query()
             ->where('instance_id', $this->instance->id)
             ->where('kind', 'deploy')
-            ->where('triggered_by', self::Trigger)
+            ->whereIn('triggered_by', self::Triggers)
             ->where('status', 'failed')
             ->whereNotNull('commit')
             ->where(static fn ($query) => $query->whereNull('error_code')->orWhere('error_code', '!=', self::Paused))

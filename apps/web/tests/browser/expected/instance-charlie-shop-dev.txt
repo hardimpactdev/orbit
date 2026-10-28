@@ -28,7 +28,7 @@
 ╭─ Deployments
 │  Started │ Release │ Branch │ Commit │ By │ Duration │ Status
 │› 2026-01-02T00:00:00+00:00 │ 20260102000000 │ main │ bbbbbbb │ nick │ 9s │ failed !
-│  2026-01-01T00:00:00+00:00 │ 20260101000000 │ main │ aaaaaaa │ gateway │ 42s │ succeeded
+│  2026-01-01T00:00:00+00:00 │ 20260101000000 │ main │ aaaaaaa │ swamp:auto-deploy │ 42s │ succeeded
 ╰─
 
 ╭─ Processes

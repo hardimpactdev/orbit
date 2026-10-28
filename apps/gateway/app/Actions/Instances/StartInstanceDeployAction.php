@@ -63,7 +63,7 @@ final readonly class StartInstanceDeployAction
             $instance = Instance::query()->lockForUpdate()->findOrFail($instance->id);
             $this->writer->assertSwamp($instance);
 
-            return $this->pinned($instance, AutomaticDeployHistory::Trigger, $requestId, $commit, $caller->id);
+            return $this->pinned($instance, AutomaticDeployHistory::SwampTrigger, $requestId, $commit, $caller->id);
         });
     }
 }

@@ -44,6 +44,7 @@ const operation = (overrides: Partial<Operation> = {}): Operation => ({
     cancel_requested: false,
     attempts: 1,
     triggered_by: "laptop",
+    caller_node_id: null,
     created_at: null,
     started_at: null,
     finished_at: null,

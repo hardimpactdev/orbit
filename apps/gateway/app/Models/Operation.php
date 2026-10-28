@@ -84,6 +84,13 @@ final class Operation extends Model
         return $this->hasMany(OperationStep::class)->orderBy('position');
     }
 
+    public function callerNodeId(): ?int
+    {
+        $caller = $this->input['caller_node_id'] ?? null;
+
+        return is_int($caller) ? $caller : null;
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {

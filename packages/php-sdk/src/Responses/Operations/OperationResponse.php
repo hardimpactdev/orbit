@@ -42,6 +42,7 @@ final readonly class OperationResponse
         public ?int $pollAfterSeconds,
         public array $steps,
         public string $requestId,
+        public ?int $callerNodeId = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -90,6 +91,7 @@ final readonly class OperationResponse
             pollAfterSeconds: is_int($data['poll_after_seconds'] ?? null) ? $data['poll_after_seconds'] : null,
             steps: $steps,
             requestId: $requestId,
+            callerNodeId: is_int($data['caller_node_id'] ?? null) ? $data['caller_node_id'] : null,
         );
     }
 
@@ -121,6 +123,7 @@ final readonly class OperationResponse
             'cancel_requested' => $this->cancelRequested,
             'attempts' => $this->attempts,
             'triggered_by' => $this->triggeredBy,
+            'caller_node_id' => $this->callerNodeId,
             'created_at' => $this->createdAt,
             'started_at' => $this->startedAt,
             'finished_at' => $this->finishedAt,

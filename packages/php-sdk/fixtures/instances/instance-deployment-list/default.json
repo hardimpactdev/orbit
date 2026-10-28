@@ -19,7 +19,8 @@
                 "failed_step": null,
                 "error_code": null,
                 "selected_release": "20260101000000",
-                "triggered_by": "gateway"
+                "triggered_by": "swamp:auto-deploy",
+                "caller_node_id": 1
             }
         ],
         "meta": {

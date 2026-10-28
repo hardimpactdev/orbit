@@ -39,7 +39,7 @@ final readonly class InstanceDeployOperation implements OperationKind
             return OperationOutcome::failed('operation.target_missing');
         }
 
-        if ($operation->triggered_by !== AutomaticDeployHistory::Trigger || (! $instance->placedOnAppProd() && ! isset($operation->input['caller_node_id']))) {
+        if (! in_array($operation->triggered_by, AutomaticDeployHistory::Triggers, true) || (! $instance->placedOnAppProd() && ! isset($operation->input['caller_node_id']))) {
             return $this->deploy($operation, $run, $instance);
         }
 

@@ -339,6 +339,9 @@ it('uses the native history subjects for policy alerts', function (string $event
     'failure without commit' => ['failed', 'deploy', 'orbit:auto-deploy', null, false, false],
     'current manual pause' => ['paused', 'deploy', null, str_repeat('a', 40), false, true],
     'current rollback pause' => ['paused', 'rollback', 'operator', str_repeat('a', 40), false, true],
+    'Swamp failure' => ['failed', 'deploy', 'swamp:auto-deploy', str_repeat('a', 40), false, true],
+    'Swamp deploy does not pause' => ['paused', 'deploy', 'swamp:auto-deploy', str_repeat('a', 40), false, false],
+    'Swamp-labelled rollback pauses' => ['paused', 'rollback', 'swamp:auto-deploy', str_repeat('a', 40), false, true],
     'current automatic failure' => ['failed', 'deploy', 'orbit:auto-deploy', str_repeat('a', 40), false, true],
 ]);
 
@@ -440,7 +443,7 @@ it('distinguishes an already deployed head from a root that cannot reach the bas
 it('exposes the shipped owner and accepts Swamp automatic admission', function (): void {
     $this->getJson($this->url)->assertOk()->assertJsonPath('data.auto_deploy.policy_owner', 'swamp');
     $this->withHeader('Idempotency-Key', 'swamp')->postJson($this->url.'/deploy/automatic', ['commit' => $this->sha])->assertAccepted();
-    expect(Operation::query()->sole()->triggered_by)->toBe('orbit:auto-deploy');
+    expect(Operation::query()->sole()->triggered_by)->toBe('swamp:auto-deploy');
 });
 
 it('returns 409 without automatic admission when the app-prod role is not active', function (?string $status): void {

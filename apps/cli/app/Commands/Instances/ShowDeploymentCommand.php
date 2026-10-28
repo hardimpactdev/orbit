@@ -68,6 +68,7 @@ final class ShowDeploymentCommand extends GatewayCommand
             'Error code' => $deployment->errorCode,
             'Selected release' => $deployment->selectedRelease,
             'Triggered by' => $deployment->triggeredBy,
+            'Caller Node ID' => $deployment->callerNodeId,
             'Request ID' => $deployment->requestId,
         ]));
 

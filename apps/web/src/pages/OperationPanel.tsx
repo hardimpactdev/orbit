@@ -80,7 +80,13 @@ export function OperationPanel({ instance }: { instance: Instance }) {
                 rows={operation.steps ?? []}
                 rowId={(row) => row.name}
                 warn={(row) => row.status === "failed"}
-                topRight={headline(operation)}
+                topRight={[
+                    headline(operation),
+                    operation.triggered_by,
+                    operation.caller_node_id == null ? null : `Node ${operation.caller_node_id}`,
+                ]
+                    .filter(Boolean)
+                    .join(" · ")}
                 empty={operation.status === "queued" ? "Waiting for a worker." : "No steps yet."}
             />
             <LogPane

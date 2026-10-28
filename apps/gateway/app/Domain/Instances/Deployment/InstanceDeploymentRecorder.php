@@ -26,7 +26,7 @@ final readonly class InstanceDeploymentRecorder
         private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
-    public function start(Instance $instance, string $triggeredBy, string $kind = 'deploy'): InstanceDeployment
+    public function start(Instance $instance, string $triggeredBy, string $kind = 'deploy', ?int $callerNodeId = null): InstanceDeployment
     {
         $deployment = InstanceDeployment::query()->create([
             'instance_id' => $instance->id,
@@ -37,6 +37,7 @@ final readonly class InstanceDeploymentRecorder
             'started_at' => Carbon::now(),
             'status' => 'running',
             'triggered_by' => $triggeredBy,
+            'caller_node_id' => $callerNodeId,
         ]);
 
         $this->broadcast(RecordEventType::DeploymentCreated, $deployment);

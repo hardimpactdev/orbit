@@ -8,8 +8,8 @@ covers:
   - apps/gateway/app/Console/Commands/AutoDeployCommand.php
   - apps/agent/src/commands/{production,production_tests,production_home,production_home_tests,deploy_step}.rs
   - apps/gateway/app/Http/{Controllers/Api/{InstanceDeploymentsController,InstanceDeployStepsController,InstanceReleasesController,InstanceRollbacksController,ProjectDevelopmentDeployStepsController},Requests/Projects/*ProjectDevelopmentDeployStepRequest}.php
-  - apps/gateway/{app/Models/{InstanceDeployment,InstanceDeployStep,ProjectDevelopmentDeployStep}.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - packages/php-sdk/src/{Requests,Responses}/Projects/*DevelopmentDeployStep*.php
+  - apps/gateway/{app/{Models/{InstanceDeployment,InstanceDeployStep,ProjectDevelopmentDeployStep},Data/Instances/InstanceDeploymentData}.php,database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_01_05_000000_add_caller_node_id_to_instance_deployments}.php}
+  - packages/php-sdk/src/{Requests/Projects/*DevelopmentDeployStep*,Responses/{Projects/*DevelopmentDeployStep*,Deployments/InstanceDeploymentResponse}}.php
 ---
 
 # Instance releases
@@ -297,7 +297,7 @@ Swamp runs the production automatic-deploy policy every minute at second 30 (`30
 Each policy tick reads the branch head through the Gateway with `git ls-remote` and the Project's [read credential](/reference/instance-setup#credentialed-git). Production policy uses the [Gateway source contracts](#swamp-policy-contracts); development defaults call the same credentialed reader locally. It keeps the GitHub App installation that covers the repository for up to 60 minutes. It keeps the read tokens for up to 50 minutes, encrypted with the application key. Between token refreshes, each eligible Instance costs one `ls-remote` and no GitHub API call in a quiet minute. A failed read drops the cached installation and tokens.
 
 - When the Instance already runs the commit the tick would deploy, the tick starts nothing and writes no history row.
-- Otherwise it starts an [`instance.deploy` operation](#the-deploy-operation) pinned to that commit, with `triggered_by` `orbit:auto-deploy`. No Node name contains a colon, so the marker cannot be a caller.
+- Otherwise it starts an [`instance.deploy` operation](#the-deploy-operation) pinned to that commit. The [origin label](#history) identifies Swamp or the Gateway development runner.
 - The deployment proves that the branch contains the commit and checks out exactly that commit. It fails with `deployment.commit_not_on_branch` otherwise.
 - Pushes that arrive meanwhile wait for the next tick. That tick reads the newest head, so intermediate commits coalesce.
 - While another operation holds the Instance, the tick skips it and reports `busy`. Its own operation that has not ended yet is `deploying`.
@@ -368,7 +368,7 @@ A rollback that came after the tick queued the deployment wins while no worker h
 
 A rollback or manual deployment can also end between the tick's read of the history and the start of its deployment. So the deployment checks for a pause again under the Instance lock. A pause found there ends the operation with `deployment.paused` and deploys nothing. A first attempt writes no history row. An attempt that a worker resumes after a lost worker ends its row with `deployment.paused`, which does not count as a failure of the commit.
 
-**Visibility.** Each automatic deployment has its operation and its [history row](#history) with `triggered_by` `orbit:auto-deploy`. `instance:show` shows the last result, its commit, the head, and a pause. When a result other than `up_to_date`, `deploying`, or `gate_pending` starts, the tick writes one Activity entry, `auto_deploy.<result>`, with the command `orbit:auto-deploy`. A [release alert](/reference/gateway-recovery#release-alerts) with the target `instance:<id>` reports a failed automatic deployment once per commit, a commit or a pending head on the first tick after it waited at least 30 minutes, once per commit, and a pause.
+**Visibility.** Each automatic deployment has its operation and its [history row](#history) with the [recorded origin](#history). `instance:show` shows the last result, its commit, the head, and a pause. When a result other than `up_to_date`, `deploying`, or `gate_pending` starts, the tick writes one Activity entry, `auto_deploy.<result>`, with the command `orbit:auto-deploy`. A [release alert](/reference/gateway-recovery#release-alerts) with the target `instance:<id>` reports a failed automatic deployment once per commit, a commit or a pending head on the first tick after it waited at least 30 minutes, once per commit, and a pause.
 
 **One worker.** Development defaults, production Instances, and manual deployments share the one `operations` worker, as [One worker for every operation](/reference/operations#one-worker-for-every-operation) describes. A tick's deployment waits in the queue while another deployment runs. Instances behind one Route deploy one after another, not together.
 
@@ -389,7 +389,7 @@ The source listing contains at most 100 reachable commits, and the walk returns 
 
 The commits and checks reads require the Project's GitHub App access. They return `instance.auto_deploy_gate_unreadable` for another source provider and `instance.auto_deploy_gate_unavailable` when the upstream read fails. They expose evidence, not a green-commit decision. Swamp applies the policy and checks that the walk's head matches its fresh head. A moved branch does not silently change a selected commit.
 
-Instance list/show and broadcasts expose `auto_deploy.policy_owner`, `auto_deploy.resumed_after`, `auto_deploy.blocked`, and `auto_deploy.history_version`. The cursor is set only by `instance:update --auto-deploy=true`. The block list combines durable rollback blocks and retained rolled-away history without waiting for a tick. When automatic deployment is off, blocks are empty and the history version is null; these reads make no policy-history query. No block-write contract is needed: Gateway rollback history already preserves these blocks before pruning. Swamp keeps its retry and gate state itself. Deployment list/show expose `kind` (`deploy` or `rollback`); automatic versus manual origin remains `triggered_by`.
+Instance list/show and broadcasts expose `auto_deploy.policy_owner`, `auto_deploy.resumed_after`, `auto_deploy.blocked`, and `auto_deploy.history_version`. The cursor is set only by `instance:update --auto-deploy=true`. The block list combines durable rollback blocks and retained rolled-away history without waiting for a tick. When automatic deployment is off, blocks are empty and the history version is null; these reads make no policy-history query. No block-write contract is needed: Gateway rollback history already preserves these blocks before pruning. Swamp keeps its retry and gate state itself. Deployment list/show expose `kind` (`deploy` or `rollback`); origin is recorded in `triggered_by`, with the authorized automatic caller in `caller_node_id`.
 
 A found automatic receipt is the original operation, including its bound caller in `input.caller_node_id`, status, result, and error. Follow that operation and read fresh deployment history before deciding what happened. A missing receipt means only that no admission is recorded at the read: an earlier request might still be in flight. It never authorizes a retry. A worker-lost outcome or a terminal operation without required effect evidence stays unresolved. Keyed operations are retained. Neither lookup nor outcome resolution starts work.
 
@@ -432,7 +432,17 @@ The Gateway derives alert targets and repositories from the Instance. Both polic
 
 The Gateway records one row for each deployment and each rollback. It writes the row when a worker first starts the deploy or rollback operation, and completes it when the run ends. It keeps the last 50 rows for each Instance.
 
-Each row holds `kind` (`deploy` or `rollback`), `release`, `branch`, `commit`, `started_at`, `finished_at`, `duration_seconds`, `status` (`running`, `succeeded`, or `failed`), `failed_step`, `error_code`, `selected_release`, `triggered_by` (the calling Node's name, or `orbit:auto-deploy` for an [automatic deployment](#automatic-deployments)), and `events`. `events` holds the phase and output events of the run, with at most 128 KiB of output. A deployment saves them after each step, so a resumed deployment keeps the events up to the last step that ended. The `cleanup` phase marks release cleanup. A development deployment records `commit` and leaves `release` and `selected_release` null.
+Each row holds `kind` (`deploy` or `rollback`), `release`, `branch`, `commit`, `started_at`, `finished_at`, `duration_seconds`, `status` (`running`, `succeeded`, or `failed`), `failed_step`, `error_code`, `selected_release`, `triggered_by`, `caller_node_id`, and `events`. `events` holds the phase and output events of the run, with at most 128 KiB of output. A deployment saves them after each step, so a resumed deployment keeps the events up to the last step that ended. The `cleanup` phase marks release cleanup. A development deployment records `commit` and leaves `release` and `selected_release` null.
+
+The web, CLI, API, and MCP show the stored origin. Deployment and operation reads expose nullable `caller_node_id` separately from the readable `triggered_by` label. Swamp deployment rows copy the authorized Gateway peer's Node ID from the operation when the row starts. The ID is retained if the Node is renamed or removed; no current Node lookup changes history. Manual deployments and the Gateway development runner have no automatic caller ID. Operations also retain the bound ID in `input.caller_node_id`.
+
+| `triggered_by` | Meaning |
+| --- | --- |
+| `swamp:auto-deploy` | Swamp production policy admitted through the automatic endpoint. `caller_node_id` identifies the authorized Gateway peer. Policy event operations and fenced automatic admission receipts use the same origin. |
+| `orbit:auto-deploy` | The PHP automatic runner's label, still used for development defaults. Existing rows keep this label, including early Swamp admissions. No labels or caller IDs are backfilled. |
+| A Node name | A manual deployment or rollback by that Node. |
+
+Both automatic labels count as automatic for pause and failure selection. A Swamp deployment never creates a manual-deploy pause. A rollback still pauses automatic deployment regardless of its label. Clients cannot set either automatic label or the caller ID on a deploy request.
 
 | Request | Result |
 | --- | --- |
