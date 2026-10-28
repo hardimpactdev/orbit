@@ -9,14 +9,16 @@ use LogicException;
 /** Resolves Gateway intent projection from the family-local operation declarations. */
 final readonly class OperationExecutors
 {
+    public function __construct(private OperationKinds $kinds) {}
+
     public function swamp(string $kind): bool
     {
-        return in_array($kind, OperationKinds::names(), true) && OperationKinds::executor($kind) === 'swamp';
+        return is_array($this->kinds->definition($kind));
     }
 
     public function completion(string $kind): ?OperationCompletion
     {
-        $definition = OperationKinds::definitions()[$kind] ?? null;
+        $definition = $this->kinds->definition($kind);
         if (! is_array($definition)) {
             return null;
         }

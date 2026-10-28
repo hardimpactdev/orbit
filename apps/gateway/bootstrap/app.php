@@ -89,8 +89,9 @@ $app = Application::configure(basePath: dirname(__DIR__))
         $middleware->replace(ValidatePostSize::class, ValidateRequestBodySize::class);
         // The Gateway keeps no session, so the Horizon dashboard has no CSRF token: only Sec-Fetch-Site: same-origin passes.
         $middleware->preventRequestForgery(originOnly: true);
-        $middleware->trimStrings(except: [ValidateRequestBodySize::keepsExactBody(...)]);
-        $middleware->convertEmptyStringsToNull(except: [ValidateRequestBodySize::keepsExactBody(...)]);
+        $executorInput = static fn (Request $request): bool => $request->is('api/v1/operation-executor/*');
+        $middleware->trimStrings(except: [ValidateRequestBodySize::keepsExactBody(...), $executorInput]);
+        $middleware->convertEmptyStringsToNull(except: [ValidateRequestBodySize::keepsExactBody(...), $executorInput]);
         $middleware->prepend(GuardBrowserOrigins::class);
         $middleware->prepend(EnsureRequestId::class);
         $middleware->api(prepend: [NormalizeErrorDetails::class, RecordCommandActivity::class], append: [AnnounceDesiredCliVersion::class, HandleOperationIdempotency::class]);

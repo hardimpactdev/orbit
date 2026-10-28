@@ -82,6 +82,12 @@ final readonly class OperationKinds
         return is_string($definition) ? 'php' : $definition['executor'];
     }
 
+    /** @return class-string<OperationKind>|SwampDefinition|null */
+    public function definition(string $kind): string|array|null
+    {
+        return $this->kinds[$kind] ?? null;
+    }
+
     public function for(string $kind): OperationKind
     {
         $class = $this->kinds[$kind] ?? throw new LogicException("Unknown operation kind [{$kind}].");
