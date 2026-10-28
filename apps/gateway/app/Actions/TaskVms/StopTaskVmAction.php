@@ -39,6 +39,6 @@ final readonly class StopTaskVmAction
         if ($power->running) {
             throw $failure ?? new TaskVmException(TaskVmError::ParkFailed, 'The task VM is still running after parking.');
         }
-        $vm->update(['error_code' => null, 'error_message' => null]);
+        $vm->update(['stop_confirmed_at' => now(), 'error_code' => null, 'error_message' => null]);
     }
 }

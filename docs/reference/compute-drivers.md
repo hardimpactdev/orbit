@@ -372,6 +372,8 @@ A live PPA would be a second owner of Git, and an exact APT version alone does n
 
 ## Task VMs
 
+Swamp requests review parking through `tasks.park`. A parked row reports unknown power until the provider confirms stopped. A wake invalidates that confirmation. Gateway resource observation refreshes parked power in every group status and never starts or stops a VM.
+
 A task VM is an Ubuntu 26.04 VM on an Incus host. It boots from the [base image](#build-the-base-image), which each host builds from the same recipe and which holds the `app-dev` tool set. The Gateway creates it for one group, enrolls it as an `app-dev` Node, and destroys it when the group ends. After enrollment, the group uses the normal Instance and task paths, pinned to that Node. Incus provides local capacity; [UpCloud](#upcloud-overflow) provides optional overflow.
 
 The host's image, instance-name, and host-wide resource inventories use the typed agent commands `incus.images`, `incus.instances`, and `incus.inventory`. Rust validates complete Incus output and returns fingerprints, aliases, and resource names. Instance-name reads first prove that the configured project exists; a missing project cannot count as an empty host. Host-wide inventory includes every project and storage pool so the Gateway can compare it with recorded ownership. These reads take no mutation lock. Invalid or incomplete output refuses with `task_vm.invalid_host_output`; a failed Incus call returns `task_vm.host_command_failed`.
@@ -406,12 +408,12 @@ The workspace Instance has one durable [workspace lease](/reference/tasks#worksp
 
 A claim moves a group through these steps. Steps 2 to 5 are queued [jobs](#jobs).
 
-1. The scheduler claims a group. `AllocateTaskVmAction` decides the VM's [size](#size-by-declared-topology). It records a new `provisioning` row, and queues `ProvisionTaskVm`.
+1. A keyed provision operation reserves a group. `AllocateTaskVmAction` decides the VM's [size](#size-by-declared-topology). It records a new `provisioning` row, and queues `ProvisionTaskVm`.
 2. `ProvisionTaskVm` launches the VM from the base image with cloud-init user-data. Its disk is a ZFS clone of the image. On beast, the launch takes under a second. Cloud-init is done about 10 seconds later.
 3. `EnrollTaskVm` waits for cloud-init. Then it reads the guest's IPv4 address, and its ed25519 host key fingerprint from the host through `incus`. Enrollment [trusts the image](#skip-what-the-image-holds) for the `app-dev` software.
 4. `EnrollTaskVm` runs the normal [Node provisioning](/reference/node-provisioning#add-a-node) for the Node `tvm-<id>`, through the host as [jump host](/reference/node-provisioning#enroll-through-a-jump-host).
 5. `PrepareTaskVmRuntime` creates the group's CLIProxyAPI key and starts Pi as `orbit`. See [Run Pi on a task VM](/reference/pi-server#run-pi-on-a-task-vm). The row becomes `ready`.
-6. On the next claim, Orbit creates the [task workspace](/reference/tasks#task-vm-workspace) on the VM's Node. It is a normal Instance `task-<group id>`. A routed workspace gets the private Route `task-<id>.<project>.<dev-tld>`.
+6. On the next claim, Orbit creates the [task workspace](/reference/tasks#execution-ownership) on the VM's Node. It is a normal Instance `task-<group id>`. A routed workspace gets the private Route `task-<id>.<project>.<dev-tld>`.
 7. The claim starts the baseline check. Then the same claim projects the Route.
 
 #### Start the baseline check before the Route
@@ -482,7 +484,7 @@ A parked VM starts before preservation is attempted. Pushes, fetches, checks, an
 
 A step that fails keeps the Instance and records the error on the row. The group asks for assistance with the removal reason, and the next removal attempt continues. A group's topology runs in its VM, so it goes with the VM, and removal runs no topology release.
 
-Each `tasks:tick` also queues `DestroyTaskVm` for every task VM that is not `destroyed` when its group has ended, no [claim](/reference/tasks#claim-and-provision) of the group is in flight, and the workspace the group [owns](/reference/tasks#workspace-ownership) is gone. Any other Instance row on the Node goes with the VM. A claim is over once it starts the group, so a group that ends soon after its claim loses its VM on the next tick. Its unique lock has no expiry, so the tick never queues a second copy while one waits or runs. `DestroyTaskVm` then runs these steps:
+Explicit completion, cancellation and workspace removal queue `DestroyTaskVm`. Swamp owns retries and cleanup scheduling. `DestroyTaskVm` then runs these steps:
 
 1. It sets the row to `destroying` and revokes the group's model key.
 2. It deletes the VM, then the VM's [clone of the topology seed](#incus-provider). Incus keeps custom volumes after VM deletion. A VM or a volume that is gone counts as deleted.
@@ -671,34 +673,13 @@ The checkout keeps the Project repository URL as `origin`. After setup ends, the
 
 ### Park and resume
 
-A task VM that has nothing to do stops. Its group keeps the VM, and the next work for the group starts it again. A stopped VM uses no CPU or memory on its host. Its disk stays on the host's ZFS pool, so the workspace, its checkout, and Pi's sessions survive.
+Swamp requests review parking through the keyed `tasks.park` operation. The Gateway checks that the published group has no open work, assistance or workspace owner, stops the VM through its provider and records `waiting_for_review` only after stopped power is confirmed. It does not run automatic idle parking or retry a failed park. Swamp owns retry policy and execution-slot accounting.
 
-Each `tasks:tick` parks the `ready` task VM of a group when all of these are true:
+The row enters `parked` before the provider stop. Its `vm_power` stays unknown until `stop_confirmed_at` records a confirmed stop. A failed stop clears that proof and retains the error. A resource observation job refreshes proof every minute for parked VMs in every group status, including assistance and ended groups. Running, missing, unsettled or unreadable power clears the proof. Observation never starts or stops a VM.
 
-- The group is `waiting_for_review` and has a pull request.
-- The group has no `todo`, `reserved`, `running`, or `reviewing` subtask, and it is not `preview`.
-- The group has no open `removal_failure` assistance request. Those removals retry on the tick and need the VM. A cleared request's stored reason does not prevent parking.
-- The group and all of its subtasks settled more than `task_vms.park_after_minutes` minutes ago. The default is 30 minutes.
-- The VM has been `ready` for at least as long.
+A requested workspace operation wakes a parked VM through `ResumeTaskVm`. The wake clears stop proof before queuing the job. The job starts the provider VM, checks Node and Pi readiness once, and releases for two seconds if it must wait. It has a fixed nine-minute deadline and three real exceptions; queue deferrals do not consume an attempt limit. Once ready, it records `ready`, and the requested operation can continue. A failed wake keeps its error evidence for Swamp.
 
-The last rule keeps a VM that Orbit started again, for example for a removal retry, running that long before it can park again. The row's `ready_at` records when the VM last became `ready`: at its first preparation, and at each resume.
-
-The tick sets the row to `parked` and queues `ParkTaskVm`, which stops the VM with `incus stop`. If an operation is unfinished, the job requeues after five seconds without stopping or marking the VM ready. After three failed attempts, the row keeps its error and stays `parked`, and Orbit logs a warning with the VM and its error. The next eligible idle tick retries that errored row.
-
-Parking failure does not ask for group assistance or replace an existing request. New subtasks still wake the VM, and a reviewed, green pull request can still merge. A successful resume or park clears the row error. A late failure after the VM wakes changes nothing. A `parked` VM still takes its slot on the host, so a resume never needs a free slot.
-
-Work for the group starts the VM again: a new subtask after a push, a review fix, a reviewer run, the workspace removal after a merge, a completion, and a destroy that must first remove the workspace. That work waits while the VM is `parked`. The group shows the reason `Task VM: resuming.`, and Orbit queues `ResumeTaskVm`. The job runs these steps:
-
-1. It starts the VM with `incus start`. A VM that already runs counts as started.
-2. It checks once whether the VM answers over WireGuard, `orbit-agent.service` is active, and Pi answers `GET /capabilities` with the group's Pi token.
-3. If the VM is not ready, the job calls `release(2)` and returns.
-4. Once all checks pass, it sets the row to `ready`.
-
-Horizon retries a released job when it is due. The worker is free for other task VMs between checks. The resume job does not sleep or poll in a long-running job.
-
-The next tick then continues the work, and the reason clears. Orbit never runs a workspace command, an agent turn, a fetch, or a push on a VM that is not `ready`. Those operations fail with `task_vm.parked` while it is `parked`. A merged group's workspace removal and the sweep of ended groups wait without a failure. A manual `tasks:complete` records the reason `Workspace removal failed: ` with that error, and the sweep removes the workspace once the VM is `ready`. Completion removes the workspace under the group's admission lock, so a tick cannot park the VM during that removal.
-
-The queued resume has a fixed 9-minute deadline exposed through Laravel's `retryUntil()`. That deadline stays the same across releases and retries. When Laravel stops retrying at the deadline, `failed()` maps expiry to `task_vm.resume_timeout` and marks the still-parked row `failed`. Readiness releases do not exhaust an attempt count before that deadline. The group asks for assistance with the reason `Task VM failed:`. A `parked` VM that has no workspace left is deleted without a start. Destroy on merge is otherwise unchanged.
+Parking retains the disk, workspace and sessions. It releases CPU and memory. It retains the provider's allocated VM count; Swamp's maintenance execution slots are separate.
 
 ### Sweep task VM hosts
 
@@ -778,7 +759,6 @@ The task VM jobs run on the [Gateway queue](/reference/gateway-queue), which Lar
 | `EnrollTaskVm` | Fails at once on a cloud-init error, an absent or stopped VM, or a boot over 10 minutes. Retries other errors twice. Stops after 60 tries, waits included |
 | `PrepareTaskVmRuntime` | Twice, 30 seconds apart |
 | `DestroyTaskVm` | Until it succeeds |
-| `ParkTaskVm` | Twice, 30 seconds apart. A failure stays on the row as its error, and the row stays `parked` |
 | `ResumeTaskVm` | `release(2)` between checks until `retryUntil()` expires after 9 minutes; `failed()` maps expiry to `task_vm.resume_timeout`. Readiness waits do not exhaust retries. Start errors fail after three exceptions |
 | `SweepTaskVmHosts` | Never. It runs again 10 minutes later |
 | `RefreshTaskVmBaseImages` | Never. The next minute checks again |
@@ -1262,7 +1242,6 @@ Global keys live in the Gateway's `config/task_vms.php`. Set them in the Gateway
 | `task_vms.pi.models` | `ORBIT_TASK_VMS_PI_MODELS` | A JSON list of the models Pi offers. Default `[]` |
 | `task_vms.medium_projects` | `ORBIT_TASK_VMS_MEDIUM_PROJECTS` | A JSON list of Project IDs whose groups get a [medium VM](#size-by-declared-topology) when no subtask declares a topology. Default `[]` |
 | `task_vms.topology_paths` | `ORBIT_TASK_VMS_TOPOLOGY_PATHS` | A JSON object from Project ID to a list of path patterns that need a [declared topology](#prove-work-on-a-topology). Default `{}` |
-| `task_vms.park_after_minutes` | `ORBIT_TASK_VMS_PARK_AFTER_MINUTES` | How many minutes a group waits for review before its VM [parks](#park-and-resume), from 1 to 10080. Unset or empty means `30`. `0` and other values are an error |
 
 Each task VM stores `ai_router_origin` with its model key, and revokes the key at that origin. So changing the origin never strands a key. A task VM that holds a key at another origin cannot prepare Pi again.
 
@@ -1542,7 +1521,7 @@ Orbit adds the counted records, with their time, node, label, and command, to th
 {"46": ["apps/agent/**", "apps/e2e/resources/guest/**", "apps/gateway/app/{Domain,Infrastructure,Actions}/{Nodes,Deployments,Routes,Caddy,WireGuard}/**"]}
 ```
 
-Orbit checks this when the handoff check of a group passes. It refuses the handoff when the group's own changes touch a matching path and no subtask of the group declares a topology. It compares the candidate tree with the merge base of HEAD and the current `origin/main`, including uncommitted files. Changes inherited from main do not count; the group's own changes, including merge resolutions, still count. An unreadable merge base or diff fails the handoff. See the [handoff rubric](/reference/tasks#rubric-and-reminders).
+Orbit checks this when the handoff check of a group passes. It refuses the handoff when the group's own changes touch a matching path and no subtask of the group declares a topology. It compares the candidate tree with the merge base of HEAD and the current `origin/main`, including uncommitted files. Changes inherited from main do not count; the group's own changes, including merge resolutions, still count. An unreadable merge base or diff fails the handoff. See the [handoff rubric](/reference/tasks#execution-ownership).
 
 The reminder starts with `This subtask changes paths that need real machines`. The implementer reverts those changes, or ends its turn blocked so the operator can add a subtask with a topology.
 

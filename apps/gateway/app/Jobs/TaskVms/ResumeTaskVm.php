@@ -70,6 +70,7 @@ final class ResumeTaskVm implements ShouldBeUnique, ShouldQueue
             return;
         }
 
+        $vm->update(['stop_confirmed_at' => null]);
         $provider->start($vm);
         if ($runtime->responds($vm)) {
             TaskVm::query()->whereKey($vm->id)->where('state', TaskVmState::Parked)

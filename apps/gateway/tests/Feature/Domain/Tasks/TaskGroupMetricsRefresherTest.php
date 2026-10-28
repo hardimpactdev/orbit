@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Actions\Tasks\ShowTaskGroupAction;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupMetricsRefresher;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -141,7 +140,7 @@ it('does not observe a reserved reviewer row', function (): void {
         'node_id' => $nodeId,
         'driver' => 't3',
         'runtime_key' => 'node:'.$nodeId,
-        'external_id' => TaskAgentSpawner::PendingPrefix.'reserved-reviewer',
+        'external_id' => AgentThread::PendingPrefix.'reserved-reviewer',
         'role' => 'reviewer',
         'model' => 'reviewer',
         'effort' => 'high',
@@ -154,7 +153,7 @@ it('does not observe a reserved reviewer row', function (): void {
         public function snapshot(Node $node, string $threadId): ?array
         {
             $this->seen[] = $threadId;
-            if (str_starts_with($threadId, TaskAgentSpawner::PendingPrefix)) {
+            if (str_starts_with($threadId, AgentThread::PendingPrefix)) {
                 throw new RuntimeException('observed a reserved row');
             }
 
@@ -166,7 +165,7 @@ it('does not observe a reserved reviewer row', function (): void {
 
     expect($threads->seen)->toContain('implementer-1')
         ->and($threads->seen)->toContain('reviewer-thread')
-        ->and($threads->seen)->not->toContain(TaskAgentSpawner::PendingPrefix.'reserved-reviewer');
+        ->and($threads->seen)->not->toContain(AgentThread::PendingPrefix.'reserved-reviewer');
 });
 
 it('keeps stored thread metrics when the agent refuses the snapshot', function (): void {

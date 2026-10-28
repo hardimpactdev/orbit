@@ -211,7 +211,7 @@
     },
     {
       "source": "/decisions/0192-stop-a-group-whose-pull-request-ended",
-      "destination": "/reference/tasks#a-watched-pull-request-is-not-the-reviewed-pull-request"
+      "destination": "/reference/tasks#execution-ownership"
     },
     {
       "source": "/decisions/0193-run-task-agents-as-a-dedicated-user",
@@ -827,11 +827,11 @@
     },
     {
       "source": "/decisions/0113-gate-task-completion-on-validation-and-review",
-      "destination": "/reference/tasks#rubric-and-reminders"
+      "destination": "/reference/tasks#execution-ownership"
     },
     {
       "source": "/decisions/0114-judge-task-completion-as-separate-checks",
-      "destination": "/reference/tasks#rubric-and-reminders"
+      "destination": "/reference/tasks#execution-ownership"
     },
     {
       "source": "/decisions/0116-run-task-implementers-on-pi",
@@ -839,7 +839,7 @@
     },
     {
       "source": "/decisions/0117-judge-the-blocked-question-on-role-evidence",
-      "destination": "/reference/tasks#rubric-and-reminders"
+      "destination": "/reference/tasks#execution-ownership"
     },
     {
       "source": "/decisions/0121-end-agent-turns-with-a-run-receipt",
@@ -875,7 +875,7 @@
     },
     {
       "source": "/decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks",
-      "destination": "/reference/tasks#fix-a-settling-pull-request"
+      "destination": "/reference/tasks#execution-ownership"
     },
     {
       "source": "/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone",
@@ -887,7 +887,7 @@
     },
     {
       "source": "/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask",
-      "destination": "/reference/tasks#fix-a-settling-pull-request"
+      "destination": "/reference/tasks#execution-ownership"
     },
     {
       "source": "/decisions/0165-record-per-thread-token-metrics",
@@ -911,7 +911,7 @@
     },
     {
       "source": "/decisions/0171-reset-fixup-caps-after-operator-work",
-      "destination": "/reference/tasks#fix-a-settling-pull-request"
+      "destination": "/reference/tasks#execution-ownership"
     },
     {
       "source": "/decisions/0172-count-every-t3-model-call-in-thread-metrics",
@@ -919,7 +919,7 @@
     },
     {
       "source": "/decisions/0173-record-and-label-jev-decisions",
-      "destination": "/reference/tasks#jev-decision-records"
+      "destination": "/reference/tasks#execution-ownership"
     },
     {
       "source": "/decisions/0178-run-project-agnostic-tasks-without-a-planner",
@@ -935,7 +935,7 @@
     },
     {
       "source": "/decisions/0187-ask-the-reviewer-before-the-operator",
-      "destination": "/reference/tasks#questions-go-through-the-reviewer"
+      "destination": "/reference/tasks#execution-ownership"
     },
     {
       "source": "/decisions/0183-manage-macos-tools-without-service-roles",
@@ -963,7 +963,7 @@
     },
     {
       "source": "/decisions/0194-respond-to-github-review-feedback",
-      "destination": "/reference/tasks#trusted-reviews-are-input-not-merge-authority"
+      "destination": "/reference/tasks#execution-ownership"
     },
     {
       "source": "/decisions/0193-record-development-branch-renames",

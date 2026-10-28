@@ -732,16 +732,11 @@ final class TaskWorkspaceLease
                 $process = new TaskCheckProcess($holder->pid, $holder->process_started ?? '', $holder->process_head ?? $holder->head_before ?? '', $holder->process_tree ?? $holder->tree_before ?? '', is_string($holder->getAttribute('check_run_id')) ? $holder->getAttribute('check_run_id') : null);
                 try {
                     $reading = $this->readCheck($instance, $process);
-                } catch (TaskCheckException $exception) {
-                    // Assistance would skip the normal handler, so account for this failed read here.
-                    if ($group->groupOrchestration() === TaskOrchestration::Tick && ($group->assistance_requested || $checkTask->assistance_requested)) {
-                        app(TaskScheduler::class)->recordCommunicationFailure($checkTask, $group, $exception->getMessage());
-                    }
-
+                } catch (TaskCheckException) {
                     return;
                 }
                 if ($reading->state === 'lost' && $check->status === TaskCheckStatus::Running) {
-                    app(TaskSubtaskRunner::class)->recordReading($check, $reading);
+                    app(TaskCheckEvidence::class)->recordReading($check, $reading);
                 }
                 if ($reading->state !== 'finished') {
                     // A missing wrapper PID does not prove that its shell children stopped.
@@ -751,7 +746,7 @@ final class TaskWorkspaceLease
                     if ($check->pid === 0) {
                         $check->update(['pid' => $holder->pid, 'process_started' => $holder->process_started, 'head_before' => $process->head, 'tree_before' => $process->tree]);
                     }
-                    app(TaskSubtaskRunner::class)->recordReading($check, $reading);
+                    app(TaskCheckEvidence::class)->recordReading($check, $reading);
                 }
                 $check->refresh();
                 if ($reading->causalityUncertain) {

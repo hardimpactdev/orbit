@@ -30,7 +30,7 @@ final readonly class TaskGroupMetricsRefresher
         $reviewerTokens = 0;
         $hasReviewerTokens = false;
         foreach (AgentThread::query()->where('task_group_id', $group->id)->where('role', TaskThreadRole::Reviewer->value)->orderBy('id')->get() as $reviewer) {
-            if (str_starts_with($reviewer->external_id, TaskAgentSpawner::PendingPrefix)) {
+            if (str_starts_with($reviewer->external_id, AgentThread::PendingPrefix)) {
                 continue;
             }
             $this->threads->observe($reviewer);
@@ -84,7 +84,7 @@ final readonly class TaskGroupMetricsRefresher
     private function refreshTask(Task $task): void
     {
         $thread = $task->implementerThread;
-        if ($thread !== null && ! str_starts_with($thread->external_id, TaskAgentSpawner::PendingPrefix)) {
+        if ($thread !== null && ! str_starts_with($thread->external_id, AgentThread::PendingPrefix)) {
             $this->threads->observe($thread);
             if ($thread->tokens !== null) {
                 $task->tokens = $thread->tokens;

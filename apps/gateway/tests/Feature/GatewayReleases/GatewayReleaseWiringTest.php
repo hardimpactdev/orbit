@@ -7,7 +7,6 @@ use App\Actions\GatewayReleases\ConfigureGatewayReleaseAction;
 use App\Actions\GatewayReleases\DeployGatewayReleaseAction;
 use App\Actions\GatewayReleases\PrepareGatewayReleaseAction;
 use App\Actions\GatewayReleases\RollbackGatewayReleaseAction;
-use App\Actions\GatewayReleases\RunAutomaticGatewayReleaseAction;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
@@ -17,10 +16,6 @@ use App\Infrastructure\GatewayReleases\ArtisanGatewayReleaseRuntime;
 use App\Infrastructure\GatewayReleases\GatewayNodeAgentUpdate;
 use App\Infrastructure\GatewayReleases\GatewayReleaseAdopter;
 use App\Infrastructure\GatewayReleases\GatewayReleaseBuilder;
-use App\Infrastructure\GatewayReleases\GatewayReleaseCommands;
-use App\Infrastructure\GatewayReleases\GatewayReleaseGuard;
-use App\Infrastructure\GatewayReleases\GatewayReleasePromoter;
-use App\Infrastructure\GatewayReleases\GatewayReleaseTickConfirmation;
 use App\Infrastructure\GatewayReleases\GatewayRuntimeHandoff;
 use App\Infrastructure\GatewayReleases\GatewaySchedulerHandoff;
 use App\Infrastructure\GatewayReleases\HttpGatewayReleaseVerifier;
@@ -58,32 +53,6 @@ describe('the Gateway release pipeline from the container', function (): void {
         ConfigureGatewayReleaseAction::class,
         GatewayRuntimeHandoff::class,
     ]);
-
-    it('wires deploy with the real promoter, guard, database, and runtime', function (): void {
-        $deploy = app(DeployGatewayReleaseAction::class);
-        $promoter = wired($deploy, 'promoter');
-        $runtime = wired($promoter, 'runtime');
-        $database = wired($deploy, 'database');
-        $builder = wired($deploy, 'builder');
-
-        expect(wired($deploy, 'guard'))->toBeInstanceOf(GatewayReleaseGuard::class)
-            ->and($promoter)->toBeInstanceOf(GatewayReleasePromoter::class)
-            ->and(wired($promoter, 'keptReleases'))->toBe(4)
-            ->and(wired($promoter, 'verifier'))->toBeInstanceOf(HttpGatewayReleaseVerifier::class)
-            ->and(wired($promoter, 'ticks'))->toBeInstanceOf(GatewayReleaseTickConfirmation::class)
-            ->and(wired(app(RunAutomaticGatewayReleaseAction::class), 'ticks'))->toBeInstanceOf(GatewayReleaseTickConfirmation::class)
-            ->and(wired(wired($promoter, 'ticks'), 'windowSeconds'))->toBe(240)
-            ->and($runtime)->toBeInstanceOf(ArtisanGatewayReleaseRuntime::class)
-            ->and(wired($runtime, 'commands'))->toBeInstanceOf(GatewayReleaseCommands::class)
-            ->and(wired($runtime, 'stepLock'))->toBe('/home/orbit/.orbit/gateway-release-step.lock')
-            ->and($database)->toBeInstanceOf(SqliteGatewayReleaseDatabase::class)
-            ->and(wired($database, 'stepLock'))->toBe('/home/orbit/.orbit/gateway-release-step.lock')
-            ->and(wired($database, 'keptSnapshots'))->toBe(3)
-            ->and(wired($database, 'minimumFreeBytes'))->toBe(2048 * 1_048_576)
-            ->and($builder)->toBeInstanceOf(GatewayReleaseBuilder::class)
-            ->and(wired($builder, 'stepLock'))->toBe('/home/orbit/.orbit/gateway-release-step.lock')
-            ->and(wired($builder, 'minimumFreeBytes'))->toBe(2048 * 1_048_576);
-    });
 
     it('wires rollback and adopt with the in-process handoff and the deploy path', function (): void {
         $adopter = wired(app(AdoptGatewayReleaseAction::class), 'adopter');

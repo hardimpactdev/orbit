@@ -65,7 +65,7 @@
                 "vm_power": null,
                 "preview": false,
                 "review_and_merge": null,
-                "orchestration": "tick"
+                "orchestration": "external"
             },
             {
                 "id": 1,
@@ -181,7 +181,7 @@
                 "vm_power": null,
                 "preview": false,
                 "review_and_merge": null,
-                "orchestration": "tick"
+                "orchestration": "external"
             }
         ],
         "meta": {

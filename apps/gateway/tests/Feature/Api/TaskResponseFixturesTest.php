@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Actions\Tasks\ArchiveAgentTranscriptsAction;
-use App\Actions\Tasks\WatchTaskBranchPullRequestAction;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentObservation;
@@ -13,7 +12,6 @@ use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\QuestionAsker;
 use App\Domain\Tasks\QuestionStatus;
-use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -22,7 +20,6 @@ use App\Domain\Tasks\TaskReviewedCommitSource;
 use App\Domain\Tasks\TaskReviewFindingsPacket;
 use App\Domain\Tasks\TaskSettlingFixup;
 use App\Domain\Tasks\TaskStatus;
-use App\Domain\Tasks\TaskTickClock;
 use App\Domain\Tasks\TaskType;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -97,11 +94,6 @@ describe('task response fixtures', function (): void {
         record_fixture($this->postJson("/api/v1/task-groups/{$group->id}/tasks", [
             'title' => 'Use a workload node', 'brief' => 'Verify the private app-dev node.', 'topology' => ['app-dev'],
         ])->assertCreated(), 'tasks/tasks-subtask-create/topology', CreateSubtaskRequest::class, 'POST /api/v1/task-groups/{group}/tasks');
-    });
-
-    it('records tasks status', function (): void {
-        app(TaskTickClock::class)->record();
-        record_fixture($this->getJson('/api/v1/tasks/status')->assertOk(), 'tasks/tasks-status/enabled', ShowTasksStatusRequest::class, 'GET /api/v1/tasks/status');
     });
 
     it('records groups asking for assistance', function (): void {
@@ -210,29 +202,6 @@ describe('task response fixtures', function (): void {
         $this->deleteJson("/api/v1/task-groups/{$group->id}/tasks/{$fixup->id}")
             ->assertConflict()->assertJsonPath('error.code', 'tasks.not_in_backlog');
         expect($fixup->fresh())->not->toBeNull();
-    });
-
-    it('records a watched pull request opened outside Orbit on a running group', function (): void {
-        Http::preventStrayRequests();
-        GitHubTestSupport::storeApp();
-        $group = task_fixture_group($this->project);
-        $group->update(['status' => TaskGroupStatus::Running]);
-        Http::fake([
-            'https://api.github.com/repos/hardimpactdev/orbit/installation' => Http::response(['id' => 9]),
-            'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
-            'https://api.github.com/repos/hardimpactdev/orbit/pulls?*' => Http::response([
-                ['number' => 451, 'html_url' => 'https://github.com/hardimpactdev/orbit/pull/451', 'state' => 'open', 'merged_at' => null],
-            ]),
-        ]);
-        app(WatchTaskBranchPullRequestAction::class)->execute($group);
-
-        record_fixture($this->getJson("/api/v1/task-groups/{$group->id}")->assertOk()
-            ->assertJsonPath('data.pr_url', null)
-            ->assertJsonPath('data.watched_pr_url', 'https://github.com/hardimpactdev/orbit/pull/451')
-            ->assertJsonPath('data.watched_pr_number', 451)
-            ->assertJsonPath('data.watched_pr_state', 'open'),
-            'tasks/tasks-show/watched', ShowTaskGroupRequest::class, 'GET /api/v1/task-groups/{group}');
-        Http::assertSentCount(3);
     });
 
     it('records an incoming pull request under review and merge', function (): void {
@@ -445,7 +414,7 @@ describe('task response fixtures', function (): void {
 
         record_fixture($this->getJson("/api/v1/task-groups/{$group->id}/agents/{$archived->id}")->assertOk(), 'tasks/tasks-agent-show/archived', ShowTaskAgentRequest::class, 'GET /api/v1/task-groups/{group}/agents/{session}');
 
-        $pending = AgentThread::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id, 'node_id' => 1, 'role' => 'reviewer', 'model' => 'gpt-5.6-luna', 'effort' => 'high', 'driver' => 'pi', 'runtime_key' => 'node:1', 'external_id' => TaskAgentSpawner::PendingPrefix.'reserved']);
+        $pending = AgentThread::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id, 'node_id' => 1, 'role' => 'reviewer', 'model' => 'gpt-5.6-luna', 'effort' => 'high', 'driver' => 'pi', 'runtime_key' => 'node:1', 'external_id' => AgentThread::PendingPrefix.'reserved']);
 
         record_fixture($this->getJson("/api/v1/task-groups/{$group->id}/agents/{$pending->id}")->assertOk(), 'tasks/tasks-agent-show/pending', ShowTaskAgentRequest::class, 'GET /api/v1/task-groups/{group}/agents/{session}');
     });

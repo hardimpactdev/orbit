@@ -8,7 +8,7 @@ final readonly class TasksStatusResponse
 {
     /**
      * @param  list<TaskAssistanceResponse>|null  $assistance  Null when this route does not report assistance.
-     * @param  string|null  $lastTickAt  When the latest `tasks:tick` started its work. Null when no tick is remembered or this route does not report it.
+     * @param  string|null  $lastTickAt  Retired scheduler observation; null.
      * @param  list<TaskWorkspaceLeaseResponse>  $workspaceLeases
      * @param  list<TaskMergeResponse>  $merges  Open tasks of review-and-merge Projects. Empty when this route does not report them.
      */

@@ -11,14 +11,13 @@ use App\Data\Tasks\TaskWorkspaceActorData;
 use App\Data\Tasks\TaskWorkspaceLeaseData;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskTickClock;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Models\Instance;
 use App\Models\Task;
 
 final readonly class ShowTasksStatusAction
 {
-    public function __construct(private TaskExtensionState $extension, private TaskTickClock $clock) {}
+    public function __construct(private TaskExtensionState $extension) {}
 
     public function execute(): TasksStatusData
     {
@@ -42,7 +41,7 @@ final readonly class ShowTasksStatusAction
         return new TasksStatusData(
             enabled: $this->extension->enabled(),
             assistance: $assistance,
-            lastTickAt: $this->clock->lastStartedAt(),
+            lastTickAt: null,
             merges: $merges,
             workspaceLeases: $this->workspaceLeases(),
         );

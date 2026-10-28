@@ -80,12 +80,12 @@ Each kind caps its run with one `CommandDeadline::within()` call, as `instance.d
 
 | Command | Moves to | Longest seen | Why |
 | --- | --- | --- | --- |
-| `tasks:create` and `tasks:update` with status `todo` | The claim in `tasks:tick` | 196 s, 245 s | The tick claims these groups anyway. The request becomes a database write, and the next tick claims the group. A tick starts every 10 seconds unless one still runs |
-| `tasks:cancel`, `tasks:complete` | `instance.destroy`, started by `tasks:tick` | 199 s, 192 s | The slow part is the workspace removal; see [Task workspaces use instance.destroy](#task-workspaces-use-instancedestroy) |
+| `tasks:create` and `tasks:update` with status `todo` | The claim in Swamp group execution | 196 s, 245 s | The tick claims these groups anyway. The request becomes a database write, and the next tick claims the group. A tick starts every 10 seconds unless one still runs |
+| `tasks:cancel`, `tasks:complete` | `instance.destroy`, started by Swamp group execution | 199 s, 192 s | The slow part is the workspace removal; see [Task workspaces use instance.destroy](#task-workspaces-use-instancedestroy) |
 | The runtime wake of a hibernated Instance | One unique queued job per Instance on the `tasks` queue, with a budget capped at 300 seconds and at most one wake at a time | No Activity entry | It runs after the response, with no deadline. The wake page and the failure page stay |
 | `gateway:desired-fleet-state` | A cache read; the scheduled resolver fills the cache every 5 minutes | 1.1 s, about 70 s with a cold cache | `gateway:status` and the CLI version header already read only the cache |
 
-The runtime wake does not use the `operations` queue: a browser that waits for its app must not wait behind a deploy. It must not starve the `tasks` queue either, whose 3 processes also run `tasks:tick`, `orbit:auto-deploy`, `orbit:operations-sweep`, and `orbit:activity-finalize-interrupted`. The wake job enforces two limits itself, with no new supervisor:
+The runtime wake does not use the `operations` queue: a browser that waits for its app must not wait behind a deploy. It must not starve the `tasks` queue either, whose 3 processes also run Swamp group execution, `orbit:auto-deploy`, `orbit:operations-sweep`, and `orbit:activity-finalize-interrupted`. The wake job enforces two limits itself, with no new supervisor:
 
 - **Budget.** Let B be `min(orbit.hibernation.cold_wake_timeout_seconds, 300)` seconds. The existing setting is environment-overridable, defaults to 1,800, and has a minimum of 60. It becomes the total wake budget, not a fresh allowance for each restore step. Both warm and cold wakes run inside one `CommandDeadline::within(B)`. Inspection, Composer, Vite+, Process starts, readiness, and marker writes share that deadline. Readiness keeps its own `orbit.hibernation.wake_timeout_seconds` cap (60 seconds by default), but gets only the smaller of that cap and the remaining total budget. Its loops, sleeps, and probes must respect both deadlines; wrapping SSH calls alone does not bound the loops. The job derives `$timeout = B + 30`, below the supervisor's 1,700 seconds. At the cap these are 300 and 330 seconds. Tests cover a lower configured budget as well as the cap.
 - **Concurrency.** The job uses Laravel's `WithoutOverlapping` job middleware with one key for every wake, so at most one wake runs at a time. A second wake job is released and tries again after 10 seconds. The lock expiry is derived as `$timeout + 30` (B + 60, at most 360 seconds), so it outlives the worker timeout. A slow cold wake delays a warm wake behind it by up to B, at most 300 seconds of work, plus queue scheduling; more wakes ahead add more delay. A killed worker can leave the lock until its expiry. No priority or fairness guarantee is added.
@@ -188,10 +188,9 @@ The `instance.destroy` pull request of ADR 0209 replaces `instance_removals` and
 The maintainer decided on 16 Oct 2026: a task workspace removal uses the same `instance.destroy` operation as every other removal. There is one removal path and one record.
 
 - `instance.destroy` takes the task VM branch itself when a live task VM holds the workspace: guest teardown, transcript archive, VM delete, and workspace records. Then it queues `DestroyTaskVm`. Otherwise it takes the generic branch. So `instance:destroy` of a task workspace also archives its transcripts and deletes its VM.
-- `tasks:cancel` and `tasks:complete` end the group in the request and answer at once. They start no operation. Only `tasks:tick` and `DestroyTaskVm` start the `instance.destroy` of a task workspace, under rule 3 of [Keep deploys moving on one worker](#keep-deploys-moving-on-one-worker). Every Tasks call site in the table below hands its removal to them. When the removal fails, the group gets the reason "Workspace removal failed" with the operation's error code.
+- `tasks:cancel` and `tasks:complete` end the group in the request and answer at once. They start no operation. Only Swamp group execution and `DestroyTaskVm` start the `instance.destroy` of a task workspace, under rule 3 of [Keep deploys moving on one worker](#keep-deploys-moving-on-one-worker). Every Tasks call site in the table below hands its removal to them. When the removal fails, the group gets the reason "Workspace removal failed" with the operation's error code.
 - A parked VM never holds the worker. For a parked VM, the tick queues `ResumeTaskVm` and starts `instance.destroy` only when the VM is ready. A removal that a person starts on a parked VM refuses with `task_vm.parked` and queues the resume, as today.
 - The push of approved work stays in Tasks and runs before the removal starts.
-- `ParkIdleTaskVmsAction` does not park a VM while an `instance.destroy` of its workspace is queued or running.
 - The removal backoff reads the failed `instance.destroy` operations of the workspace instead of its cache entry.
 - `DestroyTaskVm` stays a `task-vms` job. It removes the Node offline and retries without limit, so it is work owed beyond an operation. When its VM is gone but a workspace is left, it starts `instance.destroy` for that workspace and retries on its own backoff, instead of writing the ledger itself.
 
@@ -200,19 +199,14 @@ The call sites that change, all in the `instance.destroy` pull request:
 | Call site | Runs in | Today |
 | --- | --- | --- |
 | `CancelTaskGroupAction` | `tasks:cancel` request | Removes the workspace, an Instance that a racing claim attached, and an unattached leftover on a repeated cancel |
-| `CompleteTaskGroupAction` | `tasks:complete` request and `tasks:tick` | Removes the workspace under `TaskExecutionLock` |
-| `TaskSettling::tickPullRequest` | `tasks:tick` | Completes a group whose watched pull request ended |
-| `TaskSettling::completeMergedGroup` | `tasks:tick` | Merge cleanup with a backoff per Instance |
-| `TaskSettling::removeAbandonedWorkspaces` | `tasks:tick` | Sweeps ended groups, with a 60-second start budget and a backoff |
-| `TaskClaimAdmission::removeEndedWorkspace` | `tasks:tick`, and today the `tasks:create` and `tasks:update` requests | Removes a workspace whose group ended while its claim ran |
+| `CompleteTaskGroupAction` | `tasks:complete` request and Swamp group execution | Removes the workspace under `TaskExecutionLock` |
 | `RemoveTaskWorkspaceAction::remove` and `removeWithTaskVm` | The callers above | The shared entry: task VM branch or the generic forced remover |
 | `DeleteTaskVmAction`, `ForgetTaskVmWorkspacesAction` | The callers above and `DestroyTaskVm` | VM delete, and the second writer of the ledger |
 | `DestroyTaskVm` | `task-vms` job | The dead-VM path deletes the VM and forgets its workspaces through `DeleteTaskVmAction`, which writes a removal without SSH |
-| `ParkIdleTaskVmsAction`, `DestroyEndedTaskVmsAction` | `tasks:tick` | Read the removal-failed reasons |
 
 Two callers outside Tasks use the remover too and change in the same pull request: `CreateInstanceAction` for failed-create cleanup and `ConvergeRouteTargetSetAction`.
 
-Task workspace provisioning stays in the claim of `tasks:tick`. It does not use `instance.create`, because a claim starts a group and must not wait behind deploys. It keeps writing the Instance's provisioning columns, which `instance.create` no longer writes. It is the one long run without an operation, and the maintainer decides it separately.
+Task workspace provisioning stays in the claim of Swamp group execution. It does not use `instance.create`, because a claim starts a group and must not wait behind deploys. It keeps writing the Instance's provisioning columns, which `instance.create` no longer writes. It is the one long run without an operation, and the maintainer decides it separately.
 
 ### Keep deploys moving on one worker
 
@@ -220,7 +214,7 @@ The `operations` queue keeps one worker. Memory is one reason: each worker costs
 
 1. **No operation spans the fleet.** `doctor` stays a read in the request. The fleet rollout stays in `orbit-fleet-converge.service`, and problem collection stays in the scheduler.
 2. **Each operation is capped.** A kind of this ADR caps its run at 570 seconds, as [Kind names, targets, and deadlines](#kind-names-targets-and-deadlines) says. A deploy therefore waits at most about 10 minutes behind most operations. Behind the longest it waits up to about 27 minutes: another deploy, a dependency update, or a create, registration, removal, or clone that runs a full list or copy. ADR 0217's stall alert fires after 30 minutes, so one long operation ahead does not raise it.
-3. **Background work yields.** Work that no person or agent waits for starts one operation at a time, and only while the `operations` queue holds no job, waiting or running. The check and the start run under one cache lock, so `tasks:tick` and `DestroyTaskVm` never both start one. A task workspace removal is such work, also after `tasks:cancel` or `tasks:complete`, because the group ends at once. `DestroyTaskVm` follows the same rule when it starts a removal. A burst of ended groups therefore queues no burst of removals: the tick starts the next removal only when the worker is idle. A deploy that arrives can still wait for the one removal that runs, 52 to 196 seconds in the 9 Oct burst, at most 1,110 seconds when it runs a full teardown list. A burst never adds more. A command that a person or agent runs starts its operation at once, in order. Automatic deploys are the one exception: they start as they do now, even while the queue holds a job.
+3. **Background work yields.** Work that no person or agent waits for starts one operation at a time, and only while the `operations` queue holds no job, waiting or running. The check and the start run under one cache lock, so Swamp group execution and `DestroyTaskVm` never both start one. A task workspace removal is such work, also after `tasks:cancel` or `tasks:complete`, because the group ends at once. `DestroyTaskVm` follows the same rule when it starts a removal. A burst of ended groups therefore queues no burst of removals: the tick starts the next removal only when the worker is idle. A deploy that arrives can still wait for the one removal that runs, 52 to 196 seconds in the 9 Oct burst, at most 1,110 seconds when it runs a full teardown list. A burst never adds more. A command that a person or agent runs starts its operation at once, in order. Automatic deploys are the one exception: they start as they do now, even while the queue holds a job.
 
 Horizon already flags a wait of more than 300 seconds on the `operations` queue. If such waits become common, the next step is a queue of their own for deploys that the same worker reads first. Horizon supports this order. It is not built now.
 

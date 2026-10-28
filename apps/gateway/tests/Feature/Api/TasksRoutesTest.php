@@ -8,11 +8,8 @@ use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\InstanceRemover;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\DeliverablePathChecker;
 use App\Domain\Tasks\DeliverablePathRepository;
-use App\Domain\Tasks\InstanceProvisioning;
-use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\QuestionAsker;
 use App\Domain\Tasks\QuestionCause;
 use App\Domain\Tasks\QuestionStatus;
@@ -280,71 +277,6 @@ it('returns 409 extension.disabled for create and list while the extension is of
         ->assertJsonPath('error.code', 'extension.disabled');
 
     expect(Task::topLevel()->count())->toBe(0);
-});
-
-it('still returns the created group, and fails it when the first implementer cannot start after the baseline', function (): void {
-    tasks_gateway();
-    enable_tasks();
-    $project = tasks_app('spawn-failure');
-    $node = Node::query()->create([
-        'name' => 'spawn-failure-node',
-        'status' => LifecycleStatus::Active,
-        'platform' => 'linux',
-        'public_ssh_host' => '192.0.2.81',
-        'wireguard_ip' => '10.44.0.81',
-    ]);
-    app()->instance(InstanceProvisioning::class, new class($node) implements InstanceProvisioning
-    {
-        public function __construct(private Node $node) {}
-
-        public function provision(InstanceProvisionIntent $intent): ?Instance
-        {
-            return test_vm_workspace($intent->group, test_task_workspace($intent->group, [
-                'node_id' => $this->node->id,
-                'name' => 'workspace',
-                'branch_override' => null,
-                'checkout_path' => '/tmp/tasks-spawn-failure',
-                'starting_commit' => str_repeat('a', 40),
-                'status' => 'reserved',
-            ], attach: false));
-        }
-    });
-    app()->instance(AgentSpawner::class, new class implements AgentSpawner
-    {
-        public function reserveReviewer(Task $task): ?int
-        {
-            return null;
-        }
-
-        public function spawnReviewer(Task $task): ?int
-        {
-            return null;
-        }
-
-        public function spawnImplementer(Task $task): ?int
-        {
-            return null;
-        }
-
-        public function requestReview(Task $task): void {}
-    });
-
-    $this->postJson('/api/v1/task-groups', [
-        'project_id' => $project->id,
-        'title' => 'Spawn failure',
-        'brief' => 'Fail the group. Accept when create still answers.',
-        'status' => 'todo',
-        'tasks' => [
-            ['title' => 'Only', 'brief' => 'One subtask. Accept when it is recorded.', 'deliverables' => [['id' => 'recorded', 'type' => 'review', 'description' => 'The subtask is recorded.']]],
-        ],
-    ])
-        ->assertCreated()
-        ->assertJsonPath('data.title', 'Spawn failure')
-        ->assertJsonPath('data.status', 'running');
-    test_pass_baseline();
-
-    expect(Task::topLevel()->count())->toBe(1)
-        ->and(Task::topLevel()->sole()->status)->toBe(TaskGroupStatus::Failed);
 });
 
 it('creates a group with ordered tasks and lists and shows it', function (): void {

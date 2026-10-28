@@ -160,12 +160,12 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0110 | Route task sessions with Laravel AI Jev | [Tasks: Session routing (Jev routing removed)](/reference/tasks#session-routing) |
 | 0111 | Retain completed transfer history through Instance removal | [Instance removal: Keep unfinished transfer history](/reference/instance-removal#keep-unfinished-transfer-history) |
 | 0112 | Isolate agent threads behind drivers | [Tasks: Agent threads](/reference/tasks#agent-threads) |
-| 0113 | Gate task completion on validation and review | [Tasks: Rubric and reminders](/reference/tasks#rubric-and-reminders) |
+| 0113 | Gate task completion on validation and review | [Tasks: Rubric and reminders](/reference/tasks#execution-ownership) |
 | 0114 | Expand the three-node Incus Cluster (superseded) | [Incus topologies: Declared roles only](/reference/incus-topologies#declared-roles-only) |
-| 0114 | Judge task completion as separate checks | [Tasks: Rubric and reminders](/reference/tasks#rubric-and-reminders) |
+| 0114 | Judge task completion as separate checks | [Tasks: Rubric and reminders](/reference/tasks#execution-ownership) |
 | 0115 | Run Project setup commands on development Instances | [Instance setup and teardown](/reference/instance-setup) |
 | 0116 | Run task implementers on Pi | [Tasks: Drivers](/reference/tasks#drivers) |
-| 0117 | Judge the blocked question on the role's own evidence | [Tasks: Rubric and reminders (Jev question removed)](/reference/tasks#rubric-and-reminders) |
+| 0117 | Judge the blocked question on the role's own evidence | [Tasks: Rubric and reminders (Jev question removed)](/reference/tasks#execution-ownership) |
 | 0118 | Skip selected Nodes for a Project | [Development node exclusions](/reference/development-node-exclusions) |
 | 0119 | Share caches after bootstrap | [Feature delivery: Only main CI publishes](/reference/implementation-loop#only-main-ci-publishes) |
 | 0120 | Extract the agent annotation package | [Web app: Annotation overlay](/reference/web-app#annotation-overlay) |
@@ -188,7 +188,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0137 | Refuse carried Caddy global options | [Caddy configuration: Why it works this way](/reference/caddy-configuration#orbit-owns-the-global-options) |
 | 0138 | Opt public Ingress sites into Caddy certificate automation | [Caddy configuration: Public Ingress certificates](/reference/caddy-configuration#public-ingress-certificates) |
 | 0139 | Collect Caddy HTTP metrics on every Node | [Caddy configuration: Published layout](/reference/caddy-configuration#published-layout) |
-| 0140 | Watch settling pull requests for conflicts and failed checks | [Tasks: Fix a settling pull request](/reference/tasks#fix-a-settling-pull-request) |
+| 0140 | Watch settling pull requests for conflicts and failed checks | [Tasks: Fix a settling pull request](/reference/tasks#execution-ownership) |
 | 0141 | Build each Node's Caddyfile on the Gateway | [Caddy configuration: Node Caddy build](/reference/caddy-configuration#node-caddy-build) |
 | 0142 | Apply Plausible's ClickHouse configuration from the analytics role | [Analytics role: ClickHouse configuration](/reference/analytics#clickhouse-configuration) |
 | 0143 | Record topology evidence and sync without verification | [Incus topologies: Evidence log](/reference/incus-topologies#evidence-log) |
@@ -212,16 +212,16 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0161 | Set a stale Caddyfile aside when Caddy is absent | [Caddy configuration: When Caddy is absent](/reference/caddy-configuration#when-caddy-is-absent) |
 | 0162 | Verify web UI changes with bin/web-verify | [Web verification: Why it works this way](/reference/web-verification#why-it-works-this-way) |
 | 0163 | Prove a failing test on the start commit | [Tasks: Prove a command fails on the start commit](/reference/tasks#prove-a-command-fails-on-the-start-commit) |
-| 0164 | Heal a settling pull request with a fixup subtask | [Tasks: Fix a settling pull request](/reference/tasks#fix-a-settling-pull-request) |
+| 0164 | Heal a settling pull request with a fixup subtask | [Tasks: Fix a settling pull request](/reference/tasks#execution-ownership) |
 | 0165 | Record per-thread token metrics | [Tasks: Thread token metrics](/reference/tasks#thread-token-metrics) |
 | 0166 | Raise PHPStan one level at a time | [Feature delivery: Findings are fixed, not silenced](/reference/implementation-loop#findings-are-fixed-not-silenced) |
 | 0167 | Resume a Pi turn interrupted by a server restart | [Pi server: Restarts](/reference/pi-server#restarts) |
 | 0168 | Offload large Pi tool output | [Pi server: Large tool output](/reference/pi-server#large-tool-output) |
 | 0169 | Start each subtask review in a fresh thread | [Tasks: Review a subtask](/reference/tasks#review-a-subtask) |
 | 0170 | Edit Todo subtasks after a group starts | [Tasks: Change subtasks](/reference/tasks#change-subtasks) |
-| 0171 | Reset fixup caps after operator work | [Tasks: Fix a settling pull request](/reference/tasks#fix-a-settling-pull-request) |
+| 0171 | Reset fixup caps after operator work | [Tasks: Fix a settling pull request](/reference/tasks#execution-ownership) |
 | 0172 | Count every T3 model call in thread metrics | [Tasks: Thread token metrics](/reference/tasks#thread-token-metrics) |
-| 0173 | Record and label every Jev decision | [Tasks: Jev decision records](/reference/tasks#jev-decision-records) |
+| 0173 | Record and label every Jev decision | [Tasks: Jev decision records](/reference/tasks#execution-ownership) |
 | 0174 | Match the task gate to CI and repeated findings | [Feature delivery: The candidate gate](/reference/implementation-loop#the-candidate-gate) |
 | 0175 | Keep the docs-impact check in Orbit's repository | [Contributor guide: Docs impact stays in the repository](/contributor-guide#docs-impact-stays-in-the-repository) |
 | 0176 | File recurring production problems as repro-first bug groups | [Tasks: Outer loop](/reference/tasks#outer-loop) |
@@ -233,15 +233,15 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0183 | Manage macOS tools without service roles | [Node provisioning: A Mac needs no service role](/reference/node-provisioning#a-mac-needs-no-service-role) |
 | 0184 | Adopt selected tools from existing managers | [Tools: Selected adoption](/reference/tools#selected-adoption) |
 | 0185 | Report informational tool discoveries in Doctor | [doctor: Informational findings stay healthy](/cli/doctor#informational-findings-stay-healthy) |
-| 0187 | Ask the reviewer before the operator and record every question | [Tasks: Questions go through the reviewer](/reference/tasks#questions-go-through-the-reviewer) |
+| 0187 | Ask the reviewer before the operator and record every question | [Tasks: Questions go through the reviewer](/reference/tasks#execution-ownership) |
 | 0188 | Read private GitHub repositories through the Gateway's GitHub CLI | [GitHub App: Read through the GitHub CLI](/reference/github-app#read-through-the-github-cli) |
 | 0189 | Register Instances only for existing Projects | [Projects: Registration needs a Project](/reference/projects#registration-needs-a-project) |
 | 0191 | Clone the default Instance's database for each new Instance | [Applications: Database clone](/domains/applications#database-clone); [Applications: Each new Instance copies the default database](/domains/applications#each-new-instance-copies-the-default-database) |
 | 0192 | Run task agents on Pi only | [Tasks: Task agents run on Pi](/reference/tasks#task-agents-run-on-pi) |
-| 0192 | Stop a group whose pull request ended | [Tasks: A watched pull request is not the reviewed pull request](/reference/tasks#a-watched-pull-request-is-not-the-reviewed-pull-request) |
+| 0192 | Stop a group whose pull request ended | [Tasks: A watched pull request is not the reviewed pull request](/reference/tasks#execution-ownership) |
 | 0193 | Run task agents as a dedicated user | [Pi server: One user for every task agent](/reference/pi-server#one-user-for-every-task-agent); [GitHub App: The checkout cannot inherit the token](/reference/github-app#the-checkout-cannot-inherit-the-token) |
 | 0193 | Record development branch renames | [Applications: Development branch reconciliation](/domains/applications#development-branch-reconciliation) |
-| 0194 | Respond to GitHub review feedback | [Tasks: Trusted reviews are input, not merge authority](/reference/tasks#trusted-reviews-are-input-not-merge-authority) |
+| 0194 | Respond to GitHub review feedback | [Tasks: Trusted reviews are input, not merge authority](/reference/tasks#execution-ownership) |
 | 0195 | Request topologies for review with an operator container | [Incus topologies: Nested in the task VM](/reference/incus-topologies#nested-in-the-task-vm); [Incus topologies: An isolated operator for web work](/reference/incus-topologies#an-isolated-operator-for-web-work) |
 | 0197 | Native Project Documents with private UpCloud S3 storage | [Project Documents: Why it works this way](/reference/project-documents#why-it-works-this-way) |
 | 0198 | Keep delivery-line proofs as repository commands | [Delivery-line proofs](/reference/delivery-line); [Delivery-line proofs: Why it works this way](/reference/delivery-line#why-it-works-this-way) |
@@ -249,7 +249,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0200 | Run each task group in its own sandbox VM | [Compute drivers: Task VMs](/reference/compute-drivers#task-vms); [Compute drivers: UpCloud overflow](/reference/compute-drivers#upcloud-overflow); [Compute drivers: Orbit Project](/reference/compute-drivers#orbit-project); [Compute drivers: Why task VMs work this way](/reference/compute-drivers#why-task-vms-work-this-way); [Pi server: One user for every task agent](/reference/pi-server#one-user-for-every-task-agent); [Tasks: Every task group runs on its own task VM](/reference/tasks#every-task-group-runs-on-its-own-task-vm); [Incus topologies: Nested in the task VM](/reference/incus-topologies#nested-in-the-task-vm) |
 | 0201 | Release the Gateway automatically from green main | [Update and recover a Gateway: Automatic releases](/reference/gateway-recovery#automatic-releases); [Update and recover a Gateway: Why it works this way](/reference/gateway-recovery#why-it-works-this-way) |
 | 0202 | The fleet follows the Gateway through orbit self-update | [Update and recover a Gateway: Fleet rollout](/reference/gateway-recovery#fleet-rollout); [Orbit self-update](/reference/self-update); [Node agent: Typed commands over SSH](/reference/node-agent#typed-commands-over-ssh) |
-| 0203 | Review and merge pull requests inside Orbit | [Tasks: Review and merge](/reference/tasks#review-and-merge); [Tasks: Orbit reviews before it pushes](/reference/tasks#orbit-reviews-before-it-pushes); [GitHub App: How Orbit reviews and merges a pull request](/reference/github-app#how-orbit-reviews-and-merges-a-pull-request) |
+| 0203 | Review and merge pull requests inside Orbit | [Tasks: Review and merge](/reference/tasks#review-and-merge); [Tasks: Orbit reviews before it pushes](/reference/tasks#execution-ownership); [GitHub App: How Orbit reviews and merges a pull request](/reference/github-app#how-orbit-reviews-and-merges-a-pull-request) |
 | 0205 | Publish database credentials to Vaultwarden | [Vaultwarden](/reference/vaultwarden); [Vaultwarden: Why it works this way](/reference/vaultwarden#why-it-works-this-way) |
 | 0207 | One image recipe, shared package cache, no workspace templates | [Compute drivers: Machine software recipe](/reference/compute-drivers#machine-software-recipe); [Incus topologies: One template Node](/reference/incus-topologies#one-template-node); [Node provisioning: Converge a Node to a recipe](/reference/node-provisioning#converge-a-node-to-a-recipe) |
 | 0208 | Scan monorepo dependencies per sub-project | [Dependency contracts: Separate monorepo dependency sources](/reference/instance-dependency-contracts#separate-monorepo-dependency-sources) |

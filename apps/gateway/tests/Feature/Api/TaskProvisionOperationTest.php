@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\TaskVms\DeleteTaskVmAction;
-use App\Actions\TaskVms\DestroyEndedTaskVmsAction;
-use App\Actions\TaskVms\ParkIdleTaskVmsAction;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
 use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
 use App\Domain\Instances\DevelopmentSourceResolution;
@@ -32,7 +30,6 @@ use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskReviewedCommitSource;
-use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
@@ -43,7 +40,6 @@ use App\Infrastructure\Tasks\NativeTaskExecutionLock;
 use App\Infrastructure\TaskVms\TaskVmWorker;
 use App\Infrastructure\TaskVms\TaskWorkerEnrollment;
 use App\Jobs\TaskVms\DestroyTaskVm;
-use App\Jobs\TaskVms\ParkTaskVm;
 use App\Jobs\TaskVms\ResumeTaskVm;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -57,7 +53,6 @@ use App\Models\TaskReviewedCommit;
 use App\Models\TaskVm;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
@@ -147,7 +142,7 @@ function provision_operation_start(Task $group, ?string $key = null): Operation
 describe('tasks.provision', function (): void {
     it('records the refusal contract for a tick group', function (): void {
         $this->travelTo('2026-10-22 12:00:00');
-        $group = provision_operation_group(orchestration: TaskOrchestration::Tick);
+        $group = provision_operation_group(orchestration: TaskOrchestration::External);
 
         record_fixture($this->postJson('/api/v1/task-groups/'.$group->id.'/provision')->assertConflict(),
             'tasks/tasks-provision/not-orchestrated',
@@ -163,7 +158,7 @@ describe('tasks.provision', function (): void {
         expect(Operation::query()->count())->toBe(0);
         expect($group->fresh()->status)->toBe($status);
     })->with([
-        [TaskGroupStatus::Todo, TaskOrchestration::Tick, 'tasks.not_orchestrated'],
+        [TaskGroupStatus::Todo, TaskOrchestration::External, 'tasks.not_orchestrated'],
         [TaskGroupStatus::Backlog, TaskOrchestration::External, 'tasks.not_todo'],
         [TaskGroupStatus::Reserved, TaskOrchestration::External, 'tasks.already_claimed'],
         [TaskGroupStatus::Running, TaskOrchestration::External, 'tasks.already_claimed'],
@@ -507,45 +502,6 @@ describe('tasks.provision', function (): void {
         expect($group->reserved_at)->toBeNull();
     })->with([false, true]);
 
-    it('ends a failed VM provision and releases it for existing cleanup without retrying', function (): void {
-        $group = provision_operation_group();
-        $vm = test_task_vm($group, $this->gatewayNode);
-        $vm->update(['state' => TaskVmState::Provisioning]);
-        $operation = provision_operation_start($group);
-        app(OperationRunner::class)->run($operation->id);
-        expect($operation->refresh()->status)->toBe(OperationStatus::Waiting);
-        $vm->update(['state' => TaskVmState::Failed, 'error_code' => 'task_vm.bootstrap_failed', 'error_message' => 'Failed.']);
-        $this->travel(10)->seconds();
-        app(OperationRunner::class)->read($operation->id);
-        expect($operation->refresh()->error_code)->toBe('task_vm.bootstrap_failed');
-        expect($operation->status)->toBe(OperationStatus::Failed);
-        expect($group->refresh()->status)->toBe(TaskGroupStatus::Failed);
-        expect($group->reserved_at)->toBeNull();
-        Queue::fake([DestroyTaskVm::class]);
-        app(DestroyEndedTaskVmsAction::class)->execute();
-        Queue::assertPushed(DestroyTaskVm::class, fn (DestroyTaskVm $job): bool => $job->taskVmId === $vm->id);
-    });
-
-    it('cancels a waiting provision before group cancellation and clears its reservation for cleanup', function (): void {
-        $group = provision_operation_group();
-        $vm = test_task_vm($group, $this->gatewayNode);
-        $vm->update(['state' => TaskVmState::Provisioning]);
-        $operation = provision_operation_start($group);
-        app(OperationRunner::class)->run($operation->id);
-
-        $this->postJson('/api/v1/task-groups/'.$group->id.'/cancel')->assertOk()->assertJsonPath('data.status', 'cancelled');
-
-        expect($operation->refresh()->status)->toBe(OperationStatus::Cancelled);
-        expect($group->refresh()->reserved_at)->toBeNull();
-        Queue::fake([DestroyTaskVm::class]);
-        app(DestroyEndedTaskVmsAction::class)->execute();
-        Queue::assertPushed(DestroyTaskVm::class, fn (DestroyTaskVm $job): bool => $job->taskVmId === $vm->id);
-        $this->travel(10)->seconds();
-        app(OperationRunner::class)->read($operation->id);
-        expect($group->refresh()->status)->toBe(TaskGroupStatus::Cancelled);
-        expect(Instance::query()->count())->toBe(0);
-    });
-
     it('completes a group only after cancelling its open operation', function (): void {
         $group = provision_operation_group(TaskGroupStatus::WaitingForReview);
         $operation = app(OperationStore::class)->create(OperationKinds::TasksProvision, OperationKinds::TaskGroupTarget, $group->id, null, [], 'test', null);
@@ -590,15 +546,6 @@ describe('tasks.provision', function (): void {
         expect($group->reserved_at)->not->toBeNull();
     });
 
-    it('keeps disabled task VMs as a tick claim wait', function (): void {
-        $group = provision_operation_group(orchestration: TaskOrchestration::Tick);
-        app()->instance(TaskVmSettings::class, TaskVmSettingsBuilder::off());
-
-        expect(app(TaskScheduler::class)->claimNext())->toBeNull();
-        expect($group->refresh()->status)->toBe(TaskGroupStatus::Todo);
-        expect($group->capacity_wait_reason)->toBe('Task VM: task VMs are not enabled on this Gateway.');
-        expect(Operation::query()->count())->toBe(0);
-    });
 });
 
 describe('optional provision worker', function (): void {
@@ -812,50 +759,6 @@ function worker_operation_start(Task $group, string $key = 'worker.1', string $s
     return Operation::query()->findOrFail($response->json('data.id'));
 }
 
-it('starts a worker again on the same group after parking and resuming its VM', function (): void {
-    [$group, $vm] = worker_operation_workspace();
-    $provider = new RecordingTaskVmProvider;
-    app()->instance(TaskVmProvider::class, $provider);
-    $agents = (new FakeAgentCommandRunner)
-        ->answer('swamp.start-worker', ['started' => true])
-        ->answer('agent.status', ['version' => '0.5.0', 'sha256' => str_repeat('a', 64), 'platform' => 'linux', 'architecture' => 'x86_64', 'observer' => 'active']);
-    app()->instance(AgentCommandRunner::class, $agents);
-    Http::fake(['http://10.44.0.129:3774/capabilities' => Http::response(['models' => []])]);
-    $first = worker_operation_start($group);
-    app(OperationRunner::class)->run($first->id);
-    expect($first->refresh()->status)->toBe(OperationStatus::Succeeded);
-    $group->tasks()->update(['status' => TaskStatus::Completed, 'settled_at' => now()->subHour()]);
-    $group->update(['status' => TaskGroupStatus::WaitingForReview, 'pr_url' => 'https://github.com/acme/provision/pull/1', 'settled_at' => now()->subHour()]);
-    $vm->update(['ready_at' => now()->subHour()]);
-    $workspaceId = $group->taskable_id;
-    Queue::fake([ParkTaskVm::class, ResumeTaskVm::class]);
-
-    $provider->observations = [new VmObservation(true, null), new VmObservation(false, null)];
-    expect(app(ParkIdleTaskVmsAction::class)->execute())->toBe(1);
-    app()->call([new ParkTaskVm($vm->id), 'handle']);
-    expect($vm->refresh()->state)->toBe(TaskVmState::Parked);
-    $second = worker_operation_start($group, 'worker.2', 'b');
-    app(OperationRunner::class)->run($second->id);
-    expect($second->refresh()->status)->toBe(OperationStatus::Waiting);
-    expect(array_column($agents->calls, 'command'))->toBe(['swamp.start-worker']);
-    Queue::assertPushed(ResumeTaskVm::class, fn (ResumeTaskVm $job): bool => $job->taskVmId === $vm->id);
-    app()->call([new ResumeTaskVm($vm->id), 'handle']);
-    $this->travel(10)->seconds();
-    app(OperationRunner::class)->read($second->id);
-
-    expect($second->refresh()->status)->toBe(OperationStatus::Succeeded);
-    expect($vm->refresh()->state)->toBe(TaskVmState::Ready);
-    expect($provider->vmCalls)->toBe(['observe '.$vm->name, 'stop '.$vm->name, 'observe '.$vm->name, 'start '.$vm->name]);
-    $starts = array_values(array_filter($agents->calls, fn (array $call): bool => $call['command'] === 'swamp.start-worker'));
-    expect($starts)->toHaveCount(2);
-    expect($starts[1]['input']['enrollment_id'])->not->toBe($starts[0]['input']['enrollment_id']);
-    expect($starts[1]['input']['enrollment_token'])->toBe('group.'.str_repeat('b', 64));
-    expect($group->refresh()->taskable_id)->toBe($workspaceId);
-    expect($group->status)->toBe(TaskGroupStatus::WaitingForReview);
-    expect(TaskVm::query()->count())->toBe(1);
-    expect(app(TaskWorkerEnrollment::class)->read($second->input['worker']['enrollment_reference']))->toBeNull();
-});
-
 it('replays worker and provision keys with a new token without retaining token-derived fingerprints', function (string $route): void {
     [$group, $vm] = worker_operation_workspace();
     if ($route === 'provision') {
@@ -901,7 +804,7 @@ it('requires worker enrollment, a key, an open external group and an existing VM
     $vm->delete();
     $payload = ['worker' => ['orchestrator_url' => 'wss://swamp.orbit', 'enrollment_token' => 'group.'.str_repeat('a', 64)]];
     $this->postJson($url, $payload, ['Idempotency-Key' => 'worker.no-vm'])->assertConflict()->assertJsonPath('error.code', 'tasks.no_workspace');
-    Task::topLevel()->whereKey($group->id)->update(['orchestration' => TaskOrchestration::Tick]);
+    Task::topLevel()->whereKey($group->id)->update(['orchestration' => TaskOrchestration::External]);
     $group->refresh();
     $this->postJson($url, $payload, ['Idempotency-Key' => 'worker.tick'])->assertConflict()->assertJsonPath('error.code', 'tasks.not_orchestrated');
     Task::topLevel()->whereKey($group->id)->update(['orchestration' => TaskOrchestration::External, 'status' => TaskGroupStatus::Cancelled]);

@@ -15,6 +15,10 @@ use App\Models\TaskCheck;
 /** Shared handoff push, classification and output. Neither caller delegates lifecycle decisions here. */
 final readonly class TaskHandoffCiChecks
 {
+    public const int NoSuiteSeconds = 600;
+
+    public const string FailedStep = 'ci';
+
     private const string SkipDirectives = '/\[(?:skip ci|ci skip|no ci|skip actions|actions skip)\]|^[ \t]*skip-checks[ \t]*:[ \t]*true[ \t]*$/im';
 
     public function __construct(
@@ -74,8 +78,8 @@ final readonly class TaskHandoffCiChecks
     {
         $suites = array_values(array_filter($suites, static fn (GitHubCheckSuite $suite): bool => $suite->appSlug === RequiredCheckState::CheckApp));
         if ($suites === []) {
-            if ($check->pushed_at?->isBefore(now()->subSeconds(TaskHandoffCi::NoSuiteSeconds)) === true) {
-                return new TaskHandoffCiReading(RequiredCheckState::Missing, 'configuration', 'GitHub Actions started no workflow on handoff commit '.$commit.' in the '.(TaskHandoffCi::NoSuiteSeconds / 60)
+            if ($check->pushed_at?->isBefore(now()->subSeconds(self::NoSuiteSeconds)) === true) {
+                return new TaskHandoffCiReading(RequiredCheckState::Missing, 'configuration', 'GitHub Actions started no workflow on handoff commit '.$commit.' in the '.(self::NoSuiteSeconds / 60)
                     .' minutes since Orbit pushed it to '.TaskRemoteBranch::handoff($group).'. A ci.yml on the task branch without the task-*-handoff push trigger, '
                     .'such as one from before that trigger existed, or a skipped workflow causes this. Merge main into the task branch.');
             }

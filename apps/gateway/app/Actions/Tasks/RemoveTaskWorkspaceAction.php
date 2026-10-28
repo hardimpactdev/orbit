@@ -18,10 +18,8 @@ use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
-use App\Domain\Tasks\TaskRemoteBranch;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Domain\TaskVms\TaskVmError;
@@ -213,14 +211,7 @@ final readonly class RemoveTaskWorkspaceAction
             try {
                 $this->publisher->deleteHandoffBranch($group);
             } catch (TaskPullRequestException $exception) {
-                if ($group->groupOrchestration() === TaskOrchestration::External) {
-                    report($exception);
-
-                    return;
-                }
-                TaskAssistance::apply($group, AssistanceKind::RemovalFailure, null, self::HandoffBranchLeftPrefix.$exception->getMessage()
-                    .' Delete '.TaskRemoteBranch::handoff($group).' on GitHub or restore the App access, then cancel or complete the task again.',
-                    replaceFailure: true, replaceDirection: true);
+                report($exception);
 
                 return;
             }

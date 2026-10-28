@@ -133,7 +133,7 @@ function tvm_sweep_node(string $name, string $address): Node
     ]);
 }
 
-function tvm_sweep_vm(Node $host, TaskVmState $state, string $wireguardIp, TaskOrchestration $orchestration = TaskOrchestration::Tick): TaskVm
+function tvm_sweep_vm(Node $host, TaskVmState $state, string $wireguardIp, TaskOrchestration $orchestration = TaskOrchestration::External): TaskVm
 {
     $group = Task::topLevel()->create([
         'orchestration' => $orchestration, 'project_id' => test()->project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => TaskGroupStatus::WaitingForReview,
@@ -249,7 +249,7 @@ describe(SweepTaskVmHosts::class, function (): void {
             ->and($parked->fresh()?->state)->toBe(TaskVmState::Parked)
             ->and($provisioning->fresh()?->state)->toBe(TaskVmState::Provisioning)
             ->and($destroying->fresh()?->state)->toBe(TaskVmState::Destroying);
-    })->with(['tick' => [TaskOrchestration::Tick, true], 'external' => [TaskOrchestration::External, false]]);
+    })->with(['tick' => [TaskOrchestration::External, true], 'external' => [TaskOrchestration::External, false]]);
 
     it('forgets a miss when the next sweep finds the VM again', function (): void {
         $ready = tvm_sweep_vm($this->beast, TaskVmState::Ready, '10.44.0.129');

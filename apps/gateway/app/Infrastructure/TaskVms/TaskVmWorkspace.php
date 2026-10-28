@@ -8,7 +8,6 @@ use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCapacityException;
-use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskWait;
 use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
@@ -37,20 +36,10 @@ final readonly class TaskVmWorkspace
     {
         $vm = TaskVm::forGroup($group);
         if (! $vm instanceof TaskVm) {
-            try {
-                if (! app(TaskVmSettings::class)->enabled) {
-                    if ($group->groupOrchestration() === TaskOrchestration::External) {
-                        throw new TaskVmException(TaskVmError::InvalidConfig, 'Task VMs are not enabled on this Gateway.');
-                    }
-                    throw new TaskCapacityException(TaskWait::TaskVm, 'Task VM: task VMs are not enabled on this Gateway.');
-                }
-                $vm = app(AllocateTaskVmAction::class)->execute($group);
-            } catch (TaskVmException $exception) {
-                if ($group->groupOrchestration() === TaskOrchestration::External) {
-                    throw $exception;
-                }
-                throw new TaskCapacityException(TaskWait::TaskVm, "Task VM: {$exception->errorCode}: {$exception->getMessage()}");
+            if (! app(TaskVmSettings::class)->enabled) {
+                throw new TaskVmException(TaskVmError::InvalidConfig, 'Task VMs are not enabled on this Gateway.');
             }
+            $vm = app(AllocateTaskVmAction::class)->execute($group);
         }
 
         if ($vm->state === TaskVmState::Failed) {

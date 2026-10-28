@@ -8,13 +8,9 @@ use App\Domain\Tasks\AgentThreadObserver;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskMergeStatus;
-use App\Domain\Tasks\TaskPullRequestHealth;
-use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
-use App\Models\TaskWorkspaceLeaseRecord;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeTaskCheckRunner;
 
@@ -48,40 +44,4 @@ it('admits later checks and receipts after a review fix returns the group to run
     expect($leases->withReceipt($group, $fixup->id, null, static fn (): bool => true))->toBeTrue();
 
     expect($leases->status($group))->toBe([]);
-});
-
-it('evaluates merge-ready while the workspace is busy without joining its queue', function (): void {
-    $group = tick_group();
-    $group->update(['status' => TaskGroupStatus::Settling, 'pr_url' => 'https://github.com/acme/orbit/pull/42']);
-    $group->tasks()->update(['status' => TaskStatus::Completed]);
-    $scheduler = app(TaskScheduler::class);
-    $health = new TaskPullRequestHealth('open');
-    $leases = app(TaskWorkspaceLease::class);
-    $holder = $leases->acquire($group, 'check', 'prior-check');
-
-    $scheduler->mergeWhenReady($group, $health, null);
-
-    expect($leases->status($group)[0]['waiters'])->toBe([])
-        ->and($holder->fresh()->status)->toBe('held');
-    expect($group->fresh()->merge_status)->toBe(TaskMergeStatus::Waiting)
-        ->and($group->fresh()->merge_reason)->toBe('GitHub did not report the pull request head.');
-    $this->assertDatabaseMissing('task_workspace_leases', [
-        'group_id' => $group->id, 'owner' => 'merge-ready:'.$group->id,
-    ]);
-});
-
-it('leaves earlier durable workspace waiters unchanged while evaluating merge-ready', function (): void {
-    $group = tick_group();
-    $group->update(['status' => TaskGroupStatus::Settling]);
-    $leases = app(TaskWorkspaceLease::class);
-    $holder = $leases->acquire($group, 'check', 'prior-check');
-    expect(fn () => $leases->acquire($group, 'verdict', 'earlier-receipt'))->toThrow(TaskWorkspaceWaiting::class);
-    $earlier = TaskWorkspaceLeaseRecord::query()->where('owner', 'earlier-receipt')->sole();
-    $leases->release($holder);
-
-    app(TaskScheduler::class)->mergeWhenReady($group, new TaskPullRequestHealth('open'), null);
-
-    expect($earlier->fresh()->status)->toBe('queued')
-        ->and($leases->status($group)[0]['waiters'])->toHaveCount(1)
-        ->and($leases->acquire($group, 'verdict', 'earlier-receipt')->id)->toBe($earlier->id);
 });

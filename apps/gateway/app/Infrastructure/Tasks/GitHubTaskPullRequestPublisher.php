@@ -13,7 +13,6 @@ use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\SourceControl\GitBranchName;
-use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskRemoteBranch;
@@ -191,28 +190,25 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
     {
         $vm = TaskVm::forGroup($group) ?? throw new TaskPullRequestException('The task workspace is unavailable.');
         if ($vm->publish_commit === $commit && $vm->publish_branch === $branch && $vm->publish_state instanceof TaskVmPublishState
-            && ! ($group->groupOrchestration() === TaskOrchestration::External && $vm->publish_state === TaskVmPublishState::Failed)) {
+            && $vm->publish_state !== TaskVmPublishState::Failed) {
             if ($vm->publish_state === TaskVmPublishState::Pushed) {
                 return;
             }
             $lost = match (true) {
-                $vm->publish_state !== TaskVmPublishState::Queued => null,
                 $vm->publish_started_at !== null => $vm->publish_started_at->isBefore(now()->subSeconds(self::PublishStaleSeconds))
                     ? 'the publish job did not finish within '.self::PublishStaleSeconds.' seconds of its start.' : null,
                 default => ! ($vm->publish_queued_at?->isAfter(now()->subSeconds(self::PublishUnstartedSeconds)) ?? false)
                     ? 'the publish job did not start within '.self::PublishUnstartedSeconds.' seconds.' : null,
             };
             $stale = $lost !== null;
-            if ($vm->publish_state === TaskVmPublishState::Queued && ! $stale) {
+            if (! $stale) {
                 throw TaskPullRequestException::pending("Orbit is pushing commit {$commit} to {$branch}.");
             }
             // The failure is reported once. The next push, after the scheduler's backoff, queues a new job.
             TaskVm::query()->whereKey($vm->id)->where('publish_commit', $commit)->where('publish_branch', $branch)
                 ->where('publish_state', $vm->publish_state)->update(['publish_state' => null]);
 
-            throw new TaskPullRequestException($stale
-                ? 'The task branch could not be pushed: '.$lost
-                : ($vm->publish_error ?? 'The task branch could not be pushed.'));
+            throw new TaskPullRequestException('The task branch could not be pushed: '.$lost);
         }
         $vm->update([
             'publish_commit' => $commit, 'publish_branch' => $branch, 'publish_state' => TaskVmPublishState::Queued,
@@ -276,8 +272,8 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
                     $deadline,
                     // The handoff branch holds only commits for CI, and the workspace can leave its history, as when it
                     // follows an incoming pull request's head. So a handoff replaces it, over the tip just fetched.
-                    replace: $branch === TaskRemoteBranch::handoff($group) && $group->groupOrchestration() !== TaskOrchestration::External,
-                    checkedPublish: $group->groupOrchestration() === TaskOrchestration::External,
+                    replace: false,
+                    checkedPublish: true,
                 );
             } catch (RuntimeConvergenceException $exception) {
                 $this->failedPush($exception, $token);

@@ -50,6 +50,7 @@ final readonly class WakeTaskVmAction
         if ($vm?->state !== TaskVmState::Parked) {
             return true;
         }
+        $vm->update(['stop_confirmed_at' => null]);
         ResumeTaskVm::dispatch($vm->id);
 
         return false;

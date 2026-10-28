@@ -10,7 +10,6 @@ use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExecutionLock;
-use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Models\Instance;
 use App\Models\Project;
@@ -39,7 +38,7 @@ final readonly class CancelTaskCheckAction
     /** The caller holds the group execution lock. A fenced absent start has no check left to stop. */
     public function recoverStart(Task $group, TaskCheck $check): ?TaskCheck
     {
-        if ($group->groupOrchestration() === TaskOrchestration::External && $check->pid === 0) {
+        if ($check->pid === 0) {
             app(TaskWorkspaceLease::class)->reconcile($group);
             $check = $check->fresh();
             if ($check instanceof TaskCheck && $check->pid === 0) {

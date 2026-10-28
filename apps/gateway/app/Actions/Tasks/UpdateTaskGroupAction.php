@@ -6,13 +6,9 @@ namespace App\Actions\Tasks;
 
 use App\Data\Tasks\UpdateTaskGroupData;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\AssistanceKind;
-use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskOrchestration;
-use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatusMoves;
 use App\Models\Task;
 use Illuminate\Support\Collection;
@@ -22,7 +18,6 @@ final readonly class UpdateTaskGroupAction
 {
     public function __construct(
         private RequireTasksExtensionAction $requireExtension,
-        private TaskScheduler $scheduler,
         private TaskExecutionLock $execution,
     ) {}
 
@@ -41,11 +36,7 @@ final readonly class UpdateTaskGroupAction
             }
 
             if ($data->status !== null && $data->status !== $locked->status) {
-                if ($locked->groupOrchestration() === TaskOrchestration::External) {
-                    TaskStatusMoves::group($locked, $data->status);
-                } elseif (! in_array($locked->status, [TaskGroupStatus::Backlog, TaskGroupStatus::Todo], true)) {
-                    throw TaskGroupGuard::alreadyClaimed();
-                }
+                TaskStatusMoves::group($locked, $data->status);
 
                 if ($data->status === TaskGroupStatus::Todo && $locked->tasks->isEmpty()) {
                     throw TaskGroupGuard::noSubtasks();
@@ -56,9 +47,6 @@ final readonly class UpdateTaskGroupAction
                 }
 
                 $locked->status = $data->status;
-                if ($locked->assistance_kind !== AssistanceKind::Direction && TaskScheduler::isClaimFailureReason($locked->assistance_reason)) {
-                    TaskAssistance::apply($locked);
-                }
             }
 
             if ($data->preview !== null) {
@@ -69,16 +57,12 @@ final readonly class UpdateTaskGroupAction
             }
             $locked->title = $data->title ?? $locked->title;
             $locked->brief = $data->brief ?? $locked->brief;
-            if ($locked->groupOrchestration() === TaskOrchestration::Tick || $locked->isDirty()) {
+            if ($locked->isDirty()) {
                 $locked->save();
             }
 
             return $locked;
         }), wait: false);
-
-        if ($data->status === TaskGroupStatus::Todo && $updated->orchestration === TaskOrchestration::Tick) {
-            $this->scheduler->claimNext();
-        }
 
         return $updated->fresh(['project', 'tasks', 'taskable']) ?? $updated;
     }

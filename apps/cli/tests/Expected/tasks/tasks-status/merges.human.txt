@@ -11,7 +11,6 @@ Loading tasks status...
 │
 ├  Status      enabled
 │
-└  Last tick   not recorded
 
 No groups are asking for assistance.
 Review and merge

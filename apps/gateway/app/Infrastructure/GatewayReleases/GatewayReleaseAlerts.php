@@ -99,12 +99,6 @@ final readonly class GatewayReleaseAlerts
      *
      * @return array<string, mixed>
      */
-    public function schedulerSilent(GatewayRelease $record, string $summary): array
-    {
-        $receipt = $record->commit() === null ? null : $this->send(ReleaseAlertKind::ReleaseSchedulerSilent, (string) $record->commit(), (string) $record->id, $summary, new ReleaseIncident(self::Target, (string) $record->id, 'scheduler_silent'));
-
-        return $this->stored($record, ReleaseAlertKind::ReleaseSchedulerSilent, $receipt);
-    }
 
     /**
      * Raises the one alert of a verified release whose handoff could not bring the Gateway Node's own `orbit-agent` to

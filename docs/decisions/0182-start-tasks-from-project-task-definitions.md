@@ -32,7 +32,7 @@ The run must repeat every week without an operator, stop early when there is not
 
 All custom configuration must live in the database, so that the Gateway code stays generic and other people can run Orbit for their own Projects. A skill in a repository is guidance for an agent, not configuration the Gateway can enforce. Keeping definitions in the Gateway also lets the web app draw them, lets an agent change one definition through the API, and keeps the work next to the machines it runs on.
 
-Most subtasks can be decided by a script. An agent session is the most expensive kind of work, so a definition uses one only where a subtask needs judgment. [Jev](/reference/tasks#jev-decision-records) already answers typed questions with probabilities for routing choices that need judgment.
+Most subtasks can be decided by a script. An agent session is the most expensive kind of work, so a definition uses one only where a subtask needs judgment. [Jev](/reference/tasks#execution-ownership) already answers typed questions with probabilities for routing choices that need judgment.
 
 ## Decision
 

@@ -14,30 +14,25 @@ use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Models\Node;
 use App\Models\Process;
 use Closure;
-use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\Cache;
 
 /**
  * Moves the Gateway scheduler to the new release without cutting off a scheduled command. The scheduler is the
  * Gateway Node's systemd Process that runs `schedule:work` in the Gateway application directory.
  *
- * 1. `schedule:interrupt` ends the current minute's repeating events, such as `tasks:tick`, after their current run.
+ * 1. `schedule:interrupt` ends the current minute's repeating events after their current run.
  * 2. SIGTERM goes to the `schedule:work` main process only. It stops starting new `schedule:run` processes, waits for
  *    the running ones, and exits. A long command, such as a development deploy, finishes on the release it started on.
  * 3. When it has exited, the unit starts again (or systemd already restarted it). The stable application path now
  *    links to the new release.
  *
  * Every scheduled command ran to its end, so each released its own overlap mutex, and no mutex is cleared. Only when
- * the drain outlasts its limit does the handoff take the `tasks:tick` lock, stop the unit, which ends what still runs,
+ * the drain outlasts its limit does the handoff stop the unit, which ends what still runs,
  * clear the overlap mutexes those commands can no longer release, and start it. The result says which happened.
  */
 final readonly class GatewaySchedulerHandoff
 {
-    /** The cache lock that `tasks:tick` holds while it works, for up to 300 seconds. */
-    public const string TickLock = 'orbit:tasks:tick';
-
     /** The default time the old scheduler gets to finish its running commands. */
     public const int DrainSeconds = 600;
 
@@ -48,7 +43,6 @@ final readonly class GatewaySchedulerHandoff
     public function __construct(
         private AgentCommandRunner $agents,
         private string $applicationPath,
-        private int $tickWaitSeconds = 330,
         private int $drainSeconds = self::DrainSeconds,
         ?Closure $clearMutexes = null,
     ) {
@@ -205,26 +199,9 @@ final readonly class GatewaySchedulerHandoff
      */
     private function forceRestart(Node $gateway, Process $process): void
     {
-        $lock = Cache::lock(self::TickLock, $this->tickWaitSeconds);
-
-        try {
-            $lock->block($this->tickWaitSeconds);
-        } catch (LockTimeoutException) {
-            throw new GatewayReleaseException(
-                step: 'handoff',
-                errorCode: 'gateway.release_scheduler_busy',
-                message: "A tasks tick held its lock for more than {$this->tickWaitSeconds} seconds, so the scheduler was not stopped. It finishes its running commands and exits on its own.",
-                status: 500,
-            );
-        }
-
-        try {
-            $this->control($gateway, $process, 'gateway.stop-scheduler');
-            ($this->clearMutexes)();
-            $this->control($gateway, $process, 'gateway.start-scheduler');
-        } finally {
-            $lock->release();
-        }
+        $this->control($gateway, $process, 'gateway.stop-scheduler');
+        ($this->clearMutexes)();
+        $this->control($gateway, $process, 'gateway.start-scheduler');
     }
 
     private function control(Node $gateway, Process $process, string $command): void

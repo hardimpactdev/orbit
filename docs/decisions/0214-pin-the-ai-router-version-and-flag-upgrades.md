@@ -22,7 +22,7 @@ CLIProxyAPI publishes its releases on [router-for-me/CLIProxyAPI](https://github
 
 The [problem collector](/reference/tasks#outer-loop) turns recurring Doctor findings into Backlog tasks. It skips informational findings, because they do not make Doctor unhealthy.
 
-A router restart drops the model calls that are in flight. Tasks already retries a [transient provider error](/reference/tasks#retry-a-transient-provider-error) on the same thread, after a backoff of 1, 2, 4, then 8 minutes.
+A router restart drops the model calls that are in flight. Tasks already retries a [transient provider error](/reference/tasks#execution-ownership) on the same thread, after a backoff of 1, 2, 4, then 8 minutes.
 
 ## Decision
 
@@ -71,7 +71,7 @@ The [problem collector](/reference/tasks#outer-loop) skips informational finding
 
 The first update of an adopted router, such as Process 103, replaces it as the Process `ai-router`. That is its first restart.
 
-`ai-router:update` runs while task groups run. A Pi turn whose model call fails during the restart follows the Tasks [transient provider retry](/reference/tasks#retry-a-transient-provider-error): the same thread retries after the backoff. The update adds no wait or refusal of its own.
+`ai-router:update` runs while task groups run. A Pi turn whose model call fails during the restart follows the Tasks [transient provider retry](/reference/tasks#execution-ownership): the same thread retries after the backoff. The update adds no wait or refusal of its own.
 
 ### Build order
 
@@ -82,7 +82,7 @@ This record is built in one pull request, after the five build steps of [ADR 021
 The pull request passes the [acceptance test of ADR 0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension#acceptance-test) and these checks on the live fleet after its Gateway release:
 
 1. `ai-router:update` to the current pin changes nothing, and an update to a newer release passes the canary task group.
-2. An `ai-router:update` while the canary's Pi turn is running restarts the router mid-turn. The turn fails with a transient provider error, the [provider retry](/reference/tasks#retry-a-transient-provider-error) posts a `provider_retry` comment and retries on the same thread, and the group then settles normally with only the anchor key left.
+2. An `ai-router:update` while the canary's Pi turn is running restarts the router mid-turn. The turn fails with a transient provider error, the [provider retry](/reference/tasks#execution-ownership) posts a `provider_retry` comment and retries on the same thread, and the group then settles normally with only the anchor key left.
 3. With the pin behind the latest release, `orbit doctor` reports the informational `role.update_available`, stays healthy, and exits 0. The problem collector records a fingerprint for it.
 
 ## Rejected alternatives

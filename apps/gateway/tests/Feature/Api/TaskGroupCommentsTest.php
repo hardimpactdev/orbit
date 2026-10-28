@@ -8,7 +8,6 @@ use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCheckRunner;
@@ -55,7 +54,6 @@ it('records and resolves group direction with readable isolated history and no e
     Bus::fake();
     Queue::fake();
     Http::preventStrayRequests();
-    $this->mock(AgentSpawner::class)->shouldNotReceive('spawnImplementer', 'spawnReviewer', 'requestReview');
     $this->mock(TaskCheckRunner::class)->shouldNotReceive('start');
     $children = $this->group->tasks()->get()->map->getAttributes()->all();
     $child = $this->group->tasks()->firstOrFail();

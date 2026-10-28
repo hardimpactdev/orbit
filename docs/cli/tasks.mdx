@@ -63,9 +63,9 @@ Show whether the tasks extension is on, then list every task currently asking fo
 orbit tasks:status [--json]
 ```
 
-JSON returns `enabled` as `true` or `false`, `last_tick_at`, and `assistance` as a list in ascending task id order. `last_tick_at` is the time the latest `tasks:tick` took the tick lock and started its work, or `null` when the Gateway remembers no tick. The human output shows it as `Last tick`, or `not recorded`. The [scheduler](/reference/tasks#scheduler) explains the record. Each entry has the task's `id`, `project_id`, `project`, `project_code`, `title`, `status`, `assistance_kind`, `assistance_question`, and `assistance_reason`. The list is empty when no task is asking, and it is present while the extension is off. The human output shows direction requests first, under `Needs your direction`, with the task reference, title, status, and question. Failures follow under `Failures`, with the task reference, title, status, and reason. An empty list says `No groups are asking for assistance.` The [tasks reference](/reference/tasks#direction-requests) defines the four kinds: `direction`, `failure`, `removal_failure`, and `observation`.
+JSON returns `enabled` as `true` or `false`, `last_tick_at`, and `assistance` as a list in ascending task id order. `last_tick_at` is always null; Swamp owns execution. The human output omits that field. Each entry has the task's `id`, `project_id`, `project`, `project_code`, `title`, `status`, `assistance_kind`, `assistance_question`, and `assistance_reason`. The list is empty when no task is asking, and it is present while the extension is off. The human output shows direction requests first, under `Needs your direction`, with the task reference, title, status, and question. Failures follow under `Failures`, with the task reference, title, status, and reason. An empty list says `No groups are asking for assistance.` The [tasks reference](/reference/tasks#direction-requests) defines the four kinds: `direction`, `failure`, `removal_failure`, and `observation`.
 
-JSON also returns `merges`: each open task of a review-and-merge Project, or with an incoming pull request, in ascending task id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, `pr_url`, `pr_branch`, `merge_status`, and `merge_reason`. The human output lists them under `Review and merge` with the task reference, title, status, merge status, and reason, and omits the section when the list is empty. [Merge on green](/reference/tasks#merge-on-green) defines the merge status.
+JSON also returns `merges`: each open task of a review-and-merge Project, or with an incoming pull request, in ascending task id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, `pr_url`, `pr_branch`, `merge_status`, and `merge_reason`. The human output lists them under `Review and merge` with the task reference, title, status, merge status, and reason, and omits the section when the list is empty. [Merge on green](/reference/tasks#execution-ownership) defines the merge status.
 
 `workspace_leases` lists each Instance with an active holder or queued waiter. Each entry names the Instance and task group, the holder kind, owner key, acquisition time, and optional thread or check id. Waiters appear in queue order with their kind, owner key, queue time, and optional thread or check id. The holder also reports `remote_uncertain` when a remote mutation has no confirmed result; human output names that retained uncertainty. Human output shows the same holder and queue. An empty list means no actor holds or waits for a workspace lease. Status only reads these records; it does not release a lease or reconcile an actor.
 
@@ -116,7 +116,7 @@ orbit tasks:create [title] [--project=ID] [--brief=TEXT] [--status=STATUS] [--or
 | `--brief=TEXT` | prompt | Goal and acceptance. Pass a file with `--brief="$(cat brief.md)"`. |
 | `--status=STATUS` | `backlog` | `backlog` or `todo`. `todo` needs at least one subtask, each with deliverables, and asks the scheduler to claim the task. |
 | `--subtasks=FILE` | none | JSON file with an ordered array of at most 50 objects, each with a string `title` and `brief` and an optional `deliverables` array. |
-| `--orchestration=MODE` | `tick` | `tick` or `external`. Create fixes the mode for the group. External groups skip the task engine and cannot declare topologies or use review and merge. An unknown mode returns `tasks.orchestration_invalid`. |
+| `--orchestration=MODE` | `external` | Swamp executes task groups. The only supported mode is `external`; any other value returns `tasks.orchestration_invalid`. Topologies are not supported. |
 | `--preview` | off | Keep the task's sandbox running during review. See [Request a preview](/reference/compute-drivers#request-a-preview). |
 
 
@@ -139,7 +139,7 @@ The CLI does not prompt for the status, the subtasks, or the notification. After
 
 ## orbit tasks:update
 
-Change a task's title, brief, or status. Title and brief change only while the task is in `backlog`. The status moves between `backlog` and `todo`. A move to `todo` asks the scheduler to claim a tick group. External groups also move among `running`, `reviewing`, `settling`, and `waiting_for_review`, without running work. See [external status rules](/reference/tasks#tasks-and-subtasks).
+Change a task's title, brief, or status. Title and brief change only while the task is in `backlog`. The status moves between `backlog` and `todo`. A move to `todo` records work for Swamp. Groups also move among `running`, `reviewing`, `settling`, and `waiting_for_review`, without running work. See [external status rules](/reference/tasks#tasks-and-subtasks).
 
 ```bash
 orbit tasks:update [group] [--title=TEXT] [--brief=TEXT] [--status=STATUS] [--preview | --no-preview] [--json]
@@ -199,7 +199,7 @@ In a terminal, the task list shows only `settling` tasks. Pass the task id to co
 
 ## orbit tasks:subtask:create
 
-Append one subtask to a task at the next position, with status `todo`. This works in every task status except `completed`, `failed`, and `cancelled`. Outside `backlog`, the subtask needs deliverables. When the task is `settling` or `waiting_for_review` with an open pull request, or with no pull request, the next tick returns the task to `running` and starts this subtask. Another assistance cause keeps the task `settling`. The [tasks reference](/reference/tasks#fix-a-settling-pull-request) owns that transition.
+Append one subtask to a task at the next position, with status `todo`. This works in every task status except `completed`, `failed`, and `cancelled`. Outside `backlog`, the subtask needs deliverables. When the task is `settling` or `waiting_for_review` with an open pull request, or with no pull request, the next tick returns the task to `running` and starts this subtask. Another assistance cause keeps the task `settling`. The [tasks reference](/reference/tasks#execution-ownership) owns that transition.
 
 ```bash
 orbit tasks:subtask:create [group] [title] [--brief=TEXT] [--deliverables=FILE] [--topology=JSON] [--json]
@@ -266,7 +266,6 @@ In a terminal, the task list shows only `backlog` tasks. The question names the 
 
 For an external group, cancel a `todo`, `running`, or `reviewing` subtask. Orbit interrupts active work and marks it `cancelled`, without starting another subtask or settling the group. Pass both IDs to cancel a reviewing subtask.
 
-For a tick group, cancel a `todo` or `running` subtask. A `todo` subtask can be cancelled in a `todo`, `running`, `reviewing`, `settling`, or `waiting_for_review` task; cancellation marks it `cancelled`, starts nothing, and does not ask for assistance. If it was the last open subtask, the task settles as after a completed subtask. Cancelling a running subtask stops its implementer and running check, keeps the task and its Instance, and starts the next `todo` subtask. The task settles only when no open subtask remains. The [tasks reference](/reference/tasks#cancel-a-subtask) owns these effects.
 
 ```bash
 orbit tasks:subtask:cancel [group] [subtask] [--yes] [--json]
@@ -299,7 +298,7 @@ orbit tasks:group:comment:create [group] [--type=TYPE] [--body=TEXT] [--author=N
 | `--author=NAME` | local login name | Author, at most 255 characters. Required explicitly with `--json` or `-n`. |
 | `--json` | off | Return the comment and request ID as JSON. |
 
-A terminal prompts for missing inputs. A `--json` or `-n` call requires them before any network call. There is no agent-thread or receipt option. `tasks.not_orchestrated` refuses a tick group, `tasks.group_closed` refuses an ended group, and `tasks.assistance_subtask_open` refuses a group with an open child. Read the full current request before answering; there is no versioned matching-resolution protocol. Repeating a write may add another audit comment even when assistance state is unchanged.
+A terminal prompts for missing inputs. A `--json` or `-n` call requires them before any network call. There is no agent-thread or receipt option. `tasks.group_closed` refuses an ended group, and `tasks.assistance_subtask_open` refuses a group with an open child. Read the full current request before answering; there is no versioned matching-resolution protocol. Repeating a write may add another audit comment even when assistance state is unchanged.
 
 ## orbit tasks:group:comment:list
 
@@ -373,7 +372,7 @@ orbit tasks:question:close [question] [--status=STATUS] [--reason=TEXT] [--json]
 
 In a terminal the command prompts for each omitted input. A noninteractive call fails before the request with `tasks.question_required`, `tasks.status_required`, or `tasks.reason_required`, and an invalid value fails with `tasks.question_invalid`, `tasks.status_invalid`, or `tasks.reason_invalid`. A question that is already `answered` or `superseded` fails with `tasks.question_closed`, unless the status and the reason are the same as before. Then the command returns the question unchanged. The command needs Gateway access.
 
-Human output prints the closed question as `tasks:question:list` does. JSON returns the question record. [Close a question](/reference/tasks#close-a-question) describes what closing changes and what it leaves alone.
+Human output prints the closed question as `tasks:question:list` does. JSON returns the question record. [Close a question](/reference/tasks#execution-ownership) describes what closing changes and what it leaves alone.
 
 ## orbit tasks:agents
 

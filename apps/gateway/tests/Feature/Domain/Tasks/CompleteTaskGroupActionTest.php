@@ -8,23 +8,15 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentObservation;
-use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\AssistanceKind;
-use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCheckKind;
-use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskScheduler;
-use App\Domain\Tasks\TaskSessionActor;
 use App\Domain\Tasks\TaskStatus;
-use App\Domain\Tasks\TaskThreadObservation;
-use App\Domain\Tasks\TaskThreadRole;
-use App\Domain\Tasks\TaskTurnReceipts;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
@@ -37,7 +29,6 @@ use Illuminate\Support\Facades\Http;
 use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeTaskCheckRunner;
-use Tests\Support\FakeTaskTurnReceipts;
 
 function complete_group(TaskGroupStatus $status = TaskGroupStatus::Settling): Task
 {
@@ -331,201 +322,6 @@ it('complete ended still refuses other running or reviewing groups', function (T
     'wrong repository' => ['merged', 'https://github.com/another/orbit/pull/544'],
 ]);
 
-it('complete ended resumes a committed authorization without GitHub after a stop or transaction failure', function (TaskGroupStatus $status, string $failure): void {
-    app(TaskExtensionState::class)->enable();
-    complete_ended_read('merged');
-    $group = complete_group($status);
-    $group->update(['watched_pr_url' => 'https://github.com/hardimpactdev/orbit/pull/544']);
-    $task = Task::query()->create([
-        'parent_id' => $group->id, 'position' => 1, 'title' => 'Open', 'brief' => 'Cancel atomically.',
-        'status' => TaskStatus::Running,
-    ]);
-    $thread = AgentThread::query()->create([
-        'task_group_id' => $group->id, 'task_id' => $task->id, 'node_id' => $group->taskable->node_id,
-        'driver' => 'fake', 'runtime_key' => 'node:'.$group->taskable->node_id, 'external_id' => 'recover', 'role' => 'implementer',
-    ]);
-    $task->update(['implementer_agent_thread_id' => $thread->id]);
-    $check = TaskCheck::query()->create([
-        'task_id' => $task->id, 'kind' => TaskCheckKind::Baseline, 'status' => TaskCheckStatus::Running,
-        'pid' => 4100, 'process_started' => 'Wed Sep 23 12:00:00 2026', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40), 'started_at' => now(),
-    ]);
-    $driver = new FakeAgentDriver('fake');
-    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'stopped-for-completion');
-    $driver->supportsInterruption = true;
-    $driver->failNextInterrupt = $failure === 'interrupt';
-    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
-    $checks = new FakeTaskCheckRunner([TaskCheckReading::running()]);
-    $checks->failNextCancel = $failure === 'check';
-    app()->instance(TaskCheckRunner::class, $checks);
-    $receipts = new FakeTaskTurnReceipts;
-    app()->instance(TaskTurnReceipts::class, $receipts);
-    $spawner = new class implements AgentSpawner
-    {
-        public int $starts = 0;
-
-        public function reserveReviewer(Task $task): ?int
-        {
-
-            return null;
-
-        }
-
-        public function spawnReviewer(Task $task): ?int
-        {
-            $this->starts++;
-
-            return null;
-        }
-
-        public function spawnImplementer(Task $task): ?int
-        {
-            $this->starts++;
-
-            return null;
-        }
-
-        public function requestReview(Task $task): void
-        {
-            $this->starts++;
-        }
-    };
-    app()->instance(AgentSpawner::class, $spawner);
-    $stale = $task->fresh(['parent']);
-    $driver->duringInterrupt = static function () use ($stale): void {
-        // An already-running tick holds this pre-authorization model and tries to start review.
-        app(TaskScheduler::class)->settleImplementer($stale);
-    };
-    $failUpdate = $failure === 'transaction';
-    Task::updating(static function (Task $updating) use ($group, &$failUpdate): void {
-        if ($failUpdate && $updating->id === $group->id && $updating->status === TaskGroupStatus::Completed) {
-            $failUpdate = false;
-            throw new RuntimeException('Injected parent update failure.');
-        }
-    });
-    $instanceId = $group->taskable_id;
-    app()->instance(InstanceRemover::class, new class implements InstanceRemover
-    {
-        public function execute(Instance $instance, bool $force): InstanceRemoval
-        {
-            $instance->delete();
-
-            return new InstanceRemoval;
-        }
-    });
-
-    expect(fn () => app(CompleteTaskGroupAction::class)->execute($group))->toThrow($failure === 'transaction' ? RuntimeException::class : ResourceOperationException::class);
-
-    expect($group->fresh()->watched_pr_completion)->toBe('merged')
-        ->and($group->fresh()->status)->toBe($status)
-        ->and($task->fresh()->status)->toBe(TaskStatus::Running)
-        ->and($task->fresh()->settled_at)->toBeNull()
-        ->and($check->fresh()->status)->toBe(TaskCheckStatus::Running)
-        ->and(Instance::query()->find($instanceId))->not->toBeNull()
-        ->and($spawner->starts)->toBe(0)
-        ->and($receipts->prepared)->toBe([])
-        ->and($checks->starts)->toBe(0);
-    Http::assertSentCount(3);
-    Http::fake();
-
-    app(TaskScheduler::class)->tick();
-
-    expect($group->fresh()->status)->toBe(TaskGroupStatus::Completed)
-        ->and($group->fresh()->taskable_id)->toBeNull()
-        ->and($task->fresh()->status)->toBe(TaskStatus::Cancelled)
-        ->and($check->fresh()->status)->toBe(TaskCheckStatus::Cancelled)
-        ->and(Instance::query()->find($instanceId))->toBeNull();
-    Http::assertNothingSent();
-})->with([TaskGroupStatus::Running, TaskGroupStatus::Reviewing])->with(['interrupt', 'check', 'transaction']);
-
-it('complete ended holds stale transitions and start or send boundaries during interrupt without an assistance reason', function (TaskGroupStatus $status, bool $fail): void {
-    app(TaskExtensionState::class)->enable();
-    complete_ended_read('merged');
-    $group = complete_group($status);
-    $group->update(['watched_pr_url' => 'https://github.com/hardimpactdev/orbit/pull/544', 'implementer_agent_driver' => 'fake', 'reviewer_agent_driver' => 'fake']);
-    $taskStatus = $status === TaskGroupStatus::Running ? TaskStatus::Running : TaskStatus::Reviewing;
-    $task = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Acting', 'brief' => 'Stop.', 'status' => $taskStatus]);
-    $todo = Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Queued', 'brief' => 'Never start.', 'status' => TaskStatus::Todo]);
-    $role = $taskStatus === TaskStatus::Running ? TaskThreadRole::Implementer : TaskThreadRole::Reviewer;
-    $thread = AgentThread::query()->create([
-        'task_group_id' => $group->id, 'task_id' => $task->id, 'node_id' => $group->taskable->node_id,
-        'driver' => 'fake', 'runtime_key' => 'node:'.$group->taskable->node_id, 'external_id' => 'acting', 'role' => $role->value,
-    ]);
-    $role === TaskThreadRole::Implementer
-        ? $task->update(['implementer_agent_thread_id' => $thread->id])
-        : $group->update(['reviewer_agent_thread_id' => $thread->id]);
-    $check = TaskCheck::query()->create([
-        'task_id' => $task->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Running,
-        'pid' => 4100, 'process_started' => 'Wed Sep 23 12:00:00 2026', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40), 'started_at' => now(),
-    ]);
-    $driver = new FakeAgentDriver('fake');
-    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'stopped-for-completion');
-    $driver->supportsInterruption = true;
-    $driver->failNextInterrupt = $fail;
-    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
-    $checks = new FakeTaskCheckRunner($fail ? [TaskCheckReading::running()] : null);
-    app()->instance(TaskCheckRunner::class, $checks);
-    $receipts = new FakeTaskTurnReceipts;
-    app()->instance(TaskTurnReceipts::class, $receipts);
-    $instanceId = $group->taskable_id;
-    app()->instance(InstanceRemover::class, new class implements InstanceRemover
-    {
-        public function execute(Instance $instance, bool $force): InstanceRemoval
-        {
-            $instance->delete();
-
-            return new InstanceRemoval;
-        }
-    });
-    $stale = $task->fresh(['parent']);
-    $queued = $todo->fresh(['parent']);
-    $observed = new TaskThreadObservation($thread->id, $role, 'done', true, null, null, false, null, null);
-    $driver->duringInterrupt = static function () use ($stale, $queued, $observed, $status): void {
-        $scheduler = app(TaskScheduler::class);
-        $scheduler->settleImplementer($stale);
-        $scheduler->acceptReview($stale);
-        $scheduler->startTask($queued);
-        expect($stale->parent->fresh()->status)->toBe($status)
-            ->and($stale->fresh()->status)->toBe($stale->status)
-            ->and($queued->fresh()->status)->toBe(TaskStatus::Todo);
-        // These are real admission boundaries, not a fake spawner that ignores the parent.
-        $spawner = app(TaskAgentSpawner::class);
-        expect($spawner->reserveReviewer($stale))->toBeNull()
-            ->and($spawner->spawnReviewer($stale))->toBeNull()
-            ->and($spawner->reserveImplementer($queued))->toBeNull()
-            ->and($spawner->spawnImplementer($queued))->toBeNull();
-        $spawner->requestReview($stale);
-        $actor = app(TaskSessionActor::class);
-        $actor->remindRubric($stale->parent, $observed, 'Start another turn.');
-        $actor->relayReviewBody($stale->parent, $observed, 'Findings.');
-    };
-
-    if ($fail) {
-        expect(fn () => app(CompleteTaskGroupAction::class)->execute($group))->toThrow(ResourceOperationException::class);
-        expect($group->fresh()->status)->toBe($status)
-            ->and($group->fresh()->watched_pr_completion)->toBe('merged')
-            ->and($group->fresh()->assistance_reason)->toBeNull()
-            ->and($task->fresh()->status)->toBe($taskStatus)
-            ->and($check->fresh()->status)->toBe(TaskCheckStatus::Running)
-            ->and(Instance::query()->find($instanceId))->not->toBeNull();
-        Http::fake();
-        app(TaskScheduler::class)->tick();
-        Http::assertNothingSent();
-    } else {
-        app(CompleteTaskGroupAction::class)->execute($group);
-        Http::assertSentCount(3);
-    }
-
-    expect($group->fresh()->status)->toBe(TaskGroupStatus::Completed)
-        ->and($task->fresh()->status)->toBe(TaskStatus::Cancelled)
-        ->and($todo->fresh()->status)->toBe(TaskStatus::Cancelled)
-        ->and($check->fresh()->status)->toBe(TaskCheckStatus::Cancelled)
-        ->and($checks->starts)->toBe(0)
-        ->and($receipts->prepared)->toBe([])
-        ->and(AgentThread::query()->where('task_group_id', $group->id)->count())->toBe(1)
-        ->and(array_column($driver->calls, 'operation'))->toBe($fail ? ['interrupt', 'interrupt'] : ['interrupt'])
-        ->and(Instance::query()->find($instanceId))->toBeNull();
-})->with([TaskGroupStatus::Running, TaskGroupStatus::Reviewing])->with([false, true]);
-
 it('complete ended revalidates and stops a replacement reviewer and check before workspace removal', function (bool $fail): void {
     app(TaskExtensionState::class)->enable();
     complete_ended_read('merged');
@@ -601,87 +397,6 @@ it('complete ended revalidates and stops a replacement reviewer and check before
         Http::assertNothingSent();
     }
 })->with([false, true]);
-
-it('complete ended refuses an interrupted baseline start and retries without GitHub once its identity is recorded', function (int $pid, string $started, string $resume): void {
-    app(TaskExtensionState::class)->enable();
-    complete_ended_read('merged');
-    $group = complete_group(TaskGroupStatus::Running);
-    $group->update(['watched_pr_url' => 'https://github.com/hardimpactdev/orbit/pull/544']);
-    $instanceId = $group->taskable_id;
-    $this->markAsGateway($group->taskable->node);
-    $this->withServerVariables(['REMOTE_ADDR' => $group->taskable->node->wireguard_ip]);
-    $running = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Baseline', 'brief' => 'A remote check may still run.', 'status' => TaskStatus::Running]);
-    $todo = Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Queued', 'brief' => 'Keep open until completion commits.', 'status' => TaskStatus::Todo]);
-    $check = TaskCheck::query()->create([
-        'task_id' => $running->id, 'kind' => TaskCheckKind::Baseline, 'status' => TaskCheckStatus::Running,
-        'pid' => $pid, 'process_started' => $started, 'head_before' => '', 'tree_before' => '',
-        'started_at' => now()->subSeconds(TaskScheduler::BASELINE_START_LIMIT_SECONDS + 1),
-    ]);
-    $checks = new FakeTaskCheckRunner($resume === 'tick' ? [TaskCheckReading::running()] : null);
-    app()->instance(TaskCheckRunner::class, $checks);
-    $remover = new class implements InstanceRemover
-    {
-        public int $calls = 0;
-
-        public function execute(Instance $instance, bool $force): InstanceRemoval
-        {
-            $this->calls++;
-            $instance->delete();
-
-            return new InstanceRemoval;
-        }
-    };
-    app()->instance(InstanceRemover::class, $remover);
-
-    $this->postJson("/api/v1/task-groups/{$group->id}/complete")
-        ->assertStatus(502)->assertJsonPath('error.code', 'tasks.subtask_interrupt_failed');
-
-    expect($group->fresh()->watched_pr_completion)->toBe('merged')
-        ->and($group->fresh()->status)->toBe(TaskGroupStatus::Running)
-        ->and($running->fresh()->status)->toBe(TaskStatus::Running)
-        ->and($todo->fresh()->status)->toBe(TaskStatus::Todo)
-        ->and($check->fresh()->status)->toBe(TaskCheckStatus::Running)
-        ->and($check->fresh()->finished_at)->toBeNull()
-        ->and($checks->cancels)->toBe(0)
-        ->and($checks->starts)->toBe(0)
-        ->and($remover->calls)->toBe(0)
-        ->and(Instance::query()->find($instanceId))->not->toBeNull();
-    Http::assertSentCount(3);
-    Http::fake();
-
-    // An unreconciled retry must remain fail-closed and use the committed authorization.
-    $this->postJson("/api/v1/task-groups/{$group->id}/complete")
-        ->assertStatus(502)->assertJsonPath('error.code', 'tasks.subtask_interrupt_failed');
-    expect($checks->cancels)->toBe(0)
-        ->and($remover->calls)->toBe(0)
-        ->and($check->fresh()->status)->toBe(TaskCheckStatus::Running);
-    Http::assertNothingSent();
-
-    // Represent reconciliation of the remote start result, not a new check or a new GitHub read.
-    $check->update(['pid' => 4100, 'process_started' => 'Wed Sep 23 12:00:00 2026']);
-    if ($resume === 'manual') {
-        $this->postJson("/api/v1/task-groups/{$group->id}/complete")
-            ->assertOk()->assertJsonPath('data.status', 'completed')->assertJsonPath('data.taskable_id', null);
-    } else {
-        app(TaskScheduler::class)->tick();
-    }
-
-    expect($group->fresh()->status)->toBe(TaskGroupStatus::Completed)
-        ->and($group->fresh()->taskable_id)->toBeNull()
-        ->and($running->fresh()->status)->toBe(TaskStatus::Cancelled)
-        ->and($todo->fresh()->status)->toBe(TaskStatus::Cancelled)
-        ->and($check->fresh()->status)->toBe(TaskCheckStatus::Cancelled)
-        ->and($check->fresh()->finished_at)->not->toBeNull()
-        ->and($checks->cancels)->toBe(1)
-        ->and($checks->starts)->toBe(0)
-        ->and($remover->calls)->toBe(1)
-        ->and(Instance::query()->find($instanceId))->toBeNull();
-    Http::assertNothingSent();
-})->with([
-    'unrecorded start result' => [0, ''],
-    'missing PID' => [0, 'Wed Sep 23 12:00:00 2026'],
-    'missing start time' => [4100, ''],
-])->with(['manual', 'tick']);
 
 it('complete ended retries workspace removal after the completion commit without GitHub', function (): void {
     app(TaskExtensionState::class)->enable();

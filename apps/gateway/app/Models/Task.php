@@ -411,7 +411,6 @@ final class Task extends Model
             ->where(static fn (Builder $eligible) => $eligible
                 ->whereIn('status', TaskGroupStatus::endedStatuses())
                 ->orWhere(static fn (Builder $published) => $published
-                    ->where('orchestration', TaskOrchestration::Tick)
                     ->whereNotNull('pr_url')->where('pr_url', '!=', '')->removalFailure()
                     ->whereDoesntHave('tasks', static fn (Builder $subtasks) => $subtasks->whereIn('status', [TaskStatus::Todo, TaskStatus::Running, TaskStatus::Reviewing]))));
     }
@@ -646,7 +645,7 @@ final class Task extends Model
     {
         if ($this->parentKey() === null) {
             if (! $this->exists) {
-                $this->fillIfMissing(['orchestration' => TaskOrchestration::Tick->value]);
+                $this->fillIfMissing(['orchestration' => TaskOrchestration::External->value]);
             }
             $this->fillIfMissing([
                 'status' => TaskGroupStatus::Backlog->value,
