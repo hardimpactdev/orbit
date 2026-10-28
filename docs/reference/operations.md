@@ -363,6 +363,10 @@ A kind declared with `executor: swamp` is admitted through the same Operation st
 
 Only the configured Services peer (`dependency_detection.services_node_id`) can use `/api/v1/operation-executor`. Its primitives claim one queued kind with a renewable lease, record named steps and keyed log lines, invoke a named RemoteProgram or agent command on a Node, and complete the Operation. A worker uses one stable claim key per workflow run. An expired claim can be reclaimed; every later write must present the current lease. A lost response is retried with the same key and input. Families must use convergent Node commands or reconcile an uncertain effect before advancing.
 
+### Protected inputs
+
+A run may declare named secret sources for parameter paths. Operation input and Swamp carry only an owning-record reference; the Gateway verifies ownership before hydrating it for the existing transport. Secrets never enter Operation records or responses. Each family supplies tagged resolvers for protected values and redaction strings. Script resolvers verify an admitted SHA-256 digest. Optional family execution hooks derive public context and exact inputs, recheck policy before execution, and project redacted receipts in the database. Nonresumable invocations refuse an uncertain retry with `operation.execution_uncertain`.
+
 ### Execution contracts
 
 Each kind declares a closed list of allowed transport/name pairs, typed input bindings to admitted intent, a successful step/result completion contract, and scalar result fields that may be retained. The Gateway validates agent input against the exported schema; RemotePrograms require an explicit input schema. Run targets come only from the Operation, and a supplied target or unlisted command receives `operation.execution_forbidden`. Successful completion requires a recorded successful Node run and matching step, or returns `operation.completion_unproven`.

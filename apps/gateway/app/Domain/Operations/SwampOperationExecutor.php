@@ -4,12 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Operations;
 
-use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
-use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
-use App\Models\Node;
 use App\Models\Operation;
 use App\Models\OperationStep;
 use App\Support\ValidatedData;
@@ -28,7 +24,7 @@ final readonly class SwampOperationExecutor
 {
     public const int LeaseSeconds = 120;
 
-    public function __construct(private OperationStore $store, private OperationExecutors $executors, private OperationExecutionContract $contract) {}
+    public function __construct(private OperationStore $store, private OperationExecutors $executors, private OperationExecutionContract $contract, private OperationSecrets $secrets, private OperationTransports $transports) {}
 
     public function claim(string $kind, string $worker): ?Operation
     {
@@ -75,8 +71,8 @@ final readonly class SwampOperationExecutor
             $state = $operation->state ?? [];
             $fingerprint = hash('sha256', json_encode(array_diff_key($data, ['worker' => true]), JSON_THROW_ON_ERROR));
             $data['result'] = $this->contract->result($operation, $data['result'] ?? []);
-            $data['output'] = $this->contract->text($data['output'] ?? '');
-            $data['error_code'] = isset($data['error_code']) ? $this->contract->text($data['error_code']) : null;
+            $data['output'] = $this->contract->text($data['output'] ?? '', $operation);
+            $data['error_code'] = isset($data['error_code']) ? $this->contract->text($data['error_code'], $operation) : null;
             if ($data['status'] === 'succeeded') {
                 $this->contract->assertStep($operation, $data['name'], $data['result']);
             }
@@ -124,7 +120,7 @@ final readonly class SwampOperationExecutor
         return DB::transaction(function () use ($operation, $data): Operation {
             $operation->refresh();
             $receipt = ['status' => $data['status'], 'result' => $this->contract->result($operation, $data['result'] ?? []),
-                'error_code' => isset($data['error_code']) ? $this->contract->text($data['error_code']) : null];
+                'error_code' => isset($data['error_code']) ? $this->contract->text($data['error_code'], $operation) : null];
             if ($operation->status->terminal()) {
                 if ($operation->worker !== $data['worker'] || ($operation->state['executor_completion'] ?? null) !== $receipt) {
                     throw new ResourceOperationException('operation.completion_conflict', 'The Operation has another completion receipt.', 409);
@@ -145,6 +141,7 @@ final readonly class SwampOperationExecutor
                     'cancelled' => OperationOutcome::cancelled($receipt['result']),
                     default => OperationOutcome::failed(ValidatedData::string($receipt['error_code']), $receipt['result']),
                 };
+                $this->contract->execution($operation)?->assertCompletion($operation, $outcome);
                 $this->executors->completion($operation->kind)?->complete($operation, $outcome);
                 $this->store->change($operation, [
                     'status' => $outcome->status, 'result' => $outcome->result, 'error_code' => $outcome->errorCode,
@@ -182,8 +179,11 @@ final readonly class SwampOperationExecutor
     {
         $fingerprint = hash('sha256', json_encode(array_diff_key($data, ['worker' => true]), JSON_THROW_ON_ERROR));
         $receipt = null;
-        $this->owned($operation, $data['worker'], function (Operation $operation) use ($data, $fingerprint, &$receipt): void {
-            $this->contract->authorizeRun($operation, $data);
+        $spec = null;
+        $references = [];
+        $this->owned($operation, $data['worker'], function (Operation $operation) use ($data, $fingerprint, &$receipt, &$spec, &$references): void {
+            $spec = $this->contract->authorizeRun($operation, $data);
+            $references = $this->secrets->references($operation, $data['input'], $spec['secrets'] ?? []);
             $runs = ValidatedData::object($operation->state['executor_runs'] ?? []);
             $value = $runs[$data['key']] ?? null;
             $receipt = $value === null ? null : ValidatedData::object($value);
@@ -191,37 +191,65 @@ final readonly class SwampOperationExecutor
                 throw new ResourceOperationException('operation.idempotency_conflict', 'The execution key has another payload.', 409);
             }
             if ($receipt === null) {
-                $runs[$data['key']] = ['fingerprint' => $fingerprint, 'transport' => $data['transport'], 'name' => $data['name'], 'result' => null];
+                $runs[$data['key']] = ['fingerprint' => $fingerprint, 'transport' => $data['transport'], 'name' => $data['name'], 'references' => $references, 'step' => $spec['step'] ?? null, 'started' => false, 'result' => null];
                 $this->store->change($operation, ['state' => [...($operation->state ?? []), 'executor_runs' => $runs]]);
             }
         });
         if ($receipt !== null && $receipt['result'] !== null) {
             return ValidatedData::object($receipt['result']);
         }
-        $node = Node::query()->whereKey($operation->node_id)->firstOrFail();
-        if ($data['transport'] === 'agent') {
-            $runner = app(AgentCommandRunner::class);
-            $invoke = static fn (): array => $runner->run($node, $data['name'], $data['input']);
+        if ($spec === null) {
+            throw new \LogicException('An invocation requires its authorized run contract.');
+        }
+        $result = null;
+        $values = $this->contract->redactions($operation);
+        if ($receipt !== null && ($receipt['started'] ?? false) === true && ! ($spec['resumable'] ?? true)) {
+            $result = ['error_code' => $spec['uncertain_error_code'] ?? 'operation.execution_uncertain'];
         } else {
-            $runner = app(RemoteProgramRunner::class);
-            $program = app(RemoteProgramCatalog::class)->program($data['name']);
-            $invoke = static function () use ($runner, $node, $program, $data): array {
-                $remote = $runner->run($node, $program, $data['input']);
-
-                return ['outcome' => $remote->outcome, 'data' => $remote->data, 'log' => $remote->log];
-            };
+            $this->owned($operation, $data['worker'], function (Operation $operation) use ($data): void {
+                if ($this->contract->cancellationAllowsRun($operation)) {
+                    $this->contract->execution($operation)?->beforeRun($operation, $data);
+                }
+            });
+            if (! $this->contract->cancellationAllowsRun($operation)) {
+                $result = ['error_code' => 'operation.cancelled'];
+            } else {
+                $hydrated = $this->secrets->hydrate($operation, $data['key'], $data['input'], $spec['secrets'] ?? []);
+                $values = [...$values, ...$hydrated['values']];
+                $input = $hydrated['input'];
+                $this->contract->validateHydratedInput($operation, $data, $spec, $input);
+                $transport = $this->transports->get($data['transport']);
+                $invoke = static fn (): array => $transport->run($operation, $data, $input);
+                $this->owned($operation, $data['worker'], function (Operation $operation) use ($data): void {
+                    if ($this->contract->cancellationAllowsRun($operation)) {
+                        $this->contract->execution($operation)?->beforeRun($operation, $data);
+                        $state = $operation->state ?? [];
+                        $runs = ValidatedData::object($state['executor_runs'] ?? []);
+                        $entry = ValidatedData::object($runs[$data['key']]);
+                        $runs[$data['key']] = [...$entry, 'started' => true];
+                        $this->store->change($operation, ['state' => [...$state, 'executor_runs' => $runs]]);
+                    }
+                });
+                try {
+                    $result = $this->contract->cancellationAllowsRun($operation) ? $invoke() : ['error_code' => 'operation.cancelled'];
+                } catch (AgentCommandRefused $exception) {
+                    $result = ['error_code' => $exception->errorCode];
+                } catch (ResourceOperationException $exception) {
+                    throw OperationSecrets::refusal($exception);
+                } catch (\Throwable) {
+                    // Do not report a transport exception carrying hydrated credentials.
+                    throw new ResourceOperationException('operation.execution_failed', 'The named invocation did not return a receipt.', 502);
+                }
+            }
         }
-        try {
-            $this->owned($operation, $data['worker'], static function (Operation $operation): void {});
-            $result = $operation->cancel_requested_at !== null ? ['error_code' => 'operation.cancelled'] : $invoke();
-        } catch (AgentCommandRefused $exception) {
-            $result = ['error_code' => $exception->errorCode];
-        }
-        $result = $this->contract->result($operation, $result);
-        $this->owned($operation, $data['worker'], function (Operation $operation) use ($data, $fingerprint, $result): void {
+        $result = ValidatedData::object($this->secrets->redact($result, $values));
+        $this->owned($operation, $data['worker'], function (Operation $operation) use ($data, $values, &$result): void {
+            $runs = ValidatedData::object($operation->state['executor_runs'] ?? []);
+            $result = $this->contract->execution($operation)?->received($operation, $data, $result) ?? $result;
+            $result = $this->contract->result($operation, $result, $values);
             $state = $operation->state ?? [];
-            $runs = ValidatedData::object($state['executor_runs'] ?? []);
-            $runs[$data['key']] = ['fingerprint' => $fingerprint, 'transport' => $data['transport'], 'name' => $data['name'], 'result' => $result];
+            $entry = ValidatedData::object($runs[$data['key']]);
+            $runs[$data['key']] = [...$entry, 'result' => $result];
             $state['executor_runs'] = $runs;
             $this->store->change($operation, ['state' => $state]);
         });

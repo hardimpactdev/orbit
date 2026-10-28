@@ -35,8 +35,20 @@ final class AgentSchemas
     /** @param  array<string, mixed>  $input */
     public static function assertInput(string $command, array $input): void
     {
-        $wire = json_decode(json_encode((object) AgentInvocation::wire($input)[0], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), flags: JSON_THROW_ON_ERROR);
+        $wire = self::wireInput($input);
         self::assert($command, 'input', $wire);
+    }
+
+    /** @param array<string, mixed> $input */
+    public static function wireInput(array $input): mixed
+    {
+        return json_decode(json_encode((object) AgentInvocation::wire($input)[0], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), flags: JSON_THROW_ON_ERROR);
+    }
+
+    /** @return array<string, mixed>|bool */
+    public static function inputSchema(string $command): array|bool
+    {
+        return self::commands()[$command]['input'] ?? throw new LogicException('The command has no input schema.');
     }
 
     public static function assertOutput(string $command, mixed $output): void

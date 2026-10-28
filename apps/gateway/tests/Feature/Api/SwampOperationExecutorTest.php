@@ -163,7 +163,7 @@ it('retains a named invocation identity before an uncertain transport response',
     app()->instance(AgentCommandRunner::class, $runner);
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'firewall.allow', 'worker' => 'run-1'])->assertOk();
     $input = executorRunInput($id);
-    $this->postJson("/api/v1/operation-executor/{$id}/run", $input)->assertStatus(500);
+    $this->postJson("/api/v1/operation-executor/{$id}/run", $input)->assertStatus(502)->assertJsonPath('error.code', 'operation.execution_failed');
     $this->postJson("/api/v1/operation-executor/{$id}/run", [...$input, 'input' => [...$input['input'], 'name' => 'different']])->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
 });
 
@@ -344,3 +344,20 @@ it('rechecks status and cancellation after preparing transport and before invoki
         $response->assertConflict()->assertJsonPath('error.code', 'operation.lease_lost');
     }
 })->with(['cancel_requested', 'terminal']);
+
+it('allows explicitly configured workers only on executor routes while preserving Gateway access', function (): void {
+    [, $id] = firewallAdmission($this);
+    $services = asExecutor($this);
+    $worker = executorNode('worker', '10.44.0.12');
+    config(['operation_executor.worker_node_ids' => [$worker->id]]);
+    $this->withServerVariables(['REMOTE_ADDR' => $worker->wireguard_ip]);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'firewall.allow', 'worker' => 'worker-12'])->assertForbidden();
+    $worker->accessibleNodes()->attach(Node::query()->where('name', 'gateway')->sole());
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'firewall.allow', 'worker' => 'worker-12'])->assertOk()->assertJsonPath('data.id', $id);
+    $this->postJson('/api/v1/projects/1/dependency-read-token')->assertForbidden();
+    $this->withServerVariables(['REMOTE_ADDR' => $services->wireguard_ip]);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'firewall.deny', 'worker' => 'services'])->assertOk();
+    config(['operation_executor.worker_node_ids' => []]);
+    $this->withServerVariables(['REMOTE_ADDR' => $worker->wireguard_ip]);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'firewall.allow', 'worker' => 'worker-12'])->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
+});

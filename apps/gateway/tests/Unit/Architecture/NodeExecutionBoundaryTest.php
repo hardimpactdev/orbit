@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\Operations\OperationTransport;
+use App\Domain\Operations\OperationTransports;
 use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Infrastructure\AgentCommands\AgentInvocation;
 use App\Infrastructure\AgentCommands\AgentTransport;
@@ -163,8 +165,6 @@ it('keeps Node execution inside the agent transports across core and extensions'
         'app/Infrastructure/Nodes/Roles/GatewayRoleBaseline.php',
         'app/Infrastructure/Doctor/NativeRoleStateInspector.php',
         'app/Infrastructure/WireGuard/NativeGatewayVpnConverger.php',
-        // The Services-only Operation primitive invokes names from the existing closed program catalog.
-        'app/Domain/Operations/SwampOperationExecutor.php',
         // Existing Tasks workspace execution and its journal are excluded from this port.
         'app/Infrastructure/AppDev/DevelopmentSshExecutor.php',
         'app/Infrastructure/RemotePrograms/SshProgramRunner.php',
@@ -187,6 +187,12 @@ it('keeps Node execution inside the agent transports across core and extensions'
     $violations = [];
     $unusedExceptions = array_fill_keys($allowed, true);
     $gateway = dirname(__DIR__, 3);
+    $transportPaths = [];
+    foreach (OperationTransports::definitions() as $class) {
+        $reflection = new ReflectionClass($class);
+        expect($reflection->implementsInterface(OperationTransport::class))->toBeTrue();
+        $transportPaths[] = substr($reflection->getFileName(), strlen($gateway) + 1);
+    }
     foreach (['app', 'routes', 'bootstrap', 'config', 'database', 'extensions'] as $root) {
         $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($gateway.'/'.$root, FilesystemIterator::SKIP_DOTS));
         foreach ($files as $file) {
@@ -198,6 +204,9 @@ it('keeps Node execution inside the agent transports across core and extensions'
                 continue;
             }
             $dependencies = node_execution_dependencies(file_get_contents($file->getPathname()));
+            if (in_array($path, $transportPaths, true)) {
+                continue;
+            }
             if (in_array($path, $allowed, true)) {
                 if ($dependencies !== []) {
                     unset($unusedExceptions[$path]);

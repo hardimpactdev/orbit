@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Operations\SwampOperationExecutor;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
@@ -62,6 +63,7 @@ final class OperationExecutorController extends Controller
             'worker' => $operation->worker,
             'lease_seconds' => SwampOperationExecutor::LeaseSeconds,
             'step_results' => $operation->state['steps'] ?? [],
+            'execution_context' => app(OperationExecutionContract::class)->context($operation),
         ];
     }
 }
