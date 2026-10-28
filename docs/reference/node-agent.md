@@ -569,6 +569,8 @@ Run the [agent checks](/reference/bun-and-rust-projects#node-agent) as a normal 
 
 Tests that create executable tools use the shared `tests/support/executable.rs` helper. It writes a source file, then waits for a separate `install` process to copy it to the executable path. Only that child opens the executable inode for writing. Parallel test forks can inherit a writable descriptor for the source, but the source is never executed. Closing, syncing, or renaming a file written by the test process would leave an inherited descriptor open until the other child executes or exits, which can cause Linux `ETXTBSY` errors.
 
+Recipe interruption tests run signal handlers in an isolated process. The supervised fixture sends a Unix datagram after execution, including its process group. The test receives that event before it signals the worker and supervisor groups. Readiness has its own timeout and fails before any termination assertion. A separate test delivers each supported signal before execution and checks that no command starts.
+
 ## Releases
 
 The agent ships in the one public release that each green `main` commit gets, beside the CLI ([CLI binaries: Published releases](/reference/cli-binaries#published-releases)). A push to `main` builds the [delivery](#delivery) in CI from that exact source and uploads it as the `agent-delivery` artifact. After main's required checks pass, the Orbit CLI Release workflow downloads that artifact from the CI run, checks each binary against its tested digest, and publishes it with the CLI binaries. It never rebuilds the agent. It publishes with the workflow's own token; there is no other credential.

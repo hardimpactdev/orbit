@@ -300,11 +300,28 @@ fn install_and_audit_failures_remove_restart_suppression_and_expose_bounded_diag
 }
 
 #[test]
-#[ignore]
+#[ignore = "subprocess fixture reports readiness only after exec"]
+#[cfg(target_os = "linux")]
+fn interruption_command_helper() {
+    use std::os::unix::net::UnixDatagram;
+    let socket = UnixDatagram::unbound().unwrap();
+    socket
+        .connect(std::env::var_os("ORBIT_RECIPE_INTERRUPT_SOCKET").unwrap())
+        .unwrap();
+    // GNU timeout establishes its process group before executing this fixture.
+    let group = rustix::process::getpgrp().as_raw_pid();
+    socket.send(&group.to_ne_bytes()).unwrap();
+    loop {
+        // SAFETY: pause waits for a signal; SIGTERM has its default terminating action.
+        unsafe { libc::pause() };
+    }
+}
+
+#[test]
+#[ignore = "subprocess helper installs process-wide signal handlers"]
+#[cfg(target_os = "linux")]
 fn interruption_helper() {
-    let Some(root) = std::env::var_os("ORBIT_RECIPE_INTERRUPT_TEST") else {
-        return;
-    };
+    let root = std::env::var_os("ORBIT_RECIPE_INTERRUPT_TEST").unwrap();
     let files = Files {
         root: root.into(),
         uid: rustix::process::getuid().as_raw(),
@@ -312,70 +329,121 @@ fn interruption_helper() {
     };
     let _signals = interruption::Guard::install().unwrap();
     let _policy = Policy::install(&files).unwrap();
-    fs::write(files.root.join("ready"), "").unwrap();
-    let context = Context::new(Platform::Linux, Instant::now() + Duration::from_secs(10));
+    let context = Context::new(Platform::Linux, Instant::now() + Duration::from_secs(60));
     let mut host = Native(&context);
-    let error =
-        super::super::run(&mut host, &Invocation::new(&["/bin/sleep", "5"]), true).unwrap_err();
-    assert_eq!(error.stage, "interrupted");
+    let binary = std::env::current_exe().unwrap();
+    let call = Invocation::new(&[
+        binary.to_str().unwrap(),
+        "--ignored",
+        "--exact",
+        "commands::recipe::operations::tests::interruption_command_helper",
+    ]);
+    let error = super::super::run(&mut host, &call, true).unwrap_err();
+    assert_eq!(error.stage, "interrupted", "{error:?}");
 }
+
+#[test]
+#[ignore = "subprocess helper installs process-wide signal handlers"]
+fn interruption_before_execution_helper() {
+    for signal in [libc::SIGHUP, libc::SIGINT, libc::SIGTERM] {
+        let (_work, files, _account, _input, mut host) = fixture();
+        let _signals = interruption::Guard::install().unwrap();
+        let policy = Policy::install(&files).unwrap();
+        // SAFETY: this isolated process has installed the signal guard.
+        assert_eq!(unsafe { libc::raise(signal) }, 0);
+        // Fake rejects this invocation if run fails to check interruption first.
+        let error =
+            super::super::run(&mut host, &Invocation::new(&["must-not-start"]), true).unwrap_err();
+        assert_eq!(error.stage, "interrupted", "signal {signal}: {error:?}");
+        assert!(host.calls.is_empty());
+        drop(policy);
+        assert!(!files.path("/usr/sbin/policy-rc.d").exists());
+    }
+}
+
+#[test]
+fn interruption_before_execution_starts_no_command_and_unwinds_the_restart_policy() {
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--ignored",
+            "--exact",
+            "commands::recipe::operations::tests::interruption_before_execution_helper",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 #[test]
 #[cfg(target_os = "linux")]
 fn service_termination_unwinds_the_temporary_package_restart_policy() {
-    use std::os::unix::process::CommandExt;
+    use std::os::unix::{net::UnixDatagram, process::CommandExt};
+
+    struct Worker {
+        child: std::process::Child,
+        supervisor: Option<i32>,
+    }
+    impl Drop for Worker {
+        fn drop(&mut self) {
+            // Clean up owned processes even when readiness or a signal assertion fails.
+            // SAFETY: these process groups belong to this test's fixtures.
+            unsafe {
+                if let Some(group) = self.supervisor.take() {
+                    libc::kill(-group, libc::SIGKILL);
+                }
+                if self.child.try_wait().ok().flatten().is_none() {
+                    libc::kill(-(self.child.id() as i32), libc::SIGKILL);
+                }
+            }
+            let _ = self.child.wait();
+        }
+    }
+
     let work = WorkDir::new().unwrap();
     fs::create_dir_all(work.0.join("usr/sbin")).unwrap();
-    let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+    let path = work.0.join("ready.sock");
+    let ready = UnixDatagram::bind(&path).unwrap();
+    ready
+        .set_read_timeout(Some(Duration::from_secs(30)))
+        .unwrap();
+    let child = std::process::Command::new(std::env::current_exe().unwrap())
         .args([
             "--ignored",
             "--exact",
             "commands::recipe::operations::tests::interruption_helper",
         ])
         .env("ORBIT_RECIPE_INTERRUPT_TEST", &work.0)
+        .env("ORBIT_RECIPE_INTERRUPT_SOCKET", &path)
         .process_group(0)
         .spawn()
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while !work.0.join("ready").exists() && Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    assert!(work.0.join("ready").exists());
-    // Wait for exec, so the signal exercises termination of both the worker and its child.
-    fn children(pid: u32) -> Vec<u32> {
-        fs::read_dir(format!("/proc/{pid}/task"))
-            .unwrap()
-            .filter_map(Result::ok)
-            .flat_map(|task| {
-                fs::read_to_string(task.path().join("children"))
-                    .unwrap_or_default()
-                    .split_whitespace()
-                    .filter_map(|pid| pid.parse().ok())
-                    .collect::<Vec<_>>()
-            })
-            .collect()
-    }
-    let mut running = None;
-    while Instant::now() < deadline {
-        running = children(child.id()).into_iter().find(|pid| {
-            children(*pid).into_iter().any(|descendant| {
-                fs::read_to_string(format!("/proc/{descendant}/comm"))
-                    .is_ok_and(|name| name.trim() == "sleep")
-            })
-        });
-        if running.is_some() {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    let mut worker = Worker {
+        child,
+        supervisor: None,
+    };
+    let mut message = [0; std::mem::size_of::<i32>()];
+    let received = ready
+        .recv(&mut message)
+        .expect("the supervised child did not report readiness after exec");
+    assert_eq!(received, message.len(), "invalid readiness message");
+    let group = i32::from_ne_bytes(message);
+    assert!(group > 0);
+    assert_ne!(group, worker.child.id() as i32);
+    worker.supervisor = Some(group);
+    assert!(work.0.join("usr/sbin/policy-rc.d").exists());
     // GNU timeout owns a separate process group. Systemd kills both groups in the service cgroup.
-    // SAFETY: both process groups belong to this test's child processes.
+    // SAFETY: readiness identifies the supervisor group owned by this test.
     unsafe {
-        libc::kill(-(child.id() as i32), libc::SIGTERM);
-        if let Some(group) = running {
-            libc::kill(-(group as i32), libc::SIGTERM);
-        }
+        assert_eq!(libc::kill(-(worker.child.id() as i32), libc::SIGTERM), 0);
+        assert_eq!(libc::kill(-group, libc::SIGTERM), 0);
     }
-    assert!(child.wait().unwrap().success());
-    assert!(running.is_some(), "the supervised child did not start");
+    let status = worker.child.wait().unwrap();
+    worker.supervisor = None;
+    assert!(status.success(), "interruption helper exited with {status}");
     assert!(!work.0.join("usr/sbin/policy-rc.d").exists());
 }
