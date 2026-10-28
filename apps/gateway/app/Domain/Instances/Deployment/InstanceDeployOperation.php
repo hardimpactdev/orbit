@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Instances\Deployment;
 
 use App\Actions\Instances\DeployInstanceAction;
+use App\Actions\Instances\InstanceSmokeControlAction;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Operations\OperationKind;
 use App\Domain\Operations\OperationOutcome;
@@ -39,6 +40,18 @@ final readonly class InstanceDeployOperation implements OperationKind
             return OperationOutcome::failed('operation.target_missing');
         }
 
+        if (isset($operation->input['smoke_hold_key'])) {
+            try {
+                return $this->locks->run([$instance->id], function () use ($operation, $run, $instance): OperationOutcome {
+                    app(InstanceSmokeControlAction::class)->guardRedeploy($instance, $operation);
+
+                    return $this->deploy($operation, $run, $instance);
+                });
+            } catch (ResourceOperationException $exception) {
+                return OperationOutcome::failed($exception->errorCode);
+            }
+        }
+
         if (! in_array($operation->triggered_by, AutomaticDeployHistory::Triggers, true) || (! $instance->placedOnAppProd() && ! isset($operation->input['caller_node_id']))) {
             return $this->deploy($operation, $run, $instance);
         }
@@ -61,7 +74,7 @@ final readonly class InstanceDeployOperation implements OperationKind
                 return $this->deploy($operation, $run, $instance);
             });
         } catch (ResourceOperationException $exception) {
-            return in_array($exception->errorCode, [AutomaticDeployHistory::Paused, 'instance.auto_deploy_policy_owner', AutomaticDeployPolicyWriter::InactiveRole], true)
+            return in_array($exception->errorCode, ['instance.smoke_held', AutomaticDeployHistory::Paused, 'instance.auto_deploy_policy_owner', AutomaticDeployPolicyWriter::InactiveRole], true)
                 ? $this->paused($operation, $exception->errorCode)
                 : OperationOutcome::failed($exception->errorCode);
         }

@@ -168,6 +168,9 @@ final readonly class ProblemRecovery
 
             return null;
         }
+        if ($kind === ReleaseAlertKind::InstanceSmokeHeld->value) {
+            return null; // Only exact passing smoke resolves this incident.
+        }
         if (str_starts_with($resource, 'instance:')) {
             $instance = Instance::query()->find((int) substr($resource, 9));
             if (! $instance instanceof Instance) {

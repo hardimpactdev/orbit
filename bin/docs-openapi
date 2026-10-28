@@ -1717,6 +1717,9 @@ RESPONSE_OVERRIDES = {
     }}},
 }
 CTRL_DATA_OVERRIDES = {
+    'InstanceSmokeControlController@store': ('InstanceSmokeControlReceiptData', False),
+    'InstanceSmokeControlController@receipt': ('InstanceSmokeControlLookupData', False),
+    'InstanceSmokeControlController@redeployReceipt': ('InstanceSmokeRollbackReceiptData', False),
     'InstanceSmokeController@receipt': ('InstanceSmokeReceiptData', False),
     'InstanceSmokeController@context': ('InstanceSmokeContextData', False),
     'InstanceSmokeController@failure': ('InstanceSmokeBlockData', False),
@@ -2012,8 +2015,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             body_schema['additionalProperties'] = False
         op['requestBody'] = {'required': body_required or bool(body_schema.get('required')), 'content': {'application/json': {'schema': body_schema}}}
     starts_operation = controllers.get(action, {}).get('starts_operation', False)
-    if route['name'] == 'instance:smoke:failure':
-        op['parameters'].append({'name': 'Idempotency-Key', 'in': 'header', 'required': True, 'schema': {'type': 'string', 'maxLength': 128}, 'description': 'Permanent smoke-failure.<instance>.<deployment> key, bound to caller, Instance and full body; identical retry returns the original block.'})
+    if route['name'] in ('instance:smoke:failure', 'instance:smoke:control'):
+        op['parameters'].append({'name': 'Idempotency-Key', 'in': 'header', 'required': True, 'schema': {'type': 'string', 'maxLength': 128}, 'description': 'Permanent key bound to caller, Instance and full body; identical retry returns the original receipt.'})
     if starts_operation:
         op['x-orbit-operation'] = 'start'
         op['parameters'].append({

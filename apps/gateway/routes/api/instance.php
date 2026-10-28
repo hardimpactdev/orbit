@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\InstanceQueueController;
 use App\Http\Controllers\Api\InstanceReleasesController;
 use App\Http\Controllers\Api\InstanceRollbacksController;
 use App\Http\Controllers\Api\InstancesController;
+use App\Http\Controllers\Api\InstanceSmokeControlController;
 use App\Http\Controllers\Api\InstanceSmokeController;
 use App\Http\Controllers\Api\InstanceTransfersController;
 use App\Http\Controllers\Api\ProjectLifecycleStepsController;
@@ -99,6 +100,10 @@ Route::middleware([
     Route::get('instances/{instance}/deployment-source/checks', [InstanceDeploymentSourceController::class, 'checks'])->name('instance:deployment-source:checks');
     Route::post('instances/{instance}/deploy/automatic/resolve', [InstanceDeploymentsController::class, 'resolve'])->name('instance:deploy:automatic:resolve');
     Route::get('instances/{instance}/deploy/automatic/receipt', [InstanceDeploymentsController::class, 'receipt'])->name('instance:deploy:automatic:receipt');
+    Route::post('instances/{instance}/smoke/control', [InstanceSmokeControlController::class, 'store'])->name('instance:smoke:control');
+    Route::get('instances/{instance}/smoke/control/receipt', [InstanceSmokeControlController::class, 'receipt'])->name('instance:smoke:control:receipt');
+    Route::post('instances/{instance}/smoke/redeploy', [InstanceSmokeControlController::class, 'redeploy'])->name('instance:smoke:redeploy');
+    Route::get('instances/{instance}/smoke/redeploy/receipt', [InstanceSmokeControlController::class, 'redeployReceipt'])->name('instance:smoke:redeploy:receipt');
     Route::post('instances/{instance}/smoke', [InstanceSmokeController::class, 'store'])->name('instance:smoke');
     Route::get('instances/{instance}/smoke/receipt', [InstanceSmokeController::class, 'receipt'])->name('instance:smoke:receipt');
     Route::get('instances/{instance}/smoke/context', [InstanceSmokeController::class, 'context'])->name('instance:smoke:context');
