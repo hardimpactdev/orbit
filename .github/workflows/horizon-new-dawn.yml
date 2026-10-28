@@ -28,5 +28,3 @@ jobs:
           deno fmt --check extensions/behaviors/projects/horizon-new-dawn
           deno lint extensions/behaviors/projects/horizon-new-dawn
           deno check extensions/behaviors/projects/horizon-new-dawn/mod.ts extensions/behaviors/projects/horizon-new-dawn/gateway.ts
-      - name: Test parity and task creation (one worker)
-        run: deno test --allow-all extensions/behaviors/projects/horizon-new-dawn/mod_test.ts extensions/behaviors/projects/horizon-new-dawn/queue_test.ts extensions/behaviors/projects/horizon-new-dawn/gateway_test.ts

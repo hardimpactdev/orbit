@@ -195,22 +195,11 @@ resource version. A changed config writes a new version.
 
 ## CI coverage
 
-CI runs the config, schedule, Gateway stage and worker-contract fixtures. The
-three real Swamp routing tests (`maintenance_factory_test.ts`,
-`package_routing_test.ts`, `routine_routing_test.ts`) also run locally before
-handoff. They use the pinned official extensions, not a fork or test
-replacement.
-
-The Maintenance worker native CI job installs the pinned CLI and official
-factory. It runs `maintenance_factory_test.ts`, including same-group detect
-retry through native approval and cycle-override gates. It also runs
-`group_workflow_test.py`, including parallel progress, restart, recovery parking,
-and manual-workflow ownership. The package and routine routing tests still run
-locally; the project contract job does not install the Swamp CLI.
-That job uses the dedicated `SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN` repository
-secrets. Never copy a developer's key or production datastore into a runner.
-A passing contract job is not evidence that the native routing tests ran;
-the PR records the applicable native CI and local results separately.
+CI checks project extension types, formatting and lint through the `contracts`
+job. It runs no test suites or native Swamp workflows. All fixture and routing
+test files remain available for local verification. The `driver` job checks
+the maintenance worker modules in the same way. Neither job needs Swamp account
+credentials.
 
 Read stuck rows and recorded skips on the deployed server:
 

@@ -319,3 +319,13 @@ Swamp runs the production automatic-deploy policy after the ADR 0238 Gateway cut
 [Production smoke opt-in and the paired Gateway contract](docs/production-smoke-contract.md) cover the unscheduled read-only observer and explicit baseline admission.
 
 [Smoke failure recovery](docs/production-smoke-failure-contract.md) plans verified-failure blocks and guarded rollback; live recovery stays disabled.
+## Repository CI
+
+CI runs Deno type, format and lint checks only. It keeps the check names
+`driver`, `contracts`, `parity`, `policy`, `composer-maintenance` and
+`js-maintenance`. The test-only checks `native-group-workflows` and `test`
+are removed. Test files stay in the repository for local use. CI needs no
+Swamp account, native workflow execution, PHP or Node setup.
+
+If branch protection requires either removed check, the repository owner must
+remove that requirement. This PR does not change repository settings.

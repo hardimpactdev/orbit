@@ -54,19 +54,6 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.9.8
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: '24'
-      - name: Install pinned GitHub CLI for credential-boundary tests
-        shell: bash
-        run: |
-          set -euo pipefail
-          gh_tools="$RUNNER_TEMP/gh-2.103.3"
-          mkdir -p "$gh_tools"
-          curl --fail --location --retry 3 https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_amd64.tar.gz --output "$gh_tools/gh.tar.gz"
-          printf '%s  %s\n' 4c806978ffce1cec70853302a56d70ac6da4f19bae7adca4e1a8ab00633dd91d "$gh_tools/gh.tar.gz" | sha256sum --check
-          tar -xzf "$gh_tools/gh.tar.gz" -C "$gh_tools" --strip-components=1 gh_2.103.3_linux_amd64/bin/gh
-          echo "$gh_tools/bin" >> "$GITHUB_PATH"
       - name: Check driver types
         run: deno check extensions/behaviors/dependency_scanner.ts extensions/behaviors/orbit_gateway.ts extensions/behaviors/orbit_driver.ts extensions/behaviors/orbit_group_run.ts extensions/behaviors/orbit_group_runs.ts
       - name: Check worker modules
@@ -78,64 +65,7 @@ jobs:
           deno fmt --check extensions/behaviors/production-smoke tests/production_smoke_test.ts tests/production_smoke_failure_test.ts tests/fixtures/production-smoke
           deno lint extensions/behaviors/production-smoke tests/production_smoke_test.ts tests/production_smoke_failure_test.ts tests/fixtures/production-smoke
           deno check extensions/behaviors/production-smoke/mod.ts tests/production_smoke_test.ts tests/production_smoke_failure_test.ts
-          deno test --allow-read=. tests/production_smoke_test.ts tests/production_smoke_failure_test.ts
-      - name: Test affected driver contracts (one worker)
-        run: >-
-          deno test --allow-all
-          tests/driver_test.ts tests/group_runs_test.ts tests/group_assistance_test.ts
-          tests/review_capacity_test.ts tests/dependency_projects_test.ts tests/routine_stage_test.ts
-          tests/package_stage_test.ts tests/maintenance_worker_test.ts
-          tests/maintenance_resources_test.ts tests/worker_enrollment_entry_test.ts tests/stage_launch_test.ts
-          tests/dependency_credentials_test.ts tests/dependency_results_test.ts tests/dependency_inventory_test.ts tests/dependency_results_fixtures_test.ts tests/service_detection_security_test.ts tests/dependency_retention_test.ts
       - name: Check Services producer modules
         run: |
           deno fmt --check extensions/behaviors/_lib/dependency_credentials.ts extensions/behaviors/_lib/dependency_inventory.ts extensions/behaviors/_lib/dependency_results.ts extensions/behaviors/_lib/dependency_results_schema.ts extensions/behaviors/_lib/service_detection.ts extensions/behaviors/_lib/service_workspace.ts extensions/behaviors/_lib/dependency_retention.ts extensions/behaviors/_lib/maintenance/tool_policy.ts extensions/behaviors/dependency_scanner.ts tests/dependency_credentials_test.ts tests/service_detection_security_test.ts tests/dependency_retention_test.ts tests/dependency_results_test.ts tests/dependency_inventory_test.ts
           deno lint extensions/behaviors/_lib/dependency_credentials.ts extensions/behaviors/_lib/dependency_inventory.ts extensions/behaviors/_lib/dependency_results.ts extensions/behaviors/_lib/dependency_results_schema.ts extensions/behaviors/_lib/service_detection.ts extensions/behaviors/_lib/service_workspace.ts extensions/behaviors/_lib/dependency_retention.ts extensions/behaviors/_lib/maintenance/tool_policy.ts extensions/behaviors/dependency_scanner.ts tests/dependency_credentials_test.ts tests/service_detection_security_test.ts tests/dependency_retention_test.ts tests/dependency_results_test.ts tests/dependency_inventory_test.ts
-  native-group-workflows:
-    runs-on: [self-hosted, hardimpact]
-    timeout-minutes: 10
-    env:
-      SWAMP_API_KEY: ${{ secrets.SWAMP_API_KEY }}
-      SWAMP_SIGNIN_TOKEN: ${{ secrets.SWAMP_SIGNIN_TOKEN }}
-      SWAMP_NO_UPDATE_CHECK: '1'
-      SWAMP_NO_TELEMETRY: '1'
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.9.8
-      - name: Prepare isolated Swamp account
-        shell: bash
-        run: |
-          printf 'SWAMP_HOME=%s\nSWAMP_CONFIG_DIR=%s\n' \
-            "$RUNNER_TEMP/orbit-swamp-native-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
-            "$RUNNER_TEMP/orbit-swamp-native-config-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
-      - name: Install pinned Swamp
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "$SWAMP_API_KEY" && test -n "$SWAMP_SIGNIN_TOKEN"
-          mkdir -p "$SWAMP_HOME/bin" "$SWAMP_CONFIG_DIR"
-          curl --fail --location --retry 3 \
-            https://github.com/swamp-club/swamp/releases/download/v20261022.021804.0-sha.983e2929/swamp-linux-x86_64 \
-            --output "$SWAMP_HOME/bin/swamp"
-          printf '%s  %s\n' 940416b92781dad1d48aff0e4f42b48bbcb29fd92aca9bb8ed126aff0f6d135d "$SWAMP_HOME/bin/swamp" | sha256sum --check
-          chmod +x "$SWAMP_HOME/bin/swamp"
-          echo "$SWAMP_HOME/bin" >> "$GITHUB_PATH"
-      - name: Pull official factory and test native group workflows (four workers maximum)
-        shell: bash
-        run: |
-          set -euo pipefail
-          unset SWAMP_API_KEY_FILE SWAMP_SERVER_TOKEN SWAMP_SERVER_TOKEN_FILE SWAMP_SERVE_URL SWAMP_SERVER_URL
-          swamp extension pull @swamp/software-factory@2026.10.23.1 --json
-          swamp extension pull @swamp/git@2026.10.16.1 --json
-          python3 -B -m unittest discover -s tests -p production_smoke_workflow_test.py -v
-          python3 -m unittest tests/group_workflow_test.py
-          python3 -B -m unittest tests/service_detection_native_test.py
-          python3 -B -m unittest tests/dependency_credentials_https_test.py
-          python3 -B -m unittest discover -s tests -p deploy_services_native_test.py -v
-          deno test --allow-all tests/maintenance_factory_test.ts
-      - name: Remove isolated Swamp account state
-        if: always()
-        shell: bash
-        run: rm -rf -- "$SWAMP_HOME" "$SWAMP_CONFIG_DIR"

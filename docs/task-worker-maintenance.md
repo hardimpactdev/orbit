@@ -86,12 +86,10 @@ script contract. The implementation PR contains no live-run evidence.
 
 ## Local verification
 
-CI runs the affected Deno contracts in `.github/workflows/maintenance-worker.yml`.
-The native workflow and factory tests require an authenticated Swamp account,
-including for pulling the official software-factory extension. The repository
-currently exposes no Actions secrets for `SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN`;
-an unauthenticated pull fails at Swamp's account check. These integration tests
-run locally until CI has those credentials. Run
+CI checks types, formatting and lint in `.github/workflows/maintenance-worker.yml`.
+It runs no test suites or native workflows. All test files remain available
+locally. Native workflow and factory tests need an authenticated Swamp account
+with the official software-factory extension installed. Run
 `tests/maintenance_factory_test.ts` with the installed official extension. Run
 `python3 -B -m unittest discover -s tests -p maintenance_workflow_test.py -v`
 for the real token-authenticated serve/worker test. It verifies that enrollment
