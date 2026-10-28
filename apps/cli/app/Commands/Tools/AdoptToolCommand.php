@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 namespace App\Commands\Tools;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use App\Support\Console\ProgressOutcome;
-use App\Support\Console\ProgressState;
-use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Requests\Tools\AdoptToolRequest;
-use Orbit\Sdk\Responses\Tools\ToolResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class AdoptToolCommand extends ToolCommand
 {
+    use FollowsOperations;
+
     #[\Override]
     protected $signature = 'tool:adopt
         {package : Manager-native package coordinate}
@@ -21,6 +21,7 @@ final class AdoptToolCommand extends ToolCommand
         {--manager= : Tool manager name}
         {--constraint= : Optional SemVer safety constraint}
         {--yes : Skip the ownership confirmation prompt}
+        {--idempotency-key= : Reuse a stable operation start key}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -61,34 +62,15 @@ final class AdoptToolCommand extends ToolCommand
             return self::FAILURE;
         }
 
-        $response = $this->sendWithProgress(
-            $connector,
-            new AdoptToolRequest($nodeId, $manager, $package, $constraint),
-            ToolResponse::class,
-            ['Adopt Tool', 'Adopting Tool', 'Adopted Tool'],
-            static function (ToolResponse $response): ProgressState|ProgressOutcome {
-                if (! in_array($response->outcome, ['applied', 'unchanged'], strict: true)) {
-                    throw new GatewayApiException(
-                        'Gateway response is invalid.',
-                        'gateway.invalid_response',
-                        requestId: $response->requestId,
-                    );
-                }
-
-                return $response->outcome === 'unchanged'
-                    ? new ProgressOutcome(ProgressState::Skipped, 'Ownership unchanged')
-                    : ProgressState::Success;
-            },
-        );
-        if (! $response instanceof ToolResponse) {
+        $profile = $this->activeGatewayProfile($repository);
+        if ($profile === null) {
             return self::FAILURE;
         }
+        $operation = $this->send($connector, new AdoptToolRequest($nodeId, $manager, $package, $constraint, $this->stringOption('idempotency-key')), OperationResponse::class);
 
-        $message = $response->outcome === 'applied'
-            ? "Tool [{$response->package}] adopted with [{$response->manager}]."
-            : "Tool [{$response->package}] already has this ownership with [{$response->manager}].";
-
-        return $this->renderTool($response, $message);
+        return $operation instanceof OperationResponse
+            ? $this->followOperation($connector, $profile, $operation, "Adopt Tool [{$package}]", 'Tool')
+            : self::FAILURE;
     }
 
     private function packageName(): ?string

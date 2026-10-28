@@ -2,30 +2,17 @@
 
 declare(strict_types=1);
 
-use App\Actions\Tools\InstallToolAction;
-use App\Actions\Tools\RemoveToolAction;
-use App\Actions\Tools\UpdateToolAction;
-use App\Data\Tools\InstallToolData;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\ToolAdoptionFact;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
-use App\Domain\Tools\ToolManagerRegistry;
-use App\Domain\Tools\ToolNodeEligibility;
 use App\Domain\Tools\ToolOperation;
-use App\Domain\Tools\ToolOperationException;
-use App\Domain\Tools\ToolOutcome;
 use App\Domain\Tools\ToolStatus;
-use App\Domain\Tools\VersionConstraint;
 use App\Infrastructure\Tools\HomebrewCaskToolManager;
-use App\Infrastructure\Tools\HomebrewToolManager;
-use App\Infrastructure\Tools\NativeToolManagerMaterializer;
-use App\Infrastructure\Tools\NativeToolManagerScopeLock;
 use App\Models\Node;
 use App\Models\Tool;
 use Tests\Support\FakeAgentCommandRunner;
-use Tests\Support\ImmediateToolOperationLock;
 
 describe(HomebrewCaskToolManager::class, function (): void {
     it('is a macOS-only manager and rejects taps, urls, local files, and options', function (string $package, bool $valid): void {
@@ -79,45 +66,6 @@ describe(HomebrewCaskToolManager::class, function (): void {
             ->and(Tool::query()->where('package', 'docker')->count())->toBe(2);
     });
 
-    it('sends typed cask operations with the stored architecture', function (): void {
-        [$manager, $agent] = cask_manager();
-        $node = cask_node();
-        $agent->answer('tool.homebrew-cask-candidate', ['version' => '3.003'])
-            ->answer('tool.homebrew-cask-install', [])->answer('tool.homebrew-cask-update', [])->answer('tool.homebrew-cask-remove', []);
-        expect($manager->candidateVersion($node, 'font-hack', ToolOperation::Install))->toBe('3.003');
-        $manager->install($node, 'font-hack');
-        $manager->update($node, 'font-hack');
-        expect($manager->planRemoval($node, 'font-hack')->packages)->toBe(['font-hack']);
-        $manager->remove($node, 'font-hack');
-        expect($agent->commands())->toBe(['tool.homebrew-cask-candidate', 'tool.homebrew-cask-install', 'tool.homebrew-cask-update', 'tool.homebrew-cask-remove']);
-        foreach ($agent->calls as $call) {
-            expect($call['input'])->toBe(['package' => 'font-hack', 'architecture' => 'arm64']);
-        }
-    });
-
-    it('keeps formula and cask command identities separate', function (): void {
-        [$cask, $agent] = cask_manager();
-        $formula = new HomebrewToolManager(new SemverVersionNormalizer, $agent);
-        $agent->answer('tool.homebrew-cask-install', [])->answer('tool.homebrew-formula-install', []);
-        $formula->install(cask_node(), 'docker');
-        $cask->install(cask_node(), 'docker');
-        expect($agent->commands())->toBe(['tool.homebrew-formula-install', 'tool.homebrew-cask-install']);
-    });
-
-    it('maps native cask refusals without raw manager output', function (string $code, string $step): void {
-        [$manager, $agent] = cask_manager();
-        $agent->refuse('tool.homebrew-cask-install', $code);
-        expect(fn () => $manager->install(cask_node(), 'font-hack'))->toThrow(function (ToolManagerException $error) use ($step): void {
-            expect($error->step)->toBe($step)->and($error->result)->toBeNull();
-        });
-    })->with([
-        ['tool.homebrew_cask_source', 'cask-source'], ['tool.homebrew_cask_artifact', 'cask-artifact'],
-        ['tool.homebrew_cask_authorization', 'cask-authorization'], ['tool.homebrew_cask_checksum', 'cask-checksum'],
-        ['tool.homebrew_cask_version', 'cask-version'], ['tool.homebrew_output_invalid', 'install'],
-        ['tool.homebrew_operation_failed', 'install'], ['tool.homebrew_scope_absent', 'manager-absent'],
-        ['tool.homebrew_scope_conflict', 'manager-conflict'], ['tool.homebrew_scope_unreadable', 'manager-probe'],
-    ]);
-
     it('reads the native manager version and preserves absence and ambiguous inventories', function (): void {
         [$manager, $agent] = cask_manager();
         $agent->answer('tool.homebrew-cask-candidate', ['version' => null]);
@@ -143,57 +91,6 @@ describe(HomebrewCaskToolManager::class, function (): void {
         expect(Tool::query()->count())->toBe(0);
     })->with([['3.003', null], [null, null], ['3.003', 'authorization_required'], ['3.003', 'unsupported_source'], ['3.003', 'unsupported_artifact'], ['3.003', 'version_unreadable']]);
 
-    it('rejects Linux, qualified names, unknown CPUs, and removal candidates before agent calls', function (): void {
-        [$manager, $agent] = cask_manager();
-        foreach ([fn () => $manager->install(cask_node('linux'), 'font-hack'), fn () => $manager->install(cask_node(), 'other/cask/font-hack'), fn () => $manager->remove(cask_node(architecture: 'i386'), 'font-hack'), fn () => $manager->candidateVersion(cask_node(), 'font-hack', ToolOperation::Remove)] as $call) {
-            expect($call)->toThrow(ToolManagerException::class);
-        }
-        expect($agent->calls)->toBe([]);
-    });
-
-    it('retries a failed cask install through native results', function (): void {
-        $node = cask_saved_node();
-        [$manager, $agent] = cask_manager();
-        $agent->refuse('tool.homebrew-cask-candidate', 'tool.homebrew_cask_checksum');
-        $install = cask_install_action($manager);
-        $failure = cask_operation_exception(fn () => $install->execute(new InstallToolData($node->id, 'brew-cask', 'font-hack', null)));
-        expect($failure->errorCode)->toBe('tool.install_failed')->and(Tool::query()->sole()->status)->toBe(ToolStatus::Failed);
-        $agent->answer('tool.homebrew-cask-candidate', ['version' => '3.003']);
-        $agent->answer('tool.homebrew-cask-install', function () use ($agent): array {
-            $agent->answer('tool.homebrew-cask-inventory', ['packages' => [['name' => 'font-hack', 'versions' => ['3.003'], 'unverifiable' => false]]]);
-
-            return [];
-        });
-        $result = $install->execute(new InstallToolData($node->id, 'brew-cask', 'font-hack', null));
-        expect($result->outcome)->toBe(ToolOutcome::Applied)->and($result->tool->status)->toBe(ToolStatus::Installed)->and($result->tool->installed_version)->toBe('3.003');
-    });
-
-    it('records failed updates and removals when the native cask check refuses authorization', function (string $operation): void {
-        $node = cask_saved_node();
-        $record = $node->toolManagers()->create(['name' => ToolManagerName::BrewCask, 'status' => LifecycleStatus::Active]);
-        $tool = $node->tools()->create(['tool_manager_id' => $record->id, 'package' => 'font-hack', 'status' => ToolStatus::Installed, 'installed_version' => '3.003']);
-        [$manager, $agent] = cask_manager();
-        $agent->answer('tool.homebrew-cask-inventory', ['packages' => [['name' => 'font-hack', 'versions' => ['3.003'], 'unverifiable' => false]]]);
-        $agent->refuse($operation === 'update' ? 'tool.homebrew-cask-candidate' : 'tool.homebrew-cask-remove', 'tool.homebrew_cask_authorization');
-        $action = $operation === 'update' ? cask_update_action($manager) : cask_remove_action($manager);
-        $failure = cask_operation_exception(fn () => $action->execute($tool));
-        expect($failure->errorCode)->toBe('tool.'.$operation.'_failed')->and($tool->refresh()->status)->toBe(ToolStatus::Failed);
-    })->with(['update', 'remove']);
-
-    it('deletes Tool intent only after the native removal passes', function (): void {
-        $node = cask_saved_node();
-        $record = $node->toolManagers()->create(['name' => ToolManagerName::BrewCask, 'status' => LifecycleStatus::Active]);
-        $tool = $node->tools()->create(['tool_manager_id' => $record->id, 'package' => 'font-hack', 'status' => ToolStatus::Installed, 'installed_version' => '3.003']);
-        [$manager, $agent] = cask_manager();
-        $agent->answer('tool.homebrew-cask-inventory', ['packages' => [['name' => 'font-hack', 'versions' => ['3.003'], 'unverifiable' => false]]]);
-        $agent->answer('tool.homebrew-cask-remove', function () use ($agent): array {
-            $agent->answer('tool.homebrew-cask-inventory', ['packages' => []]);
-
-            return [];
-        });
-        $result = cask_remove_action($manager)->execute($tool);
-        expect($result->outcome)->toBe(ToolOutcome::Applied)->and(Tool::query()->whereKey($tool->id)->exists())->toBeFalse();
-    });
 });
 
 /** @return array{HomebrewCaskToolManager, FakeAgentCommandRunner} */
@@ -230,58 +127,4 @@ function cask_saved_node(): Node
         'wireguard_ip' => '10.8.0.46',
         'ssh_host_fingerprint' => 'SHA256:'.str_repeat('A', 43),
     ]);
-}
-
-function cask_install_action(HomebrewCaskToolManager $manager): InstallToolAction
-{
-    $registry = new ToolManagerRegistry([$manager]);
-
-    return new InstallToolAction(
-        managers: $registry,
-        constraints: new VersionConstraint,
-        lock: new ImmediateToolOperationLock,
-        materializer: new NativeToolManagerMaterializer($registry, new NativeToolManagerScopeLock),
-        eligibility: new ToolNodeEligibility,
-    );
-}
-
-function cask_update_action(HomebrewCaskToolManager $manager): UpdateToolAction
-{
-    return new UpdateToolAction(
-        managers: new ToolManagerRegistry([$manager]),
-        constraints: new VersionConstraint,
-        lock: new ImmediateToolOperationLock,
-        eligibility: new ToolNodeEligibility,
-    );
-}
-
-function cask_remove_action(HomebrewCaskToolManager $manager): RemoveToolAction
-{
-    return new RemoveToolAction(
-        managers: new ToolManagerRegistry([$manager]),
-        lock: new ImmediateToolOperationLock,
-        eligibility: new ToolNodeEligibility,
-    );
-}
-
-function cask_exception(callable $callback): ToolManagerException
-{
-    try {
-        $callback();
-    } catch (ToolManagerException $exception) {
-        return $exception;
-    }
-
-    throw new RuntimeException('The Homebrew cask operation succeeded.');
-}
-
-function cask_operation_exception(callable $callback): ToolOperationException
-{
-    try {
-        $callback();
-    } catch (ToolOperationException $exception) {
-        return $exception;
-    }
-
-    throw new RuntimeException('The Homebrew cask tool operation succeeded.');
 }

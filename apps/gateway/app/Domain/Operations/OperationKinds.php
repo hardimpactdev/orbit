@@ -95,8 +95,18 @@ final readonly class OperationKinds
         self::validateChildren($kind, $definition);
         $proof = $definition['completion_contract'];
         $stepKeys = array_intersect(['step', 'transport', 'name', 'result'], array_keys($proof));
-        if (($stepKeys !== [] && count($stepKeys) !== 4) || ($stepKeys === [] && ! isset($proof['children_succeeded']))) {
+        if (($stepKeys !== [] && count($stepKeys) !== 4) || ($stepKeys === [] && ($proof['children_succeeded'] ?? []) === [])) {
             throw new LogicException("Operation kind [{$kind}] requires a complete enforced completion proof.");
+        }
+        if ($stepKeys !== []) {
+            foreach (['step', 'transport', 'name'] as $field) {
+                if (! is_string($proof[$field]) || $proof[$field] === '') {
+                    throw new LogicException("Operation kind [{$kind}] needs named completion evidence.");
+                }
+            }
+            if (! is_array($proof['result'])) {
+                throw new LogicException("Operation kind [{$kind}] needs a typed completion result.");
+            }
         }
         foreach ($definition['runs'] as $run) {
             if (! is_array($run)) {

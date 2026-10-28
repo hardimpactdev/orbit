@@ -4,69 +4,36 @@ declare(strict_types=1);
 
 namespace App\Commands\Tools;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use App\Support\Console\ProgressOutcome;
-use App\Support\Console\ProgressState;
-use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Responses\Tools\ToolResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 abstract class ToolActionCommand extends ToolCommand
 {
-    public function handle(
-        GatewayConfigRepository $repository,
-        GatewayConnectorFactory $connectors,
-    ): int {
-        $toolId = $this->toolId();
+    use FollowsOperations;
 
+    public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
+    {
+        $toolId = $this->toolId();
         if ($toolId === null) {
             return self::FAILURE;
         }
-
         $connector = $this->gatewayConnector($repository, $connectors);
-
         if ($connector === null) {
             return self::FAILURE;
         }
-
-        $tool = $this->sendWithProgress(
-            $connector,
-            $this->request($toolId),
-            ToolResponse::class,
-            $this->progressLabels(),
-            function (ToolResponse $response): ProgressState|ProgressOutcome {
-                if (! $this->accepts($response)) {
-                    throw new GatewayApiException(
-                        'Gateway response is invalid.',
-                        'gateway.invalid_response',
-                        requestId: $response->requestId,
-                    );
-                }
-
-                return $this->resultState($response);
-            },
-        );
-
-        if (! $tool instanceof ToolResponse) {
+        $profile = $this->activeGatewayProfile($repository);
+        if ($profile === null) {
             return self::FAILURE;
         }
+        $operation = $this->send($connector, $this->request($toolId), OperationResponse::class);
 
-        return $this->renderTool($tool, $this->message($tool));
+        return $operation instanceof OperationResponse
+            ? $this->followOperation($connector, $profile, $operation, "Change Tool #{$toolId}", 'Tool')
+            : self::FAILURE;
     }
 
     abstract protected function request(int $toolId): GatewayRequest;
-
-    abstract protected function message(ToolResponse $tool): string;
-
-    abstract protected function accepts(ToolResponse $tool): bool;
-
-    /** @return array{0: string, 1: string, 2: string} */
-    abstract protected function progressLabels(): array;
-
-    /** The response already passed accepts(); classify how truthfully the progress settles. */
-    protected function resultState(ToolResponse $tool): ProgressState|ProgressOutcome
-    {
-        return ProgressState::Success;
-    }
 }

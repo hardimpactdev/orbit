@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationChildAdmission;
@@ -14,13 +15,14 @@ use App\Domain\Operations\OperationGatewayCommands;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationTimeWindow;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
 
-final class ChildKitFamily implements OperationFamilyExecution, OperationFamilyChildren, OperationCompletion
+final class ChildKitFamily implements OperationCompletion, OperationFamilyChildren, OperationFamilyExecution
 {
     public function childContext(Operation $parent): array
     {
@@ -69,6 +71,7 @@ final class ChildKitAdmission implements OperationChildAdmission
             throw new ResourceOperationException('test.admission_refused', 'Refused by owning family.', 409);
         }
         $child->forceFill(['run_constraints' => $parent->state['child_constraints'] ?? $child->run_constraints])->save();
+
         return $child;
     }
 }
@@ -86,6 +89,7 @@ final class ChildKitCommand implements OperationGatewayCommand
     public function run(Operation $operation, #[SensitiveParameter] array $input): array
     {
         $this->calls++;
+
         return ['backend' => 'active'];
     }
 }
@@ -126,6 +130,7 @@ beforeEach(function (): void {
 function childKitAdmit($test): Operation
 {
     $id = $test->postJson($test->path.'/children', ['worker' => 'parent', 'key' => 'apply'])->assertAccepted()->json('data.id');
+
     return Operation::findOrFail($id);
 }
 
@@ -157,7 +162,9 @@ it('admits through the owning family once and proves the recorded enriched child
 it('refuses free child intent, ineligible keys, wrong relations and missing bindings', function (string $case): void {
     $body = ['worker' => 'parent', 'key' => 'apply'];
     if (in_array($case, ['input', 'kind', 'node'], true)) {
-        $body += match ($case) { 'input' => ['input' => ['target_id' => 999]], 'kind' => ['kind' => 'gateway.switch_release'], 'node' => ['node_id' => $this->peer->id] };
+        $body += match ($case) {
+            'input' => ['input' => ['target_id' => 999]], 'kind' => ['kind' => 'gateway.switch_release'], 'node' => ['node_id' => $this->peer->id]
+        };
     } elseif ($case === 'key') {
         $body['key'] = 'unprepared';
     } elseif ($case === 'relation') {
@@ -283,11 +290,38 @@ it('does not accept bare missing-child success or admit after cancellation', fun
 it('keeps a cancelled Swamp waiting parent held until its children settle', function (): void {
     $child = childKitAdmit($this);
     $this->postJson($this->path.'/wait', ['worker' => 'parent', 'keys' => ['apply']])->assertOk();
-    app(\App\Actions\Operations\CancelOperationAction::class)->execute($this->parent->refresh());
+    app(CancelOperationAction::class)->execute($this->parent->refresh());
     expect($this->parent->refresh()->status)->toBe(OperationStatus::Waiting)
         ->and($this->parent->cancel_requested_at)->not->toBeNull()
         ->and($this->parent->lock_key)->not->toBeNull();
     childKitFinish($this, $child);
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'test.parent', 'worker' => 'resume'])->assertOk();
     $this->postJson($this->path.'/complete', ['worker' => 'resume', 'status' => 'cancelled'])->assertOk();
+});
+
+it('checks named window boundaries and midnight crossing', function (string $time, string $start, string $end, bool $allowed): void {
+    $this->travelTo(now()->setTimezone('Europe/Amsterdam')->setTimeFromTimeString($time));
+    $check = new OperationTimeWindow;
+    $invoke = fn () => $check->assertAllowed($this->parent, ['timezone' => 'Europe/Amsterdam', 'start' => $start, 'end' => $end]);
+    if ($allowed) {
+        $invoke();
+        expect(true)->toBeTrue();
+    } else {
+        expect($invoke)->toThrow(ResourceOperationException::class);
+    }
+})->with([
+    ['03:00', '03:00', '06:00', true], ['05:59', '03:00', '06:00', true], ['06:00', '03:00', '06:00', false],
+    ['23:00', '22:00', '02:00', true], ['01:59', '22:00', '02:00', true], ['02:00', '22:00', '02:00', false],
+]);
+
+it('fences child writes by authenticated executor peer and restricts child reads', function (): void {
+    childKitAdmit($this);
+    $other = Node::query()->create(['name' => 'worker', 'public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.9', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
+    $other->accessibleNodes()->attach($this->parent->node_id);
+    $this->withServerVariables(['REMOTE_ADDR' => $other->wireguard_ip]);
+    $this->getJson($this->path.'/children')->assertForbidden();
+    config(['operation_executor.worker_node_ids' => [$other->id]]);
+    $this->postJson($this->path.'/children', ['worker' => 'parent', 'key' => 'apply'])->assertConflict()->assertJsonPath('error.code', 'operation.lease_lost');
+    $this->postJson($this->path.'/wait', ['worker' => 'parent', 'keys' => ['apply']])->assertConflict()->assertJsonPath('error.code', 'operation.lease_lost');
+    $this->getJson($this->path.'/children')->assertOk()->assertJsonCount(1, 'data');
 });

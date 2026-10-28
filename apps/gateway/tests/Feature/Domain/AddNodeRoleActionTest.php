@@ -18,12 +18,10 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerName;
-use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\ToolManagerScopeLock;
 use App\Infrastructure\Nodes\NodeLocks;
 use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Tools\NativeToolManagerMaterializer;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\ToolManagerRecord;
@@ -391,13 +389,9 @@ describe(AddNodeRoleAction::class, function (): void {
         $vpManager = new FakeToolManager(ToolManagerName::Vp);
         $composerManager = new FakeToolManager(ToolManagerName::Composer);
         app()->instance(RoleBaselineConverger::class, $baseline);
-        app()->instance(ToolManagerMaterializer::class, new NativeToolManagerMaterializer(
-            new ToolManagerRegistry([
-                $vpManager,
-                $composerManager,
-            ]),
-            app(ToolManagerScopeLock::class),
-        ));
+        $materializer = new FakeToolManagerMaterializer;
+        $materializer->persistActive = true;
+        app()->instance(ToolManagerMaterializer::class, $materializer);
         $node = add_role_node();
         $node->load('roles');
         $vp = $node->toolManagers()->create([

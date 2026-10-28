@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Console\Commands\BackfillTaskMergedAtCommand;
-use App\Console\Commands\CollectProblemsCommand;
 use App\Console\Commands\FileProblemsCommand;
 use App\Console\Commands\JevReportCommand;
 use App\Console\Commands\ReleaseTaskWorkspaceLeaseCommand;
@@ -156,7 +155,6 @@ final class TasksServiceProvider extends ExtensionServiceProvider
     public function boot(): void
     {
         $this->commands([
-            CollectProblemsCommand::class,
             FileProblemsCommand::class,
             JevReportCommand::class,
             ReleaseTaskWorkspaceLeaseCommand::class,

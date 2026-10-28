@@ -1,10 +1,2 @@
-Adopting Tool...
-
-┌  Adopt Tool
-│
-├  ● Adopting Tool
-│
-└  Operation failed.
-
 The request data is invalid.
 body: The request body contains unsupported top-level keys.

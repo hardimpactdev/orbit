@@ -53,3 +53,10 @@ it('reports enforced child and target receipt capabilities', function (): void {
     expect(OperationKinds::supports('children'))->toBeTrue()
         ->and(OperationKinds::supports('receipts'))->toBeTrue();
 });
+
+it('rejects a child-only completion contract that proves no child', function (): void {
+    $definition = OperationKinds::definitions()['firewall.allow'];
+    $definition['completion_contract'] = ['children_succeeded' => []];
+    expect(fn () => new OperationKinds(new Container, ['test.empty' => $definition]))
+        ->toThrow(LogicException::class, 'complete enforced completion proof');
+});

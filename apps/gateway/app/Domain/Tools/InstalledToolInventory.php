@@ -16,6 +16,7 @@ final readonly class InstalledToolInventory
         private array $versionsByPackage,
         private ?CommandResult $result = null,
         private array $unverifiablePackages = [],
+        private bool $complete = true,
     ) {}
 
     public function versionFor(string $package): ?string
@@ -27,6 +28,10 @@ final readonly class InstalledToolInventory
         }
 
         if ($versions === []) {
+            if (! $this->complete) {
+                throw new ToolManagerException('installed-version', 'An incomplete inventory cannot prove package absence.');
+            }
+
             return null;
         }
 

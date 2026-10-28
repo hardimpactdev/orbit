@@ -22,6 +22,18 @@ Recording a development [Instance branch rename](/cli/instance#orbit-instanceren
 
 [Importing workspace CI caches](/reference/instance-setup#import-ci-main-caches) restores private test and analysis data, not Tools or packages. It does not call a Tool Manager, fill a package download cache, or install a missing dependency. The Project's setup steps must install dependencies before importing these caches.
 
+## Execution and receipts
+
+Install, update, remove, and adopt return HTTP 202 with an [Operation](/reference/operations). The Gateway validates requests, records intent and the target Node, and keeps the API and managed Tool records. Swamp executes the existing typed agent commands and records their steps. CLI writes follow the Operation. List, show, scan, manager list, and Doctor keep their read paths.
+
+Each operation admits only the selected manager's named commands and exact recorded input. The Gateway takes the Node from the Operation, verifies successful run and step receipts before completion, and retains only declared, redacted scalar result leaves. Swamp saves completion intent before posting it and reuses effect keys after a lost reply. Package-manager output and credentials are never part of a receipt.
+
+Node enrollment and role operations can request a `tool.manager_converge` child with the exact intent `{manager: string, image_provides_manager: bool}`. The Tools admission adapter loads the Node from the server-owned child intent's `node_id` and uses the normal manager admission action to record recipe and completion inputs. The child targets `node_tools` with that Node's ID; its transport Node is the same ID. The shared child primitive records ancestry. Successful completion proves the manager's `version`; it returns no binary path or project environment identifier. Project runtime environments belong to the Instances family.
+
+The errors and outcomes below describe the completed Operation. Input, ownership and platform refusals still happen before admission. Scan returns its discovery report directly and creates no Tool intent.
+
+When the shared executor lacks Kit B child admission (`children`) or Kit C result schemas (`list_of`), Tools write kinds remain unregistered. Package writes and manager convergence refuse admission with `operation.kind_unavailable` (HTTP 503), without recording an Operation or running a Node command. Tool reads remain available.
+
 ## Where Tools run
 
 The Gateway manages Tools only on an active Node that it manages over SSH. That Node runs a supported platform, has a verified WireGuard address, and has a stored SSH host fingerprint. Ubuntu supports the existing managers. [macOS Nodes](/reference/node-provisioning#macos-nodes) support Homebrew formulae, casks, and Vite+ global packages in the enrolled account's existing installations. Any other Node gets `tool.node_inactive` or `tool.node_unmanaged` (HTTP 409) before the Gateway changes anything.
@@ -87,7 +99,7 @@ The probe prints the prefix and the account home. The script accepts only `/`, A
 | `active` | The manager is ready. |
 | `failed` | Installing or checking the manager failed. The record keeps the failed step and error code. The next install tries again. |
 
-Before each Linux install, the Gateway converges the manager: it installs the manager when it is missing and checks its version. A failure returns `tool.manager_provision_failed` (HTTP 502), keeps the manager `failed`, and creates no Tool. On macOS, install rechecks the existing scope and returns `tool.manager_unavailable` (HTTP 409) when that scope is absent or conflicting. It creates no Tool. An absent macOS scope stays `failed` at step `manager-absent` with error code `node.tool_manager_absent`. A conflicting owner, origin, or Vite+ store stays `failed` at step `manager-conflict` with error code `node.tool_manager_conflict`. A failed macOS probe returns `tool.manager_provision_failed`.
+Before each Linux install, Swamp converges the manager: it installs the manager when it is missing and checks its version. A failed Operation records `tool.manager_provision_failed` (HTTP 502), keeps the manager `failed`, and creates no Tool. On macOS, install rechecks the existing scope and returns `tool.manager_unavailable` (HTTP 409) when that scope is absent or conflicting. It creates no Tool. An absent macOS scope stays `failed` at step `manager-absent` with error code `node.tool_manager_absent`. A conflicting owner, origin, or Vite+ store stays `failed` at step `manager-conflict` with error code `node.tool_manager_conflict`. A failed macOS probe returns `tool.manager_provision_failed`.
 
 Update and removal use the same `tool.manager_unavailable` code when the macOS scope is absent or conflicting. The Tool stays `failed` for that operation, with its installed version kept, and the same command retries it. A probe that is not an absent or conflicting scope still returns `tool.version_probe_failed`, `tool.update_failed`, or `tool.remove_failed`. A manager stays installed after its last Tool is removed. No command removes a manager.
 
@@ -256,9 +268,9 @@ The JSON object allows only these fields. Any other field fails with `validation
 | `package` | yes | string | That manager's package name, at most 255 characters. |
 | `version_constraint` | no | string or null | A SemVer range, such as `^14.0`, at most 255 characters. Omit or null for none. |
 
-The Gateway takes the Tool lock for that Node, manager, and package, then the manager scope lock. `brew-cask` uses the `brew` prefix lock. It then reads the live package again. A discovery row is not evidence.
+The Gateway records an Operation for the Node. Swamp reads the selected package again through a narrow Gateway read command. A discovery row is not evidence.
 
-Success returns the same Tool object as install, update, and remove. `status` is `installed`. `failed_operation` and `error_code` are null. `outcome` is set. The object is wrapped in `data`, with `meta.request_id`.
+Writes return an Operation with HTTP 202. Successful package receipts include `installed_version`, `block`, and `outcome`. Read the Tool with list or show after completion. Those reads retain these fields:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -273,15 +285,15 @@ Success returns the same Tool object as install, update, and remove. `status` is
 | `error_code` | string or null | The last mutation error, or null. |
 | `outcome` | string or null | The operation outcome. |
 
-| Result | HTTP | `outcome` | Record |
-| --- | --- | --- | --- |
-| No Tool yet for this Node, manager, package, and constraint | 201 | `applied` | Created as `installed`. The host package is unchanged. |
-| The same constraint exists, status is `installed`, and the package is still accepted | 200 | `unchanged` | Not rewritten, including `installed_version`. |
-| The same constraint exists, status is `failed`, and the package is still accepted | 200 | `applied` | Repaired to `installed`, with the failure cleared and `installed_version` set. The host package is unchanged. |
+| Result | `outcome` | Record |
+| --- | --- | --- |
+| No Tool yet for this Node, manager, package, and constraint | `applied` | Created as `installed`. The host package is unchanged. |
+| The same constraint exists, status is `installed`, and the package is still accepted | `unchanged` | Not rewritten, including `installed_version`. |
+| The same constraint exists, status is `failed`, and the package is still accepted | `applied` | Repaired to `installed`, with the failure cleared and `installed_version` set. The host package is unchanged. |
 
 A different constraint on an existing Tool is `tool.constraint_conflict`. It does not create a second row. A row left in `installing`, `updating`, or `removing` is not repaired. Adopt returns `tool.state_invalid` and leaves that row. The caller retries the original operation or removes the Tool.
 
-Adoption errors use the Tool envelope. `details.step` is `adopt`. `details.id` is included only after the Gateway has found an existing Tool row. `tool.adoption_unsupported` also includes `details.adoption_block`.
+Admission errors use the Tool envelope. Execution errors are recorded on the Operation; the HTTP columns below apply to admission refusals. `details.step` is `adopt`. `details.id` is included only after the Gateway has found an existing Tool row. `tool.adoption_unsupported` also includes `details.adoption_block`.
 
 | Code | HTTP | `details.outcome` | When |
 | --- | --- | --- | --- |
@@ -318,9 +330,11 @@ The Gateway refuses a package that is already on the Node without a Tool record,
 
 When Doctor or a Tool operation checks whether a package is installed, it uses the manager inventory. An individual version check selects its package from that inventory; it has no separate parser. An unmanageable package name is excluded from this inventory. An unreadable version makes only that package unverifiable. Failed or truncated inventory reads remain unverifiable.
 
-A new install creates the Tool as `installing`, installs the package, and reads the installed version. A success marks the Tool `installed` and reports `applied`. A failure after the Tool exists marks it `failed` and returns its ID in the error, so you can retry or remove it. Running the same install again retries a Tool whose install failed. An install of a Tool that is already `installed`, with the same constraint, checks the package again. When the package is present, the result is `unchanged`.
+A new install records its Operation, installs the package, and reads the installed version. A success records the Tool as `installed` and reports `applied`. A package-phase failure retains a `failed` Tool, so the same command can retry it or removal can drop it. A manager failure creates no Tool. List Tools to find the retained record. Running the same install again retries a Tool whose install failed. An install of a Tool that is already `installed`, with the same constraint, checks the package again. When the package is present, the result is `unchanged`.
 
-The optional constraint is a SemVer range, such as `^0.150`. It only stops an unsafe version. Before an install, the Gateway reads the manager's candidate version. A candidate outside the range records the Tool as `failed` with `tool.version_constraint_blocked` (HTTP 422, outcome `blocked_by_constraint`) and installs nothing. Remove that row, or retry with a constraint the candidate satisfies. The Gateway never searches for another matching version and never downgrades. When the candidate is not SemVer, the same failed row is kept and the code is `tool.candidate_version_unparseable`. A Tool keeps its constraint: installing it again with another constraint fails with `tool.constraint_conflict`.
+The optional constraint is a SemVer range, such as `^0.150`. It only stops an unsafe version. Before an install, Swamp reads the manager's candidate version. The Gateway compiles the admitted range with Composer and rechecks the proven candidate before mutation.
+
+A candidate outside the range records the Tool as `failed` with `tool.version_constraint_blocked` (HTTP 422, outcome `blocked_by_constraint`) and installs nothing. Remove that row, or retry with a constraint the candidate satisfies. The Gateway never searches for another matching version and never downgrades. When the candidate is not SemVer, the same failed row is kept and the code is `tool.candidate_version_unparseable`. A Tool keeps its constraint: installing it again with another constraint fails with `tool.constraint_conflict`.
 
 ## Update a Tool
 
@@ -437,9 +451,9 @@ No other `details` keys are returned.
 
 ## Locks
 
-Each mutation locks its Tool and its manager's scope on the Node. A busy lock fails at once with `tool.operation_locked`. `brew` and `brew-cask` share the Homebrew prefix lock. Scan does not take either lock. [Per-Node locks](/reference/node-provisioning#per-node-locks) lists every lock and its term.
+An admitted Tool Operation holds `node_tools:<node id>` until it ends. This serializes package and manager changes on that Node, including the shared Homebrew prefix. Another start returns `operation.target_busy`. The agent retains its native package-manager locks. Scan does not hold the Operation target. [Per-Node locks](/reference/node-provisioning#per-node-locks) lists every lock and its term.
 
-`tool.operation_locked` means Orbit's lock is busy. It does not mean a dpkg lock is busy. [The dpkg lock](#the-dpkg-lock) says which apt commands wait for one.
+`operation.target_busy` means another Tool Operation holds the Node. It does not mean a dpkg lock is busy. [The dpkg lock](#the-dpkg-lock) says which apt commands wait for one.
 
 ## Check removal with Doctor
 

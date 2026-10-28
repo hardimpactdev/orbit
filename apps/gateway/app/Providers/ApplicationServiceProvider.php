@@ -13,7 +13,6 @@ use App\Console\Commands\CheckNodeDnsCommand;
 use App\Console\Commands\CheckSwampReaderCredentialCommand;
 use App\Console\Commands\ConvergeGatewayWebCommand;
 use App\Console\Commands\ConvergeNodeRecipeCommand;
-use App\Console\Commands\FinalizeInterruptedActivitiesCommand;
 use App\Console\Commands\InstallSwampReaderCredentialCommand;
 use App\Console\Commands\MachineRecipeCommand;
 use App\Console\Commands\MigrateDockerCommand;
@@ -47,7 +46,6 @@ final class ApplicationServiceProvider extends ServiceProvider
             CheckNodeDnsCommand::class,
             ConvergeGatewayWebCommand::class,
             ConvergeNodeRecipeCommand::class,
-            FinalizeInterruptedActivitiesCommand::class,
             MachineRecipeCommand::class,
             MigrateDockerCommand::class,
             ProvisionNodeCommand::class,

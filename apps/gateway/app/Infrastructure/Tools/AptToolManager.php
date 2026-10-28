@@ -11,6 +11,7 @@ use App\Domain\Tools\ReservesRolePackages;
 use App\Domain\Tools\SupportsToolAdoption;
 use App\Domain\Tools\ToolAdoptionFact;
 use App\Domain\Tools\ToolInventoryPackage;
+use App\Domain\Tools\ToolInventoryReceipt;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
@@ -76,11 +77,6 @@ final readonly class AptToolManager implements ReservesRolePackages, SupportsToo
             && preg_match('/[a-z]/', $package) === 1;
     }
 
-    public function materialize(Node $node): void
-    {
-        $this->managerVersion($node);
-    }
-
     public function managerVersion(Node $node): string
     {
         $version = $this->version($node, 'tool.apt-version', [], 'manager-version');
@@ -101,23 +97,8 @@ final readonly class AptToolManager implements ReservesRolePackages, SupportsToo
     public function installedInventory(Node $node): InstalledToolInventory
     {
         $data = $this->command($node, 'tool.apt-inventory', [], 'installed-version');
-        if (! is_array($data['packages'] ?? null) || ! array_is_list($data['packages'])) {
-            throw new ToolManagerException('installed-version', 'The agent returned an invalid APT inventory.');
-        }
-        $versions = [];
-        $unverifiable = [];
-        foreach ($data['packages'] as $entry) {
-            if (! is_array($entry) || ! is_string($entry['name'] ?? null) || ! array_key_exists('version', $entry) || ($entry['version'] !== null && ! is_string($entry['version']))) {
-                throw new ToolManagerException('installed-version', 'The agent returned an invalid APT package observation.');
-            }
-            if ($entry['version'] === null) {
-                $unverifiable[] = $entry['name'];
-            } else {
-                $versions[$entry['name']][] = $entry['version'];
-            }
-        }
 
-        return new InstalledToolInventory($versions, unverifiablePackages: $unverifiable);
+        return new ToolInventoryReceipt()->parse(ToolManagerName::Apt, $data);
     }
 
     public function installedVersion(Node $node, string $package): ?string
@@ -184,16 +165,6 @@ final readonly class AptToolManager implements ReservesRolePackages, SupportsToo
         return array_values(array_unique($names));
     }
 
-    public function install(Node $node, string $package): void
-    {
-        $this->mutate($node, $package, 'install');
-    }
-
-    public function update(Node $node, string $package): void
-    {
-        $this->mutate($node, $package, 'update');
-    }
-
     public function planRemoval(Node $node, string $package): ToolRemovalPlan
     {
         $this->guardPackage($package);
@@ -203,11 +174,6 @@ final readonly class AptToolManager implements ReservesRolePackages, SupportsToo
         }
 
         return new ToolRemovalPlan($data['packages']);
-    }
-
-    public function remove(Node $node, string $package): void
-    {
-        $this->mutate($node, $package, 'remove');
     }
 
     private function guardPackage(string $package): void
@@ -220,12 +186,6 @@ final readonly class AptToolManager implements ReservesRolePackages, SupportsToo
             step: 'package',
             message: 'The APT package coordinate is invalid.',
         );
-    }
-
-    private function mutate(Node $node, string $package, string $step): void
-    {
-        $this->guardPackage($package);
-        $this->command($node, 'tool.apt-'.$step, ['package' => $package], $step);
     }
 
     /** @param array<string, mixed> $input */

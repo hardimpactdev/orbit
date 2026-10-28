@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Doctor\FirewallDoctorProbe;
+use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorIssueData;
 use App\Data\Doctor\DoctorNodeReportData;
 use App\Data\Doctor\DoctorReportData;
@@ -22,7 +23,6 @@ use App\Domain\Metrics\MetricsFirewallExpectationProvider;
 use App\Domain\Problems\ProblemRecovery;
 use App\Domain\Problems\ProblemSource;
 use App\Domain\Shared\LifecycleStatus;
-use App\Jobs\Problems\CollectDoctorResource;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\ProblemFingerprint;
@@ -425,7 +425,7 @@ final readonly class FirewallExpectationProviderFake implements MetricsFirewallE
 it('recovers a failed Firewall inventory only after its inventory completes', function (bool $hasExpectation, bool $inspectionFails, bool $recovered): void {
     $this->freezeTime();
     $node = Node::query()->create(['name' => 'inventory-node', 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.9']);
-    (new CollectDoctorResource('failed-firewall', [$node->id], $node->id, DoctorFamily::Firewall, new DoctorResources(DoctorResourceKind::Inventory)))->failed(new RuntimeException('Worker stopped.'));
+    app(ProblemCollector::class)->recordDoctor(DoctorReportData::fromNodes([DoctorNodeReportData::fromFamilies($node->id, $node->name, [DoctorFamilyReportData::fromIssues(DoctorFamily::Firewall, 0, (new DoctorResources(DoctorResourceKind::Inventory))->failures(DoctorFamily::Firewall, $node->id))])]), now());
     $row = ProblemFingerprint::query()->sole();
     $this->travel(1)->minutes();
     $inspector = new class($inspectionFails) implements FirewallInspector
