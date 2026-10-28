@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Commands\Nodes;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
@@ -11,10 +12,13 @@ use App\Support\Console\ProgressState;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRoleRequest;
-use Orbit\Sdk\Responses\Nodes\NodeRoleMutationResponse;
+use Orbit\Sdk\Responses\Nodes\NodeRoleRemovalResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class RemoveNodeRoleCommand extends NodeCommand
 {
+    use FollowsOperations;
+
     #[\Override]
     protected $signature = 'node:role:remove
         {node : Node ID or name}
@@ -22,6 +26,7 @@ final class RemoveNodeRoleCommand extends NodeCommand
         {--force : Confirm destructive role removal and dependent cleanup}
         {--purge-data : Request supported role-owned data cleanup}
         {--offline : Remove the role from a node Orbit cannot reach}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -65,14 +70,22 @@ final class RemoveNodeRoleCommand extends NodeCommand
                 force: true,
                 purgeData: $this->option('purge-data') === true,
                 offline: $this->option('offline') === true,
+                idempotencyKey: is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null,
             ),
-            NodeRoleMutationResponse::class,
-            ['Remove Node role', 'Removing Node role', 'Removed Node role'],
-            static fn (object $response): ProgressState => NodeOutput::mutationState($response, removing: true),
+            NodeRoleRemovalResponse::class,
+            ['Start Node role removal', 'Starting Node role removal', 'Started Node role removal'],
         );
 
-        if (! $response instanceof NodeRoleMutationResponse) {
+        if (! $response instanceof NodeRoleRemovalResponse) {
             return self::FAILURE;
+        }
+
+        $response = $response->result;
+        if ($response instanceof OperationResponse) {
+            $profile = $this->activeGatewayProfile($repository);
+
+            return $profile === null ? self::FAILURE
+                : $this->followOperation($connector, $profile, $response, 'Remove Node role', 'Node role removal');
         }
 
         if ($this->option('json') === true) {
@@ -109,7 +122,7 @@ final class RemoveNodeRoleCommand extends NodeCommand
                 try {
                     $this->sendOrThrow($connector, new RemoveNodeRoleRequest(
                         nodeId: $nodeId, role: $role, force: false, purgeData: false, offline: false,
-                    ), NodeRoleMutationResponse::class);
+                    ), NodeRoleRemovalResponse::class);
                 } catch (GatewayApiException $exception) {
                     if ($this->isConsentPreview($exception)) {
                         return $exception;

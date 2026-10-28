@@ -13,6 +13,7 @@ use App\Domain\Nodes\NodeProvisioningLockException;
 use App\Domain\Nodes\NodeWireGuardKeyPolicy;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\AwaitOperation;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Models\Node;
@@ -57,7 +58,11 @@ final readonly class SetNodeWireGuardKeyAction
 
     public function execute(Node $node, string $publicKey): Node
     {
-        app(AwaitOperation::class)->execute($this->start($node, $publicKey));
+        $operation = app(AwaitOperation::class)->execute($this->start($node, $publicKey));
+        if ($operation->status !== OperationStatus::Succeeded) {
+            throw new ResourceOperationException($operation->error_code ?? ($operation->status === OperationStatus::Cancelled ? 'operation.cancelled' : 'operation.failed'),
+                'The WireGuard key was recorded but hub publication did not succeed.', 409, details: ['operation_id' => $operation->id]);
+        }
 
         return $node->refresh()->load('roles');
     }

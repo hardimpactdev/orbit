@@ -15,9 +15,9 @@ use App\Domain\Nodes\NodeRoleDependencyInspector;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleFollowUpReport;
-use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Operations\OperationSecretSource;
+use App\Infrastructure\AgentCommands\NativeAgentCommandRunner;
 use App\Infrastructure\AgentCommands\OperationAgentTransport;
 use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Nodes\AgentManagedUserAccountResolver;
@@ -31,12 +31,12 @@ use App\Infrastructure\Nodes\NodeAgentHashSource;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
 use App\Infrastructure\Nodes\NodeBootstrapSshIdentitySource;
 use App\Infrastructure\Nodes\NodeLocks;
+use App\Infrastructure\Nodes\NodeOperationAgentInstaller;
 use App\Infrastructure\Nodes\NodeVpnConfigurationSource;
 use App\Infrastructure\Nodes\NodeWireGuardOperationTransport;
 use App\Infrastructure\Nodes\NodeWireGuardProjectionLock;
 use App\Infrastructure\Nodes\Roles\GatewayRoleBaseline;
 use App\Infrastructure\Nodes\Roles\NativeNodeRoleFirewallManager;
-use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
 use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Infrastructure\Nodes\SshNodeReachabilityProbe;
 use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
@@ -48,6 +48,7 @@ final class NodesServiceProvider extends ServiceProvider
 {
     /** @var array<class-string, class-string> */
     public array $bindings = [
+        NodeOperationAgentInstaller::class => NativeAgentCommandRunner::class,
         NodeConverger::class => NativeNodeConverger::class,
         NodeStorageRootPreparer::class => AgentNodeStorageRootPreparer::class,
         NodeReachabilityProbe::class => SshNodeReachabilityProbe::class,
@@ -55,7 +56,6 @@ final class NodesServiceProvider extends ServiceProvider
         NodeRoleDependencyInspector::class => EloquentNodeRoleDependencyInspector::class,
         NodeRoleDependentCleaner::class => NativeNodeRoleDependentCleaner::class,
         NodeRoleFirewallManager::class => NativeNodeRoleFirewallManager::class,
-        RoleBaselineConverger::class => NativeRoleBaselineConverger::class,
         GatewayPrivateDnsRoute::class => GatewayRoleBaseline::class,
         NodeAgentRuntime::class => NodeAgentSshExecutor::class,
     ];

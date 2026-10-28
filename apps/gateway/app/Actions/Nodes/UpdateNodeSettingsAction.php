@@ -15,6 +15,7 @@ use App\Domain\Nodes\Storage\ConfiguredStoragePathValidator;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\NodeSettingsPatch;
 use App\Domain\Operations\AwaitOperation;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
@@ -65,7 +66,11 @@ final readonly class UpdateNodeSettingsAction
     {
         $result = $this->start($node, $patch);
         if ($result instanceof Operation) {
-            app(AwaitOperation::class)->execute($result);
+            $result = app(AwaitOperation::class)->execute($result);
+            if ($result->status !== OperationStatus::Succeeded) {
+                throw new ResourceOperationException($result->error_code ?? ($result->status === OperationStatus::Cancelled ? 'operation.cancelled' : 'operation.failed'),
+                    'The Node Operation did not succeed.', 409, details: ['operation_id' => $result->id]);
+            }
         }
 
         return $node->refresh();

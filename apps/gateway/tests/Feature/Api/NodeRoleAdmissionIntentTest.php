@@ -157,3 +157,55 @@ it('refuses unconsented removal before changing a role or recording an Operation
     expect(Operation::query()->where('node_id', $node->id)->count())->toBe(0);
     expect($node->roles()->sole()->status)->toBe(LifecycleStatus::Active);
 });
+
+it('returns a queued role Operation over HTTP and replays before changing the assignment again', function (): void {
+    $gateway = FleetFixtures::node('role-http-gateway', [RoleName::Gateway]);
+    $node = FleetFixtures::node('role-http-target', [RoleName::AppDev]);
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+    $headers = ['Idempotency-Key' => 'role-http-new'];
+
+    $response = $this->postJson("/api/v1/nodes/{$node->id}/roles", ['role' => 'websocket', 'converge_existing' => false], $headers)
+        ->assertAccepted()->assertJsonPath('data.kind', 'node.role_add')->assertJsonPath('data.status', 'queued');
+    $id = $response->json('data.id');
+    $this->postJson("/api/v1/nodes/{$node->id}/roles", ['role' => 'websocket', 'converge_existing' => false], $headers)
+        ->assertAccepted()->assertJsonPath('data.id', $id);
+
+    expect(Operation::query()->where('kind', 'node.role_add')->count())->toBe(1);
+    expect($node->roles()->where('role', RoleName::WebSocket)->sole()->status)->toBe(LifecycleStatus::Provisioning);
+});
+
+it('records role removal over HTTP without awaiting teardown or deleting its assignment', function (): void {
+    $gateway = FleetFixtures::node('remove-http-gateway', [RoleName::Gateway]);
+    $node = FleetFixtures::node('remove-http-target', [RoleName::WebSocket]);
+    $assignment = $node->roles->sole();
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+
+    $this->deleteJson("/api/v1/nodes/{$node->id}/roles/websocket", ['force' => true, 'purge_data' => false, 'offline' => false])
+        ->assertAccepted()->assertJsonPath('data.kind', 'node.role_remove')->assertJsonPath('data.status', 'queued');
+
+    expect($assignment->refresh()->status)->toBe(LifecycleStatus::Removing);
+    $this->assertModelExists($assignment);
+});
+
+it('records relocation over HTTP while the original source remains serving', function (): void {
+    $gateway = FleetFixtures::node('relocate-http-gateway', [RoleName::Gateway]);
+    $source = FleetFixtures::node('relocate-http-source', [RoleName::WebSocket]);
+    $target = FleetFixtures::node('relocate-http-target');
+    $assignment = $source->roles->sole();
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+
+    $this->postJson("/api/v1/nodes/{$target->id}/roles/websocket/relocate", ['force' => true, 'from' => $source->id])
+        ->assertAccepted()->assertJsonPath('data.kind', 'node.role_relocate')->assertJsonPath('data.status', 'queued');
+
+    expect($assignment->refresh()->node_id)->toBe($source->id);
+    expect($assignment->status)->toBe(LifecycleStatus::Active);
+});
+
+it('admits provisioning role children without a second first-role network transition', function (): void {
+    $node = FleetFixtures::node('role-provisioning-child', status: LifecycleStatus::Provisioning);
+
+    $operation = app(AdmitNodeRoleOperationAction::class)->add($node, RoleName::AppDev, true, duringProvisioning: true);
+
+    expect($operation->state['role_first_managed'])->toBeFalse();
+    expect($operation->state['role_intent'])->toMatchArray(['created' => true, 'source_node_id' => $node->id, 'role' => 'app-dev']);
+});

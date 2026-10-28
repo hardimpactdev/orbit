@@ -34,9 +34,7 @@ final readonly class PrepareNodeAgentConfigurationCommand implements OperationGa
             || ! is_array(Arr::get($operation->input, '_footprint.payloads.agent'))) {
             throw new ResourceOperationException('operation.completion_unproven', 'A successful pinned agent installer receipt is required.', 409);
         }
-        $intent = $operation->input;
-        Arr::set($intent, '_footprint.payloads.agent.binary_changed', $receipt['result']['changed']);
-        $this->operations->change($operation, ['input' => $intent]);
+        $this->operations->change($operation, ['state' => [...($operation->state ?? []), 'node_agent_configuration_changed' => $receipt['result']['changed']]]);
 
         return ['prepared' => true];
     }

@@ -46,6 +46,10 @@ Keep the departing Node's Route associations until every required cleanup child 
 
 Before WireGuard exists, Node enrollment uses the family transport `bootstrap-ssh`. The Operation records the public host, port, login, and pinned host-key fingerprint. Run requests cannot replace those values. The transport permits only declared bootstrap command names and refuses an observed fingerprint mismatch. Bootstrap credentials resolve within the Gateway through the shared secret-reference contract.
 
+Bootstrap receipt reads resolve only the declared existing connection identity through `OperationSecrets::connection`. The source implements `OperationConnectionSecretSource`; it reads the existing SSH identity without creating or rotating credentials. Receipt reads recheck the admitted host fingerprint and use the identity only for that connection. Payload sources and original redaction masks are never resolved again.
+
+Agent installation records the delivered binary pin before dispatch and sends the shared effect key and original sanitization metadata to the native installer. A lost reply reads the original receipt, including whether the binary changed. Receipt reads use a verified staged binary without installing it. The Gateway refuses the effect when its release does not deliver the admitted pin.
+
 The transport registration uses `OperationTransport::schema(Operation, array $run)` and `run(Operation, array $run, array $hydratedInput)`. Schema preparation performs no remote work. The Gateway validates the allowlist, exact bindings, schema, and ownership before dispatching a run.
 
 ## PHP package prerequisite
@@ -94,3 +98,7 @@ For add or ordinary removal, `target_node_id` and `target_settings` are null. Th
 Kit B stamps `parent_operation_id` and `child_key` on the child. A Gateway handler reads that parent Operation and its retained role intent. `GET /operation-executor/{parent}/children` returns only stamped children of that parent with their IDs, keys, kinds, Node IDs, statuses, error codes, and results. Swamp admits a stored child by posting `{worker, key}`.
 
 `tool.manager_converge` prepares the `apt`, `vp`, or `composer` capability on the target Node, using the Tool family's admission adapter to build its own immutable input. Node workflows supply only the manager name and whether the task VM image already provides it. `fleet.cli_converge {}` delivers the CLI when a Node joins the rollout set. Its failure is a follow-up and does not fail the role. Fleet owns release selection and install proof.
+
+Role removal retains its assignment and Settings while Swamp removes the runtime and publications. Removing the last online role restores public SSH before completion. The Gateway checks the captured dependency set again before finalization. A successful removal deletes the assignment and its owned Settings according to the data-retention policy; a failed removal keeps them and records a `remove:` failure. Router children owned by a Cluster never activate or delete its assignment: the Cluster parent owns that cutover.
+
+Relocation holds both Nodes through a nested child chain. The destination parent starts `node.role_relocate_source {assignment_id}` on the original source; that child starts `node.role_relocate_target {assignment_id}` on the destination under the ancestor hold. The destination prepares its firewall, transfers the stable assignment and copied Settings in a Gateway step, then converges the destination runtime. Only its verified success permits source withdrawal. WebSocket withdrawal also waits for cached private DNS answers to expire. Source Settings are deleted after successful withdrawal. A refused destination or source keeps the source Settings for a retry with `--from`.

@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
+use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\Nodes\NodeOperationAgentInstaller;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\HostKeyScanner;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -21,8 +23,8 @@ function bootstrapOperation($test): array
     $services->accessibleNodes()->attach($gateway);
     config(['dependency_detection.services_node_id' => $services->id]);
     $node = Node::query()->create(['name' => 'new', 'status' => LifecycleStatus::Provisioning, 'platform' => 'linux',
-        'user' => 'orbit', 'public_ssh_host' => '192.0.2.10', 'wireguard_ip' => '10.44.0.3']);
-    $input = ['bootstrap_host' => '192.0.2.10', 'bootstrap_port' => 2222,
+        'architecture' => 'x86_64', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.10', 'wireguard_ip' => '10.44.0.3']);
+    $input = ['agent_pin' => app(AgentDelivery::class)->pin($node), 'bootstrap_host' => '192.0.2.10', 'bootstrap_port' => 2222,
         'bootstrap_fingerprint' => 'SHA256:'.str_repeat('A', 43), 'bootstrap_user' => 'root', 'bootstrap_identity' => ['$secret' => 'node.bootstrap_ssh_identity', 'id' => $node->id], 'command_input' => []];
     $operation = Operation::query()->create(['kind' => 'node.bootstrap_install', 'target_type' => 'node_bootstrap',
         'target_id' => $node->id, 'node_id' => $node->id, 'input' => $input, 'status' => 'queued', 'sequence' => 1, 'attempts' => 0]);
@@ -52,7 +54,9 @@ it('pins bootstrap SSH before installing and never uses the future WireGuard add
         && $connection->hostIdentity === 'SHA256:'.str_repeat('A', 43)
         && $connection->identityFile === '/fake/gateway-identity' && ! $connection->shareConnection;
     $runner->shouldReceive('architectureOver')->once()->withArgs(fn (Node $target, SshConnection $ssh): bool => $target->id === $node->id && $connection($ssh))->andReturn('x86_64');
-    $runner->shouldReceive('installOver')->once()->withArgs(fn (Node $target, SshConnection $ssh): bool => $target->architecture === 'x86_64' && $connection($ssh))->andReturn(true);
+    $installer = Mockery::mock(NodeOperationAgentInstaller::class);
+    $installer->shouldReceive('installEffect')->once()->withArgs(fn (Node $target, string $pin, array $run, SshConnection $ssh): bool => $target->architecture === 'x86_64' && $connection($ssh) && $pin === $operation->input['agent_pin'] && $run['effect_key'] === 'op-'.$operation->id.'.install')->andReturn(true);
+    app()->instance(NodeOperationAgentInstaller::class, $installer);
     app()->instance(AdmissionAgentRunner::class, $runner);
 
     $this->postJson("/api/v1/operation-executor/{$operation->id}/run", $body)->assertOk()->assertJsonPath('data.installed', true);
@@ -109,4 +113,39 @@ it('does not accept bare or forged bootstrap completion', function (): void {
     $this->postJson("/api/v1/operation-executor/{$operation->id}/step", [
         'worker' => 'bootstrap-1', 'key' => 'forged', 'name' => 'agent-install', 'status' => 'succeeded', 'result' => ['installed' => true],
     ])->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
+});
+
+it('recovers a lost bootstrap installer reply using only the existing connection identity', function (): void {
+    [$node, $operation, $body] = bootstrapOperation($this);
+    $key = new HostKey('ssh-ed25519', 'public-key', $operation->input['bootstrap_fingerprint']);
+    $scanner = Mockery::mock(HostKeyScanner::class);
+    $scanner->shouldReceive('scan')->twice()->with('192.0.2.10', 2222, null)->andReturn($key);
+    app()->instance(HostKeyScanner::class, $scanner);
+    $known = Mockery::mock(KnownHostsStore::class);
+    $known->shouldReceive('put')->twice()->with('192.0.2.10', 2222, $key);
+    $known->shouldReceive('path')->andReturn('/fake/known-hosts');
+    app()->instance(KnownHostsStore::class, $known);
+    $keys = Mockery::mock(SshKeyProvider::class);
+    $keys->shouldReceive('privateKeyPath')->twice()->andReturn('/fake/existing-identity');
+    app()->instance(SshKeyProvider::class, $keys);
+    $runner = Mockery::mock(AdmissionAgentRunner::class);
+    $runner->shouldReceive('architectureOver')->twice()->andReturn('x86_64');
+    $runner->shouldNotReceive('installOver');
+    $runner->shouldNotReceive('runOver');
+    app()->instance(AdmissionAgentRunner::class, $runner);
+    $installer = Mockery::mock(NodeOperationAgentInstaller::class);
+    $installer->shouldReceive('installEffect')->once()->andThrow(new RuntimeException('lost reply'));
+    $installer->shouldReceive('effectReceipt')->once()->withArgs(static fn (Node $target, string $pin, string $command, string $effectKey, SshConnection $connection): bool => $target->id === $node->id && $pin === $operation->input['agent_pin'] && $command === 'agent.install'
+        && $effectKey === 'op-'.$operation->id.'.install' && $connection->identityFile === '/fake/existing-identity'
+        && $connection->host === '192.0.2.10' && $connection->hostIdentity === $key->fingerprint
+    )->andReturn(['effect_key' => 'op-'.$operation->id.'.install', 'state' => 'succeeded', 'result' => ['replaced' => true],
+        'sanitized' => true, 'exit_code' => 0, 'finished_at' => '2026-10-29T00:00:00Z']);
+    app()->instance(NodeOperationAgentInstaller::class, $installer);
+
+    $this->postJson("/api/v1/operation-executor/{$operation->id}/run", $body)->assertStatus(502);
+    $this->getJson("/api/v1/operation-executor/{$operation->id}/receipts/install")->assertOk()
+        ->assertJsonPath('data.state', 'succeeded')->assertJsonPath('data.result.installed', true)
+        ->assertJsonPath('data.result.changed', true)->assertDontSee('/fake/existing-identity');
+    $this->getJson("/api/v1/operation-executor/{$operation->id}/receipts/install")->assertOk();
+    expect(json_encode($operation->fresh()->state))->not->toContain('/fake/existing-identity');
 });

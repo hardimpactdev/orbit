@@ -237,8 +237,10 @@ The API also uses the shared identity, access, and not-found errors described in
 Add one role to a Node, or converge an existing role again.
 
 ```bash
-orbit node:role:add <node> <role> [--converge] [--postgres-process=ID] [--clickhouse-process=ID] [--json]
+orbit node:role:add <node> <role> [--converge] [--postgres-process=ID] [--clickhouse-process=ID] [--idempotency-key=KEY] [--json]
 ```
+
+Role writes return an Operation with HTTP 202. The CLI follows its steps; JSON contains the final Operation. Use `--idempotency-key` to retry admission after a lost reply. Removing an already absent Ingress assignment returns its immediate removal result.
 
 | Option | Meaning |
 | --- | --- |
@@ -275,7 +277,7 @@ orbit node:role:list <node> [--json]
 Move `gateway`, `websocket`, or `metrics` from its current Node to another Node. One assignment stays active for the whole request.
 
 ```bash
-orbit node:role:relocate <node> <role> [--from=NODE] [--force] [--json]
+orbit node:role:relocate <node> <role> [--from=NODE] [--force] [--idempotency-key=KEY] [--json]
 ```
 
 | Argument or option | Meaning |
@@ -303,7 +305,7 @@ When a step on the target or the source fails, the role already runs on the targ
 Remove one role from a Node.
 
 ```bash
-orbit node:role:remove <node> <role> [--force] [--purge-data] [--offline] [--json]
+orbit node:role:remove <node> <role> [--force] [--purge-data] [--offline] [--idempotency-key=KEY] [--json]
 ```
 
 | Option | Meaning |

@@ -10,7 +10,9 @@ use App\Data\Nodes\RemovedNodeAccessData;
 use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\AwaitOperation;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRole;
@@ -57,7 +59,11 @@ final readonly class RemoveNodeAccessAction
     {
         $result = $this->start($consumer, $serving, $caller);
         if ($result instanceof Operation) {
-            app(AwaitOperation::class)->execute($result);
+            $result = app(AwaitOperation::class)->execute($result);
+            if ($result->status !== OperationStatus::Succeeded) {
+                throw new ResourceOperationException($result->error_code ?? ($result->status === OperationStatus::Cancelled ? 'operation.cancelled' : 'operation.failed'),
+                    'The Node Operation did not succeed.', 409, details: ['operation_id' => $result->id]);
+            }
 
             return RemovedNodeAccessData::from($result->input['access']);
         }

@@ -126,7 +126,7 @@ it('binds binary_changed from a proven install instead of trusting Swamp', funct
     $command = app(PrepareNodeAgentConfigurationCommand::class);
 
     expect($command->run($operation, []))->toBe(['prepared' => true])
-        ->and($operation->refresh()->input['_footprint']['payloads']['agent']['binary_changed'])->toBe($changed);
+        ->and($operation->refresh()->state['node_agent_configuration_changed'])->toBe($changed);
 })->with([true, false]);
 
 it('refuses forged, failed and wrong installer evidence', function (string $variant): void {

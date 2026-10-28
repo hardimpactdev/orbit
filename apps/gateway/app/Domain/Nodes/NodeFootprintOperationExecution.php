@@ -11,6 +11,7 @@ use App\Domain\Operations\OperationFamilyExecution;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
@@ -80,6 +81,12 @@ final readonly class NodeFootprintOperationExecution implements OperationFamilyC
 
     public function received(Operation $operation, array $run, array $receipt): array
     {
+        if ($run['key'] === 'footprint-agent-install' && $run['transport'] === 'node-agent' && $run['name'] === 'agent.install'
+            && ($receipt['installed'] ?? null) === true && ! isset($receipt['error_code'])) {
+            $this->input($operation, $run);
+            Node::query()->whereKey($operation->node_id)->update(['agent_failed_pin' => null]);
+        }
+
         return $receipt;
     }
 
@@ -159,7 +166,7 @@ final readonly class NodeFootprintOperationExecution implements OperationFamilyC
             }
             $name = ValidatedData::string($artifact['name']);
             if ($name === 'agent') {
-                $effects[] = ['type' => 'run', 'descriptor' => $this->descriptor('footprint-agent-install', 'node-agent', 'agent.install', [])];
+                $effects[] = ['type' => 'run', 'descriptor' => $this->descriptor('footprint-agent-install', 'node-agent', 'agent.install', ['pin' => ValidatedData::string($snapshot['agent_pin'] ?? null)])];
                 $effects[] = ['type' => 'run', 'descriptor' => $this->descriptor('prepare-agent-configuration', 'gateway', 'node.prepare-agent-configuration', [])];
             }
             if (isset($children[$name])) {
@@ -175,7 +182,11 @@ final readonly class NodeFootprintOperationExecution implements OperationFamilyC
                     'peer-dns' => 'wireguard.repair-peer-dns', 'tmpfiles' => 'node.publish-tmpfiles',
                     default => throw $this->unproven(),
                 };
-                $effects[] = ['type' => 'run', 'descriptor' => $this->descriptor('footprint-'.$name, 'agent', $command, ValidatedData::object($payloads[$name] ?? []))];
+                $input = ValidatedData::object($payloads[$name] ?? []);
+                if ($name === 'agent') {
+                    $input['binary_changed'] = ($operation->state['node_agent_configuration_changed'] ?? false) === true;
+                }
+                $effects[] = ['type' => 'run', 'descriptor' => $this->descriptor('footprint-'.$name, 'agent', $command, $input)];
             }
         }
 

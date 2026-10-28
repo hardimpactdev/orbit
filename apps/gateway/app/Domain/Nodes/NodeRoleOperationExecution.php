@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Nodes;
 
 use App\Actions\Nodes\GrantGatewayRoleAccessAction;
+use App\Domain\AppDev\PrivateDnsAnswerExpiry;
 use App\Domain\Operations\OperationChildIntent;
 use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationFamilyChildren;
@@ -15,6 +16,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
+use Illuminate\Support\Carbon;
 
 /** Node role ordering and proof from immutable plans, transport receipts and Kit B child identity. */
 final readonly class NodeRoleOperationExecution implements OperationFamilyChildren, OperationFamilyExecution
@@ -24,7 +26,7 @@ final readonly class NodeRoleOperationExecution implements OperationFamilyChildr
     public function context(Operation $operation): array
     {
         $descriptors = [$this->descriptor(['key' => 'prepare-role', 'transport' => 'gateway', 'name' => 'node.prepare-role',
-            'input' => ['role' => $operation->input['role'], 'converge' => $operation->input['converge']]])];
+            'input' => $this->prepareInput($operation)])];
         foreach ($this->eligible($operation) as $step) {
             if ($step['type'] === 'run') {
                 $descriptors[] = $this->descriptor($step);
@@ -32,7 +34,9 @@ final readonly class NodeRoleOperationExecution implements OperationFamilyChildr
         }
         $descriptors[] = $this->descriptor(['key' => 'role-result', 'transport' => 'gateway', 'name' => 'node.role-result', 'input' => []]);
 
-        return ['descriptors' => $descriptors];
+        $waitUntil = $this->withdrawalAt($operation);
+
+        return ['descriptors' => $descriptors, 'result' => $waitUntil === null ? [] : ['role_wait_until' => $waitUntil]];
     }
 
     public function childContext(Operation $parent): array
@@ -136,11 +140,31 @@ final readonly class NodeRoleOperationExecution implements OperationFamilyChildr
         return $result;
     }
 
+    /** @return array<string,mixed> */
+    private function prepareInput(Operation $operation): array
+    {
+        if ($operation->kind === 'node.role_relocate') {
+            return ['role' => $operation->input['role'], 'converge' => true];
+        }
+        if (in_array($operation->kind, ['node.role_converge', 'node.role_relocate_source', 'node.role_relocate_target'], true)) {
+            return ['assignment_id' => $operation->input['assignment_id']];
+        }
+        if ($operation->kind === 'node.role_remove') {
+            return ['role' => $operation->input['role'], 'purge_data' => $operation->input['purge_data'], 'offline' => $operation->input['offline']];
+        }
+
+        return ['role' => $operation->input['role'], 'converge' => $operation->input['converge']];
+    }
+
     /** @return list<array<string,mixed>> */
     private function eligible(Operation $operation): array
     {
         $eligible = [];
+        $waitUntil = $this->withdrawalAt($operation);
         foreach ($this->plan($operation) as $step) {
+            if ($step['key'] !== 'role-relocation-target' && $waitUntil !== null && Carbon::now()->getTimestampMs() < $waitUntil) {
+                break;
+            }
             $proof = $this->proof($operation, $step);
             if ($proof['status'] === 'skipped') {
                 continue;
@@ -152,6 +176,24 @@ final readonly class NodeRoleOperationExecution implements OperationFamilyChildr
         }
 
         return $eligible;
+    }
+
+    private function withdrawalAt(Operation $operation): ?int
+    {
+        $intent = ValidatedData::object($operation->state['role_intent'] ?? []);
+        if ($operation->kind !== 'node.role_relocate_source' || ($intent['role'] ?? null) !== 'websocket') {
+            return null;
+        }
+        $target = $operation->children()->where('child_key', 'role-relocation-target')->first();
+        if ($target === null || $target->status !== OperationStatus::Succeeded) {
+            return null;
+        }
+        $this->children->verify($operation, $target);
+        if ($target->finished_at === null) {
+            throw $this->unproven();
+        }
+
+        return $target->finished_at->addSeconds(PrivateDnsAnswerExpiry::WithdrawalGraceSeconds)->getTimestampMs();
     }
 
     /** @param array<string,mixed> $step

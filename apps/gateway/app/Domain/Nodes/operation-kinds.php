@@ -9,6 +9,9 @@ use App\Domain\Nodes\NodeChildAdmission;
 use App\Domain\Nodes\NodeFootprintOperationCompletion;
 use App\Domain\Nodes\NodeFootprintOperationExecution;
 use App\Domain\Nodes\NodePhpPackagesOperationCompletion;
+use App\Domain\Nodes\NodeRoleOperationCompletion;
+use App\Domain\Nodes\NodeRoleOperationExecution;
+use App\Domain\Nodes\NodeRoleRelocationSourceCompletion;
 use App\Domain\Nodes\NodeSettingsOperationCompletion;
 use App\Domain\Nodes\NodeWireGuardOperationCompletion;
 use App\Domain\Nodes\NodeWireGuardOperationExecution;
@@ -72,8 +75,8 @@ $nodeKinds = [
             ['transport' => 'gateway', 'name' => 'node.prepare-footprint', 'resumable' => true, 'input_fields' => ['force_artifacts', 'first_visit']],
             ['transport' => 'gateway', 'name' => 'node.prepare-agent-configuration', 'resumable' => true, 'input_values' => []],
             ['transport' => 'gateway', 'name' => 'node.footprint-result', 'resumable' => true, 'input_values' => []],
-            ['transport' => 'node-agent', 'name' => 'agent.install', 'input_values' => []],
-            [...$bound('agent.configure', 'agent', ['secret_hash', 'configuration', 'certificate', 'unit', 'checkouts', 'binary_changed']),
+            ['transport' => 'node-agent', 'name' => 'agent.install', 'input_fields' => ['pin'], 'bind' => ['pin' => 'input._footprint.agent_pin']],
+            [...$bound('agent.configure', 'agent', ['secret_hash', 'configuration', 'certificate', 'unit', 'checkouts']),
                 'secrets' => ['secret_hash' => 'node.agent_secret_hash']],
             $bound('caddy.install-package', 'caddy-package', array_keys(AgentCaddyPackage::input())),
             $bound('wireguard.repair-peer-dns', 'peer-dns', ['dns_server', 'public_key', 'domains']),
@@ -97,12 +100,12 @@ $nodeKinds = [
         'completion' => NodeBootstrapOperationCompletion::class,
         'runs' => [[
             'transport' => 'bootstrap-ssh', 'name' => 'agent.install',
-            'input_fields' => ['bootstrap_host', 'bootstrap_port', 'bootstrap_fingerprint', 'bootstrap_user', 'bootstrap_identity', 'command_input'],
+            'input_fields' => ['agent_pin', 'bootstrap_host', 'bootstrap_port', 'bootstrap_fingerprint', 'bootstrap_user', 'bootstrap_identity', 'command_input'],
             'input_values' => [],
             'secrets' => ['bootstrap_identity' => 'node.bootstrap_ssh_identity'],
             'input_schema' => BootstrapSshOperationTransport::inputSchema('agent.install'),
             'bind' => [
-                'bootstrap_host' => 'input.bootstrap_host', 'bootstrap_port' => 'input.bootstrap_port',
+                'agent_pin' => 'input.agent_pin', 'bootstrap_host' => 'input.bootstrap_host', 'bootstrap_port' => 'input.bootstrap_port',
                 'bootstrap_fingerprint' => 'input.bootstrap_fingerprint', 'bootstrap_user' => 'input.bootstrap_user',
                 'command_input' => 'input.command_input', 'bootstrap_identity' => 'input.bootstrap_identity',
             ],
@@ -132,8 +135,37 @@ $nodeKinds = [
     ],
 ];
 
+$nodeRoleDefinition = [
+    'executor' => 'swamp', 'execution' => NodeRoleOperationExecution::class, 'completion' => NodeRoleOperationCompletion::class,
+    'admission' => NodeChildAdmission::class,
+    'runs' => [
+        ...array_map(static fn (string $name): array => ['transport' => 'gateway', 'name' => $name, 'resumable' => true], [
+            'node.prepare-role', 'node.role-result', 'node.grant-gateway-access', 'node.transfer-role',
+        ]),
+        ...array_map(static fn (string $name): array => ['transport' => 'agent', 'name' => $name], [
+            'node.prepare-storage-root', 'caddy.install-package', 'caddy.order-after-vpn', 'firewall.rules', 'firewall.router-lan',
+            'wireguard.gateway-dns', 'role.install-prerequisites', 'recipe.install-javascript', 'php.install-build',
+            'ci-runner.host', 'hibernation.prepare-directories',
+        ]),
+    ],
+    'children' => array_map(static fn (string $kind): array => ['kind' => $kind, 'node_from' => 'intent.node_ids'], [
+        'node.network_converge', 'node.role_relocate_source', 'node.role_relocate_target', 'node.converge', 'fleet.cli_converge', 'route.caddy_converge', 'route.private_dns_publish',
+        'tool.manager_converge', 'metrics.reconcile', 'metrics.role_converge', 'metrics.role_remove',
+        'analytics.role_converge', 'analytics.role_remove', 'websocket.role_converge', 'websocket.role_remove',
+    ]),
+    'completion_contract' => ['step' => 'role-result', 'transport' => 'gateway', 'name' => 'node.role-result', 'result' => ['role_proven' => true]],
+    'result_fields' => ['prepared', 'role_proven', 'assignment_id', 'created', 'follow_up', 'failed_step', 'error_code', 'outcome', 'matches',
+        'changed', 'configured', 'access_granted', 'version', 'transferred', 'role_wait_until'],
+];
+
+foreach (['node.role_add', 'node.role_converge', 'node.role_remove', 'node.role_relocate', 'node.role_relocate_source', 'node.role_relocate_target'] as $nodeRoleKind) {
+    $nodeKinds[$nodeRoleKind] = $nodeRoleDefinition;
+}
+
+$nodeKinds['node.role_relocate_source']['completion'] = NodeRoleRelocationSourceCompletion::class;
+
 if (! OperationKinds::supports('children') || ! OperationKinds::supports('children_settled') || ! OperationKinds::supports('list_of')) {
-    unset($nodeKinds['node.converge']);
+    unset($nodeKinds['node.converge'], $nodeKinds['node.role_add'], $nodeKinds['node.role_converge'], $nodeKinds['node.role_remove'], $nodeKinds['node.role_relocate'], $nodeKinds['node.role_relocate_source'], $nodeKinds['node.role_relocate_target']);
 }
 
 return $nodeKinds;

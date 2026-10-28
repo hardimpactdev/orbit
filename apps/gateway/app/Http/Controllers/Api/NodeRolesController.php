@@ -10,7 +10,7 @@ use App\Actions\Nodes\RelocateNodeRoleAction;
 use App\Actions\Nodes\RemoveNodeRoleAction;
 use App\Data\Nodes\NodeRoleAssignmentData;
 use App\Data\Nodes\NodeRoleMutationData;
-use App\Domain\Nodes\NodeRoleFollowUpReport;
+use App\Data\Operations\OperationData;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
@@ -21,8 +21,10 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Nodes\AddNodeRoleRequest;
 use App\Http\Requests\Nodes\RelocateNodeRoleRequest;
 use App\Http\Requests\Nodes\RemoveNodeRoleRequest;
+use App\Http\Requests\Operations\StartsOperation;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Operation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -46,6 +48,7 @@ final class NodeRolesController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::RoleMutation)]
+    #[StartsOperation('node.role_add')]
     public function store(
         AddNodeRoleRequest $request,
         Node $node,
@@ -56,7 +59,7 @@ final class NodeRolesController extends Controller
         $this->guardMutable($role, $registry);
 
         try {
-            $result = $action->execute($node, $role, $request->convergeExisting(), $request->analyticsSettings());
+            $operation = $action->start($node, $role, $request->convergeExisting(), $request->analyticsSettings(), $request->attributes->getString('orbit.request_id'));
         } catch (RoleAssignmentException $exception) {
             throw new NodeRoleValidationException(
                 message: $exception->getMessage(),
@@ -66,30 +69,30 @@ final class NodeRolesController extends Controller
 
         return response()->json(
             [
-                'data' => NodeRoleMutationData::added($node, $result['assignment'], $result['follow_up'])->toArray(),
+                'data' => OperationData::fromModel($operation)->toArray(),
                 'meta' => $this->meta($request),
             ],
-            $result['created'] ? 201 : 200,
+            202,
         );
     }
 
     #[RequiresNodeAccess(ServingNode::Gateway)]
+    #[StartsOperation('node.role_relocate')]
     public function relocate(
         RelocateNodeRoleRequest $request,
         Node $node,
         RelocateNodeRoleAction $action,
-        NodeRoleFollowUpReport $followUps,
     ): JsonResponse {
-        $followUps->take();
-        $outcome = $action->execute($node, $request->role(), $request->force(), $request->from());
+        $operation = $action->start($node, $request->role(), $request->force(), $request->from(), $request->attributes->getString('orbit.request_id'));
 
         return response()->json([
-            'data' => NodeRoleMutationData::added($node, $outcome, $followUps->take())->toArray(),
+            'data' => OperationData::fromModel($operation)->toArray(),
             'meta' => $this->meta($request),
-        ]);
+        ], 202);
     }
 
     #[RequiresNodeAccess(ServingNode::RoleMutation)]
+    #[StartsOperation('node.role_remove')]
     public function destroy(
         RemoveNodeRoleRequest $request,
         Node $node,
@@ -99,12 +102,13 @@ final class NodeRolesController extends Controller
         $validatedRole = $request->role();
         $this->guardMutable($validatedRole, $registry);
         try {
-            $outcome = $action->execute(
+            $outcome = $action->start(
                 $node,
                 $validatedRole,
                 $request->force(),
                 $request->purgeData(),
                 $request->offline(),
+                requestId: $request->attributes->getString('orbit.request_id'),
             );
         } catch (NodeRoleValidationException $exception) {
             if ($exception->details !== []) {
@@ -118,9 +122,9 @@ final class NodeRolesController extends Controller
         }
 
         return response()->json([
-            'data' => NodeRoleMutationData::removed($node, $validatedRole, $outcome)->toArray(),
+            'data' => $outcome instanceof Operation ? OperationData::fromModel($outcome)->toArray() : NodeRoleMutationData::removed($node, $validatedRole, $outcome)->toArray(),
             'meta' => $this->meta($request),
-        ]);
+        ], $outcome instanceof Operation ? 202 : 200);
     }
 
     private function guardMutable(RoleName $role, RoleRegistry $registry): void

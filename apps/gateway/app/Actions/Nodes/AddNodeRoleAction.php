@@ -4,447 +4,67 @@ declare(strict_types=1);
 
 namespace App\Actions\Nodes;
 
-use App\Data\Nodes\NodeData;
 use App\Domain\Analytics\AnalyticsRoleSettings;
-use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
-use App\Domain\Analytics\AnalyticsStorageProcessGuard;
-use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\Broadcasting\RecordEventBroadcaster;
-use App\Domain\Broadcasting\RecordEventType;
-use App\Domain\Firewall\FirewallOperationException;
-use App\Domain\Nodes\NodeConverger;
-use App\Domain\Nodes\NodeObservation;
-use App\Domain\Nodes\NodeProvisioningException;
-use App\Domain\Nodes\NodeProvisioningIdentity;
-use App\Domain\Nodes\NodeRoleFollowUpReport;
 use App\Domain\Nodes\NodeRoleOperationException;
-use App\Domain\Nodes\RecoverableNodeConverger;
 use App\Domain\Nodes\RoleAssignmentException;
-use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\RoleRegistry;
-use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tools\ToolManagerMaterializer;
-use App\Domain\Tools\ToolManagerName;
-use App\Domain\Tools\ToolManagerScopeLock;
-use App\Domain\Tools\ToolManagerScopeLockException;
-use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
+use App\Domain\Operations\AwaitOperation;
+use App\Domain\Operations\OperationStatus;
 use App\Models\Node;
 use App\Models\NodeRole;
-use Closure;
-use Illuminate\Support\Facades\DB;
-use Throwable;
+use App\Models\Operation;
+use App\Support\ValidatedData;
 
+/** Retained Gateway callers admit a role Operation. Swamp owns every role effect. */
 final readonly class AddNodeRoleAction
 {
-    public function __construct(
-        private AssignRoleAction $assignRole,
-        private RoleRegistry $registry,
-        private RoleBaselineConverger $baselines,
-        private NodeConverger $converger,
-        private ToolManagerMaterializer $toolManagers,
-        private ToolManagerScopeLock $managerScope,
-        private ?RecordEventBroadcaster $broadcaster = null,
-        private ?AnalyticsStorageProcessGuard $analyticsStorage = null,
-        private ?AnalyticsRoleSettingsRepository $analyticsSettings = null,
-        private ?NodeRoleConvergeLock $nodeLock = null,
-        private ?NodeRoleFollowUpReport $followUps = null,
-    ) {}
+    public function __construct(private AdmitNodeRoleOperationAction $admission, private AwaitOperation $await,
+        private AssignRoleAction $assign, private RoleRegistry $roles) {}
 
-    /**
-     * `follow_up` names a convergence step that failed without failing the role, or is null.
-     *
-     * @return array{assignment: NodeRole, created: bool, follow_up: ?string}
-     */
-    public function execute(
-        Node $node,
-        RoleName $role,
-        bool $convergeExisting = false,
-        ?AnalyticsRoleSettings $analytics = null,
-    ): array {
-        $this->guardActiveNode($node);
-        $this->guardSupportedPlatform($node);
-        $this->guardAnalyticsStorage($node, $role, $analytics);
-
-        if (! $this->registry->definition($role)->mutable) {
-            throw new RoleAssignmentException("Role [{$role->value}] is protected from generic mutation.");
-        }
-
-        $result = $this->withAppManagerScope($node, $role, fn (): array => $this->nodeLock()->run($node, function () use ($node, $role, $convergeExisting, $analytics): array {
-            $assignedRoles = $node->roles()->get();
-
-            if ($assignedRoles->every(static fn (NodeRole $assignment): bool => $assignment->status !== LifecycleStatus::Active)) {
-                $assignment = $assignedRoles->firstWhere('role', $role);
-
-                if ($assignment instanceof NodeRole && $assignment->role === $role) {
-                    if (! $convergeExisting) {
-                        throw new RoleAssignmentException("Role [{$role->value}] is already assigned; explicit convergence is required.");
-                    }
-
-                    if (! $assignment->canClaimConvergence()) {
-                        throw new RoleAssignmentException("Role [{$role->value}] cannot converge from status [{$assignment->status->value}].");
-                    }
-                } else {
-                    $this->assignRole->preflight($node, $role, [$role]);
-                }
-
-                return $this->convergeManagedDnsTransition($node, $role, $analytics, $assignment instanceof NodeRole && $assignment->role === $role);
-            }
-
-            $claim = $convergeExisting ? $this->claimExisting($node, $role) : $this->claimNew($node, $role);
-
-            if ($analytics instanceof AnalyticsRoleSettings) {
-                $this->analyticsSettings()->store($node, $analytics);
-            }
-
-            if ($role === RoleName::Ingress && ! $convergeExisting && ! $claim['created']) {
-                return [
-                    'assignment' => $claim['assignment']->refresh(),
-                    'created' => false,
-                    'follow_up' => null,
-                ];
-            }
-
-            return $this->convergeClaim($node, $role, $claim);
-        }, step: 'converge:node-lock'));
-
-        ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
-            RecordEventType::NodeUpdated,
-            $node->id,
-            NodeData::fromModel($node->refresh())->toArray(),
-        );
-
-        return $result;
+    public function start(Node $node, RoleName $role, bool $convergeExisting = false, ?AnalyticsRoleSettings $analytics = null, ?string $requestId = null): Operation
+    {
+        return $this->admission->add($node, $role, $convergeExisting, $analytics, $requestId);
     }
 
     /** @return array{assignment: NodeRole, created: bool, follow_up: ?string} */
-    private function convergeManagedDnsTransition(Node $node, RoleName $role, ?AnalyticsRoleSettings $analytics, bool $retryExisting): array
+    public function execute(Node $node, RoleName $role, bool $convergeExisting = false, ?AnalyticsRoleSettings $analytics = null): array
     {
-        $identity = new NodeProvisioningIdentity($node->user, $node->user);
-        $result = null;
-        $completion = function (NodeObservation $observation) use ($node, $role, $analytics, $retryExisting, &$result): void {
-            $claim = $retryExisting ? $this->claimExisting($node, $role) : $this->claimNew($node, $role);
-
-            if ($analytics instanceof AnalyticsRoleSettings) {
-                $this->analyticsSettings()->store($node, $analytics);
-            }
-
-            $result = $this->convergeClaim($node, $role, $claim);
-        };
-
-        if (! $this->converger instanceof RecoverableNodeConverger) {
-            throw new \LogicException('The Node converger must support recoverable convergence for the managed DNS transition.');
-        }
-
-        try {
-            $this->converger->convergeRecoverably($node, $identity, null, $completion, false);
-        } catch (NodeProvisioningException $exception) {
-            if ($result !== null) {
-                DB::transaction(static fn () => $result['assignment']->markConvergenceFailed($exception->step, $exception->errorCode));
-            }
-
-            throw new NodeRoleOperationException(
-                step: "converge:{$exception->step}",
-                errorCode: 'node_role.convergence_failed',
-                underlyingErrorCode: $exception->errorCode,
-                message: $exception->getMessage(),
-                result: $exception->result,
-                previous: $exception,
-            );
-        }
-
-        if ($result === null) {
-            throw new \LogicException('Node convergence did not complete the role assignment.');
-        }
-
-        return $result;
+        return $this->result($this->await->execute($this->start($node, $role, $convergeExisting, $analytics)));
     }
 
     public function executeDuringProvisioning(Node $node, RoleName $role): NodeRole
     {
-        $this->guardProvisioningNode($node);
-        $this->guardSupportedPlatform($node);
-        if (! $this->registry->definition($role)->assignableDuringProvisioning) {
-            throw new RoleAssignmentException("Role [{$role->value}] cannot be assigned during provisioning.");
-        }
+        $operation = $this->admission->add($node, $role, true, duringProvisioning: true);
 
-        return $this->withAppManagerScope(
-            $node,
-            $role,
-            fn (): NodeRole => $this->nodeLock()->run(
-                $node,
-                fn (): NodeRole => $this->convergeClaim($node, $role, $this->claimExisting($node, $role))['assignment'],
-                step: 'converge:node-lock',
-            ),
-        );
+        return $this->result($this->await->execute($operation))['assignment'];
     }
 
     /** @param list<RoleName> $prospectiveRoles */
     public function preflightDuringProvisioning(Node $node, RoleName $role, array $prospectiveRoles): void
     {
-        if (! $this->registry->definition($role)->assignableDuringProvisioning) {
+        if (! $this->roles->definition($role)->assignableDuringProvisioning) {
             throw new RoleAssignmentException("Role [{$role->value}] cannot be assigned during provisioning.");
         }
-
-        $this->assignRole->preflight($node, $role, $prospectiveRoles);
+        $this->assign->preflight($node, $role, $prospectiveRoles);
     }
 
-    /** @return array{assignment: NodeRole, created: bool} */
-    private function claimNew(Node $node, RoleName $role): array
+    /** @return array{assignment: NodeRole, created: bool, follow_up: ?string} */
+    private function result(Operation $operation): array
     {
-
-        $claim = DB::transaction(function () use ($node, $role): array {
-            $assignment = $this->assignRole->execute($node, $role);
-
-            if (! $assignment->wasRecentlyCreated) {
-                if ($role === RoleName::Ingress && $assignment->status === LifecycleStatus::Active) {
-                    return ['assignment' => $assignment, 'created' => false];
-                }
-
-                throw new RoleAssignmentException(
-                    "Role [{$role->value}] is already assigned; explicit convergence is required.",
-                );
-            }
-
-            return ['assignment' => $assignment, 'created' => true];
-        });
-
-        return $claim;
-    }
-
-    /** @return array{assignment: NodeRole, created: bool} */
-    private function claimExisting(Node $node, RoleName $role): array
-    {
-
-        $claim = DB::transaction(function () use ($node, $role): array {
-            $assignment = $this->assignRole->execute($node, $role);
-
-            if ($assignment->wasRecentlyCreated) {
-                return ['assignment' => $assignment, 'created' => true];
-            }
-
-            $assignment->refresh();
-
-            if (! $assignment->canClaimConvergence()) {
-                throw new RoleAssignmentException(
-                    "Role [{$role->value}] cannot converge from status [{$assignment->status->value}].",
-                );
-            }
-
-            $assignment->claimConvergence();
-
-            return ['assignment' => $assignment, 'created' => false];
-        });
-
-        return $claim;
-    }
-
-    /**
-     * @param  array{assignment: NodeRole, created: bool}  $claim
-     * @return array{assignment: NodeRole, created: bool, follow_up: ?string}
-     */
-    private function convergeClaim(Node $node, RoleName $role, array $claim): array
-    {
-        // A follow-up recorded earlier in this request belongs to another convergence.
-        $this->followUps()->take();
-
-        try {
-            $this->nodeLock()->run($node, function () use ($node, $role, $claim): void {
-                $this->baselines->converge($node, $claim['assignment']);
-                $this->materializeAppManagers($node, $role, $claim['assignment']);
-            });
-        } catch (NodeProvisioningException $exception) {
-            $this->failConvergence($claim['assignment'], new NodeRoleOperationException(
-                step: $exception->step,
-                errorCode: 'node_role.convergence_failed',
-                underlyingErrorCode: $exception->errorCode,
-                message: $exception->getMessage(),
-                result: $exception->result,
-                previous: $exception,
-            ));
-        } catch (NodeRoleOperationException $exception) {
-            $step = $this->unnamespacedStep($exception->step);
-
-            $this->failConvergence($claim['assignment'], new NodeRoleOperationException(
-                step: $step,
-                errorCode: 'node_role.convergence_failed',
-                underlyingErrorCode: $exception->underlyingErrorCode,
-                message: $exception->getMessage(),
-                result: $exception->result,
-                previous: $exception,
-            ));
-        } catch (RuntimeConvergenceException|FirewallOperationException $exception) {
-            $this->failConvergence($claim['assignment'], new NodeRoleOperationException(
-                step: $this->unnamespacedStep($exception->step),
-                errorCode: 'node_role.convergence_failed',
-                underlyingErrorCode: $exception->errorCode,
-                message: $exception->getMessage(),
-                result: $exception->result,
-                previous: $exception,
-            ));
-        } catch (Throwable $exception) {
-            $this->failConvergence($claim['assignment'], new NodeRoleOperationException(
-                step: 'baseline',
-                errorCode: 'node_role.convergence_failed',
-                underlyingErrorCode: 'node_role.convergence_unknown',
-                message: "Role [{$role->value}] convergence failed on node [{$node->name}].",
-                previous: $exception,
-            ));
+        if ($operation->status !== OperationStatus::Succeeded) {
+            $step = $operation->result['failed_step'] ?? 'operation';
+            throw new NodeRoleOperationException(is_string($step) ? $step : 'operation', 'node_role.convergence_failed',
+                $operation->error_code ?? ($operation->status === OperationStatus::Cancelled ? 'operation.cancelled' : 'node_role.convergence_failed'),
+                "Role convergence did not succeed; follow Operation [{$operation->id}].");
+        }
+        $intent = ValidatedData::object($operation->state['role_intent'] ?? []);
+        $created = $intent['created'] ?? null;
+        if (! is_bool($created)) {
+            throw new \LogicException('The role Operation has no retained creation intent.');
         }
 
-        DB::transaction(static fn () => $claim['assignment']->markConvergenceActive());
-
-        return [
-            'assignment' => $claim['assignment']->refresh(),
-            'created' => $claim['created'],
-            'follow_up' => $this->followUps()->take(),
-        ];
-    }
-
-    private function followUps(): NodeRoleFollowUpReport
-    {
-        return $this->followUps ?? app(NodeRoleFollowUpReport::class);
-    }
-
-    /**
-     * The analytics role names its two storage Processes at assignment. They are proven before
-     * the assignment exists, so a refused Process never leaves a role behind.
-     */
-    private function guardAnalyticsStorage(Node $node, RoleName $role, ?AnalyticsRoleSettings $analytics): void
-    {
-        if ($role !== RoleName::Analytics) {
-            return;
-        }
-
-        $analytics ??= $this->analyticsSettings()->find($node);
-
-        if (! $analytics instanceof AnalyticsRoleSettings) {
-            throw new ResourceOperationException(
-                errorCode: 'analytics.settings_missing',
-                message: 'The analytics role requires a PostgreSQL Process and a ClickHouse Process.',
-                status: 422,
-            );
-        }
-
-        ($this->analyticsStorage ?? app(AnalyticsStorageProcessGuard::class))->assert(
-            $analytics->postgresProcessId,
-            $analytics->clickhouseProcessId,
-        );
-    }
-
-    private function analyticsSettings(): AnalyticsRoleSettingsRepository
-    {
-        return $this->analyticsSettings ?? app(AnalyticsRoleSettingsRepository::class);
-    }
-
-    private function guardSupportedPlatform(Node $node): void
-    {
-        if ($node->platform === 'linux') {
-            return;
-        }
-
-        throw new ResourceOperationException(
-            errorCode: 'node.platform_unsupported',
-            message: "Node platform [{$node->platform}] does not support roles.",
-            status: 422,
-        );
-    }
-
-    private function guardActiveNode(Node $node): void
-    {
-        if (! $node->exists || $node->status !== LifecycleStatus::Active) {
-            throw new RoleAssignmentException('Roles can be changed only on an active node.');
-        }
-    }
-
-    private function guardProvisioningNode(Node $node): void
-    {
-        if (
-            ! $node->exists
-            || ! in_array(
-                $node->status,
-                [LifecycleStatus::Provisioning, LifecycleStatus::Active],
-                strict: true,
-            )
-        ) {
-            throw new RoleAssignmentException('Roles can be changed only on a provisioning or active node.');
-        }
-    }
-
-    private function materializeAppManagers(Node $node, RoleName $role, NodeRole $assignment): void
-    {
-        if ($role !== RoleName::AppDev && $role !== RoleName::AppProd) {
-            return;
-        }
-
-        $this->toolManagers->convergeWithFailureHandler(
-            $node,
-            static function (NodeProvisioningException $failure) use ($assignment): void {
-                $assignment->markConvergenceFailed($failure->step, $failure->errorCode);
-            },
-            ToolManagerName::Vp,
-            ToolManagerName::Composer,
-        );
-    }
-
-    /**
-     * The per-Node role lock. The action takes it before it claims the assignment, so a busy Node
-     * returns an error and leaves the assignment as it was.
-     */
-    private function nodeLock(): NodeRoleConvergeLock
-    {
-        return $this->nodeLock ?? app(NodeRoleConvergeLock::class);
-    }
-
-    private function unnamespacedStep(string $step): string
-    {
-        return str_starts_with($step, 'converge:') ? substr($step, offset: 9) : $step;
-    }
-
-    /**
-     * @template T
-     *
-     * @param  Closure(): T  $callback
-     * @return T
-     */
-    private function withAppManagerScope(Node $node, RoleName $role, Closure $callback): mixed
-    {
-        if ($role !== RoleName::AppDev && $role !== RoleName::AppProd) {
-            return $callback();
-        }
-
-        try {
-            return $this->managerScope->run($node->id, ToolManagerName::Vp, fn () => $this->managerScope->run(
-                $node->id,
-                ToolManagerName::Composer,
-                $callback,
-            ));
-        } catch (ToolManagerScopeLockException $exception) {
-            throw new NodeRoleOperationException(
-                step: 'converge:tool-manager-lock',
-                errorCode: 'node_role.convergence_failed',
-                underlyingErrorCode: 'node_role.tool_manager_locked',
-                message: "Tool manager state is busy on node [{$node->name}].",
-                previous: $exception,
-            );
-        }
-    }
-
-    private function failConvergence(NodeRole $assignment, NodeRoleOperationException $exception): never
-    {
-        DB::transaction(static fn () => $assignment->markConvergenceFailed(
-            $exception->step,
-            $exception->underlyingErrorCode,
-        ));
-
-        throw new NodeRoleOperationException(
-            step: "converge:{$exception->step}",
-            errorCode: $exception->errorCode,
-            underlyingErrorCode: $exception->underlyingErrorCode,
-            message: $exception->getMessage(),
-            result: $exception->result,
-            previous: $exception->getPrevious(),
-        );
+        return ['assignment' => NodeRole::query()->findOrFail(ValidatedData::integer($intent['assignment_id'])),
+            'created' => $created, 'follow_up' => is_string($operation->result['follow_up'] ?? null) ? $operation->result['follow_up'] : null];
     }
 }

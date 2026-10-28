@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace App\Infrastructure\Nodes;
 
 use App\Domain\Nodes\LinuxUserName;
-use App\Domain\Operations\OperationTransport;
+use App\Domain\Operations\OperationEffectTransport;
+use App\Domain\Operations\OperationSecrets;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
+use App\Infrastructure\AgentCommands\AgentEffectReceipts;
 use App\Infrastructure\AgentCommands\AgentSchemas;
+use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\HostKeyScanner;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshConnection;
@@ -18,7 +21,7 @@ use App\Support\ValidatedData;
 use LogicException;
 
 /** Pinned first-contact transport. The request cannot select a connection or an SSH credential. */
-final readonly class BootstrapSshOperationTransport implements OperationTransport
+final readonly class BootstrapSshOperationTransport implements OperationEffectTransport
 {
     private const array Commands = [
         'agent.install', 'agent.status', 'node.bootstrap', 'node.inspect-macos-enrollment',
@@ -28,6 +31,7 @@ final readonly class BootstrapSshOperationTransport implements OperationTranspor
 
     public function __construct(
         private AdmissionAgentRunner $agents,
+        private NodeOperationAgentInstaller $installer,
         private HostKeyScanner $hostKeys,
         private KnownHostsStore $knownHosts,
     ) {}
@@ -42,6 +46,73 @@ final readonly class BootstrapSshOperationTransport implements OperationTranspor
         $name = $run['name'];
         $input = $hydratedInput;
         if (! in_array($name, self::Commands, true)) {
+            throw $this->forbidden();
+        }
+        $command = ValidatedData::object($input['command_input'] ?? []);
+        if ($name === 'agent.install') {
+            if ($command !== []) {
+                throw $this->forbidden();
+            }
+        } else {
+            try {
+                AgentSchemas::assertInput($name, $command);
+            } catch (LogicException) {
+                throw $this->forbidden();
+            }
+        }
+
+        [$node, $connection, $key] = $this->connection($operation, $run, $input, $input['bootstrap_identity'] ?? null);
+        if ($name === 'agent.install') {
+            $architecture = $this->agents->architectureOver($node, $connection);
+            if ($node->platform === 'linux' && ! in_array($architecture, ['amd64', 'x86_64'], true)) {
+                throw new ResourceOperationException('node.architecture_unsupported', 'Managed Linux Nodes require x86_64.', 422);
+            }
+            if ($node->architecture !== null && $node->architecture !== $architecture) {
+                throw new ResourceOperationException('node.architecture_mismatch', 'The bootstrap architecture differs from the admitted Node.', 409);
+            }
+            $node->architecture = $architecture;
+            $changed = $this->installer->installEffect($node, ValidatedData::string($operation->input['agent_pin'] ?? null), $run, $connection);
+
+            return ['installed' => true, 'changed' => $changed, 'architecture' => $architecture,
+                'host_type' => $key->type, 'public_key' => $key->value, 'host_key_fingerprint' => $key->fingerprint];
+        }
+
+        return $this->agents->runOver($node, $connection, $name, $this->effectful($operation, $run) ? AgentEffectReceipts::input($run, $command) : $command);
+    }
+
+    public function effectful(Operation $operation, array $run): bool
+    {
+        return in_array($run['name'], self::Commands, true) && ! in_array($run['name'], ['agent.status', 'node.inspect-macos-enrollment'], true);
+    }
+
+    public function receipt(Operation $operation, array $run, #[\SensitiveParameter] array $input): array
+    {
+        $identity = app(OperationSecrets::class)->connection($operation, $run, 'bootstrap_identity');
+        [$node, $connection, $key] = $this->connection($operation, $run, $input, $identity->value);
+        if ($run['name'] === 'agent.install') {
+            $architecture = $this->agents->architectureOver($node, $connection);
+            if (($node->platform === 'linux' && ! in_array($architecture, ['amd64', 'x86_64'], true))
+                || ($node->architecture !== null && $node->architecture !== $architecture)) {
+                throw $this->forbidden();
+            }
+            $node->architecture = $architecture;
+        }
+        $receipt = $this->installer->effectReceipt($node, ValidatedData::string($operation->input['agent_pin'] ?? null), $run['name'], $run['effect_key'], $connection);
+        if ($run['name'] === 'agent.install' && $receipt['state'] === 'succeeded') {
+            $receipt['result'] = ['installed' => true, 'changed' => ($receipt['result']['replaced'] ?? null) === true,
+                'architecture' => $node->architecture, 'host_type' => $key->type, 'public_key' => $key->value, 'host_key_fingerprint' => $key->fingerprint];
+        }
+
+        return $receipt;
+    }
+
+    /** @param array<string, mixed> $run
+     * @param  array<string, mixed>  $input
+     * @return array{Node,SshConnection,HostKey}
+     */
+    private function connection(Operation $operation, array $run, array $input, #[\SensitiveParameter] mixed $identity): array
+    {
+        if (! in_array($run['name'], self::Commands, true)) {
             throw $this->forbidden();
         }
         $node = Node::query()->findOrFail($operation->node_id);
@@ -59,26 +130,12 @@ final readonly class BootstrapSshOperationTransport implements OperationTranspor
                 throw $this->forbidden();
             }
         }
-        $command = ValidatedData::object($input['command_input'] ?? []);
-        if ($name === 'agent.install') {
-            if ($command !== []) {
-                throw $this->forbidden();
-            }
-        } else {
-            try {
-                AgentSchemas::assertInput($name, $command);
-            } catch (LogicException) {
-                throw $this->forbidden();
-            }
-        }
-
         $key = $this->hostKeys->scan($host, $port, $node->sshJumpNode);
         if (! hash_equals($fingerprint, $key->fingerprint)
             || ($node->ssh_host_fingerprint !== null && ! hash_equals($node->ssh_host_fingerprint, $key->fingerprint))) {
             throw new ResourceOperationException('node.ssh_host_key_mismatch', 'The bootstrap host does not match the admitted SSH fingerprint.', 409);
         }
         $this->knownHosts->put($host, $port, $key);
-        $identity = $input['bootstrap_identity'] ?? null;
         if (! is_string($identity) || $identity === '') {
             throw $this->forbidden();
         }
@@ -86,22 +143,8 @@ final readonly class BootstrapSshOperationTransport implements OperationTranspor
             identityFile: $identity, knownHostsFile: $this->knownHosts->path(),
             proxyJump: NodeSshJump::connection($node, $identity, $this->knownHosts->path()),
             hostIdentity: $fingerprint, shareConnection: false);
-        if ($name === 'agent.install') {
-            $architecture = $this->agents->architectureOver($node, $connection);
-            if ($node->platform === 'linux' && ! in_array($architecture, ['amd64', 'x86_64'], true)) {
-                throw new ResourceOperationException('node.architecture_unsupported', 'Managed Linux Nodes require x86_64.', 422);
-            }
-            if ($node->architecture !== null && $node->architecture !== $architecture) {
-                throw new ResourceOperationException('node.architecture_mismatch', 'The bootstrap architecture differs from the admitted Node.', 409);
-            }
-            $node->architecture = $architecture;
-            $changed = $this->agents->installOver($node, $connection);
 
-            return ['installed' => true, 'changed' => $changed, 'architecture' => $architecture,
-                'host_type' => $key->type, 'public_key' => $key->value, 'host_key_fingerprint' => $key->fingerprint];
-        }
-
-        return $this->agents->runOver($node, $connection, $name, $command);
+        return [$node, $connection, $key];
     }
 
     /** @return array<string, mixed> */
@@ -118,8 +161,9 @@ final readonly class BootstrapSshOperationTransport implements OperationTranspor
 
         return [
             'type' => 'object', 'additionalProperties' => false, '$defs' => $definitions,
-            'required' => ['bootstrap_host', 'bootstrap_port', 'bootstrap_fingerprint', 'bootstrap_user', 'bootstrap_identity', 'command_input'],
+            'required' => ['agent_pin', 'bootstrap_host', 'bootstrap_port', 'bootstrap_fingerprint', 'bootstrap_user', 'bootstrap_identity', 'command_input'],
             'properties' => [
+                'agent_pin' => ['type' => 'string', 'pattern' => '^[0-9a-f]{64}$'],
                 'bootstrap_host' => ['type' => 'string', 'minLength' => 1],
                 'bootstrap_port' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 65535],
                 'bootstrap_fingerprint' => ['type' => 'string', 'pattern' => '^SHA256:[A-Za-z0-9+/]{43}$'],

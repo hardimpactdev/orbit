@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Nodes\NodeFootprintOperationExecution;
 use App\Domain\Operations\OperationChildIntent;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Node;
 use App\Models\Operation;
 use Tests\Support\Fleet\FleetFixtures;
 
@@ -21,7 +22,7 @@ function footprintContextOperation(array $artifacts, array $children, array $pay
     return Operation::query()->create(['kind' => 'node.converge', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id,
         'input' => ['force_artifacts' => false, 'first_visit' => false, '_footprint' => [
             'artifacts' => array_map(static fn (string $name): array => ['name' => $name, 'digest' => 'digest-'.$name, 'required' => true, 'repair' => false], $artifacts),
-            'children' => $children, 'payloads' => $payloads,
+            'agent_pin' => str_repeat('a', 64), 'children' => $children, 'payloads' => $payloads,
         ]], 'state' => ['node_footprint_prepared' => true, 'child_intents' => $intents], 'status' => 'running', 'sequence' => 1, 'attempts' => 1]);
 }
 
@@ -105,3 +106,16 @@ it('withholds agent configuration until the installer receipt is proven', functi
     footprintContextReceipt($operation, 'prepare-agent-configuration', 'gateway', 'node.prepare-agent-configuration', ['prepared' => true]);
     expect(array_column($execution->context($operation)['descriptors'], 'key'))->toBe(['prepare-footprint', 'footprint-agent-install', 'prepare-agent-configuration', 'footprint-agent', 'footprint-result']);
 });
+
+it('clears a failed agent pin only when the bound installer receipt proves replacement', function (bool $proven): void {
+    $operation = footprintContextOperation(['agent'], [], ['agent' => []]);
+    Node::query()->whereKey($operation->node_id)->update(['agent_failed_pin' => str_repeat('a', 64)]);
+    $execution = app(NodeFootprintOperationExecution::class);
+    $run = ['key' => 'footprint-agent-install', 'transport' => 'node-agent', 'name' => 'agent.install',
+        'input' => ['pin' => str_repeat('a', 64)], 'worker' => 'footprint-worker'];
+    $receipt = $proven ? ['installed' => true, 'changed' => true] : ['error_code' => 'agent.install_failed'];
+
+    $execution->received($operation, $run, $receipt);
+
+    expect(Node::query()->findOrFail($operation->node_id)->agent_failed_pin)->toBe($proven ? null : str_repeat('a', 64));
+})->with([false, true]);

@@ -4,25 +4,28 @@ declare(strict_types=1);
 
 namespace App\Commands\Nodes;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use App\Support\Console\ConsoleWriter;
 use App\Support\Console\ProgressState;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Requests\Nodes\RelocateNodeRoleRequest;
-use Orbit\Sdk\Responses\Nodes\NodeRoleMutationResponse;
 use Orbit\Sdk\Responses\Nodes\NodesResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class RelocateNodeRoleCommand extends NodeCommand
 {
+    use FollowsOperations;
+
     #[\Override]
     protected $signature = 'node:role:relocate
         {node : Node ID or name of the target}
         {role : Role name}
         {--force : Confirm the role transfer}
         {--from= : Optional source Node ID or name}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -77,27 +80,20 @@ final class RelocateNodeRoleCommand extends NodeCommand
 
         $response = $this->sendWithProgress(
             $connector,
-            new RelocateNodeRoleRequest($nodeId, $role, force: true, from: $fromId),
-            NodeRoleMutationResponse::class,
-            ['Relocate Node role', 'Relocating Node role', 'Relocated Node role'],
-            NodeOutput::mutationState(...),
+            new RelocateNodeRoleRequest($nodeId, $role, force: true, from: $fromId,
+                idempotencyKey: is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null),
+            OperationResponse::class,
+            ['Start Node role relocation', 'Starting Node role relocation', 'Started Node role relocation'],
         );
 
-        if (! $response instanceof NodeRoleMutationResponse) {
+        if (! $response instanceof OperationResponse) {
             return self::FAILURE;
         }
 
-        if ($this->option('json') === true) {
-            $this->writeJson($response->toArray());
+        $profile = $this->activeGatewayProfile($repository);
 
-            return self::SUCCESS;
-        }
-
-        $this->writeHumanMessage("Role [{$response->role}] relocated to node [{$response->nodeName}] (#{$response->nodeId}).");
-        ConsoleWriter::write($this->output, NodeOutput::followUpWarning($this->consoleMode(), $response->followUp));
-        $this->writeHumanMessage("Request ID: {$response->requestId}");
-
-        return self::SUCCESS;
+        return $profile === null ? self::FAILURE
+            : $this->followOperation($connector, $profile, $response, 'Relocate Node role', 'Node role relocation');
     }
 
     private function nodesForResolution(GatewayConnector $connector, mixed $target, ?string $from): NodesResponse|null|false
@@ -140,7 +136,7 @@ final class RelocateNodeRoleCommand extends NodeCommand
                     $this->sendOrThrow(
                         $connector,
                         new RelocateNodeRoleRequest($nodeId, $role, force: false, from: $fromId),
-                        NodeRoleMutationResponse::class,
+                        OperationResponse::class,
                     );
                 } catch (GatewayApiException $exception) {
                     if ($this->isConsentPreview($exception)) {

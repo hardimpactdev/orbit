@@ -11,6 +11,7 @@ use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Operations\OperationGatewayCommand;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
 use App\Infrastructure\Nodes\AgentCaddyPackage;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
@@ -112,7 +113,7 @@ final readonly class PrepareNodeFootprintCommand implements OperationGatewayComm
         foreach ($children as $artifact => $intent) {
             $intents[] = ['key' => 'footprint-'.$artifact, ...$intent];
         }
-        $snapshot = ['node_id' => $node->id, 'artifacts' => $plan, 'payloads' => $payloads, 'recorded' => $recorded,
+        $snapshot = ['node_id' => $node->id, 'agent_pin' => app(AgentDelivery::class)->pin($node), 'artifacts' => $plan, 'payloads' => $payloads, 'recorded' => $recorded,
             'children' => $children];
         $this->operations->change($operation, [
             'input' => [...$operation->input, '_footprint' => $snapshot],
