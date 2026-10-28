@@ -187,6 +187,7 @@ it('keeps Node execution inside the agent transports across core and extensions'
     $violations = [];
     $unusedExceptions = array_fill_keys($allowed, true);
     $gateway = dirname(__DIR__, 3);
+    // Registered transport classes are the reviewed named-effect boundary; family hooks remain outside it.
     $transportPaths = [];
     foreach (OperationTransports::definitions() as $class) {
         $reflection = new ReflectionClass($class);

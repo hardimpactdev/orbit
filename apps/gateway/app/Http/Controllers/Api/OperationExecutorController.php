@@ -24,29 +24,29 @@ final class OperationExecutorController extends Controller
 {
     public function claim(ClaimExecutorRequest $request, SwampOperationExecutor $executor): JsonResponse
     {
-        $operation = $executor->claim(ValidatedData::string($request->validated('kind')), $request->worker());
+        $operation = $executor->claim(ValidatedData::string($request->validated('kind')), $request->worker(), $request->peerNodeId());
 
         return $this->respond($request, $operation === null ? null : $this->receipt($operation));
     }
 
     public function heartbeat(HeartbeatExecutorRequest $request, Operation $operation, SwampOperationExecutor $executor): JsonResponse
     {
-        return $this->respond($request, $this->receipt($executor->heartbeat($operation, $request->worker())));
+        return $this->respond($request, $this->receipt($executor->heartbeat($operation, $request->worker(), $request->peerNodeId())));
     }
 
     public function step(StepExecutorRequest $request, Operation $operation, SwampOperationExecutor $executor): JsonResponse
     {
-        return $this->respond($request, $this->receipt($executor->step($operation, $request->stepInput())));
+        return $this->respond($request, $this->receipt($executor->step($operation, $request->stepInput(), $request->peerNodeId())));
     }
 
     public function complete(CompleteExecutorRequest $request, Operation $operation, SwampOperationExecutor $executor): JsonResponse
     {
-        return $this->respond($request, $this->receipt($executor->complete($operation, $request->completionInput())));
+        return $this->respond($request, $this->receipt($executor->complete($operation, $request->completionInput(), $request->peerNodeId())));
     }
 
     public function run(RunExecutorRequest $request, Operation $operation, SwampOperationExecutor $executor): JsonResponse
     {
-        return $this->respond($request, $executor->run($operation, $request->runInput()));
+        return $this->respond($request, $executor->run($operation, $request->runInput(), $request->peerNodeId()));
     }
 
     /** @param array<string, mixed>|null $data */

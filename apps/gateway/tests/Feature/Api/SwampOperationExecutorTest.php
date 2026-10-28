@@ -182,17 +182,17 @@ it('replays a keyed remove admission after the rule was deleted', function (): v
     $runner->shouldReceive('run')->once()->andReturn(['backend' => 'active']);
     $runner->shouldReceive('run')->once()->andReturn(['backend' => 'absent']);
     app()->instance(AgentCommandRunner::class, $runner);
-    $executor->claim('firewall.allow', 'allow');
+    $executor->claim('firewall.allow', 'allow', config()->integer('dependency_detection.services_node_id'));
     recordExecutorProof($this, $id, 'active', 'allow');
-    $executor->complete(Operation::findOrFail($id), ['worker' => 'allow', 'status' => 'succeeded', 'result' => ['backend' => 'active']]);
+    $executor->complete(Operation::findOrFail($id), ['worker' => 'allow', 'status' => 'succeeded', 'result' => ['backend' => 'active']], config()->integer('dependency_detection.services_node_id'));
     $this->withHeader('Idempotency-Key', 'remove-proof')->deleteJson("/api/v1/nodes/{$node->id}/firewall-rules/proof")->assertAccepted();
-    $remove = $executor->claim('firewall.remove', 'remove');
+    $remove = $executor->claim('firewall.remove', 'remove', config()->integer('dependency_detection.services_node_id'));
     $this->withoutHeader('Idempotency-Key');
     $this->postJson("/api/v1/operation-executor/{$remove->id}/complete", ['worker' => 'remove', 'status' => 'succeeded', 'result' => ['backend' => 'absent']])
         ->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
     expect(FirewallRule::query()->count())->toBe(1);
     recordExecutorProof($this, $remove->id, 'absent', 'remove');
-    $executor->complete($remove, ['worker' => 'remove', 'status' => 'succeeded', 'result' => ['backend' => 'absent']]);
+    $executor->complete($remove, ['worker' => 'remove', 'status' => 'succeeded', 'result' => ['backend' => 'absent']], config()->integer('dependency_detection.services_node_id'));
     $this->withHeader('Idempotency-Key', 'remove-proof');
     expect(FirewallRule::query()->count())->toBe(0);
     $this->deleteJson("/api/v1/nodes/{$node->id}/firewall-rules/proof")->assertAccepted()->assertJsonPath('data.id', $remove->id);
@@ -204,7 +204,8 @@ it('leaves Swamp operations alone when PHP jobs and the recovery sweep run', fun
     app(OperationRunner::class)->run($id);
     expect(Operation::findOrFail($id)->status)->toBe(OperationStatus::Queued);
     $executor = app(SwampOperationExecutor::class);
-    $executor->claim('firewall.allow', 'run-1');
+    asExecutor($this);
+    $executor->claim('firewall.allow', 'run-1', config()->integer('dependency_detection.services_node_id'));
     app(OperationSweeper::class)->sweep();
     expect(Operation::findOrFail($id)->status)->toBe(OperationStatus::Running);
     app(OperationDispatcher::class)->dispatch(Operation::findOrFail($id));
@@ -360,4 +361,32 @@ it('allows explicitly configured workers only on executor routes while preservin
     config(['operation_executor.worker_node_ids' => []]);
     $this->withServerVariables(['REMOTE_ADDR' => $worker->wireguard_ip]);
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'firewall.allow', 'worker' => 'worker-12'])->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
+});
+
+it('binds a lease to its authenticated peer even when another worker reuses its worker string', function (): void {
+    [, $id] = firewallAdmission($this);
+    $services = asExecutor($this);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'firewall.allow', 'worker' => 'shared-worker'])->assertOk()->assertJsonPath('data.id', $id);
+    $other = executorNode('other-worker', '10.44.0.9');
+    $other->accessibleNodes()->attach(Node::query()->where('name', 'gateway')->sole());
+    config(['operation_executor.worker_node_ids' => [$other->id]]);
+    $this->withServerVariables(['REMOTE_ADDR' => $other->wireguard_ip]);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'firewall.allow', 'worker' => 'shared-worker'])->assertOk()->assertJsonPath('data', null);
+    $path = '/api/v1/operation-executor/'.$id;
+    foreach (['heartbeat' => ['worker' => 'shared-worker'],
+        'run' => executorRunInput($id, 'shared-worker'),
+        'step' => ['worker' => 'shared-worker', 'key' => 'event', 'name' => 'ufw-converge', 'status' => 'running'],
+        'complete' => ['worker' => 'shared-worker', 'status' => 'failed', 'error_code' => 'test.failed'],
+    ] as $method => $body) {
+        $this->postJson($path.'/'.$method, $body)->assertConflict()->assertJsonPath('error.code', 'operation.lease_lost');
+    }
+    expect(Operation::findOrFail($id)->state['executor_lease_node_id'])->toBe($services->id);
+    $this->travel(121)->seconds();
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'firewall.allow', 'worker' => 'shared-worker'])->assertOk()->assertJsonPath('data.id', $id);
+    expect(Operation::findOrFail($id)->state['executor_lease_node_id'])->toBe($other->id)->and(Operation::findOrFail($id)->attempts)->toBe(2);
+    $completion = ['worker' => 'shared-worker', 'status' => 'failed', 'error_code' => 'test.failed'];
+    $this->postJson($path.'/complete', $completion)->assertOk();
+    $this->withServerVariables(['REMOTE_ADDR' => $services->wireguard_ip]);
+    $this->postJson($path.'/heartbeat', ['worker' => 'shared-worker'])->assertConflict()->assertJsonPath('error.code', 'operation.lease_lost');
+    $this->postJson($path.'/complete', $completion)->assertConflict()->assertJsonPath('error.code', 'operation.completion_conflict');
 });

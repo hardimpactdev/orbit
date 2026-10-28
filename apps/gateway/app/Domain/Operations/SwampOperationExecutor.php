@@ -26,15 +26,15 @@ final readonly class SwampOperationExecutor
 
     public function __construct(private OperationStore $store, private OperationExecutors $executors, private OperationExecutionContract $contract, private OperationSecrets $secrets, private OperationTransports $transports) {}
 
-    public function claim(string $kind, string $worker): ?Operation
+    public function claim(string $kind, string $worker, int $nodeId): ?Operation
     {
         if (! $this->executors->swamp($kind)) {
             throw new ResourceOperationException('operation.executor_invalid', 'This kind is not executed by Swamp.', 422);
         }
 
-        return DB::transaction(function () use ($kind, $worker): ?Operation {
+        return DB::transaction(function () use ($kind, $worker, $nodeId): ?Operation {
             $operation = Operation::query()->where('kind', $kind)->where('status', OperationStatus::Running->value)
-                ->where('worker', $worker)->first();
+                ->where('worker', $worker)->where('state->executor_lease_node_id', $nodeId)->first();
             $operation ??= Operation::query()->where('kind', $kind)
                 ->where(function ($query): void {
                     $query->where('status', OperationStatus::Queued->value)
@@ -48,7 +48,8 @@ final readonly class SwampOperationExecutor
             }
             $this->store->change($operation, [
                 'status' => OperationStatus::Running, 'worker' => $worker,
-                'attempts' => $operation->attempts + ($operation->worker === $worker ? 0 : 1),
+                'attempts' => $operation->attempts + ($operation->worker === $worker && ($operation->state['executor_lease_node_id'] ?? null) === $nodeId ? 0 : 1),
+                'state' => [...($operation->state ?? []), 'executor_lease_node_id' => $nodeId],
                 'started_at' => $operation->started_at ?? Carbon::now(),
                 'updated_at' => Carbon::now(),
             ]);
@@ -57,22 +58,22 @@ final readonly class SwampOperationExecutor
         });
     }
 
-    public function heartbeat(Operation $operation, string $worker): Operation
+    public function heartbeat(Operation $operation, string $worker, int $nodeId): Operation
     {
-        return $this->owned($operation, $worker, function (Operation $operation): void {
+        return $this->owned($operation, $worker, $nodeId, function (Operation $operation): void {
             $this->store->change($operation, ['updated_at' => Carbon::now()]);
         });
     }
 
     /** @param StepInput $data */
-    public function step(Operation $operation, array $data): Operation
+    public function step(Operation $operation, array $data, int $nodeId): Operation
     {
-        return $this->owned($operation, $data['worker'], function (Operation $operation) use ($data): void {
+        return $this->owned($operation, $data['worker'], $nodeId, function (Operation $operation) use ($data): void {
             $state = $operation->state ?? [];
             $fingerprint = hash('sha256', json_encode(array_diff_key($data, ['worker' => true]), JSON_THROW_ON_ERROR));
             $data['result'] = $this->contract->result($operation, $data['result'] ?? []);
-            $data['output'] = $this->contract->text($data['output'] ?? '', $operation);
-            $data['error_code'] = isset($data['error_code']) ? $this->contract->text($data['error_code'], $operation) : null;
+            $data['output'] = $this->contract->text($data['output'] ?? '');
+            $data['error_code'] = isset($data['error_code']) ? $this->contract->text($data['error_code']) : null;
             if ($data['status'] === 'succeeded') {
                 $this->contract->assertStep($operation, $data['name'], $data['result']);
             }
@@ -115,21 +116,21 @@ final readonly class SwampOperationExecutor
     }
 
     /** @param CompletionInput $data */
-    public function complete(Operation $operation, array $data): Operation
+    public function complete(Operation $operation, array $data, int $nodeId): Operation
     {
-        return DB::transaction(function () use ($operation, $data): Operation {
+        return DB::transaction(function () use ($operation, $data, $nodeId): Operation {
             $operation->refresh();
             $receipt = ['status' => $data['status'], 'result' => $this->contract->result($operation, $data['result'] ?? []),
-                'error_code' => isset($data['error_code']) ? $this->contract->text($data['error_code'], $operation) : null];
+                'error_code' => isset($data['error_code']) ? $this->contract->text($data['error_code']) : null];
             if ($operation->status->terminal()) {
-                if ($operation->worker !== $data['worker'] || ($operation->state['executor_completion'] ?? null) !== $receipt) {
+                if ($operation->worker !== $data['worker'] || ($operation->state['executor_lease_node_id'] ?? null) !== $nodeId || ($operation->state['executor_completion'] ?? null) !== $receipt) {
                     throw new ResourceOperationException('operation.completion_conflict', 'The Operation has another completion receipt.', 409);
                 }
 
                 return $operation;
             }
 
-            return $this->owned($operation, $data['worker'], function (Operation $operation) use ($receipt): void {
+            return $this->owned($operation, $data['worker'], $nodeId, function (Operation $operation) use ($receipt): void {
                 if ($operation->steps()->where('status', OperationStepStatus::Running->value)->exists()) {
                     throw new ResourceOperationException('operation.step_running', 'Finish the current step before completion.', 409);
                 }
@@ -159,11 +160,11 @@ final readonly class SwampOperationExecutor
      * @param  RunInput  $data
      * @return array<string, mixed>
      */
-    public function run(Operation $operation, array $data): array
+    public function run(Operation $operation, array $data, int $nodeId): array
     {
         $result = null;
-        $held = app(OperationAttemptLease::class)->hold($operation->id, function () use ($operation, $data, &$result): void {
-            $result = $this->invoke($operation, $data);
+        $held = app(OperationAttemptLease::class)->hold($operation->id, function () use ($operation, $data, $nodeId, &$result): void {
+            $result = $this->invoke($operation, $data, $nodeId);
         });
         if (! $held || $result === null) {
             throw new ResourceOperationException('operation.execution_busy', 'A named invocation still runs for this Operation.', 409);
@@ -175,13 +176,13 @@ final readonly class SwampOperationExecutor
     /** @param RunInput $data
      * @return array<string, mixed>
      */
-    private function invoke(Operation $operation, array $data): array
+    private function invoke(Operation $operation, array $data, int $nodeId): array
     {
         $fingerprint = hash('sha256', json_encode(array_diff_key($data, ['worker' => true]), JSON_THROW_ON_ERROR));
         $receipt = null;
         $spec = null;
         $references = [];
-        $this->owned($operation, $data['worker'], function (Operation $operation) use ($data, $fingerprint, &$receipt, &$spec, &$references): void {
+        $this->owned($operation, $data['worker'], $nodeId, function (Operation $operation) use ($data, $fingerprint, &$receipt, &$spec, &$references): void {
             $spec = $this->contract->authorizeRun($operation, $data);
             $references = $this->secrets->references($operation, $data['input'], $spec['secrets'] ?? []);
             $runs = ValidatedData::object($operation->state['executor_runs'] ?? []);
@@ -202,11 +203,11 @@ final readonly class SwampOperationExecutor
             throw new \LogicException('An invocation requires its authorized run contract.');
         }
         $result = null;
-        $values = $this->contract->redactions($operation);
-        if ($receipt !== null && ($receipt['started'] ?? false) === true && ! ($spec['resumable'] ?? true)) {
+        $values = [];
+        if ($receipt !== null && ($receipt['started'] ?? false) === true && ! ($spec['resumable'] ?? false)) {
             $result = ['error_code' => $spec['uncertain_error_code'] ?? 'operation.execution_uncertain'];
         } else {
-            $this->owned($operation, $data['worker'], function (Operation $operation) use ($data): void {
+            $this->owned($operation, $data['worker'], $nodeId, function (Operation $operation) use ($data): void {
                 if ($this->contract->cancellationAllowsRun($operation)) {
                     $this->contract->execution($operation)?->beforeRun($operation, $data);
                 }
@@ -215,12 +216,12 @@ final readonly class SwampOperationExecutor
                 $result = ['error_code' => 'operation.cancelled'];
             } else {
                 $hydrated = $this->secrets->hydrate($operation, $data['key'], $data['input'], $spec['secrets'] ?? []);
-                $values = [...$values, ...$hydrated['values']];
+                $values = $hydrated['values'];
                 $input = $hydrated['input'];
                 $this->contract->validateHydratedInput($operation, $data, $spec, $input);
                 $transport = $this->transports->get($data['transport']);
                 $invoke = static fn (): array => $transport->run($operation, $data, $input);
-                $this->owned($operation, $data['worker'], function (Operation $operation) use ($data): void {
+                $this->owned($operation, $data['worker'], $nodeId, function (Operation $operation) use ($data): void {
                     if ($this->contract->cancellationAllowsRun($operation)) {
                         $this->contract->execution($operation)?->beforeRun($operation, $data);
                         $state = $operation->state ?? [];
@@ -243,7 +244,7 @@ final readonly class SwampOperationExecutor
             }
         }
         $result = ValidatedData::object($this->secrets->redact($result, $values));
-        $this->owned($operation, $data['worker'], function (Operation $operation) use ($data, $values, &$result): void {
+        $this->owned($operation, $data['worker'], $nodeId, function (Operation $operation) use ($data, $values, $nodeId, &$result): void {
             $runs = ValidatedData::object($operation->state['executor_runs'] ?? []);
             $result = $this->contract->execution($operation)?->received($operation, $data, $result) ?? $result;
             $result = $this->contract->result($operation, $result, $values);
@@ -251,6 +252,7 @@ final readonly class SwampOperationExecutor
             $entry = ValidatedData::object($runs[$data['key']]);
             $runs[$data['key']] = [...$entry, 'result' => $result];
             $state['executor_runs'] = $runs;
+            $state['executor_lease_node_id'] = $nodeId;
             $this->store->change($operation, ['state' => $state]);
         });
 
@@ -258,12 +260,12 @@ final readonly class SwampOperationExecutor
     }
 
     /** @param Closure(Operation): void $write */
-    private function owned(Operation $operation, string $worker, Closure $write): Operation
+    private function owned(Operation $operation, string $worker, int $nodeId, Closure $write): Operation
     {
-        return DB::transaction(function () use ($operation, $worker, $write): Operation {
+        return DB::transaction(function () use ($operation, $worker, $nodeId, $write): Operation {
             $operation->refresh();
             if (! $this->executors->swamp($operation->kind) || $operation->status !== OperationStatus::Running
-                || $operation->worker !== $worker || $operation->updated_at?->lessThanOrEqualTo(Carbon::now()->subSeconds(self::LeaseSeconds))) {
+                || $operation->worker !== $worker || ($operation->state['executor_lease_node_id'] ?? null) !== $nodeId || $operation->updated_at?->lessThanOrEqualTo(Carbon::now()->subSeconds(self::LeaseSeconds))) {
                 throw new ResourceOperationException('operation.lease_lost', 'Claim the Operation before writing it.', 409);
             }
             $write($operation);

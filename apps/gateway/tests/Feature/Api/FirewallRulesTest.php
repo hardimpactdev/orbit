@@ -28,9 +28,9 @@ it('records inactive UFW as an Operation failure and retains failed intent', fun
         'name' => 'private-web', 'source' => '192.0.2.129/24', 'protocol' => 'tcp', 'port' => '0443',
     ])->assertAccepted();
     $executor = app(SwampOperationExecutor::class);
-    $operation = $executor->claim('firewall.allow', 'test');
-    $executor->step($operation, ['worker' => 'test', 'key' => 'failure', 'name' => 'ufw-converge', 'status' => 'failed', 'error_code' => 'firewall.backend_inactive']);
-    $executor->complete($operation, ['worker' => 'test', 'status' => 'failed', 'error_code' => 'firewall.backend_inactive']);
+    $operation = $executor->claim('firewall.allow', 'test', $this->node->id);
+    $executor->step($operation, ['worker' => 'test', 'key' => 'failure', 'name' => 'ufw-converge', 'status' => 'failed', 'error_code' => 'firewall.backend_inactive'], $this->node->id);
+    $executor->complete($operation, ['worker' => 'test', 'status' => 'failed', 'error_code' => 'firewall.backend_inactive'], $this->node->id);
     expect(FirewallRule::query()->sole())->status->toBe(LifecycleStatus::Failed)
         ->error_code->toBe('firewall.backend_inactive')->failed_step->toBe('ufw-converge')->source->toBe('192.0.2.0/24')->port->toBe('443');
 });

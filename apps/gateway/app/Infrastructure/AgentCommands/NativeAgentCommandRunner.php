@@ -37,19 +37,19 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
     ) {}
 
     #[\Override]
-    public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
+    public function run(Node $node, string $command, #[\SensitiveParameter] array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
     {
         return $this->runWith($this->transports->for($node), $node, $command, $input, $deadlineSeconds, $output, $binaryInput);
     }
 
     #[\Override]
-    public function runInWorkspace(Node $node, Closure $execute, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
+    public function runInWorkspace(Node $node, Closure $execute, string $command, #[\SensitiveParameter] array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
     {
         return $this->runWith(new WorkspaceAgentTransport($this->transports->for($node), $execute), $node, $command, $input, $deadlineSeconds, $output, $binaryInput);
     }
 
     #[\Override]
-    public function runGuest(AgentGuest $guest, string $command, array $input = [], ?float $deadlineSeconds = null): array
+    public function runGuest(AgentGuest $guest, string $command, #[\SensitiveParameter] array $input = [], ?float $deadlineSeconds = null): array
     {
         return $this->runWith($this->transports->guest($guest), $guest, $command, $input, $deadlineSeconds);
     }
@@ -61,7 +61,7 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
     }
 
     #[\Override]
-    public function runOver(Node $node, SshConnection $connection, string $command, array $input = [], ?float $deadlineSeconds = null): array
+    public function runOver(Node $node, SshConnection $connection, string $command, #[\SensitiveParameter] array $input = [], ?float $deadlineSeconds = null): array
     {
         return $this->runWith($this->transports->over($node, $connection), $node, $command, $input, $deadlineSeconds);
     }

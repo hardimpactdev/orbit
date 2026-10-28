@@ -51,7 +51,7 @@ final readonly class OperationExecutionContract
                 if ($descriptor === null) {
                     continue;
                 }
-                $run['resumable'] = ($run['resumable'] ?? true) && $descriptor['resumable'];
+                $run['resumable'] = ($run['resumable'] ?? false) && $descriptor['resumable'];
                 $run['step'] = $descriptor['step'];
                 $run['required'] = $descriptor['required'];
             }
@@ -85,9 +85,8 @@ final readonly class OperationExecutionContract
     {
         $context = $this->execution($operation)?->context($operation) ?? ['descriptors' => []];
         foreach ($context['descriptors'] as $descriptor) {
-            $spec = $this->authorizeRun($operation, ['worker' => $operation->worker ?? '', 'key' => $descriptor['key'],
+            $this->authorizeRun($operation, ['worker' => $operation->worker ?? '', 'key' => $descriptor['key'],
                 'transport' => $descriptor['transport'], 'name' => $descriptor['name'], 'input' => $descriptor['input']]);
-            $this->secrets->references($operation, $descriptor['input'], $spec['secrets'] ?? []);
         }
 
         return ['descriptors' => $context['descriptors'],
@@ -98,7 +97,7 @@ final readonly class OperationExecutionContract
      * @param  RunContract  $spec
      * @param  array<string, mixed>  $input
      */
-    public function validateHydratedInput(Operation $operation, array $data, array $spec, array $input): void
+    public function validateHydratedInput(Operation $operation, array $data, array $spec, #[\SensitiveParameter] array $input): void
     {
         try {
             $transport = $this->transports->get($data['transport']);
@@ -106,10 +105,10 @@ final readonly class OperationExecutionContract
             $wire = $transport instanceof OperationTransportInput
                 ? $transport->wireInput($operation, $data, $input)
                 : json_decode(json_encode((object) $input, JSON_THROW_ON_ERROR), flags: JSON_THROW_ON_ERROR);
-            if (AgentSchemas::errors($wire, $schema) === []) {
+            if ($schema !== true && AgentSchemas::errors($wire, $schema) === []) {
                 return;
             }
-        } catch (LogicException) {
+        } catch (\Throwable) {
             // Only the fixed refusal leaves this boundary, never hydrated values or schema details.
         }
         throw new ResourceOperationException('operation.execution_forbidden', 'The invocation does not match the command schema.', 422);
@@ -134,40 +133,14 @@ final readonly class OperationExecutionContract
         return is_array($result) && ! isset($result['error_code']) && $this->same(Arr::only($result, array_keys($boundary['result'])), $boundary['result']);
     }
 
-    /** @return list<string> */
-    public function redactions(Operation $operation): array
-    {
-        $values = [];
-        foreach (ValidatedData::object($operation->state['executor_runs'] ?? []) as $key => $receipt) {
-            if (! is_array($receipt) || ($receipt['started'] ?? false) !== true) {
-                continue;
-            }
-            foreach (ValidatedData::object($receipt['references'] ?? []) as $parameter => $reference) {
-                $reference = ValidatedData::object($reference);
-                $source = $this->secrets->source(ValidatedData::string($reference['$secret']));
-                $id = ValidatedData::integer($reference['id']);
-                if ($source->ownerId($operation) !== $id) {
-                    throw new ResourceOperationException('operation.execution_forbidden', 'Protected reference ownership changed.', 422);
-                }
-                try {
-                    $values = [...$values, ...$source->resolve($operation, $id, $key, $parameter)->strings()];
-                } catch (\Throwable) {
-                    throw new ResourceOperationException('operation.secret_unavailable', 'Protected redaction values are unavailable.', 409);
-                }
-            }
-        }
-
-        return $values;
-    }
-
     /**
      * Keep only declared scalar leaves. Never retain an open object or a raw program log.
      *
      * @param  array<string, mixed>  $result
-     * @param  list<string>|null  $knownValues
+     * @param  list<string>  $knownValues
      * @return array<string, mixed>
      */
-    public function result(Operation $operation, array $result, ?array $knownValues = null): array
+    public function result(Operation $operation, array $result, #[\SensitiveParameter] array $knownValues = []): array
     {
         $safe = [];
         foreach ($this->definition($operation)['result_fields'] as $path) {
@@ -177,12 +150,12 @@ final readonly class OperationExecutionContract
             }
         }
 
-        return ValidatedData::object($this->secrets->redact($this->redactor->sanitizeProperties($safe), $knownValues ?? $this->redactions($operation)));
+        return ValidatedData::object($this->secrets->redact($this->redactor->sanitizeProperties($safe), $knownValues));
     }
 
-    public function text(string $text, ?Operation $operation = null): string
+    public function text(string $text): string
     {
-        return $this->redactor->redactText($operation === null ? $text : ValidatedData::string($this->secrets->redact($text, $this->redactions($operation))));
+        return $this->redactor->redactText($text);
     }
 
     /**

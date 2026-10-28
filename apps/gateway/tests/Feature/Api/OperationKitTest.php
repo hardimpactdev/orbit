@@ -3,11 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\GitHub\GitReadEnvironment;
-use App\Domain\Operations\OperationTransport;
-use App\Domain\Operations\OperationTransportInput;
-use App\Domain\Operations\OperationTransports;
-use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\AgentCommands\OperationAgentTransport;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationCompletion;
 use App\Domain\Operations\OperationExecutionContract;
@@ -17,11 +12,19 @@ use App\Domain\Operations\OperationGatewayCommands;
 use App\Domain\Operations\OperationGatewayTransport;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationOutcome;
+use App\Domain\Operations\OperationSecrets;
 use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationTransport;
+use App\Domain\Operations\OperationTransportInput;
+use App\Domain\Operations\OperationTransports;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentSchemas;
+use App\Infrastructure\AgentCommands\NativeAgentCommandRunner;
+use App\Infrastructure\AgentCommands\OperationAgentTransport;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
@@ -46,11 +49,53 @@ final readonly class KitAgentWrapper implements OperationTransport, OperationTra
     }
 }
 
+final class KitInvalidTransport implements OperationTransport, OperationTransportInput
+{
+    public int $runs = 0;
+
+    public function __construct(public string $mode) {}
+
+    public function schema(Operation $operation, array $run): array|bool
+    {
+        return $this->mode === 'permissive' ? true : ['type' => 'object', 'additionalProperties' => false];
+    }
+
+    public function wireInput(Operation $operation, array $run, #[SensitiveParameter] array $input): mixed
+    {
+        if ($this->mode === 'type-error') {
+            throw new TypeError('kit-private-token-value');
+        }
+
+        return (object) [];
+    }
+
+    public function run(Operation $operation, array $run, #[SensitiveParameter] array $input): array
+    {
+        $this->runs++;
+
+        return [];
+    }
+}
+
 final readonly class KitNativeSource implements OperationSecretSource
 {
     public function __construct(public mixed $value) {}
-    public function name(): string { return 'project.native'; }
-    public function ownerId(Operation $operation): ?int { return $operation->target_id; }
+
+    public function name(): string
+    {
+        return 'project.native';
+    }
+
+    public function targetTypes(): array
+    {
+        return ['project'];
+    }
+
+    public function ownerId(Operation $operation): ?int
+    {
+        return $operation->target_id;
+    }
+
     public function resolve(Operation $operation, int $id, string $key, string $parameter): OperationSecretValue
     {
         return new OperationSecretValue($this->value);
@@ -65,11 +110,18 @@ final class KitSecretSource implements OperationSecretSource
 
     public bool $rotates = false;
 
+    public ?string $token = null;
+
     public ?ResourceOperationException $refusal = null;
 
     public function name(): string
     {
         return 'project.test';
+    }
+
+    public function targetTypes(): array
+    {
+        return ['project'];
     }
 
     public function ownerId(Operation $operation): ?int
@@ -84,7 +136,7 @@ final class KitSecretSource implements OperationSecretSource
             throw $this->refusal;
         }
 
-        return new OperationSecretValue('kit-private-token-value'.($this->rotates ? '-'.$this->resolves : ''));
+        return new OperationSecretValue($this->token ?? ('kit-private-token-value'.($this->rotates ? '-'.$this->resolves : '')));
     }
 }
 
@@ -111,19 +163,6 @@ final class KitGatewayCommand implements OperationGatewayCommand
         }
 
         return $this->refuse ? ['error_code' => 'test.refused'] : ['backend' => 'active', 'echo' => $input['token'], 'undeclared' => $input['token']];
-    }
-}
-
-final class KitEchoCommand implements OperationGatewayCommand
-{
-    public function schema(): array
-    {
-        return ['type' => 'object', 'additionalProperties' => false];
-    }
-
-    public function run(Operation $operation, #[SensitiveParameter] array $input): array
-    {
-        return ['echo' => 'kit-private-token-value', 'backend' => 'active'];
     }
 }
 
@@ -202,7 +241,7 @@ beforeEach(function (): void {
     app()->instance(KitSecretSource::class, $this->source);
     app()->tag([KitSecretSource::class], OperationSecretSource::class);
     app()->instance(KitGatewayCommand::class, $this->command);
-    app()->instance(OperationGatewayCommands::class, new OperationGatewayCommands(['test.command' => KitGatewayCommand::class, 'test.echo' => KitEchoCommand::class]));
+    app()->instance(OperationGatewayCommands::class, new OperationGatewayCommands(['test.command' => KitGatewayCommand::class]));
     $this->spec = ['executor' => 'swamp', 'completion' => KitFamilyExecution::class, 'execution' => KitFamilyExecution::class,
         'runs' => [['transport' => 'gateway', 'name' => 'test.command', 'bind' => ['port' => 'input.configuration.ports.0'], 'secrets' => ['token' => 'project.test']]],
         'completion_contract' => ['step' => 'effect', 'transport' => 'gateway', 'name' => 'test.command', 'result' => ['backend' => 'active']],
@@ -214,8 +253,9 @@ beforeEach(function (): void {
     $this->run = ['worker' => 'worker', 'key' => 'effect', 'transport' => 'gateway', 'name' => 'test.command',
         'input' => ['token' => ['$secret' => 'project.test', 'id' => 27], 'port' => 65431]];
     $this->operation = Operation::query()->create(['kind' => 'test.protected', 'target_type' => 'project', 'target_id' => 27, 'node_id' => null,
-        'status' => OperationStatus::Running, 'worker' => 'worker', 'sequence' => 1,
+        'status' => OperationStatus::Running, 'worker' => 'worker', 'sequence' => 1, 'state' => ['executor_lease_node_id' => $services->id],
         'input' => ['configuration' => ['ports' => [65431]], 'descriptors' => [[...array_diff_key($this->run, ['worker' => true]), 'step' => 'effect', 'resumable' => true, 'required' => true]]]]);
+    $this->executorNodeId = $services->id;
     $this->path = '/api/v1/operation-executor/'.$this->operation->id;
 });
 
@@ -226,9 +266,10 @@ it('hydrates target-owned references only in memory and stores one redacted Gate
     expect($this->command->runs)->toBe(1);
     expect($this->operation->refresh()->state['projection_count'])->toBe(1);
     $this->postJson($this->path.'/step', ['worker' => 'worker', 'key' => 'finished', 'name' => 'effect', 'status' => 'succeeded',
-        'result' => ['backend' => 'active', 'echo' => '[REDACTED]'], 'output' => 'echoed kit-private-token-value'])->assertOk();
+        'result' => ['backend' => 'active', 'echo' => '[REDACTED]'], 'output' => 'echoed [REDACTED]'])->assertOk();
     $this->postJson($this->path.'/complete', ['worker' => 'worker', 'status' => 'succeeded', 'result' => ['backend' => 'active', 'echo' => '[REDACTED]']])->assertOk();
     expect(json_encode([$this->operation->refresh()->toArray(), $this->operation->steps()->get()->toArray()]))->not->toContain('kit-private-token-value');
+    expect($this->source->resolves)->toBe(1);
 });
 
 it('refuses foreign owners, raw protected values and changed nested binding before any resolution', function (string $case): void {
@@ -270,7 +311,7 @@ it('does not replay an uncertain nonresumable effect or expose a transport excep
 it('continues after cancellation only with an already proven activation receipt', function (bool $proven): void {
     $input = [...$this->operation->input, 'activation_boundary' => true];
     $state = $proven ? ['executor_runs' => ['activate' => ['transport' => 'gateway', 'name' => 'test.command', 'result' => ['backend' => 'active']]]] : [];
-    $this->operation->update(['input' => $input, 'state' => $state, 'cancel_requested_at' => now()]);
+    $this->operation->update(['input' => $input, 'state' => ['executor_lease_node_id' => $this->executorNodeId, ...$state], 'cancel_requested_at' => now()]);
     $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath($proven ? 'data.backend' : 'data.error_code', $proven ? 'active' : 'operation.cancelled');
     expect($this->command->runs)->toBe($proven ? 1 : 0);
 })->with([true, false]);
@@ -307,20 +348,25 @@ it('requires keyed transport proof for an intermediate descriptor step', functio
     $this->postJson($this->path.'/step', $step)->assertOk();
 });
 
-it('redacts earlier successful failed or uncertain secrets in a later unprotected receipt', function (string $outcome): void {
-    $input = $this->operation->input;
-    $input['descriptors'][] = ['key' => 'echo', 'step' => 'echo', 'name' => 'test.echo', 'transport' => 'gateway', 'input' => [], 'resumable' => true, 'required' => false];
-    $this->operation->update(['input' => $input]);
-    $this->spec['runs'][] = ['transport' => 'gateway', 'name' => 'test.echo'];
-    ($this->register)();
+it('does not re-resolve protected sources during later steps context or failure completion', function (string $outcome): void {
     $this->command->loseReply = $outcome === 'uncertain';
     $this->command->refuse = $outcome === 'failed';
     $this->postJson($this->path.'/run', $this->run)->assertStatus($outcome === 'uncertain' ? 502 : 200);
-    $this->postJson($this->path.'/run', [...$this->run, 'key' => 'echo', 'name' => 'test.echo', 'input' => []])->assertOk()->assertJsonPath('data.echo', '[REDACTED]');
+    expect($this->source->resolves)->toBe(1);
+    $this->source->refusal = new ResourceOperationException('github.unavailable', 'must not resolve again', 503);
+    $this->source->missingOwner = true;
+    $this->postJson('/api/v1/operation-executor/claim', ['worker' => 'worker', 'kind' => 'test.protected'])->assertOk();
+    $this->postJson($this->path.'/heartbeat', ['worker' => 'worker'])->assertOk();
+    $this->postJson($this->path.'/step', ['worker' => 'worker', 'key' => 'failed', 'name' => 'effect',
+        'status' => 'failed', 'error_code' => 'deployment.failed', 'output' => 'already redacted output'])->assertOk();
+    $this->postJson($this->path.'/complete', ['worker' => 'worker', 'status' => 'failed', 'error_code' => 'deployment.failed'])->assertOk();
+    expect($this->source->resolves)->toBe(1);
     expect(json_encode($this->operation->refresh()->state))->not->toContain('kit-private-token-value');
 })->with(['success', 'failed', 'uncertain']);
 
-it('binds run keys and receipts to references when each mint returns a new token', function (): void {
+it('binds explicitly convergent retries to references when each mint returns a new token', function (): void {
+    $this->spec['runs'][0]['resumable'] = true;
+    ($this->register)();
     $this->source->rotates = true;
     $this->command->loseReply = true;
     $this->postJson($this->path.'/run', $this->run)->assertStatus(502);
@@ -340,7 +386,7 @@ it('refuses an unresolved secret owner before minting or running', function (): 
     $this->source->missingOwner = true;
     $this->postJson($this->path.'/run', $this->run)->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
     expect($this->source->resolves)->toBe(0)->and($this->command->runs)->toBe(0)
-        ->and($this->operation->refresh()->state)->toBeNull();
+        ->and($this->operation->refresh()->state)->toBe(['executor_lease_node_id' => $this->executorNodeId]);
 });
 
 it('marks the Gateway command and hydrated transport parameters as sensitive', function (): void {
@@ -384,14 +430,13 @@ it('exposes a filtered public projection and validates it on failed or cancelled
     $projection = ['deployment_id' => 42, 'release' => 'new-release', 'selected_release' => 'previous-release', 'commit' => 'admitted-sha'];
     $this->spec['result_fields'] = [...$this->spec['result_fields'], ...array_keys($projection)];
     ($this->register)();
-    $this->operation->update(['state' => ['family_projection' => [...$projection, 'unlisted' => 'drop this']], 'cancel_requested_at' => now()]);
+    $this->operation->update(['state' => ['executor_lease_node_id' => $this->executorNodeId, 'family_projection' => [...$projection, 'unlisted' => 'drop this']], 'cancel_requested_at' => now()]);
     $this->postJson($this->path.'/heartbeat', ['worker' => 'worker'])->assertOk()->assertJsonPath('data.execution_context.result', $projection);
     $body = ['worker' => 'worker', 'status' => $status, 'result' => [...$projection, 'deployment_id' => 99], 'error_code' => 'deployment.failed'];
     $this->postJson($this->path.'/complete', $body)->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
     $this->postJson($this->path.'/complete', [...$body, 'result' => $projection])->assertOk()->assertJsonPath('data.result', $projection);
     expect($this->command->runs)->toBe(0);
 })->with(['failed', 'cancelled']);
-
 
 it('validates registered agent wrappers using native Git wire input without weakening the schema', function (bool $valid): void {
     app()->instance(KitNativeSource::class, new KitNativeSource(GitReadEnvironment::forGitHubToken('kit-private-token-value')));
@@ -451,3 +496,53 @@ it('keeps native object and list validation strict through an agent wrapper', fu
     app()->instance(AgentCommandRunner::class, $runner);
     $this->postJson($this->path.'/run', $run)->assertStatus($object ? 200 : 422)->assertJsonPath($object ? 'data.exit_code' : 'error.code', $object ? 0 : 'operation.execution_forbidden');
 })->with([true, false]);
+
+it('defaults a started run without a receipt to uncertain without a second mint or effect', function (): void {
+    $this->command->loseReply = true;
+    $this->postJson($this->path.'/run', $this->run)->assertStatus(502);
+    $this->command->loseReply = false;
+    $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath('data.error_code', 'operation.execution_uncertain');
+    expect($this->command->runs)->toBe(1)->and($this->source->resolves)->toBe(1);
+});
+
+it('refuses equal numeric secret owners across different target types before resolution', function (): void {
+    $this->operation->update(['target_type' => 'instance']);
+    $this->postJson($this->path.'/run', $this->run)->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
+    expect($this->source->resolves)->toBe(0)->and($this->command->runs)->toBe(0);
+});
+
+it('returns a fixed refusal for invalid UTF-8 in a hydrated value', function (): void {
+    $this->source->token = "private-invalid-\xff";
+    $response = $this->postJson($this->path.'/run', $this->run)->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
+    expect($response->getContent())->not->toContain('private-invalid');
+    expect($this->command->runs)->toBe(0)
+        ->and($this->operation->refresh()->state['executor_runs']['effect']['started'])->toBeFalse();
+});
+
+it('refuses permissive transport schemas and hides wire-conversion type errors', function (string $mode): void {
+    $transport = new KitInvalidTransport($mode);
+    app()->instance(KitInvalidTransport::class, $transport);
+    app()->instance(OperationTransports::class, new OperationTransports(['invalid' => KitInvalidTransport::class]));
+    $this->spec['runs'][0]['transport'] = 'invalid';
+    ($this->register)();
+    $input = $this->operation->input;
+    $input['descriptors'][0]['transport'] = 'invalid';
+    $this->operation->update(['input' => $input, 'node_id' => Node::query()->where('name', 'gateway')->sole()->id]);
+    $response = $this->postJson($this->path.'/run', [...$this->run, 'transport' => 'invalid'])->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
+    expect($response->getContent())->not->toContain('kit-private-token-value');
+    expect($transport->runs)->toBe(0)
+        ->and($this->operation->refresh()->state['executor_runs']['effect']['started'])->toBeFalse();
+})->with(['permissive', 'type-error']);
+
+it('marks all hydrated-value and redaction parameters as sensitive', function (): void {
+    foreach ([
+        [OperationExecutionContract::class, 'validateHydratedInput', 'input'],
+        [OperationExecutionContract::class, 'result', 'knownValues'],
+        [OperationSecrets::class, 'redact', 'values'],
+        [AgentSchemas::class, 'wireInput', 'input'],
+        [AgentCommandRunner::class, 'run', 'input'],
+        [NativeAgentCommandRunner::class, 'run', 'input'],
+    ] as [$class, $method, $name]) {
+        expect((new ReflectionParameter([$class, $method], $name))->getAttributes(SensitiveParameter::class))->toHaveCount(1);
+    }
+});
