@@ -1,5 +1,6 @@
 <?php
 
 declare(strict_types=1);
+use App\Domain\Certificates\CertificateRequestTransport;
 
-return ['certificate-request' => \App\Domain\Certificates\CertificateRequestTransport::class];
+return ['certificate-request' => CertificateRequestTransport::class];

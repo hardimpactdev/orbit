@@ -18,8 +18,8 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteTargetSetGuard;
 use App\Domain\Routes\RouteWebRoot;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Shared\StoredInteger;
 use App\Domain\WebSocket\WebSocketRouteSelection;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Route;
@@ -123,7 +123,7 @@ final readonly class AdmitRouteOperationAction
     public function destroy(Route $route, bool $offline = false, ?Node $caller = null, ?string $requestId = null): Operation
     {
         return DB::transaction(function () use ($route, $offline, $caller, $requestId): Operation {
-            $ids = $route->targets()->pluck('instance_id')->map(static fn ($id): int => (int) $id)->all();
+            $ids = array_values($route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->all());
             $route = $this->removal->lockAndGuard($route, $ids);
             if (! $route->isUnactivatedReplacement()) {
                 $this->removal->assertStandaloneRemovalAllowed($route, false);
@@ -142,7 +142,9 @@ final readonly class AdmitRouteOperationAction
     {
         $route->loadMissing(['targets.instance.node', 'cluster.routerAssignment.node', 'cluster.ingressAssignment.node', 'customProxy.node']);
         $workloads = $route->targets->map(static fn ($target): int => $target->instance->node_id)->all();
-        $nodeId = $workloads[0] ?? $route->node_id ?? $route->cluster?->routerAssignment?->node_id ?? $route->customProxy?->node_id;
+        $routerId = $route->cluster?->routerAssignment?->node_id;
+        $proxyId = $route->customProxy?->node_id;
+        $nodeId = $workloads[0] ?? $route->node_id ?? $routerId ?? $proxyId;
         if (! is_int($nodeId)) {
             throw new ResourceOperationException('route.router_required', 'The Route requires a serving Node.', 409);
         }
@@ -150,11 +152,20 @@ final readonly class AdmitRouteOperationAction
             $route->cluster?->ingressAssignment?->node_id,
             ...Node::query()->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Vpn))->pluck('id')->all()], is_int(...))));
 
+        $accessNodes = [$nodeId];
+        if ($route->isCustomProxy() && $route->cluster_id !== null) {
+            $proxy = $route->customProxy;
+            $ingress = $route->cluster?->ingressAssignment;
+            if ($proxy === null || $ingress === null) {
+                throw new ResourceOperationException('route.ingress_required', 'The public Process Route requires its stored Process and Ingress.', 409);
+            }
+            $accessNodes = [$proxy->node_id, $ingress->node_id];
+        }
+
         return $this->operations->execute($kind, 'route', $route->id, $nodeId,
             ['route_id' => $route->id, 'node_ids' => $nodes,
                 'public_process' => $route->isCustomProxy() && $route->cluster_id !== null,
-                'access_node_ids' => $route->isCustomProxy() && $route->cluster_id !== null
-                    ? [$route->customProxy->node_id, $route->cluster->ingressAssignment->node_id] : [$nodeId],
+                'access_node_ids' => $accessNodes,
                 'caller_node_id' => $caller?->id, ...$input], 'operator', $requestId);
     }
 }

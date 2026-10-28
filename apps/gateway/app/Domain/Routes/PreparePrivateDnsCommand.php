@@ -10,6 +10,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 
 /** Records DNS data from current fleet state. Does not execute a Node command. */
 final readonly class PreparePrivateDnsCommand implements OperationGatewayCommand
@@ -22,7 +23,7 @@ final readonly class PreparePrivateDnsCommand implements OperationGatewayCommand
             'properties' => ['reason' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 200]]];
     }
 
-    public function run(Operation $operation, array $input): array
+    public function run(Operation $operation, #[\SensitiveParameter] array $input): array
     {
         if ($operation->kind !== 'route.private_dns_publish') {
             throw new ResourceOperationException('operation.execution_forbidden', 'A private DNS publication Operation is required.', 422);
@@ -41,6 +42,6 @@ final readonly class PreparePrivateDnsCommand implements OperationGatewayCommand
             $operation->update(['state' => [...($operation->state ?? []), 'private_dns_plan' => $stored]]);
         }
 
-        return ['prepared' => true, 'version' => hash('sha256', $stored['catalog'])];
+        return ['prepared' => true, 'version' => hash('sha256', ValidatedData::string($stored['catalog']))];
     }
 }

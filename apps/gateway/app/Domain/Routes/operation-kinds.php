@@ -2,12 +2,15 @@
 
 declare(strict_types=1);
 
-use App\Domain\Routes\RouteNodeExecution;
 use App\Domain\Routes\CaddyOperationCompletion;
+use App\Domain\Routes\InstanceRuntimeExecution;
+use App\Domain\Routes\OfflineResidueCompletion;
+use App\Domain\Routes\OfflineResidueExecution;
+use App\Domain\Routes\RouteNodeExecution;
 
 return [
     'route.offline_residue_clean' => [
-        'executor' => 'swamp', 'completion' => \App\Domain\Routes\OfflineResidueCompletion::class, 'execution' => \App\Domain\Routes\OfflineResidueExecution::class,
+        'executor' => 'swamp', 'completion' => OfflineResidueCompletion::class, 'execution' => OfflineResidueExecution::class,
         'runs' => [
             ['transport' => 'gateway', 'name' => 'route.offline-residue', 'input_fields' => [], 'input_values' => []],
             ['transport' => 'route-caddy', 'name' => 'caddy.publish', 'input_fields' => [], 'input_values' => []],
@@ -20,7 +23,7 @@ return [
         'result_fields' => ['prepared', 'ready', 'result', 'outcome', 'data.ready', 'data.digest', 'error_code', ['name' => 'removed', 'type' => 'list', 'items' => 'string', 'max' => 10000]],
     ],
     ...array_fill_keys(['route.withdraw_instance', 'route.cleanup_instance'], [
-        'executor' => 'swamp', 'completion' => CaddyOperationCompletion::class, 'execution' => \App\Domain\Routes\InstanceRuntimeExecution::class,
+        'executor' => 'swamp', 'completion' => CaddyOperationCompletion::class, 'execution' => InstanceRuntimeExecution::class,
         'runs' => [
             ['transport' => 'gateway', 'name' => 'route.instance-runtime', 'input_fields' => [], 'input_values' => []],
             ['transport' => 'agent', 'name' => 'php.converge-shared-pools', 'input_fields' => [], 'input_values' => [], 'secrets' => ['configurations' => 'route.php_pools']],

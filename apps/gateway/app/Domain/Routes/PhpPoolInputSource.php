@@ -12,7 +12,10 @@ use App\Models\Operation;
 /** Hydrates the exact stored configuration map, including the empty object that withdraws every stale pool. */
 final readonly class PhpPoolInputSource implements OperationSecretSource
 {
-    public function name(): string { return 'route.php_pools'; }
+    public function name(): string
+    {
+        return 'route.php_pools';
+    }
 
     public function ownerId(Operation $operation): ?int
     {
@@ -22,7 +25,7 @@ final readonly class PhpPoolInputSource implements OperationSecretSource
     public function resolve(Operation $operation, int $id, string $key, string $parameter): OperationSecretValue
     {
         $plan = $operation->kind === 'route.offline_residue_clean' ? 'offline_residue_plan' : 'instance_runtime_plan';
-        $configurations = $operation->state[$plan]['php']['configurations'] ?? null;
+        $configurations = data_get($operation->state, $plan.'.php.configurations');
         if ($this->ownerId($operation) !== $id || $parameter !== 'configurations' || ! is_array($configurations)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The PHP pool render does not belong to this Operation.', 422);
         }

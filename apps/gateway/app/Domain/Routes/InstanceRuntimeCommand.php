@@ -13,6 +13,7 @@ use App\Infrastructure\Caddy\Build\CaddySiteRoles;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Models\Instance;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 
 /** Records runtime removal input or checks its evidence. Neither operation executes on a Node. */
 final readonly class InstanceRuntimeCommand implements OperationGatewayCommand
@@ -25,26 +26,18 @@ final readonly class InstanceRuntimeCommand implements OperationGatewayCommand
             'properties' => ['instance_id' => ['type' => 'integer', 'minimum' => 1], 'action' => ['enum' => ['prepare', 'prove']]]];
     }
 
-    public function run(Operation $operation, array $input): array
+    public function run(Operation $operation, #[\SensitiveParameter] array $input): array
     {
         if (! in_array($operation->kind, ['route.withdraw_instance', 'route.cleanup_instance'], true) || $input['instance_id'] !== $operation->input['instance_id']) {
             throw new ResourceOperationException('operation.execution_forbidden', 'This runtime boundary was not admitted.', 422);
         }
-        $instance = Instance::query()->with('node')->findOrFail($input['instance_id']);
+        $instance = Instance::query()->with('node')->findOrFail(ValidatedData::integer($input['instance_id']));
         if ($instance->node_id !== $operation->node_id || $instance->status !== InstanceState::Removing) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The removing Instance must belong to the Operation Node.', 422);
         }
         $operation->refresh();
         if ($input['action'] === 'prove') {
-            foreach (app(InstanceRuntimeExecution::class)->context($operation)['descriptors'] as $descriptor) {
-                if ($descriptor['key'] === 'instance-runtime-proof') {
-                    continue;
-                }
-                $run = $operation->state['executor_runs'][$descriptor['key']] ?? null;
-                if (! is_array($run['result'] ?? null) || isset($run['result']['error_code']) || $run['name'] !== $descriptor['name'] || $run['transport'] !== $descriptor['transport']) {
-                    throw new ResourceOperationException('operation.completion_unproven', 'Every runtime withdrawal effect needs a successful receipt.', 409);
-                }
-            }
+            RouteExecutionProof::preceding($operation, app(InstanceRuntimeExecution::class)->context($operation)['descriptors'], 'instance-runtime-proof');
 
             return ['ready' => true];
         }

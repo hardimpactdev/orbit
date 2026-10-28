@@ -19,6 +19,7 @@ use App\Models\Route;
 use App\Models\Schedule;
 use App\Models\Task;
 use App\Models\Tool;
+use App\Support\ValidatedData;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
 
@@ -504,9 +505,13 @@ final readonly class ServingNodeResolver
                     throw (new ModelNotFoundException)->setModel(Route::class, [$id]);
                 }
                 $request->attributes->set('orbit.route_public_process', ($receipt->input['public_process'] ?? false) === true);
-                $ids = $receipt->input['access_node_ids'] ?? [$receipt->node_id];
+                $ids = ValidatedData::integerList($receipt->input['access_node_ids'] ?? array_values(array_filter([$receipt->node_id], is_int(...))));
+                $nodes = Node::query()->whereIn('id', $ids)->get();
+                if ($nodes->isEmpty() || $nodes->count() !== count($ids)) {
+                    return $this->gateway();
+                }
 
-                return Node::query()->whereIn('id', is_array($ids) ? $ids : [$receipt->node_id])->get()->all();
+                return $nodes->all();
             }
             $request->attributes->set('orbit.route_public_process', $route->isCustomProxy() && $route->cluster_id !== null);
         }

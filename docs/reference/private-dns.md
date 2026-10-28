@@ -277,3 +277,11 @@ Syncing a full checkout on the `vpn` Node is rejected, because every deploy woul
 ### Uplink resolvers for the backend
 
 The backend must not forward to the systemd-resolved stub on `127.0.0.53` or `127.0.0.54`, because that path can loop back once the VPN DNS listener is bound. It forwards to the uplink resolvers instead, which a default-deny host firewall already admits.
+
+`route.private_dns_publish` takes `{reason}` and runs on the Node that serves
+private DNS. The Gateway records its records and requester catalog from stored
+fleet state. Swamp publishes that snapshot through a named Node program. The
+Node footprint installs the listener and its socket units before publication.
+Publication keeps the socket listeners active, validates the candidate records,
+and restores the previous files and service states on refusal. It carries no
+secret input.

@@ -703,3 +703,21 @@ A Node service that is not an application still needs a unique name, private DNS
 A Process can run on a service Node outside any Cluster. Selecting an Ingress independently keeps the service Node's membership and private Caddy sites unchanged. The Process Node's Cluster supplies the natural default; outside a Cluster, the existing public app Routes identify the production edge without a hard-coded Node or Cluster ID. Ambiguity requires an explicit selection. Routing scope follows the selected Ingress internally.
 
 LAN address selection uses the recorded /24, not Cluster membership; the source firewall check and connection probe confirm the path before activation. Requiring a listener on the selected address avoids silently rewriting Docker publications. Arbitrary remote URLs, wildcard bindings, a Router hop, and a private certificate on the service Node add exposure or complexity without helping this HTTP path.
+
+Swamp Route composition uses Node-bound children. `route.caddy_converge` takes
+`{reason}` and renders the whole Caddyfile from Gateway state. A stale saved
+render refuses before publication. The Node build lock covers the fresh check
+and dispatch, so an older render cannot replace a newer serving configuration.
+
+Instance removal calls `route.withdraw_instance` with `{instance_id}` before it
+removes source files. This converges shared PHP-FPM pools even when the Instance
+has no Route. After source removal, `route.cleanup_instance` withdraws Caddy
+before removing the unused Instance certificate and runtime. A certificate still
+named by a stored site stays on the Node.
+
+`route.offline_residue_clean` takes `{removed_node_id: int|null}` on the serving
+Node. A Node ID scopes cleanup through the removed Node's preserved Route
+associations. `null` selects historical orphan residue whose Route no longer
+exists. Successful cleanup removes only the captured residue rows that have not
+changed during execution. Its `removed` result is a redacted list of artifact
+names.

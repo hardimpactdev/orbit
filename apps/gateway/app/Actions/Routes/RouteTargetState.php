@@ -6,28 +6,20 @@ namespace App\Actions\Routes;
 
 use App\Data\Routes\RouteTargetDispositionData;
 use App\Data\Routes\SetRouteTargetsData;
-use App\Domain\AppDev\DevelopmentProjectionOperationLock;
-use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
-use App\Domain\Instances\Environment\InstanceEnvironmentRouteDomain;
-use App\Domain\Instances\Environment\InstanceRouteEnvironmentSynchronizer;
-use App\Domain\Instances\InstanceRemover;
-use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteTargetSetGuard;
 use App\Domain\Routes\RouteTargetSetStep;
-use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
-use App\Domain\WebSocket\WebSocketRouteSelection;
 use App\Models\Instance;
 use App\Models\Route;
 use App\Models\RouteTarget;
 use Illuminate\Support\Facades\DB;
-use Throwable;
 
 /** Gateway-owned validation and Route state transitions. Contains no Node execution. */
 final readonly class RouteTargetState
 {
     public function __construct(private RouteTargetSetGuard $guard) {}
+
     public function isCompletedNoop(Route $route, SetRouteTargetsData $proposal): bool
     {
         if ($route->target_set_intent !== null) {
@@ -144,6 +136,7 @@ final readonly class RouteTargetState
         }
     }
 
+    /** @param list<int>|null $orderedInstanceIds */
     public function compactPositions(int $routeId, ?array $orderedInstanceIds = null): void
     {
         if ($orderedInstanceIds !== null) {
@@ -186,6 +179,7 @@ final readonly class RouteTargetState
         }
     }
 
+    /** @return list<int> */
     public function vacatedRouteIds(Route $route, SetRouteTargetsData $proposal): array
     {
         $ids = [];
@@ -204,6 +198,7 @@ final readonly class RouteTargetState
         return array_values(array_unique($ids));
     }
 
+    /** @return list<array{Instance, Route}> */
     public function preparedInstances(Route $route, SetRouteTargetsData $proposal): array
     {
         $prepared = [];
@@ -228,6 +223,7 @@ final readonly class RouteTargetState
         return $prepared;
     }
 
+    /** @return list<Instance> */
     public function synchronizedInstances(Route $route, SetRouteTargetsData $proposal): array
     {
         $ids = $proposal->targetIds;
@@ -269,6 +265,7 @@ final readonly class RouteTargetState
         ]);
     }
 
+    /** @return list<int> */
     public function ownerIds(Route $route, SetRouteTargetsData $proposal): array
     {
         $ids = [

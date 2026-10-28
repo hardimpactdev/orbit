@@ -23,7 +23,7 @@ abstract class RouteCommand extends GatewayCommand
         if ($profile === null) {
             return self::FAILURE;
         }
-        $key = $this->option('idempotency-key');
+        $key = $this->stringOption('idempotency-key');
         if (is_string($key)) {
             $request->headers()->add('Idempotency-Key', $key);
         }

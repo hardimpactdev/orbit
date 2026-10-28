@@ -12,6 +12,7 @@ use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
 
 /** Keeps public CSR bytes usable without weakening the common PEM redactor. */
@@ -22,21 +23,20 @@ final readonly class CertificateExecution implements OperationFamilyExecution
         $commands = $operation->kind === 'certificate.remove'
             ? [['certificate-remove', 'agent', 'certificate.remove-leaf']]
             : [['certificate-request', 'certificate-request', 'certificate.request-leaf']];
-        $runs = $operation->state['executor_runs'] ?? [];
-        $request = $runs['certificate-request']['result'] ?? [];
+        $request = RouteExecutionProof::result($operation, 'certificate-request');
         if (($request['state'] ?? null) === 'request') {
             $commands[] = ['certificate-sign', 'gateway', 'certificate.sign-leaf'];
-            if (($runs['certificate-sign']['result']['signed'] ?? false) === true) {
+            if ((data_get($operation->state, 'executor_runs.certificate-sign.result.signed', false)) === true) {
                 $commands[] = ['certificate-publish', 'agent', 'certificate.publish-leaf'];
             }
         }
-        if (($request['state'] ?? null) === 'current' || (is_array($runs['certificate-publish']['result'] ?? null)
-            && ! isset($runs['certificate-publish']['result']['error_code']))) {
+        if (($request['state'] ?? null) === 'current' || (is_array(data_get($operation->state, 'executor_runs.certificate-publish.result'))
+            && ! isset(RouteExecutionProof::result($operation, 'certificate-publish')['error_code']))) {
             $commands[] = ['certificate-inspect', 'agent', 'certificate.inspect-leaf'];
         }
         $descriptors = [];
         foreach ($commands as [$key, $transport, $name]) {
-            $run = ['key' => $key, 'transport' => $transport, 'name' => $name];
+            $run = ['worker' => $operation->worker ?? '', 'key' => $key, 'transport' => $transport, 'name' => $name, 'input' => []];
             $descriptors[] = [...$run, 'step' => $key, 'input' => $this->input($operation, $run), 'resumable' => true, 'required' => true];
         }
 
@@ -50,7 +50,7 @@ final readonly class CertificateExecution implements OperationFamilyExecution
         return match ($run['name']) {
             'certificate.request-leaf' => $leaf,
             'certificate.sign-leaf' => ['domain' => $operation->input['domain'],
-                'request_base64' => $operation->state['executor_runs']['certificate-request']['result']['request_base64'] ?? null],
+                'request_base64' => data_get($operation->state, 'executor_runs.certificate-request.result.request_base64')],
             'certificate.publish-leaf' => [...$leaf,
                 'certificate' => ['$secret' => 'certificate.leaf', 'id' => $operation->id],
                 'root_certificate' => ['$secret' => 'certificate.leaf', 'id' => $operation->id]],
@@ -63,7 +63,7 @@ final readonly class CertificateExecution implements OperationFamilyExecution
     {
         RouteExecutionProof::preceding($operation, $this->context($operation)['descriptors'], $run['key']);
         if ($run['name'] === 'certificate.remove-leaf') {
-            $scope = $operation->input['scope'];
+            $scope = ValidatedData::string($operation->input['scope']);
             $node = Node::query()->findOrFail($operation->node_id);
             if (app(DevelopmentSiteRepository::class)->forNode($node)->contains(
                 static fn (DevelopmentSite $site): bool => $site->loadsCertificate($scope))) {
@@ -82,6 +82,8 @@ final readonly class CertificateExecution implements OperationFamilyExecution
 
     public function cancellationBoundary(Operation $operation): ?array
     {
-        return null;
+        return $operation->kind === 'certificate.converge'
+            ? ['key' => 'certificate-publish', 'transport' => 'agent', 'name' => 'certificate.publish-leaf', 'result' => []]
+            : null;
     }
 }

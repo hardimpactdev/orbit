@@ -9,6 +9,7 @@ use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Models\Operation;
 use App\Models\RouteRemovalResidue;
+use App\Support\ValidatedData;
 
 final readonly class OfflineResidueCompletion implements OperationCompletion
 {
@@ -17,8 +18,8 @@ final readonly class OfflineResidueCompletion implements OperationCompletion
         if ($outcome->status !== OperationStatus::Succeeded) {
             return;
         }
-        foreach ($operation->state['offline_residue_plan']['rows'] as $snapshot) {
-            $row = RouteRemovalResidue::query()->lockForUpdate()->where('node_id', $operation->node_id)->find($snapshot['id']);
+        foreach (RouteExecutionProof::objects(data_get($operation->state, 'offline_residue_plan.rows')) as $snapshot) {
+            $row = RouteRemovalResidue::query()->lockForUpdate()->where('node_id', $operation->node_id)->find(ValidatedData::integer($snapshot['id']));
             if ($row !== null && $row->route_id === $snapshot['route_id'] && $row->domain === $snapshot['domain'] && $row->steps === $snapshot['steps'] && $row->attempts === $snapshot['attempts']) {
                 $row->delete();
             }

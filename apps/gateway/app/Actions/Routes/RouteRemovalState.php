@@ -4,36 +4,22 @@ declare(strict_types=1);
 
 namespace App\Actions\Routes;
 
-use App\Domain\AppDev\DevelopmentProjectionOperationLock;
-use App\Domain\Broadcasting\RecordEventBroadcaster;
-use App\Domain\Broadcasting\RecordEventType;
-use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
-use App\Domain\Instances\InstanceState;
-use App\Domain\Metrics\ExporterDegradationReason;
-use App\Domain\Metrics\MetricsFleetReconciler;
-use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Routes\PublicRouteEligibility;
-use App\Domain\Routes\RouteAssociationGuard;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteReconciliationGuard;
-use App\Domain\Routes\RouteRemovalNode;
-use App\Domain\Routes\RouteRemovalProjector;
-use App\Domain\Routes\RouteRemovalStep;
 use App\Domain\Routes\RouteStatus;
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
-use App\Models\Instance;
 use App\Models\InstanceTransfer;
 use App\Models\Route;
-use App\Models\RouteRemovalResidue;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
-use Throwable;
 
 final readonly class RouteRemovalState
 {
     public function __construct(private RouteReconciliationGuard $reconciliation) {}
+
+    /** @param list<int> $expectedTargetIds */
     public function lockAndGuard(Route $route, array $expectedTargetIds): Route
     {
         $locked = DB::transaction(function () use ($route, $expectedTargetIds): Route {
@@ -102,6 +88,7 @@ final readonly class RouteRemovalState
         });
     }
 
+    /** @param list<int> $expectedTargetIds */
     public function assertTargetsUnchanged(Route $route, array $expectedTargetIds): void
     {
         $currentTargetIds = $route

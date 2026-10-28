@@ -292,7 +292,7 @@ final readonly class CreateRouteAction
                     'domain' => $domain,
                     'provenance' => RouteProvenance::Explicit,
                     'publication' => RoutePublication::Private,
-                    'status' => RouteStatus::Activating,
+                    'status' => RouteStatus::Pending,
                     'failed_step' => null,
                     'error_code' => null,
                 ]);
@@ -301,6 +301,7 @@ final readonly class CreateRouteAction
                     'process_id' => $process?->id,
                     'upstream' => $upstream->url(),
                 ]);
+                $route->update(['status' => RouteStatus::Activating]);
 
                 return $route->load(['targets', 'customProxy']);
             });

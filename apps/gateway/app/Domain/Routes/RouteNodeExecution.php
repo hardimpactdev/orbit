@@ -8,6 +8,7 @@ use App\Domain\Operations\OperationFamilyExecution;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 
 /** Exact public inputs rendered by the Gateway; Swamp cannot supply another Caddyfile. */
 final readonly class RouteNodeExecution implements OperationFamilyExecution
@@ -48,10 +49,10 @@ final readonly class RouteNodeExecution implements OperationFamilyExecution
             return $receipt;
         }
         if ($operation->kind === 'route.private_dns_publish') {
-            if (($receipt['outcome'] ?? null) === 'refused' && is_string($receipt['data']['error_code'] ?? null)) {
-                return ['error_code' => $receipt['data']['error_code']];
+            if (($receipt['outcome'] ?? null) === 'refused' && is_string(data_get($receipt, 'data.error_code'))) {
+                return ['error_code' => data_get($receipt, 'data.error_code')];
             }
-            if (($receipt['outcome'] ?? null) !== 'published' || ($receipt['data']['ready'] ?? null) !== true) {
+            if (($receipt['outcome'] ?? null) !== 'published' || (data_get($receipt, 'data.ready')) !== true) {
                 throw new ResourceOperationException('private_dns.result_invalid', 'Private DNS returned no publication receipt.', 409);
             }
         } elseif (! in_array($receipt['result'] ?? null, ['published', 'unchanged'], true)) {
@@ -77,7 +78,7 @@ final readonly class RouteNodeExecution implements OperationFamilyExecution
             throw new ResourceOperationException('route.plan_missing', 'Prepare the Gateway render before publication.', 409);
         }
 
-        return $operation->state[$spec['plan']];
+        return ValidatedData::object($operation->state[$spec['plan']]);
     }
 
     /** @return array{prepare: string, plan: string, step: string, transport: string, command: string} */

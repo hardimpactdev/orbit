@@ -25,7 +25,7 @@ final readonly class SignLeafCommand implements OperationGatewayCommand
     /** @param array<string, mixed> $input
      * @return array<string, mixed>
      */
-    public function run(Operation $operation, array $input): array
+    public function run(Operation $operation, #[\SensitiveParameter] array $input): array
     {
         $encoded = $input['request_base64'] ?? null;
         $request = is_string($encoded) ? base64_decode($encoded, true) : false;

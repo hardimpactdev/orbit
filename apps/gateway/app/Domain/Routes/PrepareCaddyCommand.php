@@ -23,7 +23,7 @@ final readonly class PrepareCaddyCommand implements OperationGatewayCommand
             'properties' => ['reason' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 200]]];
     }
 
-    public function run(Operation $operation, array $input): array
+    public function run(Operation $operation, #[\SensitiveParameter] array $input): array
     {
         if ($operation->kind !== 'route.caddy_converge' || ! is_int($operation->node_id)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'A Node Caddy Operation is required.', 422);

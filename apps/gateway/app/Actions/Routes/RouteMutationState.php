@@ -4,39 +4,26 @@ declare(strict_types=1);
 
 namespace App\Actions\Routes;
 
-use App\Domain\AppDev\DevelopmentProjectionOperationLock;
-use App\Domain\AppDev\PrivateDnsAnswerExpiry;
-use App\Domain\Instances\DevelopmentInstanceConfigurator;
-use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
-use App\Domain\Instances\Environment\InstanceEnvironmentRouteDomain;
-use App\Domain\Instances\Environment\InstanceRouteEnvironmentSynchronizer;
 use App\Domain\Instances\InstanceSourceProfileGuard;
 use App\Domain\Instances\InstanceState;
-use App\Domain\Routes\RouteDomain;
-use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RoutePlacement;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReconciliationGuard;
-use App\Domain\Routes\RouteRemovalNode;
-use App\Domain\Routes\RouteRemovalStep;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
-use App\Domain\WebSocket\WebSocketRouteSelection;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Route;
-use App\Models\RouteRemovalResidue;
 use App\Models\RouteTarget;
-use Closure;
 use Illuminate\Support\Facades\DB;
-use Throwable;
 
 /** Gateway-owned validation and Route state transitions. Contains no Node execution. */
 final readonly class RouteMutationState
 {
+    /** @param list<int> $expectedTargetIds */
     public function assertTargetsUnchanged(Route $route, array $expectedTargetIds): void
     {
         $currentTargetIds = $route
@@ -58,6 +45,7 @@ final readonly class RouteMutationState
         }
     }
 
+    /** @return list<Instance> */
     public function eligibleTargets(
         Route $route,
         bool $allowRetiring = false,
