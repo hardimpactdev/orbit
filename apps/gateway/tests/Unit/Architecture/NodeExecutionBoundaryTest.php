@@ -161,6 +161,8 @@ it('keeps Node execution inside the agent transports across core and extensions'
         'app/Infrastructure/Nodes/Roles/GatewayRoleBaseline.php',
         'app/Infrastructure/Doctor/NativeRoleStateInspector.php',
         'app/Infrastructure/WireGuard/NativeGatewayVpnConverger.php',
+        // The Services-only Operation primitive invokes names from the existing closed program catalog.
+        'app/Domain/Operations/SwampOperationExecutor.php',
         // Existing Tasks workspace execution and its journal are excluded from this port.
         'app/Infrastructure/AppDev/DevelopmentSshExecutor.php',
         'app/Infrastructure/RemotePrograms/SshProgramRunner.php',

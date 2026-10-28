@@ -6,7 +6,6 @@ use App\Data\Metrics\MetricsMutationData;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\NodeStateInspector;
-use App\Domain\Firewall\FirewallBackendStatus;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
 use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;

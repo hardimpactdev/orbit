@@ -172,4 +172,3 @@ final class MacOsBoundaryConverger implements NodeConverger, RecoverableNodeConv
         throw new RuntimeException('Linux convergence must not start.');
     }
 }
-

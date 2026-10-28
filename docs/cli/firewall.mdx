@@ -100,7 +100,7 @@ If authorized overlap narrowing occurred, restore the exact previous operator re
 
 Every command accepts `--json` and requires `--node` with a numeric Node ID. A rule name is 1 through 63 characters of lowercase letters, digits, dots, underscores, and hyphens, starting and ending with a letter or digit; it cannot contain a colon, so an operator name never collides with an `orbit:` rule. The Gateway tags each UFW rule with the comment `orbit:node:<node-id>:firewall:<name>` and uses that comment for every later change.
 
-All targets and rule values are explicit; these commands do not prompt for missing arguments or options. Human requests show an indeterminate progress tree while the Gateway works, then the verified result and request ID. Piped output has no animation or escape codes. JSON contains only the existing response or error.
+All targets and rule values are explicit; these commands do not prompt for missing arguments or options. Human requests follow the Operation steps and show the final status and request ID. Piped output has no animation or escape codes. Write-command JSON contains the final Operation or an admission error.
 
 ## orbit firewall:allow
 
@@ -126,7 +126,9 @@ orbit firewall:allow office-postgres --node=7 --port=5432 --from=10.6.0.0/24
 orbit firewall:allow media-udp --node=7 --port=6000:6100 --protocol=udp
 ```
 
-Repeating the same command with the same values converges the existing rule and returns it. The same name with different values returns `firewall.name_taken`; remove the rule and create it again to change it. Human output reports `Firewall rule [name] is active.` with the request ID.
+Repeating the same command with the same values admits an Operation that converges the existing rule. A running Operation keeps its Node firewall target and returns `operation.target_busy` to another admission. The same name with different values returns `firewall.name_taken`; remove the rule and create it again to change it. Human output follows the UFW step and reports `Firewall rule succeeded.` with the Operation and request IDs.
+
+Use `--idempotency-key=KEY` to retry the same admission without creating another Operation. Keep the same key, Node, rule name and input.
 
 ## orbit firewall:deny
 
@@ -143,6 +145,8 @@ orbit firewall:deny block-scanner --node=7 --port=22 --from=203.0.113.9
 <Warning>
 The Gateway refuses a deny rule whose port contains the Node's public SSH port for any source that would cover it with `firewall.public_ssh_deny_forbidden`, because that port is the recovery path after a failed provisioning. A deny rule and an allow rule with the same source, protocol, and port cannot coexist on one Node; the second one returns `firewall.action_conflict`.
 </Warning>
+
+Use `--idempotency-key=KEY` to retry the same admission without creating another Operation. Keep the same key, Node, rule name and input.
 
 ## orbit firewall:list
 
@@ -162,7 +166,7 @@ A rule's `status` is `provisioning`, `active`, `failed`, or `removing`. A failed
 
 ## orbit firewall:remove
 
-Remove one named rule from UFW and delete its record. Before prompting, the CLI resolves the rule with a read-only lookup, then asks `Remove firewall rule [name] from Node #ID?` with No selected. Supply `--yes` for automation, including JSON; JSON never implies consent.
+Remove one named rule from UFW and delete its record. Before prompting, the CLI resolves the rule with a read-only lookup unless a retry key is supplied, then asks `Remove firewall rule [name] from Node #ID?` with No selected. Supply `--yes` for automation, including JSON; JSON never implies consent.
 
 ```bash
 orbit firewall:remove <name> --node=ID [--yes] [--json]
@@ -182,13 +186,15 @@ orbit firewall:remove office-postgres --node=7
 orbit firewall:remove office-postgres --node=7 --yes --json
 ```
 
-The Gateway marks the rule `removing`, deletes every UFW rule that carries its comment, verifies that none remains, and then deletes the record. A failure leaves the rule `failed` with the step that stopped; repeat the command to retry.
+The Gateway marks the rule `removing` and returns its Operation. Swamp asks the Node agent to delete every UFW rule that carries the owned comment and verify that none remains. Completion removes the Gateway record. A failure leaves the rule `failed` with the step that stopped; repeat the command with a new admission key after fixing the cause.
 
 Declining, Ctrl-C, or end of input before removal exits 1 with `input.cancelled`. Noninteractive removal without `--yes` exits 1 with `input.confirmation_required` and an instruction to supply `--yes`. Refused confirmations send no removal request. Existing lookup, authorization, and safety errors retain their codes.
 
+Use `--idempotency-key=KEY` to retry the same admission without creating another Operation. Keep the same key, Node, rule name and input.
+
 ## Error codes
 
-The CLI validates the name, source, protocol, and port before it sends a request. The Gateway returns the remaining codes.
+The CLI validates the name, source, protocol, and port before it sends a request. The Gateway returns admission errors. Node execution errors appear on the final Operation.
 
 | Error code | Meaning |
 | --- | --- |

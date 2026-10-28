@@ -32,7 +32,7 @@ The retained runtime needs Python 3.10 or newer. `resources/remote/bootstrap.py`
 
 ## The runner
 
-`TaskWorkspaceLeaseRecovery` calls `RemoteProgramRunner` for `gateway.task-workspace-owner`. It maps the returned facts to workspace lease recovery. No Instance, tool, recipe, or other Node-management action calls this runner.
+`TaskWorkspaceLeaseRecovery` calls `RemoteProgramRunner` for `gateway.task-workspace-owner`. It maps the returned facts to workspace lease recovery. No Instance, tool, recipe, or other Node-management action calls this runner. The Services-only [Operation primitive](/reference/operations#swamp-execution) can invoke a named program from the same catalog. It accepts typed input and a catalog name, never caller-supplied source.
 
 `SshProgramRunner` checks the result shape and declared outcome. It distinguishes unreachable Nodes, missing results, malformed results, undeclared outcomes, timeouts, and cancellation. Failures retain a redacted stderr tail of at most 4096 bytes and the exit status when available. Redaction runs before truncation.
 
