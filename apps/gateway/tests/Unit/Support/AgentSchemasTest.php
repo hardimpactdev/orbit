@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use Tests\Support\AgentSchemas;
+use App\Infrastructure\AgentCommands\AgentSchemas;
 
 /** A schema in the shape `schemars` writes: a tagged enum, a map, a list, and an unsigned integer. */
 function agent_schema_example(): array

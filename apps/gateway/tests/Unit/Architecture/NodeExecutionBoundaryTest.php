@@ -121,6 +121,8 @@ it('keeps Node execution inside the agent transports across core and extensions'
         'app/Infrastructure/Ssh/SshExecutor.php',
         'app/Infrastructure/Ssh/NativeSshExecutor.php',
         'app/Infrastructure/AgentCommands/AgentInvocation.php',
+        // Uses only AgentInvocation::wire to validate the exact serialized command input.
+        'app/Infrastructure/AgentCommands/AgentSchemas.php',
         'app/Infrastructure/AgentCommands/AgentOutputDecoder.php',
         'app/Infrastructure/AgentCommands/IncusAgentTransport.php',
         'app/Infrastructure/AgentCommands/AgentTransports.php',

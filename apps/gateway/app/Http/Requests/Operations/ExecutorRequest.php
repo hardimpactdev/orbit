@@ -58,7 +58,7 @@ abstract class ExecutorRequest extends FormRequest
     public function runInput(): array
     {
         return ['worker' => $this->worker(), 'key' => ValidatedData::string($this->validated('key')),
-            'node_id' => $this->integer('node_id'), 'transport' => ValidatedData::string($this->validated('transport')),
+            'transport' => ValidatedData::string($this->validated('transport')),
             'name' => ValidatedData::string($this->validated('name')), 'input' => ValidatedData::object($this->validated('input'))];
     }
 

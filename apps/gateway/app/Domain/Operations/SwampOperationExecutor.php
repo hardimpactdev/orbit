@@ -22,13 +22,13 @@ use Illuminate\Support\Facades\DB;
  *
  * @phpstan-type StepInput array{worker: string, key: string, name: string, status: string, output?: string, result?: array<string, mixed>, error_code?: string|null}
  * @phpstan-type CompletionInput array{worker: string, status: string, result?: array<string, mixed>, error_code?: string|null}
- * @phpstan-type RunInput array{worker: string, key: string, node_id: int, transport: string, name: string, input: array<string, mixed>}
+ * @phpstan-type RunInput array{worker: string, key: string, transport: string, name: string, input: array<string, mixed>}
  */
 final readonly class SwampOperationExecutor
 {
     public const int LeaseSeconds = 120;
 
-    public function __construct(private OperationStore $store, private OperationExecutors $executors) {}
+    public function __construct(private OperationStore $store, private OperationExecutors $executors, private OperationExecutionContract $contract) {}
 
     public function claim(string $kind, string $worker): ?Operation
     {
@@ -74,6 +74,12 @@ final readonly class SwampOperationExecutor
         return $this->owned($operation, $data['worker'], function (Operation $operation) use ($data): void {
             $state = $operation->state ?? [];
             $fingerprint = hash('sha256', json_encode(array_diff_key($data, ['worker' => true]), JSON_THROW_ON_ERROR));
+            $data['result'] = $this->contract->result($operation, $data['result'] ?? []);
+            $data['output'] = $this->contract->text($data['output'] ?? '');
+            $data['error_code'] = isset($data['error_code']) ? $this->contract->text($data['error_code']) : null;
+            if ($data['status'] === 'succeeded') {
+                $this->contract->assertStep($operation, $data['name'], $data['result']);
+            }
             $events = ValidatedData::object($state['executor_events'] ?? []);
             $receipt = $events[$data['key']] ?? null;
             if ($receipt !== null) {
@@ -91,12 +97,12 @@ final readonly class SwampOperationExecutor
             if (in_array($step->status, [OperationStepStatus::Succeeded, OperationStepStatus::Failed], true)) {
                 throw new ResourceOperationException('operation.step_finished', 'The step has already finished.', 409);
             }
-            $output = ($step->output ?? '').($data['output'] ?? '');
+            $output = ($step->output ?? '').$data['output'];
             $events[$data['key']] = $fingerprint;
             $state['executor_events'] = $events;
             if ($data['status'] === 'succeeded') {
                 $steps = ValidatedData::object($state['steps'] ?? []);
-                $steps[$data['name']] = $data['result'] ?? [];
+                $steps[$data['name']] = $data['result'];
                 $state['steps'] = $steps;
             }
             $this->store->change($operation, [
@@ -117,7 +123,8 @@ final readonly class SwampOperationExecutor
     {
         return DB::transaction(function () use ($operation, $data): Operation {
             $operation->refresh();
-            $receipt = ['status' => $data['status'], 'result' => $data['result'] ?? [], 'error_code' => $data['error_code'] ?? null];
+            $receipt = ['status' => $data['status'], 'result' => $this->contract->result($operation, $data['result'] ?? []),
+                'error_code' => isset($data['error_code']) ? $this->contract->text($data['error_code']) : null];
             if ($operation->status->terminal()) {
                 if ($operation->worker !== $data['worker'] || ($operation->state['executor_completion'] ?? null) !== $receipt) {
                     throw new ResourceOperationException('operation.completion_conflict', 'The Operation has another completion receipt.', 409);
@@ -129,6 +136,9 @@ final readonly class SwampOperationExecutor
             return $this->owned($operation, $data['worker'], function (Operation $operation) use ($receipt): void {
                 if ($operation->steps()->where('status', OperationStepStatus::Running->value)->exists()) {
                     throw new ResourceOperationException('operation.step_running', 'Finish the current step before completion.', 409);
+                }
+                if ($receipt['status'] === 'succeeded') {
+                    $this->contract->assertCompletion($operation, $receipt['result']);
                 }
                 $outcome = match ($receipt['status']) {
                     'succeeded' => OperationOutcome::succeeded($receipt['result']),
@@ -173,6 +183,7 @@ final readonly class SwampOperationExecutor
         $fingerprint = hash('sha256', json_encode(array_diff_key($data, ['worker' => true]), JSON_THROW_ON_ERROR));
         $receipt = null;
         $this->owned($operation, $data['worker'], function (Operation $operation) use ($data, $fingerprint, &$receipt): void {
+            $this->contract->authorizeRun($operation, $data);
             $runs = ValidatedData::object($operation->state['executor_runs'] ?? []);
             $value = $runs[$data['key']] ?? null;
             $receipt = $value === null ? null : ValidatedData::object($value);
@@ -180,14 +191,14 @@ final readonly class SwampOperationExecutor
                 throw new ResourceOperationException('operation.idempotency_conflict', 'The execution key has another payload.', 409);
             }
             if ($receipt === null) {
-                $runs[$data['key']] = ['fingerprint' => $fingerprint, 'result' => null];
+                $runs[$data['key']] = ['fingerprint' => $fingerprint, 'transport' => $data['transport'], 'name' => $data['name'], 'result' => null];
                 $this->store->change($operation, ['state' => [...($operation->state ?? []), 'executor_runs' => $runs]]);
             }
         });
         if ($receipt !== null && $receipt['result'] !== null) {
             return ValidatedData::object($receipt['result']);
         }
-        $node = Node::query()->whereKey($data['node_id'])->firstOrFail();
+        $node = Node::query()->whereKey($operation->node_id)->firstOrFail();
         try {
             if ($data['transport'] === 'agent') {
                 $result = app(AgentCommandRunner::class)->run($node, $data['name'], $data['input']);
@@ -198,10 +209,11 @@ final readonly class SwampOperationExecutor
         } catch (AgentCommandRefused $exception) {
             $result = ['error_code' => $exception->errorCode];
         }
+        $result = $this->contract->result($operation, $result);
         $this->owned($operation, $data['worker'], function (Operation $operation) use ($data, $fingerprint, $result): void {
             $state = $operation->state ?? [];
             $runs = ValidatedData::object($state['executor_runs'] ?? []);
-            $runs[$data['key']] = ['fingerprint' => $fingerprint, 'result' => $result];
+            $runs[$data['key']] = ['fingerprint' => $fingerprint, 'transport' => $data['transport'], 'name' => $data['name'], 'result' => $result];
             $state['executor_runs'] = $runs;
             $this->store->change($operation, ['state' => $state]);
         });

@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Tests\Support;
+namespace App\Infrastructure\AgentCommands;
 
-use App\Infrastructure\AgentCommands\AgentInvocation;
+use App\Support\ValidatedData;
 use LogicException;
 use stdClass;
 
 /**
- * The input and output JSON Schemas the agent exports in `apps/agent/contract/schemas.json`. Fakes check every
+ * The input and output JSON Schemas the agent exports in `apps/agent/contract/schemas.json`. Gateway execution and fakes check every
  * input they receive and every answer they give against them, so a PHP test cannot send or expect a shape that the
  * Rust command would refuse or never return.
  *
@@ -19,7 +19,7 @@ use stdClass;
  */
 final class AgentSchemas
 {
-    public const string Path = __DIR__.'/../../../agent/contract/schemas.json';
+    public const string Path = __DIR__.'/../../../../agent/contract/schemas.json';
 
     public const array Keywords = [
         '$schema', '$defs', '$ref', 'title', 'description', 'default', 'examples', 'deprecated', 'readOnly', 'writeOnly',
@@ -48,6 +48,7 @@ final class AgentSchemas
      * Every violation of `$schema` by `$value`, each with its JSON path. A `stdClass` is a wire object; then an array
      * is only a list.
      *
+     * @param  array<string, mixed>|bool  $schema
      * @return list<string>
      */
     public static function errors(mixed $value, array|bool $schema): array
@@ -74,14 +75,14 @@ final class AgentSchemas
             }
         }
         if (isset($schema['$ref'])) {
-            $errors = self::check($value, self::reference($schema['$ref'], $root), $root, $path, $wire);
+            $errors = self::check($value, self::reference(ValidatedData::string($schema['$ref']), $root), $root, $path, $wire);
             if ($errors !== []) {
                 return $errors;
             }
         }
 
         if (isset($schema['type'])) {
-            $types = (array) $schema['type'];
+            $types = is_string($schema['type']) ? [$schema['type']] : ValidatedData::stringList($schema['type']);
             if (! array_any($types, static fn (string $type): bool => self::is($value, $type, $wire))) {
                 return ["{$path}: expected ".implode('|', $types).', got '.get_debug_type($value)];
             }
@@ -89,24 +90,24 @@ final class AgentSchemas
         if (array_key_exists('const', $schema) && ! self::same($value, $schema['const'])) {
             return ["{$path}: expected ".json_encode($schema['const'])];
         }
-        if (isset($schema['enum']) && ! array_any($schema['enum'], static fn (mixed $option): bool => self::same($value, $option))) {
+        if (isset($schema['enum']) && ! array_any(self::values($schema['enum']), static fn (mixed $option): bool => self::same($value, $option))) {
             return ["{$path}: expected one of ".json_encode($schema['enum'])];
         }
 
         $errors = [];
-        foreach ($schema['allOf'] ?? [] as $part) {
+        foreach (self::schemas($schema['allOf'] ?? []) as $part) {
             $errors = [...$errors, ...self::check($value, $part, $root, $path, $wire)];
         }
-        if (isset($schema['anyOf']) && ! array_any($schema['anyOf'], static fn (array|bool $part): bool => self::check($value, $part, $root, $path, $wire) === [])) {
+        if (isset($schema['anyOf']) && ! array_any(self::schemas($schema['anyOf']), static fn (array|bool $part): bool => self::check($value, $part, $root, $path, $wire) === [])) {
             $errors[] = "{$path}: matches none of anyOf";
         }
         if (isset($schema['oneOf'])) {
-            $matches = count(array_filter($schema['oneOf'], static fn (array|bool $part): bool => self::check($value, $part, $root, $path, $wire) === []));
+            $matches = count(array_filter(self::schemas($schema['oneOf']), static fn (array|bool $part): bool => self::check($value, $part, $root, $path, $wire) === []));
             if ($matches !== 1) {
                 $errors[] = "{$path}: matches {$matches} of oneOf";
             }
         }
-        if (isset($schema['not']) && self::check($value, $schema['not'], $root, $path, $wire) === []) {
+        if (isset($schema['not']) && self::check($value, self::schema($schema['not']), $root, $path, $wire) === []) {
             $errors[] = "{$path}: matches a forbidden schema";
         }
 
@@ -120,27 +121,32 @@ final class AgentSchemas
             if (($schema['uniqueItems'] ?? false) === true && count(array_unique(array_map(static fn (mixed $item): string => json_encode($item, JSON_THROW_ON_ERROR), $value))) !== count($value)) {
                 $errors[] = "{$path}: items are not unique";
             }
-            if (isset($schema['minItems']) && count($value) < $schema['minItems']) {
-                $errors[] = "{$path}: fewer than {$schema['minItems']} items";
+            if (isset($schema['minItems']) && count($value) < ValidatedData::integer($schema['minItems'])) {
+                $bound = ValidatedData::integer($schema['minItems']);
+                $errors[] = "{$path}: fewer than {$bound} items";
             }
-            if (isset($schema['maxItems']) && count($value) > $schema['maxItems']) {
-                $errors[] = "{$path}: more than {$schema['maxItems']} items";
+            if (isset($schema['maxItems']) && count($value) > ValidatedData::integer($schema['maxItems'])) {
+                $bound = ValidatedData::integer($schema['maxItems']);
+                $errors[] = "{$path}: more than {$bound} items";
             }
         }
         if (is_int($value) || is_float($value)) {
             $unsigned = is_string($schema['format'] ?? null) && str_starts_with($schema['format'], 'uint');
-            $minimum = $schema['minimum'] ?? ($unsigned ? 0 : null);
+            $minimum = isset($schema['minimum']) ? self::number($schema['minimum']) : ($unsigned ? 0 : null);
             if ($minimum !== null && $value < $minimum) {
                 $errors[] = "{$path}: below {$minimum}";
             }
-            if (isset($schema['maximum']) && $value > $schema['maximum']) {
-                $errors[] = "{$path}: above {$schema['maximum']}";
+            if (isset($schema['maximum']) && $value > self::number($schema['maximum'])) {
+                $bound = self::number($schema['maximum']);
+                $errors[] = "{$path}: above {$bound}";
             }
-            if (isset($schema['exclusiveMinimum']) && $value <= $schema['exclusiveMinimum']) {
-                $errors[] = "{$path}: not above {$schema['exclusiveMinimum']}";
+            if (isset($schema['exclusiveMinimum']) && $value <= self::number($schema['exclusiveMinimum'])) {
+                $bound = self::number($schema['exclusiveMinimum']);
+                $errors[] = "{$path}: not above {$bound}";
             }
-            if (isset($schema['exclusiveMaximum']) && $value >= $schema['exclusiveMaximum']) {
-                $errors[] = "{$path}: not below {$schema['exclusiveMaximum']}";
+            if (isset($schema['exclusiveMaximum']) && $value >= self::number($schema['exclusiveMaximum'])) {
+                $bound = self::number($schema['exclusiveMaximum']);
+                $errors[] = "{$path}: not below {$bound}";
             }
         }
         if (is_string($value)) {
@@ -153,14 +159,19 @@ final class AgentSchemas
             if ($address === false) {
                 $errors[] = "{$path}: not an {$schema['format']} address";
             }
-            if (isset($schema['minLength']) && mb_strlen($value) < $schema['minLength']) {
-                $errors[] = "{$path}: shorter than {$schema['minLength']}";
+            if (isset($schema['minLength']) && mb_strlen($value) < ValidatedData::integer($schema['minLength'])) {
+                $bound = ValidatedData::integer($schema['minLength']);
+                $errors[] = "{$path}: shorter than {$bound}";
             }
-            if (isset($schema['maxLength']) && mb_strlen($value) > $schema['maxLength']) {
-                $errors[] = "{$path}: longer than {$schema['maxLength']}";
+            if (isset($schema['maxLength']) && mb_strlen($value) > ValidatedData::integer($schema['maxLength'])) {
+                $bound = ValidatedData::integer($schema['maxLength']);
+                $errors[] = "{$path}: longer than {$bound}";
             }
-            if (isset($schema['pattern']) && preg_match('/'.str_replace('/', '\\/', $schema['pattern']).'/u', $value) !== 1) {
-                $errors[] = "{$path}: does not match {$schema['pattern']}";
+            if (isset($schema['pattern'])) {
+                $pattern = ValidatedData::string($schema['pattern']);
+                if (preg_match('/'.str_replace('/', '\\/', $pattern).'/u', $value) !== 1) {
+                    $errors[] = "{$path}: does not match {$pattern}";
+                }
             }
         }
 
@@ -185,22 +196,23 @@ final class AgentSchemas
     private static function object(array $value, array $schema, array $root, string $path, bool $wire): array
     {
         $errors = [];
-        foreach ($schema['required'] ?? [] as $name) {
+        foreach (ValidatedData::stringList($schema['required'] ?? []) as $name) {
             if (! array_key_exists($name, $value)) {
                 $errors[] = "{$path}: missing [{$name}]";
             }
         }
+        $properties = ValidatedData::object($schema['properties'] ?? []);
         foreach ($value as $name => $item) {
             $name = (string) $name;
             if (isset($schema['propertyNames'])) {
-                $errors = [...$errors, ...self::check($name, $schema['propertyNames'], $root, "{$path}.{$name}", $wire)];
+                $errors = [...$errors, ...self::check($name, self::schema($schema['propertyNames']), $root, "{$path}.{$name}", $wire)];
             }
-            if (isset($schema['properties'][$name])) {
-                $errors = [...$errors, ...self::check($item, $schema['properties'][$name], $root, "{$path}.{$name}", $wire)];
+            if (isset($properties[$name])) {
+                $errors = [...$errors, ...self::check($item, self::schema($properties[$name]), $root, "{$path}.{$name}", $wire)];
             } elseif (array_key_exists('additionalProperties', $schema)) {
                 $errors = [...$errors, ...($schema['additionalProperties'] === false
                     ? ["{$path}: unknown field [{$name}]"]
-                    : self::check($item, $schema['additionalProperties'], $root, "{$path}.{$name}", $wire))];
+                    : self::check($item, self::schema($schema['additionalProperties']), $root, "{$path}.{$name}", $wire))];
             }
         }
 
@@ -216,10 +228,10 @@ final class AgentSchemas
     private static function list(array $value, array $schema, array $root, string $path, bool $wire): array
     {
         $errors = [];
-        $prefix = $schema['prefixItems'] ?? [];
+        $prefix = self::schemas($schema['prefixItems'] ?? []);
         foreach ($value as $index => $item) {
             $itemSchema = $prefix[$index] ?? $schema['items'] ?? true;
-            $errors = [...$errors, ...self::check($item, $itemSchema, $root, "{$path}[{$index}]", $wire)];
+            $errors = [...$errors, ...self::check($item, self::schema($itemSchema), $root, "{$path}[{$index}]", $wire)];
         }
 
         return $errors;
@@ -258,7 +270,40 @@ final class AgentSchemas
             throw new LogicException("Unsupported JSON Schema reference [{$reference}].");
         }
 
-        return $root['$defs'][substr($reference, 8)] ?? throw new LogicException("Unknown JSON Schema reference [{$reference}].");
+        $definitions = ValidatedData::object($root['$defs'] ?? []);
+
+        return self::schema($definitions[substr($reference, 8)] ?? throw new LogicException("Unknown JSON Schema reference [{$reference}]."));
+    }
+
+    /** @return array<string, mixed>|bool */
+    private static function schema(mixed $value): array|bool
+    {
+        return is_bool($value) ? $value : ValidatedData::object($value);
+    }
+
+    /** @return list<array<string, mixed>|bool> */
+    private static function schemas(mixed $value): array
+    {
+        return array_map(self::schema(...), self::values($value));
+    }
+
+    /** @return list<mixed> */
+    private static function values(mixed $value): array
+    {
+        if (! is_array($value) || ! array_is_list($value)) {
+            throw new LogicException('A schema list must be an array.');
+        }
+
+        return $value;
+    }
+
+    private static function number(mixed $value): int|float
+    {
+        if (! is_int($value) && ! is_float($value)) {
+            throw new LogicException('A schema bound must be a number.');
+        }
+
+        return $value;
     }
 
     /** @return array<string, array{input: array<string, mixed>|bool, output: array<string, mixed>|bool}> */
@@ -266,7 +311,12 @@ final class AgentSchemas
     {
         if (self::$commands === null) {
             $document = json_decode((string) file_get_contents(self::Path), true, flags: JSON_THROW_ON_ERROR);
-            self::$commands = $document['commands'];
+            $commands = [];
+            foreach (ValidatedData::object(ValidatedData::object($document)['commands'] ?? []) as $name => $schemas) {
+                $pair = ValidatedData::object($schemas);
+                $commands[$name] = ['input' => self::schema($pair['input'] ?? false), 'output' => self::schema($pair['output'] ?? false)];
+            }
+            self::$commands = $commands;
         }
 
         return self::$commands;

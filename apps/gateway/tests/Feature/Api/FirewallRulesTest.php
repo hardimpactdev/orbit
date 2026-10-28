@@ -7,6 +7,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
 use App\Models\FirewallRule;
 use App\Models\Node;
+use Tests\Support\FirewallOperationProof;
 
 beforeEach(function (): void {
     $this->node = Node::query()->create([
@@ -147,13 +148,12 @@ it('lists stable named intent and admits removal of only the selected rule', fun
     $this->postJson("/api/v1/nodes/{$this->node->id}/firewall-rules/allow", [
         'name' => 'private-web', 'port' => '443',
     ])->assertAccepted();
-    $executor = app(SwampOperationExecutor::class);
-    $executor->complete($executor->claim('firewall.allow', 'test'), ['worker' => 'test', 'status' => 'succeeded']);
+    FirewallOperationProof::finish('firewall.allow', 'test');
     $this->getJson("/api/v1/nodes/{$this->node->id}/firewall-rules")->assertOk()
         ->assertJsonCount(1, 'data')->assertJsonPath('data.0.name', 'private-web')->assertJsonMissingPath('data.0.backend_status');
     $this->deleteJson("/api/v1/nodes/{$this->node->id}/firewall-rules/private-web")->assertAccepted()->assertJsonPath('data.kind', 'firewall.remove');
     expect(FirewallRule::query()->sole()->status)->toBe(LifecycleStatus::Removing);
-    $executor->complete($executor->claim('firewall.remove', 'remove-test'), ['worker' => 'remove-test', 'status' => 'succeeded']);
+    FirewallOperationProof::finish('firewall.remove', 'remove-test');
     expect(FirewallRule::query()->count())->toBe(0);
 });
 
@@ -219,8 +219,7 @@ it('binds identical firewall rule names through the requested node', function ()
         ->deleteJson("/api/v1/nodes/{$this->node->id}/firewall-rules/private-web")
         ->assertAccepted();
 
-    $executor = app(SwampOperationExecutor::class);
-    $executor->complete($executor->claim('firewall.remove', 'test'), ['worker' => 'test', 'status' => 'succeeded']);
+    FirewallOperationProof::finish('firewall.remove', 'test');
     $this->assertDatabaseHas('firewall_rules', ['id' => $otherRule->id]);
     $this->assertDatabaseMissing('firewall_rules', ['id' => $requestedRule->id]);
 

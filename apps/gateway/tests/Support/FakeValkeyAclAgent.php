@@ -8,6 +8,7 @@ use App\Infrastructure\AgentCommands\AgentBinaryInput;
 use App\Infrastructure\AgentCommands\AgentBinaryOutput;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentSchemas;
 use App\Models\Node;
 use Closure;
 use LogicException;

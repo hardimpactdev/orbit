@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Support;
 
 use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
+use App\Infrastructure\AgentCommands\AgentSchemas;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Models\Node;
 use Throwable;

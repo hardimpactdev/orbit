@@ -7,6 +7,7 @@ namespace Tests\Support;
 use App\Infrastructure\AgentCommands\AgentBinaryInput;
 use App\Infrastructure\AgentCommands\AgentBinaryOutput;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
+use App\Infrastructure\AgentCommands\AgentSchemas;
 use App\Infrastructure\AgentCommands\WorkspaceAgentCommandRunner;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;

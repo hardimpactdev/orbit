@@ -13,6 +13,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
+use App\Infrastructure\AgentCommands\AgentSchemas;
 use App\Infrastructure\Nodes\NativeNodeConverger;
 use App\Infrastructure\Nodes\NodeBootstrapCommandFactory;
 use App\Infrastructure\Processes\CommandResult;
@@ -24,7 +25,6 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\WireGuard\RecoverableWireGuardPeerConverger;
 use App\Infrastructure\WireGuard\WireGuardPeerConverger;
 use App\Models\Node;
-use Tests\Support\AgentSchemas;
 use Tests\Support\FakeAgentCommandRunner;
 
 final class BaseAdmissionAgents implements AdmissionAgentRunner

@@ -8,11 +8,11 @@ use App\Data\Firewall\StoreFirewallRuleData;
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Firewall\FirewallAction;
-use App\Domain\Operations\SwampOperationExecutor;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use Illuminate\Support\Facades\Event;
+use Tests\Support\FirewallOperationProof;
 
 beforeEach(function (): void {
     $this->node = Node::query()->create([
@@ -38,8 +38,7 @@ describe('FirewallRule record events', function (): void {
         );
 
         $operation = app(StoreFirewallRuleAction::class)->execute($this->node, $data);
-        $executor = app(SwampOperationExecutor::class);
-        $executor->complete($executor->claim('firewall.allow', 'test'), ['worker' => 'test', 'status' => 'succeeded']);
+        FirewallOperationProof::finish('firewall.allow', 'test');
 
         Event::assertDispatched(
             RecordBroadcast::class,
@@ -58,14 +57,12 @@ describe('FirewallRule record events', function (): void {
             port: '8443',
         );
         app(StoreFirewallRuleAction::class)->execute($this->node, $data);
-        $executor = app(SwampOperationExecutor::class);
-        $executor->complete($executor->claim('firewall.allow', 'first'), ['worker' => 'first', 'status' => 'succeeded']);
+        FirewallOperationProof::finish('firewall.allow', 'first');
 
         Event::fake([RecordBroadcast::class]);
 
         $operation = app(StoreFirewallRuleAction::class)->execute($this->node, $data);
-        $executor = app(SwampOperationExecutor::class);
-        $executor->complete($executor->claim('firewall.allow', 'test'), ['worker' => 'test', 'status' => 'succeeded']);
+        FirewallOperationProof::finish('firewall.allow', 'test');
 
         Event::assertNotDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::FirewallCreated);
     });
@@ -84,8 +81,7 @@ describe('FirewallRule record events', function (): void {
         Event::fake([RecordBroadcast::class]);
 
         app(RemoveFirewallRuleAction::class)->execute($rule);
-        $executor = app(SwampOperationExecutor::class);
-        $executor->complete($executor->claim('firewall.remove', 'test'), ['worker' => 'test', 'status' => 'succeeded']);
+        FirewallOperationProof::finish('firewall.remove', 'test');
 
         Event::assertDispatched(
             RecordBroadcast::class,
