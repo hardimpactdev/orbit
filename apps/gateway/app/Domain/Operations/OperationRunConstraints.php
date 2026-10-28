@@ -24,7 +24,7 @@ final readonly class OperationRunConstraints
         return $checks;
     }
 
-    /** @param array<string,array<string,mixed>> $constraints */
+    /** @param array<string,mixed> $constraints */
     public function validate(Operation $operation, array $constraints): void
     {
         $checks = $this->registered();

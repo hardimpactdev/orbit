@@ -173,7 +173,7 @@ final readonly class OperationExecutionContract
             }
         }
         $contract = $this->definition($operation)['completion_contract'];
-        if (! isset($contract['step']) || $name !== $contract['step']) {
+        if (! isset($contract['step'], $contract['transport'], $contract['name'], $contract['result']) || $name !== $contract['step']) {
             return;
         }
         foreach (ValidatedData::object($operation->state['executor_runs'] ?? []) as $run) {

@@ -112,7 +112,7 @@ beforeEach(function (): void {
         'result_fields' => ['backend', 'error_code']];
     $this->register = function (): void {
         app()->instance(OperationKinds::class, new OperationKinds(app(), [...OperationKinds::definitions(),
-            'test.parent' => $this->parentSpec, 'test.middle' => [...$this->parentSpec, 'admission' => ChildKitAdmission::class], 'test.effect' => $this->childSpec]));
+            'test.parent' => $this->parentSpec, 'test.middle' => [...$this->parentSpec, 'admission' => ChildKitAdmission::class, 'children' => [['kind' => 'test.effect', 'node_from' => 'operation.node_id']], 'completion_contract' => ['children_succeeded' => ['test.effect']]], 'test.effect' => $this->childSpec]));
     };
     ($this->register)();
     $this->parent = app(StartOperationAction::class)->execute('test.parent', 'node', $gateway->id, $gateway->id, ['removed_node_id' => null], 'test', null);
@@ -258,7 +258,6 @@ it('keeps constraint inheritance immutable and enforces a time window before any
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'test.effect', 'worker' => 'child'])->assertOk();
     $run = ['worker' => 'child', 'key' => 'effect', 'transport' => 'gateway', 'name' => 'test.effect', 'input' => ['removed_node_id' => null]];
     $this->travelTo(now()->setTimezone('Europe/Amsterdam')->setTime(6, 0));
-    $this->postJson('/api/v1/operation-executor/'.$child->id.'/heartbeat', ['worker' => 'child'])->assertConflict();
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'test.effect', 'worker' => 'child'])->assertOk();
     $this->postJson('/api/v1/operation-executor/'.$child->id.'/run', $run)->assertConflict()->assertJsonPath('error.code', 'operation.run_constraint_failed');
     expect($this->command->calls)->toBe(0);

@@ -29,7 +29,7 @@ final class OperationExecutorController extends Controller
 {
     public function claim(ClaimExecutorRequest $request, SwampOperationExecutor $executor): JsonResponse
     {
-        $operation = $executor->claim(ValidatedData::string($request->validated('kind')), $request->worker(), $request->peerNodeId(), $request->validated('operation_id') === null ? null : (int) $request->validated('operation_id'));
+        $operation = $executor->claim(ValidatedData::string($request->validated('kind')), $request->worker(), $request->peerNodeId(), $request->validated('operation_id') === null ? null : $request->integer('operation_id'));
 
         return $this->respond($request, $operation === null ? null : $this->receipt($operation));
     }
@@ -71,7 +71,7 @@ final class OperationExecutorController extends Controller
         return $this->respond($request, $this->receipt($executor->wait($operation, $request->worker(), ValidatedData::stringList($request->validated('keys')), $request->peerNodeId())));
     }
 
-    /** @param array<string, mixed>|null $data */
+    /** @param array<string, mixed>|list<array<string,mixed>>|null $data */
     private function respond(ExecutorRequest $request, ?array $data): JsonResponse
     {
         return response()->json(['data' => $data, 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]]);
@@ -80,12 +80,15 @@ final class OperationExecutorController extends Controller
     /** @return array<string, mixed> */
     private function receipt(Operation $operation): array
     {
+        $wait = ValidatedData::object($operation->state['executor_wait'] ?? []);
+        $tuples = is_array($wait['children'] ?? null) ? $wait['children'] : [];
+
         return [...OperationsController::withSteps($operation, null, null),
             'node_id' => $operation->node_id,
             'parent_operation_id' => $operation->parent_operation_id, 'child_key' => $operation->child_key,
             'worker' => $operation->worker,
             'lease_seconds' => $operation->status === OperationStatus::Waiting ? 0 : SwampOperationExecutor::LeaseSeconds,
-            'waiting_for' => array_map(static fn (array $tuple): array => ['key' => $tuple['key'], 'id' => $tuple['id']], $operation->state['executor_wait']['children'] ?? []),
+            'waiting_for' => array_map(static fn (mixed $tuple): array => ['key' => ValidatedData::object($tuple)['key'], 'id' => ValidatedData::object($tuple)['id']], $tuples),
             'step_results' => $operation->state['steps'] ?? [],
             'execution_context' => app(OperationExecutionContract::class)->context($operation),
         ];

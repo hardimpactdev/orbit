@@ -186,13 +186,13 @@ final readonly class OperationChildren
     /** @return list<array<string,mixed>> */
     public function receipts(Operation $parent): array
     {
-        return $parent->children()->get()->map(function (Operation $child) use ($parent): array {
+        return array_values($parent->children()->get()->map(function (Operation $child) use ($parent): array {
             $this->verify($parent, $child);
 
             return ['id' => $child->id, 'key' => $child->child_key, 'kind' => $child->kind, 'node_id' => $child->node_id,
                 'status' => $child->status->value, 'error_code' => $child->error_code,
                 'result' => $child->result === null ? null : $this->contract->result($child, $child->result)];
-        })->all();
+        })->all());
     }
 
     /** @param list<string> $keys
@@ -211,7 +211,8 @@ final readonly class OperationChildren
 
     public function ready(Operation $parent): bool
     {
-        $wait = $parent->state['executor_wait']['children'] ?? null;
+        $record = ValidatedData::object($parent->state['executor_wait'] ?? []);
+        $wait = $record['children'] ?? null;
         if (! is_array($wait) || $wait === []) {
             return false;
         }

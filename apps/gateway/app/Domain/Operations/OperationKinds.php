@@ -136,7 +136,8 @@ final readonly class OperationKinds
                 }
             }
         }
-        $required = $definition['completion_contract']['children_succeeded'] ?? [];
+        $proof = ValidatedData::object($definition['completion_contract']);
+        $required = $proof['children_succeeded'] ?? [];
         if (! is_array($required) || ! array_is_list($required)) {
             throw new LogicException("Operation kind [{$kind}] needs required child kinds.");
         }

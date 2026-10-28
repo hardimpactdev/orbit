@@ -6,6 +6,7 @@ namespace App\Domain\Operations;
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 use DateTimeZone;
 use Illuminate\Support\Carbon;
 
@@ -34,7 +35,7 @@ final readonly class OperationTimeWindow implements OperationRunConstraint
     public function assertAllowed(Operation $operation, array $constraint): void
     {
         $this->validate($constraint);
-        $now = Carbon::now(new DateTimeZone((string) $constraint['timezone']))->format('H:i');
+        $now = Carbon::now(new DateTimeZone(ValidatedData::string($constraint['timezone'])))->format('H:i');
         $allowed = $constraint['start'] < $constraint['end']
             ? $now >= $constraint['start'] && $now < $constraint['end']
             : $now >= $constraint['start'] || $now < $constraint['end'];
