@@ -3,10 +3,15 @@
 declare(strict_types=1);
 
 use App\Domain\Tools\ToolManagerChildAdmission;
+use App\Domain\Tools\ToolOperationAvailability;
 use App\Domain\Tools\ToolOperationCompletion;
 use App\Domain\Tools\ToolOperationExecution;
 
 return (static function (): array {
+    if (! ToolOperationAvailability::available()) {
+        return [];
+    }
+
     $kinds = [];
     foreach (['install', 'update', 'remove', 'adopt', 'manager_converge'] as $verb) {
         $commands = ['tool.apt-version', 'tool.composer-version', 'tool.vp-version', 'tool.homebrew-version'];
