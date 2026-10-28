@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Applications",
+      "order": 4,
+      "pages": [
+        "reference/environment-variables"
+      ]
+    }
+  ]
+}

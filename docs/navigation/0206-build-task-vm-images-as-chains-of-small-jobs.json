@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 3,
+      "pages": [
+        "decisions/0206-build-task-vm-images-as-chains-of-small-jobs"
+      ]
+    }
+  ]
+}

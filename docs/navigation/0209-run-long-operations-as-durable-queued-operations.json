@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 4,
+      "pages": [
+        "decisions/0209-run-long-operations-as-durable-queued-operations"
+      ]
+    }
+  ]
+}

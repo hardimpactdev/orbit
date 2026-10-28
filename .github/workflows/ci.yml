@@ -62,7 +62,6 @@ jobs:
       - name: Build and check the documentation index
         run: |
           composer docs-build
-          git diff --exit-code -- docs/generated/context.json
           composer docs-lint
 
   api-reference:
@@ -88,10 +87,8 @@ jobs:
         run: |
           bin/docs-openapi --check
           bin/mcp-tools --check
-      - name: Check generated web schema
-        run: |
-          bun run --cwd apps/web types
-          git diff --exit-code -- apps/web/src/api/schema.d.ts
+      - name: Generate web schema
+        run: bun run --cwd apps/web types
 
   web:
     name: Web build
@@ -110,6 +107,12 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.2
+      - uses: ./.github/actions/php
+        with:
+          coverage: none
+      - name: Build API contracts
+        working-directory: .
+        run: composer install --working-dir=apps/gateway --no-dev --no-interaction --prefer-dist
       - run: bun install --frozen-lockfile
       - name: Build
         run: bun run build && test -s dist/index.html && test -s dist/version.json

@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Applications",
+      "order": 6,
+      "pages": [
+        "reference/database-connections"
+      ]
+    }
+  ]
+}

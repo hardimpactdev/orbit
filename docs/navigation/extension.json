@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "CLI",
+      "group": "Operations",
+      "order": 6,
+      "pages": [
+        "cli/extension"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Fleet",
+      "order": 21,
+      "pages": [
+        "reference/gateway-queue"
+      ]
+    }
+  ]
+}

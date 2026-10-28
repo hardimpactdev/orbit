@@ -91,7 +91,7 @@ composer docs-build
 composer docs-lint
 ```
 
-Commit `docs/generated/context.json` when `docs-build` changes it. Add a new page to the navigation in `docs/docs.json`, or `composer docs-nav` fails.
+Generated outputs stay out of Git. Add a new page through its own file in `docs/navigation/`, then run `composer docs-build` and `composer docs-nav`. See [Parallel command families](/contributor-guide#parallel-command-families).
 
 CI also runs checks from the repository root that no project check covers. They compare generated files and documentation with the code. Run the ones that match your change:
 

@@ -331,7 +331,7 @@ Each step is one pull request. Steps 2b to 5 start after step 1, and each step a
 | 5h | The same bounds for the extension hooks of ADR 0212 amendment A3 | ADR 0212 build step 4 | None |
 | 6 | The limit | Every step above | None |
 
-Every conversion edits the same common files: the kind registry `OperationKinds`, the kinds table in [Operations](/reference/operations), the descriptions in `bin/docs-openapi`, the CLI step labels, and the Activity special cases in `RecordCommandActivity`. Each pull request incorporates current main before it merges. It regenerates `docs/openapi.json`, `apps/gateway/resources/mcp/tools.json`, `apps/web/src/api/schema.d.ts`, and `docs/generated/context.json` instead of merging them by hand.
+Each conversion owns its [family registration files](/contributor-guide#parallel-command-families). Shared loaders discover those files, and builds generate OpenAPI, MCP tools, web types, and documentation indexes. A family pull request does not change these generated outputs.
 
 ## Rejected alternatives
 

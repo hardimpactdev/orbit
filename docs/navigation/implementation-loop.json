@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Contributing",
+      "order": 3,
+      "pages": [
+        "reference/implementation-loop"
+      ]
+    }
+  ]
+}

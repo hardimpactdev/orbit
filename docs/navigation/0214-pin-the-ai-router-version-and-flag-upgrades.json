@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 8,
+      "pages": [
+        "decisions/0214-pin-the-ai-router-version-and-flag-upgrades"
+      ]
+    }
+  ]
+}

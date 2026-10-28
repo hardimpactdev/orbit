@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 16,
+      "pages": [
+        "decisions/0229-let-an-orchestrator-drive-task-work-through-gateway-operations"
+      ]
+    }
+  ]
+}

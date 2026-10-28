@@ -4,18 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Operations;
 
-use App\Domain\Instances\Deployment\AutomaticDeployEventOperation;
-use App\Domain\Instances\Deployment\InstanceDeployOperation;
-use App\Domain\Instances\Deployment\InstanceRollbackOperation;
-use App\Domain\Instances\Smoke\InstanceSmokeOperation;
-use App\Domain\Tasks\TaskAnalysisOperation;
-use App\Domain\Tasks\TaskCheckOperation;
-use App\Domain\Tasks\TaskParkOperation;
-use App\Domain\Tasks\TaskProvisionOperation;
-use App\Domain\Tasks\TaskPublishOperation;
-use App\Domain\Tasks\TaskScriptOperation;
-use App\Domain\Tasks\TaskTurnOperation;
-use App\Domain\Tasks\TaskWorkerOperation;
 use Illuminate\Contracts\Container\Container;
 use LogicException;
 
@@ -58,28 +46,45 @@ final readonly class OperationKinds
     /** All operations on a task group hold the same target. */
     public const string TaskGroupTarget = 'task_group';
 
-    /** @var array<string, class-string<OperationKind>> */
-    private const array Kinds = [
-        self::InstanceSmoke => InstanceSmokeOperation::class,
-        self::InstanceDeploy => InstanceDeployOperation::class,
-        self::InstancePolicyEvent => AutomaticDeployEventOperation::class,
-        self::InstanceRollback => InstanceRollbackOperation::class,
-        self::TasksPublish => TaskPublishOperation::class,
-        self::TasksScript => TaskScriptOperation::class,
-        self::TasksCheck => TaskCheckOperation::class,
-        self::TasksAnalyze => TaskAnalysisOperation::class,
-        self::TasksProvision => TaskProvisionOperation::class,
-        self::TasksTurn => TaskTurnOperation::class,
-        self::TasksWorker => TaskWorkerOperation::class,
-        self::TasksPark => TaskParkOperation::class,
-    ];
+    /** @var array<string, class-string<OperationKind>|array{executor: 'swamp', completion: class-string}> */
+    private array $kinds;
 
-    /** @param array<string, class-string<OperationKind>> $kinds */
-    public function __construct(private Container $container, private array $kinds = self::Kinds) {}
+    /** @param array<string, class-string<OperationKind>|array{executor: 'swamp', completion: class-string}>|null $kinds */
+    public function __construct(private Container $container, ?array $kinds = null)
+    {
+        $this->kinds = $kinds ?? self::definitions();
+    }
+
+    /** @return array<string, class-string<OperationKind>|array{executor: 'swamp', completion: class-string}> */
+    public static function definitions(): array
+    {
+        $kinds = [];
+        foreach (glob(__DIR__.'/../*/operation-kinds.php') ?: [] as $file) {
+            foreach (require $file as $name => $class) {
+                if (isset($kinds[$name])) {
+                    throw new LogicException("Duplicate operation kind [{$name}].");
+                }
+                $kinds[$name] = $class;
+            }
+        }
+
+        return $kinds;
+    }
+
+    public static function executor(string $kind): string
+    {
+        $definition = self::definitions()[$kind] ?? throw new LogicException("Unknown operation kind [{$kind}].");
+
+        return is_string($definition) ? 'php' : $definition['executor'];
+    }
 
     public function for(string $kind): OperationKind
     {
         $class = $this->kinds[$kind] ?? throw new LogicException("Unknown operation kind [{$kind}].");
+
+        if (! is_string($class)) {
+            throw new LogicException("Operation kind [{$kind}] is not executed by PHP.");
+        }
 
         return $this->container->make($class);
     }
@@ -87,6 +92,6 @@ final readonly class OperationKinds
     /** @return list<string> */
     public static function names(): array
     {
-        return array_keys(self::Kinds);
+        return array_keys(self::definitions());
     }
 }

@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 2,
+      "pages": [
+        "decisions/0196-derive-application-directory-from-web-root"
+      ]
+    }
+  ]
+}

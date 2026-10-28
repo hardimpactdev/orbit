@@ -14,7 +14,13 @@ use Orbit\Extensions\Conn\ConnServiceProvider;
 use Orbit\Extensions\Documents\DocumentsServiceProvider;
 use Orbit\Extensions\Vault\VaultServiceProvider;
 
+$domains = array_map(
+    static fn (string $file): string => 'App\\Providers\\Domains\\'.basename($file, '.php'),
+    glob(__DIR__.'/../app/Providers/Domains/*ServiceProvider.php') ?: [],
+);
+
 return [
+    ...$domains,
     ApplicationServiceProvider::class,
     FleetServiceProvider::class,
     GatewayBoostServiceProvider::class,

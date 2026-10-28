@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Fleet",
+      "order": 26,
+      "pages": [
+        "reference/pi-server"
+      ]
+    }
+  ]
+}

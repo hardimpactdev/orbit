@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Fleet",
+      "order": 6,
+      "pages": [
+        "reference/caddy-configuration"
+      ]
+    }
+  ]
+}

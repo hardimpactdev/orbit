@@ -10,8 +10,8 @@ documentation corpus under the repository-root `docs/` directory.
 - Keep the application console-only. It has no public web route, database,
   queue, frontend build, or production deployment.
 - Treat generated files as routing aids, never as product authority.
-- Make generation an explicit write operation and keep linting, context lookup,
-  tests, and CI read-only.
+- Make generation an explicit build step before read-only linting and context lookup.
+  Composer install builds the ignored navigation and context outputs; CI also builds API contracts.
 - Add semantic rules only for current Orbit invariants and cover valid and
   invalid cases with Pest tests.
 

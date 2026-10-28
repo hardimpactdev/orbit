@@ -109,7 +109,6 @@ if ((dependencies_only)); then
     exit 0
 fi
 
-(cd "$repository_root" && bin/generated-merge --install)
 
 "$repository_root/bin/worktree-cache"
 

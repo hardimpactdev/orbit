@@ -1,11 +1,3 @@
 * text=auto eol=lf
 
 *.sh text eol=lf
-
-# Install the local driver with bin/generated-merge --install (also in bootstrap).
-docs/generated/context.json merge=orbit-generated
-docs/docs.json merge=orbit-generated
-docs/decisions/overview.mdx merge=orbit-generated
-docs/openapi.json merge=orbit-generated
-apps/web/src/api/schema.d.ts merge=orbit-generated
-apps/gateway/resources/mcp/tools.json merge=orbit-generated

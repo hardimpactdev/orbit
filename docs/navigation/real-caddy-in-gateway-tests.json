@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Solutions",
+      "order": 8,
+      "pages": [
+        "solutions/real-caddy-in-gateway-tests"
+      ]
+    }
+  ]
+}

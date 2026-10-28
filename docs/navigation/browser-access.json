@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Fleet",
+      "order": 3,
+      "pages": [
+        "reference/browser-access"
+      ]
+    }
+  ]
+}

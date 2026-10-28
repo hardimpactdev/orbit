@@ -272,7 +272,7 @@ printf '%s:%s:%s\n' "${PWD#"$FIXTURE_ROOT/"}" "${0##*/}" "$*" >> "$INSTALL_LOG"
 SH);
             chmod($root.'/tooling/'.$tool, 0700);
         }
-        foreach (['generated-merge', 'worktree-cache', 'gateway-app-key'] as $helper) {
+        foreach (['worktree-cache', 'gateway-app-key'] as $helper) {
             file_put_contents($root.'/bin/'.$helper, "#!/usr/bin/env sh\nexit 19\n");
             chmod($root.'/bin/'.$helper, 0700);
         }
@@ -721,7 +721,7 @@ it('sets up the recipe PHP build in every PHP job of every workflow and never fl
         ->not->toContain('php-build');
     expect($phpJobs)->toBe([
         'ci.yml:project', 'ci.yml:gateway-shards', 'ci.yml:privileged', 'ci.yml:remote-programs',
-        'ci.yml:api-reference', 'ci.yml:agent', 'dependency-audit.yml:audit', 'orbit-cli-binary.yml:build',
+        'ci.yml:api-reference', 'ci.yml:web', 'ci.yml:agent', 'dependency-audit.yml:audit', 'orbit-cli-binary.yml:build',
     ])
         ->and($steps['Install the recipe PHP build']['if'])->toBe("runner.environment == 'github-hosted'")
         ->and($steps['Install the recipe PHP build']['run'])->toStartWith("sudo chown -R root:root /var/cache/orbit/php-packages\nsudo python3 bin/php-build install --profile=ci-runner --ci --purge-extras --coverage \"\$COVERAGE\"\n")

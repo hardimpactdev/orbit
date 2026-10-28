@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Contributing",
+      "order": 5,
+      "pages": [
+        "reference/incus-topologies"
+      ]
+    }
+  ]
+}

@@ -24,6 +24,7 @@ import hashlib
 import json
 import pathlib
 import re
+import runpy
 import subprocess
 import sys
 
@@ -2283,7 +2284,7 @@ outputs = {OUTPUT: json.dumps(spec, indent=2) + '\n'}
 
 # keep docs.json navigation in sync with the operations
 config_path = DOCS / 'docs.json'
-config = json.loads(config_path.read_text())
+config = runpy.run_path(str(ROOT / 'bin/docs-navigation'))['configuration'](spec=spec)
 for tab in config['navigation']['tabs']:
     if tab['tab'] != 'API':
         continue
@@ -2303,7 +2304,7 @@ if CHECK:
                 sys.stdout.writelines(difflib.unified_diff(
                     actual.splitlines(keepends=True), expected.splitlines(keepends=True),
                     fromfile=str(path.relative_to(ROOT)), tofile='generated/' + str(path.relative_to(ROOT))))
-        sys.exit(f'{" and ".join(stale)} {"is" if len(stale) == 1 else "are"} stale. Run bin/docs-openapi and commit the result.')
+        sys.exit(f'{" and ".join(stale)} {"is" if len(stale) == 1 else "are"} stale. Run bin/docs-openapi.')
     print(f'{OUTPUT.relative_to(ROOT)} and the API navigation match the Gateway sources')
     sys.exit(0)
 

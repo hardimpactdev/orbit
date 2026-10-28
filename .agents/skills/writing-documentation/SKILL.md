@@ -30,10 +30,10 @@ Write each Markdown paragraph on one line for the prose linter. Use root-relativ
 
 The documentation is the single source of truth. Follow the [ADR guide](../../../docs/decisions/README.md) and [template](templates/adr.md). A new ADR says `In progress.`, names the mission principle it serves, and states any exception to a principle on its Principle line in Status.
 
-The pull request that completes a decision absorbs it. Write the behavior into the owning page and the lasting reasons and rejected alternatives into that page's "Why it works this way" section. Then delete the ADR, add a redirect from its path to the absorbing section in `docs/docs.json`, add a row to "Retired decisions" in `docs/decisions/overview.mdx`, and point every inbound link at the absorbing section. Never reuse a number.
+The pull request that completes a decision absorbs it. Write the behavior into the owning page and the lasting reasons and rejected alternatives into that page's "Why it works this way" section. Then delete the ADR, add a redirect from its path to the absorbing section in the owning `docs/navigation/*.json` fragment, add a row to "Retired decisions" in `docs/decisions/overview.mdx`, and point every inbound link at the absorbing section. Never reuse a number.
 
 ## Check
 
-Run `composer docs-build` when pages, titles, components, concepts, or ADR links change. Include generated context changes. Run `composer docs-lint` and fix its findings.
+Run `composer docs-build` when pages, titles, components, concepts, or ADR links change. The generated context index stays out of Git. Run `composer docs-lint` and fix its findings.
 
-Add each new page to the `docs/docs.json` navigation; `composer docs-nav` fails for a page that is missing from it. For navigation, link, or MDX changes, run `npx mint validate` and `npx mint broken-links` from `docs/`. Return the changed pages or findings and check results.
+Add each new page through its own `docs/navigation/*.json` fragment; `composer docs-nav` fails for a page that is missing from it. For navigation, link, or MDX changes, run `npx mint validate` and `npx mint broken-links` from `docs/`. Return the changed pages or findings and check results.

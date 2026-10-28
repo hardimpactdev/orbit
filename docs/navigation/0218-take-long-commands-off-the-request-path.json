@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 10,
+      "pages": [
+        "decisions/0218-take-long-commands-off-the-request-path"
+      ]
+    }
+  ]
+}

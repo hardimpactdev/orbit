@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Applications",
+      "order": 26,
+      "pages": [
+        "reference/instance-dependencies"
+      ]
+    }
+  ]
+}

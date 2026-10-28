@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 13,
+      "pages": [
+        "decisions/0223-run-one-gate-from-handoff-to-merge"
+      ]
+    }
+  ]
+}

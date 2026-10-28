@@ -75,6 +75,7 @@ The browser project needs Playwright's Chromium. The web verification tests also
 ```bash
 bun run check
 bun run test
+composer install --working-dir=../gateway
 bun run build
 ```
 

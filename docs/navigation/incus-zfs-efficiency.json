@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Solutions",
+      "order": 2,
+      "pages": [
+        "solutions/incus-zfs-efficiency"
+      ]
+    }
+  ]
+}

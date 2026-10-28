@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Fleet",
+      "order": 8,
+      "pages": [
+        "reference/node-retarget"
+      ]
+    }
+  ]
+}

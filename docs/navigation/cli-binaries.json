@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Fleet",
+      "order": 28,
+      "pages": [
+        "reference/cli-binaries"
+      ]
+    }
+  ]
+}

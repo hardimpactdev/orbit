@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Applications",
+      "order": 17,
+      "pages": [
+        "reference/instance-cloning"
+      ]
+    }
+  ]
+}

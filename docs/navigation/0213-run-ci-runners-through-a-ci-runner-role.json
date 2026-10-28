@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 7,
+      "pages": [
+        "decisions/0213-run-ci-runners-through-a-ci-runner-role"
+      ]
+    }
+  ]
+}

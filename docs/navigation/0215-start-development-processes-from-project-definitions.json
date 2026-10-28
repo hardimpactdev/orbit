@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 9,
+      "pages": [
+        "decisions/0215-start-development-processes-from-project-definitions"
+      ]
+    }
+  ]
+}

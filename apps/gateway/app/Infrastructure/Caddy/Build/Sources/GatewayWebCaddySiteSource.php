@@ -27,6 +27,11 @@ final readonly class GatewayWebCaddySiteSource implements NodeCaddySiteSource
         private ?string $webRoot = null,
     ) {}
 
+    public function order(): int
+    {
+        return 10;
+    }
+
     public function sites(Node $node): array
     {
         if (! CaddySiteRoles::nodeServes($node->id, RoleName::Gateway)) {

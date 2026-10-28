@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "CLI",
+      "group": "Applications",
+      "order": 1,
+      "pages": [
+        "cli/instance"
+      ]
+    }
+  ]
+}

@@ -27,6 +27,11 @@ final readonly class WebSocketCaddySiteSource implements NodeCaddySiteSource
         private CaddySiteCertificates $certificates = new CaddySiteCertificates,
     ) {}
 
+    public function order(): int
+    {
+        return 50;
+    }
+
     public function sites(Node $node): array
     {
         // During a move the role row already names the target, but the source keeps its site, and its

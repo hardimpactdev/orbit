@@ -1,0 +1,20 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Fleet",
+      "order": 18,
+      "pages": [
+        "reference/analytics"
+      ]
+    },
+    {
+      "tab": "CLI",
+      "group": "Fleet",
+      "order": 7,
+      "pages": [
+        "cli/analytics"
+      ]
+    }
+  ]
+}

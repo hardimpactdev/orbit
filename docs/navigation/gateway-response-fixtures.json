@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Contributing",
+      "order": 7,
+      "pages": [
+        "reference/gateway-response-fixtures"
+      ]
+    }
+  ]
+}

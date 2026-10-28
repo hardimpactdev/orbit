@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 0,
+      "pages": [
+        "decisions/0182-start-tasks-from-project-task-definitions"
+      ]
+    }
+  ]
+}

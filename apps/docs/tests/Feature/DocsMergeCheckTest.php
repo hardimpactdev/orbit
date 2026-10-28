@@ -65,8 +65,10 @@ function withDocsMergeFixture(Closure $test): void
             file_put_contents($root.'/docs/'.$name.'.md', "# Documentation\n\nOrbit checks documentation.\n");
         }
         file_put_contents($root.'/docs/domains/.gitkeep', '');
+        mkdir($root.'/docs/navigation');
+        file_put_contents($root.'/.gitignore', "/docs/docs.json\n/docs/generated/context.json\n");
         file_put_contents($root.'/docs/decisions/overview.mdx', "# Decisions\n\n## Records\n\nOrbit records decisions.\n\n## Retired decisions\n\n| Record | Decision | Now in |\n| --- | --- | --- |\n");
-        file_put_contents($root.'/docs/docs.json', '{"navigation":{"pages":["README"]},"redirects":[]}');
+        file_put_contents($root.'/docs/site.json', '{"navigation":{"tabs":[]},"redirects":[]}');
         file_put_contents($root.'/apps/docs/config/adr-legacy-allowlist.php', '<?php return [];');
         file_put_contents($root.'/apps/docs/config/adr-retired-slugs.php', '<?php return [];');
         docsMergeGit($root, ['init', '-q', '-b', 'main']);
@@ -82,7 +84,7 @@ function withDocsMergeFixture(Closure $test): void
         // The base adds retirement metadata after the PR has forked.
         file_put_contents($root.'/docs/decisions/overview.mdx', file_get_contents($root.'/docs/decisions/overview.mdx')."| 0197 | Check documentation | [Guide](/README) |\n");
         file_put_contents($root.'/apps/docs/config/adr-retired-slugs.php', "<?php return ['0197' => ['0197-check-documentation']];");
-        file_put_contents($root.'/docs/docs.json', '{"navigation":{"pages":["README"]},"redirects":[{"source":"/decisions/0197-check-documentation","destination":"/README"}]}');
+        file_put_contents($root.'/docs/site.json', '{"navigation":{"tabs":[]},"redirects":[{"source":"/decisions/0197-check-documentation","destination":"/README"}]}');
         docsMergeIndex($root);
         docsMergeCommit($root, 'retire 0197 on base');
         docsMergeGit($root, ['checkout', '-q', 'pr']);
@@ -106,6 +108,8 @@ it('retired 0197 reuse passes head-only and fails the merge check', function (bo
             // Keep all files under fixture .git, never in the tooling's workspace cache.
             $clean = $root.'/.git/clean-base';
             docsMergeGit($root, ['clone', '--quiet', '--shared', '--branch', 'main', $root, $clean]);
+            new Process(['python3', base_path('../../bin/docs-navigation'), '--root', $clean])->mustRun();
+            docsMergeIndex($clean);
             $cache = $root.'/.git/cached-config.php';
             $environment = ['APP_CONFIG_CACHE' => $cache];
             new Process(['php', base_path('artisan'), 'config:cache'], $root, [

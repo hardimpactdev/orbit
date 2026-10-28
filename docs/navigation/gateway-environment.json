@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Applications",
+      "order": 5,
+      "pages": [
+        "reference/gateway-environment"
+      ]
+    }
+  ]
+}

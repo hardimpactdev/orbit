@@ -66,16 +66,6 @@ if ! "$head_only"; then
     merge_status=$?
     set -e
     if ((merge_status == 1)); then
-        # Diagnostic only. Never lint this result or substitute it for GitHub's.
-        if (cd "$scratch/tree" && "$TOOL_ROOT/bin/generated-merge" --install); then
-            if driver_output="$(ORBIT_GENERATED_MERGE_DEPENDENCIES="$TOOL_ROOT" git -C "$scratch/tree" merge-tree --write-tree "$base_commit" "$head_commit" 2>&1)"; then
-                printf 'docs-merge-check: local_driver_clean: publish a checked local merge before GitHub can merge\n' >&2
-            else
-                printf 'docs-merge-check: local_driver_failed:\n%s\n' "$driver_output" >&2
-            fi
-        else
-            printf 'docs-merge-check: local_driver_unavailable: installation failed\n' >&2
-        fi
         fail "merge_conflict: merge refused; head-only lint was not run
 $merge_output"
     elif ((merge_status != 0)); then
@@ -86,6 +76,9 @@ $merge_output"
     preview="$(printf 'Docs merge preview\n' | git -C "$scratch/tree" -c user.name=Docs -c user.email=docs@example.test -c commit.gpgsign=false commit-tree "$tree" -p "$base_commit" -p "$head_commit")" || fail 'merge_failed: cannot record preview parents'
 fi
 git -C "$scratch/tree" -c core.hooksPath=/dev/null checkout --quiet --detach "$preview" || fail 'temporary_checkout_failed: checkout failed'
+# Build ignored docs outputs inside the preview before its read-only lint.
+python3 "$TOOL_ROOT/bin/docs-navigation" --root "$scratch/tree"
+APP_CONFIG_CACHE="$scratch/config.php" ORBIT_DOCS_ROOT="$scratch/tree/docs" php "$TOOL_ROOT/apps/docs/artisan" orbit:docs-index --no-ansi
 set +e
 # Cached Laravel configuration skips ORBIT_DOCS_ROOT evaluation. Use a fresh,
 # private cache path so neither workspace nor inherited caches select the tree.

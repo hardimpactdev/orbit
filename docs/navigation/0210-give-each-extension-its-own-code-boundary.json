@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 5,
+      "pages": [
+        "decisions/0210-give-each-extension-its-own-code-boundary"
+      ]
+    }
+  ]
+}

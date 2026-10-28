@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Contributing",
+      "order": 9,
+      "pages": [
+        "reference/cli-ux"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Solutions",
+      "order": 7,
+      "pages": [
+        "solutions/relocate-gateway-role"
+      ]
+    }
+  ]
+}

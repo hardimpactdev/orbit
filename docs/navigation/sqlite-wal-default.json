@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Solutions",
+      "order": 5,
+      "pages": [
+        "solutions/sqlite-wal-default"
+      ]
+    }
+  ]
+}

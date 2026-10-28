@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Start here",
+      "order": 2,
+      "pages": [
+        "mission"
+      ]
+    }
+  ]
+}

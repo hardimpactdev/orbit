@@ -104,6 +104,8 @@ Actions use pinned commits. Build and check jobs have read-only tokens. The CLI 
 
 ### One PHP build in CI
 
+Generated API contracts, web types, documentation navigation, and context are built in CI and stay out of Git. The Gateway Composer install builds its runtime MCP catalogue before generated-contract and web checks.
+
 The shared PHP action installs PHP 8.5 and Composer 2.10.3 through the pinned PHP setup action. It does not compile the Rust agent or install the Node software recipe. Nodes and images continue to use the [machine software recipe](/reference/compute-drivers). Composer download caches stay separate from generated files and tool result caches.
 
 ### Gateway shards
@@ -142,13 +144,9 @@ In an Orbit task, run the tests that cover the change in each changed project di
 | `composer format` | Applies Pint's Laravel preset |
 | `composer analyse` | Runs PHPStan. The applications use Larastan. |
 
-In `apps/docs`, `composer check` also runs the documentation lint, the API fixture check, and the external generated-merge proof. `guidance:check` runs the project's guidance tests. In every project, `bin/guidance-check` creates a private temporary directory for Blade views before Pest starts, then removes it when the command exits. The gate does not depend on `storage/framework/views` existing or on caches written by another user. The check still fails if Boost cannot render guidance or changes the markers required by the hard-stop transformation. The [contributor guide](/contributor-guide#static-analysis) sets the PHPStan level and the rules for fixing findings.
-
 Confirm that the tests of the feature ran. A filter that matches no test is not acceptance evidence.
 
 Each project requires stock `pestphp/pest` from its lock file. Stock Pest includes test impact analysis, which turns on with `--tia` or `--locally`, a `PEST_TIA` environment variable, or a `tia()` configuration. Orbit uses none of them, and a contract test checks the project scripts, the PHPUnit configuration, the workflows, the CI actions, and the `bin` scripts. To adopt a new release, update the dependency and the lock file in every project, then run the project checks.
-
-Stock ParaTest detects the available runner CPUs for full Docs runs in CI, which use `pest --parallel` and record no graph. Every Pest case remains subject to the two-second limit. The external generated-merge proof runs sequentially in the quality step, separate from ParaTest; see the [fixture guidance](/contributor-guide#3-implement-and-verify).
 
 Root `bin/test` queues the five project suites through the same weighted lane allocator as the candidate gate. The total of concurrent Pest workers stays within the [available process budget](#parallel-processes), including when the budget is smaller than the number of suites. Each finished suite frees its share for the remaining suites.
 

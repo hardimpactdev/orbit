@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "API",
+      "group": "Using the API",
+      "order": 1,
+      "pages": [
+        "api/php-sdk"
+      ]
+    }
+  ]
+}
