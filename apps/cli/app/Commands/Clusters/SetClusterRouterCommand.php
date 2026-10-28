@@ -7,14 +7,18 @@ namespace App\Commands\Clusters;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Clusters\SetClusterRouterRequest;
-use Orbit\Sdk\Responses\Clusters\ClusterResponse;
+use App\Commands\Concerns\FollowsOperations;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class SetClusterRouterCommand extends ClusterCommand
 {
+    use FollowsOperations;
+
     #[\Override]
     protected $signature = 'cluster:router:set
         {cluster : Numeric Cluster ID}
         {node : Numeric Node ID}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -38,17 +42,14 @@ final class SetClusterRouterCommand extends ClusterCommand
             return self::FAILURE;
         }
 
-        $cluster = $this->sendWithProgress(
-            $connector,
-            new SetClusterRouterRequest($clusterId, $nodeId),
-            ClusterResponse::class,
-            ['Set Cluster Router', 'Setting Cluster Router', 'Set Cluster Router'],
-        );
-
-        if (! $cluster instanceof ClusterResponse) {
+        $profile = $this->activeGatewayProfile($repository);
+        if ($profile === null) {
             return self::FAILURE;
         }
+        $operation = $this->send($connector, new SetClusterRouterRequest($clusterId, $nodeId, $this->stringOption('idempotency-key')), OperationResponse::class);
 
-        return $this->renderCluster($cluster, "Node #{$nodeId} set as Router for Cluster [{$cluster->name}].");
+        return $operation instanceof OperationResponse
+            ? $this->followOperation($connector, $profile, $operation, 'Set Cluster Router', 'Cluster Router')
+            : self::FAILURE;
     }
 }

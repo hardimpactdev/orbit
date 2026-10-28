@@ -30,11 +30,11 @@ Route::middleware([
         ->whereNumber('cluster')
         ->whereNumber('node')
         ->name('cluster:node:remove');
-    Route::put('clusters/{cluster}/router/{node}', [ClustersController::class, 'setRouter'])
+    Route::put('clusters/{cluster}/router/{node}', [\App\Http\Controllers\Api\ClusterRouterController::class, 'set'])
         ->whereNumber('cluster')
         ->whereNumber('node')
         ->name('cluster:router:set');
-    Route::delete('clusters/{cluster}/router', [ClustersController::class, 'clearRouter'])
+    Route::delete('clusters/{cluster}/router', [\App\Http\Controllers\Api\ClusterRouterController::class, 'unset'])
         ->whereNumber('cluster')
         ->name('cluster:router:unset');
 });

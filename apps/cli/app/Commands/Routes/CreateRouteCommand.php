@@ -14,7 +14,6 @@ use Orbit\Sdk\Requests\Processes\NodeProcessTarget;
 use Orbit\Sdk\Requests\Routes\CreateRouteRequest;
 use Orbit\Sdk\Responses\Instances\InstancesResponse;
 use Orbit\Sdk\Responses\Processes\ProcessesResponse;
-use Orbit\Sdk\Responses\Routes\RouteResponse;
 
 class CreateRouteCommand extends RouteCommand
 {
@@ -28,6 +27,7 @@ class CreateRouteCommand extends RouteCommand
         {--upstream= : Loopback HTTP URL for a custom proxy Route}
         {--process= : Node Process name or ID for a custom proxy Route}
         {--web-root= : Web root inside the Instance checkout, such as apps/docs/public}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -99,7 +99,7 @@ class CreateRouteCommand extends RouteCommand
             return self::FAILURE;
         }
 
-        $route = $this->sendWithProgress(
+        return $this->startRouteOperation($repository, 
             $connector,
             new CreateRouteRequest(
                 domain: $domain,
@@ -107,13 +107,9 @@ class CreateRouteCommand extends RouteCommand
                 instanceId: $instanceId,
                 webRoot: $this->stringOption('web-root'),
             ),
-            RouteResponse::class,
-            ['Create Route', 'Creating Route', 'Created Route'],
+            'Create Route',
         );
 
-        return $route instanceof RouteResponse
-            ? $this->renderRoute($route)
-            : self::FAILURE;
     }
 
     private function createCustomProxy(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
@@ -165,11 +161,10 @@ class CreateRouteCommand extends RouteCommand
             if ($ingressRef !== null && $ingressNodeId === null) {
                 return self::FAILURE;
             }
-            $route = $this->sendWithProgress($connector,
+            return $this->startRouteOperation($repository, $connector,
                 new CreateRouteRequest(domain: $domain, publication: $publication, processId: $processId, ingressNodeId: $ingressNodeId),
-                RouteResponse::class, ['Create Route', 'Creating Route', 'Created Route']);
+                'Create Route');
 
-            return $route instanceof RouteResponse ? $this->renderRoute($route) : self::FAILURE;
         }
         if ($this->option('ingress') !== null) {
             return $this->renderGatewayFailure('route.scope_required', 'Ingress selection requires public publication and a Process.');
@@ -198,7 +193,7 @@ class CreateRouteCommand extends RouteCommand
             return self::FAILURE;
         }
 
-        $route = $this->sendWithProgress(
+        return $this->startRouteOperation($repository, 
             $connector,
             new CreateRouteRequest(
                 domain: $domain,
@@ -207,13 +202,9 @@ class CreateRouteCommand extends RouteCommand
                 upstream: $upstream,
                 processId: $processId,
             ),
-            RouteResponse::class,
-            ['Create Route', 'Creating Route', 'Created Route'],
+            'Create Route',
         );
 
-        return $route instanceof RouteResponse
-            ? $this->renderRoute($route)
-            : self::FAILURE;
     }
 
     private function routeDomain(string $argument): ?string

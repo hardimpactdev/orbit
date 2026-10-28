@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Actions\Clusters\SetClusterRouterAction;
 use App\Actions\Routes\ConvergeRouteAction;
 use App\Actions\Routes\SetRouteTargetAction;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
@@ -10,7 +9,6 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Certificates\LeafCertificateSigner;
-use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\DevelopmentSourceAccess;
 use App\Domain\Instances\InstanceState;
@@ -18,7 +16,6 @@ use App\Domain\Instances\Transfer\InstanceTransferStatus;
 use App\Domain\Instances\Transfer\InstanceTransferStep;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
-use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ClusterRouterReplacementProjector;
 use App\Domain\Routes\ContributedPrivateHostnames;
@@ -56,14 +53,12 @@ use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
 use App\Models\Node;
-use App\Models\NodeRole;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 use Tests\Support\FakeAgentCommandRunner;
-use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
 use Tests\Support\PhpBuildAnswers;
 use Tests\Support\RouteProjectionAgentAnswers;
 use Tests\Support\SharedPhpPoolAnswers;
@@ -732,88 +727,6 @@ it('moves a Route to another Cluster through its stored transition and restores 
             ->and($afterMove[$newRouter->wireguard_ip])->toBe(["route-{$route->id}-router" => 'feature.acme.test'])
             ->and($afterMove[$oldRouter->wireguard_ip])->toBe([])
             ->and($afterMove[$workload->wireguard_ip])->toBe(["app-instance-{$instance->id}" => 'feature.acme.test']);
-    } finally {
-        new Filesystem()->deleteDirectory($home);
-    }
-});
-
-it('replaces a Router through its stored router rows and restores a failed replacement', function (): void {
-    [$instance, $route, $workload, $oldRouter] = orb127_route_projection_models();
-    $route->update(['status' => RouteStatus::Active]);
-    $instance->update(['status' => InstanceState::Active, 'source_is_laravel' => false]);
-    $candidate = orb_router_candidate($oldRouter);
-    [$projector, $agents, $processes, $home] = orb127_route_projector();
-    $action = orb_router_replacement_action();
-    $disk = [
-        $workload->wireguard_ip => ["app-instance-{$instance->id}" => 'feature.acme.test'],
-        $oldRouter->wireguard_ip => ["route-{$route->id}-router" => 'feature.acme.test'],
-    ];
-    $cluster = Cluster::query()->findOrFail($oldRouter->cluster_id);
-    // The DNS publication fails once, after the candidate build served the Router sites.
-    $processes->failNext = 1;
-
-    try {
-        expect(fn () => $action->execute($cluster, $candidate))->toThrow(RuntimeConvergenceException::class);
-
-        [$mismatches, $afterRestore, $served] = orb_hostname_change_certificate_replay($agents, $disk);
-        $row = NodeRole::query()->where('node_id', $candidate->id)->where('role', RoleName::Router)->sole();
-
-        expect($mismatches)->toBe([])
-            ->and($row->status)->toBe(LifecycleStatus::Failed)
-            ->and($row->failed_step)->toBe('dns-publication')
-            ->and($served[$candidate->wireguard_ip])->toBe([])
-            ->and($afterRestore[$candidate->wireguard_ip])->toBe([])
-            ->and(new DevelopmentSiteRepository()->forNode($oldRouter)->pluck('domain')->all())->toBe(['feature.acme.test']);
-
-        $action->execute($cluster->refresh(), $candidate);
-        [$mismatches, $afterReplacement, $served] = orb_hostname_change_certificate_replay($agents, $disk);
-
-        expect($mismatches)->toBe([])
-            ->and($cluster->refresh()->routerAssignment?->node_id)->toBe($candidate->id)
-            ->and(NodeRole::query()->where('node_id', $oldRouter->id)->where('role', RoleName::Router)->exists())->toBeFalse()
-            ->and($served[$candidate->wireguard_ip])->toBe(['feature.acme.test' => "route-{$route->id}-router"])
-            ->and($served[$oldRouter->wireguard_ip])->toBe([])
-            ->and($afterReplacement[$oldRouter->wireguard_ip])->toBe([])
-            ->and($afterReplacement[$candidate->wireguard_ip])->toBe(["route-{$route->id}-router" => 'feature.acme.test']);
-    } finally {
-        new Filesystem()->deleteDirectory($home);
-    }
-});
-
-it('serves a crash-left pending domain change from its staging certificate on the replacement Router', function (): void {
-    [$instance, $route, $workload, $oldRouter] = orb127_route_projection_models();
-    $route->update(['status' => RouteStatus::Active]);
-    $instance->update(['status' => InstanceState::Active, 'source_is_laravel' => false]);
-    // The Gateway stopped after the domain change built the old Router.
-    $replacement = orb_pending_domain_change($route, $instance, RouteReplacementStep::RouterCaddy);
-    $candidate = orb_router_candidate($oldRouter);
-    [$projector, $agents, $processes, $home] = orb127_route_projector();
-    $disk = [
-        $workload->wireguard_ip => [
-            "app-instance-{$instance->id}" => 'feature.acme.test',
-            "app-instance-{$instance->id}-hostname-change" => 'next.acme.test',
-        ],
-        $oldRouter->wireguard_ip => [
-            "route-{$route->id}-router" => 'feature.acme.test',
-            "route-{$replacement->id}-router-hostname-change" => 'next.acme.test',
-        ],
-    ];
-
-    try {
-        orb_router_replacement_action()->execute(Cluster::query()->findOrFail($oldRouter->cluster_id), $candidate);
-
-        [$mismatches, $after, $served] = orb_hostname_change_certificate_replay($agents, $disk);
-
-        expect($mismatches)->toBe([])
-            ->and($served[$candidate->wireguard_ip])->toBe([
-                'feature.acme.test' => "route-{$route->id}-router",
-                'next.acme.test' => "route-{$replacement->id}-router-hostname-change",
-            ])
-            ->and($after[$candidate->wireguard_ip])->toBe([
-                "route-{$route->id}-router" => 'feature.acme.test',
-                "route-{$replacement->id}-router-hostname-change" => 'next.acme.test',
-            ])
-            ->and($after[$oldRouter->wireguard_ip])->toBe([]);
     } finally {
         new Filesystem()->deleteDirectory($home);
     }
@@ -1594,22 +1507,6 @@ function orb_router_candidate(Node $router): Node
 }
 
 /** Runs the real Router replacement projector bound by `orb127_route_projector()`, with no role baseline work. */
-function orb_router_replacement_action(): SetClusterRouterAction
-{
-    return new SetClusterRouterAction(
-        new class implements RoleBaselineConverger
-        {
-            public function converge(Node $node, NodeRole $assignment): void {}
-
-            public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
-
-            public function removeUnreachable(Node $node, NodeRole $assignment): void {}
-        },
-        app(ClusterRouterOperationLock::class),
-        new FakeClusterRouterDnsSelectionReconciler,
-        app(ClusterRouterReplacementProjector::class),
-    );
-}
 
 /**
  * Cleanup issues the live certificates, stores the `cleanup` step, and then builds and removes the

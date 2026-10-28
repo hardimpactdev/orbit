@@ -35,10 +35,8 @@ final readonly class SetRouteTargetAction
         private InstanceEnvironmentOperationLock $environmentOperations,
         private RouteStateResolver $state,
         private RouteAssociationGuard $associations,
-        private DevelopmentSourceAccess $sourceAccess,
         private DevelopmentProjectionOperationLock $projections,
         private ?RecordEventBroadcaster $broadcaster = null,
-        private ?MetricsFleetReconciler $metrics = null,
     ) {}
 
     public function execute(Route $route, int $instanceId): Route
@@ -75,7 +73,7 @@ final readonly class SetRouteTargetAction
             RouteData::fromModel($result)->toArray(),
         );
 
-        $this->metrics?->reconcile();
+
 
         if ($accessFailure instanceof Throwable) {
             throw $accessFailure;
@@ -207,43 +205,7 @@ final readonly class SetRouteTargetAction
             );
         }
 
-        try {
-            $this->grantSourceAccess($updated, $instanceId);
-        } catch (RuntimeConvergenceException $exception) {
-            return [$updated, new RuntimeConvergenceException(
-                step: $exception->step,
-                errorCode: $exception->errorCode,
-                message: "{$exception->getMessage()} The Route target is stored. Set the same target on Route [{$updated->domain}] again to grant the access.",
-                previous: $exception,
-                result: $exception->result,
-            )];
-        } catch (Throwable $exception) {
-            return [$updated, $exception];
-        }
-
         return [$updated, null];
     }
 
-    /**
-     * Setting a target does not build Caddy, but the next build on the target's Node serves the
-     * Route's published sites with it. Route convergence on that Node walks only its own checkout,
-     * so the new target's Web root is made readable here, after the commit and under the caller's
-     * projection owner. A retry of the same target on a Route that is not active grants again, so
-     * it repairs a failed grant. An active Route only accepts its current target, as a no-op, and
-     * its convergence already granted that access.
-     */
-    private function grantSourceAccess(Route $route, int $instanceId): void
-    {
-        if ($route->status === RouteStatus::Active) {
-            return;
-        }
-
-        $target = Instance::query()->with('node')->findOrFail($instanceId);
-
-        if (! $target->placedOnAppDev()) {
-            return;
-        }
-
-        $this->sourceAccess->grant($target);
-    }
 }

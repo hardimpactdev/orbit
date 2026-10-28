@@ -28,7 +28,7 @@ final readonly class OperationSecretValue implements JsonSerializable
     /** Known values with no protected bytes keep their native schema type without a mask. */
     public function requiresRedaction(): bool
     {
-        if ($this->value === null || $this->value === '' || $this->value === []) {
+        if (is_bool($this->value) || $this->value === null || $this->value === '' || $this->value === []) {
             return false;
         }
         if ($this->value instanceof GitReadEnvironment) {
@@ -50,6 +50,9 @@ final readonly class OperationSecretValue implements JsonSerializable
             }
             if ($value instanceof GitReadEnvironment) {
                 return $value->githubToken() === null ? [] : [$value->githubToken(), base64_encode('x-access-token:'.$value->githubToken())];
+            }
+            if (is_bool($value)) {
+                return [];
             }
             if (is_scalar($value)) {
                 return [(string) $value];

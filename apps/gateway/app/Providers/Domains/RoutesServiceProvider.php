@@ -31,6 +31,7 @@ final class RoutesServiceProvider extends ServiceProvider
 
     public function register(): void
     {
+        $this->app->tag([\App\Domain\Routes\PhpPoolInputSource::class], \App\Domain\Operations\OperationSecretSource::class);
         $this->app->tag([RouteCaddySiteSource::class], NodeCaddySiteSource::class);
     }
 }

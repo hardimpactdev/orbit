@@ -22,7 +22,6 @@ final readonly class ClearRouteTargetAction
         private InstanceEnvironmentOperationLock $environmentOperations,
         private RouteAssociationGuard $associations,
         private ?RecordEventBroadcaster $broadcaster = null,
-        private ?MetricsFleetReconciler $metrics = null,
     ) {}
 
     public function execute(Route $route): Route
@@ -54,7 +53,7 @@ final readonly class ClearRouteTargetAction
             RouteData::fromModel($result)->toArray(),
         );
 
-        $this->metrics?->reconcile();
+
 
         return $result;
     }

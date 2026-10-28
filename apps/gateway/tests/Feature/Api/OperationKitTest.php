@@ -174,6 +174,27 @@ final class KitGatewayCommand implements OperationGatewayCommand
     }
 }
 
+final class KitBooleanCommand implements OperationGatewayCommand
+{
+    public int $runs = 0;
+
+    public function __construct(private readonly bool $stored) {}
+
+    public function schema(): array
+    {
+        return ['type' => 'object', 'properties' => ['app_name_stored' => ['type' => 'boolean']],
+            'required' => ['app_name_stored'], 'additionalProperties' => false];
+    }
+
+    public function run(Operation $operation, #[SensitiveParameter] array $input): array
+    {
+        $this->runs++;
+        expect($input)->toBe(['app_name_stored' => $this->stored]);
+
+        return ['backend' => 'active', 'echo' => 'phase-1'];
+    }
+}
+
 final class KitExactCommand implements OperationGatewayCommand
 {
     public function schema(): array
@@ -598,15 +619,15 @@ it('collects typed agent tokens and scalar protected values for redaction', func
     $value = new OperationSecretValue(new AgentGitHubToken($token));
     expect($value->strings())->toContain($token, base64_encode('x-access-token:'.$token));
     $values = (new OperationSecretValue(['pin' => 123456, 'ratio' => 12.5, 'enabled' => true]))->strings();
-    expect($values)->toContain('123456', '12.5', '1');
+    expect($values)->toContain('123456', '12.5')->not->toContain('1');
     $secrets = app(OperationSecrets::class);
     expect($secrets->redact(['pin' => 123456, 'text' => 'pin 123456', 'ratio' => 12.5], $values))
         ->toBe(['pin' => '[REDACTED]', 'text' => 'pin [REDACTED]', 'ratio' => '[REDACTED]']);
 });
 
-it('hydrates recognized empty protected values without masks or changing their types', function (string $case): void {
+it('hydrates values with no protected bytes without masks or changing their types', function (string $case): void {
     $value = match ($case) {
-        'map' => new stdClass, 'list' => [], 'string' => '', 'git' => GitReadEnvironment::none(), default => null
+        'map' => new stdClass, 'list' => [], 'string' => '', 'git' => GitReadEnvironment::none(), 'true' => true, 'false' => false, default => null
     };
     $source = new KitNativeSource($value);
     app()->instance(KitNativeSource::class, $source);
@@ -614,7 +635,7 @@ it('hydrates recognized empty protected values without masks or changing their t
     $hydrated = app(OperationSecrets::class)->hydrate($this->operation, 'protected',
         ['payload' => ['$secret' => 'project.native', 'id' => 27]], ['payload' => 'project.native']);
     expect($hydrated)->toBe(['input' => ['payload' => $value], 'values' => []])->and($source->resolves)->toBe(1);
-})->with(['map', 'list', 'string', 'git', 'null']);
+})->with(['map', 'list', 'string', 'git', 'true', 'false', 'null']);
 
 it('refuses unrecognized opaque protected values without masks', function (string $case): void {
     $value = match ($case) {
@@ -645,3 +666,29 @@ it('retains failed optional step rows while clearing failed_step on successful c
     expect($this->operation->refresh()->failed_step)->toBeNull()
         ->and($this->operation->steps()->where('name', 'cleanup.optional')->sole()->status->value)->toBe('failed');
 });
+
+it('hydrates protected booleans through the HTTP schema without masking digit one or resolving again', function (bool $stored): void {
+    $source = new KitNativeSource($stored);
+    $command = new KitBooleanCommand($stored);
+    app()->instance(KitNativeSource::class, $source);
+    app()->tag([KitNativeSource::class], OperationSecretSource::class);
+    app()->instance(KitBooleanCommand::class, $command);
+    app()->instance(OperationGatewayCommands::class, new OperationGatewayCommands(['test.boolean' => KitBooleanCommand::class]));
+    $input = ['app_name_stored' => ['$secret' => 'project.native', 'id' => 27]];
+    $run = [...$this->run, 'name' => 'test.boolean', 'input' => $input];
+    $admitted = $this->operation->input;
+    $admitted['descriptors'][0] = [...$admitted['descriptors'][0], 'name' => 'test.boolean', 'input' => $input];
+    $this->operation->update(['input' => $admitted]);
+    $this->spec['runs'] = [['transport' => 'gateway', 'name' => 'test.boolean', 'secrets' => ['app_name_stored' => 'project.native']]];
+    $this->spec['completion_contract']['name'] = 'test.boolean';
+    ($this->register)();
+    $result = ['backend' => 'active', 'echo' => 'phase-1'];
+    $this->postJson($this->path.'/run', $run)->assertOk()->assertJsonPath('data', $result);
+    $this->postJson($this->path.'/run', $run)->assertOk()->assertJsonPath('data', $result);
+    $this->postJson($this->path.'/heartbeat', ['worker' => 'worker'])->assertOk();
+    $this->postJson($this->path.'/step', ['worker' => 'worker', 'key' => 'done', 'name' => 'effect', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    $this->postJson($this->path.'/complete', ['worker' => 'worker', 'status' => 'succeeded', 'result' => $result])->assertOk()->assertJsonPath('data.result', $result);
+    expect($source->resolves)->toBe(1)->and($command->runs)->toBe(1)
+        ->and((new OperationSecretValue($stored))->strings())->toBe([])
+        ->and($this->operation->refresh()->state['executor_runs']['effect']['input'])->toBe($input);
+})->with([true, false]);
