@@ -59,7 +59,6 @@ use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\VmObservation;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\Metrics\ServiceMetricsRuntime;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
@@ -696,11 +695,6 @@ describe(DestroyTaskVm::class, function (): void {
         $this->gateway = tvm_life_node('gateway', '10.44.0.2', role: RoleName::Gateway);
         $this->events = new ArrayObject;
         $events = $this->events;
-        $services = Mockery::mock(ServiceMetricsRuntime::class);
-        $services->shouldReceive('snapshot')->andReturn('{}');
-        $services->shouldReceive('converge');
-        $services->shouldReceive('restore');
-        app()->instance(ServiceMetricsRuntime::class, $services);
         app()->instance(MetricsAccessRevoker::class, new class implements MetricsAccessRevoker
         {
             public function revoke(): void {}

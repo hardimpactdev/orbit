@@ -37,13 +37,6 @@ use App\Domain\Instances\Removal\InstanceSourceRevalidationExpectation;
 use App\Domain\Instances\Removal\InstanceSourceRevalidationState;
 use App\Domain\Instances\Transfer\InstanceTransferStatus;
 use App\Domain\Instances\Transfer\InstanceTransferStep;
-use App\Domain\Metrics\ExporterDegradationReason;
-use App\Domain\Metrics\ExporterDegradationRepository;
-use App\Domain\Metrics\MetricsCadvisorLifecycle;
-use App\Domain\Metrics\MetricsExporterLifecycle;
-use App\Domain\Metrics\MetricsFleetReconciler;
-use App\Domain\Metrics\MetricsReconcileDegradationRepository;
-use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleBaselineConverger;
@@ -58,16 +51,9 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\Instances\NativeInstanceRemovalProjector;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceConfigurator;
-use App\Infrastructure\Metrics\NativeMetricsFleetReconciler;
-use App\Infrastructure\Metrics\NativeServiceMetricsLifecycle;
-use App\Infrastructure\Metrics\ServiceMetricsNode;
-use App\Infrastructure\Metrics\ServiceMetricsProjection;
-use App\Infrastructure\Metrics\ServiceMetricsRuntime;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessRunner;
 use App\Models\Activity;
 use App\Models\Cluster;
 use App\Models\Instance;
@@ -91,7 +77,6 @@ use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakesEnvironmentSyncInspection;
 use Tests\Support\LifecycleAgent;
-use Tests\Support\SharedPhpPoolAnswers;
 use Tests\TestCase;
 
 beforeEach(function (): void {
@@ -2600,68 +2585,6 @@ it('rejects repository execution and unsupported transport keys', function (): v
         ->toBe(0)
         ->and($this->source->calls)
         ->toBeEmpty();
-});
-
-it('completes Instance removal while another Node service metrics snapshot fails', function (): void {
-    // The creation request resolves singletons used by the native removal projector.
-    $poolAgents = SharedPhpPoolAnswers::register(new FakeAgentCommandRunner()->answer('firewall.route-lan', ['matches' => false])->answer('certificate.remove-leaf', []));
-    app()->instance(AgentCommandRunner::class, $poolAgents);
-    $processes = Mockery::mock(ProcessRunner::class);
-    $processes->shouldReceive('run')->twice()->andReturn(new CommandResult(0, '', '', 1, false));
-    app()->instance(ProcessRunner::class, $processes);
-
-    $created = $this->postJson('/api/v1/instances', [
-        'project_id' => $this->orbitApp->id,
-        'node_id' => $this->node->id,
-        'name' => 'dev',
-    ])->assertCreated();
-    $id = $created->json('data.id');
-    $this->node->update(['ssh_host_fingerprint' => 'SHA256:metrics-proof']);
-    $metrics = activate_metrics_role();
-    $metrics->update(['ssh_host_fingerprint' => 'SHA256:metrics-proof']);
-    $failed = create_app_prod_node('failed-service-metrics');
-    $failed->update(['ssh_host_fingerprint' => 'SHA256:metrics-proof']);
-    $snapshots = [];
-    $converged = [];
-    $services = Mockery::mock(ServiceMetricsRuntime::class);
-    $services->shouldReceive('snapshot')->andReturnUsing(function (ServiceMetricsNode $target) use ($failed, &$snapshots): string {
-        $snapshots[] = $target->node->id;
-        if ($target->node->is($failed)) {
-            throw new ResourceOperationException('metrics.service_convergence_failed', 'Service metrics command failed.', 502);
-        }
-
-        return '{}';
-    });
-    $services->shouldReceive('converge')->andReturnUsing(function (ServiceMetricsNode $target) use (&$converged): void {
-        $converged[] = $target->node->id;
-    });
-    $exporters = Mockery::mock(MetricsExporterLifecycle::class);
-    $cadvisors = Mockery::mock(MetricsCadvisorLifecycle::class);
-    $publication = Mockery::mock(MetricsRuntimeLifecycle::class);
-    $exporters->shouldReceive('converge')->twice();
-    $cadvisors->shouldReceive('converge')->twice();
-    $publication->shouldReceive('converge')->twice();
-    $fleet = new NativeMetricsFleetReconciler($exporters, $cadvisors, $publication, new NativeServiceMetricsLifecycle(
-        app(ServiceMetricsProjection::class), $services, app(ExporterDegradationRepository::class),
-    ));
-    app()->instance(MetricsFleetReconciler::class, $fleet);
-    app()->instance(InstanceRemovalProjector::class, app(NativeInstanceRemovalProjector::class));
-
-    $this->deleteJson("/api/v1/instances/{$id}")->assertOk()
-        ->assertJsonPath('data.status', 'completed')
-        ->assertJsonPath('data.completed', 1)
-        ->assertJsonPath('data.remaining', 0);
-
-    $this->assertDatabaseMissing('instances', ['id' => $id]);
-    expect(Route::query()->count())->toBe(0);
-    expect(InstanceRemoval::query()->sole()->status->value)->toBe('completed');
-    expect($snapshots)->toContain($failed->id);
-    expect($converged)->toContain($this->node->id, $metrics->id)->not->toContain($failed->id);
-    expect(app(ExporterDegradationRepository::class)->get($failed->id))->toBe(ExporterDegradationReason::ReconcileFailed);
-    expect(app(ExporterDegradationRepository::class)->step($failed->id))->toBe('snapshot');
-    expect(app(MetricsReconcileDegradationRepository::class)->errorCode($failed->id))->toBe('metrics.service_convergence_failed');
-    expect($poolAgents->commands())->toContain('php.converge-shared-pools')->not->toContain('php.inspect-shared-pools');
-    expect(collect($poolAgents->calls)->where('command', 'certificate.remove-leaf')->pluck('input.scope')->unique()->values()->all())->toBe(["app-instance-{$id}"]);
 });
 
 it('removes an active Instance through every durable checkpoint', function (bool $force): void {

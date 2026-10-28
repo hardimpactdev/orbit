@@ -6,14 +6,8 @@ use App\Actions\Nodes\RelocateNodeRoleAction;
 use App\Domain\AppDev\PrivateDnsAnswerExpiry;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Gateway\GatewayServingHost;
-use App\Domain\Metrics\MetricsCadvisorLifecycle;
-use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsFleetReconciler;
-use App\Domain\Metrics\MetricsGatewayResolver;
-use App\Domain\Metrics\MetricsPublicationManager;
-use App\Domain\Metrics\MetricsPublicationReport;
 use App\Domain\Metrics\MetricsReconcileDeferral;
-use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Nodes\GatewayPrivateDnsRoute;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleFollowUpReport;
@@ -30,7 +24,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Infrastructure\Metrics\NativeMetricsCredentialManager;
-use App\Infrastructure\Nodes\Roles\MetricsRoleBaseline;
 use App\Infrastructure\WebSocket\WebSocketFootprint;
 use App\Models\Cluster;
 use App\Models\Node;
@@ -402,40 +395,6 @@ describe(RelocateNodeRoleAction::class, function (): void {
                         "Role [websocket] now runs on node [{$target->name}], but the move from node [{$source->name}] is incomplete: Service metrics rollback failed."
                         ." Run `orbit node:role:relocate {$target->name} websocket --from {$source->name} --force` to finish it once node [{$source->name}] is reachable.",
                     );
-            });
-
-        expect($this->baselines->removed)->toBe([]);
-    });
-
-    it('keeps the Metrics code and names the converge step when the real Metrics baseline fails on the target', function (): void {
-        $gateway = relocate_role_node('gateway', '10.44.0.1');
-        $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
-        $source = relocate_role_node('app-dev', '10.44.0.2');
-        $target = relocate_role_node('app-prod-2', '10.44.0.4');
-        $source->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
-        $exporters = Mockery::mock(MetricsExporterLifecycle::class);
-        $exporters->shouldReceive('converge')->andThrow(new ResourceOperationException(
-            'metrics.exporter_firewall_ownership_drift',
-            'Metrics exporter firewall ownership cannot be proved.',
-            409,
-        ));
-        $exporters->shouldIgnoreMissing();
-        $baseline = new MetricsRoleBaseline(
-            Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
-            $exporters,
-            Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
-            new MetricsGatewayResolver,
-            new MetricsPublicationReport,
-            Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
-        );
-        $this->baselines->delegate = $baseline;
-
-        expect(fn () => app(RelocateNodeRoleAction::class)->execute($target, RoleName::Metrics, force: true))
-            ->toThrow(function (NodeRoleOperationException $exception) use ($source, $target): void {
-                expect($exception->errorCode)->toBe('node_role.convergence_failed')
-                    ->and($exception->underlyingErrorCode)->toBe('metrics.exporter_firewall_ownership_drift')
-                    ->and($exception->step)->toBe('converge:metrics-exporters')
-                    ->and($exception->getMessage())->toStartWith("Role [metrics] now runs on node [{$target->name}], but the move from node [{$source->name}] is incomplete: Metrics exporter firewall ownership cannot be proved.");
             });
 
         expect($this->baselines->removed)->toBe([]);

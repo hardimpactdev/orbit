@@ -7,19 +7,19 @@ use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\ExporterPreference;
 use App\Domain\Metrics\ExporterPreferenceRepository;
 use App\Domain\Metrics\ExporterSelector;
-use App\Domain\Metrics\MetricsExporterLifecycle;
-use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Nodes\RoleAssignmentException;
+use App\Infrastructure\Metrics\MetricsReadCommands;
 use App\Infrastructure\Metrics\NativeMetricsExporterProjection;
 use App\Infrastructure\Metrics\NativeMetricsStatusReader;
 use App\Models\Node;
 use App\Models\NodeRole;
+use Tests\Support\FakeAgentCommandRunner;
 
 it('reports disabled state when no metrics assignment exists', function (): void {
     $reader = new NativeMetricsStatusReader(
         new NativeMetricsExporterProjection(new ExporterSelector, app(ExporterPreferenceRepository::class)),
-        new StatusRuntimeFake,
-        new StatusExporterFake,
+        status_reads(),
+        status_reads(),
         app(ExporterDegradationRepository::class),
     );
 
@@ -33,8 +33,8 @@ it('fails closed when metrics has multiple assignments', function (): void {
     NodeRole::query()->create(['node_id' => $second->id, 'role' => 'metrics', 'status' => 'active']);
     $reader = new NativeMetricsStatusReader(
         new NativeMetricsExporterProjection(new ExporterSelector, app(ExporterPreferenceRepository::class)),
-        new StatusRuntimeFake,
-        new StatusExporterFake,
+        status_reads(),
+        status_reads(),
         app(ExporterDegradationRepository::class),
     );
 
@@ -55,8 +55,8 @@ it('returns healthy services and deterministic exporter reasons', function (): v
 
     $data = new NativeMetricsStatusReader(
         new NativeMetricsExporterProjection(new ExporterSelector, $preferences),
-        new StatusRuntimeFake,
-        new StatusExporterFake,
+        status_reads(),
+        status_reads(),
         app(ExporterDegradationRepository::class),
     )
         ->status()
@@ -82,8 +82,8 @@ it('selects a node whose role is still provisioning', function (): void {
 
     $data = new NativeMetricsStatusReader(
         new NativeMetricsExporterProjection(new ExporterSelector, app(ExporterPreferenceRepository::class)),
-        new StatusRuntimeFake,
-        new StatusExporterFake,
+        status_reads(),
+        status_reads(),
         app(ExporterDegradationRepository::class),
     )
         ->status()
@@ -112,8 +112,8 @@ it('keeps failed Metrics assignments visible', function (): void {
 
     $data = new NativeMetricsStatusReader(
         new NativeMetricsExporterProjection(new ExporterSelector, app(ExporterPreferenceRepository::class)),
-        new StatusRuntimeFake,
-        new StatusExporterFake,
+        status_reads(),
+        status_reads(),
         app(ExporterDegradationRepository::class),
     )
         ->status()
@@ -139,8 +139,8 @@ it('reports a skipped node as unknown with its recorded degradation reason', fun
 
     $data = new NativeMetricsStatusReader(
         new NativeMetricsExporterProjection(new ExporterSelector, app(ExporterPreferenceRepository::class)),
-        new StatusRuntimeFake,
-        new StatusExporterFake,
+        status_reads(),
+        status_reads(),
         $degradations,
     )
         ->status()
@@ -174,33 +174,8 @@ function statusNode(string $name): Node
     ]);
 }
 
-final class StatusRuntimeFake implements MetricsRuntimeLifecycle
+function status_reads(): MetricsReadCommands
 {
-    public function converge(Node $node, NodeRole $assignment): void {}
-
-    public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
-
-    public function health(Node $node, string $service): bool
-    {
-        return true;
-    }
-}
-
-final class StatusExporterFake implements MetricsExporterLifecycle
-{
-    public function converge(Node $node, NodeRole $assignment): void {}
-
-    public function remove(Node $node, NodeRole $assignment): void {}
-
-    public function removeNode(Node $node, Node $metricsNode): void {}
-
-    public function actual(Node $node): string
-    {
-        return 'active';
-    }
-
-    public function targets(Node $metricsNode): array
-    {
-        return [];
-    }
+    return new MetricsReadCommands(new FakeAgentCommandRunner()
+        ->answer('metrics.runtime-health', ['healthy' => true])->answer('metrics.node-exporter', ['actual' => 'active']));
 }
