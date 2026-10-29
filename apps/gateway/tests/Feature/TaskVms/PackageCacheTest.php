@@ -4,10 +4,6 @@ declare(strict_types=1);
 
 use App\Actions\TaskVms\ObservePackageCacheAction;
 use App\Domain\TaskVms\TaskVmException;
-use App\Infrastructure\AgentCommands\AgentBinaryInput;
-use App\Infrastructure\AgentCommands\AgentBinaryOutput;
-use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\AgentCommands\AgentSchemas;
 use App\Infrastructure\TaskVms\ComposerPackageCache;
 use App\Infrastructure\TaskVms\TaskVmPackageCache;
 use App\Jobs\TaskVms\FillTaskVmPackageCache;
@@ -29,7 +25,7 @@ use Tests\Support\TestOrbitHome;
 /** @param list<string> $arguments */
 function package_cache_git(string $root, array $arguments): string
 {
-    return trim((new Process(['git', '-C', $root, '-c', 'user.name=Cache', '-c', 'user.email=cache@example.test', ...$arguments]))->mustRun()->getOutput());
+    return trim(new Process(['git', '-C', $root, '-c', 'user.name=Cache', '-c', 'user.email=cache@example.test', ...$arguments])->mustRun()->getOutput());
 }
 
 function package_cache_commit(string $root): string
@@ -121,7 +117,7 @@ it('coalesces queued fills by host until processing starts', function (): void {
 
     expect(DB::table('jobs')->pluck('queue')->all())->toBe(['builds', 'builds']);
     // Laravel releases this uniqueness lock when a ShouldBeUniqueUntilProcessing job starts.
-    (new UniqueLock(app(Repository::class)))->release(new FillTaskVmPackageCache(31));
+    new UniqueLock(app(Repository::class))->release(new FillTaskVmPackageCache(31));
     FillTaskVmPackageCache::dispatch(31);
 
     expect(DB::table('jobs')->count())->toBe(3);
@@ -141,56 +137,6 @@ it('lists current Project usage with verified hashes and removes usage when a lo
     $this->artisan('task-vms:package-cache-usage acme/demo 1.0.0')->expectsOutput($uncached)->assertSuccessful();
     $snapshot->update(['artifacts' => []]);
     $this->artisan('task-vms:package-cache-usage acme/demo 1.0.0')->expectsOutput('{"projects":[],"cached":[]}')->assertSuccessful();
-});
-
-abstract class CacheAgentFixture implements AgentCommandRunner
-{
-    /** Answers may break their output schema, to test the cache's own guard against a malformed result. */
-    public bool $malformed = false;
-
-    /** Holds every scripted answer to the agent contract, as the shared fake does. */
-    final public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null, ?AgentBinaryInput $binaryInput = null): array
-    {
-        FakeAgentCommandRunner::admit($node, $command, $input, $output, $binaryInput);
-        $result = $this->respond($node, $command, $input, $deadlineSeconds, $output, $binaryInput);
-        if (! $this->malformed) {
-            AgentSchemas::assertOutput($command, $result);
-        }
-
-        return $result;
-    }
-
-    /**
-     * @param  array<string, mixed>  $input
-     * @return array<string, mixed>
-     */
-    abstract protected function respond(Node $node, string $command, array $input, ?float $deadlineSeconds, ?AgentBinaryOutput $output, ?AgentBinaryInput $binaryInput): array;
-
-    public function install(Node $node): bool
-    {
-        throw new LogicException('No cache test should install an agent.');
-    }
-}
-
-function package_cache_transport(AgentCommandRunner $agents): TaskVmPackageCache
-{
-    return new TaskVmPackageCache($agents, new FakeGuestAgentCommandRunner);
-}
-
-it('maps typed cache failures with bounded sanitized evidence', function (): void {
-    $node = Node::query()->create(['public_ssh_host' => '192.0.2.7', 'name' => 'cache-host', 'platform' => 'linux']);
-    $settings = TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($node->id)]]);
-    $agents = (new FakeAgentCommandRunner)->refuse('package-cache.host', 'task_vm.package_cache_failed', [
-        'operation' => 'fill', 'path' => TaskVmPackageCache::HostPath,
-        'reason' => "old output\n".str_repeat("progress\n", 1000)."PASSWORD=cache-secret\nPermissionError: cache file\n",
-    ]);
-
-    expect(fn () => package_cache_transport($agents)->fill($settings->host($node->id), $node, []))->toThrow(function (TaskVmException $error): void {
-        expect($error->errorCode)->toBe('task_vm.package_cache_failed')
-            ->and($error->getMessage())->toContain('[fill]', '['.TaskVmPackageCache::HostPath.']', 'PermissionError')
-            ->not->toContain('cache-secret', 'old output')
-            ->and(mb_strlen($error->getMessage()))->toBeLessThanOrEqual(TaskVmException::MessageLimit);
-    });
 });
 
 it('requests a fixed read-only mount before seeding the selected guest inventory', function (): void {
@@ -227,31 +173,19 @@ it('stops before guest seeding when the mount does not confirm completion', func
     $agents = (new FakeAgentCommandRunner)->answer('package-cache.host', ['hashes' => [], 'failures' => []])->answerMalformed('incus.package-cache', $result);
     $guests = new FakeGuestAgentCommandRunner;
 
-    expect(fn () => (new TaskVmPackageCache($agents, $guests))->prepare($vm, $project))->toThrow(function (TaskVmException $error): void {
+    expect(fn () => new TaskVmPackageCache($agents, $guests)->prepare($vm, $project))->toThrow(function (TaskVmException $error): void {
         expect($error->errorCode)->toBe('task_vm.package_cache_invalid_result');
     });
     expect($guests->calls)->toBe([]);
 })->with(['missing' => [[]], 'false' => [['ready' => false]], 'mistyped' => [['ready' => 'true']]]);
 
 it('accepts bounded printable archive failure reasons and rejects unsafe or oversized text', function (string $reason, bool $accepted): void {
-    $node = Node::query()->create(['public_ssh_host' => '192.0.2.7', 'name' => 'cache-host', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.7', 'user' => 'orbit']);
-    $settings = TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($node->id)]]);
-    $agents = new class($reason) extends CacheAgentFixture
-    {
-        public function __construct(private readonly string $reason) {}
-
-        protected function respond(Node $node, string $command, array $input, ?float $deadlineSeconds, ?AgentBinaryOutput $output, ?AgentBinaryInput $binaryInput): array
-        {
-            return ['hashes' => [], 'failures' => ['archive' => $this->reason]];
-        }
-    };
-    $cache = package_cache_transport($agents);
     $artifacts = [['manager' => 'composer', 'package' => 'acme/demo', 'version' => '1.0.0', 'url' => 'https://api.github.com/repos/acme/demo/zipball/'.str_repeat('a', 40), 'integrity' => null, 'key' => 'archive']];
 
     if ($accepted) {
-        expect($cache->fill($settings->host($node->id), $node, $artifacts))->toBe(['hashes' => [], 'failures' => ['archive' => $reason]]);
+        expect(TaskVmPackageCache::verifiedResult($artifacts, ['hashes' => [], 'failures' => ['archive' => $reason]]))->toBe(['hashes' => [], 'failures' => ['archive' => $reason]]);
     } else {
-        expect(fn () => $cache->fill($settings->host($node->id), $node, $artifacts))->toThrow(TaskVmException::class, 'no verified archive hash or artifact failure');
+        expect(fn () => TaskVmPackageCache::verifiedResult($artifacts, ['hashes' => [], 'failures' => ['archive' => $reason]]))->toThrow(TaskVmException::class, 'no verified archive hash or artifact failure');
     }
 })->with([
     'fixed reason' => ['Archive checksum mismatch', true],

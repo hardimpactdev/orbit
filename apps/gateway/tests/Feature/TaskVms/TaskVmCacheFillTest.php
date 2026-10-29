@@ -4,17 +4,21 @@ declare(strict_types=1);
 
 use App\Actions\TaskVms\StartTaskVmPackageCacheOperationAction;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmCacheFillBatches;
 use App\Domain\TaskVms\TaskVmException;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\TaskVms\TaskVmPackageCache;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Models\PackageCacheSnapshot;
 use App\Models\Project;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\TaskVmSettingsBuilder;
@@ -144,4 +148,28 @@ it('refuses an unproven failed batch result before projecting archive inventory'
     $this->postJson($path.'/complete', ['worker' => 'cache-parent', 'status' => 'failed', 'error_code' => 'task_vm.package_cache_failed', 'result' => []])
         ->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
     $this->assertDatabaseCount('package_cache_entries', 0);
+});
+
+it('returns bounded redacted cache transport failures without projecting archive inventory', function (): void {
+    $parent = cacheFillAdmission([cacheFillArtifact('archive')]);
+    PackageCacheSnapshot::query()->sole()->update(['fill_pending' => true]);
+    $child = DB::transaction(fn () => app(OperationChildren::class)->admit($parent, ['key' => 'fill-0']))['operation'];
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $child->kind, 'worker' => 'cache-child'])->assertOk();
+    $runner = Mockery::mock(AgentCommandRunner::class);
+    $runner->shouldReceive('run')->once()->andThrow(new AgentCommandRefused('package-cache.host', 'task_vm.package_cache_failed', 'Fill refused.', [
+        'operation' => 'fill', 'path' => TaskVmPackageCache::HostPath,
+        'reason' => "old output\n".str_repeat("progress\n", 1000)."PASSWORD=cache-secret\nPermissionError: cache file\n",
+    ]));
+    app()->instance(AgentCommandRunner::class, $runner);
+
+    $response = $this->postJson("/api/v1/operation-executor/{$child->id}/run", ['worker' => 'cache-child', 'key' => 'fill-package-cache-batch',
+        'transport' => 'task_vm_package-cache', 'name' => 'task_vm.package-cache',
+        'input' => Arr::only($child->input, ['host_node_id', 'artifacts', 'conflicts', 'max_bytes', 'github_token'])]);
+
+    $response->assertStatus(502)->assertJsonPath('error.code', 'task_vm.package_cache_failed');
+    expect($response->json('error.message'))->toBe('The named operation refused this request.');
+    expect($response->getContent())->not->toContain('cache-secret', 'old output', 'PermissionError');
+    expect(mb_strlen($response->json('error.message')))->toBeLessThanOrEqual(TaskVmException::MessageLimit);
+    $this->assertDatabaseCount('package_cache_entries', 0);
+    expect(PackageCacheSnapshot::query()->sole()->fill_pending)->toBeTrue();
 });

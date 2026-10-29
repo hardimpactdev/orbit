@@ -8,10 +8,6 @@ use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\VmObservation;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\TaskVms\GuestBootstrap;
 use App\Infrastructure\TaskVms\IncusHost;
 use App\Infrastructure\TaskVms\IncusTaskVmProvider;
@@ -24,13 +20,6 @@ use App\Models\TaskVm;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeGuestAgentCommandRunner;
 use Tests\Support\TaskVmSettingsBuilder;
-
-const INCUS_PREFIX = ['sudo', '-n', 'incus', '--project', 'orbit-tasks'];
-
-function incusResult(string $stdout = '', int $exitCode = 0, string $stderr = '', bool $truncated = false): CommandResult
-{
-    return new CommandResult($exitCode, $stdout, $stderr, 5, $truncated);
-}
 
 beforeEach(function (): void {
     $project = Project::query()->create(['name' => 'DLF', 'slug' => 'dlf', 'repository_url' => 'https://github.com/acme/dlf.git', 'default_branch' => 'main']);
@@ -45,34 +34,14 @@ beforeEach(function (): void {
     ]);
     $settings = TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($host->id, ['maxVms' => 4, 'pool' => 'tank'])]]);
 
-    $this->ssh = new class implements SshExecutor
-    {
-        /** @var list<array{SshConnection, RemoteCommand}> */
-        public array $calls = [];
-
-        /** @var list<CommandResult> */
-        public array $results = [];
-
-        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-        {
-            $this->calls[] = [$connection, $command];
-
-            return array_shift($this->results) ?? throw new RuntimeException('Unexpected SSH command: '.$command->shellCommand());
-        }
-    };
     $this->agents = new FakeAgentCommandRunner;
     app()->instance(AgentCommandRunner::class, $this->agents);
     $incus = new IncusHost($this->agents);
-    $this->volumes = new TaskVmVolumes($incus);
     $this->guestAgents = new FakeGuestAgentCommandRunner;
     $this->provider = new IncusTaskVmProvider($incus, $settings, new GuestBootstrap($this->guestAgents));
     $this->host = $host;
     $this->hostSettings = $settings->host($host->id);
     $this->guest = new TaskVmGuest($this->provider);
-    $this->answer = function (CommandResult ...$results): void {
-        $this->ssh->results = $results;
-    };
-    $this->argv = fn (): array => array_map(static fn (array $call): array => $call[1]->arguments, $this->ssh->calls);
 });
 
 it('sends creation intent with the claimed image and resolved size', function (TaskVmSize $size, int $cpus, string $memory, string $disk, bool $topology): void {
@@ -90,7 +59,6 @@ it('sends creation intent with the claimed image and resolved size', function (T
             'cpus' => $cpus, 'memory' => $memory, 'disk' => $disk, 'network' => 'orbittask0', 'pool' => 'tank', 'topology' => $topology,
         ],
     ]]]);
-    expect($this->ssh->calls)->toBe([]);
 })->with([
     [TaskVmSize::Normal, 2, '4GiB', '20GiB', false],
     [TaskVmSize::Medium, 4, '8GiB', '40GiB', true],
@@ -111,7 +79,6 @@ it('returns the typed native observation', function (?array $state, ?VmObservati
 
     expect($this->provider->observe($this->vm))->toEqual($expected);
     expect($this->agents->calls)->toBe([['node' => 'beast', 'command' => 'incus.vm-state', 'input' => ['project' => 'orbit-tasks', 'name' => 'tvm-1', 'cidr' => '10.251.77.0/24']]]);
-    expect($this->ssh->calls)->toBe([]);
 })->with([
     [null, null],
     [['running' => true, 'address' => '10.251.77.20', 'image_fingerprint' => str_repeat('c', 64)], new VmObservation(true, '10.251.77.20', str_repeat('c', 64))],
@@ -129,7 +96,6 @@ it('maps VM lifecycle refusals without a second host execution path', function (
 
     expect(fn () => $this->provider->create($this->vm, 'ssh-ed25519 AAAA gateway'))
         ->toThrow(fn (TaskVmException $error) => expect([$error->errorCode, $error->getMessage()])->toBe([$code, $message]));
-    expect($this->ssh->calls)->toBe([]);
     expect($this->agents->calls)->toHaveCount(1);
 })->with([
     ['task_vm.vm_missing', [], 'Task VM [tvm-1] is gone from its host.'],
@@ -148,7 +114,6 @@ it('sends start stop and delete intent to the native lifecycle command', functio
     expect($this->agents->calls)->toBe([['node' => 'beast', 'command' => 'incus.vm', 'input' => [
         'vm' => ['project' => 'orbit-tasks', 'name' => 'tvm-1', 'cidr' => '10.251.77.0/24'], 'operation' => $operation,
     ]]]);
-    expect($this->ssh->calls)->toBe([]);
 })->with([['start', ['kind' => 'start']], ['stop', ['kind' => 'stop']], ['destroy', ['kind' => 'delete', 'pool' => 'tank']]]);
 
 it('reads typed readiness and fingerprint through the trusted guest target', function (bool $ready): void {
@@ -159,21 +124,8 @@ it('reads typed readiness and fingerprint through the trusted guest target', fun
         ->and($this->provider->sshHostFingerprint($this->vm))->toBe($pin);
     expect(array_column($this->guestAgents->calls, 'command'))->toBe(['guest.cloud-init', 'guest.fingerprint']);
     expect($this->guestAgents->calls[0]['guest']->name)->toBe('tvm-1')
-        ->and($this->guestAgents->calls[0]['guest']->host->is($this->host))->toBeTrue()
-        ->and($this->ssh->calls)->toBe([]);
+        ->and($this->guestAgents->calls[0]['guest']->host->is($this->host))->toBeTrue();
 })->with([true, false]);
-
-it('sweeps only the clones of VMs without live rows, and keeps topology seeds', function (): void {
-    $this->vm->update(['state' => TaskVmState::Parked]);
-    $this->agents->answer('incus.volumes', ['names' => ['tvm-1-topology-seed', 'tvm-999-topology-seed', 'orbit-topology-seed-cccccccccccc', 'tvm-template-1-20261011040000', 'operator-data']]);
-    $this->agents->answer('incus.volume', ['name' => 'tvm-999-topology-seed']);
-
-    expect($this->volumes->sweepClones($this->hostSettings, $this->host))->toBe(['tvm-999-topology-seed']);
-    expect($this->agents->calls)->toBe([
-        ['node' => 'beast', 'command' => 'incus.volumes', 'input' => ['project' => 'orbit-tasks', 'pool' => 'tank']],
-        ['node' => 'beast', 'command' => 'incus.volume', 'input' => ['location' => ['project' => 'orbit-tasks', 'pool' => 'tank'], 'operation' => ['kind' => 'remove', 'name' => 'tvm-999-topology-seed']]],
-    ]);
-});
 
 it('owns the clones of VMs and only the topology seeds of images the host keeps', function (): void {
     $kept = [str_repeat('c', 64)];
@@ -186,10 +138,4 @@ it('owns the clones of VMs and only the topology seeds of images the host keeps'
         ->and(TaskVmVolumes::owns('tvm-template-1-20261011040000', $kept))->toBeFalse()
         ->and(TaskVmVolumes::seed(str_repeat('c', 64)))->toBe('orbit-topology-seed-cccccccccccc')
         ->and(TaskVmVolumes::newSeed(str_repeat('c', 64)))->toBe('orbit-topology-seed-cccccccccccc-new');
-});
-
-it('keeps a clone when Incus refuses its deletion and reports the failure', function (): void {
-    $this->agents->refuse('incus.volume', 'task_vm.host_command_failed', ['operation' => 'storage volume delete', 'exit_code' => 1]);
-
-    expect(fn () => $this->volumes->release($this->hostSettings, $this->host, $this->vm))->toThrow(TaskVmException::class);
 });

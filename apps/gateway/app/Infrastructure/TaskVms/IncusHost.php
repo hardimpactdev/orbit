@@ -43,20 +43,6 @@ final readonly class IncusHost
         return self::strings($result['names'] ?? null);
     }
 
-    /** @param array<string, mixed> $operation */
-    public function volume(TaskVmHost $host, Node $node, array $operation): string
-    {
-        $result = $this->observe($node, 'incus.volume', [
-            'location' => ['project' => $host->project, 'pool' => $host->pool], 'operation' => $operation,
-        ], "the storage volumes of Node [{$node->name}]");
-        $name = $result['name'] ?? null;
-        if (! is_string($name)) {
-            throw self::invalid('the agent volume result', 'the volume name is missing');
-        }
-
-        return $name;
-    }
-
     public function vmState(TaskVmHost $host, Node $node, string $name): ?VmObservation
     {
         $result = $this->observe($node, 'incus.vm-state', ['project' => $host->project, 'name' => $name, 'cidr' => $host->cidr], "task VM [{$name}]");
@@ -116,18 +102,6 @@ final readonly class IncusHost
         }
 
         return $validated;
-    }
-
-    /** @param array<string, mixed> $operation */
-    public function image(TaskVmHost $host, Node $node, array $operation): ?string
-    {
-        $result = $this->observe($node, 'incus.image', ['project' => $host->project, 'operation' => $operation], "the images of Node [{$node->name}]");
-        if (($result['ready'] ?? null) !== true || ! array_key_exists('fingerprint', $result)
-            || ($result['fingerprint'] !== null && ! is_string($result['fingerprint']))) {
-            throw self::invalid('the agent image result', 'the change was not confirmed');
-        }
-
-        return $result['fingerprint'];
     }
 
     /**
