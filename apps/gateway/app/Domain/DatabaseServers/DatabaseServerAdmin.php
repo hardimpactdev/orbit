@@ -22,7 +22,4 @@ interface DatabaseServerAdmin
      * @return list<string>
      */
     public function execute(DatabaseServer $server, string $sql): array;
-
-    /** Copy one database into another, empty one on the same server with mysqldump piped into mysql. */
-    public function copyDatabase(DatabaseServer $server, string $source, string $target): void;
 }

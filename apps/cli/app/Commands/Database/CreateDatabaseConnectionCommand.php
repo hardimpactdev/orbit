@@ -4,13 +4,17 @@ declare(strict_types=1);
 
 namespace App\Commands\Database;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\DatabaseConnections\CreateDatabaseConnectionRequest;
 use Orbit\Sdk\Responses\DatabaseConnections\DatabaseConnectionResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class CreateDatabaseConnectionCommand extends DatabaseCommand
 {
+    use FollowsOperations;
+
     #[\Override]
     protected $signature = 'database:create
         {slug : Database connection slug}
@@ -28,6 +32,7 @@ final class CreateDatabaseConnectionCommand extends DatabaseCommand
         {--instance= : Numeric Instance ID that owns a database created with --server}
         {--pattern=* : Key pattern for a Valkey ACL user with --server}
         {--allow=* : Allowed command or category for a Valkey ACL user with --server}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -199,7 +204,11 @@ final class CreateDatabaseConnectionCommand extends DatabaseCommand
 
         $locale = $this->option('locale');
 
-        $connection = $this->sendWithProgress(
+        $profile = $this->activeGatewayProfile($repository);
+        if ($profile === null) {
+            return self::FAILURE;
+        }
+        $operation = $this->send(
             $connector,
             new CreateDatabaseConnectionRequest(
                 slug: $slug,
@@ -210,20 +219,14 @@ final class CreateDatabaseConnectionCommand extends DatabaseCommand
                 database: $databaseIndex,
                 patterns: $this->aclOptions('pattern'),
                 allow: $this->aclOptions('allow'),
+                idempotencyKey: is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null,
             ),
-            DatabaseConnectionResponse::class,
-            ['Create database', 'Creating database', 'Created database'],
+            OperationResponse::class,
         );
 
-        if (! $connection instanceof DatabaseConnectionResponse) {
-            return self::FAILURE;
-        }
-
-        $message = $connection->driver === 'redis'
-            ? "ACL user [{$connection->username}] created on [{$server}]."
-            : "Database [{$connection->database}] created on [{$server}].";
-
-        return $this->renderConnection($connection, $message);
+        return $operation instanceof OperationResponse
+            ? $this->followOperation($connector, $profile, $operation, "Create database [{$slug}]", 'Database')
+            : self::FAILURE;
     }
 
     /** @return list<string>|null */

@@ -4,16 +4,20 @@ declare(strict_types=1);
 
 namespace App\Commands\Database;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\DatabaseServers\CloseDatabaseServerRequest;
-use Orbit\Sdk\Responses\DatabaseServers\DatabaseServerResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class CloseDatabaseServerCommand extends DatabaseCommand
 {
+    use FollowsOperations;
+
     #[\Override]
     protected $signature = 'database:server:close
         {slug : Database server slug}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -33,17 +37,14 @@ final class CloseDatabaseServerCommand extends DatabaseCommand
             return self::FAILURE;
         }
 
-        $server = $this->sendWithProgress(
-            $connector,
-            new CloseDatabaseServerRequest($slug),
-            DatabaseServerResponse::class,
-            ['Close Database server', 'Closing Database server', 'Closed Database server'],
-        );
-
-        if (! $server instanceof DatabaseServerResponse) {
+        $profile = $this->activeGatewayProfile($repository);
+        if ($profile === null) {
             return self::FAILURE;
         }
+        $operation = $this->send($connector, new CloseDatabaseServerRequest($slug, is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null), OperationResponse::class);
 
-        return $this->renderServer($server, "Database server [{$server->slug}] is closed.");
+        return $operation instanceof OperationResponse
+            ? $this->followOperation($connector, $profile, $operation, "Close Database server [{$slug}]", 'Database server')
+            : self::FAILURE;
     }
 }

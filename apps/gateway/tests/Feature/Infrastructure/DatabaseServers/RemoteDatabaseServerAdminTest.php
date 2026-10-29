@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\DatabaseServers\RemoteDatabaseServerAdmin;
 use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Models\DatabaseServer;
@@ -79,30 +78,6 @@ it('runs PostgreSQL over authenticated TCP with psql error stopping', function (
             'password_variable' => 'PGPASSWORD',
             'client' => ['psql', '--no-psqlrc', '--host=127.0.0.1', '--username=postgres', '--dbname=postgres', '--no-align', '--tuples-only', '--quiet', '--set=ON_ERROR_STOP=1'],
         ]);
-});
-
-it('maps a failed command to database.server_command_failed without its output', function (string $operation): void {
-    $server = remote_database_server();
-    $agents = new FakeAgentCommandRunner()->refuse('database.server-admin', 'database.server_admin_failed', ['exit_code' => 1, 'stderr' => 'secret']);
-    $admin = remote_database_server_admin($agents);
-
-    expect(fn () => $operation === 'execute' ? $admin->execute($server, 'SELECT 1;') : $admin->copyDatabase($server, 'app', 'app_copy'))
-        ->toThrow(function (ResourceOperationException $exception): void {
-            expect($exception->errorCode)->toBe('database.server_command_failed')
-                ->and($exception->getMessage())->not->toContain('secret');
-        });
-})->with(['execute', 'copy']);
-
-it('copies a MySQL database inside the container and refuses a name that is not an identifier', function (): void {
-    $server = remote_database_server();
-    $agents = new FakeAgentCommandRunner()->answer('database.server-admin', []);
-    $admin = remote_database_server_admin($agents);
-
-    $admin->copyDatabase($server, 'app', 'app_copy');
-
-    expect($agents->calls[0]['input'])->toMatchArray(['operation' => 'copy', 'source' => 'app', 'target' => 'app_copy'])
-        ->and(fn () => $admin->copyDatabase($server, 'app', 'app; DROP'))->toThrow(ResourceOperationException::class)
-        ->and($agents->calls)->toHaveCount(1);
 });
 
 it('waits for the root login over TCP and reports a timeout', function (): void {

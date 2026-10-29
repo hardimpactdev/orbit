@@ -4,19 +4,24 @@ declare(strict_types=1);
 
 namespace App\Commands\Database;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\DatabaseConnections\QueryDatabaseConnectionRequest;
 use Orbit\Sdk\Responses\DatabaseConnections\DatabaseQueryResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class QueryDatabaseConnectionCommand extends DatabaseCommand
 {
+    use FollowsOperations;
+
     #[\Override]
     protected $signature = 'database:query
         {slug : Database connection slug}
         {sql : SQL statement}
         {--write : Allow a write statement}
+        {--idempotency-key= : Reuse a key to retry a write start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -35,6 +40,19 @@ final class QueryDatabaseConnectionCommand extends DatabaseCommand
 
         if ($connector === null) {
             return self::FAILURE;
+        }
+
+        if ($this->option('write') === true) {
+            $profile = $this->activeGatewayProfile($repository);
+            if ($profile === null) {
+                return self::FAILURE;
+            }
+            $operation = $this->send($connector, new QueryDatabaseConnectionRequest($slug, $sql, true,
+                is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null), OperationResponse::class);
+
+            return $operation instanceof OperationResponse
+                ? $this->followOperation($connector, $profile, $operation, "Run Database statement [{$slug}]", 'Database statement')
+                : self::FAILURE;
         }
 
         $result = $this->sendWithProgress(

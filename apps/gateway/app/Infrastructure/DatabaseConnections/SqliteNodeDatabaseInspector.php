@@ -27,6 +27,9 @@ final readonly class SqliteNodeDatabaseInspector
 
     public function query(DatabaseConnection $connection, string $sql, bool $write): DatabaseQueryResult
     {
+        if ($write) {
+            throw new ResourceOperationException('database.operation_required', 'SQL writes run as database.write Operations.', 409);
+        }
         $decoded = $this->run($connection, $sql, $write);
 
         $columns = [];
@@ -128,13 +131,21 @@ final readonly class SqliteNodeDatabaseInspector
         return $this->redactor->columns($connection->password, $columns);
     }
 
+    /** @return array{owner: string, path: string|null, sql: string} */
+    public function writeInput(DatabaseConnection $connection, string $sql): array
+    {
+        $node = $this->owningNode($connection);
+
+        return ['owner' => $this->executionOwner($connection, $node), 'path' => $connection->path, 'sql' => $sql];
+    }
+
     /** @return array<string, mixed> */
     private function run(DatabaseConnection $connection, string $sql, bool $write): array
     {
         $node = $this->owningNode($connection);
 
         try {
-            return $this->agents->run($node, $write ? 'database.write-sqlite' : 'database.query-sqlite', [
+            return $this->agents->run($node, 'database.query-sqlite', [
                 'owner' => $this->executionOwner($connection, $node),
                 'path' => $connection->path,
                 'sql' => $sql,
