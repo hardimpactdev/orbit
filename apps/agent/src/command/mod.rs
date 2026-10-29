@@ -51,6 +51,20 @@ pub const COMMON_ERRORS: &[&str] = &[
     "agent.effect_expired",
 ];
 
+/// These refusals are emitted only before command locks/receipt intent or supervisor spawn.
+pub const NOT_STARTED_ERRORS: &[&str] = &[
+    "agent.target_busy",
+    "agent.lock_unavailable",
+    "agent.supervisor_not_ready",
+];
+/// Terminal preflight refusals; no command effect or target receipt has started.
+pub const PREFLIGHT_ERRORS: &[&str] = &[
+    "agent.invalid_input",
+    "agent.envelope_invalid",
+    VERSION_MISMATCH,
+    "agent.unknown_command",
+];
+
 /// A complete result line.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Outcome {

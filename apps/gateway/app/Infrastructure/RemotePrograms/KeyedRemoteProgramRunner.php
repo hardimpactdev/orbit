@@ -34,6 +34,9 @@ final readonly class KeyedRemoteProgramRunner
         try {
             $reservation = $this->agent->run($node, 'agent.effect-reserve', $effect->attach([...$identity, 'timeout_seconds' => $program->timeoutSeconds]));
         } catch (AgentCommandRefused $exception) {
+            if (AgentEffectReceipts::notStarted($exception->errorCode) || AgentEffectReceipts::preflight($exception->errorCode)) {
+                throw $exception;
+            }
             throw new ResourceOperationException('operation.execution_uncertain', 'The program reservation is unproven.', 409);
         }
         if (($reservation['reserved'] ?? false) === true) {

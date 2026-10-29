@@ -455,7 +455,11 @@ fn infrastructure_refusals_never_fill_the_result_slot() {
                 &context(),
                 || Outcome::refused(error, "unproven", json!({}))
             )),
-            error
+            if super::super::NOT_STARTED_ERRORS.contains(&error) {
+                "agent.effect_unknown"
+            } else {
+                error
+            }
         );
         let receipt = store
             .receipt("test.effect", "op-42.uncertain")
@@ -550,8 +554,9 @@ fn restored_numeric_ids_cannot_adopt_receipts_from_another_operation_nonce() {
 fn masks_numbers_and_booleans_before_persisting_a_receipt() {
     let fixture = Fixture::new();
     let store = fixture.store();
-    let masks =
-        context().with_effect_masks(vec!["731".into(), "1".into(), "4.25".into(), "82".into()]);
+    let masks = context()
+        .with_effect_masks(vec!["731".into(), "1".into(), "4.25".into(), "82".into()])
+        .with_effect_boolean_masks(vec![true]);
     store.execute("test.effect", "op-42.scalars", "input", &masks, || {
         Outcome::Ok(
             json!({"integer":731,"boolean":true,"float":4.25,"whole_float":82.0,"public":false}),
@@ -653,4 +658,25 @@ fn pruning_cannot_unlink_a_lock_while_an_effect_holds_the_namespace() {
     assert!(store.path("op-42.active").exists());
     release.send(()).unwrap();
     assert_eq!(code(thread.join().unwrap()), "ok");
+}
+
+#[test]
+fn numeric_and_string_masks_do_not_hide_unrelated_boolean_results() {
+    let fixture = Fixture::new();
+    let store = fixture.store();
+    let ctx = context().with_effect_masks(vec!["1".into(), "true".into()]);
+    let outcome = store.execute("test.effect", "op-42.public-boolean", "input", &ctx, || {
+        Outcome::Ok(json!({"ready":true,"secret":1,"string":"true"}))
+    });
+    assert_eq!(
+        outcome,
+        Outcome::Ok(json!({"ready":true,"secret":"[REDACTED]","string":"[REDACTED]"}))
+    );
+    assert_eq!(
+        store
+            .receipt("test.effect", "op-42.public-boolean")
+            .unwrap_or_else(|_| panic!("receipt"))
+            .result,
+        Some(outcome.to_json())
+    );
 }

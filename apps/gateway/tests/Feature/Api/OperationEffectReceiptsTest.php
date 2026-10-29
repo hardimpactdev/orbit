@@ -346,7 +346,7 @@ it('leaves infrastructure refusals unresolved and later recovers the command res
     $this->getJson($this->path.'/receipts/effect')->assertOk()->assertJsonPath('data.state', 'succeeded');
     expect($this->transport->runs)->toBe(1)->and($this->transport->reads)->toBe(1);
     expect($this->operation->refresh()->state['projections'])->toBe(1);
-})->with(['agent.deadline_exceeded', 'agent.supervisor_failed', 'agent.effect_receipt_unavailable', 'agent.effect_unknown', 'agent.target_busy', 'agent.effect_conflict']);
+})->with(['agent.deadline_exceeded', 'agent.supervisor_failed', 'agent.effect_receipt_unavailable', 'agent.effect_unknown', 'agent.effect_conflict']);
 
 it('does not prove an effect_unknown response from an explicitly permitted re-dispatch', function (): void {
     $kind = app(OperationKinds::class)->definition('test.receipts');
@@ -409,3 +409,40 @@ it('records a command-owned refusal as a proven failed result', function (): voi
     $this->getJson($this->path.'/receipts/effect')->assertOk()->assertJsonPath('data.state', 'failed');
     expect($this->transport->reads)->toBe(0);
 });
+
+it('permits the same non-resumable key after a proven pre-start refusal', function (string $code): void {
+    $this->transport->refusal = $code;
+    $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath('data.error_code', $code)->assertJsonPath('data.not_started', true);
+    $state = $this->operation->refresh()->state;
+    expect($state['executor_runs']['effect']['started'])->toBeFalse();
+    expect($state['executor_runs']['effect']['result'])->toBeNull();
+    expect($state)->not->toHaveKey('projections');
+    $this->transport->refusal = null;
+    $this->transport->loseReply = false;
+    $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath('data.ready', true);
+    $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath('data.ready', true);
+    expect($this->transport->runs)->toBe(2);
+    expect($this->operation->refresh()->state['projections'])->toBe(1);
+})->with(['agent.target_busy', 'agent.lock_unavailable', 'agent.supervisor_not_ready']);
+
+it('records a terminal preflight refusal with its real cause', function (string $code): void {
+    $this->transport->refusal = $code;
+    $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath('data.error_code', $code);
+    $this->getJson($this->path.'/receipts/effect')->assertOk()->assertJsonPath('data.state', 'failed')->assertJsonPath('data.result.error_code', $code);
+    expect($this->transport->reads)->toBe(0);
+})->with(['agent.invalid_input', 'agent.envelope_invalid', 'agent.version_mismatch', 'agent.unknown_command']);
+
+it('does not clear earlier uncertainty when a replay has a pre-start refusal', function (string $code): void {
+    $kind = app(OperationKinds::class)->definition('test.receipts');
+    $kind['runs'][0]['resumable'] = true;
+    app()->instance(OperationKinds::class, new OperationKinds(app(), [...OperationKinds::definitions(), 'test.receipts' => $kind]));
+    $input = $this->operation->input;
+    $input['descriptors'][0]['resumable'] = true;
+    $this->operation->update(['input' => $input]);
+    $this->postJson($this->path.'/run', $this->run)->assertConflict();
+    $this->transport->refusal = $code;
+    $this->postJson($this->path.'/run', $this->run)->assertConflict()->assertJsonPath('error.code', 'operation.execution_uncertain');
+    $state = $this->operation->refresh()->state;
+    expect($state['executor_runs']['effect']['started'])->toBeTrue();
+    expect($state['executor_runs']['effect']['result'])->toBeNull();
+})->with(['agent.target_busy', 'agent.lock_unavailable', 'agent.supervisor_not_ready', 'agent.invalid_input', 'agent.version_mismatch']);

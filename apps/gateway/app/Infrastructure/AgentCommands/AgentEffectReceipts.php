@@ -25,7 +25,22 @@ final readonly class AgentEffectReceipts
 
     public static function uncertain(string $code): bool
     {
+        return self::infrastructure($code) && ! self::notStarted($code) && ! self::preflight($code);
+    }
+
+    public static function infrastructure(string $code): bool
+    {
         return in_array($code, app(AgentContract::class)->commonErrors(), true);
+    }
+
+    public static function notStarted(string $code): bool
+    {
+        return in_array($code, app(AgentContract::class)->notStartedErrors(), true);
+    }
+
+    public static function preflight(string $code): bool
+    {
+        return in_array($code, app(AgentContract::class)->preflightErrors(), true);
     }
 
     /** @return array{effect_key: string, state: string, result: array<string, mixed>|null, result_digest: string|null, sanitized: bool, effect_nonce: string|null, effect_created_at:int|null, exit_code: int|null, finished_at: string|null} */

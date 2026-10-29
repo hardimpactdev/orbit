@@ -103,8 +103,8 @@ fn run<C: Command>(input: Value, context: &Context) -> Outcome {
             )
         }
     };
-    super::effects::execute::<C>(key, raw, context, || {
-        with_locks::<C>(input, context, super::lock::lock_directory)
+    with_locks::<C>(input, context, super::lock::lock_directory, |input| {
+        super::effects::execute::<C>(key, raw, context, || invoke::<C>(input, context))
     })
 }
 
@@ -113,6 +113,7 @@ fn with_locks<C: Command>(
     input: C::Input,
     context: &Context,
     directory: fn() -> Result<std::path::PathBuf, String>,
+    effect: impl FnOnce(C::Input) -> Outcome,
 ) -> Outcome {
     let target = C::target(&input);
     let _locks = if C::MUTATES && (target.is_some() || !C::RESOURCES.is_empty()) {
@@ -147,7 +148,7 @@ fn with_locks<C: Command>(
     } else {
         Vec::new()
     };
-    invoke::<C>(input, context)
+    effect(input)
 }
 
 fn invoke<C: Command>(input: C::Input, context: &Context) -> Outcome {
@@ -312,7 +313,7 @@ pub fn contract() -> Value {
             definition
         })
         .collect();
-    json!({"common_errors": COMMON_ERRORS, "commands": commands, "output_chunk_bytes": super::binary_output::CHUNK_BYTES})
+    json!({"common_errors": COMMON_ERRORS, "not_started_errors": super::NOT_STARTED_ERRORS, "preflight_errors": super::PREFLIGHT_ERRORS, "commands": commands, "output_chunk_bytes": super::binary_output::CHUNK_BYTES})
 }
 
 /// The input and output JSON Schema of every command. Gateway test fakes validate against them.
@@ -418,7 +419,9 @@ mod tests {
         .unwrap();
         let deadline = std::time::Instant::now() + Duration::from_secs(2);
         let context = Context::new(Platform::Linux, deadline);
-        match with_locks::<ResourceOnly>(json!({}), &context, resource_locks) {
+        match with_locks::<ResourceOnly>(json!({}), &context, resource_locks, |input| {
+            invoke::<ResourceOnly>(input, &context)
+        }) {
             Outcome::Refused { code, .. } => assert_eq!(code, "agent.target_busy"),
             other => panic!("expected a busy refusal, got {other:?}"),
         }
@@ -428,10 +431,83 @@ mod tests {
             Platform::Linux,
             std::time::Instant::now() + Duration::from_secs(2),
         );
-        match with_locks::<ResourceOnly>(json!({}), &context, resource_locks) {
+        match with_locks::<ResourceOnly>(json!({}), &context, resource_locks, |input| {
+            invoke::<ResourceOnly>(input, &context)
+        }) {
             Outcome::Ok(_) => {}
             other => panic!("expected the released resource to be taken, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_prestart_lock_refusal_leaves_no_intent_and_the_same_key_runs_once_after_release() {
+        struct Keyed;
+        impl Command for Keyed {
+            const NAME: &'static str = "test.keyed";
+            const SUMMARY: &'static str = "Test";
+            const MUTATES: bool = true;
+            const TIMEOUT: Duration = Duration::from_secs(5);
+            const RESOURCES: &'static [&'static str] = &["keyed-resource"];
+            type Input = Value;
+            type Output = Value;
+            type Error = crate::commands::agent::StatusError;
+            fn privilege(_: Platform) -> Option<Privilege> {
+                Some(Privilege::Account)
+            }
+            fn target(_: &Value) -> Option<String> {
+                Some("keyed-target".into())
+            }
+            fn run(_: Value, _: &Context) -> Result<Value, Self::Error> {
+                unreachable!()
+            }
+        }
+        let directory = resource_locks().unwrap();
+        let receipt_directory = directory.join("receipts");
+        let store = super::super::effects::Store::at(receipt_directory.clone());
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        for (index, lock) in ["keyed-target", "keyed-resource"].iter().enumerate() {
+            let key = format!("op-42.lock-{index}");
+            let ctx = || {
+                Context::new(
+                    Platform::Linux,
+                    std::time::Instant::now() + Duration::from_millis(350),
+                )
+                .with_effect_masks(vec![])
+                .with_effect_identity(
+                    "11111111-1111-4111-8111-111111111111".into(),
+                    time::OffsetDateTime::now_utc().unix_timestamp(),
+                )
+            };
+            let attempt = |context: &Context| {
+                with_locks::<Keyed>(json!({}), context, resource_locks, |_| {
+                    store.execute("test.keyed", &key, "input", context, || {
+                        calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        Outcome::Ok(json!({"ran":true}))
+                    })
+                })
+            };
+            let held = super::super::lock::acquire(
+                &super::super::lock::path_for(&directory, lock),
+                std::time::Instant::now(),
+            )
+            .unwrap();
+            assert!(
+                matches!(attempt(&ctx()), Outcome::Refused { code, .. } if code == "agent.target_busy")
+            );
+            assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), index);
+            assert_eq!(
+                store
+                    .receipt("test.keyed", &key)
+                    .unwrap_or_else(|_| panic!("receipt"))
+                    .state,
+                "unknown"
+            );
+            drop(held);
+            assert!(matches!(attempt(&ctx()), Outcome::Ok(_)));
+            assert!(matches!(attempt(&ctx()), Outcome::Ok(_)));
+            assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), index + 1);
+        }
+        std::fs::remove_dir_all(receipt_directory).unwrap();
     }
 
     /// Namespaces whose last word ends in one `s` but is not a plural: the mass nouns `analytics` and `metrics`, the

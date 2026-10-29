@@ -258,7 +258,7 @@ final readonly class SwampOperationExecutor
             }
             $this->assertReceipt($effectKey, $target, $this->effectIdentity($operation));
             if (in_array($target['state'], ['succeeded', 'failed'], true)) {
-                if (AgentEffectReceipts::uncertain(ValidatedData::string($target['result']['error_code'] ?? ''))) {
+                if (AgentEffectReceipts::infrastructure(ValidatedData::string($target['result']['error_code'] ?? ''))) {
                     throw new ResourceOperationException('operation.execution_uncertain', 'The target has no proven command result.', 409);
                 }
                 $this->recordResult($operation, $data, ValidatedData::object($target['result']), [], $target, $nodeId);
@@ -385,7 +385,7 @@ final readonly class SwampOperationExecutor
                 $values = $hydrated['values'];
                 $input = $hydrated['input'];
                 $this->contract->validateHydratedInput($operation, $data, $spec, $input);
-                $run = [...$data, 'effect_key' => $effectKey, 'effect_metadata' => new EffectReceiptMetadata($values, $this->effectIdentity($operation))];
+                $run = [...$data, 'effect_key' => $effectKey, 'effect_metadata' => EffectReceiptMetadata::hydrated($values, $this->effectIdentity($operation), $input, array_keys($references))];
                 $invoke = static fn (): array => $transport->run($operation, $run, $input);
                 $this->owned($operation, $data['worker'], $nodeId, function (Operation $operation) use ($data): void {
                     if ($this->contract->cancellationAllowsRun($operation)) {
@@ -400,9 +400,6 @@ final readonly class SwampOperationExecutor
                 try {
                     $result = $this->contract->cancellationAllowsRun($operation) ? $invoke() : ['error_code' => 'operation.cancelled'];
                 } catch (AgentCommandRefused $exception) {
-                    if ($transport instanceof OperationEffectTransport && $transport->effectful($operation, $run) && AgentEffectReceipts::uncertain($exception->errorCode)) {
-                        throw new ResourceOperationException('operation.execution_uncertain', 'The effect has no proven saved result.', 409);
-                    }
                     $result = ['error_code' => $exception->errorCode];
                 } catch (ResourceOperationException $exception) {
                     throw OperationSecrets::refusal($exception);
@@ -420,8 +417,23 @@ final readonly class SwampOperationExecutor
             $result = ValidatedData::object($this->secrets->redact($result, $values));
         }
 
-        if ($transport instanceof OperationEffectTransport && $transport->effectful($operation, $run) && AgentEffectReceipts::uncertain(ValidatedData::string($result['error_code'] ?? ''))) {
-            throw new ResourceOperationException('operation.execution_uncertain', 'The effect has no proven saved result.', 409);
+        if ($transport instanceof OperationEffectTransport && $transport->effectful($operation, $run)) {
+            $code = ValidatedData::string($result['error_code'] ?? '');
+            $notStarted = AgentEffectReceipts::notStarted($code);
+            $earlierUncertain = ($receipt['started'] ?? false) === true;
+            if (AgentEffectReceipts::uncertain($code) || ($earlierUncertain && ($notStarted || AgentEffectReceipts::preflight($code)))) {
+                throw new ResourceOperationException('operation.execution_uncertain', 'The effect has no proven saved result.', 409);
+            }
+            if ($notStarted) {
+                $this->owned($operation, $data['worker'], $nodeId, function (Operation $operation) use ($data): void {
+                    $state = $operation->state ?? [];
+                    $runs = ValidatedData::object($state['executor_runs'] ?? []);
+                    $runs[$data['key']] = [...ValidatedData::object($runs[$data['key']]), 'started' => false];
+                    $this->store->change($operation, ['state' => [...$state, 'executor_runs' => $runs]]);
+                });
+
+                return ['error_code' => $code, 'not_started' => true];
+            }
         }
 
         return $this->recordResult($operation, $data, $result, $values, ($run['effect_metadata'] ?? null)?->receipt() ?? [], $nodeId);

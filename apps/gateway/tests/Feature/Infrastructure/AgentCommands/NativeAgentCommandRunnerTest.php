@@ -698,7 +698,7 @@ it('sends receipt masks only as protected transient envelope metadata', function
     $node = agentRunnerNode();
     expect(agentRunner($transport)->run($node, 'process.control', $metadata->attach($input)))->toBe([]);
     expect($transport->calls[0]['envelope']['input'])->toBe($input);
-    expect($transport->calls[0]['envelope']['effect_receipt'])->toBe(['redactions' => ['receipt-private-original'], 'nonce' => '11111111-1111-4111-8111-111111111111', 'created_at' => 1793224800]);
+    expect($transport->calls[0]['envelope']['effect_receipt'])->toBe(['redactions' => ['receipt-private-original'], 'booleans' => [], 'nonce' => '11111111-1111-4111-8111-111111111111', 'created_at' => 1793224800]);
     expect(json_encode($metadata))->not->toContain('receipt-private-original');
     expect(json_encode($transport->calls[0]['arguments']))->not->toContain('receipt-private-original');
     expect(json_encode($node->refresh()->toArray()))->not->toContain('receipt-private-original');

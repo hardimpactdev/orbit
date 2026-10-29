@@ -111,3 +111,12 @@ it('preserves failed state and exit code in live protected metadata', function (
     expect($effect->receipt()['state'])->toBe($recovered['state'])->toBe('failed');
     expect($effect->receipt()['exit_code'])->toBe($recovered['exit_code'])->toBe(23);
 });
+
+it('keeps only originally protected booleans in transient typed masks', function (): void {
+    $metadata = EffectReceiptMetadata::hydrated(['1'], ['nonce' => '11111111-1111-4111-8111-111111111111', 'created_at' => 1793224800],
+        ['secret' => ['integer' => 1, 'text' => 'true', 'boolean' => false], 'public' => true], ['secret']);
+    expect($metadata->envelope()['booleans'])->toBe([false]);
+    expect(json_encode($metadata))->toBe('"[PROTECTED]"');
+    $numeric = EffectReceiptMetadata::hydrated(['1'], $metadata->identity(), ['secret' => 1, 'public' => true], ['secret']);
+    expect($numeric->envelope()['booleans'])->toBe([]);
+});

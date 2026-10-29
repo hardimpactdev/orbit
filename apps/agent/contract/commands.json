@@ -21,6 +21,17 @@
     "agent.effect_unsanitized",
     "agent.effect_expired"
   ],
+  "not_started_errors": [
+    "agent.target_busy",
+    "agent.lock_unavailable",
+    "agent.supervisor_not_ready"
+  ],
+  "preflight_errors": [
+    "agent.invalid_input",
+    "agent.envelope_invalid",
+    "agent.version_mismatch",
+    "agent.unknown_command"
+  ],
   "commands": [
     {
       "name": "analytics.configure-clickhouse",
