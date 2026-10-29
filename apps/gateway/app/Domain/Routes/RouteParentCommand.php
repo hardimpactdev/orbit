@@ -154,8 +154,7 @@ final readonly class RouteParentCommand implements OperationGatewayCommand
             if (in_array($mode, ['withdraw', 'withdraw_replacement'], true)) {
                 $plan = $this->offline->apply($plan, ($operation->input['offline'] ?? false) === true);
             }
-            $plan['metrics'] = in_array($operation->kind, ['route.update', 'route.destroy', 'route.target_unset'], true)
-                || ($operation->kind === 'route.target_set' && ($operation->input['mode'] ?? null) === 'target');
+            $plan['metrics'] = app(RouteMetricsRelevance::class)->changes($route, $mode, $plan);
             if ($plan['metrics']) {
                 $plan = $this->plans->withMetrics($plan);
             }
