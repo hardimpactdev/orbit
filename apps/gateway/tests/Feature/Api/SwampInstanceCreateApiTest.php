@@ -3,8 +3,10 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceDestroyAction;
+use App\Actions\Operations\CancelOperationAction;
 use App\Domain\Instances\InstanceDestinationGuard;
 use App\Domain\Instances\InstanceLifecycleExecution;
+use App\Domain\Instances\InstanceRemovalState;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
 use App\Domain\Instances\Removal\InstanceSourceInventory;
 use App\Domain\Nodes\ManagedUserAccount;
@@ -17,11 +19,13 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Cluster;
 use App\Models\Instance;
+use App\Models\InstanceRemoval;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\ProjectNodeExclusion;
 use App\Models\Route;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Queue;
 
 beforeEach(function (): void {
@@ -170,7 +174,7 @@ it('keeps failed-create replay context after its proven cleanup deletes the Inst
     expect($parent->refresh()->lock_key)->toBeNull();
 });
 
-it('admits the owning destroy child for a prepared create after native Git failure', function (bool $worktree, bool $clustered): void {
+it('admits and accepts prepared create cleanup with the same ownership guards', function (bool $worktree, bool $clustered, ?string $change = null): void {
     $id = $this->postJson('/api/v1/instances', $this->payload)->assertAccepted()->json('data.id');
     $parent = Operation::query()->findOrFail($id);
     $instance = Instance::query()->findOrFail($parent->target_id);
@@ -205,8 +209,47 @@ it('admits the owning destroy child for a prepared create after native Git failu
     expect($child->parent_operation_id)->toBe($parent->id)->and($child->input['members'][0]['instance_id'])->toBe($instance->id)
         ->and($child->input['members'][0]['run_teardown'])->toBeFalse();
     $this->assertModelExists($instance);
+    if ($change === 'cancel') {
+        $child = $executor->claim('instance.destroy', 'cleanup-proof', $peer->id, $child->id);
+        $descriptor = array_find(app(InstanceLifecycleExecution::class)->context($child)['descriptors'],
+            static fn (array $entry): bool => $entry['key'] === 'removal-accept');
+        $executor->step($child, ['worker' => 'cleanup-proof', 'key' => 'removal-accept:start',
+            'name' => 'removal-accept', 'status' => 'running', 'result' => []], $peer->id);
+        $child->update(['state' => [...$child->state, 'executor_runs' => ['removal-accept' => [
+            ...$descriptor, 'started' => true, 'result' => null]]]]);
+        app(CancelOperationAction::class)->execute($parent);
+        expect(fn () => app(InstanceRemovalState::class)->transition($child, ['action' => 'removal-accept']))
+            ->toThrow(ResourceOperationException::class, 'Removal was cancelled before acceptance.');
+        $executor->step($child, ['worker' => 'cleanup-proof', 'key' => 'removal-accept:finish',
+            'name' => 'removal-accept', 'status' => 'failed', 'result' => ['error_code' => 'operation.cancelled'],
+            'error_code' => 'operation.cancelled'], $peer->id);
+        $cancelled = ['status' => 'cancelled', 'result' => [], 'error_code' => 'operation.cancelled'];
+        expect($executor->complete($child, ['worker' => 'cleanup-proof', ...$cancelled], $peer->id)->status->value)->toBe('cancelled');
+        expect($executor->complete($parent, ['worker' => 'failed-create-proof', ...$cancelled], $peer->id)->status->value)->toBe('cancelled');
+        expect(InstanceRemoval::query()->count())->toBe(0);
+        expect($instance->refresh()->status->value)->toBe('checkout_prepared');
+
+        return;
+    }
+    if ($change !== null) {
+        $instance->update([$change => $change === 'registration_request_id' ? 'unrelated-registration' : null]);
+        expect(fn () => app(InstanceRemovalState::class)->transition($child, ['action' => 'removal-accept']))
+            ->toThrow(QueryException::class, 'Invalid Instance removal contract.');
+        expect(InstanceRemoval::query()->count())->toBe(0);
+        expect($instance->refresh()->status->value)->toBe('checkout_prepared');
+
+        return;
+    }
+    expect(app(InstanceRemovalState::class)->transition($child, ['action' => 'removal-accept']))
+        ->toBe(['accepted' => true, 'removal_id' => $child->input['removal_id']]);
+    expect($instance->refresh()->status->value)->toBe('removing');
 })->with(['checkout / direct Route' => [false, false], 'checkout / clustered Route' => [false, true],
-    'worktree / direct Route' => [true, false], 'worktree / clustered Route' => [true, true]]);
+    'worktree / direct Route' => [true, false], 'worktree / clustered Route' => [true, true],
+    'missing prepare identity' => [true, false, 'source_prepare_id'],
+    'missing seed repository' => [true, false, 'seed_repository'],
+    'missing seed commit' => [true, false, 'seed_commit'],
+    'registration attempt' => [true, false, 'registration_request_id'],
+    'cancel before acceptance' => [true, false, 'cancel']]);
 
 it('refuses prepared worktree cleanup when its pending Route belongs to another cluster', function (): void {
     $id = $this->postJson('/api/v1/instances', $this->payload)->assertAccepted()->json('data.id');
