@@ -15,6 +15,8 @@ use Symfony\Component\Process\Process;
 
 describe('node:platform', function (): void {
     beforeEach(function (): void {
+        $this->originalColumns = getenv('COLUMNS');
+        putenv('COLUMNS=80');
         MockClient::destroyGlobal();
         $this->orbitHome = sys_get_temp_dir().'/orbit-cli-node-platform-'.Str::uuid();
         config()->set('orbit.home', $this->orbitHome);
@@ -28,6 +30,7 @@ describe('node:platform', function (): void {
     });
 
     afterEach(function (): void {
+        putenv($this->originalColumns === false ? 'COLUMNS' : 'COLUMNS='.$this->originalColumns);
         MockClient::destroyGlobal();
         new Filesystem()->deleteDirectory($this->orbitHome);
     });
