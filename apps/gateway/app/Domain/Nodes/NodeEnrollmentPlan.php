@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
+use App\Domain\Processes\ProcessSwampSafety;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
 use App\Support\ValidatedData;
@@ -38,7 +39,7 @@ final readonly class NodeEnrollmentPlan
                     $steps[] = $this->child('add-role-'.$role, 'node.role_add', $node->id, ['role' => $role, 'converge' => true]);
                 }
                 foreach (Node::query()->whereKeyNot($node->id)->where('status', LifecycleStatus::Active)->orderBy('id')->get() as $target) {
-                    if ($target->platform === 'linux' && $target->wireguard_ip !== null && $target->ssh_host_fingerprint !== null) {
+                    if ($target->platform === 'linux' && $target->wireguard_ip !== null && $target->ssh_host_fingerprint !== null && ! app(ProcessSwampSafety::class)->requiresSynchronous($target)) {
                         $steps[] = $this->child('add-expand-'.$target->id, 'node.network_projection', $target->id,
                             ['context_node_id' => $node->id, 'phase' => 'expand']);
                     }
@@ -55,7 +56,7 @@ final readonly class NodeEnrollmentPlan
                 if ($target->platform !== 'linux' || $target->wireguard_ip === null || $target->ssh_host_fingerprint === null) {
                     continue;
                 }
-                if ($input['mode'] === 'linux') {
+                if ($input['mode'] === 'linux' && ! app(ProcessSwampSafety::class)->requiresSynchronous($target)) {
                     $steps[] = $this->child('add-prune-'.$target->id, 'node.network_projection', $target->id,
                         ['context_node_id' => $node->id, 'phase' => 'prune']);
                 }

@@ -9,6 +9,7 @@ use App\Domain\Firewall\RouterLanIngressPolicy;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Processes\ProcessSwampSafety;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
@@ -46,6 +47,9 @@ final readonly class AdmitNodeNetworkProjectionAction
         if ($node->is($context) || $node->platform !== 'linux' || $node->status !== LifecycleStatus::Active
             || $node->wireguard_ip === null || $node->ssh_host_fingerprint === null) {
             throw new ResourceOperationException('operation.child_forbidden', 'The network projection requires another managed serving Node.', 422);
+        }
+        if (app(ProcessSwampSafety::class)->requiresSynchronous($node)) {
+            throw new ResourceOperationException('node.executor_dependency', 'Executor Nodes require synchronous network recovery.', 409);
         }
         $steps = [];
         if ($node->roles->contains(fn ($role): bool => $role->role === RoleName::Router && $role->status === LifecycleStatus::Active)

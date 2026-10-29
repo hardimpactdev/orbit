@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\WireGuard;
 
+use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
 use Illuminate\Support\Collection;
 
@@ -27,7 +28,8 @@ final readonly class WireGuardServerConfigRenderer
 
         foreach ($nodes->sortBy('id') as $node) {
             if (
-                $node->is($hub)
+                $node->status === LifecycleStatus::Removing
+                || $node->is($hub)
                 || $node->wireguard_ip === null
                 || $node->wireguard_public_key === null
             ) {

@@ -9,6 +9,7 @@ use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRemovalPlan;
 use App\Domain\Nodes\NodeRemovalPolicy;
 use App\Domain\Nodes\NodeSideResidue;
+use App\Domain\Nodes\NodeTaskVmLifecycleOwnership;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
@@ -35,6 +36,9 @@ final readonly class AdmitNodeRemovalOperationAction
         }
         if (app(ProcessSwampSafety::class)->requiresSynchronous($node)) {
             throw new ResourceOperationException('node.executor_dependency', 'Executor Nodes require synchronous removal recovery.', 409);
+        }
+        if ($deleted || $this->idempotency->parent !== null) {
+            app(NodeTaskVmLifecycleOwnership::class)->removal($node, $deleted);
         }
         $this->policy->protected($node, $caller);
         $unreachable = $offline && ($deleted || $this->reachability->degradation($node) !== null);

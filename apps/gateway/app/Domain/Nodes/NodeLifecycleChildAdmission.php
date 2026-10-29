@@ -36,6 +36,11 @@ final readonly class NodeLifecycleChildAdmission implements OperationChildAdmiss
                 throw $this->forbidden();
             }
             try {
+                $roles = $input['roles'] ?? [];
+                if (! is_array($roles) || ! array_is_list($roles)) {
+                    throw $this->forbidden();
+                }
+                $input['roles'] = array_map(static fn (mixed $role): RoleName => is_string($role) ? RoleName::from($role) : throw new \InvalidArgumentException, $roles);
                 $data = ProvisionNodeData::from($input);
             } catch (Throwable) {
                 throw $this->forbidden();
