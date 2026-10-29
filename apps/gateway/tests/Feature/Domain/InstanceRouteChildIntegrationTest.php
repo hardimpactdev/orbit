@@ -48,7 +48,7 @@ it('composes the real no-Route withdrawal child and proves the empty PHP pool co
         'linked_worktree_paths' => [$instance->checkout_path], 'source_digest' => str_repeat('b', 64)]);
     $instance->update(['status' => InstanceState::Removing]);
     $key = 'removal-'.$instance->id.'-source-prepare';
-    $binding = ['transport' => 'instance_lifecycle', 'name' => 'instance.prepare-source-removal', 'step' => $key];
+    $binding = ['transport' => 'instance_lifecycle', 'name' => 'instance.prepare-source-removal', 'step' => $key, 'input' => []];
     $parent = Operation::query()->create(['kind' => 'instance.destroy', 'target_type' => 'instance', 'target_id' => $instance->id,
         'node_id' => $node->id, 'status' => 'running', 'worker' => 'parent', 'lock_key' => 'instance:'.$instance->id,
         'input' => ['instance_id' => $instance->id, 'members' => [['instance_id' => $instance->id, 'route_id' => null, 'run_teardown' => false]]],
