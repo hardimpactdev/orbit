@@ -53,7 +53,7 @@ final readonly class TaskVmLifecycleCommand implements OperationTransport
     {
         $parent = $this->parent($operation, $vm);
         $this->owner($operation, 'prepare-enrollment', 'task_vm.prepare_enrollment');
-        $prepared = $parent->state['enrollment'] ?? [];
+        $prepared = ValidatedData::object($parent->state['enrollment'] ?? []);
         $vm->refresh();
         if (($prepared['node_id'] ?? null) !== $vm->node_id || $vm->node?->status !== LifecycleStatus::Active) {
             throw new ResourceOperationException('operation.completion_unproven', 'The reserved VM Node is not active.', 409);

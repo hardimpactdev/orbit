@@ -11,12 +11,14 @@ use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmFamilyChildren;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\TaskVm;
+use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Reserves Gateway identity and exact owning input; it performs no Node enrollment. */
@@ -40,7 +42,7 @@ final readonly class PrepareTaskVmEnrollmentAction
                     throw new TaskVmException('task_vm.node_conflict', 'The reserved VM Node changed.', 409);
                 }
 
-                return ['ready' => true, 'node_id' => $vm->node_id, 'enrolled' => $saved['enrolled'] === true];
+                return ['ready' => true, 'node_id' => ValidatedData::integer($vm->node_id), 'enrolled' => $saved['enrolled'] === true];
             }
             if ($parent->kind === 'task_vm.provision') {
                 $created = app(OperationChildren::class)->requireSucceeded($parent, 'provider-create');
@@ -76,7 +78,7 @@ final readonly class PrepareTaskVmEnrollmentAction
             $node->update(['ssh_jump_node_id' => $vm->host_node_id]);
             $vm->update(['node_id' => $node->id, 'address' => $observation->address,
                 ...($observation->imageFingerprint === null ? [] : ['image_fingerprint' => $observation->imageFingerprint])]);
-            $intents = $parent->state['child_intents'] ?? [];
+            $intents = app(TaskVmFamilyChildren::class)->nodeIntents($parent);
             if (! $enrolled) {
                 $intents[] = ['key' => 'node-enrollment', 'kind' => 'node.add', 'node_id' => $node->id, 'input' => $data->toArray()];
             }

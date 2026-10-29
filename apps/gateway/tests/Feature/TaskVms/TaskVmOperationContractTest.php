@@ -454,7 +454,7 @@ it('admits the reserved Node through its real owning adapter and replays the sta
     }
     $parent = taskVmEnrollmentParent();
     $cluster = Cluster::query()->create(['name' => 'Task development', 'tld' => 'task.test', 'state' => 'active']);
-    TaskVmSettingsBuilder::bind(['devClusterId' => $cluster->id]);
+    TaskVmSettingsBuilder::bind(['devClusterId' => $cluster->id, 'hosts' => [TaskVmSettingsBuilder::host($parent->node_id)]]);
     taskVmPrepareEnrollment($parent);
     $child = taskVmStampedChild($parent, 'node-enrollment');
     $vm = TaskVm::query()->findOrFail($parent->target_id);

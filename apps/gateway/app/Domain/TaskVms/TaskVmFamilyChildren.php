@@ -62,7 +62,7 @@ final readonly class TaskVmFamilyChildren implements OperationFamilyChildren, Op
             default => [],
         };
         if (in_array($operation->kind, ['task_vm.provision', 'task_vm.enroll'], true)
-            && ($operation->state['enrollment']['enrolled'] ?? false) !== true) {
+            && (ValidatedData::object($operation->state['enrollment'] ?? [])['enrolled'] ?? false) !== true) {
             $required['node-enrollment'] = 'node.add';
         }
         if ($operation->kind === 'task_vm.destroy' && ($operation->input['guest_node_id'] ?? null) !== null) {
@@ -118,7 +118,7 @@ final readonly class TaskVmFamilyChildren implements OperationFamilyChildren, Op
         $children = array_values(array_filter($children, static fn (array $child): bool => in_array($child['kind'], $allowed, true)));
         $vm = $operation->target_type === 'task_vm' ? TaskVm::query()->find($operation->target_id) : null;
 
-        return ['intent' => ['guest_node_id' => $vm?->node_id, 'lifecycle_node_ids' => array_column($operation->state['child_intents'] ?? [], 'node_id'), 'workspace_route_node_ids' => array_column(TaskVmInputs::workspaceRoutes($operation->input['workspace_routes'] ?? []), 'node_id')], 'children' => $children];
+        return ['intent' => ['guest_node_id' => $vm?->node_id, 'lifecycle_node_ids' => array_column($this->nodeIntents($operation), 'node_id'), 'workspace_route_node_ids' => array_column(TaskVmInputs::workspaceRoutes($operation->input['workspace_routes'] ?? []), 'node_id')], 'children' => $children];
     }
 
     /** @param array<string,mixed> $input
@@ -150,6 +150,22 @@ final readonly class TaskVmFamilyChildren implements OperationFamilyChildren, Op
         }
 
         return get_object_vars($value);
+    }
+
+    /** @return list<ChildIntent> */
+    public function nodeIntents(Operation $operation): array
+    {
+        $stored = $operation->state['child_intents'] ?? [];
+        if (! is_array($stored) || ! array_is_list($stored)) {
+            throw new \LogicException('The VM Node intents must be a list.');
+        }
+
+        return array_map(static function (mixed $value): array {
+            $intent = ValidatedData::object($value);
+
+            return ['key' => ValidatedData::string($intent['key']), 'kind' => ValidatedData::string($intent['kind']),
+                'node_id' => ValidatedData::integer($intent['node_id']), 'input' => ValidatedData::object($intent['input'])];
+        }, $stored);
     }
 
     private function known(Operation $operation, string $key): bool
@@ -247,7 +263,7 @@ final readonly class TaskVmFamilyChildren implements OperationFamilyChildren, Op
                 $children[] = $this->child('runtime-confirmed', 'task_vm.runtime_confirm', $vm->node_id, ['task_vm_id' => $vm->id, 'sha256' => $runtime['sha256']]);
             }
         }
-        foreach ($operation->state['child_intents'] ?? [] as $intent) {
+        foreach ($this->nodeIntents($operation) as $intent) {
             if (($intent['kind'] === 'node.add' && $this->known($operation, 'prepare-enrollment'))
                 || ($intent['kind'] === 'node.remove' && $this->known($operation, 'forget-workspaces'))) {
                 $children[] = $intent;
