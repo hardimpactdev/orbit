@@ -12,6 +12,7 @@ use App\Domain\Releases\ReleaseAlertSubject;
 use App\Domain\Releases\ReleaseIncident;
 use App\Models\FleetRollout;
 use App\Models\FleetRolloutNode;
+use App\Models\Operation;
 use Illuminate\Support\Facades\Config;
 use InvalidArgumentException;
 use Throwable;
@@ -81,6 +82,15 @@ final readonly class FleetRolloutAlerts
         } catch (Throwable $exception) {
             report($exception);
         }
+    }
+
+    /** @return array<string, mixed> */
+    public function openVisit(FleetRollout $rollout, FleetRolloutNode $node, Operation $operation): array
+    {
+        return $this->raise(ReleaseAlertKind::RolloutStalled, $rollout, sprintf(
+            'Fleet rollout %d: Node %s has an open visit since %s; Operation %d is %s. Inspect its steps, target receipts and child Operations. The Node hold remains in place.',
+            $rollout->id, $node->node_name, $node->started_at?->toIso8601String() ?? 'its start', $operation->id, $operation->status->value,
+        ), $node);
     }
 
     /**

@@ -19,7 +19,6 @@ use App\Http\Middleware\ValidateRequestBodySize;
 use App\Http\Responses\ApiErrorResponse;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\Logging\GatewayExceptionStatus;
-use App\Jobs\MaintainMachineRecipe;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
 use Illuminate\Console\Scheduling\Schedule;
@@ -58,14 +57,8 @@ $app = Application::configure(basePath: dirname(__DIR__))
         app(TaskSchedule::class)->register($schedule);
         // Work runs on the Gateway queue; the scheduler only dispatches (docs/reference/gateway-queue.md#scheduled-work).
         GatewaySchedule::command($schedule, 'orbit:auto-deploy', uniqueFor: 600, overlapMinutes: 10)->everyMinute();
-        GatewaySchedule::command($schedule, 'orbit:peer-dns-reconcile', uniqueFor: 600, overlapMinutes: 10)->everyFiveMinutes();
-        GatewaySchedule::command($schedule, 'orbit:desired-fleet-state', uniqueFor: 600, overlapMinutes: 10)->everyFiveMinutes();
         // Reconcile the deployed recipe each minute; only an identity change queues image builds.
         GatewaySchedule::job($schedule, new RefreshTaskVmBaseImages)->everyMinute()
-            ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);
-        GatewaySchedule::job($schedule, new MaintainMachineRecipe(snapshot: true))->everyFiveMinutes()->between('03:00', '23:59')->timezone('Europe/Amsterdam')
-            ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);
-        GatewaySchedule::job($schedule, new MaintainMachineRecipe)->everyMinute()
             ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);
         // The task VM host sweep: orphaned VMs and clones, and live rows whose VM is gone. It also runs while only the
         // UpCloud token file is set, so no UpCloud server that Orbit created keeps costing money.

@@ -5,10 +5,10 @@ covers:
   - apps/gateway/app/Actions/{Gateway/BootstrapGatewayAction.php,Nodes/{ProvisionNodeAction,EnrollMacOsNodeAction,RemoveNodeAction,AddNodeRoleAction,RemoveNodeRoleAction,AssignRoleAction}.php}
   - apps/gateway/app/Infrastructure/{WireGuard/{NativeGatewayPeerProjectionManager,NativeGatewayVpnConverger}.php,Gateway/{NativeGatewayCaddyInstaller,NativeGatewaySelfAccessConverger}.php,Nodes/{Roles/{CiRunnerRoleBaseline,NativeNodeRoleFirewallManager},CiRunnerHostProgram,NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackage*,RemotePhpPackageManager,NodeLocks,NodeLock}.php}
   - apps/gateway/app/Console/Commands/{ProvisionNodeCommand,ConvergeNodeRecipeCommand}.php
-  - apps/gateway/{app/{Actions/Fleet/ConvergeNodeRecipeAction.php,Data/Fleet/NodeRecipePlan.php,Infrastructure/MachineSoftware/NodeRecipe*.php,Domain/Nodes/RoleRegistry.php}}
+  - apps/gateway/{app/{Actions/Fleet/PlanNodeRecipeAction.php,Data/Fleet/NodeRecipePlan.php,Infrastructure/MachineSoftware/NodeRecipe*.php,Domain/Nodes/RoleRegistry.php}}
   - apps/gateway/app/Infrastructure/{Firewall/NodeFirewallRuleCatalog,Ssh/NativeSshExecutor,Ssh/SshConnection,Ssh/SshHostKeyScanner,Ssh/HostKeyScanner}.php
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
-  - apps/gateway/app/{Infrastructure/Nodes/*Cli*.php,Domain/Nodes/NodeCli*.php,Domain/Fleet/NodeFootprint*.php,Domain/Fleet/NodeCliConvergence.php,Infrastructure/Fleet/Footprint/**,Actions/Fleet/ConvergeNodeFootprintAction.php,Http/Controllers/Api/NodeFootprintsController.php,Actions/Nodes/StartNodePhpPackagesAction.php,Domain/Nodes/NodePhpPackages*.php,Domain/Nodes/operation-kinds.php}
+  - apps/gateway/app/{Infrastructure/Nodes/*Cli*.php,Domain/Nodes/NodeCli*.php,Domain/Fleet/NodeFootprint*.php,Domain/Fleet/NodeRecipeVerification.php,Domain/Fleet/CliConverge*.php,Infrastructure/Fleet/Footprint/**,Actions/Fleet/ConvergeNodeFootprintAction.php,Http/Controllers/Api/NodeFootprintsController.php,Actions/Nodes/StartNodePhpPackagesAction.php,Domain/Nodes/NodePhpPackages*.php,Domain/Nodes/operation-kinds.php}
   - apps/agent/src/commands/{ci_runner.rs,recipe.rs,recipe/**,php_build.rs,php_build/**,gateway_identity.rs,gateway_identity/**}
 ---
 
@@ -146,6 +146,8 @@ Recipe Node uses the same [immutable store layout](/reference/tools#project-envi
 
 Older migrated versions remain adopted content. A link is briefly absent between unlink and directory rename; avoid process restarts during migration. Recipe installation refuses unrelated links or differing real content without deleting them.
 
+Recipe HTTP admission requires `automatic: true`; manual convergence stays in artisan. Until kit B, C, I and `node.converge` are installed, nightly recipe maintenance, fleet rollout and manual `node:converge-recipe` have no executor and refuse admission.
+
 On the Gateway, run `php artisan node:converge-recipe <node> [--recipe=sha256:<digest>] [--dry-run]`. The target is a Node name or ID. The command uses the repository [machine software recipe](/reference/compute-drivers#machine-software-recipe). An optional full recipe identity guards against running a different version. To select an older version, check out its recipe before running the command; arbitrary Git revisions and remote recipe URLs are not inputs.
 
 The command requires an active managed Ubuntu Node on x86_64. Another architecture fails with `node.recipe_architecture`. It unions the Node's active role profiles, including common tools once. A Node without roles uses `operator`. The service-role profiles match the existing role prerequisite catalog. A prerequisite absent from the recipe, an unsupported artifact, or an incompatible managed Tool constraint stops the operation before package changes. It never installs the base image's development-only tool set on a production Node.
@@ -188,13 +190,17 @@ Services from unpinned dependency packages, such as `incus.service` or `wg-quick
 
 If a unit fails the active check, convergence accepts a loaded unit that completed successfully (`ActiveState=inactive`, `Result=success`). It also accepts a unit when the shared task-unit proof shows it is not loaded, is inactive, has no cgroup, and has no pending job. A failed state read, any other non-loaded state, or an unsuccessful completion stops convergence.
 
-The fleet verifier checks Node and role requirements with no tolerated preexisting issues. Then `recipe.verify-delivery` takes the self-update lock and checks the installed agent digest and CLI version against the delivery selected before application. Only its passing result supplies the recipe identity to record. An unavailable CLI release refuses before application; a mismatch or busy update lock leaves no success marker. The command stops at the first failure and reports the failed stage with a nonzero exit code. It makes no automatic rollback. Package application is not retried; Doctor uses the fleet verifier’s settling checks.
+The fleet verifier checks Node and role requirements with no tolerated preexisting issues. Then `recipe.verify-delivery` takes the self-update lock and checks the installed agent digest and CLI version against the delivery selected before application. Only its passing result supplies the recipe identity to record.
+
+An unavailable CLI release refuses before application; a mismatch or busy update lock leaves the last success unchanged and the current attempt unverified. The command stops at the first failure and reports the failed stage with a nonzero exit code. It makes no automatic rollback. Package application is not retried; Doctor uses the fleet verifier’s settling checks.
 
 A failed command reports its recipe stage, exit code, and bounded, redacted output in the convergence error. A failure during package installation also reports the attempted packages. APT source validation reports the source or backup path and the reason, including malformed fields, mixed provider entries, and symlinks. These reasons use the same bounded, redacted diagnostic envelope. No automatic retry or rollback runs.
 
 After all checks pass, `settings.machine_recipe` stores the recipe identity in `version`, the snapshot, completion time, and any `newer_than_recipe` packages with installed and recipe versions on the Node record. When fleet convergence holds an Incus change, it stores `partial_version` instead of `version`; the Node has applied only the non-Incus changes. See [Incus holds](/reference/compute-drivers#incus-lts-packages-and-upgrades). `php artisan node:converge-recipe --status` lists the recorded identity for every Node without SSH, including Nodes with no success marker.
 
-A failed attempt clears the previous success marker before mutation: the Node may be partly changed and must not appear converged. It keeps only a recorded profile. Node settings unrelated to the recipe stay intact. To recover manually, pin the previous snapshot date and tool pins in a reviewed recipe, then converge the Node again. Snapshot pinning alone does not undo changed third-party tool pins.
+Before mutation, the Gateway records `settings.machine_recipe_attempt` with the Operation ID, requested identity and snapshot, start time and `status: unverified`. It preserves `settings.machine_recipe` as the last verified success. A failed, cancelled or interrupted attempt stays unverified, with its terminal outcome and error when known. A crash needs no cleanup to make the Node unverified.
+
+Only application, Doctor and delivery verification together replace the success record and mark the attempt succeeded. Fleet planning never skips an unverified Node because its last verified identity matches the desired recipe. The status command shows both records and a `recipe_verified` flag. Node settings unrelated to the recipe stay intact. To recover manually, pin the previous snapshot date and tool pins in a reviewed recipe, then converge the Node again. Snapshot pinning alone does not undo changed third-party tool pins.
 
 This synchronous operation also runs inside [nightly recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance). Maintenance selects and orders Nodes; this operation applies and verifies one Node. [Gateway fleet rollout](/reference/gateway-recovery#recipe-convergence) updates Orbit itself separately.
 
@@ -364,6 +370,10 @@ Completion requires a successful keyed installer step with `outcome: current|app
 ## Orbit CLI
 
 Every Node of the [fleet rollout set](/reference/gateway-recovery#rollout-set-and-order) runs the Orbit CLI, so the fleet rollout can run [`orbit self-update`](/reference/self-update) there. Provisioning, role converge, and the fleet rollout install it with the same step.
+
+Node workflows request the optional `fleet.cli_converge` child with `{}` and the Node as its target. The Gateway records the current release asset and profile; Swamp invokes pinned `cli.install`. The first workload role may still be converging. Ineligible Nodes and unpublished releases succeed with `outcome: skipped` and a reason. Install errors fail the child; parents verify and acknowledge that failure.
+
+A proven foreign-binary refusal marks the Node as foreign, and a proven successful install clears that mark. The child inherits any parent run constraints.
 
 | Item | Path or value |
 | --- | --- |

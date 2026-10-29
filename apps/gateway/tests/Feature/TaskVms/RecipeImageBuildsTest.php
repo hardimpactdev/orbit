@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Actions\Fleet\ConvergeFleetRecipeAction;
+use App\Actions\Fleet\RecipeFleetPlanAction;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Fleet\FleetServingRelease;
 use App\Domain\Problems\ProblemCollector;
@@ -1008,7 +1008,7 @@ it('keeps a halted Node rollout and its incident through cold rebuild and promot
 
     $candidate = $builds->reconcile(rebuild: true)[0];
     runRecipeImageBuild($candidate);
-    app(ConvergeFleetRecipeAction::class)->execute();
+    app(RecipeFleetPlanAction::class)->execute();
 
     expect($candidate->refresh()->state)->toBe(TaskVmImageBuildState::Succeeded)
         ->and($candidate->promoted_at)->not->toBeNull()

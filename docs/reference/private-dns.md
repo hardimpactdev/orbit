@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Infrastructure/WireGuard/{NativeWireGuardPeerConverger,NativeWireGuardPeerDnsRepairer,PeerDnsPolicy,PeerDnsInspector,UplinkDnsResolvers}.php
   - apps/gateway/app/Infrastructure/Gateway/GatewayPrivateDnsResolver.php
   - apps/gateway/app/Domain/Nodes/GatewayPrivateDnsRoute.php
-  - apps/gateway/app/{Actions/Nodes/RepairNodeDnsAction,Actions/Nodes/ReconcilePeerDnsAction,Console/Commands/RepairNodeDnsCommand,Console/Commands/CheckNodeDnsCommand,Console/Commands/ReconcilePeerDnsCommand}.php
+  - apps/gateway/app/{Actions/Nodes/RepairNodeDnsAction,Actions/Fleet/AdmitPeerDnsAction,Console/Commands/RepairNodeDnsCommand,Console/Commands/CheckNodeDnsCommand,Console/Commands/ReconcilePeerDnsCommand}.php
 ---
 
 # Private DNS
@@ -33,7 +33,7 @@ Managed Linux peers send only Orbit names to private DNS. The Gateway renders th
 
 A routing domain for an outside-TLD Route, such as `~app.example.com`, also captures descendants. It creates no private wildcard answer: VPN DNS still forwards descendants that have no private record. Resolver routing cannot select only the exact name. A private Route on an apex such as `example.com` also moves every descendant lookup to VPN DNS; choose a narrower name when those descendants must keep public resolution.
 
-Provisioning, `node:converge`, and [repair](#repair-one-peer) apply the render. The Gateway reconciles active managed peers every five minutes with `orbit:peer-dns-reconcile`. It checks persisted and live settings and repairs only mismatches. The delay is five minutes plus queue and traversal time; unreachable peers wait for a later successful pass. Record changes do not block on fleet SSH.
+Provisioning, `node:converge`, and [repair](#repair-one-peer) apply the render. Swamp reconciles active managed peers every five minutes. `orbit:peer-dns-reconcile` records per-Node Operations; Swamp inspects persisted and live settings and repairs only mismatches. The Gateway binds each command to the admitted policy and target. Completion requires a successful inspection receipt with the exact policy and a usable uplink. The delay is five minutes plus queue and traversal time; unreachable peers wait for a later successful pass. Record changes do not block on fleet SSH.
 
 Private Route, Cluster TLD, and Node TLD writes validate names in a serialized database transaction. A change is refused only if the rendered count increases beyond 512 domains. Deletion or rollback that keeps or reduces an already oversized count is allowed. The renderer also refuses invalid stored names or more than 512 domains before peer mutation, never truncating or using `~.`. systemd 259 allows 1,024 domains per link. Orbit reserves half that capacity so a complete replacement can allocate new domains before resolved removes old ones.
 

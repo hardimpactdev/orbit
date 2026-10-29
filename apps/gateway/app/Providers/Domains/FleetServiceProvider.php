@@ -4,21 +4,57 @@ declare(strict_types=1);
 
 namespace App\Providers\Domains;
 
+use App\Actions\Fleet\ShowFleetRolloutAction;
+use App\Console\Commands\FleetConvergeCommand;
+use App\Console\Commands\ResolveDesiredFleetStateCommand;
 use App\Domain\Fleet\CliReleaseCatalog;
+use App\Domain\Fleet\DesiredFleetState;
+use App\Domain\Fleet\FleetNodeVerification;
+use App\Domain\Fleet\FleetNodeVerifier;
+use App\Domain\Fleet\FleetReleaseLag;
+use App\Domain\Fleet\FleetRolloutMembership;
+use App\Domain\Fleet\FleetWindow;
+use App\Domain\Fleet\NodeFootprint;
+use App\Domain\Fleet\NodeFootprintArtifact;
+use App\Domain\Fleet\RecipeGithubSecretSource;
 use App\Domain\Fleet\ReleaseHistory;
+use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubAppStore;
+use App\Domain\Nodes\ManagedNodeEligibility;
+use App\Domain\Nodes\NodeCliInstaller;
+use App\Domain\Operations\OperationRunConstraint;
+use App\Domain\Operations\OperationSecretSource;
+use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AgentView\AgentReportedVersions;
+use App\Infrastructure\AgentView\CacheAgentStateView;
+use App\Infrastructure\Fleet\Footprint\AgentFootprintArtifact;
+use App\Infrastructure\Fleet\Footprint\CaddyFootprintArtifact;
+use App\Infrastructure\Fleet\Footprint\CaddyPackageFootprintArtifact;
+use App\Infrastructure\Fleet\Footprint\PeerDnsFootprintArtifact;
+use App\Infrastructure\Fleet\Footprint\PhpRuntimeFootprintArtifact;
+use App\Infrastructure\Fleet\Footprint\PrivateDnsFootprintArtifact;
+use App\Infrastructure\Fleet\Footprint\RouteResidueFootprintArtifact;
+use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
 use App\Infrastructure\Fleet\GitHubCliReleaseCatalog;
 use App\Infrastructure\Fleet\GitReleaseHistory;
+use App\Infrastructure\Fleet\StaticCliRelease;
+use App\Infrastructure\Nodes\AgentNodeCliInstaller;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Releases\ReleaseProvenance;
+use Illuminate\Cache\CacheManager;
+use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
 
+/** The fleet rollout of ADR 0202: CLI install, footprint re-apply, the rollout, and its units. */
 final class FleetServiceProvider extends ServiceProvider
 {
+    #[\Override]
     public function register(): void
     {
+        $this->app->tag([RecipeGithubSecretSource::class], OperationSecretSource::class);
+        $this->app->tag([FleetWindow::class], OperationRunConstraint::class);
         $this->app->bind(
             ReleaseHistory::class,
             static fn ($app): GitReleaseHistory => new GitReleaseHistory(
@@ -35,5 +71,81 @@ final class FleetServiceProvider extends ServiceProvider
                 repositoryOrigin: Config::string('orbit.cli_releases.repository'),
             ),
         );
+        $this->app->bind(NodeCliInstaller::class, AgentNodeCliInstaller::class);
+        $this->bindStaticCliRelease();
+        $this->app->bind(FleetNodeVerification::class, FleetNodeVerifier::class);
+        $this->app->bind(
+            AgentReportedVersions::class,
+            static fn (Application $app): AgentReportedVersions => new AgentReportedVersions(
+                $app->make(CacheManager::class)->build(CacheAgentStateView::storeConfiguration(Config::string('orbit.home'))),
+            ),
+        );
+        $this->app->bind(
+            FleetRolloutMembership::class,
+            static fn (Application $app): FleetRolloutMembership => new FleetRolloutMembership(
+                eligibility: $app->make(ManagedNodeEligibility::class),
+                servingHost: $app->make(GatewayServingHost::class),
+                order: self::order(),
+            ),
+        );
+        $this->app->tag([
+            AgentFootprintArtifact::class,
+            CaddyPackageFootprintArtifact::class,
+            CaddyFootprintArtifact::class,
+            PeerDnsFootprintArtifact::class,
+            PrivateDnsFootprintArtifact::class,
+            RouteResidueFootprintArtifact::class,
+            PhpRuntimeFootprintArtifact::class,
+            TmpfilesFootprintArtifact::class,
+        ], NodeFootprintArtifact::class);
+        $this->app->bind(
+            FleetReleaseLag::class,
+            static fn (Application $app): FleetReleaseLag => new FleetReleaseLag(
+                desired: $app->make(DesiredFleetState::class),
+                membership: $app->make(FleetRolloutMembership::class),
+                footprint: $app->make(NodeFootprint::class),
+                versions: $app->make(AgentReportedVersions::class),
+                delivery: $app->make(AgentDelivery::class),
+                enabled: Config::boolean('fleet.rollout'),
+            ),
+        );
+        $this->app->bind(
+            ShowFleetRolloutAction::class,
+            static fn (Application $app): ShowFleetRolloutAction => new ShowFleetRolloutAction(
+                membership: $app->make(FleetRolloutMembership::class),
+                desired: $app->make(DesiredFleetState::class),
+                enabled: Config::boolean('fleet.rollout'),
+            ),
+        );
+    }
+
+    public function boot(): void
+    {
+        $this->commands([
+            FleetConvergeCommand::class,
+            ResolveDesiredFleetStateCommand::class,
+        ]);
+    }
+
+    /** Test-only: a disposable topology names its CLI release in a local manifest ({@see StaticCliRelease}). */
+    private function bindStaticCliRelease(): void
+    {
+        $path = Config::get('fleet.static_cli_release');
+
+        if (! is_string($path) || $path === '') {
+            return;
+        }
+
+        $release = new StaticCliRelease($path);
+        $this->app->instance(ReleaseHistory::class, $release);
+        $this->app->instance(CliReleaseCatalog::class, $release);
+    }
+
+    /** @return list<string> */
+    private static function order(): array
+    {
+        $order = Config::get('fleet.order');
+
+        return is_array($order) ? array_values(array_filter($order, is_string(...))) : [];
     }
 }

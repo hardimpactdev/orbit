@@ -22,11 +22,16 @@ final readonly class RetireNightlyRecipePullRequestsAction
      * @param  list<GitHubListedPullRequest>  $pulls
      * @return list<GitHubListedPullRequest> PRs still eligible for further work; failed retirements wait for retry.
      */
-    public function execute(PendingRequest $http, GitHubRepository $repository, array $pulls, string $author, string $mainContent): array
+    public function execute(PendingRequest $http, GitHubRepository $repository, array $pulls, string $author, string $mainContent, int $number): array
     {
         $mainSnapshot = $this->contents->snapshot($mainContent);
         $remaining = [];
         foreach ($pulls as $pull) {
+            if ($pull->number !== $number) {
+                $remaining[] = $pull;
+
+                continue;
+            }
             $snapshot = $this->contents->nightlySnapshot($pull->headRef);
             if ($snapshot === null || $pull->authorLogin !== $author) {
                 $remaining[] = $pull;

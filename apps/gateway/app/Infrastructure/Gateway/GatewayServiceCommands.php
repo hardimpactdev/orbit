@@ -10,18 +10,11 @@ use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Models\Node;
 use Illuminate\Support\Facades\Config;
-use Illuminate\Support\Facades\Log;
-use Throwable;
 
 /** Control-plane service intent; native commands own unit files and systemd calls. */
 final readonly class GatewayServiceCommands
 {
     public function __construct(private AgentCommandRunner $agents) {}
-
-    public function fleet(): void
-    {
-        $this->converge('gateway.converge-fleet-units', 'gateway-fleet-service', 'gateway.fleet_units_install_failed');
-    }
 
     public function agentView(): void
     {
@@ -31,23 +24,6 @@ final readonly class GatewayServiceCommands
     public function hibernator(int $sweepSeconds): void
     {
         $this->converge('gateway.converge-hibernator', 'gateway-hibernator-service', 'gateway.hibernator_install_failed', ['sweep_seconds' => $sweepSeconds]);
-    }
-
-    public function startFleet(bool $deferred): bool
-    {
-        try {
-            $result = $this->run('gateway.start-fleet-run', ['deferred' => $deferred], 'gateway-fleet-start', 'gateway.fleet_start_failed');
-            if (($result['accepted'] ?? null) === true) {
-                return true;
-            }
-        } catch (Throwable $error) {
-            Log::warning($deferred ? 'A later fleet rollout run could not be scheduled.' : 'The fleet rollout unit could not be started.', ['error' => $error->getMessage()]);
-
-            return false;
-        }
-        Log::warning('The fleet rollout unit returned no accepted start.');
-
-        return false;
     }
 
     /** @param array<string, mixed> $policy */

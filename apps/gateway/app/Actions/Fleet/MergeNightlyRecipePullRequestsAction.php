@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Actions\Fleet;
 
-use App\Domain\Fleet\FleetRolloutAlerts;
 use App\Domain\Fleet\RecipeMaintenanceAlerts;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubAppStore;
@@ -37,10 +36,10 @@ final readonly class MergeNightlyRecipePullRequestsAction
         private RecipeLoader $loader,
     ) {}
 
-    public function execute(): void
+    public function execute(int $number, #[\SensitiveParameter] string $token, string $expectedHead): void
     {
         $credentials = $this->store->credentials();
-        $repository = GitHubRepository::fromOrigin('https://github.com/'.FleetRolloutAlerts::repository());
+        $repository = GitHubRepository::fromOrigin('https://github.com/hardimpactdev/orbit');
         if ($credentials === null || $repository === null) {
             return;
         }
@@ -50,7 +49,6 @@ final readonly class MergeNightlyRecipePullRequestsAction
             return;
         }
         try {
-            $token = $this->access->token($repository);
             $pulls = $this->github->openPullRequests($token, $repository);
         } catch (Throwable) {
             Cache::put($scope.':retry', true, $retrySeconds);
@@ -65,8 +63,12 @@ final readonly class MergeNightlyRecipePullRequestsAction
         if ($pulls === []) {
             return;
         }
+        if (! array_any($pulls, static fn (GitHubListedPullRequest $pull): bool => $pull->number === $number && $pull->headSha === $expectedHead)) {
+            return;
+        }
         try {
-            $pulls = $this->retire->execute($http, $repository, $pulls, $author, $this->contents->read($http, 'main'));
+            $pulls = $this->retire->execute($http, $repository, $pulls, $author, $this->contents->read($http, 'main'), $number);
+            $pulls = array_values(array_filter($pulls, static fn (GitHubListedPullRequest $pull): bool => $pull->number === $number && $pull->headSha === $expectedHead));
         } catch (Throwable) {
             Cache::put($scope.':retry', true, $retrySeconds);
             $this->alerts->haltedOnce("Nightly recipe main snapshot could not be read; retrying in {$retrySeconds} seconds.", RecipeMaintenanceAlerts::repositoryIncident('main_snapshot_failed'));

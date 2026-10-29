@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Actions\GatewayReleases\AdoptGatewayReleaseAction;
 use App\Actions\GatewayReleases\DeployGatewayReleaseAction;
-use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\GatewayReleases\DeployedGatewayRelease;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseException;
@@ -33,7 +32,6 @@ use App\Models\Node;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Schema;
 use Tests\Support\FakeAgentCommandRunner;
-use Tests\Support\Fleet\FakeFleetConvergeUnits;
 use Tests\Support\GatewayAdoptionFixture;
 use Tests\Support\GatewayReleaseFixture;
 use Tests\Support\GatewayReleasePipeline;
@@ -102,26 +100,6 @@ describe('gateway:release:adopt', function (): void {
         ]);
         expect($this->adoptionFixture->agents->calls[1]['input'])->toBe(['checkout' => $layout->applicationPath, 'sha' => $this->sha])
             ->and($this->adoptionFixture->agents->calls[4]['input'])->toBe(['checkout' => $layout->applicationPath, 'release' => $this->id, 'stamp' => '20261007T120000Z']);
-    });
-
-    it('starts the fleet rollout only after phase 2 verifies the exact commit, never after phase 1', function (): void {
-        $target = $this->fixture->commit('Ships the fleet rollout');
-        $this->fixture->releaseFile(substr($target, 0, 12), 'apps/gateway/'.GatewayReleasePromoter::FleetCommand, "<?php\n");
-        $fleet = new FakeFleetConvergeUnits;
-        $this->steps->failVerify = true;
-
-        release_failure(fn () => adoption($this->fixture, $this->steps, fleet: $fleet)->execute($target, $this->source));
-
-        // Phase 1 recorded `verified` after a serving check, and phase 2 failed: the fleet stays where it is.
-        expect(GatewayRelease::query()->orderBy('id')->pluck('outcome')->first())->toBe('verified')
-            ->and($fleet->started)->toBe(0);
-
-        $this->steps->failVerify = false;
-        $fix = $this->fixture->commit('Forward fix');
-        $this->fixture->releaseFile(substr($fix, 0, 12), 'apps/gateway/'.GatewayReleasePromoter::FleetCommand, "<?php\n");
-        adoption($this->fixture, $this->steps, fleet: $fleet)->execute($fix, $this->source);
-
-        expect($fleet->started)->toBe(1);
     });
 
     it('does nothing the second time', function (): void {
@@ -329,7 +307,6 @@ function adoption(
     AdoptionSteps $steps,
     ?GatewayReleaseWebBuild $web = null,
     ?GatewayReleaseSmoke $smoke = null,
-    ?FleetConvergeUnits $fleet = null,
     ?AgentCommandRunner $agents = null,
 ): AdoptGatewayReleaseAction {
     $web ??= new AdoptionWebBuild($steps);
@@ -345,7 +322,7 @@ function adoption(
         $lock,
         $builder,
         $database,
-        new GatewayReleasePromoter($fixture->layout, new GatewayReleaseSwitcher($fixture->layout, $fixture->releaseCommands()), $runtime, $verifier, $web, $smoke, $recorder, $builder, Config::integer('orbit.gateway_releases.keep'), fleet: $fleet),
+        new GatewayReleasePromoter($fixture->layout, new GatewayReleaseSwitcher($fixture->layout, $fixture->releaseCommands()), $runtime, $verifier, $web, $smoke, $recorder, $builder, Config::integer('orbit.gateway_releases.keep')),
         $recorder,
         $guard,
         new GatewayReleaseRetry,

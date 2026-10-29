@@ -6,7 +6,6 @@ use App\Actions\GatewayReleases\ConfigureGatewayReleaseAction;
 use App\Actions\GatewayReleases\DeployGatewayReleaseAction;
 use App\Actions\GatewayReleases\RollbackGatewayReleaseAction;
 use App\Actions\GatewayReleases\SmokeGatewayReleaseAction;
-use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseInventory;
@@ -32,7 +31,6 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Schema;
 use Tests\Support\FakeAgentCommandRunner;
-use Tests\Support\Fleet\FakeFleetConvergeUnits;
 use Tests\Support\GatewayReleaseFixture;
 use Tests\Support\GatewayReleasePipeline;
 use Tests\Support\ReleaseTestOwner;
@@ -73,42 +71,6 @@ describe('gateway:release:deploy', function (): void {
             ->and(GatewayRelease::query()->value('outcome'))->toBe('verified')
             ->and(Activity::query()->value('command'))->toBe('gateway:release:deploy')
             ->and(Activity::query()->value('status'))->toBe('succeeded');
-    });
-
-    it('starts the fleet rollout unit after a verified release, and not after a failed one', function (): void {
-        $first = adopt_release($this->fixture);
-        $fleet = new FakeFleetConvergeUnits;
-        $sha = $this->fixture->commit('Fleet follows');
-        $this->fixture->releaseFile(substr($sha, 0, 12), 'apps/gateway/'.GatewayReleasePromoter::FleetCommand, "<?php\n");
-        $order = new ReleaseSteps;
-
-        release_deployer($this->fixture, passing_verifier($order), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order), fleet: $fleet)->execute($sha);
-
-        expect($fleet->started)->toBe(1);
-
-        $broken = $this->fixture->commit('Fleet stays');
-        $verifier = passing_verifier($order);
-        $verifier->failSha = $broken;
-        release_failure(fn () => release_deployer($this->fixture, $verifier, recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order), fleet: $fleet)->execute($broken));
-
-        expect($fleet->started)->toBe(1)
-            ->and($first)->not->toBe('');
-    });
-
-    it('does not start the fleet rollout for a verified release without a desired fleet state', function (): void {
-        adopt_release($this->fixture);
-        $fleet = new FakeFleetConvergeUnits;
-        $order = new ReleaseSteps;
-        $predates = $this->fixture->commit('Predates the fleet rollout');
-
-        $deployed = release_deployer($this->fixture, passing_verifier($order), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order), fleet: $fleet)->execute($predates);
-
-        expect($deployed->outcome)->toBe('verified')
-            ->and($fleet->started)->toBe(0);
-    });
-
-    it('ships the command the fleet start looks for', function (): void {
-        expect(is_file(base_path(GatewayReleasePromoter::FleetCommand)))->toBeTrue();
     });
 
     it('switches back and repeats the runtime handoff when verification fails and no migrations ran', function (): void {
@@ -966,7 +928,6 @@ function release_deployer(
     ?GatewayReleaseSwitcher $switcher = null,
     ?GatewayReleaseLock $lock = null,
     ?int $keptReleases = null,
-    ?FleetConvergeUnits $fleet = null,
 ): DeployGatewayReleaseAction {
     $builder = $fixture->builder($web);
     $recorder = new GatewayReleaseRecorder(app(GatewayReleaseRecovery::class), app(GatewayReleaseRestore::class), $fixture->base.'/home');
@@ -985,7 +946,6 @@ function release_deployer(
             $recorder,
             $builder,
             $keptReleases ?? Config::integer('orbit.gateway_releases.keep'),
-            fleet: $fleet,
         ),
         $recorder,
         new GatewayReleaseGuard($fixture->layout, $fixture->releaseCommands()),

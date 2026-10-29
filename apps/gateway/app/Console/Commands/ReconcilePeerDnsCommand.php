@@ -4,26 +4,34 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Actions\Nodes\ReconcilePeerDnsAction;
+use App\Actions\Fleet\AdmitPeerDnsAction;
+use App\Actions\Fleet\PeerDnsTargetsAction;
+use App\Domain\Shared\ResourceOperationException;
+use App\Models\Node;
 use Illuminate\Console\Command;
 
+/** Admission only. Swamp executes each Node Operation. */
 final class ReconcilePeerDnsCommand extends Command
 {
     #[\Override]
     protected $signature = 'orbit:peer-dns-reconcile';
 
     #[\Override]
-    protected $description = 'Reconcile private DNS routing domains on managed Linux peers.';
+    protected $description = 'Record peer DNS reconciliation Operations for Swamp.';
 
-    public function handle(ReconcilePeerDnsAction $action): int
+    public function handle(PeerDnsTargetsAction $targets, AdmitPeerDnsAction $admit): int
     {
-        $failed = $action->execute();
-        if ($failed !== []) {
-            $this->error('Peer DNS reconciliation failed on: '.implode(', ', array_map(static fn (string $name, string $code): string => $name.' ['.$code.']', array_keys($failed), array_values($failed))).'.');
-
-            return self::FAILURE;
+        $operations = [];
+        foreach ($targets->execute() as $id) {
+            try {
+                $operations[] = $admit->execute(Node::query()->findOrFail($id))->id;
+            } catch (ResourceOperationException $error) {
+                if ($error->errorCode !== 'operation.target_busy') {
+                    throw $error;
+                }
+            }
         }
-        $this->info('Managed peer DNS policies are aligned.');
+        $this->line(json_encode(['operations' => $operations], JSON_THROW_ON_ERROR));
 
         return self::SUCCESS;
     }

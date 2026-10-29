@@ -3,8 +3,6 @@
 declare(strict_types=1);
 
 use App\Actions\Doctor\NodeDoctorProbe;
-use App\Actions\Nodes\ReconcilePeerDnsAction;
-use App\Actions\Nodes\RepairNodeDnsAction;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
@@ -16,7 +14,6 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\VpnSettings;
-use App\Domain\WireGuard\WireGuardPeerDnsRepairer;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\Fleet\Footprint\PeerDnsFootprintArtifact;
@@ -88,54 +85,6 @@ it('reports live and persisted resolver drift and failed private answers', funct
     'server down' => ['answer', true, false],
     'wrong private answer' => ['wrong-answer', true, false],
 ]);
-
-it('propagates new TLDs on reconciliation and skips matching peers', function (): void {
-    [$node] = peer_dns_inspection_fixture();
-    $repairer = new class implements WireGuardPeerDnsRepairer
-    {
-        /** @var list<int> */
-        public array $nodes = [];
-
-        public function repair(Node $node): void
-        {
-            $this->nodes[] = $node->id;
-        }
-    };
-    $action = new ReconcilePeerDnsAction(app(PeerDnsPolicy::class), app(PeerDnsInspector::class), new RepairNodeDnsAction($repairer));
-
-    expect($action->execute())->toBe([])->and($repairer->nodes)->toBe([]);
-    Cluster::query()->create(['name' => 'dev', 'tld' => 'test']);
-    expect($action->execute())->toBe([])->and($repairer->nodes)->toBe([$node->id]);
-});
-
-it('continues reconciliation after one peer fails and reports the failed peer', function (): void {
-    [$node, $peer] = peer_dns_inspection_fixture();
-    $second = $node->replicate();
-    $second->name = 'second';
-    $second->wireguard_ip = '10.44.0.4';
-    $second->wireguard_public_key = str_repeat('B', 43).'=';
-    $second->save();
-    $second->roles()->create(['role' => RoleName::AppProd]);
-    $peer->fault = 'saved';
-    $repairer = new class($node->id) implements WireGuardPeerDnsRepairer
-    {
-        /** @var list<int> */
-        public array $nodes = [];
-
-        public function __construct(private int $fail) {}
-
-        public function repair(Node $node): void
-        {
-            $this->nodes[] = $node->id;
-            if ($node->id === $this->fail) {
-                throw new RuntimeException('peer unavailable');
-            }
-        }
-    };
-    $action = new ReconcilePeerDnsAction(app(PeerDnsPolicy::class), app(PeerDnsInspector::class), new RepairNodeDnsAction($repairer));
-
-    expect($action->execute())->toBe([$node->name => 'vpn.peer_dns_reconcile_failed'])->and($repairer->nodes)->toBe([$node->id, $second->id]);
-});
 
 it('verifies uncached private and public lookups on separate resolver links', function (string $fault, int $exit): void {
     [$node, $peer] = peer_dns_inspection_fixture();
@@ -217,14 +166,6 @@ it('excludes the Gateway after VPN moves to another Node', function (): void {
         ->and(app(PeerDnsFootprintArtifact::class)->applies($node))->toBeFalse();
 });
 
-it('takes one locked snapshot without sending DNS queries during reconcile', function (): void {
-    [$node, $peer] = peer_dns_inspection_fixture();
-
-    expect(app(ReconcilePeerDnsAction::class)->execute())->toBe([]);
-    expect($peer->agents->commands())->toBe(['wireguard.inspect-peer-dns'])
-        ->and($peer->agents->calls[0]['input'])->toBe(['server' => '10.44.0.1']);
-});
-
 it('reports SSH inspection failure as unverifiable without attempting repair', function (): void {
     [$node, $peer] = peer_dns_inspection_fixture();
     $peer->fault = 'ssh';
@@ -234,7 +175,6 @@ it('reports SSH inspection failure as unverifiable without attempting repair', f
     expect($dnsIssues)->toHaveCount(1)
         ->and($dnsIssues[0]->code)->toBe('node.inspection_failed')
         ->and($dnsIssues[0]->kind)->toBe(DoctorIssueKind::Unverifiable);
-    expect(app(ReconcilePeerDnsAction::class)->execute())->toBe([$node->name => 'vpn.peer_dns_reconcile_failed']);
 });
 
 it('checks public resolution in Doctor including global DNS answers', function (string $fault, bool $failed): void {
@@ -322,15 +262,11 @@ it('inspects the complete maximum namespace without truncating the snapshot', fu
     expect(app(PeerDnsInspector::class)->inspect($node))->toBe(['policy' => true, 'uplink' => true]);
 });
 
-it('names missing uplink DNS in Doctor and reconcile output', function (): void {
+it('names missing uplink DNS in Doctor', function (): void {
     [$node, $peer] = peer_dns_inspection_fixture();
     $peer->fault = 'uplink-missing';
     $report = app(NodeDoctorProbe::class)->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true)));
     expect(array_map(static fn ($issue): string => $issue->code, $report->issues))->toContain('node.private_dns_uplink_missing');
-    expect(app(ReconcilePeerDnsAction::class)->execute())->toBe([$node->name => 'vpn.peer_dns_uplink_missing']);
-    $this->artisan('orbit:peer-dns-reconcile')
-        ->expectsOutput('Peer DNS reconciliation failed on: app-prod [vpn.peer_dns_uplink_missing].')
-        ->assertExitCode(1);
 });
 
 it('allows nonincreasing teardown and TLD rollback when stored namespace already exceeds the cap', function (string $kind): void {

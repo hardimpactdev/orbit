@@ -22,7 +22,6 @@ use App\Console\Commands\ShowGatewayReleaseCommand;
 use App\Console\Commands\SmokeGatewayReleaseCommand;
 use App\Console\Commands\StageGatewayReleaseCommand;
 use App\Domain\AgentView\AgentViewConverger;
-use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\GatewayReleases\GatewayReleaseAgent;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
@@ -159,7 +158,6 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 cleanup: $app->make(GatewayCleanupHandoff::class),
                 applicationPath: GatewayApplicationPath::resolve(),
                 orbitHome: rtrim(Config::string('orbit.home'), '/'),
-                fleet: $app->make(FleetConvergeUnits::class),
                 agent: $app->make(GatewayNodeAgentUpdate::class),
                 horizon: $app->make(GatewayHorizon::class),
                 recipeImages: static function () use ($app): void {
@@ -269,7 +267,6 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 builder: $app->make(GatewayReleaseBuilder::class),
                 keptReleases: Config::integer('orbit.gateway_releases.keep'),
                 retry: $app->make(GatewayReleaseRetry::class),
-                fleet: $app->make(FleetConvergeUnits::class),
             ),
         );
         $this->app->bind(
