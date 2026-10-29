@@ -66,7 +66,7 @@ final readonly class InstanceDeploymentIntent
 
         return [
             'runtime_synchronous' => app(ProcessSwampSafety::class)->requiresSynchronous($instance->node),
-            'php_profile' => is_string($instance->selected_php_version) ? app(RemotePhpPackageManager::class)->runtimeInputForAppProd($instance->node, $instance->selected_php_version) : null,
+            'php_profile' => is_string($instance->selected_php_version) ? app(RemotePhpPackageManager::class)->runtimeInput($instance->node, $instance->selected_php_version) : null,
             'variant' => $rollback ? 'rollback' : 'production', 'projection_route_id' => null,
             'needs_vp' => ! $rollback && array_any($config->steps, static fn (DeploymentStep $step): bool => InstanceVpEnvironmentMaterial::required($step->name, $step->command)),
             'php' => is_string($instance->selected_php_version), 'php_version' => $instance->selected_php_version,

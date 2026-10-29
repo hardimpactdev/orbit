@@ -39,7 +39,7 @@ final readonly class InstancePhpRuntimeExecution implements OperationCompletion,
         [$runtime] = $this->intents->runtimeIntent($instance, $activating);
 
         return ['runtime' => $runtime, 'profile' => $runtime === null ? null
-            : app(RemotePhpPackageManager::class)->runtimeInputForAppProd($instance->node, $instance->selected_php_version ?? throw $this->unproven())];
+            : app(RemotePhpPackageManager::class)->runtimeInput($instance->node, $instance->selected_php_version ?? throw $this->unproven())];
     }
 
     public function context(Operation $operation): array
