@@ -9,6 +9,7 @@ use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
+use App\Models\Operation;
 use Illuminate\Container\Attributes\Tag;
 
 final readonly class DestroyDatabaseConnectionAction
@@ -20,7 +21,7 @@ final readonly class DestroyDatabaseConnectionAction
         private RecordEventBroadcaster $broadcaster,
     ) {}
 
-    public function execute(DatabaseConnection $connection): void
+    public function execute(DatabaseConnection $connection): ?Operation
     {
         if ($connection->targets()->exists()) {
             throw new ResourceOperationException(
@@ -34,14 +35,13 @@ final readonly class DestroyDatabaseConnectionAction
             $guard->assertRemovable($connection);
         }
 
-        $this->drops->execute($connection, static function () use ($connection): void {
+        if ($connection->database_server_id === null) {
             $connection->delete();
-        });
+            $this->broadcaster->broadcast(RecordEventType::DatabaseDeleted, $connection->id, ['id' => $connection->id, 'slug' => $connection->slug]);
 
-        $this->broadcaster->broadcast(
-            RecordEventType::DatabaseDeleted,
-            $connection->id,
-            ['id' => $connection->id, 'slug' => $connection->slug],
-        );
+            return null;
+        }
+
+        return $this->drops->execute($connection);
     }
 }

@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Actions\DatabaseConnections;
 
+use App\Actions\DatabaseServers\RecordDatabaseOperationAction;
+use App\Domain\DatabaseServers\DatabaseCommands;
 use App\Domain\DatabaseServers\DatabaseRemovalLock;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\PostgresStatements;
 use App\Domain\DatabaseServers\PostgresTestDatabases;
+use App\Domain\DatabaseServers\PreparedDatabaseOperation;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
@@ -20,11 +23,12 @@ final readonly class RepairPostgresTestDatabasesAction
         private PostgresStatements $statements,
         private PostgresTestDatabases $tests,
         private DatabaseRemovalLock $lock,
+        private RecordDatabaseOperationAction $operations,
     ) {}
 
-    public function execute(DatabaseServer $server, DatabaseConnection $connection): DatabaseConnection
+    public function prepare(DatabaseServer $server, DatabaseConnection $connection): PreparedDatabaseOperation
     {
-        return $this->lock->run([$server->id], function () use ($server, $connection): DatabaseConnection {
+        return $this->lock->run([$server->id], function () use ($server, $connection): PreparedDatabaseOperation {
             $connection->refresh();
             $names = $this->tests->recordedNames($connection);
             $username = $connection->username;
@@ -38,16 +42,14 @@ final readonly class RepairPostgresTestDatabasesAction
                 );
             }
 
-            $present = $this->admin->execute($server, $this->statements->databasesIn($names));
-            foreach ($names as $name) {
-                $create = in_array($name, $present, true)
-                    ? ''
-                    : $this->statements->createDatabase($name, $connection->locale, $username);
-                $this->admin->execute($server,
-                    $create.$this->statements->grantAll($name, $username));
+            $commands = [];
+            foreach ($names as $index => $name) {
+                $sql = DatabaseCommands::createSqlDatabase($server, $name, $username, $connection->locale).$this->statements->grantAll($name, $username);
+                $commands[$index === array_key_last($names) ? 'database-apply' : 'test-pool-'.$index] = DatabaseCommands::sql($server, $sql);
             }
 
-            return $connection;
+            return $this->operations->prepare('database.create', 'database_server', $server->id, $server->node_id,
+                ['connection_id' => $connection->id, 'driver' => 'pgsql'], $commands);
         });
     }
 }
