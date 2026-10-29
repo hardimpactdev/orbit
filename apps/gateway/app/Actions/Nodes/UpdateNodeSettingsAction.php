@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Nodes;
 
+use App\Actions\Operations\StartOperationAction;
 use App\Data\Nodes\NodeData;
 use App\Data\Nodes\NodeSettingsData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
@@ -20,6 +21,8 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Models\Node;
+use App\Models\Operation;
+use Illuminate\Support\Facades\DB;
 
 final readonly class UpdateNodeSettingsAction
 {
@@ -28,29 +31,37 @@ final readonly class UpdateNodeSettingsAction
         private ConfiguredStoragePathValidator $validator,
         private ManagedUserAccountResolver $accounts,
         private NodeStorageRootPreparer $preparer,
+        private StartOperationAction $operations,
         private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
-    public function execute(Node $node, NodeSettingsPatch $patch): Node
+    public function start(Node $node, NodeSettingsPatch $patch, ?Node $caller = null, ?string $requestId = null): Node|Operation
     {
-        $merged = $patch->merge($this->normalizer->fromStored($node->settings));
-        $normalized = $this->normalizer->normalize($merged);
-        $this->validateHostBridge($node, $normalized);
-        if ($patch->hasApps) {
-            $this->apply($node, $normalized);
-        } else {
-            $this->persist($node, $normalized);
-        }
+        return DB::transaction(function () use ($node, $patch, $caller, $requestId): Node|Operation {
+            $node->refresh();
+            $merged = $patch->merge($this->normalizer->fromStored($node->settings));
+            $normalized = $this->normalizer->normalize($merged);
+            $this->validateHostBridge($node, $normalized);
+            $create = $this->hasActiveAppDevRole($node);
+            if (! $patch->hasApps || (! $create && $normalized?->appsPath() === null)) {
+                $this->persist($node, $normalized);
+                ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+                    RecordEventType::NodeUpdated, $node->id, NodeData::fromModel($node)->toArray(),
+                );
 
-        $result = $node->refresh();
+                return $node;
+            }
 
-        ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
-            RecordEventType::NodeUpdated,
-            $result->id,
-            NodeData::fromModel($result)->toArray(),
-        );
+            $account = $this->accounts->resolve($node);
+            $root = $this->validator->validateEffective($normalized, $node, $account);
 
-        return $result;
+            return $this->operations->execute('node.settings', 'node', $node->id, $node->id, [
+                'node_id' => $node->id, 'caller_node_id' => $caller?->id,
+                'root' => $root->value, 'user' => $account->user, 'group' => $account->group,
+                'create_missing' => $create, 'settings' => $this->normalizer->stored($normalized),
+                'settings_patch' => ['apps' => $patch->hasApps, 'task_vms' => $patch->hasTaskVms],
+            ], 'operator', $requestId);
+        });
     }
 
     public function persistDuringProvisioning(Node $node, ?NodeSettingsData $settings): void
