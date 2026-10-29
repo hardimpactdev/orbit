@@ -93,8 +93,8 @@ final readonly class CommandActivityInputSanitizer
 
     private function sanitizeAt(mixed $value, ?string $key, string $path): mixed
     {
-        $publicChildKey = in_array($path, ['child_phases.*.key', 'skipped.*.key'], true)
-            && is_string($value) && preg_match('/\A[a-z][a-z0-9_.:-]*\z/D', $value) === 1;
+        $publicChildKey = $path === 'child_phases.*.key'
+            && is_string($value) && preg_match('/\A[a-zA-Z0-9][a-zA-Z0-9_.:-]*\z/D', $value) === 1;
         if (! $publicChildKey && is_string($key) && $this->isSensitiveKey($key) && ! $this->isNumericMetric($key, $value)) {
             return self::REDACTED;
         }

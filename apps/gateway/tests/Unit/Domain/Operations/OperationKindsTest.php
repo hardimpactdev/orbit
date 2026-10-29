@@ -64,7 +64,6 @@ it('rejects a child-only completion contract that proves no child', function ():
         ->toThrow(LogicException::class, 'complete enforced completion proof');
 });
 
-
 it('refuses child Node relations from Swamp-written state', function (string $path): void {
     $definition = OperationKinds::definitions()['firewall.allow'];
     $definition['children'] = [['kind' => 'test.child', 'node_from' => $path]];
@@ -112,3 +111,24 @@ it('rejects malformed completion variants at kind load', function (string $case)
     $definition['completion_contract'] = ['completion' => $variant];
     expect(fn () => new OperationKinds(new Container, ['test.invalid' => $definition]))->toThrow(LogicException::class);
 })->with(['missing selector', 'empty map', 'incomplete proof', 'unknown guarantee']);
+
+it('rejects excessive expanded nested list capacity', function (): void {
+    $definition = OperationKinds::definitions()['firewall.allow'];
+    $definition['result_fields'] = [['name' => 'large', 'max' => 4096, 'list_of' => ['steps' => ['type' => 'list', 'items' => 'string', 'max' => 4096]]]];
+    expect(fn () => new OperationKinds(new Container, ['test.large' => $definition]))->toThrow(LogicException::class);
+});
+
+it('requires a usable skipped schema for settled child contracts at kind load', function (string $case): void {
+    $definition = OperationKinds::definitions()['firewall.allow'];
+    $definition['children'] = [['kind' => 'test.first', 'node_from' => 'operation.node_id'], ['kind' => 'test.second', 'node_from' => 'operation.node_id']];
+    $definition['completion_contract'] = ['children_settled' => ['test.first', 'test.second']];
+    $definition['result_fields'] = [['name' => 'skipped', 'max' => 2, 'list_of' => ['child_id' => 'int', 'reason' => 'string']]];
+    match ($case) {
+        'missing' => $definition['result_fields'] = [],
+        'id' => $definition['result_fields'][0]['list_of']['child_id'] = 'string',
+        'reason' => $definition['result_fields'][0]['list_of']['reason'] = 'string|null',
+        'max' => $definition['result_fields'][0]['max'] = 1,
+        'unknown' => $definition['result_fields'][0]['list_of']['unimplemented'] = 'string',
+    };
+    expect(fn () => new OperationKinds(new Container, ['test.settled' => $definition]))->toThrow(LogicException::class);
+})->with(['missing', 'id', 'reason', 'max', 'unknown']);

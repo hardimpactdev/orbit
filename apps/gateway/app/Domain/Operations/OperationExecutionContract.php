@@ -158,6 +158,40 @@ final readonly class OperationExecutionContract
         OperationResultFields::assertWireContainers($this->definition($operation)['result_fields'], $result, $wire);
     }
 
+    /** @param array<string,mixed> $result
+     * @return array<string,mixed>
+     */
+    public function completionResult(Operation $operation, #[\SensitiveParameter] array $result, bool $successful): array
+    {
+        $definition = $this->definition($operation);
+        $contract = OperationCompletionContracts::select($operation, $definition['completion_contract']);
+        if (($contract['children_settled'] ?? []) === []) {
+            return $this->result($operation, $result);
+        }
+        $schema = ValidatedData::object(OperationResultFields::skippedField($definition['result_fields'])['list_of']);
+        $canonical = app(OperationChildren::class)->assertSettled($operation, $contract['children_settled'], $result, $successful);
+        $result['skipped'] = array_map(static fn (array $skip): array => array_intersect_key($skip, $schema), $canonical);
+        $safe = $this->result($operation, $result);
+        $filtered = $safe['skipped'];
+        if (! is_array($filtered)) {
+            throw new LogicException('A validated skipped result must remain a list.');
+        }
+        $stamped = [];
+        // These public identifiers come only from verified child rows, never a run or step payload.
+        foreach ($canonical as $index => $skip) {
+            $entry = ValidatedData::object($filtered[$index]);
+            foreach (['key', 'kind'] as $field) {
+                if (array_key_exists($field, $schema)) {
+                    $entry[$field] = $skip[$field];
+                }
+            }
+            $stamped[] = $entry;
+        }
+        $safe['skipped'] = $stamped;
+
+        return OperationResultFields::filter($definition['result_fields'], $safe);
+    }
+
     public function text(string $text): string
     {
         return $this->redactor->redactText($text);

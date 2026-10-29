@@ -15,10 +15,17 @@ final class OperationResultFields
 {
     public const int MaximumItems = 4096;
 
+    public const int MaximumTotalItems = 65536;
+
+    public const int MaximumStringBytes = 1024;
+
+    public const int MaximumResultBytes = 262144;
+
     /** @param list<mixed> $fields */
     public static function validate(array $fields): void
     {
         $names = [];
+        $totalItems = 0;
         foreach ($fields as $field) {
             $name = is_string($field) ? $field : (is_array($field) ? ($field['name'] ?? null) : null);
             if (! is_string($name) || preg_match('/\A[a-zA-Z_][a-zA-Z0-9_.-]*\z/D', $name) !== 1 || in_array($name, $names, true)) {
@@ -37,18 +44,25 @@ final class OperationResultFields
                     self::invalidDeclaration();
                 }
                 self::bound($field['max'] ?? self::MaximumItems);
+                $entryItems = 1;
                 foreach ($field['list_of'] as $key => $rule) {
                     if (! is_string($key) || preg_match('/\A[a-zA-Z_][a-zA-Z0-9_-]*\z/D', $key) !== 1) {
                         self::invalidDeclaration();
                     }
                     if (is_array($rule)) {
                         self::validateScalarList($rule);
+                        $entryItems += ValidatedData::integer($rule['max']);
                     } elseif (! is_string($rule) || ! self::scalarRule($rule)) {
                         self::invalidDeclaration();
                     }
                 }
+                $totalItems += ValidatedData::integer($field['max'] ?? self::MaximumItems) * $entryItems;
             } else {
                 self::validateScalarList(array_diff_key($field, ['name' => true]));
+                $totalItems += ValidatedData::integer($field['max']);
+            }
+            if ($totalItems > self::MaximumTotalItems) {
+                self::invalidDeclaration();
             }
         }
     }
@@ -120,6 +134,15 @@ final class OperationResultFields
                 self::listValue($value, $field);
                 Arr::set($safe, $path, $value);
             }
+        }
+
+        try {
+            $bytes = strlen(json_encode($safe, JSON_THROW_ON_ERROR));
+        } catch (\JsonException) {
+            self::invalidResult();
+        }
+        if ($bytes > self::MaximumResultBytes) {
+            self::invalidResult();
         }
 
         return $safe;
@@ -203,8 +226,35 @@ final class OperationResultFields
             'string' => is_string($value), 'int' => is_int($value), 'bool' => is_bool($value),
             default => is_string($value) && in_array($value, array_map(trim(...), explode(',', substr($rule, 5, -1))), true),
         };
-        if (! $valid) {
+        if (! $valid || (is_string($value) && strlen($value) > self::MaximumStringBytes)) {
             self::invalidResult();
+        }
+    }
+
+    /** @param list<string|array<string,mixed>> $fields
+     * @return array<string,mixed>
+     */
+    public static function skippedField(array $fields): array
+    {
+        foreach ($fields as $field) {
+            if (is_array($field) && ($field['name'] ?? null) === 'skipped') {
+                return $field;
+            }
+        }
+
+        self::invalidDeclaration();
+    }
+
+    /** @param list<string|array<string,mixed>> $fields */
+    public static function validateSkipped(array $fields, int $requiredKinds): void
+    {
+        $field = self::skippedField($fields);
+        $schema = $field['list_of'] ?? null;
+        if (! is_array($schema) || ($schema['child_id'] ?? null) !== 'int' || ($schema['reason'] ?? null) !== 'string'
+            || array_diff(array_keys($schema), ['child_id', 'reason', 'key', 'kind']) !== []
+            || (isset($schema['key']) && $schema['key'] !== 'string') || (isset($schema['kind']) && $schema['kind'] !== 'string')
+            || ($field['max'] ?? self::MaximumItems) < $requiredKinds) {
+            self::invalidDeclaration();
         }
     }
 

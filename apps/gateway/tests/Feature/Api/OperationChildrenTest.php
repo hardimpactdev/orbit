@@ -9,6 +9,7 @@ use App\Domain\Operations\OperationAttemptLease;
 use App\Domain\Operations\OperationChildAdmission;
 use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationCompletion;
+use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Operations\OperationFamilyChildren;
 use App\Domain\Operations\OperationFamilyExecution;
 use App\Domain\Operations\OperationGatewayCommand;
@@ -716,7 +717,7 @@ it('completes a settled parent using exact scoped child failure acknowledgements
     childKitSettled($this);
     $child = childKitAdmit($this);
     childKitFinish($this, $child, $status);
-    $result = ['skipped' => $status === 'succeeded' ? [] : [['child_id' => $child->id, 'key' => 'apply', 'kind' => 'test.effect', 'reason' => 'Node unavailable']]];
+    $result = ['skipped' => $status === 'succeeded' ? [] : [['child_id' => $child->id, 'reason' => 'Node unavailable', 'key' => 'apply', 'kind' => 'test.effect']]];
     $this->postJson($this->path.'/complete', ['worker' => 'parent', 'status' => 'succeeded', 'result' => $result])->assertOk()->assertJsonPath('data.result', $result);
 })->with(['succeeded', 'failed', 'cancelled']);
 
@@ -724,7 +725,7 @@ it('refuses manufactured or incomplete skipped child evidence', function (string
     childKitSettled($this);
     $child = childKitAdmit($this);
     childKitFinish($this, $child, $case === 'successful' ? 'succeeded' : 'failed');
-    $skip = ['child_id' => $child->id, 'key' => 'apply', 'kind' => 'test.effect', 'reason' => 'Node unavailable'];
+    $skip = ['child_id' => $child->id, 'reason' => 'Node unavailable', 'key' => 'apply', 'kind' => 'test.effect'];
     $skips = [$skip];
     if ($case === 'omitted') {
         $skips = [];
@@ -734,10 +735,7 @@ it('refuses manufactured or incomplete skipped child evidence', function (string
         $foreign = app(StartOperationAction::class)->execute('test.effect', 'node', $this->peer->id, $this->peer->id, [], 'foreign', null);
         $foreign->update(['status' => OperationStatus::Failed]);
         $skips[0]['child_id'] = $foreign->id;
-    } elseif ($case === 'key') {
-        $skips[0]['key'] = 'unrelated';
-    } elseif ($case === 'kind') {
-        $skips[0]['kind'] = 'test.middle';
+
     } elseif ($case === 'empty reason') {
         $skips[0]['reason'] = ' ';
     } elseif ($case === 'long reason') {
@@ -746,13 +744,48 @@ it('refuses manufactured or incomplete skipped child evidence', function (string
     $this->postJson($this->path.'/complete', ['worker' => 'parent', 'status' => 'succeeded', 'result' => ['skipped' => $skips]])
         ->assertConflict()->assertJsonPath('error.code', 'operation.child_unproven');
     expect($this->parent->refresh()->status)->toBe(OperationStatus::Running)->and($this->parent->lock_key)->not->toBeNull();
-})->with(['omitted', 'duplicate', 'foreign', 'key', 'kind', 'successful', 'empty reason', 'long reason']);
+})->with(['omitted', 'duplicate', 'foreign', 'successful', 'empty reason', 'long reason']);
 
-it('requires failed child acknowledgements even when the parent fails', function (): void {
+it('derives failed and cancelled parent skips without an echo and replays the completion', function (string $status): void {
     childKitSettled($this);
     $child = childKitAdmit($this);
+    if ($status === 'cancelled') {
+        app(CancelOperationAction::class)->execute($this->parent->refresh());
+        expect($child->refresh()->status)->toBe(OperationStatus::Cancelled);
+    } else {
+        childKitFinish($this, $child, 'failed');
+    }
+    $body = ['worker' => 'parent', 'status' => $status, 'result' => ['skipped' => []]];
+    if ($status === 'failed') {
+        $body['error_code'] = 'test.failed';
+    }
+    $expected = [['child_id' => $child->id, 'reason' => $status, 'key' => 'apply', 'kind' => 'test.effect']];
+    $this->postJson($this->path.'/complete', $body)->assertOk()->assertJsonPath('data.status', $status)->assertJsonPath('data.result.skipped', $expected);
+    $this->postJson($this->path.'/complete', $body)->assertOk()->assertJsonPath('data.result.skipped', $expected);
+    expect($this->parent->refresh()->lock_key)->toBeNull();
+})->with(['failed', 'cancelled']);
+
+it('stamps mixed-case child metadata only on completion and ignores caller key and kind', function (): void {
+    childKitSettled($this);
+    $this->parent->update(['state' => [...$this->parent->refresh()->state, 'child_intents' => [[...$this->intent, 'key' => 'Caddy-7']]]]);
+    $id = $this->postJson($this->path.'/children', ['worker' => 'parent', 'key' => 'Caddy-7'])->assertAccepted()->json('data.id');
+    $child = Operation::findOrFail($id);
     childKitFinish($this, $child, 'failed');
-    $this->postJson($this->path.'/complete', ['worker' => 'parent', 'status' => 'failed', 'error_code' => 'test.failed', 'result' => ['skipped' => []]])
-        ->assertConflict()->assertJsonPath('error.code', 'operation.child_unproven');
-    $this->postJson($this->path.'/complete', ['worker' => 'parent', 'status' => 'failed', 'error_code' => 'test.failed', 'result' => ['skipped' => [['child_id' => $child->id, 'key' => 'apply', 'kind' => 'test.effect', 'reason' => 'Node unavailable']]]])->assertOk();
+    $result = ['skipped' => [['child_id' => $id, 'reason' => 'Node unavailable', 'key' => 'invented', 'kind' => 'invented.kind']]];
+    expect(app(OperationExecutionContract::class)->result($this->parent, $result)['skipped'][0]['key'])->toBe('[REDACTED]');
+
+    $this->postJson($this->path.'/complete', ['worker' => 'parent', 'status' => 'succeeded', 'result' => $result])->assertOk()
+        ->assertJsonPath('data.result.skipped.0.key', 'Caddy-7')->assertJsonPath('data.result.skipped.0.kind', 'test.effect');
+});
+
+it('refuses child admission beyond its declared skipped receipt capacity', function (): void {
+    childKitSettled($this);
+    $this->parentSpec['result_fields'][0]['max'] = 1;
+    ($this->register)();
+    $child = childKitAdmit($this);
+    $this->parent->update(['state' => [...$this->parent->refresh()->state, 'child_intents' => [$this->intent, [...$this->intent, 'key' => 'second']]]]);
+    $this->postJson($this->path.'/children', ['worker' => 'parent', 'key' => 'second'])->assertUnprocessable()->assertJsonPath('error.code', 'operation.result_invalid');
+    expect($this->parent->children()->count())->toBe(1);
+    app(CancelOperationAction::class)->execute($this->parent->refresh());
+    $this->postJson($this->path.'/complete', ['worker' => 'parent', 'status' => 'cancelled', 'result' => ['skipped' => []]])->assertOk()->assertJsonPath('data.result.skipped.0.child_id', $child->id);
 });

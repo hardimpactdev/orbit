@@ -112,6 +112,10 @@ final readonly class OperationKinds
             throw new LogicException("Operation kind [{$kind}] needs declared result fields.");
         }
         OperationResultFields::validate($definition['result_fields']);
+        $settledKinds = OperationCompletionContracts::settledKinds(ValidatedData::object($definition['completion_contract']));
+        if ($settledKinds !== []) {
+            OperationResultFields::validateSkipped($definition['result_fields'], count($settledKinds));
+        }
         foreach ($definition['runs'] as $run) {
             if (! is_array($run)) {
                 throw new LogicException("Operation kind [{$kind}] requires named run contracts.");

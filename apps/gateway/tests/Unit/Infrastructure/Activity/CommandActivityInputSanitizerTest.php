@@ -309,7 +309,7 @@ it('preserves only audited public child key paths while redacting their text', f
         'key' => 'private-value',
     ]))->toBe([
         'child_phases' => [['stage' => 'routes', 'key' => 'route-7']],
-        'skipped' => [['key' => 'node-7', 'reason' => 'API_TOKEN=[REDACTED]']],
+        'skipped' => [['key' => '[REDACTED]', 'reason' => 'API_TOKEN=[REDACTED]']],
         'artifacts' => [['key' => '[REDACTED]']],
         'key' => '[REDACTED]',
     ]);

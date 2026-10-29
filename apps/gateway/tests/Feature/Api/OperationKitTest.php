@@ -731,6 +731,9 @@ it('rejects invalid list results without a partial receipt or projection', funct
     ($this->register)();
     $result = richKitResult();
     match ($case) {
+        'long string' => $result['warnings'] = [str_repeat('x', 1025)],
+        'long object string' => $result['artifacts'][0]['name'] = str_repeat('x', 1025),
+        'long nested string' => $result['retained_on_nodes'][0]['steps'] = [str_repeat('x', 1025)],
         'numeric string' => $result['process_ids'] = ['7'],
         'list map' => $result['process_ids'] = ['node' => 7],
         'outer bound' => $result['process_ids'] = [1, 2, 3, 4],
@@ -748,7 +751,7 @@ it('rejects invalid list results without a partial receipt or projection', funct
     expect($state['executor_runs']['effect']['result'])->toBeNull()->and($state)->not->toHaveKey('projection_count');
     $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath('data.error_code', 'operation.execution_uncertain');
     expect($this->command->runs)->toBe(1);
-})->with(['numeric string', 'list map', 'outer bound', 'unknown field', 'missing field', 'nested type', 'nested bound', 'enum', 'bool']);
+})->with(['long string', 'long object string', 'long nested string', 'numeric string', 'list map', 'outer bound', 'unknown field', 'missing field', 'nested type', 'nested bound', 'enum', 'bool']);
 
 it('selects completion command proof only from the admitted variant', function (string $variant): void {
     $name = $variant === 'primary' ? 'test.command' : 'test.alternative';
@@ -795,7 +798,6 @@ it('refuses completion when the admitted variant is missing or unavailable', fun
         ->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
 })->with(['missing', 'unlisted']);
 
-
 it('refuses JSON objects disguised as result lists before storing a step or completion', function (string $container, string $endpoint): void {
     $this->spec['result_fields'] = richKitFields();
     ($this->register)();
@@ -832,3 +834,33 @@ it('preserves actual empty JSON lists in rich step and completion receipts', fun
     $this->postJson($this->path.'/step', ['worker' => 'worker', 'key' => 'rich.empty', 'name' => 'effect', 'status' => 'succeeded', 'result' => $safe])->assertOk();
     $this->postJson($this->path.'/complete', ['worker' => 'worker', 'status' => 'succeeded', 'result' => $safe])->assertOk()->assertJsonPath('data.result', $safe);
 });
+
+it('refuses an oversized encoded result before saving a receipt or projection', function (bool $list): void {
+    $this->spec['result_fields'] = $list ? ['backend', ['name' => 'notes', 'type' => 'list', 'items' => 'string', 'max' => 4096]] : ['backend', 'notes'];
+    ($this->register)();
+    $this->command->result = ['backend' => 'active', 'notes' => $list ? array_fill(0, 200, str_repeat('\\', 1024)) : str_repeat('x', 262144)];
+    $this->postJson($this->path.'/run', $this->run)->assertUnprocessable()->assertJsonPath('error.code', 'operation.result_invalid');
+    $state = $this->operation->refresh()->state;
+    expect($state['executor_runs']['effect']['result'])->toBeNull();
+    expect($state)->not->toHaveKey('projection_count');
+})->with([false, true]);
+
+it('accepts a list string exactly at its byte bound', function (): void {
+    $this->spec['result_fields'] = ['backend', ['name' => 'notes', 'type' => 'list', 'items' => 'string', 'max' => 1]];
+    ($this->register)();
+    $this->command->result = ['backend' => 'active', 'notes' => [str_repeat('x', 1024)]];
+    $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath('data.notes.0', str_repeat('x', 1024));
+});
+
+it('refuses an oversized completion or step result without changing Operation records', function (string $endpoint): void {
+    $this->spec['result_fields'] = ['backend', ['name' => 'notes', 'type' => 'list', 'items' => 'string', 'max' => 4096]];
+    ($this->register)();
+    $body = ['worker' => 'worker', 'status' => 'failed', 'error_code' => 'test.failed', 'result' => ['notes' => array_fill(0, 200, str_repeat('\\', 1024))]];
+    if ($endpoint === 'step') {
+        $body += ['key' => 'oversized', 'name' => 'effect'];
+    }
+    $before = $this->operation->refresh()->getAttributes();
+    $this->postJson($this->path.'/'.$endpoint, $body)->assertUnprocessable()->assertJsonPath('error.code', 'operation.result_invalid');
+    expect($this->operation->refresh()->getAttributes())->toBe($before);
+    expect($this->operation->steps()->count())->toBe(0);
+})->with(['step', 'complete']);

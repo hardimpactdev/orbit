@@ -14,6 +14,21 @@ use LogicException;
 final class OperationCompletionContracts
 {
     /** @param array<string,mixed> $contract
+     * @return list<string>
+     */
+    public static function settledKinds(array $contract): array
+    {
+        $variants = isset($contract['completion']) ? ValidatedData::object(ValidatedData::object($contract['completion'])['map']) : [$contract];
+        $kinds = [];
+        foreach ($variants as $proof) {
+            $proof = ValidatedData::object($proof);
+            $kinds = [...$kinds, ...ValidatedData::stringList($proof['children_settled'] ?? [])];
+        }
+
+        return array_values(array_unique($kinds));
+    }
+
+    /** @param array<string,mixed> $contract
      * @param  list<string>  $childKinds
      */
     public static function validate(array $contract, array $childKinds): void
