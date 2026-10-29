@@ -29,7 +29,7 @@ abstract readonly class RoutePhaseExecution implements OperationFamilyChildren, 
             if ($this instanceof RouteParentExecution && ! isset($operation->state['route_branch'])) {
                 $sequence = array_values(array_unique([...$sequence, 'rollback-preparations-caddy', 'rollback-preparations-certificates', 'rollback-preparations-record', 'rollback-public-edge', 'rollback-public-firewall', 'rollback-environment', 'rollback-dns',
                     'rollback-caddy', 'rollback-certificates', 'rollback-record', 'rollback-web-root-stored', 'rollback-workload-certificate',
-                    'rollback-prepare-web-root', 'synchronize-web-root-urls.rollback', 'rollback-production-runtime', 'rollback-workload-prepared', 'rollback-workload-caddy']));
+                    'rollback-prepare-web-root', 'synchronize-web-root-urls.rollback', 'rollback-production-runtime', 'rollback-workload-prepared', 'rollback-workload-caddy', 'rollback-initial-dns', 'rollback-initial-caddy', 'rollback-initial-php', 'rollback-initial-certificates', 'rollback-initial-firewall']));
             }
             if ($this instanceof ClusterRouterParentExecution && ! isset($operation->state['route_branch'])) {
                 $sequence = array_values(array_unique([...$sequence, 'restore-dns', 'await-restored-dns-expiry', 'withdraw-candidate-sites', 'remove-candidate-certificates', 'remove-candidate-firewall']));

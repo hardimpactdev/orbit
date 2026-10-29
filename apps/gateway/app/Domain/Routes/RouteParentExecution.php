@@ -23,8 +23,11 @@ final readonly class RouteParentExecution extends RoutePhaseExecution
     public function sequence(Operation $operation): array
     {
         $plan = ValidatedData::object($operation->state['route_plan'] ?? []);
-        $public = ($plan['publication'] ?? null) === 'public';
+        $public = ($plan['publication'] ?? null) === 'public' && ($plan['public_edge'] ?? true);
         $production = ($plan['production'] ?? false) === true;
+        if (($operation->state['route_branch'] ?? null) === 'rollback_initial') {
+            return ['rollback-initial-dns', 'rollback-initial-caddy', 'rollback-initial-php', 'synchronize-web-root-urls.rollback', 'rollback-initial-certificates', 'rollback-initial-firewall'];
+        }
         if (($operation->state['route_branch'] ?? null) === 'rollback_targets') {
             return ['rollback-preparations-caddy', 'rollback-preparations-certificates', 'rollback-preparations-record'];
         }
@@ -38,10 +41,12 @@ final readonly class RouteParentExecution extends RoutePhaseExecution
             return ['rollback-public-edge'];
         }
         if (($operation->state['route_branch'] ?? null) === 'rollback' || ($plan['mode'] ?? null) === 'withdraw_replacement') {
-            return [...($public ? ['rollback-public-edge'] : []), 'rollback-environment', 'rollback-dns', 'rollback-caddy', 'rollback-certificates', 'rollback-record'];
+            return [...($public ? ['rollback-public-edge'] : []), 'rollback-environment', 'rollback-dns', 'rollback-caddy', 'rollback-certificates', 'rollback-record',
+                ...(($plan['mode'] ?? null) === 'withdraw_replacement' && ($plan['metrics'] ?? false) ? ['metrics-reconciled'] : [])];
         }
 
         $sequence = match ($plan['mode'] ?? null) {
+            'target_binding' => ['target-source-access', 'state-recorded'],
             'targets_recover' => ['database-committed', 'environment-synchronized', 'target-live-certificates', 'target-live-caddy',
                 'router-published', 'vacated-published', 'target-staging-cleanup', 'removal', 'completed'],
             'targets' => ['target-workload-certificates', 'target-runtime-prepared', 'target-workload-caddy', 'target-router-certificates',
@@ -87,9 +92,16 @@ final readonly class RouteParentExecution extends RoutePhaseExecution
         if ($route === null) {
             return;
         }
-        $attributes = ['failed_step' => $operation->state['route_active_stage'] ?? 'preparation',
+        if (($operation->state['route_active_stage'] ?? null) === 'metrics-reconciled' || ($plan['mode'] ?? null) === 'target_binding') {
+            return;
+        }
+        $stage = ValidatedData::string($operation->state['route_active_stage'] ?? 'preparation');
+        $attributes = ['failed_step' => ($plan['mode'] ?? null) === 'withdraw' && ($plan['targeted'] ?? false) ? 'targeted:'.$stage : $stage,
             'error_code' => $outcome->errorCode ?? 'route.child_failed'];
         if (($plan['mode'] ?? null) === 'converge' && in_array($route->status, [RouteStatus::Pending, RouteStatus::Activating], true)) {
+            $attributes['status'] = ($route->isApp() && ! $route->hasWebRoot()) || in_array($stage, ['public-edge-verified', 'public-activated', 'ingress-firewall'], true) ? RouteStatus::Activating : RouteStatus::Failed;
+        }
+        if (($plan['mode'] ?? null) === 'withdraw') {
             $attributes['status'] = RouteStatus::Failed;
         }
         $route->update($attributes);

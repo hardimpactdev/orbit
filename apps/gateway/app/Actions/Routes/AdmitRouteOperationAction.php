@@ -8,12 +8,14 @@ use App\Actions\Operations\StartOperationAction;
 use App\Data\Routes\CreateRouteData;
 use App\Data\Routes\SetRouteTargetsData;
 use App\Data\Routes\UpdateRouteData;
+use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ReservedPrivateHostname;
 use App\Domain\Routes\RouteAssociationGuard;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Routes\RouteKitAvailability;
+use App\Domain\Routes\RouteParentCommand;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RouteReconciliationGuard;
 use App\Domain\Routes\RouteStatus;
@@ -27,6 +29,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Route;
 use App\Support\ValidatedData;
+use Closure;
 use Illuminate\Support\Facades\DB;
 
 /** Normal API admission. Route intent and its Operation commit together. */
@@ -41,11 +44,11 @@ final readonly class AdmitRouteOperationAction
     {
         RouteKitAvailability::kind('route.create');
 
-        return DB::transaction(function () use ($data, $caller, $requestId): Operation {
-            $result = $this->create->executeForRouteCreate($data);
+        return $this->owned($data->instanceId === null ? [] : [$data->instanceId], function () use ($data, $caller, $requestId): Operation {
+            $result = $this->create->reserveForRouteCreate($data);
             $route = $result['route'];
 
-            return $this->start('route.create', $route, ['mode' => 'converge', 'created' => $result['created'],
+            return $this->start('route.create', $route, ['mode' => ! $result['created'] && $route->status === RouteStatus::Active ? 'state_only' : 'converge', 'created' => $result['created'],
                 'instance_id' => $data->instanceId], $caller, $requestId);
         });
     }
@@ -54,7 +57,7 @@ final readonly class AdmitRouteOperationAction
     {
         RouteKitAvailability::kind('route.update');
 
-        return DB::transaction(function () use ($route, $data, $caller, $requestId, $allowGenerated): Operation {
+        return $this->owned(array_values($route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->all()), function () use ($route, $data, $caller, $requestId, $allowGenerated): Operation {
             $route = Route::query()->with('targets.instance.node')->lockForUpdate()->findOrFail($route->id);
             if (! $route->isApp()) {
                 throw new ResourceOperationException('route.kind_unsupported', 'Only a Project Route can change domain or publication.', 409);
@@ -68,7 +71,7 @@ final readonly class AdmitRouteOperationAction
             if ($changed) {
                 WebSocketRouteSelection::assertMutable($route);
             }
-            $input = ['mode' => $data->webRootProvided ? 'web_root' : 'publication',
+            $input = ['mode' => $data->webRootProvided ? ($changed ? 'web_root' : 'state_only') : 'publication',
                 'domain' => $domain, 'publication' => ($data->publication ?? $route->publication)->value,
                 'web_root' => $data->webRootProvided ? RouteWebRoot::normalize($data->webRoot) : $route->web_root,
                 'previous_web_root' => $route->web_root, 'previous_publication' => $route->publication->value,
@@ -106,8 +109,9 @@ final readonly class AdmitRouteOperationAction
     {
         RouteKitAvailability::kind('route.target_set');
 
-        return DB::transaction(function () use ($route, $proposal, $caller, $requestId): Operation {
+        return $this->owned(array_values(array_unique([...$route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->values()->all(), ...$proposal->targetIds, ...array_map(static fn ($d): int => $d->instanceId, $proposal->dispositions)])), function () use ($route, $proposal, $caller, $requestId): Operation {
             $route = Route::query()->with('targets')->lockForUpdate()->findOrFail($route->id);
+            WebSocketRouteSelection::assertMutable($route);
             $this->targetGuard->assertCompatibleIntent($route, $proposal);
             $this->targetGuard->assertMutable($route);
             $input = ['targets' => $proposal->targetIds, 'dispositions' => $proposal->toIntent()['dispositions']];
@@ -136,9 +140,9 @@ final readonly class AdmitRouteOperationAction
     {
         RouteKitAvailability::kind('route.target_set');
 
-        return DB::transaction(function () use ($route, $instanceId, $caller, $requestId): Operation {
+        return $this->owned([...$route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->values()->all(), $instanceId], function () use ($route, $instanceId, $caller, $requestId): Operation {
             $previous = $route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->values()->all();
-            $updated = app(SetRouteTargetAction::class)->execute($route, $instanceId);
+            $updated = app(SetRouteTargetAction::class)->execute($route, $instanceId, grantSourceAccess: false);
 
             return $this->start('route.target_set', $updated, ['mode' => 'target', 'instance_id' => $instanceId, 'previous_target_instance_ids' => $previous], $caller, $requestId);
         });
@@ -148,7 +152,7 @@ final readonly class AdmitRouteOperationAction
     {
         RouteKitAvailability::kind('route.target_unset');
 
-        return DB::transaction(function () use ($route, $caller, $requestId): Operation {
+        return $this->owned(array_values($route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->all()), function () use ($route, $caller, $requestId): Operation {
             $previous = $route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->values()->all();
             $updated = app(ClearRouteTargetAction::class)->execute($route);
 
@@ -160,15 +164,15 @@ final readonly class AdmitRouteOperationAction
     {
         RouteKitAvailability::kind('route.destroy');
 
-        return DB::transaction(function () use ($route, $offline, $caller, $requestId): Operation {
+        return $this->owned(array_values($route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->all()), function () use ($route, $offline, $caller, $requestId): Operation {
             $ids = array_values($route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->all());
             $route = $this->removal->lockAndGuard($route, $ids);
             if (! $route->isUnactivatedReplacement()) {
-                $this->removal->assertStandaloneRemovalAllowed($route, false);
-                if (! $route->hasWebRoot()) {
+                if (! $route->hasWebRoot() && $route->targets->isNotEmpty()) {
                     $this->associations->assertTargetsDetachable($route);
                     $this->reconciliation->assertRouteMutable($route);
                 }
+                $this->removal->assertStandaloneRemovalAllowed($route, false);
             }
 
             return $this->start('route.destroy', $route, ['mode' => 'destroy', 'offline' => $offline], $caller, $requestId);
@@ -208,13 +212,16 @@ final readonly class AdmitRouteOperationAction
             $accessNodes = [$proxy->node_id, $ingress->node_id];
         }
 
-        return $this->operations->execute($kind, 'route', $route->id, $nodeId,
+        $operation = $this->operations->execute($kind, 'route', $route->id, $nodeId,
             ['route_id' => $route->id, 'node_ids' => $nodes,
                 'public_process' => $route->isCustomProxy() && $route->cluster_id !== null,
                 'access_node_ids' => $accessNodes,
                 'caller_node_id' => $caller?->id, ...$input, 'target_instance_ids' => $proposedIds,
                 'previous_target_instance_ids' => $previousIds, 'removed_instance_ids' => $removedIds, 'instance_placements' => $placements,
                 'detached_instances' => $input['detached_instances'] ?? $this->targets->detachedInstances($removedIds)], 'operator', $requestId);
+        app(RouteParentCommand::class)->run($operation, ['action' => 'prepare']);
+
+        return $operation->refresh();
     }
 
     /** @return list<int> */
@@ -225,5 +232,13 @@ final readonly class AdmitRouteOperationAction
         }
 
         return array_map(ValidatedData::integer(...), $value);
+    }
+
+    /** @param list<int> $ids
+     * @param  Closure(): Operation  $action
+     */
+    private function owned(array $ids, Closure $action): Operation
+    {
+        return app(InstanceEnvironmentOperationLock::class)->run($ids, fn (): Operation => DB::transaction($action));
     }
 }

@@ -46,7 +46,16 @@ final readonly class RouteNodeEffectCommand implements OperationGatewayCommand
             return ['ready' => true];
         }
         if (! is_array($operation->state['route_effect_plan'] ?? null)) {
-            $operation->update(['state' => [...($operation->state ?? []), 'route_effect_plan' => $this->prepare($operation)]]);
+            try {
+                $plan = $this->prepare($operation);
+            } catch (ResourceOperationException $exception) {
+                if ($exception->errorCode !== 'route.upstream_firewall_mismatch') {
+                    throw $exception;
+                }
+
+                return ['error_code' => $exception->errorCode];
+            }
+            $operation->update(['state' => [...($operation->state ?? []), 'route_effect_plan' => $plan]]);
         }
 
         return ['prepared' => true];

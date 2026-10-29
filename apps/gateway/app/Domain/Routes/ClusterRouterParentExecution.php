@@ -44,7 +44,11 @@ final readonly class ClusterRouterParentExecution extends RoutePhaseExecution
         $id = $operation->input['candidate_role_id'] ?? null;
         $candidate = is_int($id) ? NodeRole::query()->find($id) : null;
         if ($candidate !== null) {
-            $candidate->update(['status' => $candidate->status === LifecycleStatus::Active ? LifecycleStatus::Active : LifecycleStatus::Failed,
+            $completed = ValidatedData::object($operation->state['route_completed_stages'] ?? []);
+            $restoring = ($operation->state['route_branch'] ?? null) === 'rollback_router'
+                && ($completed['workload-verify'] ?? false) === true
+                && ($completed['await-restored-dns-expiry'] ?? false) !== true;
+            $candidate->update(['status' => $candidate->status === LifecycleStatus::Active ? LifecycleStatus::Active : ($restoring ? LifecycleStatus::Provisioning : LifecycleStatus::Failed),
                 'error_code' => $outcome->errorCode ?? 'cluster.router_failed']);
         }
     }

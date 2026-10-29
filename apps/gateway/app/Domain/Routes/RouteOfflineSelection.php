@@ -7,6 +7,7 @@ namespace App\Domain\Routes;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Support\ValidatedData;
 
@@ -18,7 +19,7 @@ final readonly class RouteOfflineSelection
     /** @param array<string, mixed> $plan
      * @return array<string, mixed>
      */
-    public function apply(array $plan): array
+    public function apply(array $plan, bool $offline = true): array
     {
         $stages = ValidatedData::object($plan['stages']);
         $steps = [];
@@ -39,6 +40,9 @@ final readonly class RouteOfflineSelection
         foreach ($steps as $nodeId => $nodeSteps) {
             $node = Node::query()->findOrFail($nodeId);
             if ($node->status !== LifecycleStatus::Active || $this->reachability->degradation($node) === ExporterDegradationReason::Unreachable) {
+                if (! $offline) {
+                    throw new ResourceOperationException('route.node_unreachable', "Route removal could not change node [{$node->name}], which is unreachable or not active. Retry with --offline to remove the Route and leave that Node unchanged until its next converge.", 502);
+                }
                 $retained[$nodeId] = ['node_id' => $nodeId, 'node' => $node->name, 'steps' => array_values(array_unique($nodeSteps))];
             }
         }

@@ -140,16 +140,19 @@ final readonly class RouteParentCommand implements OperationGatewayCommand
                 app(RouteWebRootState::class)->assertChange($route, ValidatedData::nullableString($operation->input['web_root']));
                 $plan = $this->plans->webRoot($operation, $route);
             } elseif ($mode === 'state_only') {
-                $plan = ['route_id' => $route->id, 'publication' => $route->publication->value, 'placements' => [], 'stages' => []];
-            } elseif (in_array($operation->kind, ['route.create', 'route.converge'], true) || $mode === 'target') {
+                $plan = ['route_id' => $route->id, 'publication' => $route->publication->value, 'placements' => [], 'stages' => [], 'changed' => false];
+            } elseif ($mode === 'target') {
+                $plan = $this->plans->targetBinding($route, Instance::query()->findOrFail(ValidatedData::integer($operation->input['instance_id'])));
+                $mode = 'target_binding';
+            } elseif (in_array($operation->kind, ['route.create', 'route.converge'], true)) {
                 $instanceId = $operation->input['instance_id'] ?? null;
                 $plan = $this->plans->converge($operation, $route, is_int($instanceId) ? Instance::query()->findOrFail($instanceId) : null);
                 $mode = 'converge';
             } else {
                 throw new ResourceOperationException('operation.kind_unavailable', 'This Route mutation plan needs its remaining family contract.', 409);
             }
-            if (($operation->input['offline'] ?? false) === true && in_array($mode, ['withdraw', 'withdraw_replacement'], true)) {
-                $plan = $this->offline->apply($plan);
+            if (in_array($mode, ['withdraw', 'withdraw_replacement'], true)) {
+                $plan = $this->offline->apply($plan, ($operation->input['offline'] ?? false) === true);
             }
             $plan['metrics'] = in_array($operation->kind, ['route.update', 'route.destroy', 'route.target_unset'], true)
                 || ($operation->kind === 'route.target_set' && ($operation->input['mode'] ?? null) === 'target');
@@ -172,6 +175,7 @@ final readonly class RouteParentCommand implements OperationGatewayCommand
             $operation->update(['state' => [...($operation->state ?? []), 'route_plan' => $plan]]);
         }
         $plan = ValidatedData::object($operation->state['route_plan'] ?? []);
+        RouteKitAvailability::plan($operation, $plan);
         $phases = [];
         foreach (ValidatedData::object($plan['stages']) as $phase => $children) {
             foreach (RouteExecutionProof::objects($children) as $child) {
@@ -179,7 +183,7 @@ final readonly class RouteParentCommand implements OperationGatewayCommand
             }
         }
 
-        return ['prepared' => true, 'mode' => $plan['mode'], 'production' => $plan['production'], 'public' => $plan['publication'] === 'public',
+        return ['prepared' => true, 'mode' => $plan['mode'], 'production' => $plan['production'], 'public' => $plan['publication'] === 'public' && ($plan['public_edge'] ?? true),
             'remote_router' => $plan['remote_router'], 'web_root' => $plan['web_root'], 'targeted' => $plan['targeted'], 'child_phases' => $phases, 'activate_public' => $plan['activate_public'] ?? false, 'withdraw_public' => $plan['withdraw_public'] ?? false,
             'changed' => $plan['changed'] ?? true, 'metrics' => $plan['metrics'] ?? false];
     }
@@ -216,6 +220,8 @@ final readonly class RouteParentCommand implements OperationGatewayCommand
         $current = $candidate ?? $route;
         if ($stage === 'publish-sites') {
             $current?->publishSites();
+        } elseif ($stage === 'ingress-firewall') {
+            $current?->update(['replacement_step' => RouteReplacementStep::IngressFirewall]);
         } elseif ($stage === 'activate-route') {
             $current?->update(['status' => RouteStatus::Active, 'failed_step' => null, 'error_code' => null]);
         } elseif ($stage === 'publication-completed' && $route !== null && ($plan['activate_public'] ?? false)) {
@@ -294,11 +300,21 @@ final readonly class RouteParentCommand implements OperationGatewayCommand
         $failed = false;
         $failureCode = 'route.child_failed';
         foreach ($this->execution->childContext($operation)['children'] as $intent) {
+            if (! $operation->children()->where('child_key', $intent['key'])->exists()) {
+                continue;
+            }
             $child = app(OperationChildren::class)->child($operation, $intent['key']);
             if (in_array($child->status->value, ['failed', 'cancelled'], true)) {
                 $failed = true;
                 $failureCode = $child->error_code ?? 'route.child_failed';
             }
+        }
+        if ($plan['mode'] === 'converge' && ($plan['production'] ?? false) && ($plan['web_root'] ?? false) && $failed) {
+            Route::query()->whereKey($plan['route_id'])->update(['status' => RouteStatus::Failed, 'sites_published' => false,
+                'failed_step' => $active, 'error_code' => $failureCode]);
+            $operation->update(['state' => [...($operation->state ?? []), 'route_branch' => 'rollback_initial', 'route_failure_code' => $failureCode]]);
+
+            return;
         }
         $cutover = ($completed['database-cutover'] ?? false) === true || in_array($plan['mode'], ['replacement_after_cutover', 'replacement_cleanup'], true);
         if (! in_array($plan['mode'], ['replacement', 'replacement_after_cutover', 'replacement_cleanup', 'web_root', 'publication', 'targets'], true) || ! $failed || ($cutover && $stage !== 'rollback-public-edge')) {

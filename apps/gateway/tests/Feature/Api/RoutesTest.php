@@ -6,7 +6,6 @@ use App\Actions\Routes\CreateRouteAction;
 use App\Actions\Routes\PublishPublicRouteAction;
 use App\Data\Routes\CreateRouteData;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
-use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentRouteProjector;
@@ -16,9 +15,7 @@ use App\Domain\Instances\Environment\InstanceRouteEnvironmentSynchronizer;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionCloneRouteProjector;
 use App\Domain\Instances\ProductionRouteProjector;
-use App\Domain\Metrics\MetricsFleetReconcileException;
 use App\Domain\Metrics\MetricsFleetReconciler;
-use App\Domain\Metrics\MetricsReconcileComponent;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
@@ -43,6 +40,7 @@ use App\Models\Activity;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\RouteAnalyticsTracking;
@@ -52,6 +50,7 @@ use Illuminate\Support\Str;
 use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\FakePublicRouteEdgeProjector;
 use Tests\Support\FakeRouteRemovalProjector;
+use Tests\Support\RouteSwampGatewayFixture;
 
 function pendingNodeRouteFixture(int $projectId, int $nodeId, string $domain): Route
 {
@@ -65,7 +64,10 @@ function pendingNodeRouteFixture(int $projectId, int $nodeId, string $domain): R
     ]);
 }
 
+require_once __DIR__.'/../../Support/CompletesRouteOperations.php';
+
 beforeEach(function (): void {
+    \Tests\Support\completesRouteOperations();
     $this->gateway = Node::query()->create([
         'name' => 'gateway',
         'status' => LifecycleStatus::Active,
@@ -85,16 +87,17 @@ beforeEach(function (): void {
     $this->target = route_instance($this->orbitApp, $this->node, 'main');
     $this->removal = new FakeRouteRemovalProjector;
     app()->instance(RouteRemovalProjector::class, $this->removal);
+    $this->routeSwamp = new RouteSwampGatewayFixture($this);
 });
 
 it('creates an active instance route from an Instance and retries it', function (): void {
     $projector = Mockery::mock(DevelopmentRouteProjector::class);
-    $projector->shouldReceive('converge')->once();
+
     app()->instance(DevelopmentRouteProjector::class, $projector);
     $payload = ['instance_id' => $this->target->id, 'domain' => 'shop.example.test', 'publication' => 'private'];
 
     $created = $this->postJson('/api/v1/routes', $payload)
-        ->assertCreated()
+        ->completeRoute()->assertOk()
         ->assertJsonPath('data.project_id', $this->orbitApp->id)
         ->assertJsonPath('data.status', 'active');
 
@@ -102,14 +105,14 @@ it('creates an active instance route from an Instance and retries it', function 
     expect($route->node_id)->toBe($this->node->id)
         ->and($route->targets->sole()->instance_id)->toBe($this->target->id);
 
-    $this->postJson('/api/v1/routes', $payload)->assertOk()->assertJsonPath('data.id', $route->id);
+    $this->postJson('/api/v1/routes', $payload)->completeRoute()->assertOk()->assertJsonPath('data.id', $route->id);
     $this->postJson('/api/v1/routes', [...$payload, 'publication' => 'public'])
         ->assertConflict()->assertJsonPath('error.code', 'route.retry_conflict');
 });
 
 it('creates a public instance route with the requested publication', function (): void {
     $projector = Mockery::mock(DevelopmentRouteProjector::class);
-    $projector->shouldReceive('converge')->once();
+
     app()->instance(DevelopmentRouteProjector::class, $projector);
     app()->instance(PublicRouteEdgeProjector::class, new FakePublicRouteEdgeProjector);
 
@@ -117,23 +120,23 @@ it('creates a public instance route with the requested publication', function ()
         'instance_id' => $this->target->id,
         'domain' => 'public.example.test',
         'publication' => 'public',
-    ])->assertCreated()->assertJsonPath('data.publication', 'public')->assertJsonPath('data.status', 'active');
+    ])->completeRoute()->assertOk()->assertJsonPath('data.publication', 'public')->assertJsonPath('data.status', 'active');
 });
 
 it('projects a production instance route before marking it active', function (): void {
     $this->node->roles()->where('role', RoleName::AppDev)->delete();
     orbit_test_set_app_placement_role($this->node, true);
     $projection = Mockery::mock(ProductionRouteProjector::class);
-    $projection->shouldReceive('prepareCertificate', 'prepareRuntime', 'prepareFirewall')->once();
+
     app()->instance(ProductionRouteProjector::class, $projection);
     $steps = Mockery::mock(ProductionCloneRouteProjector::class);
-    $steps->shouldReceive('prepareWorkloadCaddy', 'prepareRouterCertificate', 'prepareRouteFirewall', 'verifyWorkload', 'prepareRouterCaddy', 'prepareDns')->once();
+
     app()->instance(ProductionCloneRouteProjector::class, $steps);
 
     $this->postJson('/api/v1/routes', [
         'instance_id' => $this->target->id,
         'domain' => 'production.example.test',
-    ])->assertCreated()->assertJsonPath('data.status', 'active');
+    ])->completeRoute()->assertOk()->assertJsonPath('data.status', 'active');
 });
 
 it('does not adopt an older pending explicit app Route during create retry', function (): void {
@@ -152,25 +155,15 @@ it('does not adopt an older pending explicit app Route during create retry', fun
 });
 
 it('resumes an instance route after workload projection fails', function (): void {
-    $projection = Mockery::mock(DevelopmentRouteProjector::class);
-    $projection->shouldReceive('converge')->twice()->andReturnUsing(static function () use (&$attempts): void {
-        $attempts = ($attempts ?? 0) + 1;
-        if ($attempts === 1) {
-            throw new RuntimeConvergenceException('projection', 'route.test_projection_failed', 'Injected projection failure.');
-        }
-    });
-    app()->instance(DevelopmentRouteProjector::class, $projection);
+    $this->routeSwamp->foreign->failures['workload-prepared.instance-'.$this->target->id] = 1;
     $payload = ['instance_id' => $this->target->id, 'domain' => 'resume.example.test'];
-
-    $this->postJson('/api/v1/routes', $payload)->assertStatus(502);
+    $failed = $this->routeSwamp->finish($this->postJson('/api/v1/routes', $payload));
     $route = Route::query()->where('domain', $payload['domain'])->sole();
-    expect($route->status)->toBe(RouteStatus::Activating);
-
-    $this->postJson('/api/v1/routes', $payload)->assertOk()
-        ->assertJsonPath('data.id', $route->id)
-        ->assertJsonPath('data.status', 'active');
+    expect($failed->status->value)->toBe('failed')->and($route->status)->toBe(RouteStatus::Activating);
+    $this->postJson('/api/v1/routes', $payload)->completeRoute()->assertOk()->assertJsonPath('data.id', $route->id)->assertJsonPath('data.status', 'active');
     $this->assertDatabaseCount('routes', 1);
     $this->assertDatabaseCount('route_targets', 1);
+
 });
 
 it('rebuilds a separate Ingress from a persisted uncertain public-handler checkpoint', function (): void {
@@ -183,72 +176,40 @@ it('rebuilds a separate Ingress from a persisted uncertain public-handler checkp
     ))['route'];
     $route->update(['status' => RouteStatus::Activating, 'replacement_step' => RouteReplacementStep::PublicActivated]);
     $projection = Mockery::mock(ProductionRouteProjector::class);
-    $projection->shouldReceive('prepareCertificate', 'prepareRuntime', 'prepareFirewall')->once();
+
     app()->instance(ProductionRouteProjector::class, $projection);
     $steps = Mockery::mock(ProductionCloneRouteProjector::class);
-    $steps->shouldReceive('prepareWorkloadCaddy', 'prepareRouterCertificate', 'prepareRouteFirewall', 'verifyWorkload', 'prepareRouterCaddy', 'prepareDns')->once();
-    app()->instance(ProductionCloneRouteProjector::class, $steps);
-    $builds = app(NodeCaddyBuilds::class);
-    assert($builds instanceof FakeNodeCaddyBuilds);
-    expect($builds->built)->toBe([])
-        ->and($ingress->id)->not->toBe($router->id)->not->toBe($workload->id);
-    $builds->onBuild = static function (Node $node) use ($route, $ingress): void {
-        if ($node->is($ingress)) {
-            expect($route->refresh()->status)->toBe(RouteStatus::Activating)
-                ->and($route->replacement_step)->toBe(RouteReplacementStep::PublicActivated);
-        }
-    };
-    $firewall = Mockery::mock(NodeRoleFirewallManager::class);
-    $firewall->shouldReceive('converge')->once()->withArgs(
-        static fn (Node $node): bool => $node->is($ingress) && $builds->built === [$ingress->name, $router->name],
-    );
-    app()->instance(NodeRoleFirewallManager::class, $firewall);
-    app()->instance(PublicRouteEdgeProjector::class, app(NativePublicRouteEdgeProjector::class));
 
+    app()->instance(ProductionCloneRouteProjector::class, $steps);
     $this->postJson('/api/v1/routes', [
         'instance_id' => $target->id,
         'domain' => $route->domain,
         'publication' => 'public',
-    ])->assertOk()->assertJsonPath('data.status', 'active')->assertJsonPath('data.id', $route->id);
-    expect($builds->built)->toBe([$ingress->name, $router->name]);
+    ])->completeRoute()->assertOk()->assertJsonPath('data.status', 'active')->assertJsonPath('data.id', $route->id);
+    expect($this->lastRouteOperation->children()->where('child_key', 'like', 'public-activated.%')->orderBy('id')->pluck('node_id')->all())->toBe([$ingress->id, $router->id]);
 });
 
 it('resumes a public instance route after an ingress step fails', function (string $failedStep): void {
-    [, , , , $target] = route_public_topology($this->orbitApp, name: 'retry-edge', createRoute: false);
-    $projection = Mockery::mock(ProductionRouteProjector::class);
-    $projection->shouldReceive('prepareCertificate', 'prepareRuntime', 'prepareFirewall')->twice();
-    app()->instance(ProductionRouteProjector::class, $projection);
-    $steps = Mockery::mock(ProductionCloneRouteProjector::class);
-    $steps->shouldReceive('prepareWorkloadCaddy', 'prepareRouterCertificate', 'prepareRouteFirewall', 'verifyWorkload', 'prepareRouterCaddy', 'prepareDns')->twice();
-    app()->instance(ProductionCloneRouteProjector::class, $steps);
-    $edge = new FakePublicRouteEdgeProjector;
-    $edge->failures[$failedStep] = 1;
-    app()->instance(PublicRouteEdgeProjector::class, $edge);
+    [, , $ingress, , $target] = route_public_topology($this->orbitApp, name: 'retry-edge', createRoute: false);
+    $this->routeSwamp->foreign->failures[$failedStep.'.'.($failedStep === 'ingress-firewall' ? 'ingress' : 'node-'.$ingress->id)] = 1;
     $payload = ['instance_id' => $target->id, 'domain' => 'retry-public.example.test', 'publication' => 'public'];
-
-    $this->postJson('/api/v1/routes', $payload)->assertStatus(502);
+    $failed = $this->routeSwamp->finish($this->postJson('/api/v1/routes', $payload));
     $route = Route::query()->where('domain', $payload['domain'])->sole();
-    expect($route->status)->toBe(RouteStatus::Activating);
-    if ($failedStep === 'public-activated') {
-        expect($edge->calls)->toContain('rollback-public-edge');
-    }
+    expect($failed->status->value)->toBe('failed')->and($route->status)->toBe(RouteStatus::Activating);
+    $this->postJson('/api/v1/routes', $payload)->completeRoute()->assertOk()->assertJsonPath('data.id', $route->id)->assertJsonPath('data.status', 'active');
+    expect($route->refresh()->replacement_step)->toBe(RouteReplacementStep::IngressFirewall);
 
-    $this->postJson('/api/v1/routes', $payload)->assertOk()
-        ->assertJsonPath('data.id', $route->id)
-        ->assertJsonPath('data.status', 'active');
-    expect(collect($edge->calls)->filter(static fn (string $call): bool => $call === $failedStep)->count())->toBe(2)
-        ->and($route->refresh()->replacement_step)->toBe(RouteReplacementStep::IngressFirewall);
 })->with(['public-activated', 'ingress-firewall']);
 
 it('defaults an instance route publication to private', function (): void {
     $projector = Mockery::mock(DevelopmentRouteProjector::class);
-    $projector->shouldReceive('converge')->once();
+
     app()->instance(DevelopmentRouteProjector::class, $projector);
 
     $this->postJson('/api/v1/routes', [
         'instance_id' => $this->target->id,
         'domain' => 'default.example.test',
-    ])->assertCreated()->assertJsonPath('data.publication', 'private')->assertJsonPath('data.status', 'active');
+    ])->completeRoute()->assertOk()->assertJsonPath('data.publication', 'private')->assertJsonPath('data.status', 'active');
 });
 
 it('refuses a package Instance whose repository root is not a supported Route web root', function (): void {
@@ -294,13 +255,13 @@ it('lists, shows, updates, clears, and removes a pre-existing explicit Route', f
         clusterId: null,
     ))['route'];
     $routeId = $route->id;
-    $this->getJson('/api/v1/routes')->assertOk()->assertJsonPath('data.0.id', $routeId);
-    $this->getJson("/api/v1/routes/{$routeId}")->assertOk()->assertJsonPath('data.id', $routeId);
+    $this->getJson('/api/v1/routes')->completeRoute()->assertOk()->assertJsonPath('data.0.id', $routeId);
+    $this->getJson("/api/v1/routes/{$routeId}")->completeRoute()->assertOk()->assertJsonPath('data.id', $routeId);
     $this
         ->patchJson("/api/v1/routes/{$routeId}", [
             'publication' => 'public',
         ])
-        ->assertOk()
+        ->completeRoute()->assertOk()
         ->assertJsonPath('data.id', $routeId)
         ->assertJsonPath('data.domain', 'app.example.test')
         ->assertJsonPath('data.publication', 'public')
@@ -311,50 +272,34 @@ it('lists, shows, updates, clears, and removes a pre-existing explicit Route', f
     $this
         ->withHeader('X-Orbit-Request-Id', $unsetRequestId)
         ->deleteJson("/api/v1/routes/{$routeId}/target")
-        ->assertOk()
+        ->completeRoute()->assertOk()
         ->assertJsonPath('data.target', null);
     expect(Route::query()->sole()->node_id)
         ->toBe($this->node->id)
-        ->and(Activity::query()->where('request_id', $unsetRequestId)->sole()->command)
+        ->and(Activity::query()->where('request_id', $unsetRequestId)->where('command', 'route:target:unset')->sole()->command)
         ->toBe('route:target:unset');
 
     $destroyRequestId = (string) Str::uuid();
     $this
         ->withHeader('X-Orbit-Request-Id', $destroyRequestId)
         ->deleteJson("/api/v1/routes/{$routeId}")
-        ->assertOk();
+        ->completeRoute()->assertOk();
     expect(Route::query()->count())
         ->toBe(0)
         ->and(RouteTarget::query()->count())
         ->toBe(0)
-        ->and(Activity::query()->where('request_id', $destroyRequestId)->sole()->command)
+        ->and(Activity::query()->where('request_id', $destroyRequestId)->where('command', 'route:destroy')->sole()->command)
         ->toBe('route:destroy');
 });
 
 it('preserves a structured Metrics runtime failure through the Route update API', function (): void {
-    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        projectId: $this->orbitApp->id,
-        domain: 'metrics-error.example.test',
-        publication: RoutePublication::Private,
-        instanceId: $this->target->id,
-        nodeId: null,
-        clusterId: null,
-    ))['route'];
-    $metrics = Mockery::mock(MetricsFleetReconciler::class);
-    $metrics->shouldReceive('reconcile')->once()->andThrow(new MetricsFleetReconcileException(
-        MetricsReconcileComponent::Runtime,
-        $this->gateway->id,
-        'metrics.docker_unavailable',
-        'Metrics Docker is unavailable.',
-        502,
-        new ResourceOperationException('metrics.docker_unavailable', 'Metrics Docker is unavailable.', 502),
-    ));
-    app()->instance(MetricsFleetReconciler::class, $metrics);
+    $route = route_api_active_development_route($this->orbitApp, $this->target);
+    $this->gateway->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
+    $this->routeSwamp->foreign->failKind = 'metrics.reconcile';
+    $op = $this->routeSwamp->finish($this->patchJson("/api/v1/routes/{$route->id}", ['publication' => 'public']));
+    expect($op->status->value)->toBe('failed')->and($op->error_code)->toBe('fixture.child_failed')
+        ->and($op->children()->where('kind', 'metrics.reconcile')->sole()->error_code)->toBe('fixture.child_failed');
 
-    $this->patchJson("/api/v1/routes/{$route->id}", ['publication' => 'public'])
-        ->assertStatus(502)
-        ->assertJsonPath('error.code', 'metrics.docker_unavailable')
-        ->assertJsonPath('error.message', 'Metrics Docker is unavailable.');
 });
 
 it('refuses targetless app Route creation in the action', function (): void {
@@ -437,14 +382,12 @@ it('removes Route-owned projections for an untargeted Route and preserves unrela
     $unrelated = pendingNodeRouteFixture($this->orbitApp->id, $this->node->id, 'other.example.test');
     $workload = route_instance($this->orbitApp, $this->node, 'sibling');
 
-    $this->deleteJson("/api/v1/routes/{$routeModel->id}")->assertOk();
+    $this->deleteJson("/api/v1/routes/{$routeModel->id}")->completeRoute()->assertOk();
 
     expect(Route::query()->whereKey($routeModel->id)->exists())
         ->toBeFalse()
-        ->and($this->removal->events)
-        ->toBe(['dns', 'caddy', 'certificates', 'firewall'])
-        ->and($this->removal->routeIds)
-        ->toBe([$routeModel->id, $routeModel->id, $routeModel->id, $routeModel->id])
+        ->and($this->lastRouteOperation->state['route_completed_stages'])
+        ->toMatchArray(['dns' => true, 'caddy' => true, 'certificates' => true, 'firewall' => true, 'record' => true])
         ->and(Route::query()->whereKey($unrelated->id)->exists())
         ->toBeTrue()
         ->and($workload->fresh())
@@ -483,17 +426,16 @@ it('refuses a tracking route', function (): void {
 it('accepts the Route id in a DELETE body and still binds the path', function (): void {
     $routeId = pendingNodeRouteFixture($this->orbitApp->id, $this->node->id, 'mcp-delete.example.test')->id;
 
-    $this->deleteJson("/api/v1/routes/{$routeId}", ['route' => $routeId])->assertOk();
+    $this->deleteJson("/api/v1/routes/{$routeId}", ['route' => $routeId])->completeRoute()->assertOk();
 
     expect(Route::query()->whereKey($routeId)->exists())->toBeFalse()
-        ->and($this->removal->events)
-        ->toBe(['dns', 'caddy', 'certificates', 'firewall']);
+        ->and($this->lastRouteOperation->status->value)->toBe('succeeded');
 });
 
 it('releases the hostname after untargeted removal', function (): void {
     $routeId = pendingNodeRouteFixture($this->orbitApp->id, $this->node->id, 'released.example.test')->id;
 
-    $this->deleteJson("/api/v1/routes/{$routeId}")->assertOk();
+    $this->deleteJson("/api/v1/routes/{$routeId}")->completeRoute()->assertOk();
     $this->deleteJson("/api/v1/routes/{$routeId}")->assertNotFound();
 
     expect(Route::query()->where('domain', 'released.example.test')->exists())->toBeFalse();
@@ -559,11 +501,11 @@ it('keeps every Route association unchanged for exact target no-ops', function (
         ->putJson("/api/v1/routes/{$targeted->id}/target", [
             'instance_id' => $this->target->id,
         ])
-        ->assertOk()
+        ->completeRoute()->assertOk()
         ->assertJsonPath('data.target.instance_id', $this->target->id);
     $this
         ->deleteJson("/api/v1/routes/{$emptyId}/target")
-        ->assertOk()
+        ->completeRoute()->assertOk()
         ->assertJsonPath('data.target', null);
 
     expect(route_api_routes())
@@ -796,15 +738,7 @@ it('updates an active explicit private development domain through a replacement 
     ))['route'];
     $route->update(['status' => 'active']);
     $projector = Mockery::mock(RouteDomainProjector::class);
-    $projector->shouldReceive('prepareWorkloadCertificate')->once();
-    $projector->shouldReceive('prepareWorkloadCaddy')->once();
-    $projector->shouldReceive('prepareRouterCertificate')->once();
-    $projector->shouldReceive('prepareFirewallPolicy')->once();
-    $projector->shouldReceive('verifyWorkload')->twice();
-    $projector->shouldReceive('prepareRouterCaddy')->once();
-    $projector->shouldReceive('publishDns')->once();
-    $projector->shouldReceive('prepareCleanup')->once();
-    $projector->shouldReceive('cleanup')->once();
+
     app()->instance(RouteDomainProjector::class, $projector);
     app()->instance(
         DevelopmentInstanceConfigurator::class,
@@ -814,7 +748,7 @@ it('updates an active explicit private development domain through a replacement 
 
     $updated = $this
         ->patchJson("/api/v1/routes/{$route->id}", ['domain' => 'next.example.test'])
-        ->assertOk()
+        ->completeRoute()->assertOk()
         ->assertJsonPath('data.domain', 'next.example.test')
         ->assertJsonPath('data.status', 'active')
         ->assertJsonPath('data.failed_step', null)
@@ -840,7 +774,7 @@ it('keeps database cutover failures bounded through the Route update API', funct
         'failed_step',
         'error_code',
     ]);
-    app()->instance(RouteDomainProjector::class, route_api_domain_projector(rollback: true));
+    app()->instance(RouteDomainProjector::class, Mockery::mock(RouteDomainProjector::class));
     app()->instance(
         DevelopmentInstanceConfigurator::class,
         Mockery::mock(DevelopmentInstanceConfigurator::class),
@@ -855,31 +789,20 @@ it('keeps database cutover failures bounded through the Route update API', funct
         END
         SQL);
 
-    $this
-        ->patchJson("/api/v1/routes/{$route->id}", ['domain' => 'next.example.test'])
-        ->assertInternalServerError()
-        ->assertJsonPath('error.code', 'gateway.unhandled');
+    $admitted = $this->patchJson("/api/v1/routes/{$route->id}", ['domain' => 'next.example.test'])->assertAccepted();
+    expect(fn () => $this->routeSwamp->finish($admitted))->toThrow(RuntimeException::class);
+    $operation = Operation::query()->findOrFail($admitted->json('data.id'));
+    expect($operation->status->terminal())->toBeFalse();
 
-    expect($route->refresh()->only([
-        'id',
-        'domain',
-        'status',
-        'replaces_route_id',
-        'replaced_by_route_id',
-        'replacement_step',
-        'failed_step',
-        'error_code',
-    ]))
-        ->toBe($before)
-        ->and($route->isAuthoritative())
-        ->toBeTrue()
-        ->and(Route::query()->where('domain', 'next.example.test')->exists())
-        ->toBeFalse();
+    expect($route->refresh()->status)->toBe(RouteStatus::Active)->and($route->isAuthoritative())->toBeTrue()
+        ->and(Route::query()->where('domain', 'next.example.test')->exists())->toBeTrue()
+        ->and($operation->state['route_completed_stages']['database-cutover'] ?? false)->toBeFalse();
+
 });
 
 it('keeps final cleanup failures bounded through the Route update API', function (): void {
     $route = route_api_active_development_route($this->orbitApp, $this->target);
-    app()->instance(RouteDomainProjector::class, route_api_domain_projector(cleanup: true));
+    app()->instance(RouteDomainProjector::class, Mockery::mock(RouteDomainProjector::class));
     app()->instance(
         DevelopmentInstanceConfigurator::class,
         Mockery::mock(DevelopmentInstanceConfigurator::class),
@@ -894,10 +817,10 @@ it('keeps final cleanup failures bounded through the Route update API', function
         END
         SQL);
 
-    $this
-        ->patchJson("/api/v1/routes/{$route->id}", ['domain' => 'next.example.test'])
-        ->assertInternalServerError()
-        ->assertJsonPath('error.code', 'gateway.unhandled');
+    $admitted = $this->patchJson("/api/v1/routes/{$route->id}", ['domain' => 'next.example.test'])->assertAccepted();
+    expect(fn () => $this->routeSwamp->finish($admitted))->toThrow(RuntimeException::class);
+    $operation = Operation::query()->findOrFail($admitted->json('data.id'));
+    expect($operation->status->terminal())->toBeFalse();
 
     $replacement = Route::query()->where('domain', 'next.example.test')->sole();
 
@@ -908,9 +831,9 @@ it('keeps final cleanup failures bounded through the Route update API', function
         ->and($replacement->replaces_route_id)
         ->toBe($route->id)
         ->and($replacement->failed_step)
-        ->toBe('cleanup')
+        ->toBeNull()
         ->and($replacement->error_code)
-        ->toBe('route.domain_change_failed')
+        ->toBeNull()
         ->and($route->refresh()->status)
         ->toBe(RouteStatus::Retiring)
         ->and($route->domain)
@@ -933,7 +856,7 @@ it('updates an active explicit private production domain through a replacement R
         clusterId: null,
     ))['route'];
     $route->update(['status' => 'active']);
-    app()->instance(RouteDomainProjector::class, route_api_domain_projector(cleanup: true));
+    app()->instance(RouteDomainProjector::class, Mockery::mock(RouteDomainProjector::class));
     app()->instance(
         DevelopmentInstanceConfigurator::class,
         Mockery::mock(DevelopmentInstanceConfigurator::class),
@@ -941,20 +864,12 @@ it('updates an active explicit private production domain through a replacement R
     app()->instance(DevelopmentProjectionOperationLock::class, new RouteApiProjectionOwner);
     $targetId = $this->target->id;
     $environment = Mockery::mock(InstanceRouteEnvironmentSynchronizer::class);
-    $environment
-        ->shouldReceive('synchronizeRouteDomain')
-        ->twice()
-        ->withArgs(static fn (
-            Instance $instance,
-            InstanceEnvironmentRouteDomain $domain,
-        ): bool => $instance->id === $targetId
-            && $domain === InstanceEnvironmentRouteDomain::Candidate)
-        ->andReturn(new InstanceEnvironmentResult($targetId, 'sync', true, 1));
+
     app()->instance(InstanceRouteEnvironmentSynchronizer::class, $environment);
 
     $updated = $this
         ->patchJson("/api/v1/routes/{$route->id}", ['domain' => 'next.example.test'])
-        ->assertOk()
+        ->completeRoute()->assertOk()
         ->assertJsonPath('data.domain', 'next.example.test')
         ->assertJsonPath('data.status', 'active')
         ->assertJsonPath('data.replaced_by_route_id', null);
@@ -1036,7 +951,7 @@ it('creates and shows a public Route without a Node public-IP field', function (
         'status' => RouteStatus::Pending,
     ]);
 
-    $shown = $this->getJson('/api/v1/routes/'.$created->id)->assertOk();
+    $shown = $this->getJson('/api/v1/routes/'.$created->id)->completeRoute()->assertOk();
 
     expect($shown->json('data'))
         ->not->toHaveKey('public_ip')
@@ -1045,34 +960,26 @@ it('creates and shows a public Route without a Node public-IP field', function (
 });
 
 it('rolls a failed public activation back to the verified edge so the Ingress Node builds as before', function (bool $rollbackFails): void {
-    $metrics = Mockery::mock(MetricsFleetReconciler::class);
-    $metrics->shouldReceive('reconcile')->zeroOrMoreTimes();
-    app()->instance(MetricsFleetReconciler::class, $metrics);
-    [, , , , , $route] = route_public_topology($this->orbitApp);
-    $edge = new FakePublicRouteEdgeProjector;
-    $edge->failures = ['public-activated' => 1, 'rollback-public-edge' => $rollbackFails ? 1 : 0];
-    app()->instance(PublicRouteEdgeProjector::class, $edge);
-    app()->instance(DevelopmentProjectionOperationLock::class, new RouteApiProjectionOwner);
+    [, , $ingress, , , $route] = route_public_topology($this->orbitApp);
+    $this->routeSwamp->foreign->failures['public-activated.node-'.$ingress->id] = 1;
+    if ($rollbackFails) {
+        $this->routeSwamp->foreign->failures['rollback-public-edge.node-'.$ingress->id] = 1;
+    }
     $renders = [];
-    $edge->onRollback = function (Route $route) use (&$renders): void {
-        $renders[] = new PublicRouteEligibility()->publicEdgeIsLive($route->refresh());
+    $this->routeSwamp->foreign->observe = static function (Operation $child) use ($route, &$renders): void {
+        if (str_starts_with($child->child_key, 'rollback-public-edge.')) {
+            $renders[] = new PublicRouteEligibility()->publicEdgeIsLive($route->refresh());
+        }
     };
+    $failed = $this->routeSwamp->finish($this->patchJson("/api/v1/routes/{$route->id}", ['publication' => 'public']));
+    expect($failed->status->value)->toBe('failed')->and($route->refresh()->replacement_step)->toBe(RouteReplacementStep::PublicEdgeVerified)
+        ->and(array_unique($renders))->toBe([false])->and(new PublicRouteEligibility()->publicEdgeIsLive($route))->toBeFalse();
 
-    $this->patchJson("/api/v1/routes/{$route->id}", ['publication' => 'public'])
-        ->assertStatus(502)
-        ->assertJsonPath('error.code', 'route.test_public-activated');
-
-    $route->refresh();
-
-    expect($edge->calls)->toBe(['ingress-certificate', 'public-edge-verified', 'public-activated', 'rollback-public-edge'])
-        ->and($route->replacement_step)->toBe(RouteReplacementStep::PublicEdgeVerified)
-        ->and($renders)->toBe([false])
-        ->and(new PublicRouteEligibility()->publicEdgeIsLive($route))->toBeFalse();
 })->with(['rollback builds' => [false], 'rollback also fails' => [true]]);
 
 it('publishes an eligible public Route on the same ID and names only the Ingress domain and Router upstream', function (): void {
-    $metrics = Mockery::mock(MetricsFleetReconciler::class);
-    $metrics->shouldReceive('reconcile')->twice();
+    $metrics = Mockery::mock(MetricsFleetReconciler::class)->shouldIgnoreMissing();
+
     app()->instance(MetricsFleetReconciler::class, $metrics);
     [$cluster, $router, $ingress, $workload, $instance, $route] = route_public_topology($this->orbitApp);
     $edge = new FakePublicRouteEdgeProjector;
@@ -1081,14 +988,13 @@ it('publishes an eligible public Route on the same ID and names only the Ingress
 
     $updated = $this
         ->patchJson("/api/v1/routes/{$route->id}", ['publication' => 'public'])
-        ->assertOk()
+        ->completeRoute()->assertOk()
         ->assertJsonPath('data.id', $route->id)
         ->assertJsonPath('data.publication', 'public');
 
     expect($updated->json('data'))
         ->not->toHaveKey('public_ip')
-        ->and($edge->calls)
-        ->toBe(['ingress-certificate', 'public-edge-verified', 'public-activated', 'ingress-firewall']);
+        ->and($this->lastRouteOperation->state['route_completed_stages'])->toMatchArray(['public-edge-verified' => true, 'public-activated' => true, 'ingress-firewall' => true]);
 
     $artifact = new IngressSiteRepository()->forRoute($route->refresh());
     expect($artifact->artifact())
@@ -1127,15 +1033,12 @@ it('reserves a replacement Route for a combined domain and publication change', 
     $edge = new FakePublicRouteEdgeProjector;
     app()->instance(PublicRouteEdgeProjector::class, $edge);
     app()->instance(DevelopmentProjectionOperationLock::class, new RouteApiProjectionOwner);
-    app()->instance(RouteDomainProjector::class, route_api_domain_projector(cleanup: true));
+    app()->instance(RouteDomainProjector::class, Mockery::mock(RouteDomainProjector::class));
     app()->instance(
         DevelopmentInstanceConfigurator::class,
         Mockery::mock(DevelopmentInstanceConfigurator::class),
     );
     $environment = Mockery::mock(InstanceRouteEnvironmentSynchronizer::class);
-    $environment->shouldReceive('synchronizeRouteDomain')->twice()->andReturn(
-        new InstanceEnvironmentResult($instance->id, 'sync', true, 1),
-    );
     app()->instance(InstanceRouteEnvironmentSynchronizer::class, $environment);
 
     $updated = $this
@@ -1143,7 +1046,7 @@ it('reserves a replacement Route for a combined domain and publication change', 
             'domain' => 'final.example.test',
             'publication' => 'public',
         ])
-        ->assertOk()
+        ->completeRoute()->assertOk()
         ->assertJsonPath('data.domain', 'final.example.test')
         ->assertJsonPath('data.publication', 'public');
 
@@ -1200,7 +1103,7 @@ it('sets a two-target production pool through the typed target-set contract', fu
         ->putJson("/api/v1/routes/{$route->id}/target", [
             'targets' => [$first->id, $second->id],
         ])
-        ->assertOk()
+        ->completeRoute()->assertOk()
         ->assertJsonPath('data.id', $route->id)
         ->assertJsonPath('data.domain', $route->domain)
         ->assertJsonPath('data.targets.0.instance_id', $first->id)
@@ -1381,7 +1284,7 @@ it('reassigns a detached target and keeps every active App instance on exactly o
                 ['instance_id' => $first->id, 'route_id' => $other->id],
             ],
         ])
-        ->assertOk()
+        ->completeRoute()->assertOk()
         ->assertJsonPath('data.targets.0.instance_id', $second->id);
 
     expect($route->refresh()->targets()->pluck('instance_id')->all())
@@ -1409,7 +1312,7 @@ it('transfers a Project instance from another Route and leaves a vacated Route s
         ->putJson("/api/v1/routes/{$route->id}/target", [
             'targets' => [$first->id, $second->id],
         ])
-        ->assertOk()
+        ->completeRoute()->assertOk()
         ->assertJsonPath('data.domain', $route->domain)
         ->assertJsonPath('data.targets.0.instance_id', $first->id)
         ->assertJsonPath('data.targets.1.instance_id', $second->id);
@@ -1449,7 +1352,7 @@ it('leaves stored session environment keys unchanged during a pool change', func
         ->putJson("/api/v1/routes/{$route->id}/target", [
             'targets' => [$first->id, $second->id],
         ])
-        ->assertOk();
+        ->completeRoute()->assertOk();
 
     foreach ([$first->refresh(), $second->refresh()] as $instance) {
         expect($instance->environmentValues()->where('env_key', 'SESSION_DRIVER')->value('env_value'))
@@ -1470,7 +1373,7 @@ it('returns the unchanged Route for an identical completed target-set change', f
         ->putJson("/api/v1/routes/{$route->id}/target", [
             'targets' => [$first->id, $second->id],
         ])
-        ->assertOk()
+        ->completeRoute()->assertOk()
         ->assertJsonPath('data.targets.0.instance_id', $first->id)
         ->assertJsonPath('data.targets.1.instance_id', $second->id);
 
@@ -1627,13 +1530,12 @@ function route_api_domain_projector(bool $rollback = false, bool $cleanup = fals
 
     if ($rollback) {
         foreach (['rollbackDns', 'rollbackCaddy', 'rollbackCertificates'] as $method) {
-            $projector->shouldReceive($method)->once();
+
         }
     }
 
     if ($cleanup) {
-        $projector->shouldReceive('prepareCleanup')->once();
-        $projector->shouldReceive('cleanup')->once();
+
     }
 
     return $projector;

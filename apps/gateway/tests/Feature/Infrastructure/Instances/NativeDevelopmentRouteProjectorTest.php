@@ -21,6 +21,7 @@ use App\Domain\Routes\ClusterRouterReplacementProjector;
 use App\Domain\Routes\ContributedPrivateHostnames;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RoutePlacement;
+use App\Domain\Routes\RouteProjectionPlan;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
@@ -53,6 +54,7 @@ use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
@@ -730,6 +732,43 @@ it('moves a Route to another Cluster through its stored transition and restores 
     } finally {
         new Filesystem()->deleteDirectory($home);
     }
+});
+
+it('replaces a Router through its stored router rows and restores a failed replacement', function (): void {
+    [$instance, $route, $workload, $oldRouter] = orb127_route_projection_models();
+    $route->update(['status' => RouteStatus::Active, 'sites_published' => true]);
+    $instance->update(['status' => InstanceState::Active, 'source_is_laravel' => false]);
+    $candidate = orb_router_candidate($oldRouter);
+    $assignment = $candidate->roles()->create(['role' => RoleName::Router, 'cluster_id' => $oldRouter->cluster_id, 'status' => LifecycleStatus::Provisioning]);
+    $op = new Operation(['kind' => 'cluster.router_set', 'node_id' => $candidate->id,
+        'input' => ['cluster_id' => $oldRouter->cluster_id, 'candidate_role_id' => $assignment->id]]);
+    $plan = app(RouteProjectionPlan::class)->clusterRouter($op);
+    expect($plan['old_role_ids'])->toBe([$oldRouter->roles()->where('role', RoleName::Router)->sole()->id])
+        ->and($plan['stages']['router-caddy'][0]['node_id'])->toBe($candidate->id);
+    $assignment->update(['failed_step' => 'router-caddy']);
+    expect(new DevelopmentSiteRepository()->forNode($candidate)->pluck('domain')->all())->toBe(['feature.acme.test']);
+    $assignment->update(['status' => LifecycleStatus::Failed, 'error_code' => 'fixture.publication_failed']);
+    expect(new DevelopmentSiteRepository()->forNode($candidate)->pluck('domain')->all())->toBe([])
+        ->and(new DevelopmentSiteRepository()->forNode($oldRouter)->pluck('domain')->all())->toBe(['feature.acme.test']);
+});
+
+it('serves a crash-left pending domain change from its staging certificate on the replacement Router', function (): void {
+    [$instance, $route, $workload, $oldRouter] = orb127_route_projection_models();
+    $route->update(['status' => RouteStatus::Active, 'sites_published' => true]);
+    $instance->update(['status' => InstanceState::Active, 'source_is_laravel' => false]);
+    $replacement = orb_pending_domain_change($route, $instance, RouteReplacementStep::RouterCaddy);
+    $candidate = orb_router_candidate($oldRouter);
+    $assignment = $candidate->roles()->create(['role' => RoleName::Router, 'cluster_id' => $oldRouter->cluster_id,
+        'status' => LifecycleStatus::Provisioning, 'failed_step' => 'router-caddy']);
+    $op = new Operation(['kind' => 'cluster.router_set', 'node_id' => $candidate->id,
+        'input' => ['cluster_id' => $oldRouter->cluster_id, 'candidate_role_id' => $assignment->id]]);
+    $plan = app(RouteProjectionPlan::class)->clusterRouter($op);
+    expect(array_column(array_column($plan['stages']['router-certificate'], 'input'), 'scope'))->toContain(
+        "route-{$route->id}-router", "route-{$replacement->id}-router-hostname-change");
+    expect(new DevelopmentSiteRepository()->forNode($candidate)->mapWithKeys(static fn ($site) => [$site->domain => $site->certificateScope ?? $site->scope])->all())->toBe([
+        'feature.acme.test' => "route-{$route->id}-router",
+        'next.acme.test' => "route-{$replacement->id}-router-hostname-change",
+    ]);
 });
 
 it('preserves production release sites at the environment synchronization checkpoint', function (): void {
@@ -1505,8 +1544,6 @@ function orb_router_candidate(Node $router): Node
         'user' => 'orbit',
     ]);
 }
-
-/** Runs the real Router replacement projector bound by `orb127_route_projector()`, with no role baseline work. */
 
 /**
  * Cleanup issues the live certificates, stores the `cleanup` step, and then builds and removes the

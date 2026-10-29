@@ -39,12 +39,12 @@ final readonly class RouteWorkloadTransport implements OperationEffectTransport,
             $operation->refresh();
             $instance = Instance::query()->findOrFail(ValidatedData::integer($operation->input['instance_id']));
             $route = Route::query()->findOrFail(ValidatedData::integer($operation->input['route_id']));
-            if (! $route->sites_published) {
+            $saved = ValidatedData::object($operation->state['route_workload_plan'] ?? []);
+            if (! $route->sites_published && ($saved['source_only'] ?? false) !== true) {
                 return ['error_code' => 'route.plan_stale'];
             }
             $fresh = $this->inputs->forInstance($instance, $route, ValidatedData::integer($operation->node_id));
-            $saved = ValidatedData::object($operation->state['route_workload_plan'] ?? []);
-            unset($saved['packages']);
+            unset($saved['packages'], $saved['source_only']);
             if (json_decode(json_encode($fresh, JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR) !== $saved) {
                 return ['error_code' => 'route.plan_stale'];
             }

@@ -30,7 +30,10 @@ final readonly class RouteWorkloadCommand implements OperationGatewayCommand
         $operation->refresh();
         $instance = Instance::query()->with('node')->findOrFail(ValidatedData::integer($input['instance_id']));
         $route = Route::query()->findOrFail(ValidatedData::integer($input['route_id']));
-        if ($instance->node_id !== $operation->node_id || ! $route->sites_published) {
+        $sourceOnly = $operation->parent?->kind === 'route.target_set'
+            && data_get($operation->parent->state, 'route_plan.mode') === 'target_binding'
+            && str_starts_with($operation->child_key ?? '', 'target-source-access.');
+        if ($instance->node_id !== $operation->node_id || (! $sourceOnly && ! $route->sites_published)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'Prepare the stored workload after publishing its certificate-backed site intent.', 422);
         }
         if ($input['action'] === 'prove') {
@@ -39,7 +42,7 @@ final readonly class RouteWorkloadCommand implements OperationGatewayCommand
             return ['ready' => true];
         }
         if (! is_array($operation->state['route_workload_plan'] ?? null)) {
-            $plan = $this->inputs->forInstance($instance, $route, $operation->node_id);
+            $plan = [...$this->inputs->forInstance($instance, $route, $operation->node_id), 'source_only' => $sourceOnly];
             $operation->update(['state' => [...($operation->state ?? []), 'route_workload_plan' => $plan]]);
         }
 

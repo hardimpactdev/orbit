@@ -91,6 +91,7 @@ use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakesEnvironmentSyncInspection;
 use Tests\Support\LifecycleAgent;
+use Tests\Support\RouteSwampGatewayFixture;
 use Tests\Support\SharedPhpPoolAnswers;
 use Tests\TestCase;
 
@@ -721,14 +722,17 @@ describe('development Instance rename', function (): void {
             ->assertConflict()
             ->assertJsonPath('error.code', 'route.target_conflict')
             ->assertJsonPath('error.message', fn (string $message): bool => str_contains($message, 'route:destroy'));
-        $this->deleteJson("/api/v1/routes/{$replacement->id}")->assertOk()->assertJsonPath('data.id', $replacement->id);
+        $fixture = new RouteSwampGatewayFixture($this);
+        $withdrawn = $fixture->finish($this->deleteJson("/api/v1/routes/{$replacement->id}"));
+        expect($withdrawn->status->value)->toBe('succeeded');
 
         expect(Route::query()->find($replacement->id))->toBeNull()
             ->and(Route::query()->sole()->only(['id', 'domain', 'status', 'replaced_by_route_id']))
             ->toBe(['id' => $original->id, 'domain' => 'dev.acme.test', 'status' => RouteStatus::Active, 'replaced_by_route_id' => null])
             ->and(RouteTarget::query()->sole()->only(['route_id', 'instance_id']))->toBe(['route_id' => $original->id, 'instance_id' => $id])
-            ->and($this->configuration->urls)->toBe(['https://dev.acme.test']);
+            ->and(array_column($fixture->foreign->calls, 'kind'))->toContain('instance.sync_environment');
 
+        app()->instance(AgentCommandRunner::class, $this->renameAgents);
         $this->postJson("/api/v1/instances/{$id}/rename", ['domain' => 'login.acme.test'])->assertOk();
         expect(Route::query()->sole()->domain)->toBe('login.acme.test');
     })->with(['reserved by a Project slug update' => 'reserved', 'failed before cutover' => 'failed']);
@@ -1970,7 +1974,8 @@ it('reconciles Cluster activation for an active Instance Route without moving pl
     );
 
     $this->putJson("/api/v1/clusters/{$cluster->id}/nodes/{$this->node->id}")->assertOk();
-    $this->putJson("/api/v1/clusters/{$cluster->id}/router/{$firstRouter->id}")->assertOk();
+    $routeFixture = new RouteSwampGatewayFixture($this);
+    expect($routeFixture->finish($this->putJson("/api/v1/clusters/{$cluster->id}/router/{$firstRouter->id}"))->status->value)->toBe('succeeded');
     $this->patchJson("/api/v1/clusters/{$cluster->id}", ['tld' => 'lab'])->assertOk();
     $this
         ->patchJson("/api/v1/clusters/{$cluster->id}", ['state' => 'active'])
@@ -3186,9 +3191,11 @@ it('returns current bounded progress when retry source revalidation is refused',
         ->assertJsonPath('error.details.removal.error_code', 'instance.runtime_interrupted');
 
     $route = Route::query()->sole();
+    $this->routeSwamp = new RouteSwampGatewayFixture($this);
+    \Tests\Support\completesRouteOperations();
     $this
         ->putJson("/api/v1/routes/{$route->id}/target", ['instance_id' => $id])
-        ->assertOk()
+        ->completeRoute()->assertOk()
         ->assertJsonPath('data.target.instance_id', $id);
 
     $this->removalProjector->fail = null;

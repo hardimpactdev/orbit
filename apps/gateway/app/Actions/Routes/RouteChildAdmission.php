@@ -7,6 +7,7 @@ namespace App\Actions\Routes;
 use App\Actions\Operations\StartOperationAction;
 use App\Data\Routes\UpdateRouteData;
 use App\Domain\Operations\OperationChildAdmission;
+use App\Domain\Routes\AnalyticsRouteParentCommand;
 use App\Domain\Routes\GeneratedRouteUpdateOwnership;
 use App\Domain\Routes\RouteKitAvailability;
 use App\Domain\Routes\RouteNodeEffectExecution;
@@ -68,6 +69,7 @@ final readonly class RouteChildAdmission implements OperationChildAdmission
                         throw new ResourceOperationException('route.kind_unsupported', 'The analytics child requires a tracking Route.', 409);
                     }
                     $operation = $this->operations->execute($kind, 'route', $route->id, $node->id, ['route_id' => $route->id], $parent->triggered_by, $parent->request_id);
+                    app(AnalyticsRouteParentCommand::class)->run($operation, ['action' => 'prepare']);
                 } else {
                     throw new ResourceOperationException('operation.execution_forbidden', 'This is not an owned Route child kind.', 422);
                 }

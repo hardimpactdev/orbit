@@ -47,6 +47,7 @@ final readonly class ClusterRouterParentCommand implements OperationGatewayComma
                 $operation->update(['state' => [...($operation->state ?? []), 'route_plan' => $this->plans->clusterRouter($operation)]]);
             }
             $plan = ValidatedData::object($operation->state['route_plan'] ?? []);
+            RouteKitAvailability::plan($operation, $plan);
             $phases = [];
             foreach (ValidatedData::object($plan['stages']) as $stage => $children) {
                 foreach (RouteExecutionProof::objects($children) as $child) {
@@ -79,6 +80,9 @@ final readonly class ClusterRouterParentCommand implements OperationGatewayComma
             $failed = false;
             $code = 'cluster.router_failed';
             foreach ($this->execution->childContext($operation)['children'] as $intent) {
+                if (! $operation->children()->where('child_key', $intent['key'])->exists()) {
+                    continue;
+                }
                 $child = $this->children->child($operation, $intent['key']);
                 if (in_array($child->status->value, ['failed', 'cancelled'], true)) {
                     $failed = true;
@@ -101,7 +105,9 @@ final readonly class ClusterRouterParentCommand implements OperationGatewayComma
         }
         $remaining = $this->remaining($operation, $stage);
         if ($input['action'] === 'open') {
-            if ($stage === 'withdraw-assignments') {
+            if ($stage === 'router-caddy') {
+                NodeRole::query()->whereKey($plan['candidate_role_id'])->update(['failed_step' => ClusterRouterReplacementStep::RouterCaddy->value]);
+            } elseif ($stage === 'withdraw-assignments') {
                 NodeRole::query()->whereKey($plan['assignment_ids'])->update(['status' => LifecycleStatus::Removing, 'failed_step' => ClusterRouterTransition::OldRouterCleanup]);
             } elseif ($stage === 'dns-publication' && $plan['mode'] === 'router_set') {
                 // Both Nodes already serve. DNS now reads the committed Router selection.

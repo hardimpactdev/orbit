@@ -24,18 +24,22 @@ final readonly class RouteWorkloadExecution implements OperationFamilyExecution
             if (is_array($plan['source_access'] ?? null)) {
                 $commands[] = ['workload-source-access', 'route-workload', 'instance.grant-development-caddy-access', $plan['source_access']];
             }
-            $reference = ['configurations' => ['$secret' => 'route.php_pools', 'id' => $operation->id]];
-            $commands[] = ['workload-php-inspect', 'route-workload', 'php.inspect-shared-pools', $reference];
-            // Package selection comes from the proven inspection, never the Swamp caller.
-            if (isset($plan['packages'])) {
-                if (is_array($plan['packages'])) {
-                    $commands[] = ['workload-php-install', 'route-workload', 'php.install-build', ValidatedData::object($plan['packages']['install'])];
-                    foreach (RouteExecutionProof::objects($plan['packages']['configure']) as $index => $input) {
-                        $commands[] = ["workload-php-configure-{$index}", 'route-workload', 'php.configure-runtime', $input];
-                    }
-                }
-                $commands[] = ['workload-php-pools', 'route-workload', 'php.converge-shared-pools', $reference];
+            if (($plan['source_only'] ?? false) === true) {
                 $commands[] = ['workload-proof', 'gateway', 'route.workload', [...$base, 'action' => 'prove']];
+            } else {
+                $reference = ['configurations' => ['$secret' => 'route.php_pools', 'id' => $operation->id]];
+                $commands[] = ['workload-php-inspect', 'route-workload', 'php.inspect-shared-pools', $reference];
+                // Package selection comes from the proven inspection, never the Swamp caller.
+                if (isset($plan['packages'])) {
+                    if (is_array($plan['packages'])) {
+                        $commands[] = ['workload-php-install', 'route-workload', 'php.install-build', ValidatedData::object($plan['packages']['install'])];
+                        foreach (RouteExecutionProof::objects($plan['packages']['configure']) as $index => $input) {
+                            $commands[] = ["workload-php-configure-{$index}", 'route-workload', 'php.configure-runtime', $input];
+                        }
+                    }
+                    $commands[] = ['workload-php-pools', 'route-workload', 'php.converge-shared-pools', $reference];
+                    $commands[] = ['workload-proof', 'gateway', 'route.workload', [...$base, 'action' => 'prove']];
+                }
             }
         }
         $descriptors = [];

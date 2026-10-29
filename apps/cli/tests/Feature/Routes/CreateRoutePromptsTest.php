@@ -21,6 +21,8 @@ use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Tester\CommandTester;
 
+require_once __DIR__.'/../../Support/RouteOperationMocks.php';
+
 beforeEach(function (): void {
     MockClient::destroyGlobal();
     $this->orbitHome = sys_get_temp_dir().'/orbit-cli-route-prompt-'.Str::uuid();
@@ -43,7 +45,7 @@ it('selects an omitted Instance by stable ID and sends the selected Instance in 
 
     expect($status)->toBe(0)
         ->and($display)->toContain('Instance', 'Orbit docs', 'Store')
-        ->and($mock->getLastRequest()?->body()->all())->toBe([
+        ->and(route_last_mutation($mock)?->body()->all())->toBe([
             'domain' => 'shop.test',
             'publication' => 'private',
             'instance_id' => 12,
@@ -52,14 +54,14 @@ it('selects an omitted Instance by stable ID and sends the selected Instance in 
 });
 
 it('prompts for the omitted domain after an explicit Instance without listing Instances', function (): void {
-    $mock = MockClient::global([CreateRouteRequest::class => route_prompt_response()]);
+    $mock = route_operation_mock([CreateRouteRequest::class => route_prompt_response()]);
     [$status, $display] = route_prompt_run(['instance' => '12'], [
         's', 'h', 'o', 'p', '.', 't', 'e', 's', 't', Key::ENTER,
     ]);
 
     expect($status)->toBe(0)
         ->and($display)->toContain('Route domain')
-        ->and($mock->getLastRequest()?->body()->all())->toBe([
+        ->and(route_last_mutation($mock)?->body()->all())->toBe([
             'domain' => 'shop.test',
             'publication' => 'private',
             'instance_id' => 12,
@@ -92,7 +94,7 @@ function route_prompt_mock(?array $instances = null): MockClient
         [...instance_payload(), 'id' => 12, 'name' => 'shop', 'project' => ['id' => 4, 'name' => 'Store', 'slug' => 'store']],
     ];
 
-    return MockClient::global([
+    return route_operation_mock([
         ListInstancesRequest::class => MockResponse::make([
             'data' => $instances,
             'meta' => ['request_id' => '0198e15d-16c4-7855-8eb2-182b53ad28ba'],

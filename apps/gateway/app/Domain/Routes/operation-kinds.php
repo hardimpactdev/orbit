@@ -10,6 +10,7 @@ use App\Domain\Routes\ClusterRouterParentExecution;
 use App\Domain\Routes\InstanceRuntimeExecution;
 use App\Domain\Routes\OfflineResidueCompletion;
 use App\Domain\Routes\OfflineResidueExecution;
+use App\Domain\Routes\RouteKitAvailability;
 use App\Domain\Routes\RouteNodeEffectExecution;
 use App\Domain\Routes\RouteNodeExecution;
 use App\Domain\Routes\RouteParentExecution;
@@ -113,7 +114,7 @@ if (OperationKinds::supports('children') && OperationKinds::supports('list_of'))
         $definitions[$kind] = [
             'executor' => 'swamp', 'completion' => CaddyOperationCompletion::class, 'execution' => AnalyticsRouteParentExecution::class,
             'runs' => [['transport' => 'gateway', 'name' => 'route.analytics-parent', 'resumable' => true, 'input_fields' => [], 'input_values' => []]],
-            'children' => array_map(static fn (string $child): array => ['kind' => $child, 'node_from' => 'intent.node_ids'], $childKinds),
+            'children' => array_map(static fn (string $child): array => ['kind' => $child, 'node_from' => 'intent.node_ids'], RouteKitAvailability::registeredChildren($childKinds)),
             'completion_contract' => ['step' => 'route-proof', 'transport' => 'gateway', 'name' => 'route.analytics-parent', 'result' => ['ready' => true]],
             'result_fields' => ['prepared', 'mode', 'production', 'public', 'remote_router', 'web_root', 'targeted', 'opened', 'ready', 'stage', 'route_id', 'wait_seconds', 'error_code',
                 ['name' => 'child_phases', 'max' => 4096, 'list_of' => ['stage' => 'string', 'key' => 'string']]],
@@ -134,7 +135,7 @@ if (OperationKinds::supports('children') && OperationKinds::supports('list_of'))
             'execution' => $router ? ClusterRouterParentExecution::class : RouteParentExecution::class,
             'runs' => [['transport' => 'gateway', 'name' => $router ? 'route.cluster-router' : 'route.parent',
                 'resumable' => true, 'input_fields' => [], 'input_values' => []]],
-            'children' => array_map(static fn (string $child): array => ['kind' => $child, 'node_from' => 'intent.node_ids'], $children),
+            'children' => array_map(static fn (string $child): array => ['kind' => $child, 'node_from' => 'intent.node_ids'], RouteKitAvailability::registeredChildren($children)),
             // The final command requires each exact required keyed child, including optional phases.
             'completion_contract' => ['step' => 'route-proof', 'transport' => 'gateway',
                 'name' => $router ? 'route.cluster-router' : 'route.parent', 'result' => ['ready' => true]],

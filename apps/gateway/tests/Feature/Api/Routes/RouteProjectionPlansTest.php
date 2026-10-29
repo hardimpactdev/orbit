@@ -48,8 +48,10 @@ use App\Models\Route;
 use App\Models\RouteRemovalResidue;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\RouteForeignChildKinds;
 
 beforeEach(function (): void {
+    RouteForeignChildKinds::register();
     $this->node = Node::query()->create(['name' => 'dev', 'public_ssh_host' => '192.0.2.3', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.3', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
     $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $project = Project::query()->create(['name' => 'Proof', 'slug' => 'proof', 'repository_url' => 'https://example.test/proof.git', 'root' => 'public']);

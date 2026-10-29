@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Routes\AdmitRouteOperationAction;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -18,6 +19,7 @@ use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
 use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\RouteSwampGatewayFixture;
 
 beforeEach(function (): void {
     $gateway = Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.1', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.1', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
@@ -128,4 +130,19 @@ it('recovers a workload receipt with its original Operation identity before cont
     $this->getJson($this->path.'/receipts/workload-source-access')->assertOk();
     ($this->runStep)('workload-php-inspect')->assertOk()->assertJsonPath('data.inspected', true);
     expect(array_column($this->agents->calls, 'command'))->toBe(['instance.grant-development-caddy-access', 'agent.effect-receipt', 'php.inspect-shared-pools']);
+});
+
+it('grants a non-active target binding before any later Caddy build and preserves publication state', function (): void {
+    $this->operation->update(['status' => OperationStatus::Cancelled]);
+    $agents = $this->agents;
+    $fixture = new RouteSwampGatewayFixture($this, nativeChildren: true);
+    $before = $this->route->refresh()->only(['status', 'sites_published']);
+    $parent = app(AdmitRouteOperationAction::class)->setTarget($this->route, $this->instance->id);
+    $fixture->run($parent);
+
+    expect($parent->refresh()->status->value)->toBe('succeeded')
+        ->and($this->route->refresh()->only(['status', 'sites_published']))->toBe($before)
+        ->and(array_column($agents->calls, 'command'))->toBe(['instance.grant-development-caddy-access'])
+        ->and($agents->calls[0]['input']['sites'][0]['checkout'])->toBe($this->instance->checkout_path)
+        ->and($parent->children()->sole()->input)->toBe(['route_id' => $this->route->id, 'instance_id' => $this->instance->id]);
 });

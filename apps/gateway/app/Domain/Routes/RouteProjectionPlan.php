@@ -39,7 +39,7 @@ final readonly class RouteProjectionPlan
             }
         }
         $router = $route->cluster?->routerAssignment?->node;
-        if ($route->cluster_id !== null && ! $router instanceof Node) {
+        if ($route->isApp() && $route->cluster_id !== null && ! $router instanceof Node) {
             throw new ResourceOperationException('cluster.router_required', 'The Cluster Route requires a recorded Router.', 409);
         }
         $stages = [];
@@ -82,8 +82,39 @@ final readonly class RouteProjectionPlan
         }
         $this->dns($stages, 'dns-published', $route->id);
         $this->publicEdge($stages, $route);
+        if ($route->hasWebRoot() && $instances !== [] && array_all($instances, static fn (Instance $instance): bool => $instance->placedOnAppProd())) {
+            $withdrawal = $this->withdraw($operation, $route);
+            foreach (ValidatedData::object($withdrawal['stages']) as $phase => $children) {
+                foreach (RouteExecutionProof::objects($children) as $child) {
+                    if ($child['kind'] === 'instance.sync_environment') {
+                        continue;
+                    }
+                    $stage = 'rollback-initial-'.$phase;
+                    $child['key'] = $stage.'.'.ValidatedData::string($child['key']);
+                    $stages[$stage][ValidatedData::string($child['key'])] = $child;
+                }
+            }
+            foreach ($instances as $instance) {
+                $this->child($stages, 'synchronize-web-root-urls.rollback', 'instance.sync_environment', $instance->node_id,
+                    ['instance_id' => $instance->id, 'route_domain' => 'authoritative'], (string) $instance->id);
+            }
+        }
 
         return $this->plan($route, array_values($instances), $stages);
+    }
+
+    /** A single target binding grants development source access without publishing the Route.
+     * @return array<string, mixed>
+     */
+    public function targetBinding(Route $route, Instance $instance): array
+    {
+        $stages = [];
+        if ($route->status !== RouteStatus::Active && $instance->placedOnAppDev()) {
+            $this->child($stages, 'target-source-access', 'route.workload_prepare', $instance->node_id,
+                ['route_id' => $route->id, 'instance_id' => $instance->id], 'instance-'.$instance->id);
+        }
+
+        return $this->plan($route, [$instance], $stages);
     }
 
     /** @return array<string, mixed> */
@@ -452,6 +483,9 @@ final readonly class RouteProjectionPlan
             $this->child($stages, 'firewall', 'route.lan_remove', $instance->node_id, ['route_id' => $route->id], "node-{$instance->node_id}");
             if ($route->hasWebRoot()) {
                 $this->removeLeaf($stages, 'certificates', $instance->node, "route-{$route->id}");
+                $stages['php']['urls-'.$instance->id] = ['key' => 'synchronize-web-root-urls.'.$instance->id,
+                    'kind' => 'instance.sync_environment', 'node_id' => $instance->node_id,
+                    'input' => ['instance_id' => $instance->id, 'route_domain' => 'authoritative']];
             }
         }
         if ($route->node instanceof Node) {
@@ -537,7 +571,7 @@ final readonly class RouteProjectionPlan
     /** @param array<string, array<string, array<string, mixed>>> $stages */
     private function publicEdge(array &$stages, Route $route): void
     {
-        if ($route->publication !== RoutePublication::Public) {
+        if (! new PublicRouteEligibility()->canStartActivation($route)) {
             return;
         }
         $ingress = $this->ingress->ingressNode($route);
@@ -611,7 +645,7 @@ final readonly class RouteProjectionPlan
      */
     private function plan(Route $route, array $instances, array $stages): array
     {
-        return ['route_id' => $route->id, 'domain' => $route->domain, 'publication' => $route->publication->value,
+        return ['route_id' => $route->id, 'domain' => $route->domain, 'publication' => $route->publication->value, 'public_edge' => new PublicRouteEligibility()->canStartActivation($route),
             'target_instance_ids' => array_map(static fn (Instance $instance): int => $instance->id, $instances),
             'previous_target_instance_ids' => array_map(static fn (Instance $instance): int => $instance->id, $instances),
             'placements' => array_map(static fn (Instance $instance): array => ['instance_id' => $instance->id, 'node_id' => $instance->node_id, 'production' => $instance->placedOnAppProd()], $instances),

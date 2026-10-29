@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 use App\Actions\Doctor\RouteDoctorProbe;
 use App\Actions\Instances\DestroyInstanceAction;
+use App\Actions\Routes\AdmitRouteOperationAction;
 use App\Actions\Routes\ConvergeRouteAction;
-use App\Actions\Routes\ConvergeRouteTargetSetAction;
 use App\Data\Doctor\DoctorNodeReportData;
 use App\Data\Doctor\DoctorReportData;
 use App\Data\Routes\SetRouteTargetsData;
@@ -29,6 +29,7 @@ use App\Models\Route;
 use App\Models\WebSocketApp;
 use App\Models\WebSocketAppTarget;
 use Illuminate\Support\Facades\Http;
+use Tests\Support\RouteSwampGatewayFixture;
 
 beforeEach(function (): void {
     Http::fake();
@@ -287,7 +288,7 @@ it('guards target-set changes before reserving intent', function (): void {
     [, $instance, $route] = public_reverb_fixture();
     $this->putJson(public_reverb_url($instance), ['public' => true])->assertOk();
 
-    expect(fn () => app(ConvergeRouteTargetSetAction::class)->execute($route, new SetRouteTargetsData([], [])))->toThrow(function (ResourceOperationException $exception): void {
+    expect(fn () => app(AdmitRouteOperationAction::class)->setTargets($route, new SetRouteTargetsData([], [])))->toThrow(function (ResourceOperationException $exception): void {
         expect($exception->errorCode)->toBe('websocket.route_in_use');
     });
 
@@ -299,7 +300,8 @@ it('guards a changed web root but accepts an unchanged web root', function (): v
     $this->putJson(public_reverb_url($instance), ['public' => true])->assertOk();
 
     $this->patchJson('/api/v1/routes/'.$route->id, ['web_root' => 'other/public'])->assertConflict()->assertJsonPath('error.code', 'websocket.route_in_use');
-    $this->patchJson('/api/v1/routes/'.$route->id, ['web_root' => null])->assertOk();
+    $fixture = new RouteSwampGatewayFixture($this);
+    expect($fixture->finish($this->patchJson('/api/v1/routes/'.$route->id, ['web_root' => null]))->status->value)->toBe('succeeded');
 
     expect($route->refresh()->web_root)->toBeNull()->and(WebSocketAppTarget::query()->sole()->route_id)->toBe($route->id);
 });

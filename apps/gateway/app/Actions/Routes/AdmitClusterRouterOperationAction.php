@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Actions\Routes;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\ClusterRouterParentCommand;
 use App\Domain\Routes\ClusterRouterReplacementStep;
 use App\Domain\Routes\RouteKitAvailability;
 use App\Domain\Routes\RouteReconciliationGuard;
@@ -31,7 +33,7 @@ final readonly class AdmitClusterRouterOperationAction
     {
         RouteKitAvailability::kind('cluster.router_set');
 
-        return DB::transaction(function () use ($cluster, $node, $requestId): Operation {
+        return app(ClusterRouterOperationLock::class)->run($cluster->id, fn (): Operation => DB::transaction(function () use ($cluster, $node, $requestId): Operation {
             $cluster = Cluster::query()->lockForUpdate()->findOrFail($cluster->id);
             $node = Node::query()->lockForUpdate()->findOrFail($node->id);
             if ($node->cluster_id !== $cluster->id || $node->status !== LifecycleStatus::Active) {
@@ -49,21 +51,27 @@ final readonly class AdmitClusterRouterOperationAction
             if ($candidate === null) {
                 $candidate = NodeRole::query()->create(['node_id' => $node->id, 'cluster_id' => $cluster->id, 'role' => RoleName::Router, 'status' => LifecycleStatus::Provisioning]);
             }
+            if ($candidate->status !== LifecycleStatus::Active) {
+                $candidate->update(['status' => LifecycleStatus::Provisioning, 'error_code' => null]);
+            }
             $routeIds = Route::query()->where('cluster_id', $cluster->id)->orderBy('id')->pluck('id')->map(StoredInteger::from(...))->values()->all();
             $workloadNodes = Node::query()->whereHas('instances.routeTargets', static fn (Builder $q): Builder => $q->whereIn('route_id', $routeIds))->pluck('id')->map(StoredInteger::from(...))->all();
             $nodeIds = array_values(array_unique([$node->id, ...$assignments->map(static fn (NodeRole $row): int => $row->node_id)->all(), ...$workloadNodes, ...$this->dnsNodeIds()]));
 
-            return $this->operations->execute('cluster.router_set', 'cluster_router', $cluster->id, $node->id,
+            $operation = $this->operations->execute('cluster.router_set', 'cluster_router', $cluster->id, $node->id,
                 ['cluster_id' => $cluster->id, 'node_id' => $node->id, 'candidate_role_id' => $candidate->id, 'old_role_id' => $current?->id,
                     'old_node_id' => $current?->node_id, 'route_ids' => $routeIds, 'node_ids' => $nodeIds], 'operator', $requestId);
-        });
+            app(ClusterRouterParentCommand::class)->run($operation, ['action' => 'prepare']);
+
+            return $operation->refresh();
+        }));
     }
 
     public function unset(Cluster $cluster, ?string $requestId = null): Operation
     {
         RouteKitAvailability::kind('cluster.router_unset');
 
-        return DB::transaction(function () use ($cluster, $requestId): Operation {
+        return app(ClusterRouterOperationLock::class)->run($cluster->id, fn (): Operation => DB::transaction(function () use ($cluster, $requestId): Operation {
             $cluster = Cluster::query()->lockForUpdate()->findOrFail($cluster->id);
             $this->routes->assertClusterRouterMutable($cluster->id);
             $this->removal->assertRouterRemovable($cluster);
@@ -77,9 +85,12 @@ final readonly class AdmitClusterRouterOperationAction
                 throw new ResourceOperationException('cluster.node_required', 'The Cluster requires a stored Node for this Operation.', 409);
             }
 
-            return $this->operations->execute('cluster.router_unset', 'cluster_router', $cluster->id, $nodeId,
+            $operation = $this->operations->execute('cluster.router_unset', 'cluster_router', $cluster->id, $nodeId,
                 ['cluster_id' => $cluster->id, 'assignment_ids' => $assignments->modelKeys(), 'node_ids' => $nodeIds], 'operator', $requestId);
-        });
+            app(ClusterRouterParentCommand::class)->run($operation, ['action' => 'prepare']);
+
+            return $operation->refresh();
+        }));
     }
 
     /** @return list<int> */

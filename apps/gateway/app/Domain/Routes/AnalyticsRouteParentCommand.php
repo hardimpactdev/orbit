@@ -55,6 +55,7 @@ final readonly class AnalyticsRouteParentCommand implements OperationGatewayComm
                 $operation->update(['state' => [...($operation->state ?? []), 'route_plan' => $plan]]);
             }
             $plan = ValidatedData::object($operation->state['route_plan'] ?? []);
+            RouteKitAvailability::plan($operation, $plan);
             $phases = [];
             foreach (ValidatedData::object($plan['stages']) as $phase => $children) {
                 foreach (RouteExecutionProof::objects($children) as $child) {
