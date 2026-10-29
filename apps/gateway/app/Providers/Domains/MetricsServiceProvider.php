@@ -13,13 +13,16 @@ use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsExporterProjection;
 use App\Domain\Metrics\MetricsFirewallExpectationProvider;
 use App\Domain\Metrics\MetricsFleetReconciler;
+use App\Domain\Metrics\MetricsPasswordSecrets;
 use App\Domain\Metrics\MetricsPublicationManager as MetricsPublicationManagerContract;
 use App\Domain\Metrics\MetricsPublicationReport;
 use App\Domain\Metrics\MetricsReconcileDeferral;
 use App\Domain\Metrics\MetricsRoleManager;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
+use App\Domain\Metrics\MetricsRuntimeSecrets;
 use App\Domain\Metrics\MetricsStatusReader;
 use App\Domain\Metrics\ServiceMetricsLifecycle;
+use App\Domain\Operations\OperationSecretSource;
 use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\MetricsCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\ServiceMetricsCaddySiteSource;
@@ -73,6 +76,7 @@ final class MetricsServiceProvider extends ServiceProvider
 
     public function register(): void
     {
+        $this->app->tag([MetricsRuntimeSecrets::class, MetricsPasswordSecrets::class], OperationSecretSource::class);
         $this->app->tag([ServiceMetricsCaddySiteSource::class], NodeCaddySiteSource::class);
         $this->app->tag([MetricsCaddySiteSource::class], NodeCaddySiteSource::class);
         $this->app->scoped(
