@@ -184,6 +184,8 @@ Orbit does not wait for a running Schedule command. The command may finish or fa
 
 ### Owned databases
 
+The parent prepares one `database.destroy_owned` wrapper for each stored removal member and preserves the database owner’s full child input. An empty owned set still has a proven wrapper. The parent releases its worker while the wrapper and its per-server children run, then requires wrapper success before deleting that member’s Instance record.
+
 After proven Process, Schedule, and Route runtime cleanup, the `database.destroy_owned` child checks all owned server databases as one removal set, before dropping any of them. The [database removal checks](/reference/database-servers#remove-a-database) return `database.in_use` (409) if a client or dependency blocks removal; databases, users, attachments, connection records, and the Instance record stay. Even `--force` does not disconnect database clients or remove dependencies outside the owned set.
 
 The Gateway holds a lock on every server in the set through record deletion; an overlapping removal returns `database.server_in_use` (409) before changing anything. It fences every planned PostgreSQL database before the final blocker check and restores admission on refusal through the same recoverable journal.
