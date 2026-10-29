@@ -8,6 +8,7 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationChildAdmission;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -23,6 +24,30 @@ use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\Queue;
+
+final readonly class TransferApiChildAdmission implements OperationChildAdmission
+{
+    public function admit(Operation $parent, array $intent): Operation
+    {
+        throw new LogicException('Transfer admission must not execute a child.');
+    }
+}
+
+function swamp_transfer_admission_registry(): OperationKinds
+{
+    $definitions = [...OperationKinds::definitions(), ...require app_path('Domain/Instances/lifecycle-operation-kinds.php')];
+    foreach ($definitions['instance.transfer']['children'] as $child) {
+        $definition = $definitions[$child['kind']] ?? null;
+        if (! is_array($definition) || ! isset($definition['admission'])) {
+            $definitions[$child['kind']] = ['executor' => 'swamp', 'admission' => TransferApiChildAdmission::class,
+                'runs' => [['transport' => 'gateway', 'name' => 'test.transfer-owner']],
+                'completion_contract' => ['step' => 'fixture', 'transport' => 'gateway', 'name' => 'test.transfer-owner', 'result' => []],
+                'result_fields' => []];
+        }
+    }
+
+    return new OperationKinds(app(), $definitions);
+}
 
 beforeEach(function (): void {
     $this->caller = swamp_transfer_api_node('transfer-api-caller');
@@ -142,9 +167,7 @@ it('returns 403 before transfer when the caller lacks destination Node access', 
 });
 
 it('records a replayable transfer Operation without moving placement or executing effects', function (string $layout): void {
-    app()->instance(OperationKinds::class, new OperationKinds(app(), [
-        ...OperationKinds::definitions(), ...require app_path('Domain/Instances/lifecycle-operation-kinds.php'),
-    ]));
+    app()->instance(OperationKinds::class, swamp_transfer_admission_registry());
     $accounts = Mockery::mock(ManagedUserAccountResolver::class);
     $accounts->shouldReceive('resolve')->andReturn(new ManagedUserAccount('orbit', 'orbit', '/home/orbit'));
     app()->instance(ManagedUserAccountResolver::class, $accounts);
@@ -187,9 +210,7 @@ it('returns 404 for a missing source Instance before recording a transfer', func
 });
 
 it('refuses identical new admission while the stored attempt has pending recovery', function (array $evidence): void {
-    app()->instance(OperationKinds::class, new OperationKinds(app(), [
-        ...OperationKinds::definitions(), ...require app_path('Domain/Instances/lifecycle-operation-kinds.php'),
-    ]));
+    app()->instance(OperationKinds::class, swamp_transfer_admission_registry());
     InstanceTransfer::query()->create([
         'instance_id' => $this->instance->id, 'source_node_id' => $this->sourceNode->id,
         'destination_node_id' => $this->destinationNode->id, 'requested_name' => 'preview', 'destination_name' => 'preview',
