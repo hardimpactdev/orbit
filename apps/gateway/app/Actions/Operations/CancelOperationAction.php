@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Operations;
 
 use App\Domain\Operations\OperationChildren;
+use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Operations\OperationExecutors;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationRunner;
@@ -32,7 +33,11 @@ final readonly class CancelOperationAction
             }
             $now = Carbon::now();
             $descendants = [];
-            $frontier = $operation->cancel_requested_at === null ? [$operation->id] : [];
+            $cancelled = clone $operation;
+            $cancelled->cancel_requested_at = $now;
+            $continue = app(OperationExecutors::class)->swamp($operation->kind)
+                && app(OperationExecutionContract::class)->cancellationAllowsRun($cancelled);
+            $frontier = $operation->cancel_requested_at === null && ! $continue ? [$operation->id] : [];
             while ($frontier !== []) {
                 $children = Operation::query()->whereIn('parent_operation_id', $frontier)->whereNull('cancel_requested_at')
                     ->whereNotIn('status', [OperationStatus::Succeeded->value, OperationStatus::Failed->value, OperationStatus::Cancelled->value])->lockForUpdate()->get();

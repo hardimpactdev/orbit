@@ -21,10 +21,10 @@ final readonly class InterruptLegacyInstanceDeploymentsAction
     public function execute(): void
     {
         Operation::query()->whereIn('kind', ['instance.deploy', 'instance.rollback'])
-            ->whereIn('status', ['queued', 'running', 'waiting'])->eachById(function (Operation $candidate): void {
+            ->whereIn('status', ['queued', 'waiting'])->eachById(function (Operation $candidate): void {
                 DB::transaction(function () use ($candidate): void {
                     $operation = Operation::query()->lockForUpdate()->findOrFail($candidate->id);
-                    if ($operation->status->terminal() || ! InstanceDeploymentIntent::legacy($operation)) {
+                    if (! in_array($operation->status, [OperationStatus::Queued, OperationStatus::Waiting], true) || ! InstanceDeploymentIntent::legacy($operation)) {
                         return;
                     }
                     foreach ($operation->steps as $step) {

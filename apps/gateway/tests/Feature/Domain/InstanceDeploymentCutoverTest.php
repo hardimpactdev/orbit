@@ -2,20 +2,16 @@
 
 declare(strict_types=1);
 
-use App\Actions\Instances\StartInstanceStepListAction;
 use App\Domain\Instances\Deployment\InstanceDeploymentAvailability;
 use App\Domain\Instances\Deployment\InstanceDeploymentExecution;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\SwampOperationExecutor;
-use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\InstanceDeployment;
 use App\Models\Operation;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Sleep;
 use Tests\Support\FakeAgentCommandRunner;
 
 function cutoverDeployment(): Operation
@@ -95,6 +91,15 @@ it('interrupts legacy Operations and history once at migration while preserving 
     $migration->up();
     $sequence = $operation->refresh()->sequence;
     $migration->up();
+    if ($status === 'running') {
+        expect($operation->refresh()->status)->toBe(OperationStatus::Running)
+            ->and($operation->lock_key)->toBe('instance:'.$operation->target_id)->and($operation->sequence)->toBe($sequence)
+            ->and($operation->steps()->sole()->status->value)->toBe('running');
+        expect(InstanceDeployment::query()->sole()->status)->toBe('running');
+        expect($agents->calls)->toBe([]);
+
+        return;
+    }
 
     expect($operation->refresh()->status)->toBe(OperationStatus::Failed)->and($operation->error_code)->toBe('deployment.interrupted')
         ->and($operation->lock_key)->toBeNull()->and($operation->sequence)->toBe($sequence)
@@ -105,25 +110,3 @@ it('interrupts legacy Operations and history once at migration while preserving 
     expect(fn () => InstanceDeploymentIntent::admitted($operation))
         ->toThrow(fn (ResourceOperationException $failure) => expect($failure->errorCode)->toBe('deployment.interrupted'));
 })->with(['instance.deploy', 'instance.rollback'])->with(['queued', 'running', 'waiting']);
-
-it('keeps a newly activated Instance when the retained setup wait expires', function (): void {
-    $instance = dev935_instance();
-    $operation = app(StartInstanceStepListAction::class)->execute($instance, LifecyclePhase::Setup, 'proof', null);
-    while (DB::transactionLevel() > 0) {
-        DB::commit();
-    }
-    Sleep::fake();
-    Sleep::whenFakingSleep(function (): never {
-        throw new ResourceOperationException('operation.await_timeout', 'The caller wait ended.', 409,
-            details: ['operation_id' => Operation::query()->sole()->id]);
-    });
-    try {
-        expect(fn () => app(StartInstanceStepListAction::class)->await($operation))
-            ->toThrow(fn (ResourceOperationException $failure) => expect($failure->errorCode)->toBe('operation.await_timeout')
-                ->and($failure->details)->toBe(['operation_id' => Operation::query()->sole()->id, 'outcome' => 'unconfirmed']));
-        test()->assertModelExists($instance);
-        expect(Operation::query()->sole()->status)->toBe(OperationStatus::Queued)->and(Operation::query()->sole()->cancel_requested_at)->toBeNull();
-    } finally {
-        Sleep::fake(false);
-    }
-});

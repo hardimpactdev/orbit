@@ -22,8 +22,6 @@ use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Projects\DevelopmentNodeExclusion;
-use App\Domain\Projects\LifecyclePhase;
-use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Shared\LifecycleStatus;
@@ -50,7 +48,7 @@ final readonly class RegisterInstanceAction
         private DevelopmentProjectionOperationLock $projectionLock,
         private DevelopmentInstanceProvisioner $provisioner,
         private DevelopmentInstanceConfigurator $configuration,
-        private ?ProjectLifecycleRunner $setup = null,
+        private ?RunInstanceSetupAction $setup = null,
     ) {}
 
     /** @return array{project: Project, primary: Instance, instances: list<Instance>, name_converted_from: string|null} */
@@ -59,7 +57,7 @@ final readonly class RegisterInstanceAction
         $result = $this->performRegistration($caller, $data);
 
         if ($data->runSetup && ! $result['primary']->placedOnAppProd()) {
-            ($this->setup ?? app(ProjectLifecycleRunner::class))->run($result['primary'], LifecyclePhase::Setup);
+            ($this->setup ?? app(RunInstanceSetupAction::class))->execute($result['primary']);
         }
 
         return $result;

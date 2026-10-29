@@ -5,7 +5,7 @@ covers:
   - apps/gateway/app/Domain/{Instances/Deployment/**,Instances/Smoke/**,Instances/ProductionWebRootManager.php,Projects/*DeployStep*.php}
   - apps/gateway/app/Actions/Instances/{StartInstanceDeployAction,StartInstanceRollbackAction,RunAutomaticDeploysAction,RestartInstanceProcessesAction,InstanceDeploymentConfigResolver,UpdateInstanceAction,ListInstanceReleasesAction,ListInstanceDeploymentsAction,*InstanceSmoke*Action,*InstanceDeployStep*Action}.php
   - apps/gateway/app/Infrastructure/Instances/{GitHubInstanceSmoke,SmokeArtifactEvidence,RemoteProductionDeployment,DevelopmentCheckoutProgram,ProductionApplicationPaths,ProductionWebRootProgram,RemoteProductionWebRootManager}.php
-  - apps/gateway/app/Console/Commands/AutoDeployCommand.php
+  - apps/gateway/app/Console/Commands/{AutoDeployCommand,CheckInstanceDeploymentOperationsCommand}.php
   - apps/agent/src/commands/{production,production_tests,production_home,production_home_tests,deploy_step}.rs
   - apps/gateway/app/Http/{Controllers/Api/{InstanceSmokeController,InstanceDeploymentsController,InstanceDeployStepsController,InstanceReleasesController,InstanceRollbacksController,ProjectDevelopmentDeployStepsController},Requests/Projects/*ProjectDevelopmentDeployStepRequest}.php
   - apps/gateway/{app/{Models/{InstanceDeployment,InstanceDeployStep,ProjectDevelopmentDeployStep},Data/Instances/InstanceDeploymentData}.php,database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_01_05_000000_add_caller_node_id_to_instance_deployments}.php}
@@ -20,7 +20,7 @@ Deployment execution uses the shared child and receipt contracts. The Gateway re
 
 Release this conversion after kit I, kit B/D, the Process/Schedule children, the Node PHP preparation child and `route.converge`, in that order. The deployment kinds also require kit C's enforced list results. Vite+ readiness requires the Tool lane's `tool.manager_converge`. `bin/check-operation-kinds` refuses a release missing these contracts. Deploy orbit-swamp PR #77 before the Gateway release in Orbit PR #1590.
 
-Drain old PHP deploy workers before switching executors. The cutover migration ends legacy deploy and rollback Operations without deployment snapshots as `deployment.interrupted`, finishes their history rows and releases their targets without Node effects. It keeps new Swamp intent and terminal history. Route transitions use the converted Route Operations and their bound Instance children.
+Drain old PHP deploy workers before switching executors. The cutover migration ends queued or waiting legacy deploy and rollback Operations without deployment snapshots as `deployment.interrupted`, finishes their history rows and releases their targets without Node effects. It leaves running PHP Operations and their holds unchanged. Drain those workers before releasing the cutover; the migration must not unlock an Instance while an old worker can still write. It keeps new Swamp intent and terminal history. Route transitions use the converted Route Operations and their bound Instance children.
 
 Completion derives the selected release from proven activation or previous-selection receipts. A lost Node connection does not prevent a failed or cancelled Operation from finishing its history row and releasing its Instance. Preparing a candidate alone never proves that it was selected.
 
@@ -676,3 +676,12 @@ The brief includes the failed SHA and release, smoke output and artifact links, 
 Production deploy and rollback Operations use the owning Process and Schedule children. Instances on the configured Swamp executor Nodes keep synchronous Process and Schedule composition through a bound Gateway command, so the executor does not depend on itself for runtime recovery. The admitted intent fixes this selection. Public environment synchronization and the retained clone environment caller remain synchronous; deployment parents explicitly use `instance.sync_environment`.
 
 After the PHP package child succeeds, each deploy and rollback publishes the Orbit PHP runtime module through `php.configure-runtime` before pool convergence and cache refresh. This preserves the 64 MiB post and upload limits and the shared OPcache settings.
+
+
+## Missing executor and Gateway revert
+
+An unclaimed deploy or rollback needs attention after five minutes. Its Operation exposes `assistance.error_code: deployment.executor_unclaimed`. The scheduled `orbit:instance-deployment-operations-check` command reports the same code and fails while such work remains. Check Services placement, the target worker and the registered deployment workflow. This check does not execute or cancel work, change a target hold, or mark a commit as failed. The alert clears after a claim or terminal outcome.
+
+To undo this cutover, prepare a revert of Orbit PR #1590 on the Gateway. Drain Gateway deploy workers and stop new deploy admission before switching executors. While the current Gateway still exposes the Swamp contracts, let running Swamp Operations finish, including their runtime children after proven activation. Keep Services and its deployed workflows available until that work settles. Never clear a hold while a worker can still write.
+
+Cancel queued Swamp deploy and rollback Operations through the Operation API. Confirm their terminal status and released Instance holds, then release the Gateway revert and restart native deploy workers. A queued Operation must never reach the restored PHP executor with Swamp-only intent. Reverting the executor leaves application code, database state and deployment history in place. Resume normal automatic admission after the queued work is clean and native workers run the reverted Gateway release.

@@ -6,15 +6,12 @@ namespace App\Actions\Instances;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\InstanceState;
-use App\Domain\Operations\AwaitOperation;
-use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\ProjectLifecycleStepStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Project;
-use Illuminate\Support\Facades\DB;
 
 /** Admits one immutable Project setup or teardown list. Parents own rollback policy. */
 final readonly class StartInstanceStepListAction
@@ -38,43 +35,5 @@ final readonly class StartInstanceStepListAction
             'source' => 'project', 'list' => $phase->value,
             'configuration_digest' => $this->configurationDigest($instance->project, $phase),
         ], $triggeredBy, $requestId);
-    }
-
-    /** Gateway callers admit after committing their own changes, then await bounded reads. */
-    public function retained(Instance $instance, LifecyclePhase $phase, string $caller): Operation
-    {
-        if (DB::transactionLevel() !== 0) {
-            throw new ResourceOperationException('operation.await_in_transaction', 'Commit the caller transaction before admitting and awaiting a step list.', 409);
-        }
-        $instance->refresh()->loadMissing('project');
-        if ($instance->placedOnAppProd()) {
-            throw new ResourceOperationException('instance.setup_unavailable', 'Project step lists require a development Instance.', 409);
-        }
-
-        return $this->operations->execute('instance.run_steps', 'instance', $instance->id, $instance->node_id,
-            ['instance_id' => $instance->id, 'source' => 'project', 'list' => $phase->value,
-                'configuration_digest' => $this->configurationDigest($instance->project, $phase)], $caller, null);
-    }
-
-    public function await(Operation $operation): Operation
-    {
-        try {
-            $finished = app(AwaitOperation::class)->execute($operation, 120);
-        } catch (ResourceOperationException $failure) {
-            if ($failure->errorCode !== 'operation.await_timeout') {
-                throw $failure;
-            }
-            throw new ResourceOperationException($failure->errorCode, $failure->getMessage(), $failure->status,
-                previous: $failure, details: [...$failure->details, 'outcome' => 'unconfirmed']);
-        }
-        if ($finished->status !== OperationStatus::Succeeded) {
-            $result = $finished->result ?? [];
-            throw new ResourceOperationException($finished->error_code ?? 'instance.lifecycle_unconfirmed',
-                'The Project step list did not succeed. Inspect its Operation before retrying.', 409,
-                details: ['operation_id' => $finished->id, 'outcome' => is_string($result['outcome'] ?? null) ? $result['outcome'] : 'unconfirmed',
-                    'step' => is_string($result['failed_step'] ?? null) ? $result['failed_step'] : '']);
-        }
-
-        return $finished;
     }
 }

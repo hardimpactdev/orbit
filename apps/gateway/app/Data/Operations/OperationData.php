@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Operations;
 
+use App\Domain\Instances\Deployment\InstanceDeploymentHealth;
 use App\Domain\Operations\OperationPoll;
 use App\Models\Operation;
 use DateTimeInterface;
@@ -76,6 +77,6 @@ final class OperationData extends Data
         $code = is_array($flag) ? ($flag['error_code'] ?? null) : null;
 
         return is_string($code) && in_array($code, ['operation.child_unproven', 'operation.kind_unavailable'], true)
-            ? ['error_code' => $code] : null;
+            ? ['error_code' => $code] : app(InstanceDeploymentHealth::class)->assistance($operation);
     }
 }
