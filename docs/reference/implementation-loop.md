@@ -92,7 +92,7 @@ CI runs builds and static checks only. It keeps every test file, but runs no tes
 | Web build | Build the web app and require `dist/index.html` and `dist/version.json` |
 | Required checks | Require all five build and static-check jobs to succeed; failures, cancellations and skips fail it |
 
-Run `bin/check-operation-kinds` to repeat the registry check locally. It uses the real Gateway container, loads every family declaration and resolves its PHP executor or Swamp completion and execution handlers plus its named transports. Any loading or resolution failure exits nonzero. It runs no Operation, reads no resource records and contacts no Node. Families register a kind only after the Gateway enforces its required contracts.
+Run `bin/check-operation-kinds` to repeat the registry check locally. It uses the real Gateway container, loads every family declaration and resolves its PHP executor or Swamp completion and execution handlers plus its named transports. Any loading or resolution failure exits nonzero. CI supplies a public fixture encryption key and requires no Gateway database. Constructor dependencies defer resource reads until their first use. The check runs no Operation, reads no resource records and contacts no Node. Families register a kind only after the Gateway enforces its required contracts.
 
 The required check name stays exactly `Required checks`. The branch ruleset and automatic Gateway release resolver depend on it. Its dependencies run in minutes and do not wait for agent compilation. The complete CI run must also finish successfully before the CLI release workflow publishes.
 

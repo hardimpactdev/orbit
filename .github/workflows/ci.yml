@@ -84,6 +84,8 @@ jobs:
           composer install --working-dir=apps/gateway --no-interaction --prefer-dist --no-dev
           bun install --cwd apps/web --frozen-lockfile
       - name: Boot and validate Operation kinds
+        env:
+          APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
         run: bin/check-operation-kinds
       - name: Check OpenAPI and MCP tools
         run: |
