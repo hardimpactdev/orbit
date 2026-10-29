@@ -11,16 +11,11 @@ use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
-use App\Models\DependencyPackage;
 use App\Models\FirewallRule;
 use App\Models\FleetRollout;
 use App\Models\FleetRolloutNode;
 use App\Models\GatewayRelease;
 use App\Models\Instance;
-use App\Models\InstanceDependencyEdge;
-use App\Models\InstanceDependencyObservation;
-use App\Models\InstanceDependencyResolution;
-use App\Models\InstanceDependencyScanAttempt;
 use App\Models\InstanceDeployment;
 use App\Models\InstanceDeployStep;
 use App\Models\InstanceEnvironmentValue;
@@ -130,11 +125,6 @@ it('partitions every persisted model across doctor dispositions', function (): v
         FleetRollout::class,
         FleetRolloutNode::class,
         NodeFootprint::class,
-        DependencyPackage::class,
-        InstanceDependencyObservation::class,
-        InstanceDependencyResolution::class,
-        InstanceDependencyEdge::class,
-        InstanceDependencyScanAttempt::class,
         NodeAccess::class,
         Activity::class,
         InstanceDeployment::class,

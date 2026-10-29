@@ -1,0 +1,137 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Instances\\ShowInstanceDependenciesRequest",
+    "route": "GET /api/v1/instances/{instance}/dependencies",
+    "status": 200,
+    "body": {
+        "data": {
+            "project_id": 20,
+            "instance_id": 1,
+            "source_ref": "refs/heads/main",
+            "instance_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "availability": "available",
+            "read_at": "2026-10-28T00:01:00+00:00",
+            "generated_at": "2026-10-28T00:00:00Z",
+            "source_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "last_attempt": {
+                "run_id": "31dc1fe1-67d8-574d-86dc-88bd9e0b6fb8",
+                "started_at": "2026-10-28T00:00:00Z",
+                "finished_at": "2026-10-28T00:00:00Z",
+                "status": "succeeded",
+                "error_code": null
+            },
+            "sources": [
+                {
+                    "id": "64da9c6b9583ae0c64fd780c2d9ccea8959252e57cd608441c257ca98dc27dcf",
+                    "path": ".",
+                    "ecosystem": "composer",
+                    "package_manager": "composer",
+                    "last_attempt": {
+                        "run_id": "31dc1fe1-67d8-574d-86dc-88bd9e0b6fb8",
+                        "started_at": "2026-10-28T00:00:00Z",
+                        "finished_at": "2026-10-28T00:00:00Z",
+                        "status": "succeeded",
+                        "error_code": null
+                    },
+                    "source_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "observed_at": "2026-10-28T00:00:00Z",
+                    "freshness": "current"
+                },
+                {
+                    "id": "551ecad39fc8664221be8bf55181c6bb89ccc711164700449546234823f6c4d0",
+                    "path": "mobile",
+                    "ecosystem": "npm",
+                    "package_manager": "bun",
+                    "last_attempt": {
+                        "run_id": "31dc1fe1-67d8-574d-86dc-88bd9e0b6fb8",
+                        "started_at": "2026-10-28T00:00:00Z",
+                        "finished_at": "2026-10-28T00:00:00Z",
+                        "status": "succeeded",
+                        "error_code": null
+                    },
+                    "source_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "observed_at": "2026-10-28T00:00:00Z",
+                    "freshness": "current"
+                }
+            ],
+            "report": {
+                "source_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "publication_id": "4cceccf7-6c69-5ba7-baa8-9b981b9d76c4",
+                "path": ".",
+                "ecosystem": "composer",
+                "package_manager": "composer",
+                "observed_at": "2026-10-28T00:00:00Z",
+                "run_id": "31dc1fe1-67d8-574d-86dc-88bd9e0b6fb8",
+                "basis": "locked",
+                "observed_on": "repository",
+                "instance_id": null,
+                "freshness": "current",
+                "packages": [
+                    {
+                        "id": "example/library@1.0.0",
+                        "name": "example/library",
+                        "version": "1.0.0",
+                        "direct": true,
+                        "scopes": [
+                            "regular",
+                            "development"
+                        ],
+                        "origin": "registry"
+                    },
+                    {
+                        "id": "fixture/transitive@3.0.0",
+                        "name": "fixture/transitive",
+                        "version": "3.0.0",
+                        "direct": false,
+                        "scopes": [
+                            "development"
+                        ],
+                        "origin": "registry"
+                    },
+                    {
+                        "id": "fixture/local@dev-main",
+                        "name": "fixture/local",
+                        "version": "dev-main",
+                        "direct": true,
+                        "scopes": [
+                            "regular"
+                        ],
+                        "origin": "path"
+                    }
+                ],
+                "package_count": 3,
+                "packages_page": 1,
+                "findings": [
+                    {
+                        "id": "finding-example-major",
+                        "package": "example/library",
+                        "kind": "major",
+                        "current_versions": [
+                            "1.0.0"
+                        ],
+                        "target_version": "2.0.0",
+                        "advisory_ids": [],
+                        "state": "ready",
+                        "reason": {
+                            "code": "verified_target",
+                            "text": "A compatible target passed lockfile-only planning."
+                        },
+                        "links": null
+                    }
+                ],
+                "finding_count": 1,
+                "findings_page": 1
+            },
+            "batch_pr": {
+                "status": "absent",
+                "checked_at": "2026-10-28T00:00:00Z",
+                "last_success_at": "2026-10-28T00:00:00Z",
+                "error_code": null,
+                "value": null
+            }
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

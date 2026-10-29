@@ -8,5 +8,11 @@
         "reference/instance-dependencies"
       ]
     }
+  ],
+  "redirects": [
+    {
+      "source": "/decisions/0239-let-swamp-own-dependency-maintenance",
+      "destination": "/reference/instance-dependencies#why-it-works-this-way"
+    }
   ]
 }

@@ -1,3 +1,4 @@
+import type { DependencyResults } from "../api/dependencies";
 import type { Method, Transport } from "../api/client";
 import type {
     Database,
@@ -6,6 +7,7 @@ import type {
     ManagedFirewallRule,
     Node,
     Process,
+    Project,
     QuotaAccount,
     QuotaProvider,
     Schedule,
@@ -120,6 +122,7 @@ export function createDemoGateway() {
 
     const list = <T>(route: string, key = ""): T[] =>
         (byRoute.get(`${route}#${key}`) as T[] | undefined) ?? [];
+    const projects = list<Project>("GET /api/v1/projects");
     const nodes = list<Node>("GET /api/v1/nodes");
     const processes = list<Process>("GET /api/v1/processes");
     const schedules = list<Schedule>("GET /api/v1/schedules");
@@ -598,28 +601,64 @@ export function createDemoGateway() {
             ],
             [
                 "GET",
-                /^\/api\/v1\/instances\/(\d+)\/dependencies$/,
-                ([id]) => {
-                    const inventory = byRoute.get(
-                        `GET /api/v1/instances/{instance}/dependencies#${id}`,
-                    );
-                    if (inventory !== undefined) return ok(inventory);
-                    if (!instances.some((instance) => String(instance.id) === id))
-                        return notFound("Instance");
-                    const unknown = (ecosystem: string) => ({
-                        ecosystem,
-                        state: "unknown",
-                        succeeded: null,
-                        attempted_at: null,
-                        error_code: null,
-                        snapshot: null,
-                    });
-                    return ok({
-                        instance_id: Number(id),
-                        succeeded: null,
-                        composer: unknown("composer"),
-                        javascript: unknown("npm"),
-                    });
+                /^\/api\/v1\/(instances|projects)\/(\d+)\/dependencies(?:\?(.*))?$/,
+                ([scope, id, query = ""]) => {
+                    const route = `GET /api/v1/${scope}/{${scope === "instances" ? "instance" : "project"}}/dependencies`;
+                    const inventory = byRoute.get(`${route}#${id}`) as
+                        | DependencyResults
+                        | undefined;
+                    const known =
+                        scope === "instances"
+                            ? instances.some((i) => String(i.id) === id)
+                            : projects.some((p) => String(p.id) === id);
+                    if (!known) return notFound(scope === "instances" ? "Instance" : "Project");
+                    if (inventory === undefined)
+                        return ok({
+                            project_id:
+                                scope === "projects"
+                                    ? Number(id)
+                                    : instances.find((i) => String(i.id) === id)?.project.id,
+                            instance_id: scope === "instances" ? Number(id) : null,
+                            source_ref: "refs/heads/main",
+                            instance_commit: null,
+                            availability: "unavailable",
+                            read_at: null,
+                            generated_at: null,
+                            source_commit: null,
+                            last_attempt: null,
+                            sources: [],
+                            report: null,
+                            batch_pr: {
+                                status: "unknown",
+                                checked_at: null,
+                                last_success_at: null,
+                                error_code: "unavailable",
+                                value: null,
+                            },
+                        });
+                    const params = new URLSearchParams(query);
+                    const result = structuredClone(inventory);
+                    if (params.get("source") === inventory.sources[1]?.id) {
+                        const mobile = byRoute.get(
+                            "GET /api/v1/instances/{instance}/dependencies#mobile",
+                        ) as DependencyResults;
+                        result.report = structuredClone(mobile.report);
+                    }
+                    if (result.report !== null) {
+                        const packagesPage = Number(params.get("packages_page") ?? 1);
+                        const findingsPage = Number(params.get("findings_page") ?? 1);
+                        result.report.packages = result.report.packages.slice(
+                            (packagesPage - 1) * 100,
+                            packagesPage * 100,
+                        );
+                        result.report.findings = result.report.findings.slice(
+                            (findingsPage - 1) * 100,
+                            findingsPage * 100,
+                        );
+                        result.report.packages_page = packagesPage;
+                        result.report.findings_page = findingsPage;
+                    }
+                    return ok(result);
                 },
             ],
             ["GET", /^\/api\/v1\/tasks\/status$/, () => ok({ enabled: tasksEnabled })],

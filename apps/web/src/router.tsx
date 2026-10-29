@@ -10,7 +10,7 @@ import { TasksBoard, TaskDetail, SubtaskDetail } from "./pages/Tasks";
 import { Dashboard } from "./pages/Dashboard";
 import { NodeCreate } from "./pages/NodeCreate";
 import { NodeRecordPage } from "./pages/NodeRecord";
-import { DeploymentPage, RecordPage } from "./pages/RecordPage";
+import { DeploymentPage, RecordPage, ProjectDependenciesRecordPage } from "./pages/RecordPage";
 import { SectionList } from "./pages/SectionList";
 import { Shell } from "./ui/Shell";
 import { ProjectDocumentsPage, readDocumentsSearch } from "./extensions/documents/ProjectDocuments";
@@ -77,6 +77,11 @@ const routeTree = rootRoute.addChildren([
         path: "/projects/$id/documents",
         component: ProjectDocumentsPage,
         validateSearch: readDocumentsSearch,
+    }),
+    createRoute({
+        getParentRoute: () => rootRoute,
+        path: "/projects/$id/dependencies",
+        component: ProjectDependenciesRecordPage,
     }),
     createRoute({ getParentRoute: () => rootRoute, path: "/$section/$id", component: RecordPage }),
 ]);

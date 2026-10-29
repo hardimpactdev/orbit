@@ -61,20 +61,23 @@ describe(StreamWebSocketClient::class, function (): void {
         }
     });
 
-    it('refuses a refused handshake and a wrong accept key', function (string $mode, string $message): void {
+    it('refuses a refused handshake and a wrong accept key', function (string $mode, string $message, int $code): void {
         $server = ScriptedWebSocketServer::start($mode);
 
         try {
             $client = new StreamWebSocketClient;
 
-            expect(fn () => $client->connect($server->endpoint(), 5.0))->toThrow(WebSocketException::class, $message)
+            expect(fn () => $client->connect($server->endpoint(), 5.0))->toThrow(function (WebSocketException $exception) use ($message, $code): void {
+                expect($exception->getMessage())->toContain($message);
+                expect($exception->getCode())->toBe($code);
+            })
                 ->and($client->isConnected())->toBeFalse();
         } finally {
             $server->stop();
         }
     })->with([
-        'refused' => ['refuse', 'refused the WebSocket handshake'],
-        'wrong accept key' => ['bad-accept', 'unexpected WebSocket accept key'],
+        'refused' => ['refuse', 'refused the WebSocket handshake', 400],
+        'wrong accept key' => ['bad-accept', 'unexpected WebSocket accept key', 0],
     ]);
 
     it('returns whole JSON messages and drops oversized, malformed, and binary ones', function (): void {

@@ -5172,58 +5172,6 @@
       ]
     },
     {
-      "name": "instance.read-dependency-files",
-      "summary": "Read the dependency manifests and lockfiles of a development checkout.",
-      "mutates": false,
-      "timeout_seconds": 120,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "instance.dependency_input_invalid"
-      ]
-    },
-    {
-      "name": "instance.read-release-dependency-files",
-      "summary": "Read the dependency manifests and lockfiles of a production home's current release.",
-      "mutates": false,
-      "timeout_seconds": 120,
-      "privilege": {
-        "linux": "owner",
-        "macos": null
-      },
-      "errors": [
-        "instance.dependency_input_invalid"
-      ]
-    },
-    {
-      "name": "instance.probe-dependency-update",
-      "summary": "Check whether one package ecosystem of a directory is ready for an update.",
-      "mutates": false,
-      "timeout_seconds": 45,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "instance.dependency_input_invalid"
-      ]
-    },
-    {
-      "name": "instance.update-dependencies",
-      "summary": "Update one package ecosystem of a development checkout within its constraints.",
-      "mutates": true,
-      "timeout_seconds": 630,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "instance.dependency_input_invalid"
-      ]
-    },
-    {
       "name": "instance.resolve-development-target",
       "summary": "Fetch a development default's branch and name the commit a deploy checks out.",
       "mutates": true,

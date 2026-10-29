@@ -9,7 +9,7 @@ gateway application.
 During monorepo development, `apps/cli` consumes this package through a
 Composer path repository with symlinking enabled.
 
-The SDK exposes exactly 243 public Gateway operations. It preserves typed
+The SDK exposes exactly 242 public Gateway operations. It preserves typed
 payloads, bounded responses, structured errors, and request IDs without
 applying Gateway policy. It does not define command-line presentation or
 remote execution behavior.
@@ -116,12 +116,9 @@ composer format     # Laravel Pint formatter
 composer check      # guidance, Rector, and Pint and PHPStan checks
 ```
 
-Dependency inventory reads and scans use `ShowInstanceDependenciesRequest` and
-`ScanInstanceDependenciesRequest` with numeric instance IDs. Both return the typed
-`InstanceDependencyInventoryResponse`; inspect its nullable `succeeded` and each
-ecosystem outcome even after HTTP 200. Development updates use
-`UpdateInstanceDependenciesRequest` with the same numeric ID and empty JSON
-object, and return typed step statuses plus nullable post-update inventory.
-Inspect `succeeded`, each step, and inventory even after HTTP 200. See the
-[dependency contract](../../docs/reference/instance-dependency-contracts.md)
-for graph fields, freshness states, step outcomes, and SDK response limits.
+Dependency reads use `ShowInstanceDependenciesRequest` or
+`ShowProjectDependenciesRequest` with numeric IDs and optional source and page
+selectors. They return typed `DependencyResultsResponse` values from Swamp.
+Inspect availability, report provenance, freshness, and PR certainty even after
+HTTP 200. Reads never start maintenance. See the
+[dependency contract](../../docs/reference/instance-dependency-contracts.md).

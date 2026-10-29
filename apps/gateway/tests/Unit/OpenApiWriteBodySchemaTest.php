@@ -162,12 +162,24 @@ it('publishes empty-object bodies with the runtime requiredness', function (stri
     expect($tool['query_inputs'])->toBe([]);
 })->with([
     'environment sync' => ['env-sync', true],
-    'dependency scan' => ['instance-dependencies-scan', true],
-    'dependency update' => ['instance-dependencies-update', true],
     'task cancellation' => ['tasks-cancel', false],
     'task completion' => ['tasks-complete', false],
     'schedule enable' => ['schedule-enable', false],
 ]);
+
+it('omits retired native dependency mutations from OpenAPI and MCP', function (): void {
+    $root = dirname(__DIR__, 4);
+    $openapi = json_decode((string) file_get_contents($root.'/docs/openapi.json'), true, flags: JSON_THROW_ON_ERROR);
+    $catalogue = json_decode((string) file_get_contents($root.'/apps/gateway/resources/mcp/tools.json'), true, flags: JSON_THROW_ON_ERROR);
+    $operations = collect($openapi['paths'])->flatMap(fn (array $path): array => array_values($path))->keyBy('operationId');
+    $tools = collect($catalogue['tools'])->keyBy('name');
+
+    foreach (['scan', 'update'] as $mutation) {
+        expect($openapi['paths'])->not->toHaveKey('/api/v1/instances/{instance}/dependencies/'.$mutation);
+        expect($operations->has('instance-dependencies-'.$mutation))->toBeFalse();
+        expect($tools->has('instance-dependencies-'.$mutation))->toBeFalse();
+    }
+});
 
 it('keeps bodyless operations without a request body', function (): void {
     $root = dirname(__DIR__, 4);

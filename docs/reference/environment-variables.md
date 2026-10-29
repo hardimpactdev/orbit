@@ -89,7 +89,7 @@ The Gateway derives the file location and the user from the Instance's placement
 | `app-dev` | `.env` in the Instance's application directory within the checkout | The Node's managed user |
 | `app-prod` | `.env` in the production home | The Instance's production user |
 
-[Monorepo dependency discovery](/reference/instance-dependencies#monorepo-sub-projects) reads separate manifests and lockfiles under `apps/` and `packages/`. It does not import, store, or synchronize those sub-projects' `.env` files. The Instance environment keeps its existing application-directory scope.
+[Swamp dependency sources](/reference/instance-dependency-contracts#separate-monorepo-dependency-sources) describe separate repository paths and ecosystems. Reading these results does not import, store, or synchronize sub-project `.env` files. The Instance environment keeps its existing application-directory scope.
 
 For Laravel, the [application directory](/reference/projects#application-directory) is the effective web root without its trailing `/public`. With root `apps/site/public`, development reads and writes `<checkout>/apps/site/.env`, and `.env.testing` lives beside it. A development default uses the same paths in its checkout, which it serves directly without a `current` link.
 

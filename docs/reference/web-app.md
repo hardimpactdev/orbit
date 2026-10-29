@@ -405,11 +405,11 @@ With a translucent status bar and `viewport-fit=cover`, iOS 26 starts the web vi
 
 The opaque status bar alone does not stop the glass edge effect. iOS 26 still blurs about 38 points below the top of the web view unless WebKit can take a flat colour from a fixed, opaque box covering that edge. No CSS property or meta tag turns the effect off. Padding the header down would leave an empty band, so the shell itself is that fixed box.
 
-## Instance dependencies
+## Instance and Project dependencies
 
-An Instance has a Dependencies section with separate Composer and npm tables. Each table shows package names, installed versions from the saved scan, and runtime or development scope. The page reads `GET /api/v1/instances/{instance}/dependencies` and refreshes the saved inventory using the normal polling fallback. Opening this section does not start a scan or update packages.
+Dependencies shows results from Swamp on Instance and Project pages. Each source has its own path and ecosystem. The page reads the Gateway's dependency endpoint and never talks to Swamp or starts a scan. Dependencies remains available when the Tasks extension is disabled.
 
-The page shows when each snapshot was observed and distinguishes unscanned, absent, stale, failed, and empty inventories. A failed scan can still show the previous snapshot, labelled with the failure. Dependencies remains available when the Tasks extension is disabled.
+The view shows locked versions with their repository commit and observation time, distinct resolutions, origin, direct/transitive status, and runtime/development scopes. It shows major/advisory findings with verified targets, blocked reasons, and the whole-project batch PR. It distinguishes open, absent, and unknown PR evidence. Stale or unavailable reads retain their meaning on cached responses. [Instance dependencies](/reference/instance-dependencies) owns the provenance and freshness rules.
 
 ## Deploy an Instance
 

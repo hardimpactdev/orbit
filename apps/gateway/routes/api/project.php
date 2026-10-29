@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\Api\ProjectDependenciesController;
 use App\Http\Controllers\Api\ProjectDependencyReadTokenController;
 use App\Http\Controllers\Api\ProjectDevelopmentDeployStepsController;
 use App\Http\Controllers\Api\ProjectExcludedNodesController;
@@ -21,6 +22,7 @@ Route::middleware([
     RequireActiveWireGuardPeer::class,
     RequireNodeAccess::class,
 ])->group(function (): void {
+    Route::get('projects/{project}/dependencies', [ProjectDependenciesController::class, 'show'])->whereNumber('project')->name('project:dependencies:show');
     Route::get('projects', [ProjectsController::class, 'index'])->name('project:list');
     Route::get('projects/{project}', [ProjectsController::class, 'show'])->name('project:show');
     Route::post('projects', [ProjectsController::class, 'store'])->name('project:create');

@@ -1,4 +1,4 @@
-import { InstanceDependenciesPage } from "./InstanceDependencies";
+import { InstanceDependenciesPage, ProjectDependenciesPage } from "./InstanceDependencies";
 import { extensionsQuery } from "../api/extensions";
 import { taskGroupsQuery, tasksForInstance } from "../api/tasks";
 import { useTaskPoll } from "../realtime/polling";
@@ -703,6 +703,28 @@ export function DeploymentPage() {
                     lines={log.data}
                     loading={log.isPending}
                 />
+            </div>
+        </RecordLayout>
+    );
+}
+
+export function ProjectDependenciesRecordPage() {
+    const { id } = useParams({ from: "/projects/$id/dependencies" });
+    const fleet = useFleet();
+    const project = fleet.projects.find((p) => String(p.id) === id);
+    if (project === undefined) return null;
+    return (
+        <RecordLayout kind="projects" row={project}>
+            <div className="flex h-full min-h-0 min-w-0 flex-col gap-2 md:flex-row">
+                <ProjectMenu project={project} documents={false} dependencies />
+                <div
+                    id={`project-${id}-dependencies-panel`}
+                    role="tabpanel"
+                    aria-labelledby={`project-${id}-dependencies-tab`}
+                    className="min-h-0 min-w-0 flex-1"
+                >
+                    <ProjectDependenciesPage projectId={project.id} />
+                </div>
             </div>
         </RecordLayout>
     );

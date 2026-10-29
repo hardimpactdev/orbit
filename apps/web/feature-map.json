@@ -4,19 +4,46 @@
         "purpose": "The fleet at a glance: nodes, projects, instances, processes, schedules, and what needs attention.",
         "reach": "Open Dashboard in the main nav, or load the app.",
         "controls": [
-            { "testid": "nav-menu", "purpose": "Opens the main nav on a phone." },
-            { "testid": "nav-close", "purpose": "Closes the phone menu." },
+            {
+                "testid": "nav-menu",
+                "purpose": "Opens the main nav on a phone."
+            },
+            {
+                "testid": "nav-close",
+                "purpose": "Closes the phone menu."
+            },
             {
                 "testid": "nav-dashboard",
                 "purpose": "Dashboard in the main nav, after the phone menu is opened when the nav is collapsed."
             },
-            { "testid": "dashboard-workers", "purpose": "The Nodes with roles pane." },
-            { "testid": "dashboard-clients", "purpose": "The roleless Nodes pane." },
-            { "testid": "dashboard-projects", "purpose": "The projects pane." },
-            { "testid": "dashboard-instances", "purpose": "The instances pane." },
-            { "testid": "dashboard-processes", "purpose": "The processes pane." },
-            { "testid": "dashboard-schedules", "purpose": "The schedules pane." },
-            { "testid": "dashboard-attention", "purpose": "Rows that need a look." }
+            {
+                "testid": "dashboard-workers",
+                "purpose": "The Nodes with roles pane."
+            },
+            {
+                "testid": "dashboard-clients",
+                "purpose": "The roleless Nodes pane."
+            },
+            {
+                "testid": "dashboard-projects",
+                "purpose": "The projects pane."
+            },
+            {
+                "testid": "dashboard-instances",
+                "purpose": "The instances pane."
+            },
+            {
+                "testid": "dashboard-processes",
+                "purpose": "The processes pane."
+            },
+            {
+                "testid": "dashboard-schedules",
+                "purpose": "The schedules pane."
+            },
+            {
+                "testid": "dashboard-attention",
+                "purpose": "Rows that need a look."
+            }
         ]
     },
     {
@@ -28,8 +55,14 @@
                 "testid": "nav-tasks",
                 "purpose": "Tasks in the main nav, after the phone menu is opened when the nav is collapsed."
             },
-            { "testid": "tasks-board", "purpose": "The status columns." },
-            { "testid": "task-group-card", "purpose": "Opens one task group." },
+            {
+                "testid": "tasks-board",
+                "purpose": "The status columns."
+            },
+            {
+                "testid": "task-group-card",
+                "purpose": "Opens one task group."
+            },
             {
                 "testid": "task-insights",
                 "purpose": "The insights strip with the KPIs against the previous period."
@@ -45,13 +78,22 @@
         "purpose": "One task group, its Swamp runs, subtasks, and agent threads.",
         "reach": "Open Tasks in the main nav, then choose a group.",
         "controls": [
-            { "testid": "task-group-title", "purpose": "The group title." },
+            {
+                "testid": "task-group-title",
+                "purpose": "The group title."
+            },
             {
                 "testid": "task-swamp-runs",
                 "purpose": "Workflow state, step output, run logs, and availability."
             },
-            { "testid": "subtask-card", "purpose": "Opens one subtask." },
-            { "testid": "agent-sessions", "purpose": "The group's agent threads." }
+            {
+                "testid": "subtask-card",
+                "purpose": "Opens one subtask."
+            },
+            {
+                "testid": "agent-sessions",
+                "purpose": "The group's agent threads."
+            }
         ]
     },
     {
@@ -59,9 +101,18 @@
         "purpose": "One subtask, with its agent thread and comments.",
         "reach": "Open Tasks in the main nav, choose a group, then choose a subtask.",
         "controls": [
-            { "testid": "subtask-title", "purpose": "The subtask title." },
-            { "testid": "agent-sessions", "purpose": "The subtask's agent thread." },
-            { "testid": "task-comments", "purpose": "Comments on this subtask." }
+            {
+                "testid": "subtask-title",
+                "purpose": "The subtask title."
+            },
+            {
+                "testid": "agent-sessions",
+                "purpose": "The subtask's agent thread."
+            },
+            {
+                "testid": "task-comments",
+                "purpose": "Comments on this subtask."
+            }
         ]
     },
     {
@@ -73,7 +124,10 @@
                 "testid": "nav-activity",
                 "purpose": "Activity in the main nav, after the phone menu is opened when the nav is collapsed."
             },
-            { "testid": "activity-filters", "purpose": "Opens the filter sheet on a phone." },
+            {
+                "testid": "activity-filters",
+                "purpose": "Opens the filter sheet on a phone."
+            },
             {
                 "testid": "activity-filter-status",
                 "purpose": "Cycles the status filter, from the bar or the phone sheet."
@@ -94,8 +148,14 @@
                 "testid": "activity-filters-clear",
                 "purpose": "Clears every filter from the phone sheet."
             },
-            { "testid": "activity-filters-done", "purpose": "Closes the phone filter sheet." },
-            { "testid": "activity-row", "purpose": "Opens one activity row." },
+            {
+                "testid": "activity-filters-done",
+                "purpose": "Closes the phone filter sheet."
+            },
+            {
+                "testid": "activity-row",
+                "purpose": "Opens one activity row."
+            },
             {
                 "testid": "activity-new",
                 "purpose": "Scrolls to rows that arrived above the viewport."
@@ -107,8 +167,14 @@
         "purpose": "One activity record and its stored properties.",
         "reach": "Open Activity in the main nav, then choose a row.",
         "controls": [
-            { "testid": "activity-detail", "purpose": "The activity's fields." },
-            { "testid": "activity-properties", "purpose": "The stored properties." }
+            {
+                "testid": "activity-detail",
+                "purpose": "The activity's fields."
+            },
+            {
+                "testid": "activity-properties",
+                "purpose": "The stored properties."
+            }
         ]
     },
     {
@@ -116,15 +182,42 @@
         "purpose": "The form that adds a node.",
         "reach": "Open Nodes in the main nav, then choose + create.",
         "controls": [
-            { "testid": "node-name", "purpose": "The node name field." },
-            { "testid": "node-host", "purpose": "The SSH host field." },
-            { "testid": "node-port", "purpose": "The SSH port field." },
-            { "testid": "node-user", "purpose": "The SSH user field." },
-            { "testid": "node-role-app-dev", "purpose": "Toggles the app-dev role." },
-            { "testid": "node-role-app-prod", "purpose": "Toggles the app-prod role." },
-            { "testid": "node-role-gateway", "purpose": "Toggles the gateway role." },
-            { "testid": "node-tld", "purpose": "The domain TLD field." },
-            { "testid": "create-node", "purpose": "Submits the form." }
+            {
+                "testid": "node-name",
+                "purpose": "The node name field."
+            },
+            {
+                "testid": "node-host",
+                "purpose": "The SSH host field."
+            },
+            {
+                "testid": "node-port",
+                "purpose": "The SSH port field."
+            },
+            {
+                "testid": "node-user",
+                "purpose": "The SSH user field."
+            },
+            {
+                "testid": "node-role-app-dev",
+                "purpose": "Toggles the app-dev role."
+            },
+            {
+                "testid": "node-role-app-prod",
+                "purpose": "Toggles the app-prod role."
+            },
+            {
+                "testid": "node-role-gateway",
+                "purpose": "Toggles the gateway role."
+            },
+            {
+                "testid": "node-tld",
+                "purpose": "The domain TLD field."
+            },
+            {
+                "testid": "create-node",
+                "purpose": "Submits the form."
+            }
         ]
     },
     {
@@ -132,9 +225,18 @@
         "purpose": "One deployment and its log.",
         "reach": "Open Projects in the main nav, open a project, open an instance, then choose a deployment.",
         "controls": [
-            { "testid": "deployment-title", "purpose": "The deployment's release title." },
-            { "testid": "deployment-properties", "purpose": "The deployment's properties." },
-            { "testid": "deployment-log", "purpose": "The deployment log." },
+            {
+                "testid": "deployment-title",
+                "purpose": "The deployment's release title."
+            },
+            {
+                "testid": "deployment-properties",
+                "purpose": "The deployment's properties."
+            },
+            {
+                "testid": "deployment-log",
+                "purpose": "The deployment log."
+            },
             {
                 "testid": "deployment-missing",
                 "purpose": "Shown when that deployment is not in the list."
@@ -182,7 +284,10 @@
                 "testid": "section-list",
                 "purpose": "The section's rows, or the message when the section is missing or quota is off."
             },
-            { "testid": "nodes-create", "purpose": "Opens the create-node form from Nodes." },
+            {
+                "testid": "nodes-create",
+                "purpose": "Opens the create-node form from Nodes."
+            },
             {
                 "testid": "section-filter-node",
                 "purpose": "Cycles the node filter on Instances, Processes, and Schedules."
@@ -202,11 +307,26 @@
         "purpose": "One Node's overview: identity, supported metrics, instances, and node processes.",
         "reach": "Open Nodes, then choose a row. Overview is the Node URL without a section.",
         "controls": [
-            { "testid": "record-title", "purpose": "The Node name in the breadcrumb." },
-            { "testid": "record-actions", "purpose": "Opens the Node actions menu." },
-            { "testid": "record-properties", "purpose": "The Node's identity." },
-            { "testid": "node-overview", "purpose": "The Overview section." },
-            { "testid": "node-tools", "purpose": "The Tools section." },
+            {
+                "testid": "record-title",
+                "purpose": "The Node name in the breadcrumb."
+            },
+            {
+                "testid": "record-actions",
+                "purpose": "Opens the Node actions menu."
+            },
+            {
+                "testid": "record-properties",
+                "purpose": "The Node's identity."
+            },
+            {
+                "testid": "node-overview",
+                "purpose": "The Overview section."
+            },
+            {
+                "testid": "node-tools",
+                "purpose": "The Tools section."
+            },
             {
                 "testid": "node-firewall",
                 "purpose": "The Firewall section on a Linux Node. A Mac does not show it."
@@ -218,8 +338,14 @@
         "purpose": "Registered Tools and detected packages for one Node, including adoption, update, and removal.",
         "reach": "Open a Node, then choose Tools. The address is /nodes/<id>/tools.",
         "controls": [
-            { "testid": "node-overview", "purpose": "Back to the Node overview." },
-            { "testid": "node-tools", "purpose": "The Tools section, selected on this route." },
+            {
+                "testid": "node-overview",
+                "purpose": "Back to the Node overview."
+            },
+            {
+                "testid": "node-tools",
+                "purpose": "The Tools section, selected on this route."
+            },
             {
                 "testid": "node-firewall",
                 "purpose": "The Firewall section on a Linux Node. A Mac does not show it."
@@ -323,8 +449,14 @@
         "purpose": "The Linux Node's operator, Orbit, and live firewall rules, with the existing actions.",
         "reach": "Open a Linux Node, then choose Firewall. The address is /nodes/<id>/firewall.",
         "controls": [
-            { "testid": "node-overview", "purpose": "Back to the Node overview." },
-            { "testid": "node-tools", "purpose": "The Tools section." },
+            {
+                "testid": "node-overview",
+                "purpose": "Back to the Node overview."
+            },
+            {
+                "testid": "node-tools",
+                "purpose": "The Tools section."
+            },
             {
                 "testid": "node-firewall",
                 "purpose": "The Firewall section, selected on this route."
@@ -336,21 +468,42 @@
         "purpose": "One project, instance, process, schedule, database, firewall rule, or quota provider.",
         "reach": "Open a section from the main nav, then choose a row.",
         "controls": [
-            { "testid": "record-title", "purpose": "The record name in the breadcrumb." },
+            {
+                "testid": "record-title",
+                "purpose": "The record name in the breadcrumb."
+            },
             {
                 "testid": "record-actions",
                 "purpose": "Opens the actions menu. A quota provider has no actions menu."
             },
-            { "testid": "record-properties", "purpose": "The record's properties." },
-            { "testid": "record-log", "purpose": "The log on an instance, process, or schedule." },
-            { "testid": "record-missing", "purpose": "Shown when the id is not in that section." },
-            { "testid": "instance-overview", "purpose": "The Overview tab on an instance." },
+            {
+                "testid": "record-properties",
+                "purpose": "The record's properties."
+            },
+            {
+                "testid": "record-log",
+                "purpose": "The log on an instance, process, or schedule."
+            },
+            {
+                "testid": "record-missing",
+                "purpose": "Shown when the id is not in that section."
+            },
+            {
+                "testid": "instance-overview",
+                "purpose": "The Overview tab on an instance."
+            },
             {
                 "testid": "instance-dependencies",
-                "purpose": "Saved Composer and npm dependencies for an instance."
+                "purpose": "Swamp dependency evidence for an Instance; opening it starts no scan."
             },
-            { "testid": "instance-tasks", "purpose": "The Tasks tab on an instance." },
-            { "testid": "quota-accounts", "purpose": "Accounts in a quota provider pool." },
+            {
+                "testid": "instance-tasks",
+                "purpose": "The Tasks tab on an instance."
+            },
+            {
+                "testid": "quota-accounts",
+                "purpose": "Accounts in a quota provider pool."
+            },
             {
                 "testid": "quota-account-toggle",
                 "purpose": "Enables or disables one quota account."
@@ -393,6 +546,33 @@
             {
                 "testid": "documents-error",
                 "purpose": "Conflict or storage recovery guidance."
+            }
+        ]
+    },
+    {
+        "path": "/projects/$id/dependencies",
+        "purpose": "Swamp dependency versions, major and advisory findings, blocked reasons, and batch PR evidence.",
+        "reach": "Open a Project, then Dependencies in its section menu.",
+        "controls": [
+            {
+                "testid": "project-dependencies",
+                "purpose": "The Project Dependencies section."
+            },
+            {
+                "testid": "dependency-results",
+                "purpose": "Selected source and bounded evidence."
+            },
+            {
+                "testid": "dependency-batch-pr",
+                "purpose": "Open, absent, or unknown batch PR evidence."
+            },
+            {
+                "testid": "dependency-versions",
+                "purpose": "Distinct resolutions with provenance."
+            },
+            {
+                "testid": "dependency-findings",
+                "purpose": "Targets, advisory evidence, blocked reasons, and batch links."
             }
         ]
     }

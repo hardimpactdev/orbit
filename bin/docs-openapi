@@ -1270,6 +1270,8 @@ def ref(cls):
         for key, prop in schema_fields(d):
             props[key] = prop_schema(prop)
         components[name] = {'type': 'object', 'properties': props}
+        if name in {'DependencyResults', 'DependencyAttempt', 'DependencySource', 'DependencyReport', 'DependencyPackage', 'DependencyFinding', 'DependencyReason', 'DependencyLinks', 'DependencyBatchPr', 'DependencyPullRequest'}:
+            components[name].update(required=list(props), additionalProperties=False)
         if cls.startswith('InstanceSmoke'):
             components[name]['required'] = list(props)
             for field in ('deployment_id', 'instance_id', 'run_id', 'run_attempt'):
@@ -1629,6 +1631,8 @@ def bash_sample(route, path, body_schema, query, tag):
     url = 'https://gateway.orbit' + re.sub(r'\{(\w+)\}', lambda m: str(example_path(route, m.group(1))), path)
     if query:
         examples = {**EXAMPLE_BY_NAME, **ACTIVITY_LIST_EXAMPLES} if route['name'] == 'activity:list' else EXAMPLE_BY_NAME
+        if route['name'] in ('instance:dependencies:show', 'project:dependencies:show'):
+            examples = {**examples, 'source': '64da9c6b9583ae0c64fd780c2d9ccea8959252e57cd608441c257ca98dc27dcf'}
         url += '?' + '&'.join(f'{q}={examples.get(q, 1)}' for q in query)
     method = '' if route['method'] == 'GET' else f'-X {route["method"]} '
     lines = [f'curl -sS {method}"{url}" \\', '  --cacert /path/to/orbit-root-ca.pem \\', "  -H 'Accept: application/json' \\", "  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'"]
@@ -1738,6 +1742,8 @@ RESPONSE_OVERRIDES = {
 CTRL_DATA_OVERRIDES = {
     'InstanceSmokeRepairController@store': ('InstanceSmokeRepairData', False),
     'InstanceSmokeRepairController@receipt': ('InstanceSmokeRepairLookupData', False),
+    'InstanceDependenciesController@show': ('DependencyResultsData', False),
+    'ProjectDependenciesController@show': ('DependencyResultsData', False),
     'InstanceSmokeControlController@store': ('InstanceSmokeControlReceiptData', False),
     'InstanceSmokeControlController@receipt': ('InstanceSmokeControlLookupData', False),
     'InstanceSmokeControlController@redeployReceipt': ('InstanceSmokeRollbackReceiptData', False),

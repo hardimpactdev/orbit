@@ -7,9 +7,6 @@ use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\Instances\ResolveDirectoryInstanceRequest;
 use Orbit\Sdk\Requests\Instances\ResolveInstanceRequest;
-use Orbit\Sdk\Requests\Instances\ScanInstanceDependenciesRequest;
-use Orbit\Sdk\Requests\Instances\ShowInstanceDependenciesRequest;
-use Orbit\Sdk\Requests\Instances\UpdateInstanceDependenciesRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Saloon\Http\Response;
@@ -21,7 +18,7 @@ describe('strict decoder correlation', function (): void {
         $response = strict_decoder_response($request, ['data' => $data, 'meta' => ['request_id' => $id]], $header);
 
         expect($response->dtoOrFail()->toArray())->toBe([...$data, 'request_id' => $id]);
-    })->with(['show', 'scan', 'update', 'domain', 'directory'])
+    })->with(['domain', 'directory'])
         ->with([null, '11111111-1111-4111-8111-111111111111', 'token=strict-decoder-header-secret']);
 
     it('rejects missing invalid or conflicting body correlation with safe diagnostics', function (
@@ -42,7 +39,7 @@ describe('strict decoder correlation', function (): void {
                 ->and($exception->details())->toBe([])
                 ->and(print_r($exception, return: true))->not->toContain('strict-decoder-body-secret', 'strict-decoder-header-secret');
         }
-    })->with(['show', 'scan', 'update', 'domain', 'directory'])->with([
+    })->with(['domain', 'directory'])->with([
         'missing' => [[], null, null],
         'missing with valid header' => [[], '11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-111111111111'],
         'null' => [['request_id' => null], null, null],
@@ -60,7 +57,7 @@ describe('strict decoder correlation', function (): void {
             'ownership' => str_replace('"instance_id":17', '"instance_id":18,"instance_\u0069d":17', $body),
             'correlation' => str_replace('"request_id":', '"request_id":"22222222-2222-4222-8222-222222222222","request_\u0069d":', $body),
         };
-        $expectedId = $header === $id || in_array($factory, ['show', 'scan', 'update'], true) ? $id : null;
+        $expectedId = $header === $id ? $id : null;
 
         try {
             strict_decoder_response($request, $body, $header)->dtoOrFail();
@@ -72,7 +69,7 @@ describe('strict decoder correlation', function (): void {
                 ->and($exception->details())->toBe([])
                 ->and(print_r($exception, return: true))->not->toContain('strict-decoder-header-secret');
         }
-    })->with(['show', 'scan', 'update', 'domain', 'directory'])
+    })->with(['domain', 'directory'])
         ->with(['ownership', 'correlation'])
         ->with([null, '11111111-1111-4111-8111-111111111111', 'token=strict-decoder-header-secret']);
 
@@ -88,37 +85,19 @@ describe('strict decoder correlation', function (): void {
                 ->and($exception->requestId())->toBeNull()
                 ->and(print_r($exception, return: true))->not->toContain('strict-decoder-body-secret');
         }
-    })->with(['show', 'scan', 'update', 'domain', 'directory']);
+    })->with(['domain', 'directory']);
 });
 
 /** @return array{GatewayRequest, array<string, mixed>, string} */
 function strict_decoder_fixture(string $factory): array
 {
     $request = match ($factory) {
-        'show' => new ShowInstanceDependenciesRequest(17),
-        'scan' => new ScanInstanceDependenciesRequest(17),
-        'update' => new UpdateInstanceDependenciesRequest(17),
         'domain' => new ResolveInstanceRequest('fixture.example.test'),
         'directory' => new ResolveDirectoryInstanceRequest('/home/orbit/fixture'),
     };
-    $failed = ['state' => 'unknown', 'succeeded' => false, 'attempted_at' => '2026-09-16T17:00:00+00:00',
-        'error_code' => 'dependencies.unreadable_source', 'error_detail' => null, 'snapshot' => null];
-    $notRun = ['status' => 'not_run', 'may_have_mutated' => false, 'error_code' => null];
     $ownership = ['instance_id' => 17, 'project_id' => 3, 'node_id' => 9, 'environment' => 'development'];
-    $data = match ($factory) {
-        'show', 'scan' => ['instance_id' => 17, 'succeeded' => false,
-            'composer' => ['ecosystem' => 'composer', ...$failed], 'javascript' => ['ecosystem' => 'npm', ...$failed]],
-        'update' => ['instance_id' => 17, 'succeeded' => false, 'error_code' => 'dependencies.production_update_forbidden',
-            'may_have_mutated' => false, 'composer' => ['ecosystem' => 'composer', ...$notRun],
-            'javascript' => ['ecosystem' => 'npm', ...$notRun], 'inventory' => null],
-        'domain' => ['domain' => 'fixture.example.test', ...$ownership],
-        'directory' => $ownership,
-    };
-    $message = match ($factory) {
-        'show', 'scan' => 'Gateway response contains invalid dependency inventory data.',
-        'update' => 'Gateway response contains invalid dependency update data.',
-        'domain', 'directory' => 'Gateway response contains invalid instance resolution data.',
-    };
+    $data = $factory === 'domain' ? ['domain' => 'fixture.example.test', ...$ownership] : $ownership;
+    $message = 'Gateway response contains invalid instance resolution data.';
 
     return [$request, $data, $message];
 }

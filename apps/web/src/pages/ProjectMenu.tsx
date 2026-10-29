@@ -8,10 +8,12 @@ import { SectionMenu } from "../ui/SectionMenu";
 export function ProjectMenu({
     project,
     documents,
+    dependencies = false,
     beforeLeave = () => true,
 }: {
     project: Project;
     documents: boolean;
+    dependencies?: boolean;
     beforeLeave?: () => boolean;
 }) {
     const navigate = useNavigate();
@@ -19,18 +21,27 @@ export function ProjectMenu({
     return (
         <SectionMenu
             responsive
+            className="md:w-[18ch]!"
             label="Project navigation"
             ariaLabel="Project sections"
             idPrefix={`project-${project.id}`}
             items={[
                 { id: "overview", label: "Overview", testId: "project-overview" },
+                { id: "dependencies", label: "Dependencies", testId: "project-dependencies" },
                 ...(documentsEnabled
                     ? [{ id: "documents", label: "Documents", testId: "project-documents" }]
                     : []),
             ]}
-            selected={documents ? "documents" : "overview"}
+            selected={documents ? "documents" : dependencies ? "dependencies" : "overview"}
             onSelect={(section) => {
                 if (!beforeLeave()) return;
+                if (section === "dependencies") {
+                    void navigate({
+                        to: "/projects/$id/dependencies",
+                        params: { id: String(project.id) },
+                    });
+                    return;
+                }
                 if (section === "documents")
                     void navigate({
                         to: "/projects/$id/documents",

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Domain\Instances\Dependencies\NpmVersionRange;
+use App\Domain\Tools\NpmVersionRange;
 
 describe('npm version range', function (): void {
     it('matches node-semver loose validRange and satisfies', function (): void {
