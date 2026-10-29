@@ -763,17 +763,23 @@ Runtime admission records the fixed Pi Process definition and its ID without ins
 
 Enrollment preparation validates the booted VM and records its reserved Node ID with the exact internal `ProvisionNodeData` input. Swamp requests the direct `node.add` child from that stored descriptor; it cannot select a Node or expand the input. An already active VM Node needs only the recorded preparation and runtime proofs. Destruction proves provider deletion and Route removal, clears workspace records, then requests the exact `node.remove` child before final VM cleanup. The recorded Node identity remains available after deletion for receipt verification. These parent plans do not switch retained callers; activation waits for the owning Gateway and Swamp releases.
 
+Before the later lifecycle cutover, destruction must also gain a cancel guard after the proven provider-delete boundary so cancellation cannot abandon record cleanup.
+
 Every registered effect fixes its Node, command and input. The Gateway resolves declared secret references after authorization; tokens, private bootstrap keys and cloud-init credentials never reach Swamp or receipts. Reads remain Services-only Gateway APIs. Successful completion requires proven command or child receipts. Error codes use lowercase letters, digits, dots, underscores and hyphens.
 
 A parent yields its worker lease while its stamped child Operations run. Native effects carry the shared target receipt metadata, so recovery reads the original sanitized result before replay. Gateway projections accept only exact owning child proof; they never admit another Operation and wait for it. Package cache fills require list-result enforcement.
 
-Image builds have one permanent Operation per attempt. Swamp checkpoints reset, launch, boot, the six recipe phases, cleanup, publication, smoke, topology seed, promotion and pruning. A lost reply reuses its saved child identity. A native phase keeps its boot and invocation identity; only a later explicit Incus resume may restart a proven failed invocation. Unknown observations fail closed.
+Image builds have one permanent Operation per attempt. When reconciliation finds a Running build without a matching Swamp Operation, it increments the attempt, assigns a new builder name, clears saved image and step state, and starts from stock. It never adopts PHP phase progress as Swamp proof. Repeated reconciliation keeps the new Operation and attempt.
+
+Swamp checkpoints reset, launch, boot, the six recipe phases, cleanup, publication, smoke, topology seed, promotion and pruning. A lost reply reuses its saved child identity. A native phase keeps its boot and invocation identity; only a later explicit Incus resume may restart a proven failed invocation. Unknown observations fail closed.
 
 Successful publication alone cannot move the base alias: smoke verification and a finished topology seed must have successful Operation receipts. UpCloud uses the same base recipe, verifies the firewall on its smoke server, and promotes only its own unverified template. Older templates stay while pinned by allocations; pruning keeps the newest two verified templates.
 
 A failed recipe build does not retry because the Gateway restarts or releases code. Run `task-vms:build-recipe --retry` after fixing the cause. An Incus build with retained resources can resume its failed stage. A failed prune resumes without rebuilding or moving the alias again. A newer recipe generation fences every subsequent effect and promotion of the older build. The Gateway retains build state, validation and immutable recipe intent; Swamp owns ordering, waits and recovery.
 
-Host sweeps use independent Operations, so one failed host does not block another host. The Gateway reads ownership and reports strays. Swamp deletes only the returned owned orphans, through commands that recheck ownership before deletion. Active and recent failed builders remain protected. Two distinct sweep Operations must miss a VM before its row fails; a replay of one observation cannot fail it. Doctor retains its read-only path.
+Host sweeps use independent Operations, so one failed host does not block another host. The Gateway reads ownership and reports strays. Swamp deletes only the returned owned orphans, through commands that recheck ownership before deletion. Active and recent failed builders remain protected.
+
+The sweep reads volume names before live VM rows, so a claim recorded during the read keeps its clone. Cleanup and resume compete for the same build fence: cleanup blocks resume, and a successful resume prevents a stale sweep from deleting the builder or smoke VM. Two distinct sweep Operations must miss a VM before its row fails; a replay of one observation cannot fail it. Doctor retains its read-only path.
 
 ### Incus provider
 
@@ -1057,7 +1063,7 @@ Rust toolchain installation reads the verified archive's component manifests and
 
 The Gateway records the image recipe identity with `image.recipe-marker`. It appends sanitized observations through `image.recipe-log`, which owns the fixed root-only log directory and validates the profile and phase before writing. Both commands use native file operations; no guest path or executable is supplied by the caller.
 
-Incus and UpCloud use one ordered list of recipe installer phases: `apt-source`, `packages`, `javascript`, `rust`, `agent`, and `pi`. Before any package install, `apt-source` prepares the recipe's Ubuntu snapshot source and refreshes only its indexes. The `packages` phase fails with an `apt-source` diagnostic if that configuration is missing or does not match the recipe. To restart a failed build after a phase is added, use `task-vms:build-recipe --retry`; it clears failed Incus step history and starts a new builder attempt, reusing any published immutable image.
+Incus and UpCloud use one ordered list of recipe installer phases: `apt-source`, `packages`, `javascript`, `rust`, `agent`, and `pi`. Before any package install, `apt-source` prepares the recipe's Ubuntu snapshot source and refreshes only its indexes. The `packages` phase fails with an `apt-source` diagnostic if that configuration is missing or does not match the recipe. To restart a failed build after a phase is added, use `task-vms:build-recipe --retry`; it clears failed Incus step history and starts a new builder attempt from stock.
 
 Each installer phase runs in a transient systemd service on the builder. Its stable name identifies the recipe, profile, phase, and Incus build. UpCloud uses `upcloud-<build id>` as its execution key; each build gets a fresh server. On the first read after a resume, success advances the chain and an already failed unit restarts. A running unit belongs to the resumed attempt, so a later failure is reported without restarting it. The Gateway sends typed recipe input and observes the result through the agent.
 

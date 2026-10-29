@@ -38,7 +38,6 @@ final readonly class TaskVmImageBuildChain
                 if ($changed !== 1) {
                     throw new TaskVmException('task_vm.image_build_running', 'Another command has claimed this recipe build.');
                 }
-                $pruned = false;
                 if (! $restart) {
                     $images = $this->incus->images($this->settings->host($node->id), $node);
                     $base = $build->images['base'] ?? null;
@@ -49,9 +48,11 @@ final readonly class TaskVmImageBuildChain
                 $build->refresh();
                 $builder = $restart ? 'tvm-image-'.$build->id.'-attempt-'.$build->attempt : $build->builder_vm_name;
                 $build->forceFill(['builder_vm_name' => $builder, 'state' => TaskVmImageBuildState::Running, 'recipe_generation' => $generation,
-                    'steps' => $steps, 'images' => $pruned ? [] : $build->images,
-                    'image_fingerprint' => $pruned ? null : $build->image_fingerprint,
-                    'source_fingerprint' => $pruned ? null : $build->source_fingerprint,
+                    'steps' => $steps, 'images' => $restart ? [] : $build->images,
+                    'image_fingerprint' => $restart ? null : $build->image_fingerprint,
+                    'source_fingerprint' => $restart ? null : $build->source_fingerprint,
+                    'source_alias' => $restart ? null : $build->source_alias, 'from_stock' => $restart || $build->from_stock,
+                    'promoted_at' => $restart ? null : $build->promoted_at, 'submission_pending_at' => null,
                     'current_step' => $restart ? null : TaskVmImageBuildStep::Promote,
                     'current_program' => null, 'cleanup_started_at' => null])->save();
 
@@ -77,39 +78,35 @@ final readonly class TaskVmImageBuildChain
 
     public function resume(Node $node, int $id): TaskVmImageBuild
     {
-        return DB::transaction(function () use ($node, $id): TaskVmImageBuild {
-            $build = TaskVmImageBuild::query()->where('host_node_id', $node->id)->find($id)
-                ?? throw new TaskVmException('task_vm.image_build_failed', "Build [{$id}] does not belong to this host.");
-            if ($build->state !== TaskVmImageBuildState::Failed || $build->cleanup_started_at !== null || $build->current_step === null) {
-                throw new TaskVmException('task_vm.image_build_failed', 'Only an unclaimed failed build can resume.');
-            }
-            $error = $this->resumabilityError($build);
-            if ($error !== null) {
-                throw new TaskVmException('task_vm.image_build_failed', $error);
-            }
-            // A conditional write, not SELECT FOR UPDATE (which SQLite ignores), arbitrates against cleanup.
-            DB::transaction(function () use ($build): void {
-                $claimed = TaskVmImageBuild::query()->whereKey($build->id)->where('state', TaskVmImageBuildState::Failed)
-                    ->whereNull('cleanup_started_at')->where('attempt', $build->attempt)->update(['submission_pending_at' => now()->toISOString(), 'attempt' => $build->attempt + 1]);
-                if ($claimed !== 1) {
-                    throw new TaskVmException('task_vm.image_build_failed', 'Cleanup or another resume has already claimed this build.');
-                }
-                $build->refresh();
-                $steps = $build->steps;
-                foreach ($steps as &$entry) {
-                    if ($entry['step'] === $build->current_step?->value && $entry['program'] === $build->current_program) {
-                        unset($entry['phase_state']['observed_at']);
-                        $entry['started_at'] = null;
-                        $entry['seconds'] = null;
-                        $entry['error'] = null;
-                    }
-                }
-                unset($entry);
-                // The conditional write holds the transaction's SQLite writer fence until this save.
-                // Use the model for the state change so its running-host uniqueness error stays a domain error.
-                $build->forceFill(['steps' => $steps, 'state' => TaskVmImageBuildState::Running])->save();
-            });
+        $build = TaskVmImageBuild::query()->where('host_node_id', $node->id)->find($id)
+            ?? throw new TaskVmException('task_vm.image_build_failed', "Build [{$id}] does not belong to this host.");
+        if ($build->state !== TaskVmImageBuildState::Failed || $build->cleanup_started_at !== null || $build->current_step === null) {
+            throw new TaskVmException('task_vm.image_build_failed', 'Only an unclaimed failed build can resume.');
+        }
+        $error = $this->resumabilityError($build);
+        if ($error !== null) {
+            throw new TaskVmException('task_vm.image_build_failed', $error);
+        }
 
+        // Observe before the write transaction; cleanup may win while the remote reply is in flight.
+        return DB::transaction(function () use ($build): TaskVmImageBuild {
+            $claimed = TaskVmImageBuild::query()->whereKey($build->id)->where('state', TaskVmImageBuildState::Failed)
+                ->whereNull('cleanup_started_at')->where('attempt', $build->attempt)->update(['submission_pending_at' => now()->toISOString(), 'attempt' => $build->attempt + 1]);
+            if ($claimed !== 1) {
+                throw new TaskVmException('task_vm.image_build_failed', 'Cleanup or another resume has already claimed this build.');
+            }
+            $build->refresh();
+            $steps = $build->steps;
+            foreach ($steps as &$entry) {
+                if ($entry['step'] === $build->current_step?->value && $entry['program'] === $build->current_program) {
+                    unset($entry['phase_state']['observed_at']);
+                    $entry['started_at'] = null;
+                    $entry['seconds'] = null;
+                    $entry['error'] = null;
+                }
+            }
+            unset($entry);
+            $build->forceFill(['steps' => $steps, 'state' => TaskVmImageBuildState::Running])->save();
             $this->submit($build, true);
 
             return $build;

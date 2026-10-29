@@ -5,12 +5,14 @@ declare(strict_types=1);
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmHost;
+use App\Domain\TaskVms\TaskVmImageBuildStep;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\TaskVmImageBuild;
 use Tests\Support\TaskVmSettingsBuilder;
 
 require_once __DIR__.'/../../Support/FakeIncusImageHost.php';
@@ -105,3 +107,42 @@ it('records one immutable Swamp image Operation and reuses unchanged intent', fu
     expect($operation->input['recipe'])->toBeString();
     expect($operation->input['generation'])->toBe($first->recipe_generation);
 });
+
+it('fences an unowned running PHP image attempt and starts Swamp from stock', function (TaskVmImageBuildStep $step, ?string $program): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $builds = app(RecipeImageBuilds::class);
+    $recipe = $builds->currentRecipe();
+    $build = TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => $recipe->identity,
+        'recipe_json' => $recipe->json, 'recipe_generation' => 1, 'attempt' => 3,
+        'current_step' => $step, 'current_program' => $program, 'source_alias' => 'old-base', 'source_fingerprint' => IMAGE_OLD,
+        'image_fingerprint' => IMAGE_NEW, 'images' => ['base' => ['project' => 'orbit-tasks', 'alias' => 'old-candidate', 'fingerprint' => IMAGE_NEW, 'type' => 'virtual-machine']],
+        'steps' => [['step' => $step->value, 'program' => $program, 'started_at' => now()->toISOString(), 'seconds' => 12.0, 'error' => null]],
+    ]);
+    $oldName = $build->builder_vm_name;
+    $adopted = $builds->reconcile()[0];
+    expect($adopted->id)->toBe($build->id);
+    expect($adopted->attempt)->toBe(4);
+    expect($adopted->builder_vm_name)->toBe('tvm-image-'.$build->id.'-attempt-4')->not->toBe($oldName);
+    expect($adopted->steps)->toBe([]);
+    expect($adopted->images)->toBe([]);
+    expect($adopted->current_step)->toBeNull();
+    expect($adopted->current_program)->toBeNull();
+    expect($adopted->source_fingerprint)->toBeNull();
+    expect($adopted->image_fingerprint)->toBeNull();
+    expect($adopted->from_stock)->toBeTrue();
+    $operation = Operation::query()->where('kind', 'task_vm.image_build')->sole();
+    expect($operation->input['attempt'])->toBe(4);
+    expect($operation->input['name'])->toBe($adopted->builder_vm_name);
+    expect($operation->input['source'])->toBe(TaskVmHost::SourceImage);
+    expect($operation->input['reuse_published'])->toBeFalse();
+    expect($operation->input['resume_from'])->toBeNull();
+    expect($builds->reconcile()[0]->attempt)->toBe(4);
+    $this->assertDatabaseCount('operations', 1);
+    expect($incus->guestCalls)->toBe([]);
+})->with([
+    'recipe' => [TaskVmImageBuildStep::Recipe, 'base:packages'],
+    'promotion' => [TaskVmImageBuildStep::Promote, null],
+    'pruning' => [TaskVmImageBuildStep::Prune, null],
+]);

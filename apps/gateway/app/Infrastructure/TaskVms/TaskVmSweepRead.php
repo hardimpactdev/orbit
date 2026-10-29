@@ -36,9 +36,10 @@ final readonly class TaskVmSweepRead
         if ($operation->input['provider'] === 'incus') {
             $host = $this->settings->host($node->id);
             $found = $this->audit->audit($host, $node);
+            $names = $this->incus->volumeNames($host, $node);
             $live = TaskVm::query()->live()->where('host_node_id', $node->id)->get();
             $volumes = [];
-            foreach ($this->incus->volumeNames($host, $node) as $name) {
+            foreach ($names as $name) {
                 if (preg_match('/\A(tvm-[0-9]+)-topology-seed\z/D', $name, $match) === 1 && ! $live->contains('name', $match[1])) {
                     $volumes[] = $name;
                 }

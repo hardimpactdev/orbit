@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\TaskVms;
 
-use App\Actions\TaskVms\StartTaskVmImageOperationAction;
 use App\Domain\Fleet\RecipeMaintenanceAlerts;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmImageBuildState;
@@ -13,6 +12,7 @@ use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Jobs\TaskVms\RefreshUpCloudTaskVmBaseImage;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\TaskVmImageBuild;
 use App\Models\UpCloudTaskVmImageBuild;
 use Illuminate\Support\Facades\Cache;
@@ -47,7 +47,11 @@ final readonly class RecipeImageBuilds
             }
             if ($existing !== null) {
                 if ($existing->state === TaskVmImageBuildState::Running) {
-                    app(StartTaskVmImageOperationAction::class)->execute($existing, $existing->current_step !== null);
+                    $owned = Operation::query()->where('kind', 'task_vm.image_build')->where('target_type', 'task_vm_image')
+                        ->where('target_id', $existing->id)->where('input->attempt', $existing->attempt)->exists();
+                    $builds[] = $owned ? $existing : $this->chain->requeueRecipe(Node::query()->findOrFail($host->nodeId), $existing, $generation, true);
+
+                    continue;
                 }
                 $reactivate = $existing->state === TaskVmImageBuildState::Succeeded && $existing->recipe_generation !== $generation;
                 if ($reactivate && TaskVmImageEvidence::published($existing) === null) {
