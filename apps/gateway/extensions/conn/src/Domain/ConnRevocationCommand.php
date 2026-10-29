@@ -70,7 +70,12 @@ final readonly class ConnRevocationCommand implements OperationGatewayCommand
 
             return ['backend' => 'revoked', 'revoked' => $this->server->revokePairingLink($environment['url'], $environment['admin_session'], $input['id'])];
         }
-        $sessions = $labels === [] ? [] : $this->server->clientSessions($environment['url'], $environment['admin_session']);
+        try {
+            $sessions = $labels === [] ? [] : $this->server->clientSessions($environment['url'], $environment['admin_session']);
+        } catch (T3ServerException $exception) {
+            // This read failed before a revoke was sent; preserve a proven failure for Swamp.
+            return ['error_code' => $exception->errorCode];
+        }
         if ($input['action'] === 'session') {
             $session = array_find($sessions, static fn (T3ClientSession $session): bool => $session->sessionId === $input['id']);
             if ($session !== null && ! in_array($session->label, $labels, true)) {
