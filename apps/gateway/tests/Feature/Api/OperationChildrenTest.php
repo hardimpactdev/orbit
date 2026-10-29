@@ -468,7 +468,8 @@ it('discovers ready waiting parents with the same pure selector used by claim', 
     $this->parent->update(['kind' => 'firewall.allow']);
     app()->instance(OperationKinds::class, new OperationKinds(app(), [...OperationKinds::definitions(), 'firewall.allow' => $this->parentSpec, 'test.effect' => $this->childSpec]));
     $before = $this->parent->refresh()->getAttributes();
-    $this->getJson('/api/v1/operation-executor/claimable')->assertOk()->assertJsonPath('data.kinds.0.kind', 'firewall.allow')->assertJsonPath('data.kinds.0.claimable', 1);
+    $response = $this->getJson('/api/v1/operation-executor/claimable')->assertOk();
+    expect(collect($response->json('data.kinds'))->firstWhere('kind', 'firewall.allow')['claimable'])->toBe(1);
     expect($this->parent->refresh()->getAttributes())->toBe($before);
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'firewall.allow', 'worker' => 'resume'])->assertOk()->assertJsonPath('data.id', $this->parent->id);
 });

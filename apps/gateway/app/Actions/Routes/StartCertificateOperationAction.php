@@ -17,7 +17,7 @@ final readonly class StartCertificateOperationAction
 {
     public function __construct(private StartOperationAction $operations, private ManagedUserAccountResolver $accounts, private LeafCertificateSigner $signer) {}
 
-    public function converge(Node $node, string $scope, string $domain, ?string $requestId = null): Operation
+    public function converge(Node $node, string $scope, string $domain, ?string $requestId = null, ?string $triggeredBy = 'operator'): Operation
     {
         $this->assertScope($scope);
         $account = $this->accounts->resolve($node);
@@ -25,15 +25,15 @@ final readonly class StartCertificateOperationAction
         return $this->operations->execute('certificate.converge', 'node_certificate', $node->id, $node->id,
             ['scope' => $scope, 'domain' => RouteDomain::validate($domain), 'version' => bin2hex(random_bytes(8)),
                 'root_hash' => hash('sha256', $this->signer->rootCertificate()), 'user' => $account->user, 'home' => $account->home],
-            'operator', $requestId);
+            $triggeredBy, $requestId);
     }
 
-    public function remove(Node $node, string $scope, ?string $requestId = null): Operation
+    public function remove(Node $node, string $scope, ?string $requestId = null, ?string $triggeredBy = 'operator'): Operation
     {
         $this->assertScope($scope);
 
         return $this->operations->execute('certificate.remove', 'node_certificate', $node->id, $node->id,
-            ['scope' => $scope, 'home' => $this->accounts->resolve($node)->home], 'operator', $requestId);
+            ['scope' => $scope, 'home' => $this->accounts->resolve($node)->home], $triggeredBy, $requestId);
     }
 
     private function assertScope(string $scope): void

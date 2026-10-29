@@ -20,8 +20,8 @@ final readonly class CertificateChildAdmission implements OperationChildAdmissio
         $scope = ValidatedData::string($intent['input']['scope']);
 
         return match ($intent['kind']) {
-            'certificate.converge' => $this->certificates->converge($node, $scope, ValidatedData::string($intent['input']['domain']), $parent->request_id),
-            'certificate.remove' => $this->certificates->remove($node, $scope, $parent->request_id),
+            'certificate.converge' => $this->certificates->converge($node, $scope, ValidatedData::string($intent['input']['domain']), $parent->request_id, $parent->triggered_by),
+            'certificate.remove' => $this->certificates->remove($node, $scope, $parent->request_id, $parent->triggered_by),
             default => throw new ResourceOperationException('operation.execution_forbidden', 'This is not an owned certificate child kind.', 422),
         };
     }

@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Actions\Routes\CertificateChildAdmission;
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Nodes\ManagedUserAccount;
+use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\RoutePublication;
@@ -118,3 +121,19 @@ it('recovers and encodes the original public CSR from sanitized evidence without
     ($this->runStep)('certificate-inspect');
     expect(array_column($this->agents->calls, 'command'))->toBe(['certificate.request-leaf', 'agent.effect-receipt', 'certificate.publish-leaf', 'certificate.inspect-leaf']);
 });
+
+it('preserves the parent actor and request when admitting a certificate child', function (string $kind, ?string $actor): void {
+    $node = Node::query()->create(['name' => 'child-cert', 'public_ssh_host' => '192.0.2.4', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.4', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
+    app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver
+    {
+        public function resolve(Node $node): ManagedUserAccount
+        {
+            return new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
+        }
+    });
+    $parent = new Operation(['kind' => 'test.parent', 'triggered_by' => $actor, 'request_id' => 'certificate-parent-request']);
+    $input = ['scope' => 'route-7-router', ...($kind === 'certificate.converge' ? ['domain' => 'private.test'] : [])];
+    $child = app(CertificateChildAdmission::class)->admit($parent, ['kind' => $kind, 'node_id' => $node->id, 'input' => $input]);
+    expect($child->triggered_by)->toBe($actor)->and($child->request_id)->toBe($parent->request_id)
+        ->and($child->node_id)->toBe($node->id)->and($this->agents->calls)->toBe([]);
+})->with(['certificate.converge', 'certificate.remove'])->with(['peer:proof', null]);

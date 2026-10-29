@@ -485,7 +485,6 @@ Until cleanup, the new domain uses staging certificates, so the Instance's live 
 
 Swamp executes `certificate.converge` and `certificate.remove` on one recorded Node and certificate scope. A leaf request returns only a public CSR. The Gateway signs it, then resolves protected certificate references at publication. Completion requires the request, signing, publication and inspection receipts, or proof that the current leaf was inspected. Removal refuses a scope still used by a stored Caddy site. Lost replies recover the original sanitized target receipt without generating another key.
 
-
 A `pending` replacement renders a site only after its certificate step completes. A `failed` replacement renders no site. Cleanup issues the live certificates, stores its `cleanup` step, rebuilds the workload and Router Caddy, and only then removes the staging certificates. So a failed cleanup never leaves a site that names a missing certificate.
 
 ### Change an Instance Route domain

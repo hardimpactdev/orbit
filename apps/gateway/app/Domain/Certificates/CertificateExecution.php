@@ -74,7 +74,6 @@ final readonly class CertificateExecution implements OperationFamilyExecution
 
     public function received(Operation $operation, array $run, array $receipt): array
     {
-
         return $receipt;
     }
 
