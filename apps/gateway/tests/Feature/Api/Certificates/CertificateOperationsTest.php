@@ -30,7 +30,9 @@ beforeEach(function (): void {
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => $this->operation->kind, 'worker' => 'worker'])->assertOk()->assertJsonPath('data.id', $this->operation->id);
     $this->operation->refresh();
     $this->path = '/api/v1/operation-executor/'.$this->operation->id;
-    $this->csr = "-----BEGIN CERTIFICATE REQUEST-----\npublic CSR\n-----END CERTIFICATE REQUEST-----\n";
+    $key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_RSA, 'private_key_bits' => 2048]);
+    $request = openssl_csr_new(['commonName' => 'private.test'], $key);
+    openssl_csr_export($request, $this->csr);
     $this->agents = new FakeAgentCommandRunner()->answer('certificate.request-leaf', ['state' => 'request', 'request' => $this->csr])
         ->answer('certificate.publish-leaf', [])->answer('certificate.inspect-leaf', ['present' => true])->answer('certificate.remove-leaf', []);
     app()->instance(AgentCommandRunner::class, $this->agents);
@@ -64,6 +66,7 @@ beforeEach(function (): void {
 });
 
 it('keeps the public CSR usable through redaction and hydrates only this Operation signature at publication', function (): void {
+    expect(strlen(base64_encode($this->csr)))->toBeGreaterThan(1024);
     $request = ($this->runStep)('certificate-request');
     expect(base64_decode($request['request_base64'], true))->toBe($this->csr)->and($request)->not->toHaveKey('request');
     ($this->runStep)('certificate-sign');
@@ -107,6 +110,7 @@ it('keeps a leaf still named by a stored Caddy site', function (): void {
 });
 
 it('recovers and encodes the original public CSR from sanitized evidence without another request', function (): void {
+    expect(strlen(base64_encode($this->csr)))->toBeGreaterThan(1024);
     $this->agents->answer('certificate.request-leaf', static fn (): array => throw new RuntimeException('Lost reply after key generation.'));
     $descriptor = $this->postJson($this->path.'/heartbeat', ['worker' => 'worker'])->assertOk()->json('data.execution_context.descriptors.0');
     $run = ['worker' => 'worker', ...array_intersect_key($descriptor, array_flip(['key', 'transport', 'name', 'input']))];
