@@ -18,6 +18,8 @@ An Instance on an `app-prod` Node serves code from a release. The Gateway deploy
 
 The `app-prod` role decides this layout. `APP_ENV` does not; see [Laravel mode](/reference/environment-variables#laravel-mode).
 
+The Instance deployment execution contract binds the repository, placement, PHP runtime, ordered step digests and required-step flags to admitted intent. Arbitrary commands and environment contents stay out of that snapshot. Keyed transport receipts prove the prepared and activated releases; caller step fields do not prove activation. Before an automatic effect, the Gateway rechecks its policy writer, active role, smoke hold, manual pause and blocked commit under the Instance writer lock. Vite+ preparation reads the proven candidate checkout and resolves protected registry settings only in Gateway memory.
+
 ## The production home
 
 Each production Instance has a home, `/home/<production-user>`, with these paths.
