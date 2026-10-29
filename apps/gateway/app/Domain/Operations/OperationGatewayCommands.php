@@ -15,15 +15,7 @@ final readonly class OperationGatewayCommands
 
     public function get(string $name): OperationGatewayCommand
     {
-        $commands = $this->definitions ?? [];
-        foreach ($this->definitions === null ? (glob(__DIR__.'/../*/operation-commands.php') ?: []) : [] as $file) {
-            foreach (require $file as $key => $class) {
-                if (isset($commands[$key])) {
-                    throw new LogicException("Duplicate Gateway Operation command [{$key}].");
-                }
-                $commands[$key] = $class;
-            }
-        }
+        $commands = $this->definitions();
         if (! isset($commands[$name])) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The Gateway command is not registered.', 422);
         }
@@ -33,5 +25,27 @@ final readonly class OperationGatewayCommands
         }
 
         return $command;
+    }
+
+    /** @return list<string> */
+    public function names(): array
+    {
+        return array_keys($this->definitions());
+    }
+
+    /** @return array<string, class-string<OperationGatewayCommand>> */
+    private function definitions(): array
+    {
+        $commands = $this->definitions ?? [];
+        foreach ($this->definitions === null ? (glob(__DIR__.'/../*/operation-commands.php') ?: []) : [] as $file) {
+            foreach (require $file as $key => $class) {
+                if (isset($commands[$key])) {
+                    throw new LogicException("Duplicate Gateway Operation command [{$key}].");
+                }
+                $commands[$key] = $class;
+            }
+        }
+
+        return $commands;
     }
 }
