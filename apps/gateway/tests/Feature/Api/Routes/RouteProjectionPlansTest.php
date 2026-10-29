@@ -22,7 +22,9 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\AnalyticsRouteParentCommand;
 use App\Domain\Routes\AnalyticsRouteParentExecution;
 use App\Domain\Routes\ClusterRouterParentCommand;
+use App\Domain\Routes\ClusterRouterParentExecution;
 use App\Domain\Routes\GeneratedRouteUpdateOwnership;
+use App\Domain\Routes\PreparePrivateDnsCommand;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteNodeEffectCommand;
 use App\Domain\Routes\RouteParentCommand;
@@ -35,6 +37,7 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Models\Cluster;
 use App\Models\Instance;
@@ -540,4 +543,37 @@ it('keeps Instance rename generated-domain authorization limited to its own Rout
     expect($ownership->allows($parent, $this->route, $intent))->toBeTrue();
     $parent->target_id = $this->instance->id + 1;
     expect($ownership->allows($parent, $this->route, $intent))->toBeFalse();
+});
+
+it('commits Router selection before publishing private DNS and refuses rollback afterward', function (): void {
+    $cluster = Cluster::query()->create(['name' => 'Committed DNS', 'tld' => 'proof']);
+    $this->node->update(['cluster_id' => $cluster->id]);
+    $this->node->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
+    $old = Node::query()->create(['name' => 'dns-old-router', 'public_ssh_host' => '192.0.2.5', 'user' => 'orbit', 'platform' => 'linux', 'cluster_id' => $cluster->id, 'wireguard_ip' => '10.44.0.5', 'status' => LifecycleStatus::Active]);
+    $oldRole = $old->roles()->create(['role' => RoleName::Router, 'cluster_id' => $cluster->id, 'status' => LifecycleStatus::Active]);
+    $candidate = $this->node->roles()->create(['role' => RoleName::Router, 'cluster_id' => $cluster->id, 'status' => LifecycleStatus::Provisioning]);
+    $this->route->update(['cluster_id' => $cluster->id, 'node_id' => null, 'status' => RouteStatus::Active]);
+    $operation = Operation::query()->create(['kind' => 'cluster.router_set', 'target_type' => 'cluster_router', 'target_id' => $cluster->id,
+        'node_id' => $this->node->id, 'input' => ['cluster_id' => $cluster->id, 'candidate_role_id' => $candidate->id], 'status' => OperationStatus::Queued, 'sequence' => 1]);
+    $command = app(ClusterRouterParentCommand::class);
+    $command->run($operation, ['action' => 'prepare']);
+    $renderer = app(DevelopmentDnsConfigRenderer::class);
+    expect($renderer->render())->toContain('host-record=private.test,10.44.0.5');
+    // Earlier preparation phases have their Gateway-owned completion markers.
+    $operation->update(['state' => [...$operation->fresh()->state, 'route_completed_stages' => array_fill_keys([
+        'baseline', 'router-certificate', 'firewall-policy', 'workload-verify', 'router-caddy',
+    ], true)]]);
+    expect(fn () => $command->run($operation, ['action' => 'open', 'stage' => 'dns-publication']))->toThrow(ResourceOperationException::class);
+    $command->run($operation, ['action' => 'open', 'stage' => 'database']);
+    $command->run($operation, ['action' => 'commit', 'stage' => 'database']);
+    expect($candidate->fresh()->status)->toBe(LifecycleStatus::Active)->and($oldRole->fresh()->status)->toBe(LifecycleStatus::Removing);
+    $command->run($operation, ['action' => 'open', 'stage' => 'dns-publication']);
+    $dns = Operation::query()->create(['kind' => 'route.private_dns_publish', 'target_type' => 'node_route_projection', 'target_id' => $this->node->id,
+        'node_id' => $this->node->id, 'input' => ['reason' => 'committed Router proof'], 'status' => OperationStatus::Queued, 'sequence' => 1]);
+    app(PreparePrivateDnsCommand::class)->run($dns, $dns->input);
+    expect($dns->fresh()->state['private_dns_plan']['records'])->toContain('host-record=private.test,10.44.0.3')
+        ->not->toContain('host-record=private.test,10.44.0.5');
+    expect(fn () => $command->run($operation, ['action' => 'open', 'stage' => 'restore-dns']))->toThrow(ResourceOperationException::class, 'recovers forward');
+    expect(app(ClusterRouterParentExecution::class)->sequence($operation))->toContain('database', 'dns-publication')
+        ->and($this->agents->calls)->toBe([]);
 });

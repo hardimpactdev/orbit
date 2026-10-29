@@ -29,8 +29,8 @@ final readonly class ClusterRouterParentExecution extends RoutePhaseExecution
         return match ($plan['mode'] ?? null) {
             'router_noop' => ['prune-dns', 'complete-router'],
             'router_unset' => ['withdraw-assignments', 'dns-publication', 'remove-old-baseline', 'complete-router'],
-            default => ['baseline', 'router-certificate', 'firewall-policy', 'workload-verify', 'router-caddy', 'dns-publication',
-                'database', 'prune-dns', 'await-old-dns-expiry', 'withdraw-old-sites', 'remove-old-certificates',
+            default => ['baseline', 'router-certificate', 'firewall-policy', 'workload-verify', 'router-caddy', 'database',
+                'dns-publication', 'prune-dns', 'await-old-dns-expiry', 'withdraw-old-sites', 'remove-old-certificates',
                 'remove-old-firewall', 'remove-old-baseline', 'complete-router'],
         };
     }

@@ -73,8 +73,8 @@ final readonly class ClusterRouterParentCommand implements OperationGatewayComma
         }
         $stage = ValidatedData::string($input['stage']);
         if ($input['action'] === 'open' && $stage === 'restore-dns' && ! isset($operation->state['route_branch'])) {
-            if (($completed['dns-publication'] ?? false) === true) {
-                throw new ResourceOperationException('operation.completion_unproven', 'A published Router replacement recovers forward.', 409);
+            if (($completed['database'] ?? false) === true) {
+                throw new ResourceOperationException('operation.completion_unproven', 'A committed Router replacement recovers forward.', 409);
             }
             $failed = false;
             $code = 'cluster.router_failed';
@@ -104,7 +104,7 @@ final readonly class ClusterRouterParentCommand implements OperationGatewayComma
             if ($stage === 'withdraw-assignments') {
                 NodeRole::query()->whereKey($plan['assignment_ids'])->update(['status' => LifecycleStatus::Removing, 'failed_step' => ClusterRouterTransition::OldRouterCleanup]);
             } elseif ($stage === 'dns-publication' && $plan['mode'] === 'router_set') {
-                // Both Nodes already serve. Persist DNS selection before publishing on any resolver.
+                // Both Nodes already serve. DNS now reads the committed Router selection.
                 NodeRole::query()->whereKey($plan['candidate_role_id'])->update(['failed_step' => ClusterRouterReplacementStep::DnsPublished->value, 'error_code' => null]);
             } elseif ($stage === 'withdraw-old-sites') {
                 NodeRole::query()->whereKey($plan['old_role_ids'])->update(['failed_step' => ClusterRouterTransition::OldRouterCleanup]);
