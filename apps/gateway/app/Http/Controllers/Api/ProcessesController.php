@@ -12,15 +12,17 @@ use App\Actions\Processes\ShowProcessLogsAction;
 use App\Actions\Processes\StartProcessAction;
 use App\Actions\Processes\StopProcessAction;
 use App\Actions\Processes\UpdateProcessAction;
-use App\Data\Processes\ProcessData;
-use App\Domain\Processes\ProcessRuntimeManager;
+use App\Data\Operations\OperationData;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Operations\StartsOperation;
 use App\Http\Requests\Processes\ListProcessesRequest;
 use App\Http\Requests\Processes\ProcessLogsRequest;
 use App\Http\Requests\Processes\StoreProcessRequest;
 use App\Http\Requests\Processes\UpdateProcessRequest;
+use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Process;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -41,63 +43,34 @@ final class ProcessesController extends Controller
         ]);
     }
 
-    public function store(
-        #[SensitiveParameter]
-        StoreProcessRequest $request,
-        CreateProcessAction $action,
-        ProcessRuntimeManager $runtime,
-    ): JsonResponse {
-        $result = $action->execute($request->payload());
-
-        return response()->json(
-            [
-                'data' => ProcessData::fromModel(
-                    $result['process'],
-                    $runtime->status($result['process']),
-                )->toArray(),
-                'meta' => $this->meta($request),
-            ],
-            $result['created'] ? 201 : 200,
-        );
+    #[StartsOperation('process.create')]
+    public function store(StoreProcessRequest $request, CreateProcessAction $action): JsonResponse
+    {
+        return $this->operationResponse($request, $action->admit($request->payload(), $this->caller($request), $request->attributes->getString('orbit.request_id')));
     }
 
-    public function update(
-        UpdateProcessRequest $request,
-        Process $process,
-        UpdateProcessAction $action,
-        ProcessRuntimeManager $runtime,
-    ): JsonResponse {
-        return $this->processResponse($request, $action->execute($process, $request->updates()), $runtime);
+    #[StartsOperation('process.update')]
+    public function update(UpdateProcessRequest $request, Process $process, UpdateProcessAction $action): JsonResponse
+    {
+        return $this->operationResponse($request, $action->admit($process, $request->updates(), $this->caller($request), $request->attributes->getString('orbit.request_id')));
     }
 
-    public function start(
-        Request $request,
-        #[SensitiveParameter]
-        Process $process,
-        StartProcessAction $action,
-        ProcessRuntimeManager $runtime,
-    ): JsonResponse {
-        return $this->processResponse($request, $action->execute($process), $runtime);
+    #[StartsOperation('process.start')]
+    public function start(Request $request, Process $process, StartProcessAction $action): JsonResponse
+    {
+        return $this->operationResponse($request, $action->admit($process, $this->caller($request), $request->attributes->getString('orbit.request_id')));
     }
 
-    public function stop(
-        Request $request,
-        #[SensitiveParameter]
-        Process $process,
-        StopProcessAction $action,
-        ProcessRuntimeManager $runtime,
-    ): JsonResponse {
-        return $this->processResponse($request, $action->execute($process), $runtime);
+    #[StartsOperation('process.stop')]
+    public function stop(Request $request, Process $process, StopProcessAction $action): JsonResponse
+    {
+        return $this->operationResponse($request, $action->admit($process, $this->caller($request), $request->attributes->getString('orbit.request_id')));
     }
 
-    public function restart(
-        Request $request,
-        #[SensitiveParameter]
-        Process $process,
-        RestartProcessAction $action,
-        ProcessRuntimeManager $runtime,
-    ): JsonResponse {
-        return $this->processResponse($request, $action->execute($process), $runtime);
+    #[StartsOperation('process.restart')]
+    public function restart(Request $request, Process $process, RestartProcessAction $action): JsonResponse
+    {
+        return $this->operationResponse($request, $action->admit($process, $this->caller($request), $request->attributes->getString('orbit.request_id')));
     }
 
     public function logs(
@@ -119,31 +92,22 @@ final class ProcessesController extends Controller
         ]);
     }
 
-    public function destroy(
-        Request $request,
-        #[SensitiveParameter]
-        Process $process,
-        DestroyProcessAction $action,
-    ): JsonResponse {
-        $data = ProcessData::fromModel($process, 'absent')->toArray();
-        $action->execute($process);
-
-        return response()->json([
-            'data' => $data,
-            'meta' => $this->meta($request),
-        ]);
+    #[StartsOperation('process.destroy')]
+    public function destroy(Request $request, string $process, DestroyProcessAction $action): JsonResponse
+    {
+        return $this->operationResponse($request, $action->admit(Process::query()->findOrFail($process), caller: $this->caller($request), requestId: $request->attributes->getString('orbit.request_id')));
     }
 
-    private function processResponse(
-        Request $request,
-        #[SensitiveParameter]
-        Process $process,
-        ProcessRuntimeManager $runtime,
-    ): JsonResponse {
-        return response()->json([
-            'data' => ProcessData::fromModel($process, $runtime->status($process))->toArray(),
-            'meta' => $this->meta($request),
-        ]);
+    private function operationResponse(Request $request, Operation $operation): JsonResponse
+    {
+        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
+    }
+
+    private function caller(Request $request): ?Node
+    {
+        $caller = $request->user();
+
+        return $caller instanceof Node ? $caller : null;
     }
 
     /** @return array{request_id: string} */

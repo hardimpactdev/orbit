@@ -23,6 +23,7 @@ final class DestroyProcessCommand extends ProcessActionCommand
         {process : Process ID or definition name}
         {--project= : Numeric Project ID}
         {--yes : Skip the destructive confirmation prompt}
+        {--idempotency-key= : Reuse a key to retry this Operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -93,7 +94,7 @@ final class DestroyProcessCommand extends ProcessActionCommand
 
     protected function request(int $processId): GatewayRequest
     {
-        return new DestroyProcessRequest($processId);
+        return new DestroyProcessRequest($processId, is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null);
     }
 
     protected function pastTense(): string

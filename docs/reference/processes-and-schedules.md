@@ -16,6 +16,10 @@ covers:
 
 A Process is one long-running systemd service or Docker container that Orbit manages. It belongs to exactly one owner: an Instance or a managed Node. A Project can also hold Process and Schedule definitions. Production preparation copies them into each new production Instance. [`process`](/cli/process) lists the commands. [Schedules](/reference/schedules) describes Schedules themselves.
 
+## Execution
+
+Process create, update, start, stop, restart, and destroy record an Operation and return HTTP 202. The Gateway validates the request and stores intent. Swamp executes the named agent commands and records their receipts. Only a proven completion changes the Process lifecycle or removes its record. After an install or control command, Swamp reads the observed runtime state. The Gateway uses that result for status events and the Process status index. Reads keep their existing Gateway paths. An Idempotency-Key replays the admitted Operation, including after removal.
+
 ## Owners
 
 An Instance Process serves one Instance. The Gateway derives its Node and systemd user and default working directory from the Instance. Docker keeps the image's working directory instead. [Instance removal](/reference/instance-removal) removes it.
@@ -107,7 +111,7 @@ A preset needs a development Instance target. The Gateway refuses a Node target 
 
 ## Create a Process
 
-Create installs the unit or container. With `start`, it also starts it. An identical create returns the existing Process and keeps its desired state. A different specification with the same owner and name returns `process.name_taken` (409) and changes nothing. To change a Process, use [`process:update`](/cli/process#orbit-processupdate), which keeps its ID and links. Back up container-layer data before an update that replaces a Docker container.
+Create queues installation of the unit or container. With `start`, it also starts it. An identical create keeps the existing Process and its desired state and returns an Operation. A different specification with the same owner and name returns `process.name_taken` (409) and changes nothing. To change a Process, use [`process:update`](/cli/process#orbit-processupdate), which keeps its ID and links. Back up container-layer data before an update that replaces a Docker container.
 
 On a Node with the active `app-dev` role, a systemd Instance Process installs without a boot start. A Docker Instance Process there maps restart policy `always` to Docker `unless-stopped`, so an idle stop survives a Docker daemon restart. Node Processes on the same Node keep the normal behavior. The Gateway starts it with `systemctl start` and does not enable the unit. After a reboot the Process stays down until `process:start` or the next HTTP wake. [Hibernation](/reference/app-dev-runtime-hibernation) describes idle stop, `keep_alive`, and wake.
 
@@ -201,7 +205,7 @@ Doctor reports `process.crash_loop` as `drift`, with the Process ID and name and
 
 ## Locks
 
-The Gateway holds one runtime lock for each Process while it reads the record, changes the runtime, and writes the result. A competing Process mutation gets `process.runtime_lock_failed` and changes nothing. Public and private Process Route creation takes the same lock before reading the current Process, resolving its listener, and reserving the Route. Route creation waits up to 30 seconds, bounded by the remaining command deadline, then returns `process.runtime_lock_failed` if the lock stays busy. It takes the Process lock before the projection lock, so it never waits for a Process while holding the projection lock.
+The Gateway holds the admission lock while it records intent. The Process Operation holds the target until Swamp completes it. A competing Process mutation gets `operation.target_busy` and changes nothing. Public and private Process Route creation takes the same lock before reading the current Process, resolving its listener, and reserving the Route. Route creation waits up to 30 seconds, bounded by the remaining command deadline, then returns `process.runtime_lock_failed` if the lock stays busy. It takes the Process lock before the projection lock, so it never waits for a Process while holding the projection lock.
 
 Create, update, start, and restart of an Instance Process first take the Instance's operation lock. A competing request waits up to 30 seconds, or the rest of its command deadline, and then gets `process.operation_busy`. Node Processes skip that lock. Lifecycle commands that contend for the Instance lifecycle lock return `instance.lifecycle_busy` (409, with `details.outcome` set to `busy`); retry after the other lifecycle operation finishes.
 
@@ -209,7 +213,7 @@ Systemd replacement installs a checked candidate unit and restores the earlier u
 
 ## On the Node
 
-The Gateway changes a Process's unit or container only through the [Node agent's](/reference/node-agent#commands) `process.*` commands. Each runs as root and acts only on an artifact with the Process's own marker. The Gateway keeps the locks, the activation record, and the error codes; the agent makes the change and its rollback in one call.
+Swamp changes a Process's unit or container only through the [Node agent's](/reference/node-agent#commands) `process.*` commands. Each runs as root and acts only on an artifact with the Process's own marker. The Gateway admits the target and stores intent and receipts. Swamp orders the commands, and the agent makes each change and its rollback in one call.
 
 | Command | What it does |
 | --- | --- |
@@ -222,7 +226,7 @@ The Gateway changes a Process's unit or container only through the [Node agent's
 | `process.remove` | Removes the owned unit, or the owned container with its candidate and rollback containers. It also removes a Vite+ dev Process's Vite environment file. |
 | `process.logs` | Reads the newest journal entries or container lines, as [Live logs](/reference/live-logs#sources) describes. |
 
-The Gateway records a pending systemd activation between `process.stage-unit` and `process.activate-unit`, so a lost response leaves the activation for the next converge. A later `process.converge-container` finishes or undoes a container change that a lost response interrupted. The Vite environment file goes only when it carries the Instance marker. A container's environment goes to Docker through a root-only file that the agent deletes after `docker container create`; no argument carries a value.
+Swamp records the keyed staging receipt before `process.activate-unit` and reuses successful command receipts after a lost response. A later `process.converge-container` finishes or undoes a container change that a lost response interrupted. The Vite environment file goes only when it carries the Instance marker. A container's environment goes to Docker through a root-only file that the agent deletes after `docker container create`; no argument carries a value.
 
 ## Project definitions
 
@@ -284,3 +288,6 @@ The `vp-dev` preset applies only to development Instance Processes. Runtime defi
 ### A Node Process can name its account
 
 The systemd `User=` of a Node Process can be an account other than the managed user. Use it for a service that must not run as the managed user. The owner stays the Node. An Instance Process keeps the account derived from the Instance, because a chosen account would leave the production home and the development checkout. Docker rejects `user` because the image has its own user. The Gateway does not create the account. The Gateway checks the account with `getent passwd` over SSH before create and fails with `process.user_unavailable` when the account or its home is unavailable.
+
+
+The runtime family reads target receipts before remote effects. A lost restart reply is recovered from its original keyed receipt. A proven pre-start refusal leaves the same key available; an uncertain restart stays pending until its receipt is known. Process completion requires a recorded `process.runtime_ready` check, which verifies every required agent step and any Caddy child. This check changes no Node state.

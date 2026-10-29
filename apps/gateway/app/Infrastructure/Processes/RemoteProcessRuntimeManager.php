@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Processes;
 
-use App\Domain\AppDev\ViteProcessLifecycle;
 use App\Domain\Logs\LogReadLimit;
-use App\Domain\Nodes\ManagedUserAccountResolver;
-use App\Domain\Processes\DesiredProcessState;
+use App\Domain\Operations\AwaitOperation;
+use App\Domain\Operations\OperationStatus;
+use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntime;
-use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTarget;
 use App\Domain\Processes\ProcessTargetResolver;
@@ -19,14 +18,11 @@ use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\AgentCommands\AgentStep;
+use App\Models\Operation;
 use App\Models\Process;
 use SensitiveParameter;
 
-/**
- * A Process's systemd unit or Docker container on its Node, through the agent's `process.*` commands
- * (docs/reference/processes-and-schedules.md). The Gateway renders the unit and the container definition and records
- * a pending systemd activation; the agent checks each artifact's owner marker and makes the change with its rollback.
- */
+/** Reads runtime state in Orbit; writes admit and await a Swamp Operation. */
 final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManager
 {
     /** Each `process.*` refusal and its error code; `{runtime}` is `systemd` or `docker`. */
@@ -54,18 +50,12 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         'reload' => 'activation remains pending for retry',
     ];
 
-    private ProcessRuntimeLease $lease;
-
     public function __construct(
         private ProcessTargetResolver $targets,
-        private ManagedUserAccountResolver $accounts,
         private AgentCommandRunner $agents,
         private SystemdProcessRenderer $systemd,
         private DockerProcessRenderer $docker,
-        ?ProcessRuntimeLease $lease = null,
-    ) {
-        $this->lease = $lease ?? app(ProcessRuntimeLease::class);
-    }
+    ) {}
 
     public function assertCanStart(#[SensitiveParameter] Process $process): void
     {
@@ -75,70 +65,40 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
 
     public function converge(#[SensitiveParameter] Process $process): void
     {
-        $this->lease->run($process, function (Process $fresh): void {
-            $target = $this->targets->forInstallation($fresh);
-
-            $this->assertReleaseAvailable($fresh, $target, 'start', 'process.start_failed');
-
-            if ($fresh->isVpDev()) {
-                app(ViteProcessLifecycle::class)->run($fresh, fn () => $this->convergeAndActivateSystemd($fresh, $this->targets->forInstallation($fresh)), fn () => $this->stopUnlocked($fresh, $this->targets->forInspection($fresh)), $fresh->desired_state === DesiredProcessState::Running);
-
-                return;
-            }
-
-            match ($fresh->runtime) {
-                ProcessRuntime::Systemd => $this->convergeAndActivateSystemd($fresh, $target),
-                ProcessRuntime::Docker => $this->convergeDocker($fresh, $target),
-            };
-        });
+        $operation = app(ProcessOperationAdmission::class)->execute($process, 'create', preserveRecord: false);
+        $this->await($operation);
     }
 
     public function start(#[SensitiveParameter] Process $process, bool $explicit = false): void
     {
-        $this->lease->run($process, function (Process $fresh) use ($explicit): void {
-            $target = $this->targets->forStart($fresh);
-            $this->assertReleaseAvailable($fresh, $target, 'start', 'process.start_failed');
-            if ($fresh->isVpDev()) {
-                app(ViteProcessLifecycle::class)->run($fresh, fn () => $this->startUnlocked($fresh, $this->targets->forStart($fresh)), fn () => $this->stopUnlocked($fresh, $this->targets->forInspection($fresh)), true, explicitStart: $explicit);
-
-                return;
-            }
-            $this->startUnlocked($fresh, $target);
-        });
+        $operation = app(ProcessOperationAdmission::class)->execute($process, 'start', preserveRecord: false);
+        $this->await($operation);
     }
 
     public function stop(#[SensitiveParameter] Process $process): void
     {
-        $this->lease->run($process, function (Process $fresh): void {
-            $this->stopUnlocked($fresh, $this->targets->forProcess($fresh));
-        });
+        $operation = app(ProcessOperationAdmission::class)->execute($process, 'stop', preserveRecord: false);
+        $this->await($operation);
     }
 
     public function restart(#[SensitiveParameter] Process $process): void
     {
-        $this->lease->run($process, function (Process $fresh): void {
-            $target = $this->targets->forStart($fresh);
-            $this->assertReleaseAvailable($fresh, $target, 'restart', 'process.restart_failed');
-            if ($fresh->isVpDev()) {
-                app(ViteProcessLifecycle::class)->run($fresh, fn () => $this->startUnlocked($fresh, $this->targets->forStart($fresh)), fn () => $this->stopUnlocked($fresh, $this->targets->forInspection($fresh)), true, restart: true);
-
-                return;
-            }
-            $this->control($fresh, $target, 'restart', 'process.restart_failed');
-        });
+        $operation = app(ProcessOperationAdmission::class)->execute($process, 'restart', preserveRecord: false);
+        $this->await($operation);
     }
 
     public function remove(#[SensitiveParameter] Process $process): void
     {
-        // An explicit runtime override removes a retired footprint during an in-place runtime switch.
-        // The lease still refreshes the owner and placement before any mutation.
-        $retiredRuntime = $process->isDirty('runtime') ? $process->runtime : null;
-        $this->lease->run($process, function (Process $fresh) use ($retiredRuntime): void {
-            if ($retiredRuntime !== null) {
-                $fresh->runtime = $retiredRuntime;
-            }
-            $this->removeUnlocked($fresh, $this->targets->forRemoval($fresh));
-        });
+        $operation = app(ProcessOperationAdmission::class)->execute($process, 'destroy', preserveRecord: true);
+        $this->await($operation);
+    }
+
+    private function await(Operation $operation): void
+    {
+        $result = app(AwaitOperation::class)->execute($operation);
+        if ($result->status !== OperationStatus::Succeeded) {
+            throw new ProcessOperationException($result->failed_step ?? 'runtime', $result->error_code ?? 'process.operation_failed', 'The Process Operation did not succeed.');
+        }
     }
 
     public function status(#[SensitiveParameter] Process $process): string
@@ -167,105 +127,6 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
     public function dockerSpecHash(#[SensitiveParameter] Process $process): string
     {
         return $this->docker->specHash($process, $this->targets->forInspection($process));
-    }
-
-    private function startUnlocked(#[SensitiveParameter] Process $process, ProcessTarget $target): void
-    {
-        $this->control($process, $target, 'start', 'process.start_failed');
-    }
-
-    private function stopUnlocked(#[SensitiveParameter] Process $process, ProcessTarget $target): void
-    {
-        $this->control($process, $target, 'stop', 'process.stop_failed');
-    }
-
-    /** Starts, stops, or restarts the Process's own unit or container; an absent one is `process.runtime_not_found`. */
-    private function control(#[SensitiveParameter] Process $process, ProcessTarget $target, string $operation, string $errorCode): void
-    {
-        $this->call($process, 'process.control', [
-            'operation' => $operation,
-            ...$this->artifact($process),
-            'on_demand' => $target->onDemandHostStart,
-        ], $operation, $errorCode, $target);
-    }
-
-    private function removeUnlocked(#[SensitiveParameter] Process $process, ProcessTarget $target): void
-    {
-        $vite = $process->runtime === ProcessRuntime::Systemd && $process->isVpDev()
-            ? ['path' => SystemdProcessRenderer::viteEnvironmentPath($process->owner_id), 'instance_id' => $process->owner_id]
-            : null;
-
-        $this->call($process, 'process.remove', [...$this->artifact($process), 'vite' => $vite], 'remove', 'process.remove_failed', $target);
-    }
-
-    /**
-     * Stages the rendered unit, and publishes and activates it when it changed or a published one never finished
-     * activating. Completion is cleared before publication, so a lost response leaves the activation pending for the
-     * next converge.
-     */
-    private function convergeAndActivateSystemd(
-        #[SensitiveParameter]
-        Process $process,
-        ProcessTarget $target,
-    ): void {
-        $rendered = $this->systemd->render(
-            $process, $target,
-            $target->certificateScope === null ? null : $this->accounts->resolve($target->node),
-        );
-        $unit = $this->systemd->unitName($process);
-        $staged = $this->call($process, 'process.stage-unit', [
-            'process_id' => $process->id,
-            'unit' => $unit,
-            'content' => $rendered,
-        ], 'inspect-unit', 'process.systemd_converge_failed');
-
-        if ($staged['staged'] !== true) {
-            $running = $process->desired_state === DesiredProcessState::Running;
-            $status = $staged['state'] ?? null;
-            if (! $process->systemd_activation_pending
-                && ($process->systemd_activation_hash === null || $process->systemd_activation_hash === hash('sha256', $rendered))
-                && (($running && $status === 'active') || (! $running && $status === 'inactive'))) {
-                return;
-            }
-            // Published bytes can outlive a failed or interrupted reload or activation.
-            $change = 'reload';
-        } else {
-            $process->systemd_activation_hash = null;
-            $process->systemd_activation_pending = true;
-            $process->save();
-            $change = $staged['previous'] === true ? 'replace' : 'create';
-        }
-
-        $activated = $this->call($process, 'process.activate-unit', [
-            'process_id' => $process->id,
-            'unit' => $unit,
-            'change' => $change,
-            'desired' => $process->desired_state->value,
-            'on_demand' => $target->onDemandHostStart,
-        ], 'activate-unit', 'process.systemd_converge_failed', change: $change);
-
-        $process->systemd_activation_hash = hash('sha256', $rendered);
-        $process->systemd_activation_pending = false;
-        $process->save();
-
-        if ($activated['backup_left'] === true) {
-            throw new ProcessOperationException(
-                step: 'remove-unit-backup',
-                errorCode: 'process.systemd_converge_failed',
-                message: "Process [{$process->name}] runtime step [remove-unit-backup] failed.",
-            );
-        }
-    }
-
-    private function convergeDocker(#[SensitiveParameter] Process $process, ProcessTarget $target): void
-    {
-        $this->call($process, 'process.converge-container', [
-            'process_id' => $process->id,
-            'container' => $this->docker->containerName($process),
-            'desired' => $process->desired_state->value,
-            'spec' => $this->docker->specHash($process, $target),
-            ...$this->docker->containerInput($process, $target),
-        ], 'converge-container', 'process.docker_converge_failed');
     }
 
     private function assertReleaseAvailable(

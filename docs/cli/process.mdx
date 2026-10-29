@@ -13,6 +13,8 @@ A Process is one systemd service or Docker container that the Gateway manages fo
 
 [Processes and schedules](/reference/processes-and-schedules) describes owners, runtimes, environment, presets, locks, and definitions. [Hibernation](/reference/app-dev-runtime-hibernation) describes idle stop and wake for development Processes.
 
+Installed writes return and follow an Operation. `--json` prints the final Operation and its steps. Use `--idempotency-key` to retry the same admission. Project definition writes keep their existing responses.
+
 ## Choose the owner
 
 `process:create` and `process:list` need exactly one selector. The CLI refuses two selectors, and `--for` without `--project`, before it sends a request.
