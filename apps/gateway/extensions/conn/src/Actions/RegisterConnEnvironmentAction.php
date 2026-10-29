@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Conn\Actions;
 
-use App\Actions\Operations\StartOperationAction;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use Illuminate\Support\Carbon;
@@ -74,24 +73,13 @@ final readonly class RegisterConnEnvironmentAction
     private function revokeEarlierGatewaySessions(ConnEnvironment $environment): void
     {
         try {
-            $ids = [];
             foreach ($this->server->clientSessions($environment->url, $environment->admin_session) as $session) {
                 if (! $session->current && $session->label === self::GATEWAY_CLIENT_LABEL) {
-                    $ids[] = $session->sessionId;
+                    $this->server->revokeClientSession($environment->url, $environment->admin_session, $session->sessionId);
                 }
             }
-            if ($ids === []) {
-                return;
-            }
-            app(StartOperationAction::class)->execute('conn.gateway_sessions_revoke', 'conn_environment', $environment->id, $environment->node_id,
-                ['conn_environment_id' => $environment->id, 'environment' => ['$secret' => 'conn.environment', 'id' => $environment->id], 'pairing_ids' => [], 'session_ids' => $ids], 'integration', null);
         } catch (T3ServerException) {
-            // Registration remains valid when the read of older sessions fails; those sessions expire.
-        } catch (ResourceOperationException $exception) {
-            if ($exception->errorCode !== 'operation.target_busy') {
-                throw $exception;
-            }
-            // An earlier cleanup is pending. These older sessions still have their original expiry.
+            // The new session is stored; an earlier one that stays valid expires on its own.
         }
     }
 }

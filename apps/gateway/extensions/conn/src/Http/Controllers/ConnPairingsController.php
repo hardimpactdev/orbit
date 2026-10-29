@@ -53,8 +53,11 @@ final class ConnPairingsController extends Controller
     #[StartsOperation('conn.pairing_revoke', bindCaller: true)]
     public function revoke(RevokeConnPairingsRequest $request, ConnEnvironment $environment, RevokeConnPairingsAction $action): JsonResponse
     {
+        $caller = RequireActiveWireGuardPeer::activePeer($request);
+        abort_unless($caller instanceof Node, 403);
+
         return response()->json([
-            'data' => OperationData::fromModel($action->execute($request->node(), $environment))->toArray(),
+            'data' => OperationData::fromModel($action->execute($request->node(), $environment, $caller))->toArray(),
             'meta' => $this->meta($request),
         ], 202);
     }

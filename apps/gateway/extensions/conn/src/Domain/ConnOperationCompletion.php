@@ -19,9 +19,6 @@ final readonly class ConnOperationCompletion implements OperationCompletion
         if ($outcome->status !== OperationStatus::Succeeded) {
             return;
         }
-        if ($operation->kind === 'conn.gateway_sessions_revoke') {
-            return;
-        }
         if ($operation->kind === 'conn.pairing_create') {
             $pairing = ConnPairing::query()->findOrFail($operation->target_id);
             if ($pairing->credential === null || $pairing->pairing_link_id !== ($outcome->result['pairing_link_id'] ?? null)) {

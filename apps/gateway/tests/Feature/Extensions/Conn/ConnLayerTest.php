@@ -656,7 +656,7 @@ describe('environment registration', function (): void {
             ->assertJsonPath('data.0.label', 'beast');
     });
 
-    it('replaces the session on re-registration and records exact earlier Gateway sessions for cleanup', function (): void {
+    it('replaces the session on re-registration and revokes the earlier Gateway sessions', function (): void {
         conn_layer_fake_server([
             CONN_LAYER_SERVER.'/api/auth/clients/revoke' => Http::response(['revoked' => true]),
             CONN_LAYER_SERVER.'/api/auth/clients' => Http::response([
@@ -671,9 +671,28 @@ describe('environment registration', function (): void {
 
         expect(ConnEnvironment::query()->count())->toBe(1)
             ->and(ConnEnvironment::query()->sole()->admin_session)->toBe('admin-session-token');
-        expect(Operation::query()->where('kind', 'conn.gateway_sessions_revoke')->sole()->input['session_ids'])->toBe(['old']);
-        Http::assertNotSent(static fn (HttpRequest $request): bool => $request->method() === 'POST' && str_contains($request->url(), '/revoke'));
+        Http::assertSent(static fn (HttpRequest $request): bool => $request->url() === CONN_LAYER_SERVER.'/api/auth/clients/revoke'
+            && $request['sessionId'] === 'old'
+            && $request->hasHeader('Authorization', 'Bearer admin-session-token'));
+        Http::assertNotSent(static fn (HttpRequest $request): bool => $request->url() === CONN_LAYER_SERVER.'/api/auth/clients/revoke'
+            && in_array($request['sessionId'], ['new', 'phone'], true));
+    });
 
+    it('cleans intermediate Gateway sessions synchronously across repeated registrations', function (): void {
+        conn_layer_fake_server([
+            CONN_LAYER_SERVER.'/api/auth/clients/revoke' => Http::response(['revoked' => true]),
+            CONN_LAYER_SERVER.'/api/auth/clients' => Http::sequence()
+                ->push([['sessionId' => 'first-old', 'client' => ['label' => 'Orbit Gateway'], 'current' => false]])
+                ->push([['sessionId' => 'intermediate', 'client' => ['label' => 'Orbit Gateway'], 'current' => false]]),
+        ]);
+
+        $this->postJson('/api/v1/conn/environments', conn_layer_registration())->assertOk();
+        $this->postJson('/api/v1/conn/environments', conn_layer_registration())->assertOk();
+
+        foreach (['first-old', 'intermediate'] as $id) {
+            Http::assertSent(static fn (HttpRequest $request): bool => $request->url() === CONN_LAYER_SERVER.'/api/auth/clients/revoke' && $request['sessionId'] === $id);
+        }
+        expect(Operation::query()->count())->toBe(0);
     });
 
     it('refuses a URL that serves another environment before it sends the session', function (): void {

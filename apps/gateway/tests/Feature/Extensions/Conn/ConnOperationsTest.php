@@ -161,3 +161,33 @@ it('keeps an invalid generated output out of encrypted state and the keyed recei
     expect($this->operation->fresh()->state['executor_runs']['pairing-create']['result'])->toBeNull();
     Http::assertSentCount(1);
 });
+
+it('lets the no-grant originating caller read and cancel only its own Conn Operation', function (): void {
+    $path = '/api/v1/conn/operations/'.$this->operation->id;
+    $this->withServerVariables(['REMOTE_ADDR' => $this->other->wireguard_ip]);
+    $this->getJson($path)->assertNotFound();
+    $this->call('POST', $path.'/cancel', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')->assertNotFound();
+    expect($this->operation->fresh()->cancel_requested)->not->toBeTrue();
+    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
+    $this->getJson('/api/v1/operations/'.$this->operation->id)->assertForbidden();
+
+    $this->getJson($path)->assertOk()->assertJsonPath('data.id', $this->operation->id)->assertJsonPath('data.kind', 'conn.pairing_create');
+    $this->call('POST', $path.'/cancel', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')->assertOk();
+
+    expect($this->operation->fresh()->cancel_requested)->toBeTrue()->and($this->caller->accessibleNodes()->count())->toBe(0);
+    Http::assertNothingSent();
+});
+
+it('keeps the revocation requester separate from its subject for owner access and attribution', function (): void {
+    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
+    $this->postJson('/api/v1/conn/environments/conn-h-proof/pairings/revoke', ['node_id' => $this->other->id])->assertAccepted();
+    $operation = Operation::query()->where('kind', 'conn.pairing_revoke')->sole();
+    expect($operation->target_id)->toBe($this->other->id)->and($operation->callerNodeId())->toBe($this->caller->id)
+        ->and($operation->input['subject_node_id'])->toBe($this->other->id);
+
+    $this->getJson('/api/v1/conn/operations/'.$operation->id)->assertOk();
+    $this->withServerVariables(['REMOTE_ADDR' => $this->other->wireguard_ip]);
+    $this->getJson('/api/v1/conn/operations/'.$operation->id)->assertNotFound();
+    $this->call('POST', '/api/v1/conn/operations/'.$operation->id.'/cancel', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')->assertNotFound();
+    Http::assertNothingSent();
+});

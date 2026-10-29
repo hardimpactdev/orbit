@@ -17,7 +17,7 @@ final readonly class RevokeConnPairingsAction
 {
     public function __construct(private StartOperationAction $operations, private NodeAccessAuthorizer $nodes) {}
 
-    public function execute(Node $node, ConnEnvironment $environment): Operation
+    public function execute(Node $node, ConnEnvironment $environment, Node $caller): Operation
     {
         IntegrationAvailability::assertKind('conn.pairing_revoke');
         $gateway = $this->nodes->activeGatewayId() ?? throw new ResourceOperationException('conn.gateway_missing', 'Pairing needs one active Gateway Node.', 409);
@@ -26,6 +26,6 @@ final readonly class RevokeConnPairingsAction
 
         return $this->operations->execute('conn.pairing_revoke', 'conn_pairing_node', $node->id, $gateway,
             ['conn_environment_id' => $environment->id, 'environment' => ['$secret' => 'conn.environment', 'id' => $environment->id],
-                'pairing_ids' => $ids, 'caller_node_id' => $node->id], 'operator', null);
+                'pairing_ids' => $ids, 'subject_node_id' => $node->id, 'caller_node_id' => $caller->id], 'operator', null);
     }
 }
