@@ -56,6 +56,9 @@ final readonly class OperationExecutionContract
                 $run['required'] = $descriptor['required'];
             }
             $expected = $execution?->input($operation, $data) ?? [...Arr::only($operation->input, $run['input_fields'] ?? []), ...($run['input_values'] ?? [])];
+            if (! $this->same(Arr::only($expected, array_keys($run['input_values'] ?? [])), $run['input_values'] ?? [])) {
+                continue;
+            }
             foreach ($run['bind'] ?? [] as $parameter => $path) {
                 if (! str_starts_with($path, 'input.') || ! Arr::has($operation->input, substr($path, 6))) {
                     throw new ResourceOperationException('operation.execution_forbidden', 'The admitted input binding is missing.', 422);
