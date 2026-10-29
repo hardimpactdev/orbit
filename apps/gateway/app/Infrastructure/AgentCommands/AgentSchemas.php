@@ -51,6 +51,114 @@ final class AgentSchemas
         return self::commands()[$command]['input'] ?? throw new LogicException('The command has no input schema.');
     }
 
+    /** Restore declared JSON container shapes without hydrating or validating protected input.
+     * @param  array<string,mixed>|bool  $schema
+     */
+    public static function wireValue(#[\SensitiveParameter] mixed $value, array|bool $schema): mixed
+    {
+        return self::shape($value, $schema, is_array($schema) ? $schema : []);
+    }
+
+    /** @param array<string,mixed>|bool $schema
+     * @param  array<string,mixed>  $root
+     */
+    private static function shape(#[\SensitiveParameter] mixed $value, array|bool $schema, array $root): mixed
+    {
+        if ((! is_array($value) && ! $value instanceof stdClass) || ! is_array($schema)) {
+            return $value;
+        }
+        if (isset($schema['$ref'])) {
+            $value = self::shape($value, self::reference(ValidatedData::string($schema['$ref']), $root), $root);
+        }
+        foreach (self::schemas($schema['allOf'] ?? []) as $part) {
+            $value = self::shape($value, $part, $root);
+        }
+        foreach (['anyOf', 'oneOf'] as $choice) {
+            $matches = [];
+            foreach (self::schemas($schema[$choice] ?? []) as $part) {
+                $candidate = self::shape($value, $part, $root);
+                if (self::shapeMatches($candidate, $part, $root)) {
+                    $matches[] = $candidate;
+                }
+            }
+            if ($matches !== [] && count(array_unique(array_map(static fn (mixed $candidate): string => json_encode($candidate, JSON_THROW_ON_ERROR), $matches))) === 1) {
+                $value = $matches[0];
+            }
+        }
+        $types = is_string($schema['type'] ?? null) ? [$schema['type']] : ValidatedData::stringList($schema['type'] ?? []);
+        if (in_array('object', $types, true) && ! in_array('array', $types, true)) {
+            $fields = (array) $value;
+            $properties = ValidatedData::object($schema['properties'] ?? []);
+            foreach ($fields as $key => $item) {
+                $fields[$key] = self::shape($item, self::schema($properties[$key] ?? $schema['additionalProperties'] ?? true), $root);
+            }
+
+            return (object) $fields;
+        }
+        if (is_array($value) && array_is_list($value)) {
+            $prefix = self::schemas($schema['prefixItems'] ?? []);
+            foreach ($value as $index => $item) {
+                $value[$index] = self::shape($item, self::schema($prefix[$index] ?? $schema['items'] ?? true), $root);
+            }
+        }
+
+        return $value;
+    }
+
+    /** Select a container variant from public types and discriminators; protected leaves stay opaque.
+     * @param  array<string,mixed>|bool  $schema
+     * @param  array<string,mixed>  $root
+     */
+    private static function shapeMatches(#[\SensitiveParameter] mixed $value, array|bool $schema, array $root): bool
+    {
+        $fields = $value instanceof stdClass ? get_object_vars($value) : $value;
+        if (is_array($fields) && is_string($fields['$secret'] ?? null) && is_int($fields['id'] ?? null)) {
+            return true;
+        }
+        if (is_bool($schema)) {
+            return $schema;
+        }
+        if (isset($schema['$ref']) && ! self::shapeMatches($value, self::reference(ValidatedData::string($schema['$ref']), $root), $root)) {
+            return false;
+        }
+        if (array_key_exists('const', $schema) && ! self::same($value, $schema['const'])) {
+            return false;
+        }
+        if (isset($schema['enum']) && ! array_any(self::values($schema['enum']), static fn (mixed $option): bool => self::same($value, $option))) {
+            return false;
+        }
+        if (isset($schema['type'])) {
+            $types = is_string($schema['type']) ? [$schema['type']] : ValidatedData::stringList($schema['type']);
+            if (! array_any($types, static fn (string $type): bool => self::is($value, $type, false))) {
+                return false;
+            }
+        }
+        foreach (self::schemas($schema['allOf'] ?? []) as $part) {
+            if (! self::shapeMatches($value, $part, $root)) {
+                return false;
+            }
+        }
+        foreach (['anyOf', 'oneOf'] as $choice) {
+            if (isset($schema[$choice]) && ! array_any(self::schemas($schema[$choice]), static fn (array|bool $part): bool => self::shapeMatches($value, $part, $root))) {
+                return false;
+            }
+        }
+        if (is_array($fields)) {
+            foreach (ValidatedData::stringList($schema['required'] ?? []) as $key) {
+                if (! array_key_exists($key, $fields)) {
+                    return false;
+                }
+            }
+            foreach (ValidatedData::object($schema['properties'] ?? []) as $key => $part) {
+                if (array_key_exists($key, $fields) && ! self::shapeMatches($fields[$key], self::schema($part), $root)) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
     public static function assertOutput(string $command, mixed $output): void
     {
         self::assert($command, 'output', json_decode(json_encode($output, JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR));

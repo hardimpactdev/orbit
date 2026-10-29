@@ -106,3 +106,35 @@ it('knows every keyword and reference the exported command schemas use', functio
         $walk($schemas['output'], $schemas['output']);
     }
 });
+
+it('restores nested empty maps through referenced variant schemas while preserving lists and null', function (): void {
+    $input = ['operation' => 'apply', 'state' => ['environment' => [], 'rules' => [], 'port' => 1, 'address' => null]];
+    $wire = AgentSchemas::wireValue((object) $input, agent_schema_example());
+    expect($wire)->toBeInstanceOf(stdClass::class)->and($wire->state->environment)->toBeInstanceOf(stdClass::class)
+        ->and($wire->state->rules)->toBe([])->and($wire->state->address)->toBeNull()
+        ->and(AgentSchemas::errors($wire, agent_schema_example()))->toBe([])
+        ->and($input['state']['environment'])->toBe([]);
+});
+
+it('preserves nullable maps, numeric map keys and map entries inside lists on the wire', function (): void {
+    $schema = ['type' => 'object', 'properties' => [
+        'optional' => ['anyOf' => [['type' => 'object', 'additionalProperties' => ['type' => 'object']], ['type' => 'null']]],
+        'rows' => ['type' => 'array', 'items' => ['type' => 'object']],
+    ]];
+    $wire = AgentSchemas::wireValue(['optional' => [0 => []], 'rows' => [[]]], $schema);
+    expect(json_encode($wire, JSON_THROW_ON_ERROR))->toBe('{"optional":{"0":{}},"rows":[{}]}');
+    $wire = AgentSchemas::wireValue(['optional' => null, 'rows' => []], $schema);
+    expect(json_encode($wire, JSON_THROW_ON_ERROR))->toBe('{"optional":null,"rows":[]}');
+    expect(AgentSchemas::wireValue([], ['anyOf' => [['type' => 'object'], ['type' => 'array']]]))->toBe([]);
+});
+
+it('shapes tagged descriptor maps without validating or hydrating their secret references', function (): void {
+    $schema = agent_schema_example();
+    $schema['oneOf'][1]['properties']['token'] = ['type' => 'string', 'minLength' => 10];
+    $schema['oneOf'][1]['required'][] = 'token';
+    $reference = ['$secret' => 'github.app', 'id' => 27];
+    $input = ['operation' => 'apply', 'token' => $reference, 'state' => ['environment' => [], 'rules' => [], 'port' => 1]];
+    $wire = AgentSchemas::wireValue($input, $schema);
+    expect($wire->state->environment)->toBeInstanceOf(stdClass::class)->and($wire->state->rules)->toBe([])
+        ->and((array) $wire->token)->toBe($reference)->and($input['state']['environment'])->toBe([]);
+});
