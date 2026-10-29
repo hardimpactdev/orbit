@@ -1,5 +1,5 @@
 use super::*;
-use crate::commands::recipe::{types::Architecture, Output};
+use crate::commands::recipe::Output;
 use sha2::{Digest, Sha256};
 use std::os::unix::fs::PermissionsExt;
 use std::{
@@ -222,7 +222,15 @@ fn refuses_unsupported_architecture_or_unofficial_browser_before_installing() {
     for mutation in ["arm64", "url", "version"] {
         let (_work, files, mut input, archive, mut host) = fixture();
         match mutation {
-            "arm64" => input.architecture = Architecture::Arm64,
+            "arm64" => {
+                let mut raw = serde_json::to_value(&input).unwrap();
+                raw["architecture"] = serde_json::json!("arm64");
+                assert!(serde_json::from_value::<Input>(raw).is_err());
+                assert!(!valid(&input.tools[NAME], "arm64"));
+                assert!(!files.path(POLICY).exists());
+                assert!(host.calls.is_empty());
+                continue;
+            }
             "url" => {
                 input
                     .tools
