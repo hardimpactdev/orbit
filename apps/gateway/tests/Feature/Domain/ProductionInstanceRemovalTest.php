@@ -260,3 +260,11 @@ it('requires the successful owned database child after runtime cleanup before re
     app(RemovalLifecycleExecution::class)->beforeRun($operation, ['worker' => 'proof', ...$home]);
     expect($operation->children()->count())->toBe(4);
 });
+
+it('uses the effective unclustered placement when the Node belongs to an inactive Cluster', function (): void {
+    $this->route->targets()->where('instance_id', $this->survivor->id)->delete();
+    DB::table('routes')->where('id', $this->route->id)->update(['cluster_id' => null, 'node_id' => $this->nodes[0]->id, 'publication' => 'private']);
+    Cluster::query()->whereKey($this->nodes[0]->cluster_id)->update(['state' => 'inactive']);
+
+    expect(($this->admit)()->input['production_routes'][0]['targets'])->toBe([$this->instance->id]);
+});

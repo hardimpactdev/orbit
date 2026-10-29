@@ -306,7 +306,7 @@ final readonly class ProductionRemovalIntent
             $node->setRelation('roles', $roles);
             if ($target->position !== $position || $instance->project_id !== $route->project_id || ! $instance->placedOnAppProd()
                 || ($instance->status !== InstanceState::Active && ! ($removing && $instance->id === $requested->id && $instance->status === InstanceState::Removing))
-                || $node->status !== LifecycleStatus::Active || $node->cluster_id !== $route->cluster_id
+                || $node->status !== LifecycleStatus::Active || $route->cluster_id !== null && $node->cluster_id !== $route->cluster_id
                 || ! $roles->contains(static fn ($role): bool => $role->role === RoleName::AppProd && $role->status === LifecycleStatus::Active)
                 || isset($nodes[$node->id])) {
                 throw $this->conflict();
