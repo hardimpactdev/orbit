@@ -11,6 +11,7 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentEffectReceipts;
 use App\Infrastructure\AgentCommands\AgentGitHubToken;
 use App\Infrastructure\AgentCommands\AgentGuest;
 use App\Infrastructure\AgentCommands\GuestAgentCommandRunner;
@@ -31,9 +32,8 @@ final readonly class TaskVmPackageCache implements TaskVmPackageCacheMount
 
     public function __construct(private AgentCommandRunner $agents, private GuestAgentCommandRunner $guests) {}
 
-    /**
-     * @param  list<array{manager: string, package: string, version: string, url: string, integrity: string|null, key: string}>  $artifacts
-     * @return array{hashes: array<string, string>, failures: array<string, string>}
+    /** @param list<array{manager:string,package:string,version:string,url:string,integrity:string|null,key:string}> $artifacts
+     * @return array{hashes:array<string,string>,failures:array<string,string>}
      */
     public function fill(TaskVmHost $host, Node $node, array $artifacts, #[\SensitiveParameter] ?string $githubToken = null): array
     {
@@ -42,6 +42,31 @@ final readonly class TaskVmPackageCache implements TaskVmPackageCacheMount
             throw new TaskVmException('task_vm.package_cache_invalid_limit', 'The package cache byte budget must be positive.');
         }
         $response = $this->request(fn () => $this->agents->run($node, 'package-cache.host', ['operation' => 'fill', 'artifacts' => $artifacts, 'max_bytes' => $maxBytes, 'github_token' => $githubToken === null ? null : new AgentGitHubToken($githubToken)]));
+
+        return self::verifiedResult($artifacts, $response);
+    }
+
+    /**
+     * @param  list<array{manager: string, package: string, version: string, url: string, integrity: string|null, key: string}>  $artifacts
+     * @param  array<string,mixed>  $run
+     * @return array{hashes: array<string, string>, failures: array<string, string>}
+     */
+    public function fillProven(TaskVmHost $host, Node $node, array $artifacts, #[\SensitiveParameter] ?string $githubToken, int $maxBytes, array $run): array
+    {
+        if ($maxBytes < 1) {
+            throw new TaskVmException('task_vm.package_cache_invalid_limit', 'The package cache byte budget must be positive.');
+        }
+        $response = $this->request(fn () => $this->agents->run($node, 'package-cache.host', AgentEffectReceipts::input($run, ['operation' => 'fill', 'artifacts' => $artifacts, 'max_bytes' => $maxBytes, 'github_token' => $githubToken === null ? null : new AgentGitHubToken($githubToken)])));
+
+        return self::verifiedResult($artifacts, $response);
+    }
+
+    /** @param list<array{manager:string,package:string,version:string,url:string,integrity:string|null,key:string}> $artifacts
+     * @param  array<string,mixed>  $response
+     * @return array{hashes:array<string,string>,failures:array<string,string>}
+     */
+    public static function verifiedResult(array $artifacts, array $response): array
+    {
         $hashes = $response['hashes'] ?? null;
         $failures = $response['failures'] ?? null;
         if (! is_array($hashes) || ! is_array($failures) || array_diff(array_keys($hashes + $failures), array_column($artifacts, 'key')) !== []) {

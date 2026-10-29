@@ -9,7 +9,6 @@ use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\TaskVms\GuestBootstrap;
 use App\Models\Node;
-use Illuminate\Support\Sleep;
 use Tests\Support\FakeGuestAgentCommandRunner;
 
 function bootstrapGuest(): AgentGuest
@@ -53,35 +52,6 @@ it('maps guest refusals to public VM failures', function (string $code, array $d
     ['task_vm.host_command_failed', ['stderr' => 'key unavailable'], 'key unavailable'],
 ]);
 
-it('installs once before polling readiness', function (): void {
-    $this->freezeTime();
-    $agents = new FakeGuestAgentCommandRunner;
-    $agents->answer = static fn (): array => ['ready' => count($agents->calls) === 2];
-    $guest = bootstrapGuest();
-
-    new GuestBootstrap($agents)->awaitReady($guest, 'builder', 30);
-
-    expect($agents->installs)->toBe([$guest])->and($agents->calls)->toHaveCount(2);
-    Sleep::assertSleptTimes(1);
-});
-
-it('retries unavailable staging before the first observation', function (): void {
-    $this->freezeTime();
-    $agents = new FakeGuestAgentCommandRunner;
-    $agents->installAnswer = static function () use ($agents): bool {
-        if (count($agents->installs) === 1) {
-            throw new AgentRunnerFailure('agent.install', AgentRunnerFailure::Transport, 'unavailable', result: new CommandResult(255, '', 'connection refused', 1, false));
-        }
-
-        return true;
-    };
-
-    new GuestBootstrap($agents)->awaitReady(bootstrapGuest(), 'builder', 30);
-
-    expect($agents->installs)->toHaveCount(2)->and($agents->calls)->toHaveCount(1);
-    Sleep::assertSleptTimes(1);
-});
-
 it('treats only blank failed transport results as pending', function (string $kind, ?CommandResult $result, bool $pending): void {
     $agents = new FakeGuestAgentCommandRunner;
     $failure = new AgentRunnerFailure('guest.cloud-init', $kind, 'failure', result: $result);
@@ -102,43 +72,3 @@ it('treats only blank failed transport results as pending', function (string $ki
     [AgentRunnerFailure::Timeout, null, false],
     [AgentRunnerFailure::MalformedResult, null, false],
 ]);
-
-it('does not retry installation refusal or configuration failure', function (bool $refusal): void {
-    $agents = new FakeGuestAgentCommandRunner;
-    $error = $refusal ? new AgentCommandRefused('agent.install', 'agent.install_failed', 'failed') : new RuntimeException('invalid manifest');
-    $agents->installAnswer = static fn () => throw $error;
-
-    expect(fn () => new GuestBootstrap($agents)->awaitReady(bootstrapGuest(), 'builder', 30))->toThrow($error);
-    expect($agents->installs)->toHaveCount(1)->and($agents->calls)->toBe([]);
-    Sleep::assertSleptTimes(0);
-})->with([true, false]);
-
-it('stops polling at the boot deadline', function (): void {
-    $this->freezeTime();
-    $start = now()->getTimestamp();
-    $agents = new FakeGuestAgentCommandRunner;
-    $agents->answer = static fn (): array => ['ready' => false];
-
-    expect(fn () => new GuestBootstrap($agents)->awaitReady(bootstrapGuest(), 'builder', 4))->toThrow(function (TaskVmException $error): void {
-        expect($error->errorCode)->toBe('task_vm.bootstrap_timeout');
-    });
-    expect(now()->getTimestamp() - $start)->toBe(4);
-    expect($agents->calls)->toHaveCount(2)->and($agents->installs)->toHaveCount(1);
-});
-
-it('waits for the guest system bus before installing on first boot', function (): void {
-    $this->freezeTime();
-    $agents = new FakeGuestAgentCommandRunner;
-    $agents->installAnswer = static function () use ($agents): bool {
-        if (count($agents->installs) === 1) {
-            throw new AgentCommandRefused('agent.install', 'agent.supervisor_not_ready', 'The system bus is not available.');
-        }
-
-        return true;
-    };
-
-    new GuestBootstrap($agents)->awaitReady(bootstrapGuest(), 'builder', 30);
-
-    expect($agents->installs)->toHaveCount(2)->and($agents->calls)->toHaveCount(1);
-    Sleep::assertSleptTimes(1);
-});

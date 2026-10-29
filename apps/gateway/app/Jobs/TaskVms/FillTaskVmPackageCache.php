@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Jobs\TaskVms;
 
-use App\Actions\TaskVms\FillPackageCacheAction;
+use App\Actions\TaskVms\StartTaskVmPackageCacheOperationAction;
 use App\Domain\Gateway\GatewayQueue;
 use Illuminate\Contracts\Queue\ShouldBeUniqueUntilProcessing;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -36,7 +36,7 @@ final class FillTaskVmPackageCache implements ShouldBeUniqueUntilProcessing, Sho
         return [new WithoutOverlapping('package-cache:'.$this->hostNodeId)->dontRelease()->expireAfter(1760)];
     }
 
-    public function handle(FillPackageCacheAction $fill): void
+    public function handle(StartTaskVmPackageCacheOperationAction $fill): void
     {
         $fill->execute($this->hostNodeId);
     }

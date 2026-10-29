@@ -33,7 +33,7 @@ use Illuminate\Support\Carbon;
  * @property TaskVmImageBuildStep|null $current_step
  * @property string|null $current_program
  * @property TaskVmImageBuildState $state
- * @property list<array{step: string, program: string|null, started_at: string|null, seconds: float|null, error: string|null, phase_state?: array{observed_at?: float, boot_id?: string, attempt?: int, restart_from?: string}}> $steps
+ * @property list<array{step: string, program: string|null, started_at: string|null, seconds: float|null, error: string|null, operations?: array<string, int>, phase_state?: array{observed_at?: float, boot_id?: string, attempt?: int, restart_from?: string}}> $steps
  * @property string|null $submission_pending_at
  * @property Carbon|null $cleanup_started_at
  * @property Carbon|null $created_at

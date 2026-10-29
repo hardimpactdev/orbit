@@ -436,9 +436,9 @@ A Route that fails at the claim logs `The task workspace Route failed after the 
 
 Cloud-init creates the user `orbit` with passwordless sudo and the Gateway's SSH key. The base image already put `orbit` in `incus-admin`, so a [nested topology](#prepare-the-topology) needs no new login. Cloud-init does nothing else, because the base image already holds Incus, `openssh-server`, Chromium's system libraries, the workspace tools, the software of the `app-dev` role, the pinned Rust toolchain, the Node agent, and Pi. Enrollment trusts the recipe image for machine software. The Project's setup steps install the rest, for example its Playwright browsers.
 
-`EnrollTaskVm` checks the VM every second, for up to 2 minutes in one run, and then again 15 seconds later. Once the Incus agent in the guest runs, one check waits in the guest for up to 30 seconds with `cloud-init status --wait`, so the job hears at once when cloud-init is done.
+Provisioning and enrollment retain their synchronous jobs until the owning Node and Process child composition is installed. The Gateway also exposes bounded read views for the prepared Swamp workflows: power, address, image identity, cloud-init and runtime readiness. Enrollment allows ten minutes for boot, measured from launch.
 
-The job goes on when cloud-init reports `done` with no errors and the host reports the guest's bridge address. It reads the guest values only then, before any code but cloud-init has run in the VM. A guest reboot shows the VM stopped for about a second, so a stopped VM gets a second reading 5 seconds later before enrollment fails.
+Enrollment continues when cloud-init reports `done` with no errors and the host reports the guest's bridge address. It reads the guest values only then, before any code but cloud-init has run in the VM. A guest reboot shows the VM stopped for about a second, so a stopped VM gets a second reading 5 seconds later before enrollment fails.
 
 Provisioning links the new Node to the row when it creates the Node record, before any convergence. So the Node is a task VM Node from the start: the fleet rollout skips it, and it gets no Orbit CLI. It never hosts a [Metrics exporter](/reference/metrics#exporter-selection), because the [hub filter](#limit-fleet-traffic-on-the-hub) keeps the Metrics Node out. So its enrollment skips the fleet Metrics reconcile, which converges exporters on every Node and took about 80 seconds on the live fleet.
 
@@ -543,6 +543,8 @@ A subtask whose topology needs a larger VM than its group got waits before its f
 
 ### Shared package cache
 
+Retained Task workspace callers keep their synchronous VM stop, deletion, runtime and cache-preparation bindings. They do not admit an Operation and wait for it. Their owning cutover replaces those calls with parent and child Operations before removing the synchronous paths.
+
 Each configured task VM host has one Gateway-owned package cache at `/var/lib/orbit/package-cache`. The Gateway reads hosts through `TaskVmSettings`; the cache does not select hosts by role or read the environment host list itself. Task VMs receive an Incus directory disk at `/opt/orbit/package-cache` with `readonly=true`. The restricted Incus project permits only this directory as a host disk source; host preparation and the first cache attach set that narrow exception. This host-enforced mount prevents a root agent in the guest from publishing bytes to another Project.
 
 The Gateway sends cache intent through the agent runner. `package-cache.host` initializes or fills the owned host cache; `incus.package-cache` attaches its fixed read-only directory; `package-cache.seed` runs as the guest account and copies verified archives into private manager caches. The Incus transport names its fixed `orbit` guest account for the native supervisor, which drops privilege before account mutations. Rust owns archive validation, download credentials, redirects, integrity checks, size limits, and extraction. No cache program source crosses the transport.
@@ -559,7 +561,11 @@ When the default branch moves in the Gateway Git mirror, Orbit compares the blob
 
 An unchanged commit reuses its snapshot. Changed or removed lock blobs replace the Project's desired inventory, invalidate its recorded host inventory, and queue a fill on each configured host. A Project stays pending until every configured host has verified all its selected archives. Pending fills coalesce by host; workers drop duplicates that overlap a running fill. A fill clears pending only for the inventory it read. A lock change during a fill stays pending for the next mirror fetch, including at an unchanged commit.
 
-Fills run on the `builds` queue and add missing content, without running Project setup, Composer plugins, or package install scripts. Each artifact failure is recorded in the Gateway log with its cache key and host ID. The fill continues with the remaining artifacts and records successful archives in the host inventory before failing the job. Each job makes one attempt; the next mirror fetch retries pending Projects. A queue outage leaves source fetching usable.
+Retained workspace cache preparation stays synchronous. The prepared `task_vm.prepare_package_cache` workflow initializes the host cache, proves its read-only mount, and seeds only the admitted Project inventory; a failed mount prevents guest seeding. The owning workspace cutover must compose that Operation as a child before replacing its synchronous call.
+
+The `builds` queue records `task_vm.fill_package_cache` intent. Swamp runs fixed host fill children, without Project setup, Composer plugins, or package install scripts. Admission partitions the inventory into batches whose worst-case receipts fit the shared result limits. Each child returns bounded archive and failure lists; the parent retains only its outcome and failed child identities. Verified child receipts update the host inventory even when another batch fails.
+
+Each artifact failure is recorded in the Gateway log with its cache key and host ID. The fill continues with the remaining artifacts and records successful archives in the host inventory before failing the Operation. Each admission job makes one attempt; the next mirror fetch retries pending Projects. A queue outage leaves source fetching usable.
 
 Composer consumes native archive cache files. npm consumes its integrity-addressed content cache; Bun consumes extracted cache directories, including registry archives whose root directory uses the package name, as DefinitelyTyped archives do. Seed extraction sets archive directory entries to mode `0755` so archive modes cannot prevent the guest from extracting or using their contents. Regular files use mode `0644`, or `0755` when any archive execute bit is set. An unreadable file mode uses `0644`. Directory permission changes refuse symlinks.
 
@@ -677,19 +683,19 @@ Swamp requests review parking through the keyed `tasks.park` operation. The Gate
 
 The row enters `parked` before the provider stop. Its `vm_power` stays unknown until `stop_confirmed_at` records a confirmed stop. A failed stop clears that proof and retains the error. A resource observation job refreshes proof every minute for parked VMs in every group status, including assistance and ended groups. Running, missing, unsettled or unreadable power clears the proof. Observation never starts or stops a VM.
 
-A requested workspace operation wakes a parked VM through `ResumeTaskVm`. The wake clears stop proof before queuing the job. The job starts the provider VM, checks Node and Pi readiness once, and releases for two seconds if it must wait. It has a fixed nine-minute deadline and three real exceptions; queue deferrals do not consume an attempt limit. Once ready, it records `ready`, and the requested operation can continue. A failed wake keeps its error evidence for Swamp.
+A requested workspace operation queues the retained `ResumeTaskVm` job. It clears stop proof, starts the VM and waits for the Node agent and Pi within a fixed nine-minute deadline. Confirmed runtime readiness records `ready`; a failed wake retains its error evidence.
 
 Parking retains the disk, workspace and sessions. It releases CPU and memory. It retains the provider's allocated VM count; Swamp's maintenance execution slots are separate.
 
 ### Sweep task VM hosts
 
-Every 10 minutes, while task VMs are enabled or the [UpCloud](#sweep-upcloud) token file is set, the Gateway scheduler queues the job `SweepTaskVmHosts`. While task VMs are enabled, for each configured host that is an active Node, the job checks that the host's Incus project exists with `incus project show`, then lists the names of its instances and compares them with the task VM rows. Incus lists a project that does not exist as empty, so a missing project fails the host, and the job changes nothing there:
+The Gateway scheduler queues `SweepTaskVmHosts` every ten minutes. It runs while task VMs are enabled or the [UpCloud](#sweep-upcloud) token file is set. While task VMs are enabled, the sweep admits an Operation for each active configured host. The Operation checks that the host's Incus project exists with `incus project show`. It then compares the instance names with the task VM rows. Incus lists a project that does not exist as empty, so a missing project fails the host, and the job changes nothing there:
 
 - An **orphaned VM** is an instance named `tvm-<number>` in the project that has no task VM row on that host which is not `destroyed`. The job deletes it with `incus delete --force`.
 - A **missing VM** is a `ready` or `parked` task VM row on that host whose instance is gone.
 - An **orphaned volume** is a storage volume `tvm-<number>-topology-seed` in the project whose task VM has no row on that host that is not `destroyed`. The job deletes it after the orphaned VMs.
 
-The job fails a missing VM only when two sweeps in a row miss it. The first miss is kept for an hour, and a sweep that finds the VM forgets it. On the second miss, the job sets the row to `failed` with `task_vm.vm_missing`. The group asks for assistance with the reason `Task VM failed:`.
+The sweep fails a missing VM only when two distinct host Operations in a row miss it. Replaying the observation child of one Operation never counts as a second miss. The first miss is kept for an hour, and a sweep that finds the VM forgets it. On the second miss, the job sets the row to `failed` with `task_vm.vm_missing`. The group asks for assistance with the reason `Task VM failed:`.
 
 Cancel or complete the group of a missing VM to destroy its Node, as for [a VM that dies before its group ends](#a-vm-that-dies-before-its-group-ends).
 
@@ -749,37 +755,29 @@ Orbit derives progress inside `provisioning` from facts: the VM exists, the row 
 
 ### Jobs
 
-The task VM jobs run on the [Gateway queue](/reference/gateway-queue), which Laravel Horizon works. Each job loads its row again, does nothing when the row has moved on, and is unique for its task VM. Task VMs need the queue: set `ORBIT_GATEWAY_QUEUE_CONNECTION` before you enable them.
+The Gateway jobs `FillTaskVmPackageCache`, `SweepTaskVmHosts`, `RefreshTaskVmBaseImages` and `RefreshUpCloudTaskVmBaseImage` validate and record intent. Swamp executes their effects. Each admission job has one attempt and a one-minute timeout.
 
-[Gateway queue](/reference/gateway-queue#queues) owns the queue assignments, worker counts, timeouts, and redelivery policy. Each image chain orders its steps. A durable row permits one running build per host; builder and smoke VMs do not count against `max_vms`.
+Provisioning, enrollment, runtime preparation, resume, destruction, parking and internal removal keep their existing synchronous implementations and tests. Their replacement Operations remain inert until their parents declare the required `node.add`, `node.remove` and Process children and those owning admissions are registered. Merely registering a Node or Process kind does not activate an incomplete parent. Admission refuses with `operation.kind_unavailable` before it records intent or changes the VM.
 
-| Job | Retries |
-| --- | --- |
-| `ProvisionTaskVm` | Once after 30 seconds |
-| `EnrollTaskVm` | Fails at once on a cloud-init error, an absent or stopped VM, or a boot over 10 minutes. Retries other errors twice. Stops after 60 tries, waits included |
-| `PrepareTaskVmRuntime` | Twice, 30 seconds apart |
-| `DestroyTaskVm` | Until it succeeds |
-| `ResumeTaskVm` | `release(2)` between checks until `retryUntil()` expires after 9 minutes; `failed()` maps expiry to `task_vm.resume_timeout`. Readiness waits do not exhaust retries. Start errors fail after three exceptions |
-| `SweepTaskVmHosts` | Never. It runs again 10 minutes later |
-| `RefreshTaskVmBaseImages` | Never. The next minute checks again |
-| Base image step jobs | Poll until the step's deadline. Failure stops the chain. Failed builders stay available for resume |
-| `RefreshUpCloudTaskVmBaseImage` | Never. An attempted identity needs an explicit `task-vms:build-recipe --retry`; a new recipe identity can build automatically |
+Runtime admission records the fixed Pi Process definition and its ID without installing or starting it. Swamp requests the owning `process.create` child with only `{process_id}`, then waits for its proven completion before checking runtime readiness. An existing Process with another definition refuses admission. Runtime admission stays guarded until the owning Node enrollment kind is installed; retained runtime jobs remain synchronous until their cutover.
 
-A failed recipe build does not retry merely because the Gateway restarts or releases code. For an unchanged recipe identity, run `task-vms:build-recipe --retry` after fixing its cause. This starts another attempt from reset. A failure before the builder guest exists cannot resume. A new recipe identity queues builds automatically; it does not retry the old failed rows. Waiting groups become eligible once the current recipe images finish.
+Every registered effect fixes its Node, command and input. The Gateway resolves declared secret references after authorization; tokens, private bootstrap keys and cloud-init credentials never reach Swamp or receipts. Reads remain Services-only Gateway APIs. Successful completion requires proven command or child receipts. Error codes use lowercase letters, digits, dots, underscores and hyphens.
 
-The jobs log each step with its seconds as `Task VM step done.`. The wait for the worker is a step of its own, apart from the work: `queue` before `create` in `ProvisionTaskVm`, and `enroll-queue` before `boot` in `EnrollTaskVm`. The guest boots during `enroll-queue`. A `boot` after a released try counts from the launch.
+A parent yields its worker lease while its stamped child Operations run. Native effects carry the shared target receipt metadata, so recovery reads the original sanitized result before replay. Gateway projections accept only exact owning child proof; they never admit another Operation and wait for it. Package cache fills require list-result enforcement.
 
-When `ProvisionTaskVm`, `EnrollTaskVm`, `PrepareTaskVmRuntime`, or `ResumeTaskVm` has no retries left, or runs past its timeout, the row becomes `failed` with the job's error code, or `task_vm.job_failed` when the error has none. The group asks for assistance, so `tasks:status` lists it. After `ProvisionTaskVm`, `EnrollTaskVm`, or `PrepareTaskVmRuntime` the reason is `Task VM failed: tvm-<id>: <code>: <message> Cancel the group to destroy the VM.`, the same reason that a [claim](#from-claim-to-workspace) sets; after `ResumeTaskVm` it is `Task VM failed: <code>: <message>`. `EnrollTaskVm` never creates the VM again. The jobs run one at a time, so the 10-minute boot limit counts from the moment `ProvisionTaskVm` launched the VM, not from the row.
+Image builds have one permanent Operation per attempt. Swamp checkpoints reset, launch, boot, the six recipe phases, cleanup, publication, smoke, topology seed, promotion and pruning. A lost reply reuses its saved child identity. A native phase keeps its boot and invocation identity; only a later explicit Incus resume may restart a proven failed invocation. Unknown observations fail closed.
 
-#### Claims and resumes across a release
+Successful publication alone cannot move the base alias: smoke verification and a finished topology seed must have successful Operation receipts. UpCloud uses the same base recipe, verifies the firewall on its smoke server, and promotes only its own unverified template. Older templates stay while pinned by allocations; pruning keeps the newest two verified templates.
 
-The [Gateway release](/reference/gateway-queue#releases) calls `horizon:terminate`, not a systemd restart. Horizon lets an active claim or resume finish on its original release before the new worker starts. A crashed worker's reserved job becomes available again after the queue's `retry_after`; per-VM uniqueness, state checks, and idempotent preparation keep that retry safe.
+A failed recipe build does not retry because the Gateway restarts or releases code. Run `task-vms:build-recipe --retry` after fixing the cause. An Incus build with retained resources can resume its failed stage. A failed prune resumes without rebuilding or moving the alias again. A newer recipe generation fences every subsequent effect and promotion of the older build. The Gateway retains build state, validation and immutable recipe intent; Swamp owns ordering, waits and recovery.
 
-An old resume payload uses its original enqueue time for a fixed deadline, which survives its subsequent releases. Its old queue envelope can still exhaust its three-attempt limit before that deadline. Both expiry and that old attempt limit follow the same `task_vm.resume_timeout` failure path.
+Host sweeps use independent Operations, so one failed host does not block another host. The Gateway reads ownership and reports strays. Swamp deletes only the returned owned orphans, through commands that recheck ownership before deletion. Active and recent failed builders remain protected. Two distinct sweep Operations must miss a VM before its row fails; a replay of one observation cannot fail it. Doctor retains its read-only path.
 
 ### Incus provider
 
-`IncusTaskVmProvider` runs `sudo -n incus --project <project> …` on the host Node over SSH, as the host's managed user. It launches the row's `image_fingerprint` as a VM with the row's `name`, the host's `cpus`, `memory`, and `disk`, and `eth0` on the host's `network` with `security.port_isolation=true`. The user-data goes on stdin. The provider never creates a network.
+Swamp runs task VM effects through recorded Operations. Each effect fixes its host, guest identity and command input before execution. The Gateway admits the effect and requires a matching successful command receipt before recording completion. A retry uses the same Operation and effect key. A lost reply does not authorize a second VM or a different target.
+
+The fixed `incus.vm` agent command runs on the Operation's host Node as its managed user. `IncusTaskVmProvider` exposes observations only. It launches the row's `image_fingerprint` as a VM with the row's `name`, the host's `cpus`, `memory`, and `disk`, and `eth0` on the host's `network` with `security.port_isolation=true`. The user-data goes on stdin. The provider never creates a network.
 
 A [medium VM](#size-by-declared-topology) gets `limits.cpu=4`, `limits.memory=8GiB`, and a 40 GiB root disk instead, and a large VM `limits.cpu=6`, `limits.memory=12GiB`, and a 60 GiB root disk. Their config on stdin also sets `raw.qemu.conf` to turn on free page reporting for the balloon device `qemu_balloon`. Incus applies that key only when the VM starts, so the launch sets it.
 
@@ -1047,9 +1045,9 @@ A recipe revert reuses a retained verified base. If pruning removed it, the chai
 
 Release handoff queues builds immediately when the deployed recipe identity changes. The scheduler checks each minute to recover missed submissions and pick up new hosts. There is no fixed nightly Incus rebuild. The [nightly snapshot and Ubuntu pin PR](#nightly-recipe-maintenance) supplies the daily recipe change. Unchanged releases do not build images. A host added later builds the current recipe on its next check. The same reconcile path refreshes configured UpCloud templates when their recipe identity differs.
 
-Each host uses [ADR 0206's chain model](/decisions/0206-build-task-vm-images-as-chains-of-small-jobs) with `Bus::chain` on `builds` and one `task_vm_image_builds` row for the base image. The row stores the full recipe document, identity, desired generation, and the base image location. Steps launch and boot a stock base builder, install snapshot packages and pinned artifacts, prepare boot, clean, publish, and smoke it, and then build its topology seed. The shared base preserves the source image’s DNS configuration, including link DNS for internal names. Topology Nodes use that same base fingerprint for every role.
+Each host records one `task_vm_image_builds` row and one Swamp Operation per attempt. The row stores the full recipe document, identity, desired generation, and the base image location. Steps launch and boot a stock base builder, install snapshot packages and pinned artifacts, prepare boot, clean, publish, and smoke it, and then build its topology seed. The shared base preserves the source image’s DNS configuration, including link DNS for internal names. Topology Nodes use that same base fingerprint for every role.
 
-Each phase is a separate queued job. No workspace or Project setup runs and neither package caches nor CI cache refs enter an image.
+Each effect is a keyed child Operation; the parent yields while that child runs. No workspace or Project setup runs and neither package caches nor CI cache refs enter an image.
 
 The agent implements the image phases in Rust and reuses the Node recipe's package, archive, JavaScript, and PHP installers. Image APT uses only its recorded snapshot configuration. The agent installed before the first phase remains the Gateway delivery pin.
 
@@ -1059,9 +1057,9 @@ The Gateway records the image recipe identity with `image.recipe-marker`. It app
 
 Incus and UpCloud use one ordered list of recipe installer phases: `apt-source`, `packages`, `javascript`, `rust`, `agent`, and `pi`. Before any package install, `apt-source` prepares the recipe's Ubuntu snapshot source and refreshes only its indexes. The `packages` phase fails with an `apt-source` diagnostic if that configuration is missing or does not match the recipe. To restart a failed build after a phase is added, use `task-vms:build-recipe --retry`; it clears failed Incus step history and starts a new builder attempt, reusing any published immutable image.
 
-Each installer phase runs in a transient systemd service on the builder. Its stable name identifies the recipe, profile, phase, and Incus build. UpCloud uses the fixed unit key `upcloud`; each build gets a fresh server. On the first read after a resume, success advances the chain and an already failed unit restarts. A running unit belongs to the resumed attempt, so a later failure is reported without restarting it. The Gateway sends typed recipe input and observes the result through the agent.
+Each installer phase runs in a transient systemd service on the builder. Its stable name identifies the recipe, profile, phase, and Incus build. UpCloud uses `upcloud-<build id>` as its execution key; each build gets a fresh server. On the first read after a resume, success advances the chain and an already failed unit restarts. A running unit belongs to the resumed attempt, so a later failure is reported without restarting it. The Gateway sends typed recipe input and observes the result through the agent.
 
-Incus releases its queue job between polls. Incus reconnects to the same service after a lost SSH reply or queue-worker restart without starting another installer. UpCloud uses the same service protocol to reconnect after SSH loss while its existing template job survives; it does not resume the builder after that worker dies. No new Node program or inline script implements this supervision.
+Swamp reconnects to the same service after a lost SSH reply or process restart without starting another installer. Both backends retain their child Operations and native phase identities. No new Node program or inline script implements this supervision.
 
 Before issuing a start, the Gateway records the builder boot ID in the phase state. A missing unit on that boot can start; a changed boot ID fails with a builder-reboot diagnostic naming `task-vms:build-recipe --retry`. Completed services remain loaded. Unreadable status replies have an unknown outcome and share the SSH-loss observation bound.
 
@@ -1069,7 +1067,7 @@ The native `image.inspect-phase`, `image.start-phase`, and `image.restart-phase`
 
 Pi delivery uses `pi.receive-artifact` to send bounded chunks of the pinned binary. The command stores them in its fixed private cache, accepts a repeated matching chunk, and verifies the complete SHA-256 before making the artifact available. It accepts no destination path. `pi.install-artifact` publishes the verified binary at the managed account's fixed Pi path; the image Pi phase uses that same implementation. A failed transfer leaves the installed binary unchanged. Image cleanup removes complete and partial transfer artifacts under the same Pi resource lock before publication.
 
-Each control delivery shares a 1,440-second budget, including staging and transfers. The Incus recipe job allows that budget plus a 60-second margin. Pi uploads use a 900-second transfer limit within that budget. The receiver retains partial bytes for a resumed transfer and rejects conflicting repeated chunks. It discards a complete artifact whose digest is wrong. Digest verification and atomic rename publish only complete input.
+Each control delivery shares a 1,440-second budget, including staging and transfers. The Operation retains a fixed admission deadline while the native service keeps its own execution budget. Pi uploads use a 900-second transfer limit within that budget. The receiver retains partial bytes for a resumed transfer and rejects conflicting repeated chunks. It discards a complete artifact whose digest is wrong. Digest verification and atomic rename publish only complete input.
 
 The guest service bounds the whole process group to 1,440 seconds, with 30 seconds to stop its children. This covers the observed eight-minute cold package install with margin. One guest lock prevents two phases from changing the builder at once. The Gateway reports a lost SSH channel with its stderr and an unknown phase outcome, then reconnects. A confirmed systemd timeout is reported as a timeout. Strict package checks remain unchanged.
 
@@ -1375,6 +1373,8 @@ The server boots with ufw on, from the template. ufw denies all incoming traffic
 UpCloud has no trusted host that can read the guest's SSH host key, as Incus does. So the Gateway generates an ed25519 host key for each server, adds it to the user-data, and pins its fingerprint. No connection trusts a key on first use. Root login stays off. The Gateway reads cloud-init over SSH as `orbit` at the public address, and enrollment needs no jump Node.
 
 A park stops the server cleanly, and a hard stop follows after 150 seconds. UpCloud bills a stopped server for its storage only. A destroy stops the server, deletes it with its disk, and waits until it is gone.
+
+Swamp orders UpCloud image cleanup and orphan sweeps. Each Gateway primitive submits one fixed API action. These workflows stop a server before deletion and confirm absence afterward. Task VM provisioning, enrollment, resume, destruction and runtime preparation retain their synchronous jobs until the owning Node and Process child composition is installed. Their new admission actions refuse with `operation.kind_unavailable` while that composition is missing. A registered owning kind alone does not enable a parent that has no matching child declaration.
 
 ### Build the UpCloud template
 

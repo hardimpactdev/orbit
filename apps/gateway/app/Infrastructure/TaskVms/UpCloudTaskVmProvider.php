@@ -35,6 +35,12 @@ final readonly class UpCloudTaskVmProvider implements TaskVmProvider
 
     public function create(TaskVm $vm, string $gatewayPublicKey): void
     {
+        $this->allocate($vm, $gatewayPublicKey);
+        $this->start($vm);
+    }
+
+    public function allocate(TaskVm $vm, string $gatewayPublicKey): void
+    {
         $server = $this->server($vm);
         if ($server === null) {
             $upcloud = $this->servers->upcloud();
@@ -49,9 +55,9 @@ final readonly class UpCloudTaskVmProvider implements TaskVmProvider
             $vm->update(['image_fingerprint' => $template, 'ssh_host_key' => $hostKey['public'], 'provider_id' => null]);
             $uuid = $this->servers->create($vm->name, TaskVmUpCloud::Label, (string) $vm->id, $template, TaskVmCloudInit::withHostKey(new TaskVmCloudInit()->render($gatewayPublicKey), $hostKey), $this->keys->publicKey());
             $vm->update(['provider_id' => $uuid]);
-            $server = $this->servers->await($vm->name, TaskVmUpCloud::Label, (string) $vm->id, $uuid, 'started', self::StartSeconds);
+
+            return;
         }
-        $this->startServer($vm, $server);
     }
 
     public function observe(TaskVm $vm): ?VmObservation
@@ -106,6 +112,25 @@ final readonly class UpCloudTaskVmProvider implements TaskVmProvider
     }
 
     /** Deletes the server and its disk. An absent server counts as deleted. */
+    /** Submits one fixed power request; Swamp owns waits and hard-stop escalation. */
+    public function requestStop(TaskVm $vm, bool $hard = false): void
+    {
+        $server = $this->server($vm);
+        if ($server !== null && ($server->state === 'started' || ($hard && $server->state !== 'stopped'))) {
+            $this->servers->stop($server->uuid, $hard ? null : 120);
+        }
+    }
+
+    /** Deletes the server and its disk. An absent server counts as deleted. */
+    /** Submits one fixed start request; the workflow owns observations and waits. */
+    public function requestStart(TaskVm $vm): void
+    {
+        $server = $this->server($vm) ?? throw new TaskVmException(TaskVmError::VmMissing, "Task VM [{$vm->name}] is gone from UpCloud.", 502);
+        if ($server->state === 'stopped') {
+            $this->servers->start($server->uuid);
+        }
+    }
+
     public function destroy(TaskVm $vm): void
     {
         $this->servers->delete($vm->name, TaskVmUpCloud::Label, (string) $vm->id, $vm->provider_id);

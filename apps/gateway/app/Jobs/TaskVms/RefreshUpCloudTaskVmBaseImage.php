@@ -12,7 +12,6 @@ use App\Infrastructure\TaskVms\UpCloudTaskVmImageBuilder;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 
 /**
  * Recipe reconciliation requests this refresh when no verified UpCloud template matches the deployed identity.
@@ -26,7 +25,7 @@ final class RefreshUpCloudTaskVmBaseImage implements ShouldBeUnique, ShouldQueue
     public int $tries = 1;
 
     /** The `builds` limit, below the queue's `retry_after` of 1800 seconds. A build takes about 20 minutes. */
-    public int $timeout = 1700;
+    public int $timeout = 60;
 
     public bool $failOnTimeout = true;
 
@@ -53,9 +52,6 @@ final class RefreshUpCloudTaskVmBaseImage implements ShouldBeUnique, ShouldQueue
             return;
         }
 
-        $template = $builder->build(static function (string $stage, float $seconds): void {
-            Log::info('UpCloud task VM template build stage done.', ['stage' => $stage, 'seconds' => $seconds]);
-        }, $recipe, $this->afterAttemptId, $this->generation);
-        Log::info('UpCloud task VM template refreshed.', ['template' => $template]);
+        $builder->build($recipe, $this->afterAttemptId, $this->generation);
     }
 }

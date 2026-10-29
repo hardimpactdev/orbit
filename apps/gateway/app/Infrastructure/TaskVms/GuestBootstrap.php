@@ -9,7 +9,6 @@ use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentGuest;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\AgentCommands\GuestAgentCommandRunner;
-use Illuminate\Support\Sleep;
 
 /** Boot deadlines and public error mapping; Rust owns guest observations. */
 final readonly class GuestBootstrap
@@ -43,37 +42,6 @@ final readonly class GuestBootstrap
         }
 
         return $fingerprint;
-    }
-
-    /** Command mode is installed before the first image recipe phase, including a stock source image. */
-    public function awaitReady(AgentGuest $guest, string $subject, int $seconds): void
-    {
-        $deadline = now()->getTimestamp() + $seconds;
-        $installed = false;
-        while (now()->getTimestamp() < $deadline) {
-            try {
-                if (! $installed) {
-                    $this->agents->installGuest($guest);
-                    $installed = true;
-                }
-                if ($this->ready($guest, $subject, max(1, $deadline - now()->getTimestamp()))) {
-                    return;
-                }
-            } catch (AgentRunnerFailure $error) {
-                if (! self::pending($error)) {
-                    throw $error;
-                }
-            } catch (AgentCommandRefused $error) {
-                if ($error->command !== 'agent.install' || $error->errorCode !== 'agent.supervisor_not_ready') {
-                    throw $error;
-                }
-            }
-            $remaining = $deadline - now()->getTimestamp();
-            if ($remaining > 0) {
-                Sleep::for(min(3, $remaining))->seconds();
-            }
-        }
-        throw new TaskVmException('task_vm.bootstrap_timeout', "Cloud-init on {$subject} was not done {$seconds} seconds after launch.", 504);
     }
 
     private static function pending(AgentRunnerFailure $error): bool

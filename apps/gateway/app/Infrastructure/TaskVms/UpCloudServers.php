@@ -269,23 +269,6 @@ final readonly class UpCloudServers
     }
 
     /** Turns the stopped server's disk into a template titled `$title`, and returns the template's UUID once it is online. */
-    public function templatize(string $disk, string $title): string
-    {
-        $uuid = data_get($this->api->request('POST', "storage/{$disk}/templatize", ['storage' => ['title' => $title]]), 'storage.uuid');
-        if (! is_string($uuid) || ! Str::isUuid($uuid)) {
-            throw self::invalid($title, 'the templatize answer has no storage UUID');
-        }
-        $deadline = now()->getTimestamp() + 900;
-        while (($state = data_get($this->api->request('GET', "storage/{$uuid}"), 'storage.state')) !== 'online') {
-            if (now()->getTimestamp() >= $deadline) {
-                throw new TaskVmException('task_vm.upcloud_timeout', "UpCloud template [{$title}] was not online after 900 seconds; it is ".(is_string($state) ? $state : 'unknown').'.', 504);
-            }
-            Sleep::for(self::PollSeconds)->seconds();
-        }
-
-        return $uuid;
-    }
-
     public function renameTemplate(string $uuid, string $title, string $recipeIdentity): void
     {
         $this->api->request('PUT', "storage/{$uuid}", ['storage' => [
@@ -294,7 +277,21 @@ final readonly class UpCloudServers
         ]]);
     }
 
-    /** Deletes a template; an absent one counts as deleted. */
+    /** Starts one template request; Swamp observes its state. */
+    public function beginTemplate(string $disk, string $title): string
+    {
+        $uuid = data_get($this->api->request('POST', "storage/{$disk}/templatize", ['storage' => ['title' => $title]]), 'storage.uuid');
+
+        return is_string($uuid) && Str::isUuid($uuid) ? $uuid : throw self::invalid($title, 'the template answer has no UUID');
+    }
+
+    public function templateState(string $uuid): ?string
+    {
+        $state = data_get($this->api->request('GET', "storage/{$uuid}", allowMissing: true), 'storage.state');
+
+        return is_string($state) ? $state : null;
+    }
+
     public function deleteTemplate(string $uuid): void
     {
         $this->api->request('DELETE', "storage/{$uuid}", allowMissing: true);

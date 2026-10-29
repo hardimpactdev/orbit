@@ -30,7 +30,7 @@ final readonly class TaskFinalReview
         return $commit;
     }
 
-    private static function unpublishedRemovalCommit(Task $group): ?string
+    public static function unpublishedRemovalCommit(Task $group): ?string
     {
         if ($group->watched_pr_completion === 'merged' || $group->merged_sha !== null) {
             return null;

@@ -8,12 +8,15 @@ use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\InstanceRemovalStep;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\Removal\InstanceRemovalProjector;
+use App\Domain\Operations\OperationChildren;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmState;
+use App\Infrastructure\TaskVms\TaskVmInputs;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\InstanceRemovalMember;
 use App\Models\InstanceTransfer;
+use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Schedule;
 use App\Models\Task;
@@ -51,10 +54,38 @@ final readonly class ForgetTaskVmWorkspacesAction
         }
     }
 
-    /** The open removal journal of the Instance, or a new one when it has none. */
-    private function journal(Instance $instance, TaskVm $vm): InstanceRemovalMember
+    public function executeProven(TaskVm $vm, Operation $parent): void
     {
-        return DB::transaction(function () use ($instance, $vm): InstanceRemovalMember {
+        $routes = TaskVmInputs::workspaceRoutes($parent->input['workspace_routes'] ?? []);
+        foreach ($routes as $route) {
+            $proof = app(OperationChildren::class)->requireSucceeded($parent, 'workspace-route-'.$route['route_id']);
+            if ($proof->kind !== 'route.destroy' || $proof->target_type !== 'route' || $proof->target_id !== $route['route_id']) {
+                throw new TaskVmException('operation.completion_unproven', 'The workspace Route has no exact child proof.', 409);
+            }
+        }
+        if ($vm->state !== TaskVmState::Destroying) {
+            throw new TaskVmException('task_vm.job_failed', "Task VM [{$vm->name}] must be destroying before its workspace is forgotten.", 500);
+        }
+
+        foreach (Instance::query()->with('project')->where('node_id', $vm->node_id)->orderBy('id')->get() as $instance) {
+            if (in_array($instance->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared], true) && ! $instance->routes()->exists()) {
+                $this->deleteRow($instance, null);
+
+                continue;
+            }
+            if ($instance->routes()->exists()) {
+                throw new TaskVmException('operation.completion_unproven', 'The workspace still has a Route after cleanup.', 409);
+            }
+            $selected = array_find($routes, static fn (array $route): bool => $route['instance_id'] === $instance->id);
+            $member = $this->journal($instance, $vm, $selected['route_id'] ?? null);
+            $this->finish($instance, $member, 'deleted');
+        }
+    }
+
+    /** The open removal journal of the Instance, or a new one when it has none. */
+    private function journal(Instance $instance, TaskVm $vm, ?int $routeId = null): InstanceRemovalMember
+    {
+        return DB::transaction(function () use ($instance, $vm, $routeId): InstanceRemovalMember {
             $instance->refresh();
             $open = $instance->removalMember()->first();
             if ($open instanceof InstanceRemovalMember) {
@@ -68,7 +99,7 @@ final readonly class ForgetTaskVmWorkspacesAction
             ]);
             $member = $operation->members()->create([
                 'position' => 0, 'instance_id' => $instance->id, 'project_id' => $instance->project_id,
-                'node_id' => $instance->node_id, 'route_id' => $instance->routes()->first()?->id, 'name' => $instance->name,
+                'node_id' => $instance->node_id, 'route_id' => $routeId ?? $instance->routes()->first()?->id, 'name' => $instance->name,
                 'environment' => 'development', 'source_layout' => $instance->source_layout,
                 'repository_identity' => $instance->project->repository_identity, 'checkout_path' => $instance->checkout_path,
                 'root' => $instance->effectiveRoot(), 'branch' => $instance->branch,
@@ -83,7 +114,7 @@ final readonly class ForgetTaskVmWorkspacesAction
         });
     }
 
-    private function finish(Instance $instance, InstanceRemovalMember $member): void
+    private function finish(Instance $instance, InstanceRemovalMember $member, ?string $provenRouteOutcome = null): void
     {
         $operation = $member->removal;
         foreach (InstanceRemovalStep::cases() as $step) {
@@ -104,7 +135,7 @@ final readonly class ForgetTaskVmWorkspacesAction
                     InstanceRemovalStep::SourcePreparation => $member->update(['source_prepared_at' => now()]),
                     InstanceRemovalStep::RouteTargetClear => $member->update([
                         'route_cleared_at' => now(),
-                        'route_outcome' => $member->route_id === null ? 'none' : $this->routes->clearRouteTarget($member),
+                        'route_outcome' => $member->route_id === null ? 'none' : ($provenRouteOutcome ?? $this->routes->clearRouteTarget($member)),
                     ]),
                     InstanceRemovalStep::SourceFinalization => $member->update(['source_finalized_at' => now(), 'finalization_receipt' => 'deleted-with-'.$member->source_identity]),
                     InstanceRemovalStep::RuntimeCleanup => $this->forgetRuntime($member),
