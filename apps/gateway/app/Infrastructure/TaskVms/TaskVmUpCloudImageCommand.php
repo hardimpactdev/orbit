@@ -127,7 +127,7 @@ final readonly class TaskVmUpCloudImageCommand implements OperationEffectTranspo
             }
         } elseif (in_array($action, ['delete-builder', 'delete-smoke'], true)) {
             $slot = $action === 'delete-smoke' ? 'smoke' : 'builder';
-            $servers->delete($intent['name'].($slot === 'smoke' ? '-smoke' : ''), UpCloudServers::ImageLabel, $stamp, $build->resources[$slot]['uuid'] ?? null);
+            $servers->requestDelete($intent['name'].($slot === 'smoke' ? '-smoke' : ''), UpCloudServers::ImageLabel, $stamp, $build->resources[$slot]['uuid'] ?? null);
         } elseif ($action === 'promote') {
             DB::transaction(function () use ($operation, $build, $servers, $stamp): void {
                 DB::table('task_vm_image_recipe')->where('id', 1)->update(['generation' => DB::raw('generation')]);
