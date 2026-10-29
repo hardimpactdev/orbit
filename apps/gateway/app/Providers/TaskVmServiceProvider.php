@@ -26,7 +26,7 @@ final class TaskVmServiceProvider extends ServiceProvider
     public function register(): void
     {
         // Read Node-owned host intent on first use, once per request or queued job.
-        $this->app->scoped(TaskVmSettings::class, static fn (): TaskVmSettings => (new ReflectionClass(TaskVmSettings::class))
+        $this->app->scoped(TaskVmSettings::class, static fn (): TaskVmSettings => new ReflectionClass(TaskVmSettings::class)
             ->newLazyProxy(static fn (): TaskVmSettings => TaskVmSettings::fromConfig()));
         $this->app->bind(TaskVmProvider::class, TaskVmProviders::class);
         $this->app->bind(TaskVmPackageCacheMount::class, TaskVmPackageCache::class);
