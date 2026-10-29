@@ -22,6 +22,7 @@ use App\Infrastructure\Projects\NativeProjectUpdateProjectionMutator;
 use App\Models\InstanceDeployment;
 use App\Models\Operation;
 use App\Models\Route;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Sleep;
 use Tests\Support\FakeAgentCommandRunner;
 
@@ -140,6 +141,9 @@ it('refuses legacy production Route transitions before any mutation or Node call
 it('keeps a newly activated Instance when the retained setup wait expires', function (): void {
     $instance = dev935_instance();
     $operation = app(StartInstanceStepListAction::class)->execute($instance, LifecyclePhase::Setup, 'proof', null);
+    while (DB::transactionLevel() > 0) {
+        DB::commit();
+    }
     Sleep::fake();
     Sleep::whenFakingSleep(function (): never {
         throw new ResourceOperationException('operation.await_timeout', 'The caller wait ended.', 409,
