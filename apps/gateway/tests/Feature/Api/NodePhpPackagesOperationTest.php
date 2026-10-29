@@ -177,7 +177,7 @@ it('refuses a proven response that did not apply or confirm the packages', funct
 
     $this->postJson($path.'/complete', ['worker' => 'packages', 'status' => 'succeeded', 'result' => ['outcome' => 'planned', 'stale_masters' => [], 'deferred' => []]])
         ->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
-    expect($operation->refresh()->result)->toBeNull()->and($operation->lock_key)->not->toBeNull();
+    expect($operation->refresh()->result)->toBeNull()->and(Operation::findOrFail($operation->parent_operation_id)->lock_key)->not->toBeNull();
 });
 
 it('admits a managed production Node marked failed', function (): void {
@@ -225,19 +225,22 @@ it('retains and logs only bounded master warning lists', function (): void {
     Log::shouldHaveReceived('warning')->twice();
 });
 
-it('fails malformed installer data and releases the composed parent after refusal', function (mixed $data): void {
+it('fails malformed installer data or unexpected outcomes and releases the composed parent', function (mixed $data, string $outcome = 'current'): void {
     $node = FleetFixtures::node('bad-data-packages', [RoleName::AppProd]);
     $operation = phpPackagesChild($this, $node);
     $agents = new FakeAgentCommandRunner;
-    $agents->answerMalformed('php.install-build', ['outcome' => 'current', 'data' => $data]);
+    $agents->answerMalformed('php.install-build', ['outcome' => $outcome, 'data' => $data]);
     app()->instance(AgentCommandRunner::class, $agents);
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => $operation->kind, 'worker' => 'packages'])->assertOk();
     $path = "/api/v1/operation-executor/{$operation->id}";
     $result = $this->postJson($path.'/run', ['worker' => 'packages', 'key' => 'php-packages', 'transport' => 'agent', 'name' => 'php.install-build', 'input' => $operation->input['_php_packages']])
-        ->assertOk()->assertJsonPath('data.error_code', 'app-prod.php_install_failed')->json('data');
+        ->assertOk()->json('data');
+    if ($outcome === 'current') {
+        expect($result['error_code'])->toBe('app-prod.php_install_failed');
+    }
     $this->postJson($path.'/step', ['worker' => 'packages', 'key' => 'finish', 'name' => 'php-packages', 'status' => 'failed', 'result' => $result, 'error_code' => 'app-prod.php_install_failed'])->assertOk();
     $this->postJson($path.'/complete', ['worker' => 'packages', 'status' => 'failed', 'result' => $result, 'error_code' => 'app-prod.php_install_failed'])->assertOk();
     $this->postJson("/api/v1/operation-executor/{$operation->parent_operation_id}/complete", ['worker' => 'parent', 'status' => 'failed', 'error_code' => 'app-prod.php_install_failed'])->assertOk();
     expect($operation->refresh()->status->value)->toBe('failed')
         ->and(Operation::findOrFail($operation->parent_operation_id)->lock_key)->toBeNull();
-})->with([null, 'not-an-array', ['stale_masters' => 'not-a-list'], ['deferred' => ['bad' => 'map']]]);
+})->with([[null], ['not-an-array'], [['stale_masters' => 'not-a-list']], [['deferred' => ['bad' => 'map']]], [[], 'planned']]);

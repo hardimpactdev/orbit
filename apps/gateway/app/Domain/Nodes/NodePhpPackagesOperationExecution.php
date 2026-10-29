@@ -19,12 +19,18 @@ final readonly class NodePhpPackagesOperationExecution implements OperationFamil
     public function context(Operation $operation): array
     {
         return ['descriptors' => [['key' => 'php-packages', 'step' => 'php-packages', 'transport' => 'agent',
-            'name' => 'php.install-build', 'input' => $this->input($operation, []), 'required' => true, 'resumable' => false]]];
+            'name' => 'php.install-build', 'input' => $this->payload($operation), 'required' => true, 'resumable' => false]]];
+    }
+
+    /** @return array<string, mixed> */
+    private function payload(Operation $operation): array
+    {
+        return ValidatedData::object($operation->input['_php_packages']);
     }
 
     public function input(Operation $operation, array $run): array
     {
-        return ValidatedData::object($operation->input['_php_packages']);
+        return $this->payload($operation);
     }
 
     public function beforeRun(Operation $operation, array $run): void
