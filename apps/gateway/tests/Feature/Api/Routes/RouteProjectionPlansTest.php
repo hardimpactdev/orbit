@@ -21,11 +21,13 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\AnalyticsRouteParentCommand;
 use App\Domain\Routes\AnalyticsRouteParentExecution;
 use App\Domain\Routes\ClusterRouterParentCommand;
+use App\Domain\Routes\GeneratedRouteUpdateOwnership;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteNodeEffectCommand;
 use App\Domain\Routes\RouteParentCommand;
 use App\Domain\Routes\RouteParentExecution;
 use App\Domain\Routes\RouteProjectionPlan;
+use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
@@ -433,4 +435,67 @@ it('retires only the old Router LAN rule and keeps the new Router allowance outs
         'comment' => 'orbit:route-'.$this->route->id.'-lan', 'action' => 'allow', 'direction' => 'in', 'source' => '192.0.2.5',
         'destination' => '192.0.2.3', 'port' => '443', 'protocol' => 'tcp', 'in_interface' => null, 'out_interface' => null, 'family' => 'v4',
     ]], 'enable' => false]])->and($this->agents->calls)->toBe([]);
+});
+
+it('allows only the captured Node enrollment tuple to change a generated Route domain', function (): void {
+    $generated = $this->route->replicate();
+    $generated->fill(['domain' => 'generated.private.test', 'provenance' => 'generated', 'generation_basis_node_id' => $this->node->id]);
+    $generated->save();
+    $this->route = $generated;
+    $parent = new Operation(['kind' => 'node.add', 'target_type' => 'node', 'target_id' => $this->node->id,
+        'state' => ['enrollment_intent' => ['route_changes' => [['route_id' => $this->route->id, 'domain' => 'private.changed.test', 'node_id' => $this->node->id]]]]]);
+    $intent = ['key' => 'route-domain.'.$this->route->id, 'kind' => 'route.update', 'node_id' => $this->node->id,
+        'input' => ['route_id' => $this->route->id, 'domain' => 'private.changed.test']];
+
+    expect(app(GeneratedRouteUpdateOwnership::class)->allows($parent, $this->route, $intent))->toBeTrue()
+        ->and($this->route->fresh()->domain)->toBe('generated.private.test')->and(Operation::query()->count())->toBe(0)
+        ->and($this->agents->calls)->toBe([]);
+});
+
+it('refuses generated Route enrollment authorization when its owner or exact plan changes', function (string $case): void {
+    $generated = $this->route->replicate();
+    $generated->fill(['domain' => 'generated.private.test', 'provenance' => 'generated', 'generation_basis_node_id' => $this->node->id]);
+    $generated->save();
+    $this->route = $generated;
+    $change = ['route_id' => $this->route->id, 'domain' => 'private.changed.test', 'node_id' => $this->node->id];
+    $parent = new Operation(['kind' => 'node.add', 'target_type' => 'node', 'target_id' => $this->node->id,
+        'state' => ['enrollment_intent' => ['route_changes' => [$change]]]]);
+    $intent = ['key' => 'route-domain.'.$this->route->id, 'kind' => 'route.update', 'node_id' => $this->node->id,
+        'input' => ['route_id' => $this->route->id, 'domain' => 'private.changed.test']];
+    if ($case === 'parent kind') {
+        $parent->kind = 'node.converge';
+    } elseif ($case === 'target type') {
+        $parent->target_type = 'project';
+    } elseif ($case === 'basis Node') {
+        $parent->target_id = $this->node->id + 1;
+    } elseif ($case === 'explicit Route') {
+        $this->route->provenance = RouteProvenance::Explicit;
+    } elseif ($case === 'changed domain') {
+        $intent['input']['domain'] = 'unadmitted.test';
+    } elseif ($case === 'changed child Node') {
+        $intent['node_id'] = $this->node->id + 1;
+    } elseif ($case === 'missing child Node') {
+        $intent['node_id'] = null;
+    } elseif ($case === 'changed Route') {
+        $intent['input']['route_id'] = $this->route->id + 1;
+    } elseif ($case === 'extra input') {
+        $intent['input']['publication'] = 'public';
+    } elseif ($case === 'extra plan field') {
+        $parent->state = ['enrollment_intent' => ['route_changes' => [[...$change, 'allow_generated' => true]]]];
+    } else {
+        $parent->state = ['enrollment_intent' => ['route_changes' => []]];
+    }
+
+    expect(app(GeneratedRouteUpdateOwnership::class)->allows($parent, $this->route, $intent))->toBeFalse()
+        ->and($this->route->fresh()->domain)->toBe('generated.private.test')->and($this->agents->calls)->toBe([]);
+})->with(['parent kind', 'target type', 'basis Node', 'explicit Route', 'changed domain', 'changed child Node', 'missing child Node', 'changed Route', 'extra input', 'extra plan field', 'missing plan']);
+
+it('keeps Instance rename generated-domain authorization limited to its own Route target', function (): void {
+    $parent = new Operation(['kind' => 'instance.rename', 'target_type' => 'instance', 'target_id' => $this->instance->id]);
+    $intent = ['key' => 'rename-route', 'kind' => 'route.update', 'node_id' => $this->node->id,
+        'input' => ['route_id' => $this->route->id, 'domain' => 'renamed.private.test']];
+    $ownership = app(GeneratedRouteUpdateOwnership::class);
+    expect($ownership->allows($parent, $this->route, $intent))->toBeTrue();
+    $parent->target_id = $this->instance->id + 1;
+    expect($ownership->allows($parent, $this->route, $intent))->toBeFalse();
 });

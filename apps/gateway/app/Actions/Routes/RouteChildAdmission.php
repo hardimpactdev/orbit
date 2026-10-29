@@ -7,6 +7,7 @@ namespace App\Actions\Routes;
 use App\Actions\Operations\StartOperationAction;
 use App\Data\Routes\UpdateRouteData;
 use App\Domain\Operations\OperationChildAdmission;
+use App\Domain\Routes\GeneratedRouteUpdateOwnership;
 use App\Domain\Routes\RouteKitAvailability;
 use App\Domain\Routes\RouteNodeEffectExecution;
 use App\Domain\Routes\RoutePublication;
@@ -23,7 +24,7 @@ use Illuminate\Support\Facades\DB;
 final readonly class RouteChildAdmission implements OperationChildAdmission
 {
     public function __construct(private AdmitRouteOperationAction $routes, private StartRouteProjectionAction $projections,
-        private StartOperationAction $operations) {}
+        private StartOperationAction $operations, private GeneratedRouteUpdateOwnership $generatedUpdates) {}
 
     public function admit(Operation $parent, array $intent): Operation
     {
@@ -36,8 +37,7 @@ final readonly class RouteChildAdmission implements OperationChildAdmission
                 $operation = $this->routes->destroy($this->route($input), $this->offline($input), requestId: $parent->request_id);
             } elseif ($kind === 'route.update') {
                 $route = $this->route($input);
-                $allowGenerated = $parent->kind === 'instance.rename' && $parent->target_type === 'instance'
-                    && $route->targets()->where('instance_id', $parent->target_id)->exists();
+                $allowGenerated = $this->generatedUpdates->allows($parent, $route, $intent);
                 $data = new UpdateRouteData(array_key_exists('domain', $input), ValidatedData::nullableString($input['domain'] ?? null),
                     array_key_exists('publication', $input), isset($input['publication']) ? RoutePublication::from(ValidatedData::string($input['publication'])) : null,
                     array_key_exists('web_root', $input), ValidatedData::nullableString($input['web_root'] ?? null));
