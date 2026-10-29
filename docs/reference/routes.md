@@ -703,3 +703,8 @@ A Node service that is not an application still needs a unique name, private DNS
 A Process can run on a service Node outside any Cluster. Selecting an Ingress independently keeps the service Node's membership and private Caddy sites unchanged. The Process Node's Cluster supplies the natural default; outside a Cluster, the existing public app Routes identify the production edge without a hard-coded Node or Cluster ID. Ambiguity requires an explicit selection. Routing scope follows the selected Ingress internally.
 
 LAN address selection uses the recorded /24, not Cluster membership; the source firewall check and connection probe confirm the path before activation. Requiring a listener on the selected address avoids silently rewriting Docker publications. Arbitrary remote URLs, wildcard bindings, a Router hop, and a private certificate on the service Node add exposure or complexity without helping this HTTP path.
+
+
+### Node publication Operations
+
+`route.caddy_converge` and `route.private_dns_publish` take `{reason}` and use the Operation Node. The Gateway renders and records an exact configuration; Swamp publishes it. A changed render refuses before publication. Caddy returns `stage: render|validate` only with matching saved refusal evidence. DNS validates and atomically publishes its catalog before starting an installed inactive listener. Existing DNS stays open during publication and recovery.
