@@ -102,7 +102,7 @@ final readonly class BootstrapSshOperationTransport implements OperationEffectTr
             if (! is_bool($receipt['result']['replaced'] ?? null)) {
                 throw new ResourceOperationException('operation.receipt_unproven', 'The installer receipt has no original replacement result.', 409);
             }
-            $receipt['result'] = ['installed' => true, 'changed' => ($receipt['result']['replaced'] ?? null) === true,
+            $receipt['result'] = ['installed' => true, 'changed' => $receipt['result']['replaced'],
                 'architecture' => $node->architecture, 'host_type' => $key->type, 'public_key' => $key->value, 'host_key_fingerprint' => $key->fingerprint];
         }
 
