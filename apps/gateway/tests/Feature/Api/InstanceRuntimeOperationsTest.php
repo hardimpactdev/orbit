@@ -9,8 +9,10 @@ use App\Domain\Operations\OperationFamilyChildren;
 use App\Domain\Operations\OperationFamilyExecution;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationOutcome;
+use App\Domain\Processes\ProcessRuntimeChildAdmission;
 use App\Domain\Processes\ProcessRuntimeStatusIndex;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Instance;
 use App\Models\Node;
@@ -19,6 +21,8 @@ use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\Schedule;
+use App\Models\TaskVm;
+use Illuminate\Support\Arr;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 use Tests\TestCase;
@@ -209,3 +213,120 @@ it('refuses executor Node runtime composition before recording children or defin
     $this->assertDatabaseCount('schedules', 0);
     expect($this->agents->calls)->toBe([]);
 })->with(['services', 'worker'])->with(['process.install_instance_definitions', 'schedule.install_instance_definitions', 'process.restart_instance']);
+
+describe('task VM Process child admission', function (): void {
+    beforeEach(function (): void {
+        config(['orbit.pi.port' => 4274]);
+        $this->vm = TaskVm::query()->create(['name' => 'tvm-process-proof', 'provider' => 'incus', 'state' => 'provisioning',
+            'host_node_id' => $this->executor->id, 'node_id' => $this->node->id, 'wireguard_ip' => $this->node->wireguard_ip]);
+        $this->piProcess = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $this->node->id, 'name' => 'pi-server',
+            'runtime' => 'systemd', 'working_directory' => '/home/orbit', 'restart_policy' => 'always', 'keep_alive' => true,
+            'restart_on_deploy' => true, 'status' => 'provisioning', 'desired_state' => 'running',
+            'runtime_config' => ['environment_file' => '', 'command' => ['/home/orbit/.local/bin/pi-server', 'serve',
+                '--host=10.44.0.3', '--port=4274', '--token-file=/home/orbit/.pi/agent/orbit-token', '--allow-provider=orbit-task-vm']]]);
+        $definition = ['executor' => 'swamp', 'completion' => InstanceRuntimeTestParent::class, 'execution' => InstanceRuntimeTestParent::class,
+            'runs' => [], 'children' => [['kind' => 'process.create', 'node_from' => 'operation.node_id']],
+            'completion_contract' => ['children_succeeded' => ['process.create']], 'result_fields' => ['ready']];
+        app()->instance(OperationKinds::class, new OperationKinds(app(), [...OperationKinds::definitions(), 'task_vm.prepare_runtime' => $definition]));
+        $this->vmParent = app(StartOperationAction::class)->execute('task_vm.prepare_runtime', 'task_vm', $this->vm->id,
+            $this->node->id, ['task_vm_id' => $this->vm->id], 'test', null);
+        $this->vmParent->update(['state' => ['child_intents' => [['key' => 'pi-process-owner', 'kind' => 'process.create',
+            'node_id' => $this->node->id, 'input' => ['process_id' => $this->piProcess->id]]]]]);
+        $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'task_vm.prepare_runtime', 'worker' => 'vm-runtime',
+            'operation_id' => $this->vmParent->id])->assertOk();
+        $this->vmChildPath = '/api/v1/operation-executor/'.$this->vmParent->id.'/children';
+        $this->vmChildRequest = ['worker' => 'vm-runtime', 'key' => 'pi-process-owner'];
+    });
+
+    it('admits and replays only the fixed Pi Process on the VM Node without executing it', function (): void {
+        $id = $this->postJson($this->vmChildPath, $this->vmChildRequest)->assertAccepted()->json('data.id');
+        $this->postJson($this->vmChildPath, $this->vmChildRequest)->assertOk()->assertJsonPath('data.id', $id);
+
+        $child = Operation::query()->findOrFail($id);
+        expect($child->parent_operation_id)->toBe($this->vmParent->id);
+        expect($child->kind)->toBe('process.create');
+        expect($child->target_type)->toBe('process');
+        expect($child->target_id)->toBe($this->piProcess->id);
+        expect($child->node_id)->toBe($this->vm->node_id);
+        expect($child->input['desired'])->toBe('running');
+        expect($this->vmParent->children()->count())->toBe(1);
+        expect($this->agents->calls)->toBe([]);
+    });
+
+    it('refuses a Process or VM owned by another target', function (string $change): void {
+        match ($change) {
+            'instance' => $this->piProcess->update(['owner_type' => Instance::MorphAlias, 'owner_id' => $this->instance->id]),
+            'foreign-node' => $this->piProcess->update(['owner_id' => $this->executor->id]),
+            'moved-vm' => $this->vm->update(['node_id' => $this->executor->id]),
+            'no-node' => $this->vm->update(['node_id' => null]),
+            'settled-vm' => $this->vm->update(['state' => 'ready']),
+            'missing-vm' => $this->vm->delete(),
+        };
+
+        $this->postJson($this->vmChildPath, $this->vmChildRequest)->assertUnprocessable()->assertJsonPath('error.code', 'operation.child_forbidden');
+        expect($this->vmParent->children()->count())->toBe(0);
+        expect($this->agents->calls)->toBe([]);
+    })->with(['instance', 'foreign-node', 'moved-vm', 'no-node', 'settled-vm', 'missing-vm']);
+
+    it('refuses a changed Pi Process definition before recording a child', function (string $field, mixed $value): void {
+        if (str_starts_with($field, 'runtime_config.')) {
+            $configuration = $this->piProcess->runtime_config;
+            Arr::set($configuration, substr($field, strlen('runtime_config.')), $value);
+            $this->piProcess->update(['runtime_config' => $configuration]);
+        } else {
+            $this->piProcess->forceFill([$field => $value])->save();
+        }
+
+        $this->postJson($this->vmChildPath, $this->vmChildRequest)->assertUnprocessable()->assertJsonPath('error.code', 'operation.child_forbidden');
+        expect($this->vmParent->children()->count())->toBe(0);
+        expect($this->agents->calls)->toBe([]);
+    })->with([
+        'name' => ['name', 'other'], 'runtime' => ['runtime', 'docker'],
+        'binary' => ['runtime_config.command.0', '/bin/sh'], 'host' => ['runtime_config.command.2', '--host=10.44.0.99'],
+        'port' => ['runtime_config.command.3', '--port=3774'], 'token-file' => ['runtime_config.command.4', '--token-file=/tmp/token'],
+        'provider' => ['runtime_config.command.5', '--allow-provider=other'], 'extra-argument' => ['runtime_config.command.6', '--unsafe'],
+        'environment' => ['runtime_config.environment', ['EXTRA' => 'value']], 'account' => ['runtime_config.user', 'root'],
+        'environment-file' => ['runtime_config.environment_file', '/tmp/env'], 'directory' => ['working_directory', '/tmp'],
+        'restart' => ['restart_policy', 'never'], 'keep-alive' => ['keep_alive', false], 'restart-on-deploy' => ['restart_on_deploy', false],
+        'source-definition' => ['source_definition_id', 'foreign-definition'],
+        'stopped' => ['desired_state', 'stopped'], 'removing' => ['status', 'removing'], 'retired-runtime' => ['retired_runtime', 'docker'],
+    ]);
+
+    it('refuses prepared child input beyond the Process identity', function (): void {
+        $state = $this->vmParent->fresh()->state;
+        $state['child_intents'][0]['input']['command'] = ['/bin/sh'];
+        $this->vmParent->update(['state' => $state]);
+
+        $this->postJson($this->vmChildPath, $this->vmChildRequest)->assertUnprocessable()->assertJsonPath('error.code', 'operation.child_forbidden');
+        expect($this->vmParent->children()->count())->toBe(0);
+        expect($this->agents->calls)->toBe([]);
+    });
+
+    it('refuses a task VM parent with a different target type', function (): void {
+        $parent = clone $this->vmParent;
+        $parent->target_type = 'instance';
+        expect(fn () => app(ProcessRuntimeChildAdmission::class)->admit($parent,
+            ['kind' => 'process.create', 'node_id' => $this->node->id, 'input' => ['process_id' => $this->piProcess->id]]))
+            ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.child_forbidden'));
+        expect($this->vmParent->children()->count())->toBe(0);
+    });
+
+    it('keeps an Instance parent from adopting the Node-owned Pi Process', function (): void {
+        $parent = clone $this->vmParent;
+        $parent->kind = 'process.install_instance_definitions';
+        $parent->target_type = 'instance';
+        $parent->target_id = $this->instance->id;
+        expect(fn () => app(ProcessRuntimeChildAdmission::class)->admit($parent,
+            ['kind' => 'process.create', 'node_id' => $this->node->id, 'input' => ['process_id' => $this->piProcess->id]]))
+            ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.child_forbidden'));
+        expect($this->vmParent->children()->count())->toBe(0);
+    });
+
+    it('refuses a restart child from task VM runtime preparation', function (): void {
+        expect(fn () => app(ProcessRuntimeChildAdmission::class)->admit($this->vmParent,
+            ['kind' => 'process.restart', 'node_id' => $this->node->id, 'input' => ['process_id' => $this->piProcess->id]]))
+            ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.child_forbidden'));
+        expect($this->vmParent->children()->count())->toBe(0);
+    });
+
+});

@@ -303,6 +303,8 @@ When the plan contains runtime effects on a configured executor Node, compositio
 
 Protected Process values resolve only for their recorded Process target. Schedule commands use their owning Instance or Node ID as the secret reference, with the Schedule UUID retained in the admitted input. Resolution verifies both the actual owner relation and the recorded Node before reading command contents.
 
+Task VM runtime preparation may admit one `process.create` child using only `{process_id}`. The parent must be `task_vm.prepare_runtime` and target that VM. The Process must belong to the VM's own Node and match its fixed systemd `pi-server` definition: managed-user home paths, WireGuard host, configured Pi port, token-file path, `orbit-task-vm` provider, always-restart policy and keep-alive settings. Other owners, commands and runtime configuration are refused before child admission. Instance installation and restart children keep their existing rules. This adapter does not switch retained task VM callers or enable their gated parent composition.
+
 A successful `process.restart_instance` result contains `process_ids`, a bounded list of integers in Process ID order. The IDs come from the exact recorded restart plan after each keyed Process child has proven success. An empty selection returns an empty list. A failed or unproven child prevents successful completion. Callers map this list to the existing `restarted_process_ids` field.
 
 
