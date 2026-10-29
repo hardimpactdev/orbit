@@ -61,7 +61,23 @@ final readonly class TaskVmImageRead
             $expired = $proof->finished_at?->lte(now()->subSeconds(600)) ?? false;
         }
 
-        return ['ready' => $this->bootstrap->ready(AgentGuest::incus($build->hostNode, $host->project, $build->builder_vm_name.($smoke ? '-smoke' : '')), 'recipe image guest'), 'expired' => $expired];
+        $installation = $seed ? 'seed-smoke-agent' : ($smoke ? 'smoke-agent' : 'builder-agent');
+
+        return ['ready' => $this->installed($operation, $installation) && $this->bootstrap->ready(AgentGuest::incus($build->hostNode, $host->project, $build->builder_vm_name.($smoke ? '-smoke' : '')), 'recipe image guest'), 'expired' => $expired];
+    }
+
+    private function installed(Operation $operation, string $key): bool
+    {
+        foreach ($operation->children()->where('kind', 'task_vm.guest_install')->where('status', 'succeeded')->get() as $child) {
+            $candidate = (string) $child->child_key;
+            if ($candidate === $key || str_starts_with($candidate, $key.'-retry-')) {
+                app(OperationChildren::class)->requireSucceeded($operation, $candidate);
+
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** @return array<string, mixed> */
