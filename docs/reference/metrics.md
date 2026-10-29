@@ -111,7 +111,7 @@ cAdvisor collects only CPU and memory. Its flags disable every other metric kind
 
 ## Service metrics
 
-[Service metrics](/reference/service-metrics) collects Caddy traffic and PHP-FPM capacity on selected Nodes. Instance and Route changes trigger a fleet reconcile to update those services and the Prometheus targets.
+[Service metrics](/reference/service-metrics) collects Caddy traffic and PHP-FPM capacity on selected Nodes. Instance runtime changes and changes to Metrics-relevant public Route hosts trigger a fleet reconcile to update those services and the Prometheus targets. Private Route changes, unchanged publication, target binding and web-root-only changes do not change that host catalog and do not trigger Route reconciliation of Metrics.
 
 If a Node's service-metrics snapshot or convergence fails, the Gateway records that Node as degraded with the failing step and error code. The operation that triggered the reconcile continues. For example, an Instance removal on another Node does not fail because service metrics cannot reconcile on this Node. The Gateway skips the degraded Node and continues reconciling the rest of the fleet. It retries the Node on a later reconcile and clears the degradation when reconciliation succeeds. Inspect the Node's exporter row in `orbit metrics:status` as described under [Exporter degradation](/reference/metrics#exporter-degradation).
 
@@ -220,7 +220,7 @@ Prometheus stays unpublished. Grafana's datasource proxy reuses the publication 
 
 ## Reconciliation child Operation
 
-Route parents preserve their Metrics hook with `metrics.reconcile {}` on the one active Metrics serving Node. Metrics validates that assignment and captures its exporter fleet and service Instances when the child is requested. The parent cannot provide credentials, a fleet or another serving Node. Planning creates no runnable child.
+Route parents request `metrics.reconcile {}` on the one active Metrics serving Node only when their public, active host catalog changes. The catalog maps each host to its serving Ingress Node; FPM Instance selection does not depend on Route targets. Metrics validates that assignment and captures its exporter fleet and service Instances when the child is requested. The parent cannot provide credentials, a fleet or another serving Node. Planning creates no runnable child.
 
 Swamp snapshots exporters and service monitoring before changing them. It then refreshes the Metrics runtime, verifies Grafana credentials and proves service Caddy updates through the owning Route child. Reconciliation keeps the existing Metrics publication; it makes no certificate or private DNS change. Only proven matching child results permit successful completion. Failed or cancelled reconciliation requires restoration from the same parent's successful snapshots before it ends. A lost Node lock, lost Operation lease or cancelled service recovery stops reconciliation and requires fleet rollback. A refused or cancelled rollback completes as `metrics.rollback_failed`. Once the new runtime succeeds, later failure preserves it for recovery.
 
