@@ -41,6 +41,8 @@ jobs:
       - name: Test integration Operations
         run: |
           deno test --allow-read=. extensions/behaviors/operations/integrations/mod_test.ts extensions/behaviors/operations/integrations/pipeline_test.ts extensions/behaviors/operations/integrations/metrics_test.ts
+      - name: Test Tools Operations
+        run: deno test --allow-read=. extensions/behaviors/operations/tools/mod_test.ts
       - name: Prepare isolated Swamp environment
         shell: bash
         run: |

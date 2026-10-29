@@ -599,6 +599,29 @@ Deno.test("exact removal verifies absence and already absent removal is harmless
     assertEquals(f.mutations, present ? 1 : 0);
   }
 });
+
+Deno.test("removal refuses a missing same-scope plan descriptor before mutation", async () => {
+  for (const manager of ["apt", "vp", "composer"]) {
+    const f = new Fixture();
+    f.operation.kind = "tool.remove";
+    f.operation.input.manager = manager;
+    f.installed = "7.0.0";
+    f.admittedPlan = (operation) => {
+      const plan = fixturePlan(operation);
+      plan.descriptors = plan.descriptors.filter((entry) =>
+        entry.key !== "package-removal-plan"
+      );
+      return plan;
+    };
+
+    await assertRejects(
+      () => f.execute(),
+      Error,
+      "operation.execution_forbidden",
+    );
+    assertEquals(f.mutations, 0);
+  }
+});
 Deno.test("lost Node reply resumes the same effect key and recorded receipts", async () => {
   const f = new Fixture();
   f.loseRun = true;

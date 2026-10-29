@@ -31,7 +31,7 @@ export function tools(
 ) {
   return {
     type: "@nckrtl/operation-tools",
-    version: "2026.10.29.3",
+    version: "2026.10.29.4",
     globalArguments: Globals,
     resources: {
       assignment: {
@@ -368,9 +368,7 @@ export function tools(
               }
               if (
                 mutate && verb === "remove" &&
-                operation.execution_context.descriptors.some((entry) =>
-                  entry.key === "package-removal-plan"
-                )
+                ["apt", "vp", "composer"].includes(input.manager)
               ) {
                 const plan = await run("package-removal-plan");
                 if (
