@@ -51,6 +51,13 @@ same workflow and waits for a bounded Gateway read; it contains no separate
 pairing executor. A caller timeout leaves the existing Operation available for
 recovery.
 
+`conn.ts` runs each admitted session or link revocation with a separate stable
+key. The Gateway exposes exact effect descriptors after proving the owner-bound
+session snapshot. A final receipt requires every effect. The Conn maintenance
+workflow checks pending registration revisions each minute; an active cleanup
+keeps its lock, and a later tick admits any newer revision. Registration never
+waits for that cleanup.
+
 Focused checks:
 
 ```sh

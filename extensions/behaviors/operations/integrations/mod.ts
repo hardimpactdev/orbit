@@ -7,6 +7,7 @@ import {
   Operation,
 } from "../../operation-runner/mod.ts";
 import { pipeline, runEffect } from "./pipeline.ts";
+import { maintainConn, revokeConn } from "./conn.ts";
 import { metricsFleet } from "./metrics.ts";
 import { Completion, invocation } from "./contract.ts";
 
@@ -40,6 +41,12 @@ export function integrations(
       },
     },
     methods: {
+      maintenance: {
+        description: "Admit pending Conn registration session cleanup",
+        arguments: z.object({ tick: z.string().min(1).max(128) }),
+        execute: async (args: { tick: string }, ctx: Context) =>
+          await maintainConn(makeHttp(ctx), args.tick),
+      },
       execute: {
         description:
           "Apply an admitted integration effect and record its proven result",
@@ -137,6 +144,23 @@ export function integrations(
               );
             }, 30_000);
             try {
+              if (
+                (operation.kind === "conn.pairing_revoke" ||
+                  operation.kind === "conn.gateway_sessions_revoke") &&
+                operation.execution_context?.descriptors.some((item) =>
+                  item.name === "conn.revocation"
+                )
+              ) {
+                return await revokeConn(
+                  operation,
+                  executor,
+                  args.worker,
+                  ctx,
+                  () => {
+                    if (leaseError) throw leaseError;
+                  },
+                );
+              }
               if (
                 (operation.kind === "ai_router.collector_converge" ||
                   /^(metrics|analytics|websocket)\.role_(converge|remove)$/

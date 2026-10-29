@@ -1,0 +1,19 @@
+id: c99e437f-7bc7-44bc-ad71-56e102286363
+name: conn-maintenance
+description: Admit pending cleanup of stale Gateway sessions on registered Conn servers.
+labels: { pool: migration }
+queueTimeout: 300
+autoResume: true
+trigger:
+  schedule: '0 * * * * *'
+jobs:
+  - name: conn
+    steps:
+      - name: admit
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/operation-integrations'
+          behaviorName: operation-integrations
+          methodName: maintenance
+          inputs:
+            tick: '${{ run.id }}'
