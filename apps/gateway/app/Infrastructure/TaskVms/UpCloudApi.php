@@ -22,7 +22,12 @@ final readonly class UpCloudApi
 
     private const string TokenPattern = '/^token:\s*[\'"]?(ucat_[A-Za-z0-9_-]+)[\'"]?\s*(?:#.*)?$/m';
 
-    public function __construct(private TaskVmSettings $settings) {}
+    public function __construct(private TaskVmSettings $settings, #[\SensitiveParameter] private ?string $credential = null) {}
+
+    public function authenticated(#[\SensitiveParameter] string $credential): self
+    {
+        return new self($this->settings, $credential);
+    }
 
     public function upcloud(): TaskVmUpCloud
     {
@@ -41,13 +46,13 @@ final readonly class UpCloudApi
                 ->withOptions(['allow_redirects' => false])
                 ->send($method, self::Origin.'/'.ltrim($path, '/'), $body === null ? [] : ['json' => $body]);
         } catch (Throwable $exception) {
-            throw new TaskVmException('task_vm.upcloud_failed', "The UpCloud request [{$method} {$path}] did not return: ".mb_substr($exception->getMessage(), 0, 300), 502);
+            throw new TaskVmException('task_vm.upcloud_failed', "The UpCloud request [{$method} {$path}] did not return: ".mb_substr(str_replace($token, '[REDACTED]', $exception->getMessage()), 0, 300), 502);
         }
         if ($allowMissing && $response->status() === 404) {
             return null;
         }
         if (! $response->successful()) {
-            throw new TaskVmException('task_vm.upcloud_failed', "UpCloud refused [{$method} {$path}] with HTTP {$response->status()}: ".self::error($response), 502);
+            throw new TaskVmException('task_vm.upcloud_failed', "UpCloud refused [{$method} {$path}] with HTTP {$response->status()}: ".str_replace($token, '[REDACTED]', self::error($response)), 502);
         }
         if (trim($response->body()) === '') {
             return [];
@@ -62,8 +67,11 @@ final readonly class UpCloudApi
     }
 
     /** The token from the protected file: a regular file of the Gateway user with mode 0600 and one `token: ucat_…` line. */
-    private function token(): string
+    public function token(): string
     {
+        if ($this->credential !== null) {
+            return $this->credential;
+        }
         $path = $this->upcloud()->tokenFile;
         $stat = is_link($path) ? false : @stat($path);
         if ($stat === false || ($stat['mode'] & 0170000) !== 0100000 || ($stat['mode'] & 0777) !== 0600

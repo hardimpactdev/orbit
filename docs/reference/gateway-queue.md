@@ -32,16 +32,16 @@ Laravel Horizon runs six queues on the connection with four supervisors. The `ta
 | --- | --- | --- |
 | `tasks` | 3 | The scheduled commands below and the publish of an approved commit. The Git mirror's lock keeps one push per Project at a time |
 | `problems` | shares the 3 `tasks` workers | Doctor collection and signal collection, after waiting `tasks` jobs |
-| `task-vms` | 1 | Task VM provision, enroll, prepare, park, resume, and destroy, the host sweep |
-| `builds` | 2 | The [base image step chains and refreshes](/reference/compute-drivers#build-the-base-image), trusted [package cache fills](/reference/compute-drivers#shared-package-cache), and [recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance) |
+| `task-vms` | 1 | Retained task VM lifecycle jobs and host sweep admission |
+| `builds` | 2 | Admission for [base image Operations and refreshes](/reference/compute-drivers#build-the-base-image), trusted [package cache fills](/reference/compute-drivers#shared-package-cache), and [recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance) |
 | `builds-optional` | Shares the 2 build workers | The [UpCloud template refresh](/reference/compute-drivers#refresh-the-upcloud-template-on-recipe-changes) |
 | `operations` | 1 | [Operations](/reference/operations), such as an Instance deploy. One job runs one operation, one at a time |
 
-The `task-vms` jobs run one at a time and in order, so no two jobs change the same VM at once.
+Image, cache and host sweep jobs record Operations. Swamp executes their effects under the Operation target lock, fixed command contracts and keyed receipts. Task VM provisioning, enrollment, runtime preparation, resume and destruction keep their synchronous jobs until their owning Node and Process child composition is installed.
 
 A `task-vms` job runs at most 1500 seconds, and any other job at most 1700 seconds. An operation therefore has a deadline of 1600 seconds. Laravel makes a reservation available again after 1800 seconds if its worker did not acknowledge it. Reserving a job consumes an attempt, so with one allowed attempt the next worker fails it before its handler runs. Operations have a separate [recovery path](/reference/operations#recover-a-lost-worker). An idle worker waits on the queue with a blocking read, so a job starts within about a second when a process is free.
 
-Each build worker checks `builds` before `builds-optional`, with Horizon balancing disabled. A waiting Incus chain step therefore runs before an optional UpCloud build. Running jobs are not preempted. Two build workers let hosts build in parallel; `Bus::chain` orders each build, the database permits one running build per host, and pruning stays on that host and protects running builds.
+Each build worker checks `builds` before `builds-optional`, with Horizon balancing disabled. These jobs admit image and package cache Operations. Swamp orders each image build; the database permits one running build per host. Pruning stays on that host and protects running builds.
 
 ## Scheduled work
 

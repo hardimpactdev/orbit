@@ -8,7 +8,6 @@ use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskStatus;
-use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmPlacementPolicy;
 use App\Domain\TaskVms\TaskVmProvider;
@@ -17,11 +16,8 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\TaskVmUpCloud;
-use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentGuest;
-use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\AgentCommands\GuestAgentCommandRunner;
-use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsRepository;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -33,27 +29,20 @@ use App\Infrastructure\TaskVms\IncusTaskVmProvider;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Infrastructure\TaskVms\TaskVmProviders;
 use App\Infrastructure\TaskVms\UpCloudServers;
-use App\Infrastructure\TaskVms\UpCloudTaskVmImageBuilder;
 use App\Infrastructure\TaskVms\UpCloudTaskVmProvider;
-use App\Jobs\TaskVms\ImageBuild\BuildRecipeImageStep;
 use App\Jobs\TaskVms\ProvisionTaskVm;
 use App\Jobs\TaskVms\RefreshUpCloudTaskVmBaseImage;
-use App\Jobs\TaskVms\SweepTaskVmHosts;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
-use App\Models\UpCloudTaskVmImageBuild;
 use GuzzleHttp\Promise\PromiseInterface;
-use Illuminate\Bus\UniqueLock;
 use Illuminate\Console\Scheduling\CallbackEvent;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
@@ -697,311 +686,8 @@ describe('placement', function (): void {
     });
 });
 
-describe('sweep', function (): void {
-    beforeEach(function (): void {
-        // The Incus host is not active, so the sweep reads only UpCloud.
-        $this->host->update(['status' => LifecycleStatus::Provisioning]);
-    });
-
-    it('deletes labelled servers without a live row and fails a row whose server stays gone', function (): void {
-        $ready = tvm_up_vm(TaskVmState::Ready);
-        $kept = tvm_up_vm(TaskVmState::Ready);
-        $this->upcloud->server($kept->name, [['key' => 'orbit-task-vm', 'value' => (string) $kept->id]]);
-        $orphan = $this->upcloud->server('tvm-777', [['key' => 'orbit-task-vm', 'value' => '777']]);
-        $foreign = $this->upcloud->server('web-1', [['key' => 'orbit-task-vm', 'value' => '778']]);
-
-        app()->call([new SweepTaskVmHosts, 'handle']);
-
-        expect($this->upcloud->servers)->not->toHaveKey($orphan)
-            ->and($this->upcloud->servers)->toHaveKey($foreign)
-            ->and($ready->refresh()->state)->toBe(TaskVmState::Ready);
-
-        app()->call([new SweepTaskVmHosts, 'handle']);
-
-        expect($ready->refresh()->state)->toBe(TaskVmState::Failed)
-            ->and($ready->error_code)->toBe('task_vm.vm_missing')
-            ->and($kept->refresh()->state)->toBe(TaskVmState::Ready);
-    });
-
-    it('also sweeps with the switch off, and touches nothing without the configuration', function (): void {
-        tvm_up_settings(['enabled' => false]);
-        $orphan = $this->upcloud->server('tvm-777', [['key' => 'orbit-task-vm', 'value' => '777']]);
-
-        app()->call([new SweepTaskVmHosts, 'handle']);
-        expect($this->upcloud->servers)->not->toHaveKey($orphan);
-
-        tvm_up_settings(null);
-        $this->upcloud->requests = [];
-        app()->call([new SweepTaskVmHosts, 'handle']);
-        expect($this->upcloud->requests)->toBe([]);
-    });
-
-    it('sweeps UpCloud while task VMs are off and only the token file is set', function (): void {
-        $settings = app(TaskVmSettings::class);
-        app()->instance(TaskVmSettings::class, TaskVmSettingsBuilder::off(['hosts' => $settings->hosts, 'upcloud' => new TaskVmUpCloud(...[...get_object_vars($settings->upcloud), 'enabled' => false])]));
-        $this->host->update(['status' => LifecycleStatus::Active]);
-        $orphan = $this->upcloud->server('tvm-777', [['key' => 'orbit-task-vm', 'value' => '777']]);
-
-        app()->call([new SweepTaskVmHosts, 'handle']);
-
-        expect($this->upcloud->servers)->not->toHaveKey($orphan)
-            ->and($this->ssh->calls)->toBe([]);
-    });
-
-    it('never deletes the servers or the template of a build that is marked as running', function (): void {
-        $this->travelTo(now()->addHours(3));
-        $running = now()->subHours(3)->format('YmdHis');
-        $stale = now()->subHours(3)->subMinute()->format('YmdHis');
-        Cache::put('task-vms:upcloud-image-build:running:'.$running, true, 60);
-        $builder = $this->upcloud->server('tvm-image-'.$running, [['key' => 'orbit-task-image', 'value' => $running]]);
-        $template = $this->upcloud->template('orbit-task-base-'.$running.'-unverified');
-        $leftover = $this->upcloud->server('tvm-image-'.$stale, [['key' => 'orbit-task-image', 'value' => $stale]]);
-        $leftoverTemplate = $this->upcloud->template('orbit-task-base-'.$stale.'-unverified');
-
-        app()->call([new SweepTaskVmHosts, 'handle']);
-        app(UpCloudTaskVmImageBuilder::class)->sweep();
-
-        expect($this->upcloud->servers)->toHaveKey($builder)->not->toHaveKey($leftover)
-            ->and($this->upcloud->storages)->toHaveKey($template)->not->toHaveKey($leftoverTemplate);
-    });
-});
-
-describe('image build', function (): void {
-    beforeEach(fn () => tvm_up_image_artifact());
-
-    it('refuses a stored agent pin from another release before allocating a cloud builder', function (): void {
-        $document = json_decode(app(RecipeImageBuilds::class)->currentRecipe()->json, true, flags: JSON_THROW_ON_ERROR);
-        $document['agent']['linux-x86_64'] = str_repeat('e', 64);
-        $recipe = new RecipeLoader()->decode(json_encode($document, JSON_THROW_ON_ERROR));
-
-        expect(fn () => app(UpCloudTaskVmImageBuilder::class)->build(machineRecipe: $recipe))
-            ->toThrow(TaskVmException::class, 'serving recipe delivery changed');
-        expect($this->upcloud->requests)->toBe([]);
-        expect($this->ssh->calls)->toBe([]);
-        $this->assertDatabaseCount('upcloud_task_vm_image_builds', 0);
-    });
-
-    it('builds the template with the shared recipe, smoke-boots it, promotes it, and keeps two', function (): void {
-        $guestAgents = new FakeGuestAgentCommandRunner;
-        $guestAgents->answer = static fn (AgentGuest $guest, string $command, array $input): array => RecipeImageAnswers::success($command, $input);
-        app()->instance(GuestAgentCommandRunner::class, $guestAgents);
-        $old = $this->upcloud->template('orbit-task-base-20261001000000');
-        $previous = $this->upcloud->template('orbit-task-base-20261002000000');
-        $stages = [];
-
-        $template = app(UpCloudTaskVmImageBuilder::class)->build(function (string $stage) use (&$stages): void {
-            $stages[] = $stage;
-        });
-
-        $commands = array_map(static fn (array $call): string => implode(' ', $call[1]), $this->ssh->calls);
-        $recipe = app(RecipeImageBuilds::class)->currentRecipe();
-        $marker = array_find($guestAgents->calls, static fn (array $call): bool => $call['command'] === 'image.recipe-marker');
-        expect($marker['input'])->toBe(['identity' => $recipe->identity, 'profile' => 'base']);
-        $packages = array_find($guestAgents->calls, static fn (array $call): bool => $call['command'] === 'image.start-phase' && $call['input']['key']['phase'] === 'packages');
-        $payload = $packages['input']['recipe'];
-        expect($payload['identity'])->toBe($recipe->identity);
-        expect($payload['recipe'])->toMatchArray(['snapshot' => $recipe->snapshot, 'architecture' => 'amd64']);
-        expect($packages['input']['key']['profile'])->toBe('base')->and($stages)->toBe(['sweep', 'launch', 'cloud-init', 'orbit-user', 'apt-source', 'packages', 'javascript', 'rust', 'agent', 'pi', 'recipe-marker', 'verify', 'masks', 'firewall', 'clean', 'templatize', 'delete-builder', 'smoke', 'promote', 'prune'])
-            ->and($this->upcloud->storages[$template]['labels'])->toBe([['key' => 'orbit.recipe', 'value' => app(RecipeImageBuilds::class)->currentRecipe()->identity]])
-            ->and($this->upcloud->storages[$template]['title'])->toStartWith('orbit-task-base-')->not->toEndWith('-unverified')
-            ->and($this->upcloud->storages)->not->toHaveKey($old)
-            ->and($this->upcloud->storages)->toHaveKey($previous)
-            ->and($this->upcloud->servers)->toBe([])
-            ->and($this->upcloud->created[0]['storage_devices']['storage_device'][0]['storage'])->toBe('01000000-0000-4000-8000-000030260200')
-            ->and($this->upcloud->created[1]['storage_devices']['storage_device'][0]['storage'])->toBe($template)
-            ->and($this->upcloud->created[0]['labels']['label'][0]['key'])->toBe('orbit-task-image')
-            ->and($commands)->toBe([])
-            ->and(array_column($guestAgents->calls, 'command'))->toBe(['guest.cloud-init', 'image.owner',
-                'image.inspect-phase', 'image.start-phase', 'image.inspect-phase', 'image.start-phase',
-                'image.inspect-phase', 'image.start-phase', 'image.inspect-phase', 'image.start-phase',
-                'image.inspect-phase', 'image.start-phase', 'image.inspect-phase', 'pi.receive-artifact', 'image.start-phase',
-                'image.recipe-marker', 'image.verify', 'image.boot', 'image.firewall', 'image.trust-ca', 'image.clean', 'guest.cloud-init', 'image.verify', 'image.check'])
-            ->and(array_find($guestAgents->calls, static fn (array $call): bool => $call['command'] === 'image.check')['input'])->toBe(['lean_boot' => false, 'firewall' => true])
-            ->and(Cache::get('task-vms:upcloud-image-build:running:'.substr((string) $this->upcloud->storages[$template]['title'], -14)))->toBeNull()
-            ->and(array_filter($guestAgents->calls, static fn (array $call): bool => $call['command'] === 'image.start-phase' && $call['input']['key']['phase'] === 'packages'))->toHaveCount(1)
-            ->and(json_decode(substr($this->upcloud->created[0]['user_data'], 14), true))->not->toHaveKey('packages');
-    });
-
-    it('deletes its servers and its unverified template when the smoke boot fails', function (): void {
-        $agents = new FakeGuestAgentCommandRunner;
-        $agents->answer = static function (AgentGuest $guest, string $command, array $input): array {
-            if ($command === 'image.check') {
-                throw new AgentCommandRefused($command, 'task_vm.image_check_failed', 'wrong owner');
-            }
-
-            return RecipeImageAnswers::success($command, $input);
-        };
-        app()->instance(GuestAgentCommandRunner::class, $agents);
-        $kept = $this->upcloud->template('orbit-task-base-20261002000000');
-
-        expect(fn () => app(UpCloudTaskVmImageBuilder::class)->build())->toThrow(TaskVmException::class, 'stage [smoke]')
-            ->and($this->upcloud->servers)->toBe([])
-            ->and(array_keys($this->upcloud->storages))->toBe([$kept])
-            ->and(Cache::lock('task-vms:upcloud-image-build', 10)->get())->toBeTrue();
-    });
-
-    it('keeps templates pinned by live allocations and prunes them after destroy', function (): void {
-        $this->travelTo(now()->startOfSecond());
-        $old = $this->upcloud->template('orbit-task-base-20261001000000');
-        $this->upcloud->template('orbit-task-base-20261002000000');
-        $vm = tvm_up_vm();
-        $vm->update(['image_fingerprint' => $old]);
-
-        app(UpCloudTaskVmImageBuilder::class)->build();
-
-        expect($this->upcloud->storages)->toHaveKey($old)->toHaveCount(3);
-        $vm->update(['state' => TaskVmState::Destroyed]);
-        $this->travel(1)->seconds();
-        app(UpCloudTaskVmImageBuilder::class)->build();
-        expect($this->upcloud->storages)->not->toHaveKey($old)->toHaveCount(2);
-    });
-
-    it('does not pin source templates once the server exists', function (TaskVmState $state): void {
-        $old = $this->upcloud->template('orbit-task-base-20261001000000');
-        $this->upcloud->template('orbit-task-base-20261002000000');
-        tvm_up_vm($state)->update(['image_fingerprint' => $old, 'provider_id' => (string) Str::uuid()]);
-
-        app(UpCloudTaskVmImageBuilder::class)->build();
-
-        expect($this->upcloud->storages)->not->toHaveKey($old)->toHaveCount(2);
-    })->with([TaskVmState::Provisioning, TaskVmState::Ready, TaskVmState::Parked]);
-
-    it('records failure before cleanup and preserves the build error when cleanup fails', function (): void {
-        app(GuestAgentCommandRunner::class)->answer = static fn () => throw new AgentCommandRefused('guest.cloud-init', 'task_vm.bootstrap_failed', 'build failure');
-        $this->freezeTime();
-        $cleanupAttempts = 0;
-        $observed = null;
-        $this->upcloud->beforeServerDelete = function () use (&$cleanupAttempts, &$observed): void {
-            $cleanupAttempts++;
-            $observed = DB::table('upcloud_task_vm_image_builds')->first();
-            throw new RuntimeException('cleanup failure');
-        };
-
-        expect(fn () => app(UpCloudTaskVmImageBuilder::class)->build())->toThrow(TaskVmException::class, 'stage [cloud-init]');
-
-        expect($cleanupAttempts)->toBe(1);
-        expect($observed->state)->toBe('failed');
-        expect($observed->finished_at)->not->toBeNull();
-        $this->assertDatabaseHas('upcloud_task_vm_image_builds', ['state' => 'failed']);
-        expect(Cache::lock('task-vms:upcloud-image-build', 10)->get())->toBeTrue();
-    });
-
-    it('does not publish when recipe installation or verification fails', function (string $phase, bool $truncated): void {
-        app(GuestAgentCommandRunner::class)->answer = static function (AgentGuest $guest, string $command, array $input) use ($phase, $truncated): array {
-            if ($command === 'image.verify' && $phase === 'verify') {
-                if ($truncated) {
-                    throw new AgentRunnerFailure($command, AgentRunnerFailure::MalformedResult, 'Truncated verification response');
-                }
-                throw new AgentCommandRefused($command, 'task_vm.image_build_failed', 'Verification failed');
-            }
-            if ($command === 'image.start-phase' && $input['key']['phase'] === $phase) {
-                return RecipeImageAnswers::observation('failed', reason: 'installer failed', exit: 1);
-            }
-
-            return RecipeImageAnswers::success($command, $input);
-        };
-        $previous = $this->upcloud->template('orbit-task-base-20261002000000');
-        expect(fn () => app(UpCloudTaskVmImageBuilder::class)->build())->toThrow(TaskVmException::class, "stage [{$phase}]")
-            ->and($this->upcloud->servers)->toBe([])
-            ->and(array_keys($this->upcloud->storages))->toBe([$previous]);
-    })->with([
-        'snapshot setup fails' => ['apt-source', false],
-        'installer fails' => ['packages', false],
-        'verification fails' => ['verify', false],
-        'verification is truncated' => ['verify', true],
-    ]);
-
-    it('keeps native diagnostics after deleting a failed UpCloud builder', function (string $phase): void {
-        app(GuestAgentCommandRunner::class)->answer = static function (AgentGuest $guest, string $command, array $input) use ($phase): array {
-            if ($command === 'image.verify' && $phase === 'verify') {
-                throw new AgentCommandRefused($command, 'task_vm.image_build_failed', 'Verification failed.', [
-                    'stage' => 'verify', 'reason' => 'Verification failed', 'exit_code' => 100, 'stderr' => 'apt dependency conflict API_TOKEN=[REDACTED]',
-                ]);
-            }
-            if ($phase === 'packages' && $command === 'image.start-phase' && $input['key']['phase'] === 'packages') {
-                return RecipeImageAnswers::observation('failed', reason: 'failed with exit 100', exit: 100, log: 'apt dependency conflict API_TOKEN=[REDACTED]');
-            }
-
-            return RecipeImageAnswers::success($command, $input);
-        };
-
-        try {
-            app(UpCloudTaskVmImageBuilder::class)->build();
-            test()->fail('The package error must fail the build.');
-        } catch (TaskVmException $error) {
-            expect($error->getMessage())->toContain("stage [{$phase}]", 'exit 100');
-            expect($error->getMessage())->not->toContain('private-token');
-        }
-        expect($this->upcloud->servers)->toBe([]);
-        $this->assertDatabaseHas('upcloud_task_vm_image_builds', ['state' => 'failed']);
-        $failure = UpCloudTaskVmImageBuild::query()->latest('id')->firstOrFail()->failure;
-        expect($failure)->toMatchArray(['phase' => 'base:'.$phase, 'exit_code' => 100]);
-        expect($failure['stderr'])->toContain('apt dependency conflict API_TOKEN=[REDACTED]')->not->toContain('private-token');
-        Artisan::call('task-vms:image-builds');
-        expect(Artisan::output())->toContain('base:'.$phase, 'exit_code', 'apt dependency conflict')->not->toContain('private-token');
-
-    })->with(['packages', 'verify']);
-
-    it('fails the build when ufw does not turn on', function (): void {
-        $agents = new FakeGuestAgentCommandRunner;
-        $agents->answer = static function (AgentGuest $guest, string $command, array $input): array {
-            if ($command === 'image.firewall') {
-                throw new AgentCommandRefused($command, 'task_vm.image_check_failed', 'The image firewall is inactive.');
-            }
-
-            return RecipeImageAnswers::success($command, $input);
-        };
-        app()->instance(GuestAgentCommandRunner::class, $agents);
-
-        expect(fn () => app(UpCloudTaskVmImageBuilder::class)->build())->toThrow(TaskVmException::class, 'stage [firewall]')
-            ->and($this->upcloud->servers)->toBe([])
-            ->and($this->upcloud->storages)->toBe([]);
-    });
-});
-
-function tvm_up_refresh_job(): RefreshUpCloudTaskVmBaseImage
-{
-    $builds = app(RecipeImageBuilds::class);
-    $builds->reconcile();
-    $recipe = $builds->currentRecipe();
-
-    return new RefreshUpCloudTaskVmBaseImage($recipe->identity, UpCloudTaskVmImageBuilder::lastAttempt($recipe->identity),
-        (int) DB::table('task_vm_image_recipe')->where('id', 1)->value('generation'));
-}
-
 describe('recipe-driven UpCloud base image refresh', function (): void {
     beforeEach(fn () => tvm_up_image_artifact());
-
-    it('builds a new template on the image queue and keeps the two newest', function (): void {
-        $old = $this->upcloud->template('orbit-task-base-20261001000000');
-        $previous = $this->upcloud->template('orbit-task-base-20261002000000');
-
-        app()->call([tvm_up_refresh_job(), 'handle']);
-
-        $verified = array_filter($this->upcloud->storages, static fn (array $storage): bool => ! str_ends_with($storage['title'], '-unverified'));
-        expect($verified)->toHaveCount(2)->toHaveKey($previous)->not->toHaveKey($old)
-            ->and($this->upcloud->servers)->toBe([])
-            ->and([tvm_up_refresh_job()->connection, tvm_up_refresh_job()->queue])->toBe(['gateway', 'builds-optional']);
-    });
-
-    it('builds nothing when the recipe already matches or UpCloud is unconfigured', function (?array $upcloud): void {
-        tvm_up_settings($upcloud);
-        $this->upcloud->template('orbit-task-base-20261011000000', app(RecipeImageBuilds::class)->currentRecipe()->identity);
-
-        app()->call([tvm_up_refresh_job(), 'handle']);
-
-        expect($this->upcloud->created)->toBe([]);
-    })->with([
-        'current template' => [[]],
-        'not configured' => [null],
-    ]);
-
-    it('builds the first current recipe template without enabling overflow', function (): void {
-        tvm_up_settings(['enabled' => false]);
-        app()->call([tvm_up_refresh_job(), 'handle']);
-        expect(app(UpCloudServers::class)->currentTemplate(app(RecipeImageBuilds::class)->currentRecipe()->identity))->not->toBeNull()
-            ->and(app(TaskVmSettings::class)->upcloud->enabled)->toBeFalse();
-    });
 
     it('queues refresh through recipe reconcile only when the identity is missing', function (): void {
         Queue::fake();
@@ -1014,43 +700,6 @@ describe('recipe-driven UpCloud base image refresh', function (): void {
         $this->upcloud->template('orbit-task-base-20261012000000', 'sha256:'.str_repeat('a', 64));
         app(RecipeImageBuilds::class)->reconcile();
         Queue::assertPushed(RefreshUpCloudTaskVmBaseImage::class);
-        expect($this->upcloud->created)->toBe([]);
-    });
-
-    it('does not re-dispatch a failed recipe on the next tick and only retries explicitly', function (): void {
-        Queue::fake();
-        app(GuestAgentCommandRunner::class)->answer = static fn () => throw new AgentCommandRefused('guest.cloud-init', 'task_vm.bootstrap_failed', 'deterministic failure');
-        $builds = app(RecipeImageBuilds::class);
-        $builds->reconcile();
-        $job = Queue::pushed(RefreshUpCloudTaskVmBaseImage::class)->sole();
-
-        expect(fn () => app()->call([$job, 'handle']))->toThrow(TaskVmException::class);
-        app(UniqueLock::class)->release($job);
-        $created = count($this->upcloud->created);
-        $builds->reconcile();
-        Queue::assertPushed(RefreshUpCloudTaskVmBaseImage::class, 1);
-        $this->assertDatabaseHas('upcloud_task_vm_image_builds', ['recipe_identity' => $builds->currentRecipe()->identity, 'state' => 'failed']);
-        app()->call([$job, 'handle']);
-        expect($this->upcloud->created)->toHaveCount($created);
-
-        app(GuestAgentCommandRunner::class)->answer = static fn (AgentGuest $guest, string $command, array $input): array => RecipeImageAnswers::success($command, $input);
-        $this->artisan('task-vms:build-recipe', ['--retry' => true])->expectsOutputToContain('UpCloud refresh requested')->assertSuccessful();
-        Queue::assertPushed(RefreshUpCloudTaskVmBaseImage::class, 2);
-        app()->call([Queue::pushed(RefreshUpCloudTaskVmBaseImage::class)->last(), 'handle']);
-        $this->assertDatabaseCount('upcloud_task_vm_image_builds', 2);
-        $this->assertDatabaseHas('upcloud_task_vm_image_builds', ['recipe_identity' => $builds->currentRecipe()->identity, 'state' => 'succeeded']);
-    });
-
-    it('queues UpCloud below waiting Incus chain steps in the same supervisor', function (): void {
-        Queue::fake();
-        TaskVmImageBuild::query()->delete();
-
-        app(RecipeImageBuilds::class)->reconcile();
-
-        Queue::assertPushedOn('builds', BuildRecipeImageStep::class);
-        Queue::assertPushedOn('builds-optional', RefreshUpCloudTaskVmBaseImage::class);
-        expect(config('horizon.defaults.builds.queue'))->toBe(['builds', 'builds-optional'])
-            ->and(config('horizon.defaults.builds.balance'))->toBeFalse();
         expect($this->upcloud->created)->toBe([]);
     });
 
@@ -1148,19 +797,6 @@ describe('recipe-driven UpCloud base image refresh', function (): void {
         Queue::assertNotPushed(RefreshUpCloudTaskVmBaseImage::class);
     });
 
-    it('rechecks attempt admission after taking the builder lock', function (): void {
-        $identity = app(RecipeImageBuilds::class)->currentRecipe()->identity;
-        DB::table('upcloud_task_vm_image_builds')->insert(['recipe_identity' => $identity, 'state' => 'failed', 'started_at' => now()]);
-
-        expect(fn () => app(UpCloudTaskVmImageBuilder::class)->build(afterAttemptId: 0))->toThrow(function (TaskVmException $error): void {
-            expect($error->errorCode)->toBe(TaskVmError::ImageBuildSuperseded->value);
-            expect($error->getMessage())->toContain('explicit retry');
-        });
-
-        expect($this->upcloud->requests)->toBe([]);
-        $this->assertDatabaseCount('upcloud_task_vm_image_builds', 1);
-    });
-
     it('keeps an interrupted attempt fenced after the unique job lock expires', function (): void {
         Queue::fake();
         $identity = app(RecipeImageBuilds::class)->currentRecipe()->identity;
@@ -1172,111 +808,10 @@ describe('recipe-driven UpCloud base image refresh', function (): void {
         expect($this->upcloud->created)->toBe([]);
     });
 
-    it('reports UpCloud API errors without blocking Incus scheduling or submission recovery', function (): void {
-        Queue::fake();
-        Exceptions::fake();
-        tvm_up_settings(['enabled' => false]);
-        TaskVmImageBuild::query()->delete();
-        $this->upcloud->authenticationFails = true;
-
-        $build = app(RecipeImageBuilds::class)->reconcile()[0];
-        Queue::assertPushed(BuildRecipeImageStep::class);
-        Queue::assertNotPushed(RefreshUpCloudTaskVmBaseImage::class);
-        Exceptions::assertReported(fn (TaskVmException $error): bool => str_contains($error->getMessage(), 'AUTHENTICATION_FAILED'));
-        expect($build->host_node_id)->toBe($this->host->id);
-
-        $build->update(['submission_pending_at' => now()->subMinutes(11)->toISOString()]);
-        $recovered = app(RecipeImageBuilds::class)->reconcile()[0];
-        expect($recovered->id)->toBe($build->id)
-            ->and($recovered->attempt)->toBe($build->attempt + 1)
-            ->and($recovered->submission_pending_at)->toBeNull();
-        Queue::assertPushed(BuildRecipeImageStep::class, 2);
-        expect(app(TaskVmSettings::class)->upcloud->enabled)->toBeFalse();
-    });
-
-    it('reconciles a changed deployed recipe even with overflow disabled', function (): void {
-        Queue::fake();
-        tvm_up_settings(['enabled' => false]);
-        $directory = sys_get_temp_dir().'/upcloud-recipe-'.Str::uuid();
-        $resources = $directory.'/releases/current/apps/gateway/resources/machine-software';
-        mkdir($resources, 0700, true);
-        symlink('releases/current', $directory.'/orbit');
-        $path = $resources.'/recipe.json';
-        $document = json_decode(file_get_contents(resource_path('machine-software/recipe.json')), true, flags: JSON_THROW_ON_ERROR);
-        file_put_contents($path, json_encode($document, JSON_THROW_ON_ERROR));
-        config(['orbit.gateway_checkout' => $directory.'/orbit/apps/gateway']);
-        try {
-            $identity = app(RecipeImageBuilds::class)->currentRecipe()->identity;
-            $this->upcloud->template('orbit-task-base-20261011000000', $identity);
-            app(RecipeImageBuilds::class)->reconcile();
-            Queue::assertNotPushed(RefreshUpCloudTaskVmBaseImage::class);
-
-            $this->upcloud->storages = [];
-            app(RecipeImageBuilds::class)->reconcile();
-            $oldJob = Queue::pushed(RefreshUpCloudTaskVmBaseImage::class)->sole();
-            app(GuestAgentCommandRunner::class)->answer = static fn () => throw new AgentCommandRefused('guest.cloud-init', 'task_vm.bootstrap_failed', 'failure');
-            expect(fn () => app()->call([$oldJob, 'handle']))->toThrow(TaskVmException::class);
-            app(UniqueLock::class)->release($oldJob);
-            $created = count($this->upcloud->created);
-            $document['ubuntu']['snapshot'] = new DateTimeImmutable($document['ubuntu']['snapshot'])->modify('+1 day')->format('Ymd\THis\Z');
-            file_put_contents($path, json_encode($document, JSON_THROW_ON_ERROR));
-            app()->call([$oldJob, 'handle']);
-            expect($this->upcloud->created)->toHaveCount($created);
-            app(RecipeImageBuilds::class)->reconcile();
-            Queue::assertPushed(RefreshUpCloudTaskVmBaseImage::class, 2);
-            expect(app(RecipeImageBuilds::class)->currentRecipe()->identity)->not->toBe($identity)
-                ->and($this->upcloud->created)->toHaveCount($created);
-        } finally {
-            File::deleteDirectory($directory);
-        }
-    });
-
     it('has no separate nightly schedule', function (): void {
         Artisan::call('schedule:list');
         $refresh = collect(app(Schedule::class)->events())->first(static fn ($event): bool => $event instanceof CallbackEvent && $event->description === RefreshUpCloudTaskVmBaseImage::class);
 
         expect($refresh)->toBeNull();
     });
-});
-
-it('cold rebuilds an unchanged verified UpCloud template and preserves it until promotion', function (bool $fails): void {
-    tvm_up_image_artifact();
-    Queue::fake();
-    $builds = app(RecipeImageBuilds::class);
-    $identity = $builds->currentRecipe()->identity;
-    TaskVmImageBuild::query()->where('host_node_id', $this->host->id)->update([
-        'recipe_identity' => $identity, 'recipe_json' => $builds->currentRecipe()->json,
-    ]);
-    $previous = $this->upcloud->template('orbit-task-base-20261011000000', $identity);
-    $builds->reconcile();
-    $this->artisan('task-vms:build-recipe', ['--rebuild' => true])->expectsOutputToContain('UpCloud cold rebuild requested')->assertSuccessful();
-    $job = Queue::pushed(RefreshUpCloudTaskVmBaseImage::class)->sole();
-    $this->artisan('task-vms:build-recipe', ['--rebuild' => true])->expectsOutputToContain('pending')->assertFailed();
-    expect(app(UpCloudServers::class)->currentTemplate($identity))->toBe($previous);
-    if ($fails) {
-        app(GuestAgentCommandRunner::class)->answer = static fn () => throw new AgentCommandRefused('guest.cloud-init', 'task_vm.bootstrap_failed', 'candidate failed');
-        expect(fn () => app()->call([$job, 'handle']))->toThrow(TaskVmException::class);
-        expect(app(UpCloudServers::class)->currentTemplate($identity))->toBe($previous);
-    } else {
-        app()->call([$job, 'handle']);
-        expect(app(UpCloudServers::class)->currentTemplate($identity))->not->toBe($previous);
-    }
-    expect($this->upcloud->storages)->toHaveKey($previous);
-    app()->call([$job, 'handle']);
-    $this->assertDatabaseCount('upcloud_task_vm_image_builds', 1);
-})->with([false, true]);
-
-it('fences a queued cold UpCloud rebuild when a newer generation has been requested', function (): void {
-    Queue::fake();
-    $builds = app(RecipeImageBuilds::class);
-    $this->upcloud->template('orbit-task-base-20261011000000', $builds->currentRecipe()->identity);
-    $builds->reconcile();
-    $builds->reconcile(rebuild: true);
-    $job = Queue::pushed(RefreshUpCloudTaskVmBaseImage::class)->sole();
-    DB::table('task_vm_image_recipe')->update(['generation' => DB::raw('generation + 1')]);
-
-    app()->call([$job, 'handle']);
-
-    expect($this->upcloud->created)->toBe([]);
-    $this->assertDatabaseCount('upcloud_task_vm_image_builds', 0);
 });

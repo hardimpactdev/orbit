@@ -11,7 +11,7 @@ use App\Infrastructure\AgentCommands\AgentInvocation;
 use App\Infrastructure\MachineSoftware\NodeRecipeProgram;
 use App\Infrastructure\Nodes\Roles\RolePrerequisites;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\TaskVms\TaskVmImageRecipe;
+use App\Infrastructure\TaskVms\RecipeImageInput;
 use App\Infrastructure\Tools\VpToolManager;
 use App\Models\Node;
 use InvalidArgumentException;
@@ -19,7 +19,7 @@ use InvalidArgumentException;
 /**
  * The idempotent package and tool programs that enrollment runs on a Linux Node with the managed user `orbit`,
  * in enrollment order, rendered by the same code. It needs no SSH, no database row, and no network. Images that
- * run these programs ahead of enrollment use it: the task VM base image ({@see TaskVmImageRecipe})
+ * run these programs ahead of enrollment use it: the task VM base image ({@see RecipeImageInput})
  * and the role images of disposable test topologies (`orbit:node-programs`).
  *
  * Steps that need Gateway records, WireGuard keys, secrets, or Node-specific configuration are not programs here.

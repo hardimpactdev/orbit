@@ -12,6 +12,7 @@ use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Jobs\TaskVms\RefreshUpCloudTaskVmBaseImage;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\TaskVmImageBuild;
 use App\Models\UpCloudTaskVmImageBuild;
 use Illuminate\Support\Facades\Cache;
@@ -30,7 +31,6 @@ final readonly class RecipeImageBuilds
         if ($rebuild && ($retry || $hostId !== null)) {
             throw new TaskVmException('task_vm.image_build_failed', 'A cold rebuild targets every configured backend and cannot be combined with --retry.');
         }
-        $this->chain->recoverSubmissions();
         $builds = $rebuild ? $this->coldRebuild($recipe) : [];
         $generation = $rebuild ? (int) DB::table('task_vm_image_recipe')->where('id', 1)->firstOrFail()->generation : $this->desire($recipe);
         foreach ($this->settings->hosts as $host) {
@@ -46,7 +46,19 @@ final readonly class RecipeImageBuilds
                 }
             }
             if ($existing !== null) {
+                if ($existing->state === TaskVmImageBuildState::Running) {
+                    $owned = Operation::query()->where('kind', 'task_vm.image_build')->where('target_type', 'task_vm_image')
+                        ->where('target_id', $existing->id)->where('input->attempt', $existing->attempt)->exists();
+                    $builds[] = $owned ? $existing : $this->chain->requeueRecipe(Node::query()->findOrFail($host->nodeId), $existing, $generation, true);
+
+                    continue;
+                }
                 $reactivate = $existing->state === TaskVmImageBuildState::Succeeded && $existing->recipe_generation !== $generation;
+                if ($reactivate && TaskVmImageEvidence::published($existing) === null) {
+                    $builds[] = $this->chain->start(Node::query()->findOrFail($host->nodeId), $recipe, $generation);
+
+                    continue;
+                }
                 $restart = $existing->restartsAutomatically() || ($retry && $existing->state === TaskVmImageBuildState::Failed);
                 $builds[] = $reactivate || $restart
                     ? $this->chain->requeueRecipe(Node::query()->findOrFail($host->nodeId), $existing, $generation, $restart)

@@ -134,15 +134,6 @@ final readonly class TaskVmHostAudit
             && in_array($node->id, array_map(static fn (Node $stray): int => $stray->id, self::strayNodes()), true);
     }
 
-    /** Deletes an orphaned VM from the host's project. An absent VM counts as deleted. */
-    public function deleteOrphan(TaskVmHost $host, Node $node, string $name): void
-    {
-        if (preg_match(self::TaskVmName, $name) !== 1 && (! self::isChainBuilder($name) || ! self::claimBuildCleanup($node, $name))) {
-            return;
-        }
-        $this->incus->changeVm($host, $node, $name, ['kind' => 'remove_instance']);
-    }
-
     /** Recorded image builders have running ownership or failed-build retention, rather than timestamp names. */
     private static function isChainBuilder(string $name): bool
     {

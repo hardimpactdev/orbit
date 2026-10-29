@@ -396,7 +396,7 @@ describe('claim', function (): void {
         tvm_life_settings(enabled: false);
 
         expect(fn () => app(TaskVmWorkspace::class)->node(tvm_life_group()))
-            ->toThrow(TaskCapacityException::class, 'Task VM: task VMs are not enabled on this Gateway.')
+            ->toThrow(TaskVmException::class, 'Task VMs are not enabled on this Gateway.')
             ->and(TaskVm::query()->count())->toBe(0);
     });
 
@@ -480,8 +480,8 @@ describe(ProvisionTaskVm::class, function (): void {
         'destroying' => [TaskVmState::Destroying, false],
     ]);
 
-    it('records a provision failure and asks only tick groups for assistance', function (TaskOrchestration $orchestration, bool $assistance): void {
-        $vm = tvm_life_vm($group = tvm_life_group(orchestration: $orchestration));
+    it('records a provision failure without changing external assistance', function (): void {
+        $vm = tvm_life_vm($group = tvm_life_group(orchestration: TaskOrchestration::External));
         $destroying = tvm_life_vm(tvm_life_group(), TaskVmState::Destroying, wireguardIp: '10.44.0.131');
         $failure = new TaskVmException('task_vm.host_command_failed', '`incus launch` failed.', 502);
 
@@ -494,11 +494,11 @@ describe(ProvisionTaskVm::class, function (): void {
             ->and($vm->fresh()?->error_message)->toBe('`incus launch` failed.')
             ->and($destroying->fresh()?->state)->toBe(TaskVmState::Destroying)
             ->and($destroying->fresh()?->error_code)->toBeNull()
-            ->and($group->fresh()?->assistance_requested)->toBe($assistance)
-            ->and($group->fresh()?->assistance_kind)->toBe($assistance ? AssistanceKind::Failure : null)
-            ->and($group->fresh()?->assistance_reason)->toBe($assistance ? "Task VM failed: {$vm->name}: task_vm.host_command_failed: `incus launch` failed. Cancel the group to destroy the VM." : null)
+            ->and($group->fresh()?->assistance_requested)->toBeFalse()
+            ->and($group->fresh()?->assistance_kind)->toBeNull()
+            ->and($group->fresh()?->assistance_reason)->toBeNull()
             ->and($destroying->group->fresh()?->assistance_requested)->toBeFalse();
-    })->with(['tick' => [TaskOrchestration::External, true], 'external' => [TaskOrchestration::External, false]]);
+    });
 
     it('retries a failed create once and is unique for its task VM', function (): void {
         $job = new ProvisionTaskVm(7);
@@ -822,7 +822,7 @@ describe(DestroyTaskVm::class, function (): void {
 
         app()->call([new DestroyTaskVm($vm->id), 'handle']);
 
-        expect($this->provider->calls)->toBe([])->and($vm->fresh()?->state)->toBe(TaskVmState::Ready);
+        expect($this->provider->calls)->toBe(['observe'])->and($vm->fresh()?->state)->toBe(TaskVmState::Ready);
     });
 
     it('destroys the VM past an Instance its group does not own, and forgets that row with the Node', function (): void {
@@ -860,7 +860,7 @@ describe(DestroyTaskVm::class, function (): void {
 
         app()->call([new DestroyTaskVm($vm->id), 'handle']);
 
-        expect($this->provider->calls)->toBe($removalFailed ? ['observe'] : [])
+        expect($this->provider->calls)->toBe(['observe'])
             ->and($vm->fresh()?->state)->toBe(TaskVmState::Ready)
             ->and($instance->fresh())->not->toBeNull();
     })->with(['removal not failed' => false, 'VM still runs' => true]);
@@ -991,7 +991,8 @@ describe(DestroyTaskVm::class, function (): void {
         app()->call([new DestroyTaskVm($vm->id), 'handle']);
 
         expect($vm->fresh()->state)->toBe(TaskVmState::Ready);
-        expect($group->fresh()->assistance_reason)->toContain($sha, $pause);
+        expect($vm->fresh()->hostSweepWaitReason())->toContain($sha, $pause);
+        expect($group->fresh()->assistance_reason)->toBe('Workspace removal failed: The Node is unreachable.');
         expect($this->provider->calls)->toBe(['observe']);
     })->with([
         'task VMs disabled' => [false, LifecycleStatus::Active, 'task VMs are disabled'],
@@ -1018,7 +1019,7 @@ describe(DestroyTaskVm::class, function (): void {
             ->and($vm->fresh()->state)->toBe($state === TaskVmState::Failed ? TaskVmState::Destroyed : TaskVmState::Ready);
     })->with([TaskVmState::Ready, TaskVmState::Failed]);
 
-    it('destroys a lost VM and records its lost reviewed SHA without clearing the evidence', function (TaskGroupStatus $status): void {
+    it('destroys a lost VM while preserving its reviewed SHA and external assistance', function (TaskGroupStatus $status): void {
         [$vm, $instance, , $group] = tvm_life_stranded_workspace(true);
         $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
         $group->update(['status' => $status]);
@@ -1038,8 +1039,10 @@ describe(DestroyTaskVm::class, function (): void {
         expect(Node::query()->find($nodeId))->toBeNull();
         expect($vm->fresh()->state)->toBe(TaskVmState::Destroyed);
         expect($group->fresh()->assistance_requested)->toBeTrue();
-        expect($group->fresh()->assistance_reason)->toContain('lost', $sha);
-        expect(Activity::query()->where('subject_type', Task::class)->where('subject_id', $group->id)->where('description', 'assistance changed')->sole()->properties->get('reason'))->toContain('lost', $sha);
+        expect($group->fresh()->assistance_reason)->toBe('Workspace removal failed: The Node is unreachable.');
+        expect(TaskReviewedCommit::query()->where('task_id', $group->id)->sole()->sha)->toBe($sha);
+        expect(TaskReviewedCommit::query()->where('task_id', $group->id)->sole()->pushed_at)->toBeNull();
+        expect(Activity::query()->where('subject_type', Task::class)->where('subject_id', $group->id)->where('description', 'assistance changed')->count())->toBe(0);
         expect($this->provider->calls)->toBe(['destroy']);
     })->with([TaskGroupStatus::Failed, TaskGroupStatus::Cancelled]);
 

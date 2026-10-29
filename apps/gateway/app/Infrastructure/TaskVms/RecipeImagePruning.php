@@ -18,9 +18,10 @@ final readonly class RecipeImagePruning
     /** Retired images still exist on hosts; retain these names only for cleanup. */
     private const array RetiredProfiles = ['gateway', 'app-dev', 'app-prod', 'operator'];
 
-    public function __construct(private TaskVmSettings $settings, private IncusHost $incus) {}
+    public function __construct(private TaskVmSettings $settings) {}
 
-    public function prune(TaskVmImageBuild $current): void
+    /** @return array<string,mixed> */
+    public function input(TaskVmImageBuild $current): array
     {
         $host = $this->settings->host($current->host_node_id);
         $node = $current->hostNode;
@@ -54,9 +55,10 @@ final readonly class RecipeImagePruning
         }
         $obsolete = array_values(array_unique($obsolete));
         $retired = array_values(array_filter($obsolete, static fn (string $alias): bool => array_any(self::RetiredProfiles, static fn (string $profile): bool => str_ends_with($alias, '-'.$profile))));
-        $this->incus->image($host, $node, [
+
+        return ['project' => $host->project, 'operation' => [
             'kind' => 'prune', 'pool' => $host->pool, 'obsolete_aliases' => $obsolete,
             'retired_aliases' => $retired, 'protected_fingerprints' => array_values(array_unique($protected)),
-        ]);
+        ]];
     }
 }

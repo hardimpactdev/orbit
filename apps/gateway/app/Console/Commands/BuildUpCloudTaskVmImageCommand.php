@@ -19,18 +19,14 @@ final class BuildUpCloudTaskVmImageCommand extends Command
 
     public function handle(UpCloudTaskVmImageBuilder $builder): int
     {
-        $started = microtime(true);
         try {
-            $template = $builder->build(function (string $stage, float $seconds): void {
-                $this->line(sprintf('%-22s %7.1fs', $stage, $seconds));
-            });
+            $operation = $builder->build();
         } catch (ResourceOperationException $exception) {
             $this->error("[{$exception->errorCode}] {$exception->getMessage()}");
 
             return self::FAILURE;
         }
-
-        $this->info(sprintf('UpCloud has the task VM template [%s] after %.1fs.', $template, microtime(true) - $started));
+        $this->info("UpCloud image Operation [{$operation->id}] was admitted.");
 
         return self::SUCCESS;
     }
