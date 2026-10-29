@@ -1,0 +1,139 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Actions\Operations\StartOperationAction;
+use App\Domain\Operations\OperationCompletion;
+use App\Domain\Operations\OperationExecutionContract;
+use App\Domain\Operations\OperationFamilyChildren;
+use App\Domain\Operations\OperationFamilyExecution;
+use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\OperationOutcome;
+use App\Domain\Processes\ProcessRuntimeStatusIndex;
+use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Models\Instance;
+use App\Models\Node;
+use App\Models\Operation;
+use App\Models\Process;
+use App\Models\Project;
+use App\Models\Schedule;
+use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
+use Tests\TestCase;
+
+final class InstanceRuntimeTestParent implements OperationCompletion, OperationFamilyChildren, OperationFamilyExecution
+{
+    public function childContext(Operation $parent): array
+    {
+        return ['intent' => [], 'children' => $parent->state['child_intents']];
+    }
+
+    public function context(Operation $operation): array
+    {
+        return ['descriptors' => []];
+    }
+
+    public function input(Operation $operation, array $run): array
+    {
+        return [];
+    }
+
+    public function beforeRun(Operation $operation, array $run): void {}
+
+    public function received(Operation $operation, array $run, array $receipt): array
+    {
+        return $receipt;
+    }
+
+    public function assertCompletion(Operation $operation, OperationOutcome $outcome): void {}
+
+    public function cancellationBoundary(Operation $operation): ?array
+    {
+        return null;
+    }
+
+    public function complete(Operation $operation, OperationOutcome $outcome): void {}
+}
+
+beforeEach(function (): void {
+    $this->node = $this->markAsGateway(Node::query()->create(['name' => 'runtime-node', 'platform' => 'linux', 'status' => 'active', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.3', 'public_ssh_host' => '192.0.2.3']));
+    $this->node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
+    $project = Project::query()->create(['name' => 'Runtime proof', 'slug' => 'runtime-proof', 'repository_url' => 'https://example.test/runtime.git']);
+    $this->instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->node->id, 'name' => 'proof', 'environment' => 'production',
+        'source_layout' => 'checkout', 'checkout_path' => '/home/runtime-proof/releases/prepared', 'production_user' => 'runtime-proof', 'production_home' => '/home/runtime-proof', 'provisioning_step' => 'source-resolved', 'status' => 'source_resolved']);
+    $project->processDefinitions()->create(['name' => 'worker', 'environments' => ['production'], 'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/sleep', '300'], 'restart_policy' => 'never']]);
+    $project->scheduleDefinitions()->create(['name' => 'timer', 'environments' => ['production'], 'spec' => ['command' => 'printf private-schedule-command', 'calendar' => 'daily', 'timeout_seconds' => 60]]);
+    app()->instance(ScheduleRuntimeAccountResolver::class, new FakeScheduleRuntimeAccountResolver);
+    $this->agents = (new FakeAgentCommandRunner)->answer('process.stage-unit', ['staged' => true, 'previous' => false, 'state' => null])
+        ->answer('process.activate-unit', ['backup_left' => false])->answer('process.status', ['state' => 'inactive'])->answer('schedule.install', []);
+    app()->instance(AgentCommandRunner::class, $this->agents);
+    config(['dependency_detection.services_node_id' => $this->node->id]);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
+    $parent = ['executor' => 'swamp', 'completion' => InstanceRuntimeTestParent::class, 'execution' => InstanceRuntimeTestParent::class,
+        'runs' => [], 'children' => [['kind' => 'process.install_instance_definitions', 'node_from' => 'operation.node_id'], ['kind' => 'schedule.install_instance_definitions', 'node_from' => 'operation.node_id']],
+        'completion_contract' => ['children_succeeded' => ['process.install_instance_definitions', 'schedule.install_instance_definitions']], 'result_fields' => ['ready']];
+    app()->instance(OperationKinds::class, new OperationKinds(app(), [...OperationKinds::definitions(), 'test.runtime_parent' => $parent]));
+    $this->root = app(StartOperationAction::class)->execute('test.runtime_parent', 'instance', $this->instance->id, $this->node->id, [], 'test', null);
+    $this->root->update(['state' => ['child_intents' => array_map(fn (string $family): array => ['key' => $family, 'kind' => $family.'.install_instance_definitions', 'node_id' => $this->node->id, 'input' => ['instance_id' => $this->instance->id]], ['process', 'schedule'])]]);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $this->root->kind, 'worker' => 'root'])->assertOk();
+});
+
+it('installs captured Process and Schedule children stopped and proves them before parent readiness', function (): void {
+    app()->instance(ProcessRuntimeStatusIndex::class, Mockery::mock(ProcessRuntimeStatusIndex::class)
+        ->shouldReceive('remember')->once()->with(Mockery::type(Process::class), 'inactive')->getMock());
+    foreach (['process', 'schedule'] as $family) {
+        $response = $this->postJson('/api/v1/operation-executor/'.$this->root->id.'/children', ['worker' => 'root', 'key' => $family])->assertAccepted();
+        $id = $response->json('data.id');
+        $operation = Operation::query()->findOrFail($id);
+        expect($operation->input)->toBe(['instance_id' => $this->instance->id]);
+        expect($operation->parent_operation_id)->toBe($this->root->id);
+        $worker = $family.'-worker';
+        $this->postJson('/api/v1/operation-executor/claim', ['kind' => $operation->kind, 'worker' => $worker, 'operation_id' => $id])->assertOk();
+        $path = '/api/v1/operation-executor/'.$id;
+        $ready = ['worker' => $worker, 'key' => 'runtime-ready', 'transport' => 'gateway', 'name' => $family.'.instance_runtime_ready', 'input' => ['instance_id' => $this->instance->id]];
+        $this->postJson($path.'/run', $ready)->assertConflict()->assertJsonPath('error.code', 'operation.child_unproven');
+        $child = $this->postJson($path.'/children', ['worker' => $worker, 'key' => 'runtime-0'])->assertAccepted()->json('data.id');
+        $leaf = Operation::query()->findOrFail($child);
+        expect($leaf->input['desired'])->toBe($family === 'process' ? 'stopped' : 'disabled');
+        runtimeExecuteLeaf($this, $leaf);
+        $result = $this->postJson($path.'/run', $ready)->assertOk()->json('data');
+        $this->postJson($path.'/step', ['worker' => $worker, 'key' => 'ready-done', 'name' => 'runtime-ready', 'status' => 'succeeded', 'result' => $result])->assertOk();
+        $this->postJson($path.'/complete', ['worker' => $worker, 'status' => 'succeeded', 'result' => $result])->assertOk();
+    }
+    expect(Process::query()->sole()->desired_state->value)->toBe('stopped');
+    expect(Schedule::query()->sole()->desired_timer_state->value)->toBe('disabled');
+    expect(json_encode(Operation::query()->get()->toArray()))->not->toContain('private-schedule-command');
+});
+
+it('refuses enabling an unfinished definition copy during stopped installation', function (string $family): void {
+    $id = $this->postJson('/api/v1/operation-executor/'.$this->root->id.'/children', ['worker' => 'root', 'key' => $family])->assertAccepted()->json('data.id');
+    $worker = $family.'-worker';
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $family.'.install_instance_definitions', 'worker' => $worker, 'operation_id' => $id])->assertOk();
+    if ($family === 'process') {
+        Process::query()->sole()->update(['desired_state' => 'running']);
+    } else {
+        Schedule::query()->sole()->update(['desired_timer_state' => 'enabled']);
+    }
+    $this->postJson('/api/v1/operation-executor/'.$id.'/children', ['worker' => $worker, 'key' => 'runtime-0'])->assertUnprocessable()->assertJsonPath('error.code', 'operation.child_forbidden');
+    expect($this->agents->calls)->toBe([]);
+})->with(['process', 'schedule']);
+
+/** Execute descriptors through the real HTTP proof boundary with a fake target agent. */
+function runtimeExecuteLeaf(TestCase $test, Operation $operation): void
+{
+    $worker = 'leaf-'.$operation->id;
+    $test->postJson('/api/v1/operation-executor/claim', ['kind' => $operation->kind, 'worker' => $worker, 'operation_id' => $operation->id])->assertOk();
+    $path = '/api/v1/operation-executor/'.$operation->id;
+    $names = $operation->kind === 'process.create' ? ['process-stage-unit', 'process-activate-unit', 'process-status', 'runtime-ready'] : ['schedule-install'];
+    $result = [];
+    foreach ($names as $name) {
+        $context = app(OperationExecutionContract::class)->context($operation->refresh());
+        $descriptor = array_find($context['descriptors'], static fn (array $entry): bool => $entry['key'] === $name);
+        expect($descriptor)->not->toBeNull();
+        $test->getJson($path.'/receipts/'.$name)->assertOk()->assertJsonPath('data.state', 'unknown');
+        $result = $test->postJson($path.'/run', ['worker' => $worker, 'key' => $name, 'transport' => $descriptor['transport'], 'name' => $descriptor['name'], 'input' => $descriptor['input']])->assertOk()->json('data');
+        $test->postJson($path.'/step', ['worker' => $worker, 'key' => $name.'-done', 'name' => $name, 'status' => 'succeeded', 'result' => $result])->assertOk();
+    }
+    $test->postJson($path.'/complete', ['worker' => $worker, 'status' => 'succeeded', 'result' => $result])->assertOk();
+}
