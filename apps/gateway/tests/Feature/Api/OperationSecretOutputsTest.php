@@ -178,6 +178,94 @@ it('encrypts outputs once and keeps only references through hook, step, context 
         ->and(OperationKinds::supports('secret_outputs'))->toBeTrue();
 });
 
+it('preserves boolean completion proof when a protected value contains the digit one', function (): void {
+    $this->command->value = '1';
+    $this->command->result = ['backend' => 'issued', 'credential' => '1', 'projected' => true, 'unchanged' => false, 'echo' => '1'];
+    $this->definition['result_fields'] = [...$this->definition['result_fields'], 'projected', 'unchanged'];
+    $this->definition['completion_contract']['result']['projected'] = true;
+    app()->instance(OperationKinds::class, new OperationKinds(app(), [...OperationKinds::definitions(), 'test.secret_output' => $this->definition]));
+
+    $result = $this->postJson($this->path.'/run', $this->run)->assertOk()
+        ->assertJsonPath('data.projected', true)->assertJsonPath('data.unchanged', false)
+        ->assertJsonPath('data.credential', $this->reference)->assertJsonPath('data.echo', '[REDACTED]')->json('data');
+    $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath('data', $result);
+    $this->getJson($this->path.'/receipts/issue')->assertOk()->assertJsonPath('data.result.projected', true);
+    $this->postJson($this->path.'/step', ['worker' => 'outputs', 'key' => 'issue.done', 'name' => 'issue', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    $this->postJson($this->path.'/complete', ['worker' => 'outputs', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    expect($this->operation->fresh()->result['projected'])->toBeTrue()
+        ->and($this->family->received['projected'])->toBeTrue()
+        ->and($this->command->calls)->toBe(1)->and($this->store->calls)->toBe(1);
+});
+
+it('uses declared output sensitivity while preserving public environment and key fields', function (): void {
+    $public = ['environment' => ['php' => '8.5'], 'key' => 'public-child',
+        'child_phases' => [['key' => 'public-entry', 'environment' => 'development']]];
+    $this->definition['result_fields'] = [...$this->definition['result_fields'], 'environment.php', 'key',
+        ['name' => 'child_phases', 'max' => 2, 'list_of' => ['key' => 'string', 'environment' => 'string']]];
+    app()->instance(OperationKinds::class, new OperationKinds(app(), [...OperationKinds::definitions(), 'test.secret_output' => $this->definition]));
+    $this->command->result = [...$public, 'backend' => 'issued', 'credential' => $this->command->value,
+        'echo' => 'echo:'.$this->command->value, 'error_code' => null, 'unknown' => 'discard-me'];
+
+    $result = $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath('data.environment.php', '8.5')
+        ->assertJsonPath('data.key', 'public-child')
+        ->assertJsonPath('data.child_phases', $public['child_phases'])->assertJsonPath('data.credential', $this->reference)
+        ->assertJsonPath('data.echo', 'echo:[REDACTED]')->assertJsonMissingPath('data.unknown')->json('data');
+    expect($this->family->received['environment'])->toBe($public['environment'])
+        ->and($this->family->received['credential'])->toBe($this->reference);
+    $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath('data', $result);
+    $this->postJson($this->path.'/step', ['worker' => 'outputs', 'key' => 'issue.done', 'name' => 'issue', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    $this->postJson($this->path.'/heartbeat', ['worker' => 'outputs'])->assertOk()->assertJsonPath('data.execution_context.result.environment.php', '8.5');
+    $this->postJson($this->path.'/complete', ['worker' => 'outputs', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    expect($this->operation->fresh()->result)->toBe($result)
+        ->and(json_encode([$this->operation->fresh()->getAttributes(), $this->operation->steps()->get()->toArray()]))->not->toContain($this->command->value, 'discard-me');
+});
+
+it('refuses secret-named public result declarations when the kind loads', function (array $field): void {
+    $this->definition['result_fields'] = [...$this->definition['result_fields'], ...$field];
+    expect(fn () => new OperationKinds(app(), ['test.secret_output' => $this->definition]))->toThrow(LogicException::class);
+})->with([
+    'token' => [['token']],
+    'password' => [['password']],
+    'secret' => [['clientSecret']],
+    'api key' => [['api_key']],
+    'private key' => [['private_key']],
+    'credential' => [['credential_value']],
+    'bearer' => [['bearer']],
+    'authorization' => [['authorization']],
+    'cookie' => [['cookie']],
+    'pem' => [['pem']],
+    'nested password' => [['result.password']],
+    'nested public key is not an exact exception' => [['result.public_key']],
+    'nested key is not an exact exception' => [['result.key']],
+    'scalar list' => [[['name' => 'tokens', 'type' => 'list', 'items' => 'string', 'max' => 1]]],
+    'object list leaf' => [[['name' => 'entries', 'max' => 1, 'list_of' => ['apiKey' => 'string']]]],
+    'object list scalar list' => [[['name' => 'entries', 'max' => 1, 'list_of' => ['passwords' => ['type' => 'list', 'items' => 'string', 'max' => 1]]]]],
+]);
+
+it('accepts only exact audited public secret-word paths when the kind loads', function (): void {
+    $this->definition['result_fields'] = [...$this->definition['result_fields'], 'key', 'public_key', 'host_key_fingerprint', 'key_count',
+        ['name' => 'skipped', 'max' => 1, 'list_of' => ['key' => 'string']],
+        ['name' => 'child_phases', 'max' => 1, 'list_of' => ['key' => 'string']]];
+    $kinds = new OperationKinds(app(), ['test.secret_output' => $this->definition]);
+    expect($kinds->definition('test.secret_output'))->toBe($this->definition);
+});
+
+it('masks secret text patterns in a declared string through run storage steps and completion', function (string $raw, string $safe): void {
+    $this->command->result = ['backend' => 'issued', 'credential' => $this->command->value, 'echo' => $raw];
+    $result = $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath('data.echo', $safe)->json('data');
+    expect($this->operation->fresh()->state['executor_runs']['issue']['result']['echo'])->toBe($safe)
+        ->and($this->family->received['echo'])->toBe($safe);
+    $this->postJson($this->path.'/step', ['worker' => 'outputs', 'key' => 'issue.done', 'name' => 'issue', 'status' => 'succeeded', 'result' => [...$result, 'echo' => $raw]])->assertOk();
+    expect($this->operation->fresh()->state['steps']['issue']['echo'])->toBe($safe);
+    $this->postJson($this->path.'/complete', ['worker' => 'outputs', 'status' => 'succeeded', 'result' => [...$result, 'echo' => $raw]])->assertOk();
+    expect($this->operation->fresh()->result['echo'])->toBe($safe)
+        ->and(json_encode([$this->operation->fresh()->getAttributes(), $this->operation->steps()->get()->toArray()]))->not->toContain($raw);
+})->with([
+    'URL credentials' => ['https://u:p@host', 'https://[REDACTED]@host'],
+    'Bearer value' => ['Bearer synthetic-private-value', 'Bearer [REDACTED]'],
+    'PEM block' => ["-----BEGIN PRIVATE KEY-----\nsynthetic-private-material\n-----END PRIVATE KEY-----", '[REDACTED]'],
+]);
+
 it('refuses unavailable output owners and stores before invoking the command', function (string $case): void {
     if ($case === 'missing') {
         $this->store->missingOwner = true;
