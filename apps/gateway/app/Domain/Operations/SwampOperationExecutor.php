@@ -376,7 +376,8 @@ final readonly class SwampOperationExecutor
 
     private function assertTargetExists(Operation $operation, string $transport): void
     {
-        if ($transport !== 'gateway' && ! Node::query()->whereKey(app(OperationChildren::class)->nodeId($operation))->exists()) {
+        $nodeId = app(OperationChildren::class)->nodeId($operation);
+        if (($nodeId !== null || $transport !== 'gateway') && ! Node::query()->whereKey($nodeId)->exists()) {
             throw new ResourceOperationException('operation.target_missing', 'The admitted target Node no longer exists.', 409);
         }
     }

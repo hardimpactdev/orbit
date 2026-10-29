@@ -575,10 +575,17 @@ it('retains terminal context completion replay and cached receipts after target 
     expect($this->source->resolves)->toBe(1)->and($this->transport->runs)->toBe(1)->and($this->transport->reads)->toBe(0)->and($this->source->ownerReads)->toBe($ownerReads);
 });
 
-it('refuses a new transport effect after deletion before rehydrating or dispatching', function (): void {
+it('refuses a new transport effect after deletion before rehydrating or dispatching', function (string $transport): void {
     $this->source->requiresLiveOwner = true;
     $this->transport->loseReply = false;
+    $kind = app(OperationKinds::class)->definition('test.receipts');
+    $kind['runs'][0]['transport'] = $transport;
+    $kind['completion_contract']['transport'] = $transport;
+    app()->instance(OperationKinds::class, new OperationKinds(app(), [...OperationKinds::definitions(), 'test.receipts' => $kind]));
+    app()->instance(OperationTransports::class, new OperationTransports([$transport => ReceiptTestTransport::class]));
+    $this->run['transport'] = $transport;
     $input = $this->operation->input;
+    $input['descriptors'][0]['transport'] = $transport;
     $input['descriptors'][] = [...$input['descriptors'][0], 'key' => 'later'];
     $this->operation->update(['input' => $input, 'state' => [...$this->operation->state,
         'executor_target' => ['node_id' => $this->target->id, 'target_type' => 'node', 'target_id' => $this->target->id]]]);
@@ -588,7 +595,7 @@ it('refuses a new transport effect after deletion before rehydrating or dispatch
     $this->postJson($this->path.'/run', [...$this->run, 'key' => 'later'])->assertConflict()->assertJsonPath('error.code', 'operation.target_missing');
     $this->getJson($this->path.'/receipts/effect')->assertOk()->assertJsonPath('data.state', 'succeeded');
     expect($this->source->resolves)->toBe(1)->and($this->transport->runs)->toBe(1)->and($this->transport->reads)->toBe(0);
-});
+})->with(['receipt-test', 'gateway']);
 
 it('refuses a nulled root target before completion projects or releases its hold', function (): void {
     $this->transport->loseReply = false;
