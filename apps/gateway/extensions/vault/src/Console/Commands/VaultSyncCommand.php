@@ -6,6 +6,7 @@ namespace Orbit\Extensions\Vault\Console\Commands;
 
 use Illuminate\Console\Command;
 use Orbit\Extensions\Vault\Actions\SyncVaultAction;
+use Orbit\Extensions\Vault\Domain\VaultSettings;
 
 final class VaultSyncCommand extends Command
 {
@@ -15,16 +16,19 @@ final class VaultSyncCommand extends Command
     #[\Override]
     protected $description = 'Publish changed database credentials to Vaultwarden, when it is set up.';
 
-    public function handle(SyncVaultAction $action): int
+    public function handle(SyncVaultAction $action, VaultSettings $settings): int
     {
-        $error = $action->scheduled();
+        $operation = $action->scheduled();
+        $error = $settings->lastError();
+        if ($error !== null) {
+            $this->components->error($error['code'].': '.$error['message']);
 
-        if ($error === null) {
-            return self::SUCCESS;
+            return self::FAILURE;
+        }
+        if ($operation !== null) {
+            $this->components->info('Vault Operation '.$operation->id.' queued; collection completion is pending.');
         }
 
-        $this->components->error("{$error['code']}: {$error['message']}");
-
-        return self::FAILURE;
+        return self::SUCCESS;
     }
 }

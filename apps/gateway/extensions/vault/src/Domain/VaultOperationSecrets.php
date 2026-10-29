@@ -1,0 +1,100 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Orbit\Extensions\Vault\Domain;
+
+use App\Domain\Operations\OperationSecretSource;
+use App\Domain\Operations\OperationSecretValue;
+use App\Domain\Operations\OperationStatus;
+use App\Domain\Settings\SettingRepository;
+use App\Domain\Settings\SettingScope;
+use App\Domain\Settings\SettingScopeType;
+use App\Domain\Settings\SettingValueProtection;
+use App\Models\Operation;
+use App\Models\Setting;
+use App\Support\ValidatedData;
+use SensitiveParameter;
+
+/** Immutable encrypted admission input. The shared executor alone hydrates this secret reference. */
+final readonly class VaultOperationSecrets implements OperationSecretSource
+{
+    public function __construct(private SettingRepository $settings) {}
+
+    /** @param array<string, mixed> $configuration */
+    public function store(Operation $operation, #[SensitiveParameter] array $configuration): void
+    {
+        $this->settings->put($this->scope(), $this->key($operation), json_encode($configuration, JSON_THROW_ON_ERROR), SettingValueProtection::Secret);
+    }
+
+    public function name(): string
+    {
+        return 'vault.credentials';
+    }
+
+    /** @return list<string> */
+    public function targetTypes(): array
+    {
+        return ['vault'];
+    }
+
+    public function ownerId(Operation $operation): ?int
+    {
+        return str_starts_with($operation->kind, 'vault.') && $operation->node_id === $operation->target_id ? $operation->target_id : null;
+    }
+
+    public function resolve(Operation $operation, int $id, string $key, string $parameter): OperationSecretValue
+    {
+        $configuration = $this->snapshot($operation, ['$secret' => $this->name(), 'id' => $id]);
+        $redactions = [$configuration['client_secret'] ?? '', $configuration['master_password'] ?? ''];
+        foreach (is_array($configuration['wanted'] ?? null) ? $configuration['wanted'] : [] as $rawItem) {
+            $item = ValidatedData::object($rawItem);
+            $cipher = ValidatedData::object($item['cipher'] ?? []);
+            foreach (is_array($cipher['fields'] ?? null) ? $cipher['fields'] : [] as $rawField) {
+                $field = ValidatedData::object($rawField);
+                if (($field['hidden'] ?? false) === true && is_string($field['value'] ?? null)) {
+                    $redactions[] = $field['value'];
+                }
+            }
+        }
+
+        return new OperationSecretValue(new VaultExecutionInput($configuration), array_values(array_filter($redactions, is_string(...))));
+    }
+
+    /** @param array<string, mixed> $reference
+     * @return array<string, mixed>
+     */
+    public function snapshot(Operation $operation, array $reference): array
+    {
+        if (! str_starts_with($operation->kind, 'vault.') || $reference !== ['$secret' => 'vault.credentials', 'id' => $operation->target_id]
+            || $operation->node_id !== $operation->target_id) {
+            throw new VaultException('operation.execution_forbidden', 'The Vault reference does not belong to this Operation.', 422);
+        }
+        $stored = $this->settings->get($this->scope(), $this->key($operation));
+        if ($stored === null) {
+            throw new VaultException('vault.intent_missing', 'The Vault admission input is missing.', 409);
+        }
+
+        return ValidatedData::object(json_decode($stored, true, flags: JSON_THROW_ON_ERROR));
+    }
+
+    /** Retain only snapshots which another unfinished Operation still needs for recovery. */
+    public function forgetTerminal(Operation $operation): void
+    {
+        $active = Operation::query()->where('kind', 'like', 'vault.%')->whereKeyNot($operation->id)
+            ->whereNotIn('status', [OperationStatus::Succeeded, OperationStatus::Failed, OperationStatus::Cancelled])
+            ->get(['id'])->map(fn (Operation $pending): string => $this->key($pending))->all();
+        Setting::query()->where('scope_type', SettingScopeType::Gateway)->where('scope_id', 0)
+            ->where('key', 'like', 'vault.operation.%')->whereNotIn('key', $active)->delete();
+    }
+
+    private function scope(): SettingScope
+    {
+        return new SettingScope(SettingScopeType::Gateway);
+    }
+
+    private function key(Operation $operation): string
+    {
+        return 'vault.operation.'.$operation->id;
+    }
+}

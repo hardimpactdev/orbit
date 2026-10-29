@@ -63,7 +63,7 @@ The note says that Orbit manages the item. Orbit overwrites changes made in Vaul
 
 ## Sync
 
-The scheduler runs `orbit:vault-sync` every minute while the `vault` extension is on and Vaultwarden is set up. It does not run while `vault` is off, so a published item stays as it was until the switch turns on again. The first run after that creates, rewrites, and deletes whatever changed meanwhile. The sync runs as a job on the [Gateway queue](/reference/gateway-queue#scheduled-work). The command builds the wanted items from the database records and compares them with the published items it recorded:
+The scheduler runs `orbit:vault-sync` every minute while the `vault` extension is on and Vaultwarden is set up. It does not run while `vault` is off, so a published item stays as it was until the switch turns on again. The first run after that creates, rewrites, and deletes whatever changed meanwhile. The scheduler records an Operation for a placed Swamp integration worker. It skips every unfinished Operation, including one waiting for children. The command builds the wanted items from the database records and compares them with the published items it recorded:
 
 | Wanted item | Published item | Action |
 | --- | --- | --- |
@@ -84,9 +84,9 @@ A run that finds nothing to do does not contact Vaultwarden, except once an hour
 
 The collection belongs to Orbit. Do not add items with an `orbit.source` field by hand.
 
-One failed change does not stop the others. The run records its error, keeps that item's state, and the next run retries it. Database operations never wait for Vaultwarden, so an outage delays only the copy. The scheduled command exits with a failure while a run records an error.
+One failed change does not stop the others. The run records its error, keeps that item's state, and the next run retries it. Database operations never wait for Vaultwarden, so an outage delays only the copy. The scheduled command exits with failure while the Gateway records an error. If an Operation remains unclaimed for five minutes, the next tick records `vault.executor_unclaimed`, including its Operation ID, and exits with failure. Status exposes that error even when initial setup is still queued. Starting intent does not update `last_synced_at` or clear an error; successful completion does.
 
-[`vault:sync`](/cli/vault#orbit-vaultsync) runs the same reconcile at once, including the hourly check. It returns the status when every change succeeded. When a change failed, it returns `vault.sync_failed` (502) with `failed`, the number of failed changes, and `first_error`, the code of the first failure. Only one run happens at a time.
+[`vault:sync`](/cli/vault#orbit-vaultsync) runs the same reconcile at once, including the hourly check. It returns HTTP 202 with an Operation; follow that Operation until completion. A failed Operation records its safe error code, and a later run retries. Only one Operation holds the Vault target at a time.
 
 ## Status
 
@@ -115,9 +115,9 @@ All operations need access to the Gateway.
 | Method | Path | Result |
 | --- | --- | --- |
 | `GET` | `/api/v1/vault` | Show the status. |
-| `PUT` | `/api/v1/vault` | Set up, with `url`, `client_id`, `client_secret`, `master_password`, `organization`, and `collection`. Returns the status. |
-| `POST` | `/api/v1/vault/sync` | Run a sync now. Returns the status. |
-| `DELETE` | `/api/v1/vault` | Tear down. Optional body `{"keep_items": true}`. Returns the status. |
+| `PUT` | `/api/v1/vault` | Set up, with `url`, `client_id`, `client_secret`, `master_password`, `organization`, and `collection`. Returns an Operation (202). |
+| `POST` | `/api/v1/vault/sync` | Record a sync Operation (202). |
+| `DELETE` | `/api/v1/vault` | Tear down. Optional body `{"keep_items": true}`. Returns an Operation (202). |
 
 | Error | Status | When |
 | --- | --- | --- |
@@ -168,11 +168,11 @@ Publishing is the feature itself, not the end of work that was already recorded,
 
 ### The account keeps PBKDF2
 
-The Gateway derives the account's keys in PHP, and PHP cannot derive Bitwarden's Argon2id keys.
+The collection program derives the account's keys with PBKDF2 and refuses an account configured for Argon2id.
 
 ### The Gateway encrypts items itself
 
-The Gateway writes the standard Bitwarden format itself instead of driving the Bitwarden CLI. That avoids Node.js on the Gateway and an unlocked session that outlives a run.
+The named collection program writes the standard Bitwarden format instead of driving the Bitwarden CLI. That avoids Node.js and an unlocked session that outlives a run.
 
 ### TLS trusts only Orbit
 
@@ -180,8 +180,18 @@ The Gateway pins the Orbit root CA and accepts only `.orbit` hosts. With the sys
 
 The Gateway reads the CA from `root.pem` in its state directory, next to the root key, and checks it before each request. It never copies the CA to a shared temporary directory, where another local account could plant its own CA under the expected name.
 
-That CA file is the only trust anchor. The system trust store, such as `/etc/ssl/certs`, does not apply, so a certificate from a public CA or any other CA fails the TLS check. The Laravel HTTP client uses cURL with its default CA directory disabled. Each request has a 15-second overall deadline, including connecting, headers, and the body. A peer that sends headers slowly cannot extend that deadline. PHP's HTTP stream wrapper cannot enforce this deadline while it reads headers.
+That CA file is the only trust anchor. The system trust store, such as `/etc/ssl/certs`, does not apply, so a certificate from a public CA or any other CA fails the TLS check. The collection program builds its TLS context with that CA alone and rejects redirects. Each request has a 15-second overall deadline, including connecting, headers, and the body. A peer that sends headers slowly cannot extend that deadline. A process alarm enforces that deadline across the complete request.
 
 ### Removed credentials are deleted
 
 When a credential is removed, its item is deleted permanently instead of moved to the trash, so a removed password does not stay readable.
+
+## Operation execution
+
+Setup, synchronization, and teardown record an Operation and return HTTP 202. Swamp runs the named Vault collection program on the recorded Gateway Node. The Gateway resolves the Operation's secret reference into an encrypted snapshot of the submitted credentials and wanted Database items. Swamp receives only safe metadata and the published item identifiers. Credentials never enter Operation input, results, step output, or Swamp data. Terminal completion deletes its encrypted snapshot and snapshots without an unfinished Operation; only unfinished Operations retain their inputs for recovery.
+
+A retry reconciles the collection by `orbit.source` before it creates an item. It adopts an earlier create whose reply was lost, removes duplicates and orphans, and retains unrelated items. A failed teardown keeps its configuration and ledger for retry. Scheduled synchronization records intent; it does no network work in PHP.
+
+Operation receipts carry only collection identifiers and ledger metadata. Each ledger list contains at most 4,096 entries; each entry string is at most 1 KiB, and the whole result is at most 256 KiB. The Gateway refuses an oversized result before projecting its ledger and stores no partial result.
+
+Merge waits for orbit-swamp#75 to run `operation-integrations` on a placed worker. A queued Operation keeps the Vault target hold until a worker completes it or the operator cancels it; the scheduler never silently drops that intent.
