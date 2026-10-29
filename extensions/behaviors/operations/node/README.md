@@ -22,3 +22,24 @@ Route callers keep the synchronous installer until their cutover. The Gateway
 refuses changed recipe revisions and admissions older than 120 seconds at
 dispatch. Missing data or unexpected outcomes complete failed. Kit C preserves
 bounded `stale_masters` and `deferred` warning lists; the Gateway logs them.
+
+`node.converge` re-applies the Gateway-prepared footprint on its Operation Node.
+The Gateway records exact command payloads and optional Caddy, private DNS,
+residue and AI-router child intents. Swamp sends child keys only, parks the
+parent while a child runs, and resumes against the stamped child identity. The
+installer uses the admitted agent pin. Agent configuration uses the Gateway
+descriptor after the installer receipt proves whether the binary changed.
+
+The listener release and units precede private DNS publication. A fresh listener
+stays inactive until the publication child writes its first catalog. Caddy
+render/validation and residue refusals follow Gateway evidence rules; Swamp
+returns the Gateway's artifact and verified skipped-child lists unchanged.
+
+Protected agent output never enters Swamp resources. A lost configure reply that
+has only a target presence marker stays uncertain. The Gateway's owner-checked
+`orbit:node-agent-rekey` command restores authentication; it does not fabricate
+proof or complete the original footprint.
+
+Run `python3 extensions/behaviors/operations/node/converge_native_test.py` for
+four disposable native restart and child-wait checks. The existing native Node
+checks continue to cover the retained package and settings runners.

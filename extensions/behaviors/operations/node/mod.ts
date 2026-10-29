@@ -8,6 +8,9 @@ import {
   Operation,
 } from "../../operation-runner/mod.ts";
 
+import { converge } from "./converge.ts";
+import { NodeExecution, PendingEffect } from "./execution.ts";
+
 const Result = z.preprocess(
   (value) => Array.isArray(value) && value.length === 0 ? {} : value,
   z.record(z.string(), z.unknown()),
@@ -94,7 +97,23 @@ export function node(
       },
       intent: {
         description: "Reference-only immutable effect input",
-        schema: z.union([Input.shape._php_packages, Storage]),
+        schema: z.union([
+          Input.shape._php_packages,
+          Storage,
+          z.object({ transport: z.string(), name: z.string(), input: Result }),
+        ]),
+        lifetime: "infinite",
+        garbageCollection: 10,
+      },
+      effect: {
+        description: "Safe keyed effect receipt",
+        schema: z.object({ result: Result }),
+        lifetime: "infinite",
+        garbageCollection: 10,
+      },
+      child: {
+        description: "Stamped child identity",
+        schema: z.object({ operation_id: z.number().int().positive() }),
         lifetime: "infinite",
         garbageCollection: 10,
       },
@@ -108,9 +127,13 @@ export function node(
     methods: {
       execute: {
         description:
-          "Execute the admitted Node settings or production PHP packages",
+          "Execute admitted Node settings, footprint or production PHP packages",
         arguments: z.object({
-          kind: z.enum(["node.prepare_php_packages", "node.settings"]),
+          kind: z.enum([
+            "node.prepare_php_packages",
+            "node.settings",
+            "node.converge",
+          ]),
           worker: z.string().min(1),
         }),
         execute: async (
@@ -159,9 +182,10 @@ export function node(
           if (!operation) return { claimed: false };
           if (
             operation.kind !== args.kind ||
-            !["node.prepare_php_packages", "node.settings"].includes(
-              operation.kind,
-            ) ||
+            !["node.prepare_php_packages", "node.settings", "node.converge"]
+              .includes(
+                operation.kind,
+              ) ||
             (id !== undefined && operation.id !== id)
           ) throw new ExecutorError("operation.execution_forbidden");
           if (id === undefined) {
@@ -186,6 +210,47 @@ export function node(
           }
           if (operation.node_id === null) {
             throw new ExecutorError("operation.target_missing");
+          }
+          if (operation.kind === "node.converge") {
+            const execution = new NodeExecution(
+              operation,
+              executor,
+              args.worker,
+              ctx,
+            );
+            try {
+              const outcome = await converge(execution, ctx);
+              if ("waiting" in outcome) {
+                return {
+                  claimed: true,
+                  operationId: operation.id,
+                  status: "waiting",
+                };
+              }
+              const handle = await ctx.writeResource(
+                "receipt",
+                `operation-${path}`,
+                outcome,
+              );
+              await execution.post("complete", outcome);
+              return {
+                claimed: true,
+                operationId: operation.id,
+                status: outcome.status,
+                dataHandles: [handle],
+              };
+            } catch (error) {
+              if (error instanceof PendingEffect) {
+                return {
+                  claimed: true,
+                  operationId: operation.id,
+                  status: "waiting",
+                };
+              }
+              throw error;
+            } finally {
+              execution.close();
+            }
           }
           const settings = operation.kind === "node.settings";
           if (settings && operation.input.node_id !== operation.node_id) {
