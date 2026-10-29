@@ -89,6 +89,9 @@ final readonly class InstanceLifecycleState
 
     private function expectedBranch(Operation $operation, Instance $instance): string
     {
+        if ($operation->kind === 'instance.clone') {
+            return ValidatedData::string($operation->input['branch']);
+        }
         $name = $operation->input['name'] ?? $instance->name;
 
         return ValidatedData::string($operation->input['branch_override'] ?? ($name === 'default' ? $operation->input['default_branch'] : $name));
@@ -117,9 +120,10 @@ final readonly class InstanceLifecycleState
             throw new ResourceOperationException('app-dev.source_evidence_changed', 'The development source classification changed after provisioning began.', 409);
         }
         if ($instance->provisioning_step === null || $instance->provisioning_step === 'clone-source-resolved') {
-            $runtime = [];
+            $runtime = $operation->kind === 'instance.clone' && $profile->phpVersion !== null && $instance->servesPhp()
+                ? ProductionPhpRuntimeIdentity::forProvisioning($instance, $profile->phpVersion)->attributes() : [];
             $instance->update(['selected_php_version' => $profile->phpVersion, 'source_is_laravel' => $profile->laravel,
-                ...$runtime, 'provisioning_step' => 'php-selected', 'failed_step' => null, 'error_code' => null]);
+                ...$runtime, 'provisioning_step' => $operation->kind === 'instance.clone' ? 'clone-source-classified' : 'php-selected', 'failed_step' => null, 'error_code' => null]);
         }
 
         return ['php_version' => $profile->phpVersion, 'laravel' => $profile->laravel];
