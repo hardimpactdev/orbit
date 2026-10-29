@@ -3,7 +3,7 @@ title: "Node settings"
 description: "Typed Node settings for the apps root and operator-owned task VM hosts, with validation and explicit host configuration."
 covers:
   - apps/gateway/app/Domain/Nodes/Storage/**
-  - apps/gateway/app/{Actions/Nodes/UpdateNodeSettingsAction,Providers/TaskVmServiceProvider}.php
+  - apps/gateway/app/{Actions/Nodes/UpdateNodeSettingsAction,Domain/Nodes/NodeSettingsOperationCompletion,Providers/TaskVmServiceProvider}.php
   - apps/gateway/app/Infrastructure/Nodes/AgentNodeStorageRootPreparer.php
   - apps/gateway/app/Data/Nodes/{NodeSettingsData,NodeStorageAppsData,NodeTaskVmsData}.php
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
@@ -15,6 +15,8 @@ covers:
 # Node settings
 
 A Node has typed settings for its development apps root (`apps.path`) and its task VM host configuration (`task_vms`). Set them with `node:add` or `node:settings`. [`node`](/cli/node#orbit-nodesettings) lists the commands. The operator owns task VM host configuration; an `app-dev` role alone never makes a Node a task VM host.
+
+A settings change that must inspect or prepare an apps root records a `node.settings` Operation and returns HTTP 202. Swamp runs the existing `node.prepare-storage-root` command. The Gateway stores the settings only after a proven successful receipt. A failed or cancelled Operation preserves the previous settings. State-only patches, such as task VM host intent, stay synchronous in the Gateway. Node enrollment keeps its synchronous storage preparation until its parent Operation cutover. A settings completion changes only the requested members and preserves other updates made while it was queued.
 
 ## Set the apps root
 

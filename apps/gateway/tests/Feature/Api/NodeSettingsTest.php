@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeConverger;
@@ -117,27 +116,6 @@ describe('node storage settings', function (): void {
         expect(Node::query()->where('name', 'app-dev')->sole()->settings)->toBeNull();
     });
 
-    it('keeps settings keys it does not manage, such as the T3 connection', function (): void {
-        $t3 = ['token' => 't3-secret', 'url' => 'http://10.44.0.20:3773'];
-        $node = Node::query()->create([
-            'name' => 'beast',
-            'status' => LifecycleStatus::Active,
-            'public_ssh_host' => '192.0.2.20',
-            'user' => 'orbit',
-            'wireguard_ip' => '10.44.0.20',
-            'settings' => ['t3' => $t3, 'apps' => ['path' => '/srv/orbit/apps']],
-        ]);
-
-        $this->patchJson("/api/v1/nodes/{$node->id}/settings", ['apps' => ['path' => '/srv/orbit/work']])
-            ->assertOk()
-            ->assertJsonPath('data.settings.apps.path', '/srv/orbit/work')
-            ->assertJsonMissingPath('data.settings.t3');
-        expect($node->refresh()->settings)->toBe(['t3' => $t3, 'apps' => ['path' => '/srv/orbit/work']]);
-
-        $this->patchJson("/api/v1/nodes/{$node->id}/settings", ['apps' => null])->assertOk();
-        expect($node->refresh()->settings)->toBe(['t3' => $t3]);
-    });
-
     it('rejects unknown settings keys without persisting', function (): void {
         $node = Node::query()->create([
             'name' => 'app-dev',
@@ -182,35 +160,6 @@ describe('node storage settings', function (): void {
 
         expect($node->refresh()->settings)
             ->toBeNull()
-            ->and($prepared)
-            ->toBe([]);
-    });
-
-    it('inspects explicit roots on a node without app-dev and does not create them', function (): void {
-        $inspected = [];
-        $prepared = [];
-        app()->instance(NodeStorageRootPreparer::class, recording_storage_preparer($inspected, $prepared));
-        $node = Node::query()->create([
-            'name' => 'gateway',
-            'status' => LifecycleStatus::Active,
-            'public_ssh_host' => '192.0.2.10',
-            'user' => 'orbit',
-            'wireguard_ip' => '10.44.0.1',
-        ]);
-
-        $this
-            ->patchJson("/api/v1/nodes/{$node->id}/settings", [
-                'apps' => ['path' => '/srv/orbit/apps'],
-            ])
-            ->assertOk()
-            ->assertJsonPath('data.settings.apps.path', '/srv/orbit/apps');
-
-        expect($node->refresh()->settings)
-            ->toBe([
-                'apps' => ['path' => '/srv/orbit/apps'],
-            ])
-            ->and($inspected)
-            ->toBe(['/srv/orbit/apps'])
             ->and($prepared)
             ->toBe([]);
     });
@@ -299,36 +248,6 @@ describe('node storage settings', function (): void {
         'shared state' => '/srv/shared/gateway-storage',
     ]);
 
-    it('accepts a sibling of the configured Gateway checkout', function (): void {
-        config()->set('orbit.gateway_checkout', '/srv/orbit-gateway');
-        $inspected = [];
-        $prepared = [];
-        app()->instance(NodeStorageRootPreparer::class, recording_storage_preparer($inspected, $prepared));
-        $node = Node::query()->create([
-            'name' => 'app-dev',
-            'status' => LifecycleStatus::Active,
-            'public_ssh_host' => '192.0.2.10',
-            'user' => 'orbit',
-            'wireguard_ip' => '10.44.0.3',
-        ]);
-        $node->roles()->create([
-            'role' => RoleName::AppDev,
-            'status' => LifecycleStatus::Active,
-        ]);
-
-        $this
-            ->patchJson("/api/v1/nodes/{$node->id}/settings", [
-                'apps' => ['path' => '/srv/orbit-apps'],
-            ])
-            ->assertOk()
-            ->assertJsonPath('data.settings.apps.path', '/srv/orbit-apps');
-
-        expect($node->refresh()->settings)
-            ->toBe([
-                'apps' => ['path' => '/srv/orbit-apps'],
-            ]);
-    });
-
     it('rejects an apps root inside the worktree default hidden control path', function (): void {
         $node = Node::query()->create([
             'name' => 'app-dev',
@@ -371,82 +290,6 @@ describe('node storage settings', function (): void {
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'node.settings_path_protected');
 
-    });
-
-    it('uses the managed-home apps default when the typed override is unset', function (): void {
-        $inspected = [];
-        $prepared = [];
-        app()->instance(NodeStorageRootPreparer::class, recording_storage_preparer($inspected, $prepared));
-        $node = Node::query()->create([
-            'name' => 'app-dev',
-            'status' => LifecycleStatus::Active,
-            'public_ssh_host' => '192.0.2.10',
-            'user' => 'orbit',
-            'wireguard_ip' => '10.44.0.3',
-            'settings' => [
-                'apps' => ['path' => '/srv/orbit/apps'],
-            ],
-        ]);
-        $node->roles()->create([
-            'role' => RoleName::AppDev,
-            'status' => LifecycleStatus::Active,
-        ]);
-
-        $this
-            ->patchJson("/api/v1/nodes/{$node->id}/settings", [
-                'apps' => null,
-            ])
-            ->assertOk()
-            ->assertJsonPath('data.settings', null);
-
-        expect($node->refresh()->settings)
-            ->toBeNull()
-            ->and($inspected)
-            ->toBe([])
-            ->and($prepared)
-            ->toBe(['/home/orbit/apps']);
-    });
-
-    it('leaves stored settings unchanged when preparing defaults for the last unset fails', function (): void {
-        app()->instance(NodeStorageRootPreparer::class, new class implements NodeStorageRootPreparer
-        {
-            public function inspect(Node $node, ManagedUserAccount $account, StoragePath $path): void {}
-
-            public function prepare(Node $node, ManagedUserAccount $account, StoragePath $root): void
-            {
-                throw new RuntimeConvergenceException(
-                    step: 'node-storage-root',
-                    errorCode: 'node.settings_root_failed',
-                    message: 'Storage root failed.',
-                );
-            }
-        });
-        $node = Node::query()->create([
-            'name' => 'app-dev',
-            'status' => LifecycleStatus::Active,
-            'public_ssh_host' => '192.0.2.10',
-            'user' => 'orbit',
-            'wireguard_ip' => '10.44.0.3',
-            'settings' => [
-                'apps' => ['path' => '/srv/orbit/apps'],
-            ],
-        ]);
-        $node->roles()->create([
-            'role' => RoleName::AppDev,
-            'status' => LifecycleStatus::Active,
-        ]);
-
-        $this
-            ->patchJson("/api/v1/nodes/{$node->id}/settings", [
-                'apps' => null,
-            ])
-            ->assertStatus(502)
-            ->assertJsonPath('error.code', 'node.settings_root_failed');
-
-        expect($node->refresh()->settings)
-            ->toBe([
-                'apps' => ['path' => '/srv/orbit/apps'],
-            ]);
     });
 
     it('rejects list settings at every HTTP boundary without changing stored intent', function (

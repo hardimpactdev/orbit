@@ -8,7 +8,9 @@ use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Responses\Nodes\AppsSettings;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodeSettings;
+use Orbit\Sdk\Responses\Nodes\NodeSettingsMutationResponse;
 use Orbit\Sdk\Responses\Nodes\TaskVmsSettings;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
@@ -27,6 +29,7 @@ final class UpdateNodeSettingsRequest extends GatewayRequest implements HasBody
         private readonly ?AppsSettings $apps = null,
         private readonly bool $hasTaskVms = false,
         private readonly ?TaskVmsSettings $taskVms = null,
+        private readonly ?string $idempotencyKey = null,
     ) {}
 
     public static function fromSettings(int $nodeId, NodeSettings $settings): self
@@ -45,12 +48,20 @@ final class UpdateNodeSettingsRequest extends GatewayRequest implements HasBody
         return "/api/v1/nodes/{$this->nodeId}/settings";
     }
 
-    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): NodeResponse
+    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): NodeSettingsMutationResponse
     {
         $data = $this->unwrapData($response);
         $requestId = $this->successRequestId($response);
 
-        return NodeResponse::fromGatewayData($data, $requestId);
+        return new NodeSettingsMutationResponse($response->status() === 202
+            ? OperationResponse::fromGatewayData($data, $requestId)
+            : NodeResponse::fromGatewayData($data, $requestId));
+    }
+
+    /** @return array<string, string> */
+    protected function defaultHeaders(): array
+    {
+        return $this->idempotencyKey === null ? [] : ['Idempotency-Key' => $this->idempotencyKey];
     }
 
     /** @return array<string, mixed> */

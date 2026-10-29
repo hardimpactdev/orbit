@@ -170,12 +170,14 @@ After a rename, callers must use the new name or the numeric ID. The WireGuard h
 Set the apps root of a Node, the directory under which the Gateway creates development Instance checkouts.
 
 ```bash
-orbit node:settings <node> --setting=apps.path:/mnt/apps [--json]
+orbit node:settings <node> --setting=apps.path:/mnt/apps [--idempotency-key=<key>] [--json]
 ```
 
 Configure a task VM host with `--setting='task_vms:{"cidr":"10.251.77.0/24","max_vms":4,"pool":"orbit-tasks","image_alias":"orbit-task-base"}'`. The JSON object supports the [typed host fields](/reference/node-settings#configure-a-task-vm-host); it has no `node_id` because the selected Node supplies its identity. This example is not the live configuration of any host. Preserve the host's current values when changing it. Use `--setting=task_vms:null` to remove host intent after destroying its task VMs. An `app-dev` role alone never makes a Node a task VM host.
 
 The command needs at least one `--setting`. It sends `{"apps":{"path":"/mnt/apps"}}` to the settings API, without a `settings` wrapper. An empty value unsets the path: `--setting=apps.path:` sends `{"apps":{"path":null}}`. The [API reference](/api/overview) and [MCP](/reference/mcp) publish the same nullable path inside a closed `apps` object. A change never moves an existing checkout. [Node settings](/reference/node-settings#validation) lists the validation rules and failure codes.
+
+When the apps-root change needs a filesystem check, the API returns a `node.settings` Operation. The CLI follows it and returns its final receipt. Reuse `--idempotency-key` to recover the same admission after a lost reply. A task VM host settings patch remains a synchronous Node response.
 
 ## orbit node:wireguard-key
 
