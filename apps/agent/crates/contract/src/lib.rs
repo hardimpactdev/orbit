@@ -95,6 +95,7 @@ pub struct Context {
     deadline: Instant,
     binary_input: std::sync::Mutex<Option<std::fs::File>>,
     effect_masks: Option<Vec<String>>,
+    effect_boolean_masks: Vec<bool>,
     effect_identity: Option<(String, i64)>,
 }
 impl Context {
@@ -104,6 +105,7 @@ impl Context {
             deadline,
             binary_input: std::sync::Mutex::new(None),
             effect_masks: None,
+            effect_boolean_masks: Vec::new(),
             effect_identity: None,
         }
     }
@@ -114,6 +116,14 @@ impl Context {
     }
     pub fn effect_masks(&self) -> Option<&[String]> {
         self.effect_masks.as_deref()
+    }
+    /// Typed boolean masks cannot be inferred from string or numeric masks.
+    pub fn with_effect_boolean_masks(mut self, masks: Vec<bool>) -> Self {
+        self.effect_boolean_masks = masks;
+        self
+    }
+    pub fn effect_boolean_masks(&self) -> &[bool] {
+        &self.effect_boolean_masks
     }
     /// Original Gateway Operation identity, independent of reused numeric database IDs.
     pub fn with_effect_identity(mut self, nonce: String, created_at: i64) -> Self {

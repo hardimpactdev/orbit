@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Actions\Operations;
 
+use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationExecutors;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationRunner;
+use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStepStatus;
 use App\Domain\Operations\OperationStore;
 use App\Models\Operation;
 use Illuminate\Support\Carbon;
@@ -22,23 +25,56 @@ final readonly class CancelOperationAction
 
     public function execute(Operation $operation, bool $targetEnding = false): Operation
     {
-        if ($operation->status->terminal()) {
-            return $operation;
-        }
-
-        if ($operation->cancel_requested_at === null) {
-            $this->store->change($operation, ['cancel_requested_at' => Carbon::now()]);
-        }
-
-        DB::transaction(function () use ($operation): void {
-            if ($this->store->cancelQueued($operation)) {
-                app(OperationExecutors::class)->completion($operation->kind)?->complete($operation, OperationOutcome::cancelled());
+        return DB::transaction(function () use ($operation, $targetEnding): Operation {
+            $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
+            if ($operation->status->terminal()) {
+                return $operation;
             }
-        });
-        if (! app(OperationExecutors::class)->swamp($operation->kind)) {
-            $this->runner->cancelWaiting($operation, $targetEnding);
-        }
+            $now = Carbon::now();
+            $descendants = [];
+            $frontier = [$operation->id];
+            while ($frontier !== []) {
+                $children = Operation::query()->whereIn('parent_operation_id', $frontier)->lockForUpdate()->get();
+                $frontier = $children->modelKeys();
+                foreach ($children as $child) {
+                    if (! $child->status->terminal()) {
+                        $descendants[] = $child;
+                    }
+                }
+            }
+            foreach ([$operation, ...$descendants] as $member) {
+                if ($member->cancel_requested_at === null) {
+                    $this->store->change($member, ['cancel_requested_at' => $now]);
+                }
+            }
+            foreach (array_reverse($descendants) as $descendant) {
+                $this->settleUnstarted($descendant);
+            }
+            $this->settleUnstarted($operation);
+            $executors = app(OperationExecutors::class);
+            if (! $operation->status->terminal() && $operation->status === OperationStatus::Waiting
+                && isset($operation->state['executor_assistance'])
+                && ! app(OperationChildren::class)->hasProvenNonterminalChild($operation)) {
+                $this->store->change($operation, ['status' => OperationStatus::Cancelled, 'worker' => null,
+                    'current_step' => null, 'lock_key' => null, 'finished_at' => $now, 'error_code' => 'operation.cancelled']);
+                foreach ($operation->steps()->whereIn('status', [OperationStepStatus::Pending->value, OperationStepStatus::Running->value, OperationStepStatus::Waiting->value])->get() as $step) {
+                    $this->store->change($operation, [], $step, ['status' => OperationStepStatus::Cancelled, 'finished_at' => $now, 'error_code' => 'operation.cancelled']);
+                }
+                $executors->completion($operation->kind)?->complete($operation, OperationOutcome::cancelled());
+            }
+            if (! $executors->swamp($operation->kind)) {
+                $this->runner->cancelWaiting($operation, $targetEnding);
+            }
 
-        return $operation->refresh();
+            return $operation->refresh();
+        });
+    }
+
+    private function settleUnstarted(Operation $operation): void
+    {
+        if ($this->store->cancelQueued($operation)) {
+            $this->store->change($operation, ['error_code' => 'operation.cancelled']);
+            app(OperationExecutors::class)->completion($operation->kind)?->complete($operation, OperationOutcome::cancelled());
+        }
     }
 }

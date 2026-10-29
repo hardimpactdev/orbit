@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Operations;
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
@@ -135,8 +136,11 @@ final readonly class OperationChildren
     /** @return array<string,mixed> */
     private function identity(Operation $child): array
     {
+        $snapshot = $child->child_admission['admitted'] ?? null;
+        $admittedNode = is_array($snapshot) ? ($snapshot['node_id'] ?? null) : null;
+
         return ['parent_operation_id' => $child->parent_operation_id, 'key' => $child->child_key,
-            'kind' => $child->kind, 'node_id' => $child->node_id, 'target_type' => $child->target_type,
+            'kind' => $child->kind, 'node_id' => $child->node_id ?? $admittedNode, 'target_type' => $child->target_type,
             'target_id' => $child->target_id, 'input' => $child->input, 'run_constraints' => $child->run_constraints ?? []];
     }
 
@@ -146,12 +150,41 @@ final readonly class OperationChildren
         if ($child->parent_operation_id !== $parent->id || $child->child_key === null || $snapshot === null
             || $child->child_fingerprint !== OperationChildIntent::fingerprint($snapshot)
             || ! is_array($snapshot['admitted'] ?? null)
+            || ($child->node_id === null && is_int($snapshot['admitted']['node_id'] ?? null) && Node::query()->whereKey($snapshot['admitted']['node_id'])->exists())
             || ! OperationChildIntent::same($snapshot['admitted'], $this->identity($child))) {
             throw new ResourceOperationException('operation.child_unproven', 'The child does not match its recorded admission.', 409);
         }
     }
 
-    /** A cancelled ancestor admits only a stamped compensation branch. */
+    /** Original Node identity survives the live foreign key's ON DELETE SET NULL. */
+    public function nodeId(Operation $operation): ?int
+    {
+        if ($operation->parent_operation_id === null) {
+            $snapshot = $operation->state['executor_target'] ?? null;
+            if (! is_array($snapshot)) {
+                return $operation->node_id;
+            }
+            $id = $snapshot['node_id'] ?? null;
+            if (($snapshot['target_type'] ?? null) !== $operation->target_type || ($snapshot['target_id'] ?? null) !== $operation->target_id
+                || ($operation->node_id !== null && $operation->node_id !== $id)
+                || ($operation->node_id === null && $id !== null && Node::query()->whereKey($id)->exists())) {
+                throw new ResourceOperationException('operation.child_unproven', 'The Operation target no longer matches admission.', 409);
+            }
+
+            return $id === null ? null : ValidatedData::integer($id);
+        }
+        $parent = Operation::query()->find($operation->parent_operation_id);
+        if ($parent === null) {
+            throw new ResourceOperationException('operation.child_unproven', 'The stamped parent is unavailable.', 409);
+        }
+        $this->verify($parent, $operation);
+        $admitted = ValidatedData::object($operation->child_admission['admitted'] ?? []);
+        $id = $admitted['node_id'] ?? null;
+
+        return $id === null ? null : ValidatedData::integer($id);
+    }
+
+    /** Every ancestor must still own the stamped child admission. Cancellation is cascaded locally. */
     private function assertAncestors(Operation $operation): void
     {
         while ($operation->parent_operation_id !== null) {
@@ -160,9 +193,6 @@ final readonly class OperationChildren
                 throw new ResourceOperationException('operation.child_unproven', 'The parent no longer holds this child admission.', 409);
             }
             $this->verify($parent, $operation);
-            if ($parent->cancel_requested_at !== null && ! $this->compensationAllowed($parent, $operation->kind)) {
-                throw new ResourceOperationException('operation.cancelled', 'An ancestor cancelled this child branch.', 409);
-            }
             $operation = $parent;
         }
     }
@@ -239,7 +269,7 @@ final readonly class OperationChildren
         return array_values($parent->children()->get()->map(function (Operation $child) use ($parent): array {
             $this->verify($parent, $child);
 
-            return ['id' => $child->id, 'key' => $child->child_key, 'kind' => $child->kind, 'node_id' => $child->node_id,
+            return ['id' => $child->id, 'key' => $child->child_key, 'kind' => $child->kind, 'node_id' => $this->nodeId($child),
                 'status' => $child->status->value, 'error_code' => $child->error_code,
                 'result' => $child->result === null ? null : $this->contract->result($child, $child->result)];
         })->all());
@@ -309,6 +339,22 @@ final readonly class OperationChildren
         }
 
         return [...$record, 'children' => $children];
+    }
+
+    /** A flagged parent can be explicitly abandoned only after every provable child settles. */
+    public function hasProvenNonterminalChild(Operation $parent): bool
+    {
+        foreach ($parent->children()->whereNotIn('status', [OperationStatus::Succeeded->value, OperationStatus::Failed->value, OperationStatus::Cancelled->value])->get() as $child) {
+            try {
+                $this->verify($parent, $child);
+
+                return true;
+            } catch (ResourceOperationException) {
+                // An invalid admission is the assistance case, never proof of active child ownership.
+            }
+        }
+
+        return false;
     }
 
     public function assertNoPending(Operation $parent): void

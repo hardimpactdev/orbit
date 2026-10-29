@@ -441,7 +441,6 @@ fn infrastructure_refusals_never_fill_the_result_slot() {
     for error in [
         "agent.deadline_exceeded",
         "agent.supervisor_failed",
-        "agent.target_busy",
         "agent.effect_receipt_unavailable",
         "agent.effect_unknown",
     ] {
@@ -550,8 +549,9 @@ fn restored_numeric_ids_cannot_adopt_receipts_from_another_operation_nonce() {
 fn masks_numbers_and_booleans_before_persisting_a_receipt() {
     let fixture = Fixture::new();
     let store = fixture.store();
-    let masks =
-        context().with_effect_masks(vec!["731".into(), "1".into(), "4.25".into(), "82".into()]);
+    let masks = context()
+        .with_effect_masks(vec!["731".into(), "1".into(), "4.25".into(), "82".into()])
+        .with_effect_boolean_masks(vec![true]);
     store.execute("test.effect", "op-42.scalars", "input", &masks, || {
         Outcome::Ok(
             json!({"integer":731,"boolean":true,"float":4.25,"whole_float":82.0,"public":false}),
@@ -653,4 +653,95 @@ fn pruning_cannot_unlink_a_lock_while_an_effect_holds_the_namespace() {
     assert!(store.path("op-42.active").exists());
     release.send(()).unwrap();
     assert_eq!(code(thread.join().unwrap()), "ok");
+}
+
+#[test]
+fn numeric_and_string_masks_do_not_hide_unrelated_boolean_results() {
+    let fixture = Fixture::new();
+    let store = fixture.store();
+    let ctx = context().with_effect_masks(vec!["1".into(), "true".into()]);
+    let outcome = store.execute("test.effect", "op-42.public-boolean", "input", &ctx, || {
+        Outcome::Ok(json!({"ready":true,"secret":1,"string":"true"}))
+    });
+    assert_eq!(
+        outcome,
+        Outcome::Ok(json!({"ready":true,"secret":"[REDACTED]","string":"[REDACTED]"}))
+    );
+    assert_eq!(
+        store
+            .receipt("test.effect", "op-42.public-boolean")
+            .unwrap_or_else(|_| panic!("receipt"))
+            .result,
+        Some(outcome.to_json())
+    );
+}
+
+#[test]
+fn a_proven_prestart_refusal_inside_the_effect_removes_intent_and_the_key_runs_once() {
+    for error in super::super::NOT_STARTED_ERRORS
+        .iter()
+        .chain(super::super::PREFLIGHT_ERRORS)
+    {
+        let fixture = Fixture::new();
+        let store = fixture.store();
+        let key = "op-42.prestart";
+        let ctx = context();
+        assert_eq!(
+            code(store.execute("test.effect", key, "input", &ctx, || {
+                assert!(
+                    store.path(key).exists(),
+                    "the refusal happens after saving intent"
+                );
+                Outcome::refused(error, "Nothing started.", json!({}))
+            })),
+            *error
+        );
+        assert!(!store.path(key).exists());
+        assert_eq!(
+            store
+                .receipt("test.effect", key)
+                .unwrap_or_else(|_| panic!("receipt"))
+                .state,
+            "unknown"
+        );
+        let calls = AtomicUsize::new(0);
+        let result = store.execute("test.effect", key, "input", &ctx, || {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Outcome::Ok(json!({"ran":true}))
+        });
+        assert_eq!(result, Outcome::Ok(json!({"ran":true})));
+        assert_eq!(
+            store.execute("test.effect", key, "input", &ctx, || panic!(
+                "must not repeat"
+            )),
+            result
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[test]
+fn a_failed_prestart_intent_removal_cannot_report_that_the_key_is_unused() {
+    let fixture = Fixture::new();
+    let store = fixture.store();
+    let key = "op-42.failed-removal";
+    let ctx = context();
+    let path = store.path(key);
+    let original = fixture.0.join("intent");
+    assert_eq!(
+        code(store.execute("test.effect", key, "input", &ctx, || {
+            fs::rename(&path, &original).unwrap();
+            fs::create_dir(&path).unwrap();
+            Outcome::refused("agent.supervisor_not_ready", "Nothing started.", json!({}))
+        })),
+        "agent.effect_receipt_unavailable"
+    );
+    fs::remove_dir(&path).unwrap();
+    fs::rename(&original, &path).unwrap();
+    assert_eq!(
+        code(store.execute("test.effect", key, "input", &ctx, || panic!(
+            "unproven cleanup cannot authorize replay"
+        ))),
+        "agent.effect_unknown"
+    );
 }

@@ -77,6 +77,7 @@ final readonly class OperationStore
                     'node_id' => $nodeId,
                     'lock_key' => $lockKey,
                     'input' => $input,
+                    'state' => ['executor_target' => ['node_id' => $nodeId, 'target_type' => $targetType, 'target_id' => $targetId]],
                     'status' => OperationStatus::Queued,
                     'sequence' => 1,
                     'attempts' => 0,

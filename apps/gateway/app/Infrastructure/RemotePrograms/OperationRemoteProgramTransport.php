@@ -7,6 +7,7 @@ namespace App\Infrastructure\RemotePrograms;
 use App\Domain\Operations\EffectReceiptMetadata;
 use App\Domain\Operations\OperationEffectTransport;
 use App\Domain\Operations\OperationExecutionContract;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Operation;
 
@@ -21,7 +22,7 @@ final readonly class OperationRemoteProgramTransport implements OperationEffectT
 
     public function run(Operation $operation, array $run, #[\SensitiveParameter] array $input): array
     {
-        $result = $this->runner->run(Node::query()->findOrFail($operation->node_id), $this->catalog->program($run['name']), $input, $run['effect_key'], effect: EffectReceiptMetadata::fromRun($run));
+        $result = $this->runner->run((Node::query()->find($operation->node_id) ?? throw new ResourceOperationException('operation.target_missing', 'The admitted target Node no longer exists.', 409)), $this->catalog->program($run['name']), $input, $run['effect_key'], effect: EffectReceiptMetadata::fromRun($run));
 
         return ['outcome' => $result->outcome, 'data' => $result->data, 'log' => $result->log];
     }
@@ -33,6 +34,6 @@ final readonly class OperationRemoteProgramTransport implements OperationEffectT
 
     public function receipt(Operation $operation, array $run, #[\SensitiveParameter] array $input): array
     {
-        return $this->runner->receipt(Node::query()->findOrFail($operation->node_id), $this->catalog->program($run['name']), $run['effect_key']);
+        return $this->runner->receipt((Node::query()->find($operation->node_id) ?? throw new ResourceOperationException('operation.target_missing', 'The admitted target Node no longer exists.', 409)), $this->catalog->program($run['name']), $run['effect_key']);
     }
 }

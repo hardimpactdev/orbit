@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Operations;
 
 use App\Domain\Shared\ResourceOperationException;
+use Illuminate\Support\Arr;
 use JsonSerializable;
 
 /** Request-memory-only masks for the original invocation. No source resolution on recovery. */
@@ -17,8 +18,33 @@ final class EffectReceiptMetadata implements JsonSerializable
 
     /** @param list<string> $masks
      * @param  array{nonce:string,created_at:int}|null  $identity
+     * @param  list<bool>  $booleans
      */
-    public function __construct(#[\SensitiveParameter] private readonly array $masks, private readonly ?array $identity = null) {}
+    public function __construct(#[\SensitiveParameter] private readonly array $masks, private readonly ?array $identity = null, #[\SensitiveParameter] private readonly array $booleans = []) {}
+
+    /** @param list<string> $masks
+     * @param  array{nonce:string,created_at:int}  $identity
+     * @param  array<string,mixed>  $input
+     * @param  list<string>  $parameters
+     */
+    public static function hydrated(#[\SensitiveParameter] array $masks, array $identity, #[\SensitiveParameter] array $input, array $parameters): self
+    {
+        $booleans = [];
+        $collect = static function (mixed $value) use (&$collect, &$booleans): void {
+            if (is_bool($value)) {
+                $booleans[] = $value;
+            } elseif (is_array($value)) {
+                foreach ($value as $item) {
+                    $collect($item);
+                }
+            }
+        };
+        foreach ($parameters as $parameter) {
+            $collect(Arr::get($input, $parameter));
+        }
+
+        return new self($masks, $identity, array_values(array_unique($booleans, SORT_REGULAR)));
+    }
 
     /** @return array{nonce:string,created_at:int} */
     public function identity(): array
@@ -65,10 +91,10 @@ final class EffectReceiptMetadata implements JsonSerializable
         return [...$input, self::InputKey => $this];
     }
 
-    /** @return array{redactions: list<string>,nonce:string,created_at:int} Protected stdin only. */
+    /** @return array{redactions: list<string>,booleans:list<bool>,nonce:string,created_at:int} Protected stdin only. */
     public function envelope(): array
     {
-        return ['redactions' => $this->masks, ...$this->identity()];
+        return ['redactions' => $this->masks, 'booleans' => $this->booleans, ...$this->identity()];
     }
 
     /** @return array{protected: true} */

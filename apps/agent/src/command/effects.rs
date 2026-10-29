@@ -329,7 +329,7 @@ impl Store {
                 Err(rustix::io::Errno::WOULDBLOCK) if !context.remaining().is_zero() => {
                     std::thread::sleep(context.remaining().min(Duration::from_millis(25)))
                 }
-                _ => return Err(refused("agent.target_busy")),
+                _ => return Err(refused("agent.effect_unknown")),
             }
         }
         action()
@@ -346,22 +346,22 @@ impl Store {
             }
             value
         }
-        fn value(input: Value, masks: &[String]) -> Value {
+        fn value(input: Value, masks: &[String], booleans: &[bool]) -> Value {
             match input {
                 Value::String(string) => Value::String(text(string, masks)),
-                Value::Array(items) => {
-                    Value::Array(items.into_iter().map(|item| value(item, masks)).collect())
-                }
+                Value::Array(items) => Value::Array(
+                    items
+                        .into_iter()
+                        .map(|item| value(item, masks, booleans))
+                        .collect(),
+                ),
                 Value::Object(fields) => Value::Object(
                     fields
                         .into_iter()
-                        .map(|(key, item)| (text(key, masks), value(item, masks)))
+                        .map(|(key, item)| (text(key, masks), value(item, masks, booleans)))
                         .collect(),
                 ),
-                Value::Bool(boolean)
-                    if masks.contains(&boolean.to_string())
-                        || (boolean && masks.contains(&"1".to_string())) =>
-                {
+                Value::Bool(boolean) if booleans.contains(&boolean) => {
                     Value::String("[REDACTED]".into())
                 }
                 Value::Number(number)
@@ -378,7 +378,9 @@ impl Store {
             }
         }
         Ok(match outcome {
-            Outcome::Ok(result) => Outcome::Ok(value(result, masks)),
+            Outcome::Ok(result) => {
+                Outcome::Ok(value(result, masks, context.effect_boolean_masks()))
+            }
             Outcome::Refused {
                 code,
                 message,
@@ -386,7 +388,7 @@ impl Store {
             } => Outcome::Refused {
                 code: text(code, masks),
                 message: text(message, masks),
-                details: value(details, masks),
+                details: value(details, masks, context.effect_boolean_masks()),
             },
         })
     }
@@ -415,53 +417,68 @@ impl Store {
         context: &Context,
         effect: impl FnOnce() -> Outcome,
     ) -> Outcome {
-        let result = Self::identity(context).and_then(|(nonce, created_at)| self.locked(key, context, || {
-            if let Some(stored) = self.load(key)? {
-                if stored.command != command || stored.fingerprint != fingerprint
-                    || stored.effect_nonce.as_deref() != Some(nonce) || stored.effect_created_at != Some(created_at) {
-                    return Err(refused("agent.effect_conflict"));
+        let result = Self::identity(context).and_then(|(nonce, created_at)| {
+            self.locked(key, context, || {
+                if let Some(stored) = self.load(key)? {
+                    if stored.command != command
+                        || stored.fingerprint != fingerprint
+                        || stored.effect_nonce.as_deref() != Some(nonce)
+                        || stored.effect_created_at != Some(created_at)
+                    {
+                        return Err(refused("agent.effect_conflict"));
+                    }
+                    if stored.response.is_some() && !stored.sanitized {
+                        return Err(refused("agent.effect_unsanitized"));
+                    }
+                    return Ok(stored
+                        .response
+                        .unwrap_or_else(|| refused("agent.effect_unknown")));
                 }
-                if stored.response.is_some() && !stored.sanitized {
-                    return Err(refused("agent.effect_unsanitized"));
+                if context.effect_masks().is_none() {
+                    return Err(refused("agent.effect_sanitization_required"));
                 }
-                return Ok(stored
-                    .response
-                    .unwrap_or_else(|| refused("agent.effect_unknown")));
-            }
-            if context.effect_masks().is_none() {
-                return Err(refused("agent.effect_sanitization_required"));
-            }
-            let mut stored = Stored {
-                effect_key: key.into(),
-                command: command.into(),
-                fingerprint: fingerprint.into(),
-                response: None,
-                result_digest: None,
-                finished_at: None,
-                running_until: None,
-                sanitized: false,
-                effect_nonce: Some(nonce.into()),
-                effect_created_at: Some(created_at),
-            };
-            self.save(&stored)?;
-            let outcome = effect();
-            if matches!(&outcome, Outcome::Refused { code, .. } if super::COMMON_ERRORS.contains(&code.as_str())) {
-                return Self::sanitize(outcome, context);
-            }
-            let outcome = Self::sanitize(outcome, context)?;
-            stored.sanitized = true;
-            stored.result_digest = Some(digest(
-                &serde_json::to_vec(&outcome.to_json()).expect("JSON serializes"),
-            ));
-            stored.finished_at = Some(
-                time::OffsetDateTime::now_utc()
-                    .format(&time::format_description::well_known::Rfc3339)
-                    .expect("UTC formats"),
-            );
-            stored.response = Some(outcome.clone());
-            self.save(&stored)?;
-            Ok(outcome)
-        }));
+                let mut stored = Stored {
+                    effect_key: key.into(),
+                    command: command.into(),
+                    fingerprint: fingerprint.into(),
+                    response: None,
+                    result_digest: None,
+                    finished_at: None,
+                    running_until: None,
+                    sanitized: false,
+                    effect_nonce: Some(nonce.into()),
+                    effect_created_at: Some(created_at),
+                };
+                self.save(&stored)?;
+                let outcome = effect();
+                if let Outcome::Refused { code, .. } = &outcome {
+                    if super::NOT_STARTED_ERRORS.contains(&code.as_str())
+                        || super::PREFLIGHT_ERRORS.contains(&code.as_str())
+                    {
+                        fs::remove_file(self.path(key))
+                            .and_then(|()| File::open(&self.directory)?.sync_all())
+                            .map_err(|_| refused("agent.effect_receipt_unavailable"))?;
+                        return Self::sanitize(outcome, context);
+                    }
+                    if super::COMMON_ERRORS.contains(&code.as_str()) {
+                        return Self::sanitize(outcome, context);
+                    }
+                }
+                let outcome = Self::sanitize(outcome, context)?;
+                stored.sanitized = true;
+                stored.result_digest = Some(digest(
+                    &serde_json::to_vec(&outcome.to_json()).expect("JSON serializes"),
+                ));
+                stored.finished_at = Some(
+                    time::OffsetDateTime::now_utc()
+                        .format(&time::format_description::well_known::Rfc3339)
+                        .expect("UTC formats"),
+                );
+                stored.response = Some(outcome.clone());
+                self.save(&stored)?;
+                Ok(outcome)
+            })
+        });
         result.unwrap_or_else(|error| error)
     }
     /// Reserve an external named program. Losing the reservation reply leaves an unknown intent.

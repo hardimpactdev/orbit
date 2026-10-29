@@ -63,9 +63,9 @@ final readonly class OperationExecutionContract
                 Arr::set($expected, $parameter, Arr::get($operation->input, substr($path, 6)));
             }
             if (isset($run['node_field'])) {
-                $expected[$run['node_field']] = $operation->node_id;
+                $expected[$run['node_field']] = app(OperationChildren::class)->nodeId($operation);
             }
-            if (($data['transport'] === 'gateway' || $operation->node_id !== null) && $this->same($expected, $data['input'])) {
+            if (($data['transport'] === 'gateway' || app(OperationChildren::class)->nodeId($operation) !== null) && $this->same($expected, $data['input'])) {
                 return $run;
             }
         }
