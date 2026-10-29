@@ -14,7 +14,7 @@ use Orbit\Sdk\Requests\Schedules\CreateScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\InstanceScheduleTarget;
 use Orbit\Sdk\Requests\Schedules\NodeScheduleTarget;
 use Orbit\Sdk\Responses\Projects\ProjectRuntimeDefinitionResponse;
-use Orbit\Sdk\Responses\Schedules\ScheduleResponse;
+use Orbit\Sdk\Responses\Schedules\ScheduleMutationResponse;
 
 final class CreateScheduleCommand extends ScheduleCommand
 {
@@ -32,6 +32,7 @@ final class CreateScheduleCommand extends ScheduleCommand
         {--command= : Command to run}
         {--timeout=3600 : Execution timeout in seconds, from 1 to 86400}
         {--no-start : Install an Instance Schedule with its timer disabled and stopped}
+        {--idempotency-key= : Reuse a key to retry this Operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -110,7 +111,7 @@ final class CreateScheduleCommand extends ScheduleCommand
             return self::FAILURE;
         }
 
-        $schedule = $this->sendWithProgress(
+        $schedule = $this->send(
             $connector,
             new CreateScheduleRequest(
                 target: $target,
@@ -119,18 +120,16 @@ final class CreateScheduleCommand extends ScheduleCommand
                 command: $command,
                 timeoutSeconds: $timeout,
                 start: $this->option('no-start') === true ? false : null,
+                idempotencyKey: is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null,
             ),
-            ScheduleResponse::class,
-            ['Create Schedule', 'Creating Schedule', 'Created Schedule'],
+            ScheduleMutationResponse::class,
         );
 
-        if (! $schedule instanceof ScheduleResponse) {
+        if (! $schedule instanceof ScheduleMutationResponse) {
             return self::FAILURE;
         }
 
-        $this->renderSchedule($schedule);
-
-        return self::SUCCESS;
+        return $this->finishMutation($connector, $repository, $schedule, "Create Schedule [{$name}]");
     }
 
     /** @return 'app'|'instance'|'node'|null */

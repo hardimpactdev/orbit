@@ -11,6 +11,7 @@ use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Schedules\ScheduleErrorCode;
+use App\Domain\Schedules\ScheduleOperationAdmission;
 use App\Domain\Schedules\ScheduleOperationException;
 use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Domain\Schedules\ScheduleSpecificationValidator;
@@ -21,6 +22,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Schedule;
 use Illuminate\Support\Facades\DB;
 use SensitiveParameter;
@@ -60,6 +62,71 @@ final readonly class CreateScheduleAction
 
     /** @return array{schedule: Schedule, created: bool} */
     private function executeOwned(#[SensitiveParameter] AddScheduleData $data): array
+    {
+        $admission = $this->reserveAdmission($data);
+
+        $schedule = $admission['schedule'];
+
+        try {
+            $this->runtime->install($schedule);
+        } catch (ScheduleOperationException $exception) {
+            $schedule->update([
+                'status' => LifecycleStatus::Failed,
+                'failed_step' => $exception->step,
+                'error_code' => $exception->errorCode,
+            ]);
+
+            throw $exception;
+        }
+
+        $schedule->update([
+            'status' => LifecycleStatus::Active,
+            'failed_step' => null,
+            'error_code' => null,
+        ]);
+
+        $result = $schedule->refresh();
+
+        if ($admission['created']) {
+            ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+                RecordEventType::ScheduleCreated,
+                $result->id,
+                ScheduleData::fromModel($result)->toArray(),
+            );
+        }
+
+        return ['schedule' => $result, 'created' => $admission['created']];
+    }
+
+    private function matches(Schedule $schedule, #[SensitiveParameter] AddScheduleData $data): bool
+    {
+        return
+            in_array($schedule->target_type, $data->targetType->storedTypes(), true)
+            && $schedule->target_id === $data->targetId
+            && $schedule->name === $data->name
+            && hash_equals($schedule->calendar, $data->calendar)
+            && hash_equals($schedule->command, $data->command)
+            && $schedule->timeout_seconds === $data->timeoutSeconds;
+    }
+
+    public function admit(AddScheduleData $data, ?Node $caller = null, ?string $requestId = null): Operation
+    {
+        $this->validator->validate($data);
+        $this->targets->resolve($data->targetType, $data->targetId);
+        $ownerIds = $data->targetType === ScheduleTargetType::Instance ? [$data->targetId] : [];
+
+        try {
+            return $this->admissions->run($ownerIds, fn (): Operation => DB::transaction(fn (): Operation => $this->admitOwned($data, $caller, $requestId)));
+        } catch (ResourceOperationException $exception) {
+            if ($exception->errorCode !== 'process.operation_busy') {
+                throw $exception;
+            }
+            throw new ResourceOperationException(ScheduleErrorCode::StateInvalid->value, 'Another target operation is active. Retry the Schedule request.', 409, $exception);
+        }
+    }
+
+    /** @return array{schedule: Schedule, created: bool} */
+    private function reserveAdmission(AddScheduleData $data): array
     {
         $target = DB::transaction(function () use ($data): ScheduleTarget {
             $model = match ($data->targetType) {
@@ -123,47 +190,13 @@ final readonly class CreateScheduleAction
             return ['schedule' => $schedule, 'created' => $created];
         });
 
-        $schedule = $admission['schedule'];
-
-        try {
-            $this->runtime->install($schedule);
-        } catch (ScheduleOperationException $exception) {
-            $schedule->update([
-                'status' => LifecycleStatus::Failed,
-                'failed_step' => $exception->step,
-                'error_code' => $exception->errorCode,
-            ]);
-
-            throw $exception;
-        }
-
-        $schedule->update([
-            'status' => LifecycleStatus::Active,
-            'failed_step' => null,
-            'error_code' => null,
-        ]);
-
-        $result = $schedule->refresh();
-
-        if ($admission['created']) {
-            ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
-                RecordEventType::ScheduleCreated,
-                $result->id,
-                ScheduleData::fromModel($result)->toArray(),
-            );
-        }
-
-        return ['schedule' => $result, 'created' => $admission['created']];
+        return $admission;
     }
 
-    private function matches(Schedule $schedule, #[SensitiveParameter] AddScheduleData $data): bool
+    private function admitOwned(AddScheduleData $data, ?Node $caller, ?string $requestId): Operation
     {
-        return
-            in_array($schedule->target_type, $data->targetType->storedTypes(), true)
-            && $schedule->target_id === $data->targetId
-            && $schedule->name === $data->name
-            && hash_equals($schedule->calendar, $data->calendar)
-            && hash_equals($schedule->command, $data->command)
-            && $schedule->timeout_seconds === $data->timeoutSeconds;
+        $admission = $this->reserveAdmission($data);
+
+        return app(ScheduleOperationAdmission::class)->execute($admission['schedule'], 'create', caller: $caller, requestId: $requestId, created: $admission['created']);
     }
 }

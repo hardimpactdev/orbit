@@ -12,6 +12,7 @@ use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\Projects\ShowScheduleDefinitionRequest;
 use Orbit\Sdk\Requests\Schedules\ShowScheduleRequest;
 use Orbit\Sdk\Responses\Projects\ProjectRuntimeDefinitionResponse;
+use Orbit\Sdk\Responses\Schedules\ScheduleResponse;
 
 final class ShowScheduleCommand extends ScheduleItemCommand
 {
@@ -69,6 +70,12 @@ final class ShowScheduleCommand extends ScheduleItemCommand
     protected function request(string $scheduleId): GatewayRequest
     {
         return new ShowScheduleRequest($scheduleId);
+    }
+
+    /** @return class-string<ScheduleResponse> */
+    protected function responseClass(): string
+    {
+        return ScheduleResponse::class;
     }
 
     protected function progressLabels(): array

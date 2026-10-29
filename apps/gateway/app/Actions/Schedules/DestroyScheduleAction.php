@@ -7,10 +7,13 @@ namespace App\Actions\Schedules;
 use App\Data\Schedules\ScheduleData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Schedules\ScheduleOperationAdmission;
 use App\Domain\Schedules\ScheduleOperationException;
 use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Schedule;
 use SensitiveParameter;
 
@@ -66,5 +69,10 @@ final readonly class DestroyScheduleAction
         }
 
         return $schedule;
+    }
+
+    public function admit(Schedule $schedule, bool $cascade = false, ?Node $caller = null, ?string $requestId = null): Operation
+    {
+        return app(ScheduleOperationAdmission::class)->execute($schedule, 'destroy', $cascade, $caller, $requestId);
     }
 }

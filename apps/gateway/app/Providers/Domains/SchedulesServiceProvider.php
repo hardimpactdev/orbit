@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Providers\Domains;
 
+use App\Domain\Operations\OperationSecretSource;
+use App\Domain\Schedules\ScheduleOperationSecrets;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Infrastructure\Schedules\RemoteScheduleRuntimeManager;
@@ -17,4 +19,10 @@ final class SchedulesServiceProvider extends ServiceProvider
         ScheduleRuntimeAccountResolver::class => SshScheduleRuntimeAccountResolver::class,
         ScheduleRuntimeManager::class => RemoteScheduleRuntimeManager::class,
     ];
+
+    public function register(): void
+    {
+        $this->app->bind('operation.secret.schedule.command', ScheduleOperationSecrets::class);
+        $this->app->tag(['operation.secret.schedule.command'], OperationSecretSource::class);
+    }
 }

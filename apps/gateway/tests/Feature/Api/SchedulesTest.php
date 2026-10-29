@@ -2,20 +2,25 @@
 
 declare(strict_types=1);
 
+use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Schedule;
 use Illuminate\Routing\Route as RoutingRoute;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 use Tests\Support\Schedules\FakeScheduleRuntimeManager;
+use Tests\TestCase;
 
 beforeEach(function (): void {
     $this->gateway = schedules_api_node('gateway', '10.44.0.2');
@@ -24,6 +29,9 @@ beforeEach(function (): void {
     $this->foreignNode = schedules_api_node('foreign', '10.44.0.4');
     $this->instance = schedules_api_instance($this->targetNode);
     $this->runtime = new FakeScheduleRuntimeManager;
+    $this->agents = (new FakeAgentCommandRunner)->answer('schedule.install', [])->answer('schedule.activate', [])->answer('schedule.run', [])->answer('schedule.remove', []);
+    app()->instance(AgentCommandRunner::class, $this->agents);
+    config(['dependency_detection.services_node_id' => $this->gateway->id]);
 
     app()->instance(ScheduleRuntimeManager::class, $this->runtime);
     app()->instance(ScheduleRuntimeAccountResolver::class, new FakeScheduleRuntimeAccountResolver);
@@ -61,11 +69,17 @@ it('exposes exactly eight UUID-keyed Schedule routes and returns 404 for unknown
 
 it('adds lists shows and runs bounded Schedule data without changing disabled timer intent', function (): void {
     $payload = schedules_api_payload($this->instance, start: false);
-    $created = $this->postJson('/api/v1/schedules', $payload)->assertCreated();
-    $scheduleId = $created->json('data.id');
+    $created = $this->postJson('/api/v1/schedules', $payload)->assertAccepted()->assertJsonPath('data.kind', 'schedule.create');
+    $created->assertHeader('X-Orbit-Request-Id')->assertJsonStructure(['meta' => ['request_id']]);
+    $operationId = $created->json('data.id');
+    $scheduleId = Operation::query()->findOrFail($operationId)->input['id'];
+    expect(Schedule::query()->findOrFail($scheduleId)->status)->toBe(LifecycleStatus::Provisioning);
+    expect($this->agents->calls)->toBe([]);
+    schedules_api_finish($this, $operationId);
 
     expect($scheduleId)->toBeString()->and(Str::isUuid($scheduleId))->toBeTrue();
-    $created
+    $shown = $this->getJson("/api/v1/schedules/{$scheduleId}")->assertOk();
+    $shown
         ->assertHeader('X-Orbit-Request-Id')
         ->assertJsonPath('data.target_type', 'instance')
         ->assertJsonPath('data.target_id', $this->instance->id)
@@ -74,7 +88,7 @@ it('adds lists shows and runs bounded Schedule data without changing disabled ti
         ->assertJsonPath('data.command', 'php artisan report:send')
         ->assertJsonStructure(['meta' => ['request_id']]);
 
-    expect(array_keys($created->json('data')))->toBe([
+    expect(array_keys($shown->json('data')))->toBe([
         'id',
         'target_type',
         'target_id',
@@ -90,10 +104,9 @@ it('adds lists shows and runs bounded Schedule data without changing disabled ti
         'last_run_status',
     ]);
 
-    $this->postJson('/api/v1/schedules', $payload)
-        ->assertOk()
-        ->assertJsonPath('data.id', $scheduleId)
-        ->assertJsonPath('data.desired_timer_state', 'disabled');
+    $repeat = $this->postJson('/api/v1/schedules', $payload)->assertAccepted()->assertJsonPath('data.kind', 'schedule.create');
+    expect(Operation::query()->findOrFail($repeat->json('data.id'))->input['id'])->toBe($scheduleId);
+    schedules_api_finish($this, $repeat->json('data.id'));
 
     $listed = $this->getJson('/api/v1/schedules')->assertOk()->assertJsonCount(1, 'data');
     $listed
@@ -118,12 +131,13 @@ it('adds lists shows and runs bounded Schedule data without changing disabled ti
     $this->getJson("/api/v1/schedules/{$scheduleId}")
         ->assertOk()
         ->assertJsonPath('data.command', 'php artisan report:send');
-    $this->postJson("/api/v1/schedules/{$scheduleId}/run")
-        ->assertOk()
-        ->assertJsonPath('data.desired_timer_state', 'disabled');
+    $run = $this->postJson("/api/v1/schedules/{$scheduleId}/run")->assertAccepted()->assertJsonPath('data.kind', 'schedule.run');
+    schedules_api_finish($this, $run->json('data.id'));
 
-    expect($this->runtime->installed)->toBe([$scheduleId, $scheduleId])
-        ->and($this->runtime->ran)->toBe([$scheduleId])
+    expect($this->agents->commands())->toBe(['schedule.install', 'schedule.install', 'schedule.run'])
+        ->and(array_column(array_column($this->agents->calls, 'input'), 'id'))->toBe([$scheduleId, $scheduleId, $scheduleId])
+        ->and($this->runtime->installed)->toBe([])
+        ->and($this->runtime->ran)->toBe([])
         ->and(Schedule::query()->findOrFail($scheduleId)->desired_timer_state)
         ->toBe(DesiredTimerState::Disabled);
 });
@@ -131,14 +145,16 @@ it('adds lists shows and runs bounded Schedule data without changing disabled ti
 it('activates an Instance Schedule from an empty body idempotently and rejects invalid Node requests', function (): void {
     $schedule = schedules_api_record($this->instance, $this->targetNode, start: false);
 
-    $this->postJson("/api/v1/schedules/{$schedule->id}/activate")
-        ->assertOk()
-        ->assertJsonPath('data.desired_timer_state', 'enabled');
-    $this->postJson("/api/v1/schedules/{$schedule->id}/activate")
-        ->assertOk()
-        ->assertJsonPath('data.desired_timer_state', 'enabled');
+    for ($attempt = 0; $attempt < 2; $attempt++) {
+        $operation = $this->postJson("/api/v1/schedules/{$schedule->id}/activate")->assertAccepted()->assertJsonPath('data.kind', 'schedule.enable');
+        expect($schedule->refresh()->desired_timer_state)->toBe($attempt === 0 ? DesiredTimerState::Disabled : DesiredTimerState::Enabled);
+        schedules_api_finish($this, $operation->json('data.id'));
+        expect($schedule->refresh()->desired_timer_state)->toBe(DesiredTimerState::Enabled);
+    }
 
-    expect($this->runtime->activated)->toBe([$schedule->id, $schedule->id]);
+    expect($this->runtime->activated)->toBe([])
+        ->and($this->agents->commands())->toBe(['schedule.activate', 'schedule.activate'])
+        ->and(array_column(array_column($this->agents->calls, 'input'), 'id'))->toBe([$schedule->id, $schedule->id]);
 
     $nodeSchedule = schedules_api_record($this->targetNode, $this->targetNode, name: 'node-health');
 
@@ -151,6 +167,19 @@ it('activates an Instance Schedule from an empty body idempotently and rejects i
         ->assertJsonPath('error.code', 'schedule.state_invalid');
 
     expect(Schedule::query()->where('name', 'daily-report')->count())->toBe(1);
+});
+
+it('replays a keyed destroy after the Schedule record is removed', function (): void {
+    $schedule = schedules_api_record($this->instance, $this->targetNode);
+    $url = '/api/v1/schedules/'.$schedule->id;
+    $operation = $this->withHeader('Idempotency-Key', 'schedule-destroy-replay')->deleteJson($url)->assertAccepted();
+    $id = $operation->json('data.id');
+    $this->flushHeaders();
+    schedules_api_finish($this, $id);
+
+    expect(Schedule::query()->whereKey($schedule->id)->exists())->toBeFalse();
+    $this->withHeader('Idempotency-Key', 'schedule-destroy-replay')->deleteJson($url)->assertAccepted()->assertJsonPath('data.id', $id);
+    expect($this->agents->commands())->toBe(['schedule.remove']);
 });
 
 it('rejects malformed duplicate escaped-duplicate unknown and wrongly typed add members without mutation', function (
@@ -243,12 +272,18 @@ it('records seven sanitized operator Activities and no completion Activity', fun
     );
 
     $this->getJson('/api/v1/schedules')->assertOk();
-    $created = $this->postJson('/api/v1/schedules', $payload)->assertCreated();
-    $scheduleId = $created->json('data.id');
+    $created = $this->postJson('/api/v1/schedules', $payload)->assertAccepted()->assertJsonPath('data.kind', 'schedule.create');
+    $operationId = $created->json('data.id');
+    $scheduleId = Operation::query()->findOrFail($operationId)->input['id'];
+    expect(Schedule::query()->findOrFail($scheduleId)->status)->toBe(LifecycleStatus::Provisioning);
+    expect($this->agents->calls)->toBe([]);
+    schedules_api_finish($this, $operationId);
     $this->getJson("/api/v1/schedules/{$scheduleId}")->assertOk();
-    $this->postJson("/api/v1/schedules/{$scheduleId}/run")->assertOk();
+    $run = $this->postJson("/api/v1/schedules/{$scheduleId}/run")->assertAccepted();
+    schedules_api_finish($this, $run->json('data.id'));
     $this->getJson("/api/v1/schedules/{$scheduleId}/logs?lines=25")->assertOk();
-    $this->postJson("/api/v1/schedules/{$scheduleId}/activate")->assertOk();
+    $enable = $this->postJson("/api/v1/schedules/{$scheduleId}/activate")->assertAccepted();
+    schedules_api_finish($this, $enable->json('data.id'));
 
     $beforeCompletion = Activity::query()->count();
     $this->withServerVariables(['REMOTE_ADDR' => $this->targetNode->wireguard_ip])
@@ -256,12 +291,14 @@ it('records seven sanitized operator Activities and no completion Activity', fun
         ->assertNoContent();
     expect(Activity::query()->count())->toBe($beforeCompletion);
 
-    $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip])
-        ->deleteJson("/api/v1/schedules/{$scheduleId}")
-        ->assertOk();
+    $destroy = $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip])
+        ->deleteJson("/api/v1/schedules/{$scheduleId}")->assertAccepted();
+    schedules_api_finish($this, $destroy->json('data.id'));
+    expect(Schedule::query()->whereKey($scheduleId)->exists())->toBeFalse();
 
     $activities = Activity::query()->orderBy('id')->get();
-    expect($activities->pluck('command')->all())->toBe([
+    $operatorActivities = $activities->filter(static fn (Activity $activity): bool => str_starts_with($activity->command, 'schedule:'));
+    expect($operatorActivities->pluck('command')->all())->toBe([
         'schedule:list',
         'schedule:create',
         'schedule:show',
@@ -274,14 +311,15 @@ it('records seven sanitized operator Activities and no completion Activity', fun
     $activityJson = json_encode($activities->map->getAttributes()->all(), JSON_THROW_ON_ERROR);
     expect($activityJson)
         ->not->toContain('command-private-sentinel')
-        ->not->toContain('calendar-private-sentinel')
         ->not->toContain('/private/path')
         ->not->toContain('private-user')
         ->not->toContain('private-unit')
         ->not->toContain('safe\\n');
+    expect(json_encode($operatorActivities->map->getAttributes()->all(), JSON_THROW_ON_ERROR))
+        ->not->toContain('calendar-private-sentinel');
 
-    foreach ($activities->where('command', '!=', 'schedule:list') as $activity) {
-        expect(data_get($activity->properties, 'schedule.id'))->toBe($scheduleId)
+    foreach ($operatorActivities->where('command', '!=', 'schedule:list') as $activity) {
+        expect(data_get($activity->properties, 'schedule.id'))->toBe($scheduleId, $activity->command)
             ->and($activity->subject_type)->toBe('instance')
             ->and($activity->subject_id)->toBe($this->instance->id)
             ->and($activity->target_node_id)->toBe($this->targetNode->id);
@@ -399,4 +437,17 @@ function schedules_api_payload(
         'timeout_seconds' => 3600,
         'start' => $start,
     ];
+}
+
+/** Execute one admitted Schedule through the real Gateway proof boundary. */
+function schedules_api_finish(TestCase $test, int $id): void
+{
+    $operation = Operation::query()->findOrFail($id);
+    $worker = 'schedule-proof-'.$id;
+    $test->postJson('/api/v1/operation-executor/claim', ['kind' => $operation->kind, 'operation_id' => $id, 'worker' => $worker])->assertOk();
+    $descriptor = app(OperationExecutionContract::class)->context($operation->refresh())['descriptors'][0];
+    $path = '/api/v1/operation-executor/'.$id;
+    $result = $test->postJson($path.'/run', ['worker' => $worker, 'key' => $descriptor['key'], 'transport' => $descriptor['transport'], 'name' => $descriptor['name'], 'input' => $descriptor['input']])->assertOk()->json('data');
+    $test->postJson($path.'/step', ['worker' => $worker, 'key' => $descriptor['key'].'-done', 'name' => $descriptor['step'], 'status' => 'succeeded', 'result' => $result])->assertOk();
+    $test->postJson($path.'/complete', ['worker' => $worker, 'status' => 'succeeded', 'result' => $result])->assertOk();
 }

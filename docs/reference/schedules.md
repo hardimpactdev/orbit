@@ -31,6 +31,18 @@ The Gateway attempts `project-documents:cleanup:work` every five minutes without
 
 Swamp requests failed queue job pruning daily, keeping seven days by default. [Gateway disk retention](/reference/gateway-recovery#disk-retention) describes its configurable cutoff and the batch metadata prune.
 
+## Execution
+
+Schedule create, enable, run, and destroy record an Operation and return HTTP 202. The Gateway owns validation and Schedule intent. Swamp installs, controls, and removes the timer through named agent commands. The Gateway projects a completion only after its successful command receipt is proven. A removal refused with `schedule.run_active` keeps the Schedule in `removing`; retry destroy after that command finishes. An Idempotency-Key replays the original Operation.
+
+All Schedules for one Instance or Node share an Operation hold. A concurrent mutation for that owner returns `operation.target_busy`, including changes to different Schedule UUIDs.
+
+Retained Gateway callers keep the synchronous Schedule actions and native runtime manager until their owning lane cuts over. Clone and deployment definition installation use this path. They do not admit or await Schedule Operations.
+
+When a Schedule targets the configured Swamp Services Node or an executor worker Node, HTTP create, run, enable and destroy use the synchronous PHP actions too. This includes Instance Schedules on those Nodes. Create returns HTTP 201 for a new Schedule or 200 for an identical retry. The other mutations return HTTP 200 with Schedule data. They admit no Operation, so a maintenance command can stop serve without removing the Process API's synchronous recovery path.
+
+Direct Swamp admission and final dispatch on those Nodes refuse with `schedule.executor_dependency` (HTTP 409). The SDK exposes either Schedule data or an Operation through `ScheduleMutationResponse.result`; the CLI renders the Schedule for synchronous responses and follows HTTP 202 Operations. Installed Schedules remain immutable. `schedule:update` changes only a Project definition in Gateway state.
+
 ## Fields
 
 The Schedule UUID is its public identity. It is also the only value that names the host artifacts.
@@ -56,17 +68,17 @@ Every endpoint is under `/api/v1/schedules` and needs an access grant to the Nod
 | Operation | Request | Result |
 | --- | --- | --- |
 | List | `GET /api/v1/schedules` | The Schedules whose target Node the caller may address, ordered by name, without `command`. |
-| Create | `POST /api/v1/schedules` | Creates and installs one Schedule. Returns 201 for a new Schedule and 200 for an identical one. |
+| Create | `POST /api/v1/schedules` | Records one Schedule and returns its queued Operation with HTTP 202. |
 | Show | `GET /api/v1/schedules/{uuid}` | One Schedule, with `command`. |
-| Run | `POST /api/v1/schedules/{uuid}/run` | Starts the service once. The desired timer state does not change. |
+| Run | `POST /api/v1/schedules/{uuid}/run` | Queues one service start and returns its Operation with HTTP 202. The desired timer state does not change. |
 | Logs | `GET /api/v1/schedules/{uuid}/logs?lines=N` | The newest journal lines of the service. |
-| Enable | `POST /api/v1/schedules/{uuid}/activate` | Enables and starts the timer of an Instance Schedule. |
-| Destroy | `DELETE /api/v1/schedules/{uuid}` | Starts or resumes removal. |
+| Enable | `POST /api/v1/schedules/{uuid}/activate` | Queues timer activation for an Instance Schedule and returns its Operation with HTTP 202. |
+| Destroy | `DELETE /api/v1/schedules/{uuid}` | Queues removal and returns its Operation with HTTP 202. |
 | Complete | `POST /api/v1/schedules/{uuid}/complete` | The host Node reports a run result. Returns 204. |
 
 Create takes `target_type`, `target_id`, `name`, `calendar`, and `command`, and optionally `timeout_seconds` and `start`. `start` defaults to `true`. A Node target refuses `start: false` with `schedule.state_invalid`. An Instance target can install with its timer disabled. Run, enable, and destroy take an empty body. The Gateway refuses unknown, duplicate, or wrongly typed members with 422 before it changes anything.
 
-Each operation except Complete records one Activity entry. The entry names the Schedule and its target. It never holds the command, calendar, journal lines, paths, users, or unit text.
+Each Schedule API request except Complete records one operator Activity entry. The entry names the Schedule and its target, including a destroy request that admits an Operation. It never holds the command, calendar, journal lines, paths, users, or unit text. Executor requests have their own worker audit entries.
 
 ## Execution context
 
@@ -102,7 +114,7 @@ Installation keeps `/etc/orbit` as a real directory owned by `root:root` with mo
 
 ## Install and recover
 
-Create validates the input and the target first. Then `schedule.install` installs the artifacts through the agent runner and holds the Schedule lock on the Node. Rust checks the calendar with `systemd-analyze calendar`, stages the new files, checks them with `systemd-analyze verify`, moves them in place, reloads systemd, and sets the timer to the desired state. It checks the timer state before the Schedule becomes `active`.
+Create validates the input and the target first. Then Swamp calls `schedule.install` through the keyed executor and holds the Schedule lock on the Node. Rust checks the calendar with `systemd-analyze calendar`, stages the new files, checks them with `systemd-analyze verify`, moves them in place, reloads systemd, and sets the timer to the desired state. It checks the timer state before the Schedule becomes `active`.
 
 An existing file at an owned path must be a regular file with the expected owner, mode, and `X-Orbit-Schedule-ID` marker. Otherwise installation stops with `schedule.artifact_conflict`, and Orbit does not overwrite, adopt, or delete the file. When a step fails, Rust restores the earlier files and timer state. A first installation removes only the files it created. When the restore fails too, the Schedule becomes `failed` with `schedule.rollback_failed`. Repeat the identical create to retry.
 
@@ -128,7 +140,7 @@ The Node does not retry a failed report. A lost report leaves the earlier values
 
 ## Remove
 
-Destroy marks the Schedule `removing` and disables and stops its timer. When the service is not running, it deletes the three files, reloads systemd, resets the failed state of both units, checks that the files are gone, and deletes the record. When the service still runs, destroy stops there and returns the Schedule as `removing`. The command finishes on its own. Repeat destroy after it ends to finish the removal. An artifact with the wrong owner, mode, or marker stops removal with `schedule.artifact_conflict`, and the Schedule stays `removing`.
+Destroy marks the Schedule `removing` and disables and stops its timer. When the service is not running, it deletes the three files, reloads systemd, resets the failed state of both units, checks that the files are gone, and deletes the record. When the service still runs, destroy stops there and fails the Operation with `schedule.run_active` and keeps the Schedule as `removing`. The command finishes on its own. Repeat destroy after it ends to finish the removal. An artifact with the wrong owner, mode, or marker stops removal with `schedule.artifact_conflict`, and the Schedule stays `removing`.
 
 [Instance removal](/reference/instance-removal) removes each Schedule of the Instance without waiting for a running command. It leaves Node Schedules and the Schedules of other Instances in place.
 
