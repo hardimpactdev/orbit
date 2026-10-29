@@ -133,6 +133,14 @@ final class OperationResultFields
         $safe = [];
         foreach ($fields as $field) {
             $path = is_string($field) ? $field : ValidatedData::string($field['name']);
+            if (is_array($field) && ($field['secret'] ?? false) === true) {
+                $entry = OperationSecretOutputs::atPath($result, $path);
+                if ($entry['found']) {
+                    Arr::set($safe, $path, OperationSecretOutputs::reference(['name' => $path, 'secret' => true, 'store' => ValidatedData::string($field['store'])], $entry['value']));
+                }
+
+                continue;
+            }
             if (! Arr::has($result, $path)) {
                 continue;
             }
@@ -141,8 +149,6 @@ final class OperationResultFields
                 if (is_scalar($value) || $value === null) {
                     Arr::set($safe, $path, $value);
                 }
-            } elseif (($field['secret'] ?? false) === true) {
-                Arr::set($safe, $path, OperationSecretOutputs::reference(['name' => $path, 'secret' => true, 'store' => ValidatedData::string($field['store'])], $value));
             } else {
                 self::listValue($value, $field);
                 Arr::set($safe, $path, $value);

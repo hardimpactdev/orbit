@@ -32,7 +32,7 @@ final class OutputStore implements OperationSecretOutputStore
 
     public bool $fail = false;
 
-    public bool $acceptBoolean = false;
+    public bool $keepNull = false;
 
     public function name(): string
     {
@@ -55,8 +55,8 @@ final class OutputStore implements OperationSecretOutputStore
         if ($this->fail) {
             throw new ResourceOperationException('test.output_refused', 'private-output-credential-value', 409, ['credential' => $value]);
         }
-        if ($this->acceptBoolean && is_bool($value)) {
-            $value = json_encode($value, JSON_THROW_ON_ERROR);
+        if ($value === null && $this->keepNull) {
+            return;
         }
         if (! is_string($value)) {
             throw new LogicException('Expected a string credential.');
@@ -69,6 +69,8 @@ final class OutputCommand implements OperationGatewayCommand
     public int $calls = 0;
 
     public mixed $value = 'private-output-credential-value';
+
+    public ?array $result = null;
 
     public bool $dropOwner = false;
 
@@ -86,7 +88,7 @@ final class OutputCommand implements OperationGatewayCommand
             WebSocketApp::query()->whereKey($operation->target_id)->delete();
         }
 
-        return ['backend' => 'issued', 'credential' => $this->value, 'echo' => is_bool($this->value) ? $this->value : 'echo:'.(is_string($this->value) ? $this->value : 'other')];
+        return $this->result ?? ['backend' => 'issued', 'credential' => $this->value, 'echo' => is_bool($this->value) ? $this->value : 'echo:'.(is_string($this->value) ? $this->value : 'other')];
     }
 }
 final class OutputFamily implements OperationCompletion, OperationFamilyExecution
@@ -310,9 +312,51 @@ it('preserves declared reference fields when their secret equals the public fiel
     expect($this->owner->fresh()->secret)->toBe('credential');
 });
 
-it('redacts generated boolean echoes while preserving the owning record reference', function (): void {
-    $this->store->acceptBoolean = true;
-    $this->command->value = true;
-    $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath('data.credential', $this->reference)->assertJsonPath('data.echo', '[REDACTED]');
-    expect($this->owner->fresh()->secret)->toBe('true');
+it('refuses generated boolean secrets before writing or projecting', function (mixed $value): void {
+    $this->command->value = $value;
+    $this->postJson($this->path.'/run', $this->run)->assertConflict()->assertJsonPath('error.code', 'operation.secret_output_unavailable');
+    expect($this->store->calls)->toBe(0)->and($this->owner->fresh()->secret)->toBe('original')
+        ->and($this->operation->fresh()->state['executor_runs']['issue']['result'])->toBeNull()
+        ->and($this->operation->fresh()->state['public_projection'] ?? null)->toBeNull();
+})->with([[true], [false], [['token' => 'value', 'ready' => true]]]);
+
+it('extracts nested secret outputs by segments despite literal dotted aliases', function (string $alias): void {
+    $this->definition['result_fields'] = ['backend', 'echo', ['name' => 'nested.pairing.credential', 'secret' => true, 'store' => 'test.owner.credential']];
+    $kinds = new OperationKinds(app(), [...OperationKinds::definitions(), 'test.secret_output' => $this->definition]);
+    app()->instance(OperationKinds::class, $kinds);
+    app()->instance(OperationSecretOutputs::class, new OperationSecretOutputs([$this->store], $kinds));
+    $this->command->result = ['backend' => 'issued', 'nested' => ['pairing' => ['credential' => 'private-nested-value']], 'echo' => 'private-nested-value'];
+    if ($alias === 'root') {
+        $this->command->result['nested.pairing.credential'] = 'public-decoy';
+    } else {
+        $this->command->result['nested']['pairing.credential'] = 'public-decoy';
+    }
+    $result = $this->postJson($this->path.'/run', $this->run)->assertOk()
+        ->assertJsonPath('data.nested.pairing.credential', $this->reference)->assertJsonPath('data.echo', '[REDACTED]')->json('data');
+    expect($this->owner->fresh()->secret)->toBe('private-nested-value')->and($this->store->calls)->toBe(1);
+    $this->postJson($this->path.'/heartbeat', ['worker' => 'outputs'])->assertOk()
+        ->assertJsonPath('data.execution_context.result.nested.pairing.credential', $this->reference);
+    $this->postJson($this->path.'/step', ['worker' => 'outputs', 'key' => 'issue.done', 'name' => 'issue', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    $this->postJson($this->path.'/complete', ['worker' => 'outputs', 'status' => 'succeeded', 'result' => $result])->assertOk();
+})->with(['root', 'middle']);
+
+it('recovers a null agent output without repeating the effect or replacing the existing secret', function (): void {
+    $operation = startSecretAgentOutput($this);
+    $this->store->keepNull = true;
+    $agents = new FakeAgentCommandRunner;
+    $agents->answer('agent.configure', function (): array {
+        throw new RuntimeException('lost live reply without a new secret');
+    });
+    app()->instance(AgentCommandRunner::class, $agents);
+    $this->postJson($this->path.'/run', $this->run)->assertConflict()->assertJsonPath('error.code', 'operation.execution_uncertain');
+    $identity = $operation->fresh()->state['executor_effect_identity'];
+    $agents->answer('agent.effect-receipt', ['command' => 'agent.configure', 'effect_key' => 'op-'.$operation->id.'.configure', 'state' => 'succeeded',
+        'sanitized' => true, 'effect_nonce' => $identity['nonce'], 'effect_created_at' => $identity['created_at'], 'exit_code' => 0,
+        'result' => ['ok' => true, 'data' => ['secret_hash' => null, 'restarted' => true, 'unclosed' => []]],
+        'result_digest' => str_repeat('c', 64), 'finished_at' => '2026-10-29T02:00:00Z']);
+    $this->getJson($this->path.'/receipts/configure')->assertOk()->assertJsonPath('data.state', 'succeeded')->assertJsonPath('data.result.restarted', true);
+    $this->getJson($this->path.'/receipts/configure')->assertOk();
+    expect($operation->fresh()->state['executor_runs']['configure']['result']['secret_hash'])->toBe(['$secret' => 'test.owner.credential', 'id' => $this->owner->id])
+        ->and($this->store->calls)->toBe(1)->and($this->owner->fresh()->secret)->toBe('original')
+        ->and($agents->commands())->toBe(['agent.configure', 'agent.effect-receipt']);
 });

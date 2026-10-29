@@ -365,9 +365,11 @@ impl Store {
             for path in context.effect_secret_outputs() {
                 let pointer = format!("/{}", path.replace('.', "/"));
                 if let Some(value) = result.pointer_mut(&pointer) {
-                    collect(value, &mut masks, &mut booleans);
-                    *value = json!({"$secret_output":true});
-                    present.push(path.clone());
+                    if !value.is_null() {
+                        collect(value, &mut masks, &mut booleans);
+                        *value = json!({"$secret_output":true});
+                    }
+                    present.push((path.clone(), value.clone()));
                 }
             }
         }
@@ -415,13 +417,8 @@ impl Store {
             Outcome::Ok(result) => {
                 let mut result = value(result, masks, &booleans);
                 if let Outcome::Ok(original) = &original {
-                    for path in present {
-                        restore_output(
-                            &mut result,
-                            original,
-                            &path,
-                            json!({"$secret_output":true}),
-                        );
+                    for (path, replacement) in present {
+                        restore_output(&mut result, original, &path, replacement);
                     }
                 }
                 Outcome::Ok(result)

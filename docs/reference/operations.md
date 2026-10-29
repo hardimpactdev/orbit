@@ -480,6 +480,8 @@ A result field declared `{name,secret:true,store:"<family>.<field>"}` is stored 
 
 Before the family receives a run result, the Gateway replaces each secret output with `{"$secret":"<store>","id":<ownerId>}`. It redacts echoes from other fields. Swamp, Operation state, activity, steps and completion contain only that reference. The family's existing API controls reading the encrypted value. Unknown stores, invalid owners and storage failures return a fixed refusal without credential details. Step and completion requests cannot submit raw values at these paths.
 
+Secret output paths traverse one JSON segment at a time. A literal dotted key cannot replace a nested field. Boolean secret outputs, including booleans inside containers, refuse before storage so public boolean status fields remain usable. A null output stays null in the target receipt: it carries no new secret and does not require recovery of a lost value.
+
 A transport with secret outputs implements `OperationSecretOutputTransport` and keeps its generated values only in memory until the Gateway extracts them. The Gateway transport meets this contract. The agent receives the declared output paths as protected metadata. It stores only a presence marker at each path and redacts echoes before saving its target receipt. The first live reply carries the values for encrypted Gateway storage. If that reply is lost before storage, a presence marker cannot recover the secret: the run stays uncertain and the effect does not repeat. A custom transport must provide the same safe output path before opting in.
 
 `OperationKinds::supports("secret_outputs")` reports support for this enforced contract.
