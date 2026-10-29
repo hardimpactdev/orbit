@@ -17,7 +17,10 @@ const Descriptor = z.object({
   resumable: z.boolean(),
   required: z.boolean(),
 });
-const ExecutionContext = z.object({ descriptors: z.array(Descriptor) });
+const ExecutionContext = z.object({
+  descriptors: z.array(Descriptor),
+  result: z.record(z.string(), z.unknown()).optional(),
+});
 const Claimed = Operation.extend({ execution_context: ExecutionContext });
 const ChildIntent = z.object({
   key: z.string(),
@@ -117,15 +120,21 @@ export class LifecycleSession implements Session {
     });
     // Kit I processes recovered replies through the Gateway family hook and stores keyed proof.
     const recovered = await this.recover(key);
-    const result = recovered ?? z.record(z.string(), z.unknown()).parse(
-      await this.executor.post(`${this.id}/run`, {
-        worker: this.worker,
-        key,
-        transport: descriptor.transport,
-        name: descriptor.name,
-        input: descriptor.input,
-      }),
-    );
+    const pendingCancellation = recovered === null &&
+      this.kind === "instance.transfer" && key === "transfer-capture" &&
+      !descriptor.resumable && this.operation!.cancel_requested &&
+      this.current().execution_context.result?.rollback_pending === true;
+    const result = pendingCancellation
+      ? { error_code: "operation.cancelled", rollback_pending: true }
+      : recovered ?? z.record(z.string(), z.unknown()).parse(
+        await this.executor.post(`${this.id}/run`, {
+          worker: this.worker,
+          key,
+          transport: descriptor.transport,
+          name: descriptor.name,
+          input: descriptor.input,
+        }),
+      );
     const error = result.error_code === undefined || result.error_code === null
       ? null
       : ErrorCode.parse(result.error_code);

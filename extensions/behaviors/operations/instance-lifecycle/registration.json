@@ -4,7 +4,10 @@
     "instance.destroy",
     "instance.create",
     "instance.register",
-    "instance.clone"
+    "instance.clone",
+    "instance.transfer",
+    "instance.transfer_rollback",
+    "instance.transfer_discard"
   ],
   "workflow": "operation-instance-lifecycle"
 }

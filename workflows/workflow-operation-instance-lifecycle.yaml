@@ -9,7 +9,7 @@ inputs:
   properties:
     kind: {
       type: string,
-      enum: [instance.rename, instance.destroy, instance.create, instance.register, instance.clone],
+      enum: [instance.rename, instance.destroy, instance.create, instance.register, instance.clone, instance.transfer, instance.transfer_rollback, instance.transfer_discard],
     }
     worker: { type: string }
   required: [kind, worker]

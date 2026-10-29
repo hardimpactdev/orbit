@@ -1,4 +1,5 @@
 import { z } from "npm:zod@4.4.3";
+import { ExecutorError } from "../../operation-runner/mod.ts";
 import {
   canRemoveAfterRollbackTeardown,
   canRollbackSetup,
@@ -145,26 +146,75 @@ async function destroy(s: Session): Promise<Receipt> {
       s.input.additional_route_ids ?? [],
     )
   ) {
-    await child(s, `withdraw-extra-${routeId}`, "route.withdraw", s.nodeId, {
-      route_id: routeId,
-    });
+    const projection = list(s.input, "additional_routes").find((route) =>
+      route.route_id === routeId
+    );
+    if (!projection) throw new Error("Missing Route withdrawal placement");
+    await child(
+      s,
+      `withdraw-extra-${routeId}`,
+      "route.withdraw",
+      number(projection, "node_id"),
+      {
+        route_id: routeId,
+      },
+    );
   }
   await run(s, "removal-accept");
   for (const member of list(s.input, "members")) {
     const id = number(member, "instance_id");
     await run(s, `removal-${id}-source-prepare`);
-    if (member.route_id !== null) {
-      await child(s, `withdraw-${id}`, "route.withdraw", s.nodeId, {
-        route_id: member.route_id,
-      });
+    if (member.environment === "production") {
+      const routes = list(s.input, "production_routes");
+      for (const route of routes) {
+        if (z.array(z.number()).parse(route.targets).length === 1) {
+          await child(
+            s,
+            `withdraw-production-${route.id}`,
+            "route.withdraw",
+            number(route, "node_id"),
+            { route_id: route.id },
+          );
+        }
+      }
+      await run(s, `removal-${id}-route-detach`);
+      for (const route of routes) {
+        if (z.array(z.number()).parse(route.targets).length > 1) {
+          for (
+            const node of z.array(z.number().int().positive()).parse(
+              route.nodes,
+            )
+          ) {
+            await child(
+              s,
+              `publish-production-${route.id}-${node}`,
+              "route.caddy_converge",
+              node,
+              { reason: `Instance ${id} Route ${route.id} removal` },
+            );
+          }
+        }
+      }
+    } else {
+      if (member.route_id !== null && member.route_cleared_at == null) {
+        await child(
+          s,
+          `withdraw-${id}`,
+          "route.withdraw",
+          number(member, "route_node_id"),
+          {
+            route_id: member.route_id,
+          },
+        );
+      }
+      await child(
+        s,
+        `withdraw-instance-${id}`,
+        "route.withdraw_instance",
+        s.nodeId,
+        { instance_id: id },
+      );
     }
-    await child(
-      s,
-      `withdraw-instance-${id}`,
-      "route.withdraw_instance",
-      s.nodeId,
-      { instance_id: id },
-    );
     await run(s, `removal-${id}-route-clear`);
     await run(s, `removal-${id}-source-finalize`);
     const runtime = await run(s, `removal-${id}-runtime-intent`);
@@ -209,6 +259,9 @@ async function destroy(s: Session): Promise<Receipt> {
         instance_id: id,
       },
     );
+    if (member.environment === "production") {
+      await run(s, `removal-${id}-home-remove`);
+    }
     await run(s, `removal-${id}-row-delete`);
   }
   return await finish(s);
@@ -415,6 +468,127 @@ async function clone(s: Session): Promise<Receipt> {
   return await finish(s);
 }
 
+async function transfer(s: Session): Promise<Receipt> {
+  if (s.input.initial_completed === true) return await finish(s);
+  if (s.input.initial_cutover !== true) {
+    let stopped = false;
+    try {
+      await child(
+        s,
+        "transfer-stop-source",
+        "process.instance_runtime",
+        s.nodeId,
+        {
+          instance_id: number(s.input, "instance_id"),
+          action: "transfer_pause",
+        },
+      );
+      stopped = true;
+      await run(s, "transfer-capture");
+      await run(s, "transfer-sqlite-intent");
+      await child(
+        s,
+        "transfer-destination",
+        "instance.transfer_destination",
+        number(s.input, "destination_node_id"),
+        {
+          instance_id: number(s.input, "instance_id"),
+          transfer_id: s.input.transfer_id,
+        },
+      );
+      await run(s, "transfer-cutover");
+    } catch (caught) {
+      const error =
+        caught instanceof ExecutorError && caught.code === "operation.cancelled"
+          ? new Refused(caught.code)
+          : caught;
+      // Uncertain transport outcomes escape. A confirmed refusal may roll back only before the atomic cutover.
+      if (
+        stopped && error instanceof Refused &&
+        error.result.rollback_pending !== true &&
+        (mayCleanupRefusal(error) || error.code === "operation.cancelled")
+      ) {
+        await child(
+          s,
+          "transfer-rollback",
+          "instance.transfer_rollback",
+          s.nodeId,
+          {
+            instance_id: number(s.input, "instance_id"),
+            transfer_id: s.input.transfer_id,
+          },
+        );
+      }
+      throw error;
+    }
+  }
+  await child(
+    s,
+    "transfer-activate-destination",
+    "instance.transfer_activate",
+    number(s.input, "destination_node_id"),
+    {
+      instance_id: number(s.input, "instance_id"),
+      transfer_id: s.input.transfer_id,
+    },
+  );
+  await run(s, "transfer-destination-activated");
+  await child(s, "transfer-retire-source", "route.retire_source", s.nodeId, {
+    transfer_id: s.input.transfer_id,
+  });
+  await child(
+    s,
+    "transfer-retire-runtime",
+    "process.instance_runtime",
+    s.nodeId,
+    {
+      instance_id: number(s.input, "instance_id"),
+      action: "transfer_retire_source",
+    },
+  );
+  await run(s, "transfer-cleanup-source");
+  await run(s, "transfer-finish");
+  return await finish(s);
+}
+
+async function transferRollback(s: Session): Promise<Receipt> {
+  const recorded = await run(s, "rollback-record");
+  await child(
+    s,
+    "transfer-restore-source",
+    "process.instance_runtime",
+    s.nodeId,
+    {
+      instance_id: number(s.input, "instance_id"),
+      action: "transfer_restore",
+    },
+  );
+  if (z.boolean().parse(recorded.seed_abandon_required)) {
+    await child(
+      s,
+      "transfer-abandon-sqlite",
+      "database.sqlite_seed_abandon",
+      number(recorded, "seed_abandon_node_id"),
+      {},
+    );
+  }
+  await child(
+    s,
+    "transfer-discard-destination",
+    "instance.transfer_discard",
+    number(recorded, "destination_node_id"),
+    {},
+  );
+  await run(s, "rollback-state");
+  return await run(s, "compensation-proof");
+}
+
+async function transferDiscard(s: Session): Promise<Receipt> {
+  await run(s, "transfer-discard-checkout");
+  return await run(s, "compensation-proof");
+}
+
+/** Swamp selects the sequence; Gateway descriptors enforce each effect's admitted inputs and prerequisites. */
 export async function lifecycle(s: Session): Promise<Completion> {
   try {
     const execute = {
@@ -423,6 +597,9 @@ export async function lifecycle(s: Session): Promise<Completion> {
       "instance.clone": clone,
       "instance.register": register,
       "instance.destroy": destroy,
+      "instance.transfer": transfer,
+      "instance.transfer_rollback": transferRollback,
+      "instance.transfer_discard": transferDiscard,
     }[s.kind];
     if (!execute) throw new Error("Wrong instance lifecycle kind");
     return { status: "succeeded", result: await execute(s), error_code: null };

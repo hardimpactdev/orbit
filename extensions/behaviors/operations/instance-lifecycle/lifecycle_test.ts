@@ -234,7 +234,7 @@ Deno.test("registration runs setup only when it was requested", async () => {
   for (const requested of [false, true]) {
     const f = new Fixture();
     f.kind = "instance.register";
-    f.input.members = [{ instance_id: 501, route_id: 30 }];
+    f.input.members = [{ instance_id: 501, route_node_id: 9, route_id: 30 }];
     f.input.run_setup = requested;
     assertEquals((await lifecycle(f)).status, "succeeded");
     assertEquals(f.calls.includes("setup"), requested);
@@ -247,6 +247,7 @@ Deno.test("teardown refusal stops removal before acceptance or Route withdrawal"
   f.input.members = [{
     instance_id: 501,
     route_id: 30,
+    route_node_id: 9,
     run_teardown: true,
     teardown_digest: "b".repeat(64),
   }];
@@ -265,7 +266,7 @@ Deno.test("teardown refusal stops removal before acceptance or Route withdrawal"
 Deno.test("a confirmed registration failure restores its Laravel receipt before reporting the original refusal", async () => {
   const f = new Fixture();
   f.kind = "instance.register";
-  f.input.members = [{ instance_id: 501, route_id: 30 }];
+  f.input.members = [{ instance_id: 501, route_node_id: 9, route_id: 30 }];
   f.results.set("registration-501-configuration", {
     error_code: "app-dev.laravel_url_configuration_failed",
   });
@@ -287,12 +288,113 @@ Deno.test("cancelled, busy and unconfirmed registration effects retain their sav
   ) {
     const f = new Fixture();
     f.kind = "instance.register";
-    f.input.members = [{ instance_id: 501, route_id: 30 }];
+    f.input.members = [{ instance_id: 501, route_node_id: 9, route_id: 30 }];
     f.results.set("registration-501-configuration", { error_code: code });
     assertEquals((await lifecycle(f)).error_code, code);
     assertEquals(f.calls.includes("registration-501-receipt-restore"), false);
     assertEquals(f.calls.includes("registration-501-receipt-discard"), false);
   }
+});
+
+Deno.test("transfer proves destination completion before cutover and source cleanup", async () => {
+  const f = new Fixture();
+  f.kind = "instance.transfer";
+  f.input.destination_node_id = 10;
+  f.input.transfer_id = "proof-transfer";
+  f.results.set("transfer-destination", {
+    error_code: "instance.transfer_failed",
+  });
+  assertEquals((await lifecycle(f)).status, "failed");
+  assertEquals(f.calls, [
+    "transfer-stop-source",
+    "transfer-capture",
+    "transfer-sqlite-intent",
+    "transfer-destination",
+    "transfer-rollback",
+  ]);
+  assertEquals(
+    f.children.find((child) => child.key === "transfer-destination")!.node_id,
+    10,
+  );
+});
+
+Deno.test("cancellation after the stop child admits compensation without a parent rollback run", async () => {
+  const f = new Fixture();
+  f.kind = "instance.transfer";
+  f.input.destination_node_id = 10;
+  f.input.transfer_id = "cancelled-transfer";
+  f.results.set("transfer-capture", { error_code: "operation.cancelled" });
+  assertEquals((await lifecycle(f)).status, "cancelled");
+  assertEquals(f.calls, [
+    "transfer-stop-source",
+    "transfer-capture",
+    "transfer-rollback",
+  ]);
+  assertEquals(f.children.at(-1)!.kind, "instance.transfer_rollback");
+});
+
+Deno.test("pending capture cancellation retains both copies without admitting rollback", async () => {
+  const f = new Fixture();
+  f.kind = "instance.transfer";
+  f.input.destination_node_id = 10;
+  f.input.transfer_id = "pending-transfer";
+  f.results.set("transfer-capture", {
+    error_code: "operation.cancelled",
+    rollback_pending: true,
+  });
+
+  assertEquals(await lifecycle(f), {
+    status: "cancelled",
+    error_code: "operation.cancelled",
+    result: { error_code: "operation.cancelled", rollback_pending: true },
+  });
+  assertEquals(f.calls, ["transfer-stop-source", "transfer-capture"]);
+});
+
+Deno.test("rollback restores the source before recorded SQLite seed and destination cleanup", async () => {
+  const f = new Fixture();
+  f.kind = "instance.transfer_rollback";
+  f.results.set("rollback-record", {
+    recorded: true,
+    seed_abandon_required: true,
+    destination_node_id: 10,
+    seed_abandon_node_id: 12,
+  });
+  assertEquals((await lifecycle(f)).status, "succeeded");
+  assertEquals(f.calls, [
+    "rollback-record",
+    "transfer-restore-source",
+    "transfer-abandon-sqlite",
+    "transfer-discard-destination",
+    "rollback-state",
+    "compensation-proof",
+  ]);
+  assertEquals(f.children.map((child) => child.kind), [
+    "process.instance_runtime",
+    "database.sqlite_seed_abandon",
+    "instance.transfer_discard",
+  ]);
+  assertEquals(f.children.map((child) => child.node_id), [9, 12, 10]);
+});
+
+Deno.test("refused SQLite abandonment preserves the restored source and destination for recovery", async () => {
+  const f = new Fixture();
+  f.kind = "instance.transfer_rollback";
+  f.results.set("rollback-record", {
+    recorded: true,
+    seed_abandon_required: true,
+    destination_node_id: 10,
+    seed_abandon_node_id: 12,
+  });
+  f.results.set("transfer-abandon-sqlite", {
+    error_code: "sqlite.seed_failed",
+  });
+  assertEquals((await lifecycle(f)).error_code, "sqlite.seed_failed");
+  assertEquals(f.calls, [
+    "rollback-record",
+    "transfer-restore-source",
+    "transfer-abandon-sqlite",
+  ]);
 });
 
 Deno.test("confirmed source refusal rolls back a new create, while busy and unknown replies retain it", async () => {
@@ -358,6 +460,49 @@ Deno.test("a completed clone retry only returns its final receipt", async () => 
   assertEquals(f.calls, ["lifecycle-finish"]);
 });
 
+Deno.test("source cleanup follows proven Route retirement after cutover", async () => {
+  const f = new Fixture();
+  f.kind = "instance.transfer";
+  f.input.destination_node_id = 10;
+  f.input.transfer_id = "proof-transfer";
+  f.results.set("transfer-retire-source", {
+    error_code: "instance.transfer_cleanup_incomplete",
+  });
+  assertEquals(
+    (await lifecycle(f)).error_code,
+    "instance.transfer_cleanup_incomplete",
+  );
+  assertEquals(f.calls.includes("transfer-cutover"), true);
+  assertEquals(f.calls.includes("transfer-cleanup-source"), false);
+});
+
+Deno.test("an after-cutover retry only moves forward and never copies source again", async () => {
+  const f = new Fixture();
+  f.kind = "instance.transfer";
+  f.input.destination_node_id = 10;
+  f.input.transfer_id = "proof-transfer";
+  f.input.initial_cutover = true;
+  assertEquals((await lifecycle(f)).status, "succeeded");
+  assertEquals(f.calls.includes("transfer-stop-source"), false);
+  assertEquals(f.calls.includes("transfer-capture"), false);
+  assertEquals(f.calls.includes("transfer-destination"), false);
+  assertEquals(f.calls.includes("transfer-rollback-intent"), false);
+  assertEquals(f.calls.at(-2), "transfer-finish");
+});
+
+Deno.test("an uncertain destination outcome does not discard source or destination", async () => {
+  const f = new Fixture();
+  f.kind = "instance.transfer";
+  f.input.destination_node_id = 10;
+  f.input.transfer_id = "proof-transfer";
+  f.loseReply = "transfer-destination";
+  await assertRejects(() => lifecycle(f), Error, "reply lost");
+  assertEquals(f.calls.includes("transfer-rollback-intent"), false);
+  assertEquals(f.calls.includes("transfer-cutover"), false);
+  assertEquals((await lifecycle(f)).status, "succeeded");
+  assertEquals(f.effects.get("transfer-destination"), 1);
+});
+
 Deno.test("clone installs captured Process and Schedule definitions stopped before Route projection", async () => {
   const f = new Fixture();
   f.kind = "instance.clone";
@@ -408,7 +553,12 @@ Deno.test("removal waits for Process and Schedule removal before shared Route cl
 Deno.test("source preparation refusal keeps the Route and source in place", async () => {
   const f = new Fixture();
   f.kind = "instance.destroy";
-  f.input.members = [{ instance_id: 501, route_id: 30, run_teardown: false }];
+  f.input.members = [{
+    instance_id: 501,
+    route_node_id: 9,
+    route_id: 30,
+    run_teardown: false,
+  }];
   f.results.set("removal-501-source-prepare", {
     error_code: "instance.source_busy",
   });
@@ -521,4 +671,204 @@ Deno.test("a lost per-record child reply reuses its exact key before continuing 
     f.children.find((entry) => entry.kind === "schedule.destroy")!.input,
     { id: scheduleId },
   );
+});
+
+Deno.test("production removal publishes the shared pool on its recorded Nodes before clearing current and removes home after runtime", async () => {
+  const f = new Fixture();
+  f.kind = "instance.destroy";
+  f.input = {
+    instance_id: 501,
+    members: [{
+      instance_id: 501,
+      environment: "production",
+      route_id: null,
+      run_teardown: false,
+    }],
+    production_routes: [{
+      id: 30,
+      targets: [501, 502],
+      node_id: 4,
+      nodes: [9, 10, 4, 5],
+    }],
+  };
+  assertEquals((await lifecycle(f)).status, "succeeded");
+  assertEquals(
+    f.children.filter((c) => c.kind === "route.caddy_converge").map((c) =>
+      c.node_id
+    ),
+    [9, 10, 4, 5],
+  );
+  assertEquals(
+    f.children.some((c) =>
+      c.kind === "route.withdraw" || c.kind === "instance.run_steps"
+    ),
+    false,
+  );
+  assertEquals(
+    f.calls.indexOf("removal-501-route-detach") <
+      f.calls.indexOf("publish-production-30-9"),
+    true,
+  );
+  assertEquals(
+    f.calls.indexOf("publish-production-30-5") <
+      f.calls.indexOf("removal-501-source-finalize"),
+    true,
+  );
+  assertEquals(
+    f.calls.indexOf("cleanup-instance-501") <
+      f.calls.indexOf("removal-501-home-remove"),
+    true,
+  );
+  assertEquals(
+    f.calls.indexOf("removal-501-home-remove") <
+      f.calls.indexOf("removal-501-row-delete"),
+    true,
+  );
+});
+Deno.test("production final Route withdrawal uses its serving Node and a refused publication keeps the home", async () => {
+  const f = new Fixture();
+  f.kind = "instance.destroy";
+  f.input = {
+    instance_id: 501,
+    members: [{
+      instance_id: 501,
+      environment: "production",
+      route_id: null,
+      run_teardown: false,
+    }],
+    production_routes: [{ id: 30, targets: [501], node_id: 4, nodes: [9, 4] }],
+  };
+  f.results.set("withdraw-production-30", {
+    error_code: "caddy.activation_failed",
+  });
+  assertEquals((await lifecycle(f)).status, "failed");
+  assertEquals(f.children[0].node_id, 4);
+  assertEquals(f.calls.includes("removal-501-home-remove"), false);
+  assertEquals(f.calls.includes("removal-501-route-detach"), false);
+});
+
+Deno.test("development removal withdraws primary and extra Routes on their recorded serving Nodes", async () => {
+  const f = new Fixture();
+  f.kind = "instance.destroy";
+  f.input = {
+    instance_id: 501,
+    members: [{
+      instance_id: 501,
+      environment: "development",
+      route_id: 30,
+      route_node_id: 4,
+      run_teardown: false,
+    }],
+    additional_route_ids: [40],
+    additional_routes: [{ route_id: 40, node_id: 5 }],
+  };
+  assertEquals((await lifecycle(f)).status, "succeeded");
+  assertEquals(
+    f.children.filter((c) => c.kind === "route.withdraw").map(
+      (c) => [c.input.route_id, c.node_id],
+    ),
+    [[40, 5], [30, 4]],
+  );
+});
+
+Deno.test("database drop waits for workers and schedulers to close their connections in production", async () => {
+  const f = new Fixture();
+  f.input.production_routes = [];
+  f.kind = "instance.destroy";
+  f.input.members = [{
+    instance_id: 501,
+    environment: "production",
+    route_id: null,
+    run_teardown: false,
+  }];
+  const scheduleId = "12345678-1234-4234-8234-123456789abc";
+  f.results.set("removal-501-runtime-intent", {
+    process_ids: [31],
+    schedule_ids: [scheduleId],
+  });
+  let workerConnected = true;
+  let schedulerConnected = true;
+  const child = f.child.bind(f);
+  f.child = (intent) => {
+    if (intent.key === "remove-process-501-31") workerConnected = false;
+    if (intent.key === `remove-schedule-501-${scheduleId}`) {
+      schedulerConnected = false;
+    }
+    if (
+      intent.key === "remove-databases-501" &&
+      (workerConnected || schedulerConnected)
+    ) {
+      return Promise.resolve({ error_code: "database.in_use" });
+    }
+    return child(intent);
+  };
+  assertEquals((await lifecycle(f)).status, "succeeded");
+  assertEquals(
+    f.calls.indexOf("cleanup-instance-501") <
+      f.calls.indexOf("remove-databases-501"),
+    true,
+  );
+});
+
+Deno.test("a changed single-target Route stops production removal before withdrawal", async () => {
+  const f = new Fixture();
+  f.kind = "instance.destroy";
+  f.input.members = [{
+    instance_id: 501,
+    environment: "production",
+    route_id: 30,
+    run_teardown: false,
+  }];
+  f.input.production_routes = [{
+    id: 30,
+    targets: [501],
+    node_id: 4,
+    nodes: [9, 4],
+  }];
+  f.results.set("removal-501-source-prepare", {
+    error_code: "instance.removal_conflict",
+  });
+
+  assertEquals((await lifecycle(f)).status, "failed");
+  assertEquals(f.children, []);
+  assertEquals(f.calls.includes("withdraw-production-30"), false);
+  assertEquals(f.calls.includes("removal-501-home-remove"), false);
+});
+
+Deno.test("rollback without SQLite restores the source before discarding on the destination", async () => {
+  const f = new Fixture();
+  f.kind = "instance.transfer_rollback";
+  f.results.set("rollback-record", {
+    recorded: true,
+    seed_abandon_required: false,
+    destination_node_id: 10,
+    seed_abandon_node_id: null,
+  });
+  assertEquals((await lifecycle(f)).status, "succeeded");
+  assertEquals(f.children.map((child) => [child.key, child.node_id]), [[
+    "transfer-restore-source",
+    9,
+  ], ["transfer-discard-destination", 10]]);
+});
+
+Deno.test("an offline destination cannot block rollback source restoration", async () => {
+  const f = new Fixture();
+  f.kind = "instance.transfer_rollback";
+  f.results.set("rollback-record", {
+    recorded: true,
+    seed_abandon_required: false,
+    destination_node_id: 10,
+    seed_abandon_node_id: null,
+  });
+  f.results.set("transfer-discard-destination", {
+    error_code: "node.unreachable",
+  });
+
+  assertEquals((await lifecycle(f)).error_code, "node.unreachable");
+  assertEquals(f.calls, [
+    "rollback-record",
+    "transfer-restore-source",
+    "transfer-discard-destination",
+  ]);
+  assertEquals(f.effects.get("transfer-restore-source"), 1);
 });

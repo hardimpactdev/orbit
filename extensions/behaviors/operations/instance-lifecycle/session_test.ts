@@ -5,6 +5,8 @@ import { type ChildExecutor, LifecycleSession } from "./session.ts";
 import type { Child, Receipt } from "./runtime.ts";
 
 class Fixture {
+  kind = "instance.create";
+  cancelled = false;
   input = { instance_id: 501 };
   descriptor = {
     key: "prepare",
@@ -30,6 +32,7 @@ class Fixture {
   children: Child[] = [];
   receiptStatus = 200;
   receiptState: "running" | "unknown" | null = null;
+  contextResult: Receipt = {};
   receiptKey = "op-100.prepare";
   pauseCount = 0;
   onPause = () => {};
@@ -46,13 +49,16 @@ class Fixture {
       }
       let data: unknown = {
         id: 100,
-        kind: "instance.create",
+        kind: this.kind,
         node_id: path.endsWith("instance-lifecycle") ? this.contextNode : 9,
         input: this.input,
         status: "running",
-        cancel_requested: false,
+        cancel_requested: this.cancelled,
         step_results: this.steps,
-        execution_context: { descriptors: [this.descriptor] },
+        execution_context: {
+          descriptors: [this.descriptor],
+          result: this.contextResult,
+        },
         child_context: { children: this.children },
       };
       if (path.includes("/receipts/")) {
@@ -336,4 +342,65 @@ Deno.test("a proven failed target receipt remains terminal even with a generic f
     f.receipt,
   );
   assertEquals(f.effects, 0);
+});
+
+Deno.test("cancelled transfer recovers its nonresumable capture before compensation without a second capture", async () => {
+  const f = new Fixture();
+  f.kind = "instance.transfer";
+  Object.assign(f.descriptor, {
+    key: "transfer-capture",
+    step: "transfer-capture",
+    transport: "instance_lifecycle",
+    name: "instance.transfer-source",
+    input: {
+      operation: "capture",
+      source: "/apps/demo/proof",
+      layout: "checkout",
+      sqlite_source: null,
+    },
+    resumable: false,
+  });
+  f.receiptKey = "op-100.transfer-capture";
+  f.result = { captured: true, commit: "a".repeat(40), branch: "proof" };
+  f.uncertainReply = true;
+  await assertRejects(
+    () => f.session().run("transfer-capture"),
+    ExecutorError,
+    "operation.execution_uncertain",
+  );
+  f.cancelled = true;
+  f.receiptState = "running";
+  f.onPause = () => {
+    f.receiptState = null;
+  };
+  assertEquals(await f.session().run("transfer-capture"), f.result);
+  assertEquals(f.steps["transfer-capture"], f.result);
+  assertEquals(f.calls.filter((call) => call.path.endsWith("/run")).length, 1);
+  assertEquals(f.effects, 1);
+  assertEquals(f.pauseCount, 1);
+});
+
+Deno.test("an unknown cancelled capture ends with Gateway pending recovery without another run", async () => {
+  const f = new Fixture();
+  f.kind = "instance.transfer";
+  f.cancelled = true;
+  f.contextResult = { rollback_pending: true };
+  Object.assign(f.descriptor, {
+    key: "transfer-capture",
+    step: "transfer-capture",
+    resumable: false,
+  });
+  f.receiptKey = "op-100.transfer-capture";
+
+  assertEquals(await f.session().run("transfer-capture"), {
+    error_code: "operation.cancelled",
+    rollback_pending: true,
+  });
+
+  assertEquals(f.calls.filter((call) => call.path.endsWith("/run")), []);
+  assertEquals(f.effects, 0);
+  assertEquals(
+    f.calls.find((call) => call.body?.status === "failed")!.body.result,
+    { error_code: "operation.cancelled", rollback_pending: true },
+  );
 });

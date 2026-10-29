@@ -17,6 +17,9 @@ const Kinds = z.enum([
   "instance.create",
   "instance.register",
   "instance.clone",
+  "instance.transfer",
+  "instance.transfer_rollback",
+  "instance.transfer_discard",
 ]);
 const Assignment = z.object({ operation_id: z.number().int().positive() });
 
