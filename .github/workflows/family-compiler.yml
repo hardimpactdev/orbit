@@ -1,0 +1,52 @@
+name: Declarative family compiler
+on:
+  pull_request:
+    paths:
+      - 'family/**'
+      - 'bin/compile-family.ts'
+      - 'tests/fixtures/family/**'
+      - '.github/workflows/family-compiler.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'family/**'
+      - 'bin/compile-family.ts'
+      - 'tests/fixtures/family/**'
+      - '.github/workflows/family-compiler.yml'
+permissions:
+  contents: read
+jobs:
+  family-compiler:
+    runs-on: [self-hosted, hardimpact]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.8
+      - name: Check compiler
+        run: |
+          deno fmt --check family bin/compile-family.ts tests/fixtures/family
+          deno lint family bin/compile-family.ts
+          deno check --lock=family/deno.lock --frozen bin/compile-family.ts family/compiler_test.ts
+      - name: Install pinned Swamp and verify generated workflow
+        shell: bash
+        env:
+          SWAMP_API_KEY: ${{ secrets.SWAMP_API_KEY }}
+          SWAMP_SIGNIN_TOKEN: ${{ secrets.SWAMP_SIGNIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            https://github.com/swamp-club/swamp/releases/download/v20261028.205235.0-sha.1602a617/swamp-linux-x86_64 \
+            --output "$RUNNER_TEMP/swamp-family-compiler"
+          printf '%s  %s\n' 38b81986c7203f1e93806fc7b6d38e560a86456ea755a4369a89b17b64d4fbe3 "$RUNNER_TEMP/swamp-family-compiler" | sha256sum --check
+          chmod +x "$RUNNER_TEMP/swamp-family-compiler"
+          export SWAMP_BIN="$RUNNER_TEMP/swamp-family-compiler"
+          export SWAMP_HOME="$RUNNER_TEMP/family-swamp-home"
+          export SWAMP_CONFIG_DIR="$RUNNER_TEMP/family-swamp-config"
+          deno test --lock=family/deno.lock --frozen --allow-read --allow-write=/tmp \
+            --allow-env=SWAMP_BIN,HOME,SWAMP_CONFIG_DIR,SWAMP_HOME,SWAMP_API_KEY,SWAMP_API_KEY_FILE,SWAMP_SIGNIN_TOKEN \
+            --allow-run="$SWAMP_BIN" family/compiler_test.ts
+      - name: Clean isolated Swamp files
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP/swamp-family-compiler" "$RUNNER_TEMP/family-swamp-home" "$RUNNER_TEMP/family-swamp-config"

@@ -1,0 +1,95 @@
+{
+  "schema": "orbit.family/v1",
+  "family": "example",
+  "kind": "example.manage",
+  "actions": [
+    "inspect"
+  ],
+  "input": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "inspect"
+        ]
+      }
+    },
+    "required": [
+      "action"
+    ],
+    "additionalProperties": false
+  },
+  "target": {
+    "type": "node_tools",
+    "node": "admitted.node_id",
+    "owner": "admitted.owner_id"
+  },
+  "workflow": {
+    "id": "1b2998fb-67eb-440d-bbea-9f77031b5fe2",
+    "name": "family-compiler-fixture",
+    "inputs": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "jobs": [
+      {
+        "name": "main",
+        "steps": [
+          {
+            "name": "check",
+            "task": {
+              "type": "assert",
+              "expr": "true",
+              "message": "Synthetic compiler fixture",
+              "severity": "high"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "commands": {},
+  "steps": [
+    {
+      "key": "checked",
+      "job": "main",
+      "step": "check",
+      "effect": "read"
+    }
+  ],
+  "secrets": {},
+  "children": {},
+  "done_when": {
+    "workflow": "succeeded",
+    "receipts": [
+      "checked"
+    ]
+  },
+  "result": {
+    "schema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "additionalProperties": false
+    },
+    "max_bytes": 1024
+  },
+  "projection": "example_projection",
+  "invariants": [],
+  "cancel": {
+    "mode": "cooperative",
+    "boundary": "checked"
+  },
+  "health": {
+    "unclaimed_seconds": 120,
+    "stalled_seconds": 900
+  }
+}
