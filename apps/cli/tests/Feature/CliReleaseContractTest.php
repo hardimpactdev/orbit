@@ -546,36 +546,14 @@ function cli_binary_step_uses(array $job): array
 }
 
 describe('CLI binary workflow', function (): void {
-    it('runs PR packaging only when a binary or its build inputs change', function (string $path, bool $expected): void {
+    it('builds CLI binaries through the parent CI for every pull request', function (): void {
         $workflow = cli_binary_workflow();
-        $pullRequest = $workflow['on']['pull_request'];
-        $matches = array_any($pullRequest['paths'], fn (string $pattern): bool => fnmatch($pattern, $path));
-
-        expect($pullRequest['branches'])->toBe(['main']);
-        expect($matches)->toBe($expected);
-        expect($workflow['on'])->toHaveKeys(['workflow_dispatch', 'workflow_call']);
-        expect($workflow['on']['workflow_call']['inputs']['commit']['required'])->toBeTrue();
-        expect($workflow['jobs']['build']['steps'][0]['with']['ref'])->toBe('${{ inputs.commit || github.sha }}');
-    })->with([
-        'CLI source' => ['apps/cli/app/Commands/VersionCommand.php', true],
-        'CLI lockfile' => ['apps/cli/composer.lock', true],
-        'PHPacker' => ['apps/cli/phpacker/composer.lock', true],
-        'SDK' => ['packages/php-sdk/src/Orbit.php', true],
-        'recipe' => ['apps/gateway/resources/machine-software/recipe.json', true],
-        'native PHP installer' => ['apps/agent/src/commands/php_build.rs', true],
-        'native dependencies' => ['apps/agent/Cargo.lock', true],
-        'local command adapter' => ['tools/agent_command.py', true],
-        'unrelated remote bootstrap' => ['apps/gateway/resources/remote/bootstrap.py', false],
-        'PHP setup' => ['.github/actions/php/action.yml', true],
-        'PHP builder' => ['bin/php-build', true],
-        'binary builder' => ['bin/orbit-build-cli-binary', true],
-        'binary version' => ['bin/orbit-version', true],
-        'workflow' => ['.github/workflows/orbit-cli-binary.yml', true],
-        'docs' => ['docs/reference/cli-binaries.md', false],
-        'Gateway code' => ['apps/gateway/app/Models/Node.php', false],
-        'web' => ['apps/web/src/App.tsx', false],
-        'unrelated workflow' => ['.github/workflows/ci.yml', false],
-    ]);
+        $ci = Yaml::parseFile(cli_release_repo_root().'/.github/workflows/ci.yml');
+        expect($workflow['on'])->not->toHaveKey('pull_request')
+            ->and($workflow['on']['workflow_call']['inputs']['commit']['required'])->toBeTrue()
+            ->and($ci['on'])->toHaveKey('pull_request')
+            ->and($ci['jobs']['cli']['uses'])->toBe('./.github/workflows/orbit-cli-binary.yml');
+    });
 
     it('cancels superseded PR builds without grouping release calls together', function (): void {
         $concurrency = cli_binary_workflow()['concurrency'];
@@ -604,34 +582,11 @@ describe('CLI binary workflow', function (): void {
             ->and($build['outputs'])->toBe(['version' => '${{ steps.version.outputs.value }}']);
     });
 
-    it('runs only the amd64 binary on its build runner', function (): void {
-        $build = cli_binary_workflow()['jobs']['build'];
-        $native = array_column($build['strategy']['matrix']['include'], 'native', 'target');
-        $run = collect($build['steps'])->firstWhere('name', 'Run the binary on its own platform');
-
-        expect($native)->toBe(['linux-x64' => true, 'macos-arm64' => false])
-            ->and($run['if'])->toBe('matrix.native')
-            ->and($run['run'])->toContain('env -i HOME="$home" PATH=/usr/bin:/bin "$BINARY" --version')
-            ->and($run['run'])->toContain('test "$reported" = "Orbit ${VERSION}"');
-    });
-
-    it('builds and runs no Linux arm64 binary', function (): void {
-        expect(array_keys(cli_binary_workflow()['jobs']))->toBe(['build', 'run-macos']);
-    });
-
-    it('runs the macOS binary on a hosted Mac without PHP', function (): void {
-        $runMacos = cli_binary_workflow()['jobs']['run-macos'];
-        $run = collect($runMacos['steps'])->firstWhere('name', 'Run the binary on its own platform');
-
-        expect($runMacos['runs-on'])->toBe('macos-26')
-            ->and($runMacos['needs'])->toBe('build')
-            ->and(cli_binary_step_uses($runMacos))->toBe(['actions/download-artifact'])
-            ->and($runMacos['steps'][0]['with'])->toBe(['name' => 'orbit-macos-arm64', 'path' => 'binary'])
-            ->and($run['env'])->toBe(['VERSION' => '${{ needs.build.outputs.version }}'])
-            ->and($run['run'])->toContain('env -i HOME="$home" PATH=/usr/bin:/bin binary/mac-arm --version')
-            ->and($run['run'])->toContain('test "$reported" = "Orbit ${VERSION}"')
-            ->and($run['run'])->not->toContain('php')
-            ->and($run['run'])->not->toContain('composer');
+    it('builds only supported CLI platforms without running test jobs during migration', function (): void {
+        $jobs = cli_binary_workflow()['jobs'];
+        expect(array_keys($jobs))->toBe(['build'])
+            ->and(array_column($jobs['build']['strategy']['matrix']['include'], 'target'))->toBe(['linux-x64', 'macos-arm64'])
+            ->and(collect($jobs['build']['steps'])->firstWhere('name', 'Run the binary on its own platform'))->toBeNull();
     });
 
     it('sets up the recipe PHP build only on amd64 Linux runners', function (): void {
@@ -650,12 +605,12 @@ describe('CLI binary workflow', function (): void {
         }
     });
 
-    it('publishes only after every build job and the native macOS run succeed', function (): void {
+    it('publishes only after every supported platform build succeeds', function (): void {
         $jobs = cli_release_workflow()['jobs'];
 
         expect($jobs['publish']['needs'])->toBe(['resolve', 'build'])
             ->and($jobs['build']['uses'])->toBe('./.github/workflows/orbit-cli-binary.yml')
             ->and(cli_binary_workflow()['permissions'])->toBe(['contents' => 'read'])
-            ->and(cli_binary_workflow()['jobs']['run-macos'])->not->toHaveKey('permissions');
+            ->and(cli_binary_workflow()['jobs']['build'])->not->toHaveKey('permissions');
     });
 });

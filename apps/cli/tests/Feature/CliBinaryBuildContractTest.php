@@ -83,22 +83,20 @@ it('keeps the workflow targets, artifact names, dest paths, and build runners al
     $workflow = file_get_contents(cli_binary_repo_root().'/.github/workflows/orbit-cli-binary.yml');
     $builder = file_get_contents(cli_binary_builder_script());
 
-    $target = static fn (string $target, string $runner, string $platform, string $architecture, string $artifact, string $path, string $native): string => implode("\n", [
+    $target = static fn (string $target, string $runner, string $platform, string $architecture, string $artifact, string $path): string => implode("\n", [
         "          - target: {$target}",
         "            runner: {$runner}",
         "            platform: {$platform}",
         "            architecture: {$architecture}",
         "            artifact: {$artifact}",
         "            path: {$path}",
-        "            native: {$native}",
     ]);
 
     expect($workflow)->toBeString()
         ->and($builder)->toBeString()
-        ->and($workflow)->toContain($target('linux-x64', 'ubuntu-26.04', 'linux', 'x64', 'orbit-linux-x64', 'apps/cli/builds/dist/linux/linux-x64', 'true'))
-        ->and($workflow)->toContain($target('macos-arm64', 'ubuntu-26.04', 'mac', 'arm', 'orbit-macos-arm64', 'apps/cli/builds/dist/mac/mac-arm', 'false'))
+        ->and($workflow)->toContain($target('linux-x64', 'ubuntu-26.04', 'linux', 'x64', 'orbit-linux-x64', 'apps/cli/builds/dist/linux/linux-x64'))
+        ->and($workflow)->toContain($target('macos-arm64', 'ubuntu-26.04', 'mac', 'arm', 'orbit-macos-arm64', 'apps/cli/builds/dist/mac/mac-arm'))
         ->and($workflow)->toContain('bin/orbit-build-cli-binary "${{ matrix.platform }}" "${{ matrix.architecture }}" "$VERSION"')
-        ->and($workflow)->toContain('test "$reported" = "Orbit ${VERSION}"')
         ->and($workflow)->toContain('workflow_call:')
         ->and($workflow)->toContain('working-dir=apps/cli/phpacker')
         ->and($workflow)->toContain('GITHUB_TOKEN: ${{ github.token }}')
