@@ -366,3 +366,63 @@ fn publish_writes_only_a_changed_file_with_its_mode() {
     assert_eq!(publish(&file, "two", 0o600), Ok(true));
     assert_eq!(fs::read_to_string(&file).unwrap(), "two");
 }
+
+#[test]
+fn configure_secret_hash_is_live_once_and_never_saved_in_effect_receipts() {
+    use crate::command::{effects::Store, Context, Outcome, Platform};
+    let mut sandbox = Sandbox::new();
+    let directory = sandbox._work.0.join("effect-receipts");
+    let store = Store::at(directory.clone());
+    let context = Context::new(Platform::Linux, soon())
+        .with_effect_masks(vec![])
+        .with_effect_secret_outputs(vec!["secret_hash".into()])
+        .with_effect_identity(
+            "11111111-1111-4111-8111-111111111111".into(),
+            time::OffsetDateTime::now_utc().unix_timestamp(),
+        );
+    let first = store.execute(
+        "agent.configure",
+        "op-17.configure",
+        "configure-fingerprint",
+        &context,
+        || Outcome::Ok(serde_json::to_value(sandbox.configure(&input(None)).unwrap()).unwrap()),
+    );
+    let expected = hash(&sandbox.secret());
+    let Outcome::Ok(result) = first else {
+        panic!("configure must succeed");
+    };
+    assert_eq!(result["secret_hash"], expected);
+    assert_eq!(result["restarted"], true);
+    let receipt = store
+        .receipt("agent.configure", "op-17.configure")
+        .unwrap_or_else(|_| panic!("readable"));
+    assert_eq!(
+        receipt.result.unwrap()["data"]["secret_hash"],
+        serde_json::json!({"$secret_output":true})
+    );
+    for entry in fs::read_dir(directory).unwrap() {
+        let path = entry.unwrap().path();
+        if path
+            .extension()
+            .is_some_and(|extension| extension == "json")
+        {
+            let contents = fs::read_to_string(path).unwrap();
+            assert!(!contents.contains(&expected));
+            assert!(!contents.contains(&sandbox.secret()));
+        }
+    }
+    let repeated = store.execute(
+        "agent.configure",
+        "op-17.configure",
+        "configure-fingerprint",
+        &context,
+        || panic!("never repeat configure"),
+    );
+    let Outcome::Ok(repeated) = repeated else {
+        panic!("saved receipt");
+    };
+    assert_eq!(
+        repeated["secret_hash"],
+        serde_json::json!({"$secret_output":true})
+    );
+}

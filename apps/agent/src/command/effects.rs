@@ -335,9 +335,43 @@ impl Store {
         action()
     }
     fn sanitize(outcome: Outcome, context: &Context) -> Result<Outcome, Outcome> {
-        let masks = context
+        let mut masks = context
             .effect_masks()
-            .ok_or_else(|| refused("agent.effect_sanitization_required"))?;
+            .ok_or_else(|| refused("agent.effect_sanitization_required"))?
+            .to_vec();
+        let mut booleans = context.effect_boolean_masks().to_vec();
+        fn collect(value: &Value, masks: &mut Vec<String>, booleans: &mut Vec<bool>) {
+            match value {
+                Value::String(text) => masks.push(text.clone()),
+                Value::Number(number) => masks.push(number.to_string()),
+                Value::Bool(boolean) => booleans.push(*boolean),
+                Value::Array(items) => {
+                    for item in items {
+                        collect(item, masks, booleans);
+                    }
+                }
+                Value::Object(fields) => {
+                    for value in fields.values() {
+                        collect(value, masks, booleans);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let original = outcome.clone();
+        let mut outcome = outcome;
+        let mut present = Vec::new();
+        if let Outcome::Ok(result) = &mut outcome {
+            for path in context.effect_secret_outputs() {
+                let pointer = format!("/{}", path.replace('.', "/"));
+                if let Some(value) = result.pointer_mut(&pointer) {
+                    collect(value, &mut masks, &mut booleans);
+                    *value = json!({"$secret_output":true});
+                    present.push(path.clone());
+                }
+            }
+        }
+        let masks = masks.as_slice();
         fn text(mut value: String, masks: &[String]) -> String {
             let mut masks: Vec<_> = masks.iter().filter(|value| !value.is_empty()).collect();
             masks.sort_by_key(|value| std::cmp::Reverse(value.len()));
@@ -379,7 +413,18 @@ impl Store {
         }
         Ok(match outcome {
             Outcome::Ok(result) => {
-                Outcome::Ok(value(result, masks, context.effect_boolean_masks()))
+                let mut result = value(result, masks, &booleans);
+                if let Outcome::Ok(original) = &original {
+                    for path in present {
+                        restore_output(
+                            &mut result,
+                            original,
+                            &path,
+                            json!({"$secret_output":true}),
+                        );
+                    }
+                }
+                Outcome::Ok(result)
             }
             Outcome::Refused {
                 code,
@@ -388,7 +433,7 @@ impl Store {
             } => Outcome::Refused {
                 code: text(code, masks),
                 message: text(message, masks),
-                details: value(details, masks, context.effect_boolean_masks()),
+                details: value(details, masks, &booleans),
             },
         })
     }
@@ -464,6 +509,7 @@ impl Store {
                         return Self::sanitize(outcome, context);
                     }
                 }
+                let live = outcome.clone();
                 let outcome = Self::sanitize(outcome, context)?;
                 stored.sanitized = true;
                 stored.result_digest = Some(digest(
@@ -476,6 +522,15 @@ impl Store {
                 );
                 stored.response = Some(outcome.clone());
                 self.save(&stored)?;
+                let mut outcome = outcome;
+                if let (Outcome::Ok(original), Outcome::Ok(result)) = (live, &mut outcome) {
+                    for path in context.effect_secret_outputs() {
+                        let pointer = format!("/{}", path.replace('.', "/"));
+                        if let Some(secret) = original.pointer(&pointer) {
+                            restore_output(result, &original, path, secret.clone());
+                        }
+                    }
+                }
                 Ok(outcome)
             })
         });
@@ -648,16 +703,60 @@ impl Store {
     }
 }
 
+// Restore public declaration paths using original structure, even if a mask also matched a JSON key.
+fn restore_output(target: &mut Value, original: &Value, path: &str, value: Value) {
+    fn set(target: &mut Value, original: &Value, parts: &[&str], value: Value) {
+        let Some((part, rest)) = parts.split_first() else {
+            *target = value;
+            return;
+        };
+        match original {
+            Value::Object(fields) => {
+                if let Some(original) = fields.get(*part) {
+                    if !target.is_object() {
+                        *target = json!({});
+                    }
+                    let child = target
+                        .as_object_mut()
+                        .expect("object just created")
+                        .entry((*part).to_string())
+                        .or_insert(Value::Null);
+                    set(child, original, rest, value);
+                }
+            }
+            Value::Array(items) => {
+                if !target.is_array() {
+                    *target = Value::Array(vec![Value::Null; items.len()]);
+                }
+                if let Ok(index) = part.parse::<usize>() {
+                    if let (Some(original), Some(child)) = (items.get(index), target.get_mut(index))
+                    {
+                        set(child, original, rest, value);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    set(
+        target,
+        original,
+        &path.split('.').collect::<Vec<_>>(),
+        value,
+    );
+}
+
 fn bound_fingerprint(command: &str, input: &Value, context: &Context) -> Result<String, Outcome> {
     use std::os::unix::fs::FileExt;
     let file = context
         .clone_binary_input()
         .map_err(|_| refused("agent.binary_input_invalid"))?;
+    let mut bound = json!({"input":input,"identity":context.effect_identity()});
+    if !context.effect_secret_outputs().is_empty() {
+        bound["secret_outputs"] = json!(context.effect_secret_outputs());
+    }
     let Some(file) = file else {
-        return Ok(fingerprint(
-            command,
-            &json!({"input": input, "identity": context.effect_identity()}),
-        ));
+        return Ok(fingerprint(command, &bound));
     };
     let mut hash = Sha256::new();
     let mut buffer = [0; 65536];
@@ -672,10 +771,8 @@ fn bound_fingerprint(command: &str, input: &Value, context: &Context) -> Result<
         hash.update(&buffer[..count]);
         offset += count as u64;
     }
-    Ok(fingerprint(
-        command,
-        &json!({"input":input,"identity":context.effect_identity(),"binary_sha256":super::run::hex(&hash.finalize())}),
-    ))
+    bound["binary_sha256"] = json!(super::run::hex(&hash.finalize()));
+    Ok(fingerprint(command, &bound))
 }
 
 pub fn execute<C: Command>(

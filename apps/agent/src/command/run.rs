@@ -175,10 +175,28 @@ pub fn execute_stream(
                 booleans: Vec<bool>,
                 nonce: String,
                 created_at: i64,
+                #[serde(default)]
+                secret_outputs: Vec<String>,
             }
             match serde_json::from_value::<Protected>(value) {
-                Ok(metadata) => Some(metadata),
-                Err(_) => {
+                Ok(metadata)
+                    if metadata.secret_outputs.len() <= 64
+                        && metadata.secret_outputs.iter().all(|path| {
+                            !path.is_empty()
+                                && path.len() <= 192
+                                && path.split('.').all(|part| {
+                                    !part.is_empty()
+                                        && part.bytes().all(|byte| {
+                                            byte.is_ascii_alphanumeric()
+                                                || byte == b'_'
+                                                || byte == b'-'
+                                        })
+                                })
+                        }) =>
+                {
+                    Some(metadata)
+                }
+                _ => {
                     return Outcome::refused(
                         "agent.envelope_invalid",
                         "The protected effect metadata is invalid.",
@@ -283,6 +301,7 @@ pub fn execute_stream(
         Some(metadata) => context
             .with_effect_masks(metadata.redactions)
             .with_effect_boolean_masks(metadata.booleans)
+            .with_effect_secret_outputs(metadata.secret_outputs)
             .with_effect_identity(metadata.nonce, metadata.created_at),
         None => context,
     };
@@ -457,6 +476,30 @@ mod tests {
             )),
             "agent.envelope_invalid"
         );
+    }
+
+    #[test]
+    fn protected_output_paths_are_validated_before_command_input() {
+        for (paths, expected) in [
+            (vec!["secret_hash".to_string()], "agent.invalid_input"),
+            (
+                vec!["data..credential".to_string()],
+                "agent.envelope_invalid",
+            ),
+            (vec!["x".repeat(193)], "agent.envelope_invalid"),
+            (vec!["credential".to_string(); 65], "agent.envelope_invalid"),
+        ] {
+            let envelope = json!({"agent_sha256":PIN,"deadline_ms":1000,"input":{"unexpected":true},
+                "effect_receipt":{"redactions":[],"booleans":[],"nonce":"11111111-1111-4111-8111-111111111111","created_at":1,"secret_outputs":paths}});
+            assert_eq!(
+                code(&execute(
+                    "agent.status",
+                    envelope.to_string().as_bytes(),
+                    &host(1000)
+                )),
+                expected
+            );
+        }
     }
 
     #[test]

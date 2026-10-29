@@ -150,9 +150,24 @@ final readonly class OperationExecutionContract
     {
         $fields = $this->definition($operation)['result_fields'];
         $safe = OperationResultFields::filter($fields, $result);
-        $safe = ValidatedData::object($this->secrets->redact($this->redactor->sanitizeProperties($safe), $knownValues));
 
-        return OperationResultFields::filter($fields, $safe);
+        return OperationResultFields::filter($fields, $this->redactResult($operation, $safe, $knownValues));
+    }
+
+    /** Redact without selecting fields: family receipt classifiers still receive safe raw transport fields.
+     * @param  array<string,mixed>  $result
+     * @param  list<string>  $knownValues
+     * @return array<string,mixed>
+     */
+    public function redactResult(Operation $operation, #[\SensitiveParameter] array $result, #[\SensitiveParameter] array $knownValues = []): array
+    {
+        $references = OperationSecretOutputs::references($this->definition($operation)['result_fields'], $result);
+        $safe = ValidatedData::object($this->secrets->redact($result, $knownValues));
+        foreach ($references as $path => $reference) {
+            Arr::set($safe, $path, $reference);
+        }
+
+        return $safe;
     }
 
     /** @param array<string,mixed> $result */

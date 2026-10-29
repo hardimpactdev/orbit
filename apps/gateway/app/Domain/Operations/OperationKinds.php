@@ -112,6 +112,14 @@ final readonly class OperationKinds
             throw new LogicException("Operation kind [{$kind}] needs declared result fields.");
         }
         OperationResultFields::validate($definition['result_fields']);
+        if (OperationSecretOutputs::declarations($definition['result_fields']) !== []) {
+            foreach ($definition['runs'] as $run) {
+                $class = is_array($run) && is_string($run['transport'] ?? null) ? (OperationTransports::definitions()[$run['transport']] ?? null) : null;
+                if ($class === null || ! is_a($class, OperationSecretOutputTransport::class, true)) {
+                    throw new LogicException('Secret outputs require a transport that keeps generated values transient.');
+                }
+            }
+        }
         $settledKinds = OperationCompletionContracts::settledKinds(ValidatedData::object($definition['completion_contract']));
         if ($settledKinds !== []) {
             OperationResultFields::validateSkipped($definition['result_fields'], count($settledKinds));
@@ -176,7 +184,7 @@ final readonly class OperationKinds
      */
     public static function supports(string $capability): bool
     {
-        return in_array($capability, ['children', 'children_settled', 'list_of', 'receipts', 'compensations'], true);
+        return in_array($capability, ['children', 'children_settled', 'list_of', 'receipts', 'compensations', 'secret_outputs'], true);
     }
 
     public static function executor(string $kind): string

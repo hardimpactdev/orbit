@@ -6,7 +6,7 @@ namespace App\Domain\Operations;
 
 use App\Models\Operation;
 
-/** Family-owned encrypted output storage. The secret_outputs capability remains disabled until H enforces it. */
+/** Family-owned encrypted output storage. The framework checks ownership and commits this write with the keyed receipt. */
 interface OperationSecretOutputStore
 {
     public function name(): string;

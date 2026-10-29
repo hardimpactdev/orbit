@@ -745,3 +745,106 @@ fn a_failed_prestart_intent_removal_cannot_report_that_the_key_is_unused() {
         "agent.effect_unknown"
     );
 }
+
+#[test]
+fn generated_output_echoes_are_removed_from_stored_receipts_and_live_public_fields() {
+    let fixture = Fixture::new();
+    let store = fixture.store();
+    let ctx = context().with_effect_secret_outputs(vec!["nested.credential".into()]);
+    let outcome = store.execute("test.output", "op-42.output", "fp", &ctx, || Outcome::Ok(json!({"nested":{"credential":"private-output-value"},"echo":"echo:private-output-value"})));
+    assert_eq!(
+        outcome,
+        Outcome::Ok(
+            json!({"nested":{"credential":"private-output-value"},"echo":"echo:[REDACTED]"})
+        )
+    );
+    let receipt = store
+        .receipt("test.output", "op-42.output")
+        .unwrap_or_else(|_| panic!("receipt"));
+    assert_eq!(
+        receipt.result.unwrap()["data"],
+        json!({"nested":{"credential":{"$secret_output":true}},"echo":"echo:[REDACTED]"})
+    );
+    let input = json!({"key":"same"});
+    assert_ne!(
+        bound_fingerprint("test.output", &input, &ctx).unwrap(),
+        bound_fingerprint("test.output", &input, &context()).unwrap()
+    );
+}
+
+#[test]
+fn external_program_completion_strips_declared_outputs_before_any_target_save() {
+    let fixture = Fixture::new();
+    let store = fixture.store();
+    let ctx = context().with_effect_secret_outputs(vec!["data.credential".into()]);
+    store
+        .reserve(
+            "remote_program.test",
+            "op-42.output",
+            "fp",
+            Duration::from_secs(30),
+            &ctx,
+        )
+        .unwrap_or_else(|_| panic!("reserve"));
+    let receipt = store
+        .complete(
+            "remote_program.test",
+            "op-42.output",
+            "fp",
+            json!({"data":{"credential":"private-program-value"},"log":"private-program-value"}),
+            &ctx,
+        )
+        .unwrap_or_else(|_| panic!("complete"));
+    assert_eq!(
+        receipt.result.unwrap()["data"],
+        json!({"data":{"credential":{"$secret_output":true}},"log":"[REDACTED]"})
+    );
+}
+
+#[test]
+fn declared_paths_survive_secret_values_that_match_field_or_ancestor_names() {
+    for (path, output, secret) in [
+        (
+            "credential",
+            json!({"credential":"credential","done":true}),
+            json!("credential"),
+        ),
+        (
+            "parent.credential",
+            json!({"parent":{"credential":"parent"},"done":true}),
+            json!("parent"),
+        ),
+        (
+            "parent.0.credential",
+            json!({"parent":[{"credential":"parent"}],"done":true}),
+            json!("parent"),
+        ),
+        (
+            "credential",
+            json!({"credential":true,"done":true}),
+            json!(true),
+        ),
+    ] {
+        let fixture = Fixture::new();
+        let store = fixture.store();
+        let ctx = context().with_effect_secret_outputs(vec![path.into()]);
+        let live = store.execute("test.output", "op-42.output", "fp", &ctx, || {
+            Outcome::Ok(output)
+        });
+        let Outcome::Ok(live) = live else {
+            panic!("live output");
+        };
+        let pointer = format!("/{}", path.replace('.', "/"));
+        assert_eq!(live.pointer(&pointer), Some(&secret));
+        if secret.is_boolean() {
+            assert_eq!(live["done"], "[REDACTED]");
+        }
+        let receipt = store
+            .receipt("test.output", "op-42.output")
+            .unwrap_or_else(|_| panic!("receipt"));
+        assert_eq!(
+            receipt.result.unwrap()["data"].pointer(&pointer),
+            Some(&json!({"$secret_output":true}))
+        );
+    }
+}

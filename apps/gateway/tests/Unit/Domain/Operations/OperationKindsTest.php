@@ -47,7 +47,7 @@ it('refuses unenforced kind run and completion guarantees while loading declarat
 
 it('reports optional capabilities unavailable until their enforcement ships', function (string $capability): void {
     expect(OperationKinds::supports($capability))->toBeFalse();
-})->with(['secret_outputs', 'unknown']);
+})->with(['unknown']);
 
 it('reports enforced child and target receipt capabilities', function (): void {
     expect(OperationKinds::supports('children'))->toBeTrue()
