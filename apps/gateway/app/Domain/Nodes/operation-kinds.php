@@ -168,6 +168,21 @@ $nodeLifecycleDefinition = [
     'result_fields' => ['node_plan_proven', 'projected', 'matches', 'changed', 'outcome', 'error_code', 'failed_step'],
 ];
 $nodeKinds['node.network_projection'] = $nodeLifecycleDefinition;
+foreach (['node.bootstrap_host' => ['node.bootstrap'], 'node.bootstrap_verify' => ['agent.status', 'firewall.rules'], 'node.macos_inspect' => ['node.inspect-macos-enrollment']] as $bootstrapKind => $bootstrapCommands) {
+    $nodeKinds[$bootstrapKind] = [...$nodeLifecycleDefinition,
+        'runs' => [
+            ['transport' => 'gateway', 'name' => 'node.lifecycle-result', 'input_values' => [], 'resumable' => true],
+            ...array_map(static fn (string $name): array => ['transport' => 'bootstrap-ssh', 'name' => $name,
+                'resumable' => in_array($name, ['agent.status', 'node.inspect-macos-enrollment'], true),
+                'bind' => array_combine(['agent_pin', 'bootstrap_host', 'bootstrap_port', 'bootstrap_user', 'bootstrap_fingerprint', 'bootstrap_identity'],
+                    array_map(static fn (string $field): string => 'input.'.$field,
+                        ['agent_pin', 'bootstrap_host', 'bootstrap_port', 'bootstrap_user', 'bootstrap_fingerprint', 'bootstrap_identity'])),
+                'secrets' => ['bootstrap_identity' => 'node.bootstrap_ssh_identity'],
+                'input_schema' => BootstrapSshOperationTransport::inputSchema($name)], $bootstrapCommands),
+        ],
+        'result_fields' => ['node_plan_proven', 'bootstrapped', 'bootstrap_verified', 'matches', 'changed', 'architecture', 'platform', 'sha256', 'version', 'observer', 'error_code', 'failed_step'],
+    ];
+}
 $nodeKinds['node.removal_begin'] = [...$nodeLifecycleDefinition,
     'runs' => [
         ['transport' => 'gateway', 'name' => 'node.begin-removal', 'input_values' => [], 'resumable' => true],

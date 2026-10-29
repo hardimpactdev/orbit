@@ -7,6 +7,12 @@ description: "Execution contracts for Node lifecycle Operations and their cross-
 
 The Gateway validates Node changes and records their intent. Swamp runs the steps. Each remote run targets its Operation's `node_id` and uses a declared command, bound input, and a recorded result. Reads remain in Orbit.
 
+## Enrollment intent
+
+`node.add` records generated private Route changes as exact `{route_id, domain, node_id}` tuples in `state.enrollment_intent.route_changes`. Each `route.update` child has only `{route_id, domain}` as input. Its Node is the first target Instance's Node when Instances are sorted by ID, then the Route Node, stored Cluster Router, or custom proxy Node. Target position and the domain's generation-basis Node do not select the executor. A missing serving Node refuses admission.
+
+The Node keeps its TLD and Cluster until all captured Route changes have proven success. Route admission independently checks generation-basis ownership, the stored tuple, normal validation, and the final selected Node. A changed target refuses and rolls back its reservation.
+
 ## Network child
 
 The internal `node.network_converge` child records its public connection and host fingerprint before admission. It prepares the peer key through pinned bootstrap SSH, publishes the hub through a child on the VPN Node, then publishes and verifies the peer. An existing peer retains its native transaction until the owning role succeeds. A proven failure restores that transaction before final completion. A missing reply requires the original target receipt; it never authorizes an unkeyed retry. 
@@ -63,6 +69,8 @@ Before WireGuard exists, Node enrollment uses the family transport `bootstrap-ss
 Bootstrap receipt reads resolve only the declared existing connection identity through `OperationSecrets::connection`. The source implements `OperationConnectionSecretSource`; it reads the existing SSH identity without creating or rotating credentials. Receipt reads recheck the admitted host fingerprint and use the identity only for that connection. Payload sources and original redaction masks are never resolved again.
 
 `node.bootstrap_probe` reads the machine architecture through the pinned public SSH login before selecting an agent build. It installs nothing and executes no agent command. Its proven completion records the observed architecture and host key. The following installer child selects its pin from the parent's admitted delivery map; a requested architecture must match the observation when the Node has no recorded architecture.
+
+`node.bootstrap_host` uses the original bootstrap account for native account and package setup after installer proof. Task VM images skip that software step. `node.bootstrap_verify` then uses the recorded managed account at the same pinned public address. It verifies the agent's architecture, platform and delivery pin before installing the base firewall. `node.macos_inspect` instead checks the existing account and tunnel address without Linux host setup. Each is a child under the enrollment target hold, with no caller-selected connection or command payload.
 
 Agent installation records the delivered binary pin before dispatch and sends the shared effect key and original sanitization metadata to the native installer. A lost reply reads the original receipt, including whether the binary changed. Receipt reads use a verified staged binary without installing it. The Gateway refuses the effect when its release does not deliver the admitted pin.
 

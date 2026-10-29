@@ -81,6 +81,18 @@ final readonly class NodeLifecycleOperationExecution implements OperationFamilyC
 
     public function received(Operation $operation, array $run, array $receipt): array
     {
+        if (! isset($receipt['error_code']) && in_array($operation->kind, ['node.bootstrap_verify', 'node.macos_inspect'], true)
+            && in_array($run['key'], ['bootstrap-verify', 'bootstrap-macos'], true)) {
+            $step = array_find($this->plan($operation), static fn (array $step): bool => $step['key'] === $run['key']);
+            if ($step === null) {
+                throw $this->unproven();
+            }
+            foreach (ValidatedData::object($step['result'] ?? []) as $field => $expected) {
+                if (($receipt[$field] ?? null) !== $expected) {
+                    return ['error_code' => $field === 'architecture' ? 'node.architecture_mismatch' : 'node.bootstrap_verification_failed'];
+                }
+            }
+        }
         if (! isset($receipt['error_code']) && in_array($run['name'], ['firewall.rules', 'firewall.router-lan'], true) && ($receipt['matches'] ?? null) !== true) {
             return ['error_code' => 'node.firewall_convergence_failed'];
         }

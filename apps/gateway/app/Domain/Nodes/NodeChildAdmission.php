@@ -26,7 +26,7 @@ final readonly class NodeChildAdmission implements OperationChildAdmission
 
     public function admit(Operation $parent, array $intent): Operation
     {
-        if (in_array($intent['kind'], ['node.bootstrap_probe', 'node.bootstrap_install'], true)) {
+        if (in_array($intent['kind'], ['node.bootstrap_probe', 'node.bootstrap_install', 'node.bootstrap_host', 'node.bootstrap_verify', 'node.macos_inspect'], true)) {
             return app(AdmitNodeBootstrapAction::class)->execute($parent, $intent);
         }
         if ($intent['kind'] === 'node.network_projection') {

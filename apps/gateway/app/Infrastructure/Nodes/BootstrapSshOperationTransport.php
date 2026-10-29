@@ -7,6 +7,7 @@ namespace App\Infrastructure\Nodes;
 use App\Domain\Nodes\LinuxUserName;
 use App\Domain\Operations\OperationEffectTransport;
 use App\Domain\Operations\OperationSecrets;
+use App\Domain\Operations\OperationTransportInput;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
 use App\Infrastructure\AgentCommands\AgentEffectReceipts;
@@ -21,7 +22,7 @@ use App\Support\ValidatedData;
 use LogicException;
 
 /** Pinned first-contact transport. The request cannot select a connection or an SSH credential. */
-final readonly class BootstrapSshOperationTransport implements OperationEffectTransport
+final readonly class BootstrapSshOperationTransport implements OperationEffectTransport, OperationTransportInput
 {
     private const array Commands = [
         'node.probe-bootstrap', 'agent.install', 'agent.status', 'node.bootstrap', 'node.inspect-macos-enrollment',
@@ -39,6 +40,13 @@ final readonly class BootstrapSshOperationTransport implements OperationEffectTr
     public function schema(Operation $operation, array $run): array|bool
     {
         return in_array($run['name'], self::Commands, true) ? self::inputSchema($run['name']) : false;
+    }
+
+    public function wireInput(Operation $operation, array $run, #[\SensitiveParameter] array $input): mixed
+    {
+        $input['command_input'] = AgentSchemas::wireInput(ValidatedData::object($input['command_input'] ?? []));
+
+        return (object) $input;
     }
 
     public function run(Operation $operation, array $run, #[\SensitiveParameter] array $hydratedInput): array

@@ -178,5 +178,5 @@ it('refuses connection credentials when the Operation resource is another Node',
     app()->instance(SshKeyProvider::class, $keys);
 
     $this->postJson("/api/v1/operation-executor/{$operation->id}/run", $body)
-        ->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
+        ->assertConflict()->assertJsonPath('error.code', 'operation.child_unproven');
 });
