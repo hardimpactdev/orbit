@@ -84,6 +84,10 @@ Gateway derive skipped entries from child rows. The Gateway validates and
 redacts them before storage and projects partial cache success only from a
 proven fill receipt.
 
+Cache batch conflict maps retain the Gateway's admitted JSON value. Empty PHP
+maps arrive as `[]`; populated maps contain archive keys and string reasons. The
+input parser accepts those two shapes and refuses nonempty arrays.
+
 ## Required shared interfaces
 
 The family requires kit A/G, B, C, D and I. It registers a dependent kind only

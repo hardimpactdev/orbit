@@ -81,6 +81,34 @@ const fillInput = CacheFillInput.parse({
   batches: [{ artifacts: [], conflicts: {} }, { artifacts: [], conflicts: {} }],
 });
 
+Deno.test("Gateway empty conflict maps reach the cache batch children", async () => {
+  const admitted = CacheFillInput.parse({
+    host_node_id: 3,
+    deadline_at: 4_000_000_000,
+    batches: [{ artifacts: [], conflicts: [] }],
+  });
+  const effects = new Effects();
+  assertEquals(await fillPackageCache(admitted, effects), {
+    ready: true,
+    skipped: [],
+  });
+  assertEquals(effects.keys, ["fill-0"]);
+  assertEquals(JSON.stringify(admitted.batches[0].conflicts), "[]");
+});
+
+Deno.test("cache conflict maps refuse nonempty arrays and nonstring reasons", () => {
+  for (const conflicts of [["invalid"], [{}], { archive: 1 }]) {
+    assertEquals(
+      CacheFillInput.safeParse({
+        host_node_id: 3,
+        deadline_at: 4_000_000_000,
+        batches: [{ artifacts: [], conflicts }],
+      }).success,
+      false,
+    );
+  }
+});
+
 Deno.test("host cache fill settles bounded batches with stable child keys and a small parent result", async () => {
   const effects = new Effects();
   assertEquals(await fillPackageCache(fillInput, effects), {

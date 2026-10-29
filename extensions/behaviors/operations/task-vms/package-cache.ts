@@ -42,7 +42,11 @@ export const CacheFillInput = z.object({
   batches: z.array(
     z.object({
       artifacts: z.array(z.record(z.string(), z.unknown())),
-      conflicts: z.record(z.string(), z.string()),
+      // Eloquent array casts encode an empty PHP map as []; keep its wire value.
+      conflicts: z.union([
+        z.record(z.string(), z.string()),
+        z.array(z.never()).length(0),
+      ]),
     }).strict(),
   ).min(1).max(128),
   deadline_at: z.number().int().positive(),
