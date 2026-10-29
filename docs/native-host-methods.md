@@ -1,0 +1,15 @@
+# Dependency methods on the authoritative host
+
+Node 209 runs serve and three independent native workers under `orbit`. Two workers advertise `pool=migration`, and one advertises `pool=services-local`; all advertise `node=209`. Each worker uses `--concurrency auto`. The retired Sabre, Shark and Services workers have no active credentials. Gateway executor authorization is `ORBIT_OPERATION_EXECUTOR_WORKER_NODE_IDS=209`; repository-token authorization remains Node 209 only.
+
+The pinned Swamp runtime refuses `context.runModel()` in remote execution. `@nckrtl/native-host-method` lets a worker invoke an allowlisted dependency method through the pinned local Swamp CLI in a separate process. The CLI uses `/home/orbit/apps/orbit-swamp/default`, so nested methods get the real local context and publish to the authoritative datastore. Producer names and exact report versions remain unchanged. Scan diagnostics use a separate `dependency-scanner-<projectId>` model per project to avoid a shared scanner lock.
+
+The adapter accepts fixed actions and validated ordinary inputs. It cannot select an arbitrary executable, checkout, method or environment. JSON travels through literal stdin, with reports suppressed. Its clean environment contains trusted account paths and no inherited GitHub token, remote-server token or proxy headers. The original scanner requests its short-lived, one-repository Gateway token inside the child. Only git and gh receive that token; package-tool environments retain their existing allowlist. Workers receive no standing GitHub credential, vault grant or Node execution key.
+
+Each invocation owns a private temporary directory and process group. Cancellation or the action deadline terminates the group, waits up to ten seconds, kills remaining descendants, reaps the child and removes the temporary tree. Errors expose only fixed native CLI codes, never raw stderr. Original methods publish their normal safe diagnostics and evidence; the adapter adds no duplicate report resource.
+
+This adapter requires the authoritative Node 209 filesystem, binaries and account. Workflows using it must select both `pool=migration` and `node="209"`; a generic migration worker elsewhere is insufficient. It does not enable `@swamp/ssh` or alter deployment extension pins. The historical, unscheduled `dependency-upgrade` still requires its configured read-only Orbit scratch checkout; placement does not create that checkout or grant repository access.
+
+## Focused verification
+
+Run `deno test -A tests/native_host_method_test.ts` for literal input, environment isolation, safe errors and process-group cleanup. Run `SWAMP_BIN=/path/to/pinned/swamp python3 -B -m unittest discover -s tests -p native_host_method_native_test.py -v` for a real isolated serve, worker and nested native method. That fixture proves the remote refusal, successful local nested execution, separate producer PID and canonical data visibility. It makes no live Node changes. Full producer publication and token isolation are covered separately by the Services detection fixture and dependency credential tests.
