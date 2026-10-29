@@ -50,6 +50,7 @@ final readonly class DevelopmentSite
         public ?string $poolSuffix = null,
         public ?string $websocketKey = null,
         public ?string $websocketAppId = null,
+        public ?string $managedTlsUpstream = null,
     ) {}
 
     public function withWebSocket(string $key, string $websocketAppId): self
@@ -118,6 +119,11 @@ final readonly class DevelopmentSite
         return $this->localHttpUpstream !== null && $this->localHttpUpstream !== '';
     }
 
+    public function isServiceHttpProxy(): bool
+    {
+        return $this->isLocalHttpProxy() || $this->managedTlsUpstream !== null;
+    }
+
     /** A tracking host: only Plausible's script and event paths reach the analytics role. */
     public function isAnalyticsTracking(): bool
     {
@@ -130,7 +136,7 @@ final readonly class DevelopmentSite
             || $this->upstreamAddress !== null
             || $this->upstreamAddresses !== []
             || $this->localUnixUpstream !== null
-            || $this->isLocalHttpProxy();
+            || $this->isServiceHttpProxy();
     }
 
     /** @return list<string> */

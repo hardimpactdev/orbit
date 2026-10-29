@@ -248,6 +248,14 @@ The first form stores a loopback URL. The second form stores a Node Process and 
 
 To recover a `failed` private custom proxy create, destroy the Route and create it again. Repeat the identical public Process creation request to resume activation. Destroy withdraws its public site and reconciles the Ingress firewall; repeat destroy after a failure.
 
+### Stored private TLS upstreams
+
+A managed service relocation can retain its private Route and DNS on the serving Node while forwarding over TLS to another active Node's WireGuard listener. This is a stored recovery intent, not an additional `route:create` input: the public API still accepts only loopback HTTP URLs. An approved relocation records the backend Node in the custom proxy's `node_id` and an HTTPS URL with an explicit port in its `upstream` field. The Route's `node_id` still identifies the serving Node, and both Nodes remain protected from removal.
+
+The renderer requires that the address belongs to an active managed Node and that the serving Node already has access to it. It refuses public addresses, hostnames, credentials, paths, query strings and fragments. Caddy verifies the upstream against the Orbit CA, sends the Route domain as Host and TLS SNI, uses HTTP/1.1, and preserves streaming and WebSocket upgrades. Rebuilds derive this configuration from stored Route state. This operation creates no access edge, firewall opening, certificate or DNS change.
+
+The Doctor probe for custom proxies accepts only loopback addresses. For this remote variant it reports `route.inspection_failed`. Verify the rendered site and authenticated service response during recovery.
+
 ### Public Process hostnames
 
 Give a Node Process its own public hostname through a selected Cluster Ingress.

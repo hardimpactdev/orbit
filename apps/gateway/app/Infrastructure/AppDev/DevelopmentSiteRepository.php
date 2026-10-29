@@ -9,6 +9,7 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Routes\CustomProxyProcessListener;
 use App\Domain\Routes\CustomProxyUpstream;
+use App\Domain\Routes\ManagedTlsProxyUpstream;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteCertificateStaging;
 use App\Domain\Routes\RouteKind;
@@ -695,7 +696,8 @@ final readonly class DevelopmentSiteRepository
             phpVersion: null,
             domain: $route->domain,
             certificateScope: "route-{$route->id}",
-            localHttpUpstream: CustomProxyUpstream::parse($proxy->upstream)->authority(),
+            localHttpUpstream: str_starts_with($proxy->upstream, 'https://') ? null : CustomProxyUpstream::parse($proxy->upstream)->authority(),
+            managedTlsUpstream: str_starts_with($proxy->upstream, 'https://') ? ManagedTlsProxyUpstream::authority($node, $proxy) : null,
         );
     }
 
