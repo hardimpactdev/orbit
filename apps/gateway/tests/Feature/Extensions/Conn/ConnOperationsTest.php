@@ -58,6 +58,12 @@ it('stores one encrypted output and preserves its exact reference through replay
     expect(json_encode($this->operation->fresh()->getAttributes()))->not->toContain('conn-one-time-sentinel')->not->toContain('fixture-admin-session');
     expect(json_encode($this->operation->steps()->get()->toArray()))->not->toContain('conn-one-time-sentinel');
     Http::assertSentCount(1);
+    Http::assertSent(fn ($request): bool => $request->url() === 'http://dev.test/api/auth/pairing-token'
+        && $request->hasHeader('Authorization', 'Bearer fixture-admin-session')
+        && $request['label'] === $this->pairing->client_label
+        && in_array('access:read', $request['scopes'], true)
+        && in_array('access:write', $request['scopes'], true)
+        && ! in_array('review:write', $request['scopes'], true));
 
     $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
     $this->getJson('/api/v1/conn/environments/conn-h-proof/pairings/'.$this->pairing->id)->assertOk()

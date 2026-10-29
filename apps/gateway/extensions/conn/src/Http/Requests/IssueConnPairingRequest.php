@@ -6,7 +6,7 @@ namespace Orbit\Extensions\Conn\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 
-/** Existing clients keep the immediate reply unless they explicitly select Operations. */
+/** Existing clients wait for the Operation unless they explicitly select an asynchronous reply. */
 final class IssueConnPairingRequest extends FormRequest
 {
     /** @return array<string, list<string>> */

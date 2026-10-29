@@ -10,7 +10,6 @@ use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Config;
 use Orbit\Extensions\Vault\Domain\DatabaseCredentialCatalog;
 use Orbit\Extensions\Vault\Domain\VaultException;
-use Orbit\Extensions\Vault\Domain\VaultPlan;
 use Orbit\Extensions\Vault\Domain\VaultSettings;
 use Orbit\Extensions\Vault\Models\VaultItem;
 
@@ -57,8 +56,7 @@ final readonly class SyncVaultAction
         }
         $now = CarbonImmutable::now();
         $verified = $this->settings->lastVerifiedAt();
-        $plan = VaultPlan::for($configuration, $this->catalog->build()['items'], VaultItem::query()->get(), Config::string('app.key'));
-        if ($plan->pending() === 0 && $verified !== null && $verified->addMinutes(self::VerifyEveryMinutes)->greaterThan($now)) {
+        if (app(ShowVaultStatusAction::class)->execute()->pending === 0 && $verified !== null && $verified->addMinutes(self::VerifyEveryMinutes)->greaterThan($now)) {
             return null;
         }
 

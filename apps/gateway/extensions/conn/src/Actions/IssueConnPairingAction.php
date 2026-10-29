@@ -12,27 +12,12 @@ use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Orbit\Extensions\Conn\Data\IssuedConnPairingData;
-use Orbit\Extensions\Conn\Domain\T3PairingUrl;
-use Orbit\Extensions\Conn\Domain\T3ServerClient;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
 
 final readonly class IssueConnPairingAction
 {
-    public function __construct(private StartOperationAction $operations, private NodeAccessAuthorizer $nodes, private T3ServerClient $server) {}
-
-    /** Retained Conn clients receive the link in this request, without an Operation. */
-    public function execute(Node $node, ConnEnvironment $environment): IssuedConnPairingData
-    {
-        $this->assertSession($environment);
-        $label = $node->name.' via Orbit '.Str::lower(Str::random(8));
-        $issued = $this->server->issuePairingCredential($environment->url, $environment->admin_session, $label);
-        $pairing = ConnPairing::query()->create(['node_id' => $node->id, 'conn_environment_id' => $environment->id,
-            'pairing_link_id' => $issued->id, 'client_label' => $label, 'expires_at' => $issued->expiresAt]);
-
-        return IssuedConnPairingData::fromModel($pairing, T3PairingUrl::build($environment->url, $issued->credential));
-    }
+    public function __construct(private StartOperationAction $operations, private NodeAccessAuthorizer $nodes) {}
 
     public function admit(Node $node, ConnEnvironment $environment): Operation
     {

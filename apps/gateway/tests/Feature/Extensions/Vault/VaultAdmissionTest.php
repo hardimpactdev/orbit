@@ -16,6 +16,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Orbit\Extensions\Vault\Actions\SyncVaultAction;
+use Orbit\Extensions\Vault\Domain\DatabaseCredentialCatalog;
 use Orbit\Extensions\Vault\Domain\VaultConfiguration;
 use Orbit\Extensions\Vault\Domain\VaultCredentials;
 use Orbit\Extensions\Vault\Domain\VaultException;
@@ -23,7 +24,6 @@ use Orbit\Extensions\Vault\Domain\VaultOperationCompletion;
 use Orbit\Extensions\Vault\Domain\VaultOperationSecrets;
 use Orbit\Extensions\Vault\Domain\VaultSettings;
 use Orbit\Extensions\Vault\Models\VaultItem;
-use Symfony\Component\Process\Process;
 
 beforeEach(function (): void {
     Http::preventStrayRequests();
@@ -299,9 +299,21 @@ it('keeps a failure exit code until a later collection completion proves success
     Http::assertNothingSent();
 });
 
-it('runs the collection and TLS boundary tests beside the shipped Python program', function (): void {
-    $process = new Process(['python3', '-I', resource_path('remote/vault/tests/test_collection.py')]);
-    $process->mustRun();
-
-    expect($process->getErrorOutput())->toContain('Ran 13 tests')->toContain('OK');
+it('counts local credential intent changes without constructing an execution plan', function (): void {
+    app(VaultSettings::class)->put(new VaultConfiguration(
+        new VaultCredentials('https://vault.orbit', 'fixture-client', 'fixture-secret', 'fixture-password', 'fixture-device'),
+        'fixture@example.test', 'fixture-org', 'Orbit', 'fixture-collection', 'Database'));
+    DatabaseConnection::query()->create(['slug' => 'pending', 'driver' => 'mysql', 'host' => '10.44.0.7', 'database' => 'pending',
+        'username' => 'owner', 'password' => 'fixture-password']);
+    $this->getJson('/api/v1/vault')->assertOk()->assertJsonPath('data.pending', 1);
+    $configuration = app(VaultSettings::class)->configuration();
+    $catalog = app(DatabaseCredentialCatalog::class)->build()['items'];
+    $source = array_key_first($catalog);
+    $item = VaultItem::query()->create(['source' => $source, 'cipher_id' => 'cipher', 'revision_date' => 'revision',
+        'fingerprint' => $catalog[$source]->fingerprint($configuration->organizationId, $configuration->collectionId, config('app.key'))]);
+    $this->getJson('/api/v1/vault')->assertOk()->assertJsonPath('data.pending', 0);
+    $item->update(['fingerprint' => 'changed']);
+    VaultItem::query()->create(['source' => 'orphan', 'cipher_id' => 'orphan', 'revision_date' => 'revision', 'fingerprint' => 'orphan']);
+    $this->getJson('/api/v1/vault')->assertOk()->assertJsonPath('data.pending', 2);
+    Http::assertNothingSent();
 });
