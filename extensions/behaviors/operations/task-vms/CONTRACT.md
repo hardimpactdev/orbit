@@ -131,8 +131,10 @@ reserves the VM Node and records its exact `node-enrollment` / `node.add` child
 with internal ProvisionNodeData fields, including taskVmId and sshJumpNodeId.
 Swamp requests the recorded key and waits for its owning enrollment receipt
 before runtime preparation. A Gateway-recorded already active Node skips that
-child. Replays reuse the reservation. Both owning Node releases must be deployed
-before enabling these admissions; retained callers stay synchronous.
+child. Replays reuse the reservation. The fixed result schema preserves the
+boolean `enrolled` and the reserved `node_id` on both fresh responses and
+recovered receipts. Both owning Node releases must be deployed before enabling
+these admissions; retained callers stay synchronous.
 
 Destruction proves provider absence and Route removals, then runs
 `task_vm.forget_workspaces` while the VM still has its recorded Node. Only that

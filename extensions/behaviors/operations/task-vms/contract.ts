@@ -43,6 +43,7 @@ export const Completion = z.object({
   status: z.enum(["succeeded", "failed", "cancelled"]),
   result: z.object({
     ready: z.boolean().optional(),
+    enrolled: z.boolean().optional(),
     changed: z.boolean().optional(),
     process_id: z.number().int().positive().optional(),
     node_id: z.number().int().positive().optional(),

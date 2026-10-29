@@ -350,3 +350,23 @@ Deno.test("a dispatch retry cannot adopt another Operation after losing an effec
   );
   assertEquals(f.mutations, 1);
 });
+
+Deno.test("enrollment preparation recovers its exact reserved Node and enrolled flag after a lost reply", async () => {
+  for (const enrolled of [false, true]) {
+    const f = new Fixture();
+    f.operation.kind = "task_vm.prepare_enrollment";
+    f.operation.input = { task_vm_id: 5 };
+    f.result = { ready: true, node_id: 12, enrolled };
+    f.lose = "run";
+    await assertRejects(() => f.execute(), Error, "Lost run reply");
+    assertEquals(f.receipt, { ready: true, node_id: 12, enrolled });
+    assertEquals((await f.execute()).status, "succeeded");
+    assertEquals(f.operation.step_results["prepare-enrollment"], f.result);
+    assertEquals(f.calls.at(-1)!.body.result, f.result);
+    assertEquals(f.mutations, 1);
+    assertEquals(
+      f.calls.filter((call) => call.path.endsWith("/run")).length,
+      1,
+    );
+  }
+});
