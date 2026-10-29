@@ -14,6 +14,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
+use Illuminate\Support\Facades\Log;
 
 /** Exposes the next footprint effect, retaining earlier intents for exact child proof lookup.
  * @phpstan-import-type Descriptor from OperationFamilyExecution
@@ -87,6 +88,12 @@ final readonly class NodeFootprintOperationExecution implements OperationFamilyC
             Node::query()->whereKey($operation->node_id)->update(['agent_failed_pin' => null]);
         }
 
+        if ($run['transport'] === 'agent' && $run['name'] === 'php.configure-runtime' && ! empty($receipt['deferred'])) {
+            $this->input($operation, $run);
+            Log::warning('PHP-FPM masters failed configuration validation; deferred their restart or reload until their configuration is repaired.',
+                ['node_id' => $operation->node_id, 'version' => $run['input']['version'], 'masters' => $receipt['deferred']]);
+        }
+
         return $receipt;
     }
 
@@ -138,6 +145,9 @@ final readonly class NodeFootprintOperationExecution implements OperationFamilyC
                     || ! is_array($receipt['result'] ?? null) || isset($receipt['result']['error_code'])) {
                     break;
                 }
+                if ($descriptor['name'] === 'php.configure-runtime' && ! is_bool($receipt['result']['changed'] ?? null)) {
+                    break;
+                }
                 if (in_array($descriptor['key'], ['footprint-agent-install', 'footprint-private-dns-listener'], true)
                     && ($receipt['result']['installed'] ?? null) !== true) {
                     break;
@@ -165,6 +175,18 @@ final readonly class NodeFootprintOperationExecution implements OperationFamilyC
                 continue;
             }
             $name = ValidatedData::string($artifact['name']);
+            if ($name === 'php-runtime') {
+                $configurations = ValidatedData::object($payloads[$name] ?? [])['configurations'] ?? null;
+                if (! is_array($configurations) || ! array_is_list($configurations)) {
+                    throw $this->unproven();
+                }
+                foreach ($configurations as $input) {
+                    $input = ValidatedData::object($input);
+                    $effects[] = ['type' => 'run', 'descriptor' => $this->descriptor('footprint-php-runtime-'.ValidatedData::string($input['version']), 'agent', 'php.configure-runtime', $input)];
+                }
+
+                continue;
+            }
             if ($name === 'agent') {
                 $effects[] = ['type' => 'run', 'descriptor' => $this->descriptor('footprint-agent-install', 'node-agent', 'agent.install', ['pin' => ValidatedData::string($snapshot['agent_pin'] ?? null)])];
                 $effects[] = ['type' => 'run', 'descriptor' => $this->descriptor('prepare-agent-configuration', 'gateway', 'node.prepare-agent-configuration', [])];

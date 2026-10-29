@@ -59,6 +59,12 @@ final readonly class PhpRuntimeFootprintArtifact implements NodeFootprintArtifac
         return $versions;
     }
 
+    /** @return list<array<string, mixed>> */
+    public function inputs(Node $node): array
+    {
+        return array_map(fn (string $version): array => $this->php->runtimeInput($node, $version), $this->versions($node));
+    }
+
     public function apply(Node $node): bool
     {
         return $this->php->configureForAppNode($node, $this->versions($node));

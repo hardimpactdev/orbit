@@ -27,6 +27,8 @@ return [
         $bound('caddy.install-package', 'caddy-package', array_keys(AgentCaddyPackage::input())),
         $bound('wireguard.repair-peer-dns', 'peer-dns', ['dns_server', 'public_key', 'domains']),
         $bound('node.publish-tmpfiles', 'tmpfiles', ['rule']),
+        // Exact version inputs and order are bound by the family execution descriptors.
+        ['transport' => 'agent', 'name' => 'php.configure-runtime'],
         $bound('node.install-private-dns-listener', 'private-dns-listener', ['release_id', 'files', 'service', 'socket']),
     ],
     'children' => array_map(static fn (string $kind): array => ['kind' => $kind, 'node_from' => 'input._footprint.node_id'], [
@@ -35,8 +37,9 @@ return [
     'completion_contract' => ['step' => 'footprint-result', 'transport' => 'gateway', 'name' => 'node.footprint-result',
         'result' => ['footprint_proven' => true],
         'children_settled' => ['route.caddy_converge', 'route.private_dns_publish', 'route.offline_residue_clean', 'ai_router.collector_converge']],
-    'result_fields' => ['prepared', 'installed', 'changed', 'restarted', 'version', 'footprint_proven', 'digest', 'error_code',
+    'result_fields' => ['prepared', 'installed', 'changed', 'restarted', 'reloaded', 'version', 'footprint_proven', 'digest', 'error_code',
         ['name' => 'secret_hash', 'secret' => true, 'store' => 'node.agent_secret_hash'],
+        ['name' => 'deferred', 'type' => 'list', 'items' => 'string', 'max' => 4096],
         ['name' => 'artifacts', 'list_of' => ['name' => 'string', 'status' => 'enum(applied,unchanged,skipped)', 'reason' => 'string|null']],
         ['name' => 'skipped', 'list_of' => ['child_id' => 'int', 'key' => 'string', 'kind' => 'string', 'reason' => 'string']],
     ],

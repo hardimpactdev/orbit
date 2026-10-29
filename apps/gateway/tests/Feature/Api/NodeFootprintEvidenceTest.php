@@ -165,3 +165,41 @@ it('keeps the canonical Caddy child publication outcome in its artifact result',
     expect($derived['result']['artifacts'])->toBe([['name' => 'caddy', 'status' => $publication === 'unchanged' ? 'unchanged' : 'applied', 'reason' => null]]);
     expect($derived['result']['changed'])->toBe($publication === 'published');
 })->with(['published', 'unchanged']);
+
+it('requires every PHP receipt before recording the runtime digest', function (string $variant): void {
+    $operation = footprintEvidenceOperation([footprintEvidenceArtifact('php-runtime'), footprintEvidenceArtifact('tmpfiles', false)], recorded: ['php-runtime' => 'old', 'tmpfiles' => 'retained']);
+    $input = $operation->input;
+    $input['_footprint']['payloads']['php-runtime']['configurations'] = [['version' => '8.4'], ['version' => '8.5']];
+    $operation->input = $input;
+    $run = ['transport' => 'agent', 'name' => 'php.configure-runtime', 'result' => ['changed' => false]];
+    $runs = ['footprint-php-runtime-8.4' => $run, 'footprint-php-runtime-8.5' => $run];
+    if ($variant === 'changed') {
+        $runs['footprint-php-runtime-8.4']['result']['changed'] = true;
+    } elseif ($variant === 'failed') {
+        $runs['footprint-php-runtime-8.5']['result'] = ['error_code' => 'php.runtime_configuration_failed'];
+    } elseif ($variant === 'missing') {
+        unset($runs['footprint-php-runtime-8.5']);
+    } elseif ($variant === 'wrong-command') {
+        $runs['footprint-php-runtime-8.5']['name'] = 'php.install-build';
+    } elseif ($variant === 'wrong-transport') {
+        $runs['footprint-php-runtime-8.5']['transport'] = 'gateway';
+    } elseif ($variant === 'unproven') {
+        $runs['footprint-php-runtime-8.5']['result'] = [];
+    }
+    $operation->state = ['executor_runs' => $runs];
+    if (in_array($variant, ['missing', 'wrong-command', 'wrong-transport', 'unproven'], true)) {
+        expect(fn () => app(NodeFootprintEvidence::class)->derive($operation, []))->toThrow(ResourceOperationException::class);
+        if ($variant === 'missing') {
+            expect(app(NodeFootprintEvidence::class)->derive($operation, [], true)['recorded'])->toBe(['php-runtime' => 'old', 'tmpfiles' => 'retained']);
+        }
+
+        return;
+    }
+    $derived = app(NodeFootprintEvidence::class)->derive($operation, []);
+    if ($variant === 'failed') {
+        expect($derived['error_code'])->toBe('php.runtime_configuration_failed')->and($derived['recorded'])->toBe(['tmpfiles' => 'retained']);
+    } else {
+        expect($derived['error_code'])->toBeNull()->and($derived['recorded']['php-runtime'])->toBe('digest-php-runtime')
+            ->and($derived['result']['artifacts'][0])->toBe(['name' => 'php-runtime', 'status' => $variant === 'changed' ? 'applied' : 'unchanged', 'reason' => null]);
+    }
+})->with(['unchanged', 'changed', 'failed', 'missing', 'wrong-command', 'wrong-transport', 'unproven']);

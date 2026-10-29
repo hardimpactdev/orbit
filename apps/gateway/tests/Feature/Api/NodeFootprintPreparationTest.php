@@ -11,12 +11,16 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
+use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\WireGuard\PeerDnsInspector;
 use App\Infrastructure\WireGuard\PeerDnsPolicy;
+use App\Models\Instance;
 use App\Models\NodeFootprint as FootprintRecord;
 use App\Models\Operation;
+use App\Models\Project;
 use Tests\Support\Fleet\FakeFootprintArtifact;
 use Tests\Support\Fleet\FleetFixtures;
 
@@ -174,3 +178,28 @@ it('stages private DNS only in the Swamp plan for Gateway Nodes', function (): v
         ->and($snapshot['children']['private-dns']['kind'])->toBe('route.private_dns_publish')
         ->and($footprint->expected($node)->artifacts)->not->toHaveKey('private-dns');
 });
+
+it('captures ordered PHP inputs from the retained renderer and active Instance versions', function (array $roles, string $memory): void {
+    [$node, $operation, , $command] = footprintPreparation([new FakeFootprintArtifact('php-runtime', 'current')]);
+    foreach ($roles as $role) {
+        $node->roles()->create(['role' => $role, 'status' => 'active']);
+    }
+    foreach (['8.4' => 'active', '8.3' => 'reserved'] as $version => $status) {
+        $project = Project::query()->create(['name' => 'Runtime '.$version, 'slug' => 'runtime-'.str_replace('.', '-', $version), 'repository_url' => 'https://example.test/runtime-'.str_replace('.', '-', $version).'.git']);
+        Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'runtime-'.$version,
+            'checkout_path' => '/home/runtime-'.$version, 'status' => $status, 'selected_php_version' => $version]);
+    }
+    $agents = Mockery::mock(AgentCommandRunner::class);
+    $agents->shouldNotReceive('run');
+    app()->instance(AgentCommandRunner::class, $agents);
+
+    expect($command->run($operation, $operation->input))->toBe(['prepared' => true]);
+    $inputs = $operation->fresh()->input['_footprint']['payloads']['php-runtime']['configurations'];
+    expect(array_column($inputs, 'version'))->toBe(['8.4', '8.5']);
+    foreach ($inputs as $input) {
+        expect($input)->toBe(app(RemotePhpPackageManager::class)->runtimeInput($node->fresh(), $input['version']));
+        expect(parse_ini_string($input['runtime_ini'], scanner_mode: INI_SCANNER_RAW))->toMatchArray([
+            'post_max_size' => '64M', 'upload_max_filesize' => '64M', 'opcache.memory_consumption' => $memory,
+        ]);
+    }
+})->with([[[RoleName::AppDev], '512'], [[RoleName::AppProd], '256'], [[RoleName::AppProd, RoleName::AppDev], '512']]);
