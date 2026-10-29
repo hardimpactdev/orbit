@@ -2,9 +2,9 @@
 title: "Instance transfer"
 description: "How the Gateway moves one development Instance to another app-dev Node, keeps its ID, and recovers from a failed or interrupted move."
 covers:
-  - apps/gateway/app/Actions/Instances/TransferInstanceAction.php
+  - apps/gateway/app/Actions/Instances/StartInstanceTransferAction.php
   - apps/gateway/app/Domain/Instances/Transfer/**
-  - apps/gateway/app/Infrastructure/Instances/{NativeInstanceTransferRuntime,RemoteInstanceTransferSource}.php
+  - apps/gateway/app/Domain/Instances/{TransferCompensation,TransferLifecycleExecution,InstanceTransferState}.php
   - apps/gateway/app/Http/Controllers/Api/InstanceTransfersController.php
   - apps/gateway/{app/Models/InstanceTransfer.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
   - apps/cli/app/Commands/Instances/TransferInstanceCommand.php
@@ -21,7 +21,9 @@ orbit instance:transfer <instance> <node> [--name=NAME] [--sqlite-source-path=PA
 
 ## Request
 
-The CLI calls `POST /api/v1/instances/{instance}/transfer`.
+The CLI calls `POST /api/v1/instances/{instance}/transfer`. The Gateway validates and records immutable transfer intent, then returns HTTP 202 with an Operation. Swamp executes the transfer through keyed effects and one-Node child Operations. The CLI follows its steps and returns the final Operation receipt. An optional `Idempotency-Key` reuses admission after a lost response.
+
+Transfer admission requires the shared `archive_relay` capability. Until its protected binary relay is available, the Gateway returns `operation.kind_unavailable` before reserving a transfer or pausing the source.
 
 | Input | Meaning |
 | --- | --- |
@@ -59,7 +61,11 @@ When the request selects a SQLite file, the checkout archive excludes that file 
 
 Stopping Processes before the final checkout copy prevents their writes from being missed. Apart from the selected SQLite file, Orbit copies no database or data path.
 
-Orbit imports the source `.env` into the [stored environment](/reference/environment-variables). For a Laravel root of `apps/site/public`, that file is `<source-checkout>/apps/site/.env`; transfer closes its permissions and synchronizes the destination's `apps/site/.env`, not an unrelated repository-root file. Transfer copies the entire checkout, keeps the effective web root, and relocates explicit Process working directories. A key that is already stored keeps its stored value. An unreadable source `.env` refuses the transfer. If a failure occurs before cutover, Orbit removes environment keys imported by that transfer along with the other prepared destination state.
+The environment child reads the source `.env` inside Gateway memory and imports missing keys into the [stored environment](/reference/environment-variables). It transactionally records the imported key names on the transfer before any destination write. Environment contents never enter descriptors or receipts.
+
+Transfer renders the destination path and domain and does not merge a testing environment. For a Laravel root of `apps/site/public`, that file is `<source-checkout>/apps/site/.env`; transfer closes its permissions and synchronizes the destination's `apps/site/.env`, not an unrelated repository-root file. Transfer copies the entire checkout, keeps the effective web root, and relocates explicit Process working directories.
+
+A key that is already stored keeps its stored value. An unreadable source `.env` refuses the transfer. If a failure occurs before cutover, Orbit removes environment keys imported by that transfer along with the other prepared destination state.
 
 A Docker Process with a null working-directory override keeps null on the destination and uses its image default; null is neither a source path to relocate nor a reason to skip runtime cleanup. An existing explicit override such as `/app` stays explicit unless it points inside the source checkout.
 
@@ -95,6 +101,10 @@ Cutover is the moment the destination becomes authoritative.
 - After cutover, recovery only goes forward. Orbit never restarts the source. It finishes the Route, runtime, and cleanup without copying the source again.
 
 Before rollback changes the Nodes, the Gateway records the failure and sets `rollback_pending` in recovery evidence. The marker keeps the transfer open if the Gateway stops during rollback. An identical retry finishes that rollback before pausing and capturing the source again; it never resumes the old forward checkpoint. The Gateway clears the marker and resets the checkpoint in one write only after rollback finishes. Recovery uses the same Instance and Node locks as transfer. It also clears the transfer's reference to a replacement Route if rollback already deleted that Route.
+
+After cancellation, the parent runs no rollback effects. The Gateway admits its `instance.transfer_rollback` compensation child only after proving that the exact `transfer-stop-source` child succeeded. That child records rollback intent, abandons any recorded SQLite seed through `database.sqlite_seed_abandon`, discards the destination, restores the source runtime, and projects the restored state. Each Node effect belongs to its own child Operation. An unresolved capture or destination effect must settle before compensation can start.
+
+After capture, a Gateway step records the SQLite seed on the transfer parent before destination admission. The attempt identity comes from that Operation. The database owner retains the seed and its source intents while the parent is pending. Destination setup uses that exact descriptor. Rollback passes its recorded intent ID and its live compensation Operation to the database owner; it cannot select another attempt or cleanup path.
 
 Rollback abandons the transfer's SQLite seed before it restarts the source. It removes the owned source snapshot, unfinished destination incoming and candidate files, and seed records. A retry takes a fresh snapshot after pausing the source again, so writes committed after restoration reach the destination. If seed cleanup fails or its response is lost, the Gateway records `sqlite-seed` as incomplete recovery evidence and keeps the transfer open. An identical retry must confirm that cleanup before it captures the source again. Cleanup checks the recorded operation and file identities; it never removes a file that belongs to another operation.
 

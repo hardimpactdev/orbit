@@ -3,7 +3,7 @@ title: "instance"
 description: "Create, register, reconcile a renamed branch or domain, set up, clone, deploy, roll back, and remove Instances."
 covers:
   - apps/cli/app/Commands/Instances/**
-  - apps/gateway/app/Actions/Instances/{CreateInstanceAction,CreateInstanceServerDatabaseAction,RenameInstanceAction}.php
+  - apps/gateway/app/Actions/Instances/{StartDevelopmentInstanceCreateAction,RenameInstanceAction}.php
   - apps/gateway/app/Data/Instances/{CreateInstanceData,RenameInstanceData}.php
   - apps/gateway/app/Http/Requests/Instances/{StoreInstanceRequest,RenameInstanceRequest}.php
   - packages/php-sdk/src/Requests/Instances/{Create,Register,Rename,Show,Update,Destroy,Clone,Transfer}InstanceRequest.php
@@ -22,6 +22,8 @@ Instance JSON includes nullable `seed_path` and `seed_commit`. On `default`, the
 Every command accepts `--json`. Machine output never supplies consent. Human list commands use tables, with labeled records when the terminal is too narrow; detail commands show a tree and slow requests show progress.
 
 Placement commands create, adopt, inspect, and remove an Instance on one Node.
+
+`instance:create`, `instance:register`, `instance:rename`, `instance:clone`, `instance:transfer`, and `instance:destroy` return an Operation. The Gateway validates and records intent, then Swamp executes it. The CLI follows the Operation and prints its final receipt in JSON mode. `--idempotency-key=KEY` retries the same admission without creating another Operation. Ctrl+C stops following; it leaves the Operation running. Use `operation:show` to read it again.
 
 | Command | Result |
 | --- | --- |
@@ -112,7 +114,7 @@ orbit instance:create 4 7 feature-one --branch=release --domain=feature.example.
 orbit instance:create 4 7 t3-1a2b3c4d --branch=t3code/1a2b3c4d
 ```
 
-When the name equals the Project default branch, Orbit creates the `default` Instance, and `--branch` keeps its meaning as the `branch_override`. Human output then shows one line before the Instance, such as ``Name `main` is the Project default branch; created the `default` Instance.``, and JSON carries `name_converted_from` with the requested name. Without a conversion, JSON omits the field. See [A default-branch name means default](/domains/applications#a-default-branch-name-means-default).
+When the name equals the Project default branch, Orbit creates the `default` Instance, and `--branch` keeps its meaning as the `branch_override`. The final Operation result carries `name_converted_from` with the requested name, or null when no conversion was needed. See [A default-branch name means default](/domains/applications#a-default-branch-name-means-default).
 
 A requested origin branch keeps its existing selection behavior. Orbit does not reset an existing local branch to the default commit. A missing fetched `default_branch` when required returns `instance.branch_resolution_failed`, not a different fallback branch. An invalid Git branch name returns `validation.failed` before source changes.
 
@@ -140,7 +142,7 @@ orbit instance:rename <instance> [--branch=BRANCH] [--domain=HOST] [--json]
 | --- | --- | --- |
 | `--branch=BRANCH` | unchanged | Record this local branch. Symbolic `HEAD` must already name it. |
 | `--domain=HOST` | unchanged | Replace the domain of the Instance's own single-target Project Route, including a generated Route. |
-| `--json` | off | Return one Instance JSON document, or one error document, without prompts or progress. |
+| `--json` | off | Return the final Operation JSON, or an admission error, without prompts or progress. |
 
 Supply at least one of `--branch` and `--domain`. Supplied values must be nonempty strings. The command needs no `--yes` or `--force`: it records intent and converges the Route without discarding source. In a terminal, an omitted Instance selector uses the shared Instance selection prompt; in noninteractive or JSON mode it returns `instance.id_invalid`. There is no implicit branch or domain selection.
 
@@ -156,53 +158,17 @@ orbit instance:rename 1 --branch=t3code/login-redirect --domain=login-redirect.a
 
 A changed branch updates `selected_branch` and `branch_override`. Recording the already recorded branch is a no-op that preserves its existing override. A domain-only request does not change either branch field. The domain follows [Route replacement](/reference/routes#change-an-instance-route-domain); Laravel's stored `APP_URL`, `.env`, and cached configuration follow it. Generated provenance stays generated, so a later Project slug or effective-TLD change can recompute the domain.
 
-All supplied fields, checkout identity, the supplied branch, and domain availability are checked before mutation. A combined request with a branch mismatch or domain conflict changes nothing. A changed branch is recorded only after any requested domain convergence succeeds. An identical retry after a completed rename returns the Instance without creating an additional Route, including when the caller lost the success response. An incomplete Route replacement follows the existing recovery rules. If a full rollback before cutover deleted the failed replacement, an identical retry can reserve a fresh replacement; the changed branch is still recorded only after domain convergence succeeds. A different domain while replacement recovery is incomplete is refused. See [recorded branch behavior](/domains/applications#record-a-renamed-branch) and [Route recovery](/reference/routes#resume-or-refuse-a-change).
+All supplied fields, checkout identity, the supplied branch, and domain availability are checked before mutation. A combined request with a branch mismatch or domain conflict changes nothing. A changed branch is recorded only after any requested domain convergence succeeds. A retry with the same idempotency key returns the same Operation without creating an additional Route, including when the caller lost the success response. An incomplete Route replacement follows the existing recovery rules. If a full rollback before cutover deleted the failed replacement, an identical retry can reserve a fresh replacement; the changed branch is still recorded only after domain convergence succeeds. A different domain while replacement recovery is incomplete is refused. See [recorded branch behavior](/domains/applications#record-a-renamed-branch) and [Route recovery](/reference/routes#resume-or-refuse-a-change).
 
 ### Human output
 
-The command shows truthful waiting feedback during the synchronous request, then the shared Instance detail tree. Project and Node labels use their slug and name. It does not show a Process selector or invent remote progress stages. The following abbreviated example shows the fields affected by a combined rename; the full tree also has the usual ID, placement, root, and Vite-port fields:
-
-```text
-┌  Instance: dev
-│
-├  Project           acme
-│
-├  Node              app-dev
-│
-├  Selected branch   t3code/login-redirect
-│
-├  Branch override   t3code/login-redirect
-│
-├  Domain            login-redirect.acme.test
-│
-└  URL               https://login-redirect.acme.test
-```
-
-A refusal shows the stable error code and a useful message, with no success tree. For example, `instance.branch_not_checked_out` tells the caller to check out the requested branch first. Success exits with status `0`; a refusal or failed convergence exits with status `1`.
+The command follows the Operation and shows its recorded steps. `instance:show` reads the resulting Instance. Success exits with status `0`; a refusal or failed convergence exits with status `1`.
 
 ### JSON and API output
 
 The API is `POST /api/v1/instances/{instance}/rename` with optional `branch` and `domain`, for example `{"branch":"t3code/login-redirect","domain":"login-redirect.acme.test"}`. At least one field is required; null, empty, and wrong-type values are invalid. The MCP tool is `instance-rename`, with `instance_id` and the same optional fields.
 
-Success returns the full Instance shape used by `GET /api/v1/instances/{instance}` and `instance:show --json`, including Project and Node identities, source and placement fields, `route`, `domain`, `url`, removal and transfer state, deploy steps, and `request_id`. It has no rename-specific envelope. This abbreviated JSON example selects fields from that response, not a separate response schema:
-
-```json
-{
-  "id": 1,
-  "name": "dev",
-  "project": {"id": 1, "name": "Acme", "slug": "acme"},
-  "node": {"id": 1, "name": "app-dev"},
-  "source_layout": "checkout",
-  "checkout_path": "/srv/orbit/apps/acme/dev",
-  "selected_branch": "t3code/login-redirect",
-  "branch_override": "t3code/login-redirect",
-  "status": "active",
-  "domain": "login-redirect.acme.test",
-  "url": "https://login-redirect.acme.test"
-}
-```
-
-Failures use the existing error shape, with the stable code under `error.code`, the message under `error.message`, and the request correlation ID under `error.request_id`. JSON output contains no human tree, prompt, or animation.
+Admission returns HTTP 202 with an `instance.rename` Operation. The CLI follows it and prints the final Operation in JSON mode. The final result includes the Instance ID and recorded branch. Read `instance:show` for its full Route and placement state. Admission failures use the shared API error shape; execution failures appear on the Operation with their stable error code. JSON output contains no human tree, prompt, or animation.
 
 ### Refusal codes
 
@@ -247,7 +213,7 @@ orbit instance:register [options]
 
 The CLI refuses a directory outside Git and an origin with credentials before it sends a request. The Gateway finds the Project by repository identity, checks the source on the caller's Node, moves it into its managed path, and provisions it as `instance:create` does. See [Register an existing checkout](/domains/applications#register-an-existing-checkout).
 
-When `--name` equals the Project default branch, Orbit registers the source as `default`, under the usual [identity rules](/domains/applications#register-an-existing-checkout). Human output shows ``Name `main` is the Project default branch; registered the `default` Instance.``, and JSON carries `name_converted_from` with the requested name. Without a conversion, JSON omits the field, as it does for `instance:create`.
+When `--name` equals the Project default branch, Orbit registers the source as `default`, under the usual [identity rules](/domains/applications#register-an-existing-checkout). The final Operation result carries `name_converted_from` with the requested name, or null without a conversion, as it does for `instance:create`.
 
 Registration never creates a Project. When no Project owns the repository, it fails with `instance.project_missing`. Run [`project:create`](/cli/project#orbit-projectcreate) first.
 

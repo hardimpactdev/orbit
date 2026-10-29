@@ -6,6 +6,8 @@ use App\Domain\Instances\InstanceDestroyCancelGuard;
 use App\Domain\Instances\InstanceLifecycleChildAdmission;
 use App\Domain\Instances\InstanceLifecycleCompletion;
 use App\Domain\Instances\InstanceLifecycleExecution;
+use App\Domain\Instances\TransferCompensation;
+use App\Domain\Operations\OperationKinds;
 
 return (static function (): array {
     $agent = static fn (string $name, array $secrets = [], bool $resumable = true): array => [
@@ -40,6 +42,8 @@ return (static function (): array {
             $agent('instance.clean-removal-receipt'),
             $agent('instance.clear-current-release'), $agent('instance.remove-production-home'),
         ],
+        'transfer' => [$agent('instance.transfer-source', [], false)],
+        'transfer_destination' => [$agent('instance.transfer-source', [], false)],
     ];
     $children = [
         'create' => ['instance.sync_environment', 'instance.prepare_vp_environment', 'instance.run_steps', 'route.converge', 'database.create', 'database.clone', 'instance.destroy'],
@@ -47,6 +51,8 @@ return (static function (): array {
         'clone' => ['instance.sync_environment', 'database.sqlite_seed', 'process.install_instance_definitions', 'schedule.install_instance_definitions', 'route.converge'],
         'register' => ['route.converge', 'instance.run_steps'],
         'destroy' => ['route.caddy_converge', 'instance.run_steps', 'route.withdraw', 'route.withdraw_instance', 'route.cleanup_instance', 'process.destroy', 'schedule.destroy', 'database.destroy_owned'],
+        'transfer' => ['process.instance_runtime', 'instance.transfer_destination', 'instance.transfer_activate', 'instance.transfer_rollback', 'route.retire_source'],
+        'transfer_destination' => ['instance.sync_environment', 'database.sqlite_seed'],
     ];
     $kinds = [];
     foreach ($commands as $verb => $runs) {
@@ -80,6 +86,24 @@ return (static function (): array {
     }
 
     $kinds['instance.destroy']['cancel_guard'] = InstanceDestroyCancelGuard::class;
+    if (OperationKinds::supports('compensations')) {
+        $kinds['instance.transfer']['compensations'] = ['instance.transfer_rollback'];
+        $kinds['instance.transfer']['cancellation_boundary'] = 'transfer-stop-source';
+    }
+    foreach (['instance.transfer_rollback', 'instance.transfer_discard'] as $kind) {
+        $kinds[$kind] = ['executor' => 'swamp', 'execution' => TransferCompensation::class,
+            'completion' => InstanceLifecycleCompletion::class, 'admission' => TransferCompensation::class,
+            'runs' => [['transport' => 'gateway', 'name' => 'instance.transfer-compensation', 'resumable' => true],
+                ...($kind === 'instance.transfer_discard' ? [$agent('instance.transfer-source')] : [])],
+            'children' => $kind === 'instance.transfer_rollback' ? [
+                ['kind' => 'instance.transfer_discard', 'node_from' => 'intent.node_ids'],
+                ['kind' => 'process.instance_runtime', 'node_from' => 'intent.node_ids'],
+                ['kind' => 'database.sqlite_seed_abandon', 'node_from' => 'intent.node_ids'],
+            ] : [],
+            'completion_contract' => ['step' => 'compensation-proof', 'transport' => 'gateway',
+                'name' => 'instance.transfer-compensation', 'result' => ['lifecycle_complete' => true]],
+            'result_fields' => ['recorded', 'seed_abandon_required', 'restored', 'discarded', 'lifecycle_complete', 'transfer_id', 'error_code']];
+    }
 
     return $kinds;
 })();

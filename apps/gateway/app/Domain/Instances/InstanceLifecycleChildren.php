@@ -31,6 +31,7 @@ final readonly class InstanceLifecycleChildren
             'instance.register' => $this->register($parent),
             'instance.clone' => $this->clone($parent, $id),
             'instance.destroy' => $this->destroy($parent),
+            'instance.transfer' => $this->transfer($parent, $id),
             default => [],
         };
         $indexed = [];
@@ -195,6 +196,40 @@ final readonly class InstanceLifecycleChildren
         }
 
         return [...$children, ...app(ProductionRemovalIntent::class)->children($parent)];
+    }
+
+    /** @return list<ChildIntent> */
+    private function transfer(Operation $parent, int $id): array
+    {
+        $transfer = app(InstanceTransferState::class)->transfer($parent);
+        if ($parent->input['initial_completed'] === true) {
+            return [];
+        }
+        $children = [];
+        $destination = $transfer->destination_node_id;
+        $data = ['instance_id' => $id, 'transfer_id' => $transfer->id];
+        if (app(TransferCompensation::class)->eligible($parent)) {
+            return [$this->child($parent, 'transfer-rollback', 'instance.transfer_rollback', $data)];
+        }
+        if ($parent->cancel_requested_at !== null && $transfer->cutover_at === null) {
+            return [];
+        }
+        if ($transfer->cutover_at === null) {
+            $children[] = $this->child($parent, 'transfer-stop-source', 'process.instance_runtime', ['instance_id' => $id, 'action' => 'transfer_pause']);
+            if ($this->ready($parent, 'transfer-capture', 'transfer-sqlite-intent')) {
+                $children[] = $this->child($parent, 'transfer-destination', 'instance.transfer_destination', $data, $destination);
+            }
+        } else {
+            $children[] = $this->child($parent, 'transfer-activate-destination', 'instance.transfer_activate', $data, $destination);
+            if ($this->ready($parent, 'transfer-destination-activated')) {
+                $children[] = $this->child($parent, 'transfer-retire-source', 'route.retire_source', ['transfer_id' => $transfer->id]);
+                if ($this->succeeded($parent, 'transfer-retire-source')) {
+                    $children[] = $this->child($parent, 'transfer-retire-runtime', 'process.instance_runtime', ['instance_id' => $id, 'action' => 'transfer_retire_source']);
+                }
+            }
+        }
+
+        return $children;
     }
 
     public function succeeded(Operation $parent, string $key): bool

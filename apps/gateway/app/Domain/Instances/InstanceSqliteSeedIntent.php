@@ -44,6 +44,61 @@ final readonly class InstanceSqliteSeedIntent
     }
 
     /** @return array{prepared:true,seed_required:bool} */
+    public function prepareTransfer(Operation $operation): array
+    {
+        if ($operation->kind !== 'instance.transfer') {
+            throw new ResourceOperationException('operation.execution_forbidden', 'Only the transfer parent records its SQLite attempt.', 422);
+        }
+        $transfer = app(InstanceTransferState::class)->transfer($operation);
+        if ($transfer->cutover_at !== null) {
+            throw new ResourceOperationException('instance.transfer_cleanup_conflict', 'A cut-over transfer cannot prepare a new seed.', 409);
+        }
+        app(InstanceLifecycleExecution::class)->proven($operation, 'transfer-capture');
+        if ($transfer->sqlite_source_path === null) {
+            return ['prepared' => true, 'seed_required' => false];
+        }
+        DB::transaction(function () use ($operation, $transfer): void {
+            if (isset($operation->state['lifecycle_sqlite_seed'])) {
+                $this->transferChild($operation);
+
+                return;
+            }
+            $sourceNode = Node::query()->findOrFail($transfer->source_node_id);
+            $destinationNode = Node::query()->findOrFail($transfer->destination_node_id);
+            $attempt = (string) $operation->id;
+            $instanceId = ValidatedData::integer($transfer->instance_id);
+            $source = new SqliteSeedPlacement($instanceId, 'development', $transfer->source_path,
+                $sourceNode->user, $sourceNode, $attempt);
+            $destination = new SqliteSeedPlacement($instanceId, 'development', $transfer->destination_path,
+                $destinationNode->user, $destinationNode, $attempt);
+            $child = $this->databases->sqliteSeed($source, $destination, $transfer->sqlite_source_path, $operation);
+            app(OperationStore::class)->change($operation, ['state' => [...($operation->state ?? []),
+                'lifecycle_sqlite_seed' => [...$child, 'key' => 'transfer-sqlite']]]);
+        });
+
+        return ['prepared' => true, 'seed_required' => true];
+    }
+
+    /** @return ChildIntent */
+    public function transferChild(Operation $operation): array
+    {
+        $transfer = app(InstanceTransferState::class)->transfer($operation);
+        $child = $operation->state['lifecycle_sqlite_seed'] ?? null;
+        if ($operation->kind !== 'instance.transfer' || $transfer->sqlite_source_path === null
+            || ! is_array($child) || ($child['key'] ?? null) !== 'transfer-sqlite'
+            || ($child['kind'] ?? null) !== 'database.sqlite_seed' || ($child['node_id'] ?? null) !== $transfer->destination_node_id
+            || ! is_array($child['input'] ?? null) || ($child['input']['owner_instance_id'] ?? null) !== $transfer->instance_id
+            || ($child['input']['source_instance_id'] ?? null) !== $transfer->instance_id
+            || ($child['input']['source_node_id'] ?? null) !== $transfer->source_node_id
+            || ! is_int($child['input']['intent_id'] ?? null) || $child['input']['intent_id'] < 1) {
+            throw new ResourceOperationException('operation.child_unproven', 'The transfer parent has not recorded this SQLite attempt.', 409);
+        }
+
+        return ['key' => 'transfer-sqlite', 'kind' => 'database.sqlite_seed', 'node_id' => $transfer->destination_node_id,
+            'input' => ValidatedData::object($child['input'])];
+    }
+
+    /** @return array{prepared:true,seed_required:bool} */
     public function prepareClone(Operation $operation): array
     {
         $target = $this->cloneTarget($operation);
