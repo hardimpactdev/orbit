@@ -263,3 +263,16 @@ it('reuses a proven installer receipt after the admission deadline without dispa
     $this->postJson($path.'/complete', ['worker' => 'recovery', 'status' => 'succeeded', 'result' => $result])->assertOk();
     expect($agents->calls)->toHaveCount(1);
 });
+
+it('refuses unverified, non-Linux or withdrawing targets before child admission', function (array $change): void {
+    $node = FleetFixtures::node('ineligible-packages', [RoleName::AppProd]);
+    $node->update($change);
+
+    phpPackagesAdmit($this, $node)->assertUnprocessable()->assertJsonPath('error.code', 'app-prod.php_package_source_unavailable');
+    expect(Operation::query()->where('kind', 'node.prepare_php_packages')->count())->toBe(0);
+})->with([
+    [['platform' => 'macos']],
+    [['ssh_host_fingerprint' => null]],
+    [['status' => LifecycleStatus::Removing]],
+    [['status' => LifecycleStatus::Provisioning]],
+]);
