@@ -27,16 +27,17 @@ final readonly class ConnGatewaySessionsCommand implements OperationGatewayComma
         return $schema;
     }
 
-    /** @param array{environment: array{url: string, admin_session: string, id: int}, pairing_ids: list<int>, session_ids: list<string>} $input */
+    /** @param array{environment: ConnExecutionInput, pairing_ids: list<int>, session_ids: list<string>} $input */
     public function run(Operation $operation, #[\SensitiveParameter] array $input): array
     {
-        if ($operation->kind !== 'conn.gateway_sessions_revoke' || $operation->target_id !== $input['environment']['id'] || $input['pairing_ids'] !== []) {
+        $environment = $input['environment']->jsonSerialize();
+        if ($operation->kind !== 'conn.gateway_sessions_revoke' || $operation->target_id !== $environment['id'] || $input['pairing_ids'] !== []) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The Gateway session cleanup has another owner.', 422);
         }
         $count = 0;
-        foreach ($this->server->clientSessions($input['environment']['url'], $input['environment']['admin_session']) as $session) {
+        foreach ($this->server->clientSessions($environment['url'], $environment['admin_session']) as $session) {
             if (! $session->current && $session->label === RegisterConnEnvironmentAction::GATEWAY_CLIENT_LABEL && in_array($session->sessionId, $input['session_ids'], true)
-                && $this->server->revokeClientSession($input['environment']['url'], $input['environment']['admin_session'], $session->sessionId)) {
+                && $this->server->revokeClientSession($environment['url'], $environment['admin_session'], $session->sessionId)) {
                 $count++;
             }
         }

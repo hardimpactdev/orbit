@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Operations\OperationKinds;
 use App\Models\Node;
 use App\Models\Operation;
+use Illuminate\Http\Client\Request as HttpRequest;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
@@ -73,8 +74,13 @@ it('refuses a changed run or raw submitted credential and requires proven step c
     $this->postJson($this->path.'/complete', ['worker' => 'conn-h', 'status' => 'succeeded', 'result' => $result])->assertConflict()
         ->assertJsonPath('error.code', 'operation.completion_unproven');
     foreach (['raw-secret', true, ['$secret' => 'conn.pairing.credential', 'id' => $this->pairing->id + 1]] as $credential) {
-        $this->postJson($this->path.'/step', ['worker' => 'conn-h', 'key' => 'forged', 'name' => 'pairing-create', 'status' => 'succeeded',
-            'result' => [...$result, 'credential' => $credential]])->assertUnprocessable();
+        $response = $this->postJson($this->path.'/step', ['worker' => 'conn-h', 'key' => 'forged', 'name' => 'pairing-create', 'status' => 'succeeded',
+            'result' => [...$result, 'credential' => $credential]]);
+        if (is_array($credential)) {
+            $response->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
+        } else {
+            $response->assertUnprocessable()->assertJsonPath('error.code', 'operation.secret_output_unproven');
+        }
     }
     expect($this->operation->steps()->where('status', 'succeeded')->count())->toBe(0);
     expect(json_encode($this->operation->fresh()->getAttributes()))->not->toContain('raw-secret', 'conn-one-time-sentinel');
@@ -93,9 +99,65 @@ it('keeps an uncertain issue fenced and never mints a replacement automatically'
     Http::fake(['http://dev.test/api/auth/pairing-token' => Http::failedConnection()]);
 
     $this->postJson($this->path.'/run', $this->run)->assertServerError();
-    $this->postJson($this->path.'/run', $this->run)->assertConflict();
+    $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath('data.error_code', 'conn.pairing_outcome_unknown');
 
     Http::assertSentCount(1);
     expect($this->pairing->fresh()->credential)->toBeNull()->and($this->pairing->fresh()->issue_started_at)->not->toBeNull();
     expect($this->operation->fresh()->state['executor_runs']['pairing-create']['result'])->toBeNull();
+});
+
+it('revokes only the admitted Node links and sessions after a proven revocation step', function (): void {
+    $this->pairing->update(['pairing_link_id' => 'phone-link', 'credential' => 'phone-sentinel', 'expires_at' => now()->addMinutes(5)]);
+    $other = ConnPairing::query()->create(['node_id' => $this->other->id, 'conn_environment_id' => $this->environment->id,
+        'pairing_link_id' => 'laptop-link', 'client_label' => 'laptop via Orbit other', 'credential' => 'laptop-sentinel', 'expires_at' => now()->addMinutes(5)]);
+    Http::fake([
+        'http://dev.test/api/auth/clients' => Http::response([
+            ['sessionId' => 'gateway-current', 'client' => ['label' => 'Orbit Gateway'], 'current' => true],
+            ['sessionId' => 'phone-session', 'client' => ['label' => $this->pairing->client_label], 'current' => false],
+            ['sessionId' => 'laptop-session', 'client' => ['label' => $other->client_label], 'current' => false],
+        ]),
+        'http://dev.test/api/auth/clients/revoke' => Http::response(['revoked' => true]),
+        'http://dev.test/api/auth/pairing-links/revoke' => Http::response(['revoked' => false]),
+    ]);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
+    $this->postJson('/api/v1/conn/environments/conn-h-proof/pairings/revoke')->assertAccepted();
+    $operation = Operation::query()->where('kind', 'conn.pairing_revoke')->sole();
+    expect($operation->input['pairing_ids'])->toBe([$this->pairing->id]);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->services->wireguard_ip]);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'conn.pairing_revoke', 'worker' => 'conn-h'])->assertOk();
+    $path = '/api/v1/operation-executor/'.$operation->id;
+    $result = $this->postJson($path.'/run', ['worker' => 'conn-h', 'key' => 'pairing-revoke', 'transport' => 'gateway', 'name' => 'conn.pairing-revoke',
+        'input' => ['environment' => $operation->input['environment'], 'pairing_ids' => [$this->pairing->id]]])->assertOk()->assertJsonPath('data.revoked_sessions', 1)->json('data');
+    expect($this->pairing->fresh()->revoked_at)->toBeNull();
+    $this->postJson($path.'/step', ['worker' => 'conn-h', 'key' => 'revoke.done', 'name' => 'pairing-revoke', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    $this->postJson($path.'/complete', ['worker' => 'conn-h', 'status' => 'succeeded', 'result' => $result])->assertOk();
+
+    expect($this->pairing->fresh()->revoked_at)->not->toBeNull()->and($this->pairing->fresh()->credential)->toBeNull()
+        ->and($other->fresh()->credential)->toBe('laptop-sentinel')->and($other->fresh()->revoked_at)->toBeNull();
+    Http::assertSentCount(3);
+    Http::assertNotSent(static fn (HttpRequest $request): bool => ($request['sessionId'] ?? null) === 'laptop-session' || ($request['id'] ?? null) === 'laptop-link');
+});
+
+it('refuses expired sessions and missing environments before admitting another issue', function (): void {
+    $this->environment->update(['admin_session_expires_at' => now()->subMinute()]);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
+
+    $this->postJson('/api/v1/conn/environments/conn-h-proof/pairings')->assertConflict()->assertJsonPath('error.code', 'conn.session_expired');
+    $this->postJson('/api/v1/conn/environments/missing/pairings')->assertNotFound();
+
+    expect(Operation::query()->count())->toBe(1)->and(ConnPairing::query()->count())->toBe(1);
+    Http::assertNothingSent();
+});
+
+it('keeps an invalid generated output out of encrypted state and the keyed receipt', function (): void {
+    $credential = 'oversized-output-'.str_repeat('x', 16384);
+    Http::fake(['http://dev.test/api/auth/pairing-token' => Http::response(['id' => 'one-time-link',
+        'credential' => $credential, 'expiresAt' => now()->addMinutes(5)->toIso8601String()])]);
+
+    $response = $this->postJson($this->path.'/run', $this->run)->assertUnprocessable()->assertJsonPath('error.code', 'conn.pairing_credential_invalid');
+
+    expect($response->getContent())->not->toContain('oversized-output-');
+    expect($this->pairing->fresh()->credential)->toBeNull();
+    expect($this->operation->fresh()->state['executor_runs']['pairing-create']['result'])->toBeNull();
+    Http::assertSentCount(1);
 });

@@ -47,6 +47,6 @@ final readonly class ConnOperationSecrets implements OperationSecretSource
         }
         $environment = ConnEnvironment::query()->findOrFail($id);
 
-        return new OperationSecretValue(['url' => $environment->url, 'admin_session' => $environment->admin_session, 'id' => $environment->id]);
+        return new OperationSecretValue(new ConnExecutionInput(['url' => $environment->url, 'admin_session' => $environment->admin_session, 'id' => $environment->id]), [$environment->admin_session]);
     }
 }

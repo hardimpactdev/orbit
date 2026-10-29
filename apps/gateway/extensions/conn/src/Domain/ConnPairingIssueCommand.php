@@ -25,13 +25,14 @@ final readonly class ConnPairingIssueCommand implements OperationGatewayCommand
                 'pairing_ids' => ['type' => 'array', 'items' => ['type' => 'integer'], 'maxItems' => 10000]]];
     }
 
-    /** @param array{environment: array{url: string, admin_session: string, id: int}, pairing_ids: list<int>} $input
+    /** @param array{environment: ConnExecutionInput, pairing_ids: list<int>} $input
      * @return array<string, mixed>
      */
     public function run(Operation $operation, #[SensitiveParameter] array $input): array
     {
+        $environment = $input['environment']->jsonSerialize();
         $pairing = ConnPairing::query()->whereKey($operation->target_id)
-            ->where('conn_environment_id', $input['environment']['id'])->sole();
+            ->where('conn_environment_id', $environment['id'])->sole();
         if ($operation->kind !== 'conn.pairing_create' || $input['pairing_ids'] !== [$pairing->id]) {
             throw new ResourceOperationException('operation.execution_forbidden', 'This issue does not belong to the pairing.', 422);
         }
@@ -44,7 +45,7 @@ final readonly class ConnPairingIssueCommand implements OperationGatewayCommand
             throw new ResourceOperationException('conn.pairing_outcome_unknown', 'The earlier pairing issue has no saved credential. Create a new pairing explicitly.', 409);
         }
         $pairing->forceFill(['issue_started_at' => Carbon::now()])->save();
-        $issued = $this->server->issuePairingCredential($input['environment']['url'], $input['environment']['admin_session'], $pairing->client_label);
+        $issued = $this->server->issuePairingCredential($environment['url'], $environment['admin_session'], $pairing->client_label);
         $pairing->forceFill(['pairing_link_id' => $issued->id, 'expires_at' => $issued->expiresAt])->save();
 
         return ['backend' => 'issued', 'pairing_id' => $pairing->id, 'pairing_link_id' => $issued->id,
