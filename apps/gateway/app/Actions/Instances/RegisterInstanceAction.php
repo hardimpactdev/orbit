@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace App\Actions\Instances;
 
+use App\Actions\Operations\StartOperationAction;
+use App\Actions\Routes\CreateRouteAction;
 use App\Data\Instances\RegisterInstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\Instances\DefaultInstanceName;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
-use App\Domain\Instances\DevelopmentInstanceProvisioner;
 use App\Domain\Instances\InstanceDestinationGuard;
+use App\Domain\Instances\InstanceLifecycleAvailability;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\Registration\RegistrationSourceFacts;
@@ -21,7 +23,9 @@ use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\Storage\StorageRootResolver;
+use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Projects\DevelopmentNodeExclusion;
+use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Shared\LifecycleStatus;
@@ -29,6 +33,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ProjectRoot;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
@@ -46,33 +51,24 @@ final readonly class RegisterInstanceAction
         private InstanceDestinationGuard $destinationGuard,
         private AppDevSourceOperationLock $sourceLock,
         private DevelopmentProjectionOperationLock $projectionLock,
-        private DevelopmentInstanceProvisioner $provisioner,
         private DevelopmentInstanceConfigurator $configuration,
-        private ?RunInstanceSetupAction $setup = null,
+        private StartOperationAction $operations,
+        private OperationIdempotency $idempotency,
     ) {}
 
-    /** @return array{project: Project, primary: Instance, instances: list<Instance>, name_converted_from: string|null} */
-    public function execute(Node $caller, RegisterInstanceData $data): array
+    public function execute(Node $caller, RegisterInstanceData $data, ?string $requestId = null): Operation
     {
-        $result = $this->performRegistration($caller, $data);
-
-        if ($data->runSetup && ! $result['primary']->placedOnAppProd()) {
-            ($this->setup ?? app(RunInstanceSetupAction::class))->execute($result['primary']);
+        if (($replay = $this->idempotency->replay('instance.register')) !== null) {
+            return $replay;
         }
-
-        return $result;
-    }
-
-    /** @return array{project: Project, primary: Instance, instances: list<Instance>, name_converted_from: string|null} */
-    private function performRegistration(Node $caller, RegisterInstanceData $data): array
-    {
+        app(InstanceLifecycleAvailability::class)->assertAvailable('instance.register');
         $this->assertPlacement($caller);
 
         if ($data->domain !== null) {
             RouteDomain::validate($data->domain);
         }
 
-        return $this->sourceLock->synchronized($caller->id, function () use ($caller, $data): array {
+        return $this->sourceLock->synchronized($caller->id, function () use ($caller, $data, $requestId): Operation {
             $retainedMember = $this->retainedMember($caller, $data);
 
             if (
@@ -103,65 +99,44 @@ final readonly class RegisterInstanceAction
                 : $this->primaryFacts($facts, $data->sourcePath);
             $project = $this->resolveProject($primaryFacts, $data);
             $this->preflightSources($caller, $project, $facts, $retainedPrimary, $data->sourcePath, $data->root);
-            [$members, $instances] = $this->projectionLock->run(function () use (
-                $caller,
-                $project,
-                $facts,
-                $primaryFacts,
-                $data,
-            ): array {
+
+            return $this->projectionLock->run(fn (): Operation => DB::transaction(function () use ($caller, $project, $facts, $primaryFacts, $data, $requestId): Operation {
                 $members = $this->reserveMembers($caller, $project, $facts, $primaryFacts, $data);
-
-                try {
-                    if ($this->needsRelocation($members)) {
-                        $this->sources->relocateSet(array_map(
-                            static fn (array $member): array => [
-                                'instance' => $member['instance'],
-                                'facts' => $member['facts'],
-                            ],
-                            $members,
-                        ));
+                foreach ($members as $member) {
+                    if ($member['instance']->requiresRoute()) {
+                        app(CreateRouteAction::class)->ensureForInstance($member['instance'], $member['routeDomain']);
                     }
-                    $instances = [];
-
-                    foreach ($members as $member) {
-                        $instances[] = $this->completeMember(
-                            $member['instance'],
-                            $member['facts'],
-                            $member['routeDomain'],
-                        );
-                    }
-                } catch (Throwable $exception) {
-                    foreach ($members as $member) {
-                        $this->recordFailure($member['instance'], $exception);
-                    }
-
-                    throw new ResourceOperationException(
-                        errorCode: 'instance.registration_incomplete',
-                        message: 'Instance registration is incomplete and can be retried.',
-                        status: 502,
-                        previous: $exception,
-                    );
                 }
+                $primaryMember = array_find($members, static fn (array $member): bool => $member['facts']->path === $primaryFacts->path);
+                if ($primaryMember === null) {
+                    throw $this->conflict('instance.registration_incomplete', 'The registration set does not contain its primary source.');
+                }
+                $primary = $primaryMember['instance'];
 
-                return [$members, $instances];
-            });
-
-            $primary = collect($instances)->first(
-                static fn (Instance $instance): bool => (
-                    $instance->registration_original_path === $primaryFacts->path
-                ),
-            );
-            assert($primary instanceof Instance);
-
-            return [
-                'project' => $project->refresh(),
-                'primary' => $primary,
-                'instances' => $instances,
-                'name_converted_from' => $data->instanceName === null
-                    ? null
-                    : DefaultInstanceName::convertedFrom($project, $data->instanceName),
-            ];
+                return $this->operations->execute('instance.register', 'instance', $primary->id, $caller->id, [
+                    'instance_id' => $primary->id, 'project_id' => $project->id,
+                    'repository_identity' => $project->repository_identity, 'repository' => $project->repository_url,
+                    'source_path' => $data->sourcePath, 'include_worktrees' => $data->includeWorktrees,
+                    'run_setup' => $data->runSetup, 'root' => $data->root, 'domain' => $data->domain,
+                    'node_id' => $caller->id,
+                    'setup_digest' => app(StartInstanceStepListAction::class)->configurationDigest($project, LifecyclePhase::Setup),
+                    'name_converted_from' => $data->instanceName === null ? null : DefaultInstanceName::convertedFrom($project, $data->instanceName),
+                    'members' => array_map(static fn (array $member): array => [
+                        'instance_id' => $member['instance']->id,
+                        'original_path' => $member['facts']->path, 'checkout' => $member['instance']->checkout_path,
+                        'source_digest' => $member['facts']->sourceDigest, 'branch' => $member['facts']->branch,
+                        'commit' => $member['facts']->commit, 'detached' => $member['facts']->detached,
+                        'source_layout' => $member['facts']->layout->value,
+                        'common_repository_path' => $member['facts']->commonRepositoryPath,
+                        'worktree_paths' => $member['facts']->worktreePaths,
+                        'relocation_state' => $member['instance']->registration_relocation_state,
+                        'source_device' => $member['instance']->registration_source_device, 'source_inode' => $member['instance']->registration_source_inode,
+                        'completed' => $member['instance']->registration_completed_at !== null,
+                        'route_id' => $member['instance']->routes()->whereNull('web_root')->value('routes.id'),
+                        'domain' => $member['routeDomain'],
+                    ], $members),
+                ], 'operator', $requestId);
+            }));
         });
     }
 
@@ -712,25 +687,6 @@ final readonly class RegisterInstanceAction
     }
 
     /**
-     * @param  list<array{instance: Instance, facts: RegistrationSourceFacts, routeDomain: string|null}>  $members
-     */
-    private function needsRelocation(array $members): bool
-    {
-        foreach ($members as $member) {
-            $instance = $member['instance'];
-
-            if (
-                $instance->registration_relocation_state !== 'relocated'
-                || $instance->registration_authoritative_path !== $instance->checkout_path
-            ) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
      * @param  list<string>  $paths
      * @return list<string>
      */
@@ -1077,90 +1033,6 @@ final readonly class RegisterInstanceAction
         }
     }
 
-    private function completeMember(
-        Instance $instance,
-        RegistrationSourceFacts $facts,
-        ?string $domain,
-    ): Instance {
-        if ($instance->registration_completed_at !== null && $instance->status === InstanceState::Active) {
-            $retryHostname = $this->retainedRouteDomain($instance, $domain);
-            $this->provisioner->reserve($instance, $retryHostname);
-            $completed = $this->provisioner->complete($instance, $retryHostname);
-            $this->sources->discardLaravelRollback($completed);
-            $completed->update(['failed_step' => null, 'error_code' => null]);
-
-            return $completed->refresh()->load('routes.targets');
-        }
-
-        if (
-            $instance->status === InstanceState::Active
-            && $instance->provisioning_step === 'active'
-            && $instance->registration_request_id !== null
-        ) {
-            $this->provisioner->reserve($instance, $domain);
-
-            return $this->finishPublishedRegistration(
-                $this->provisioner->complete($instance, $domain),
-            );
-        }
-
-        DB::transaction(static function () use ($instance, $facts): void {
-            $locked = Instance::query()->lockForUpdate()->findOrFail($instance->id);
-            $locked->update([
-                'name' => $instance->name,
-                'source_layout' => $facts->layout,
-                'checkout_path' => $instance->checkout_path,
-                'branch' => $facts->branch,
-                'branch_override' => null,
-                'starting_commit' => $facts->commit,
-                'registration_original_path' => $facts->path,
-                'registration_repository_identity' => $facts->repositoryIdentity,
-                'registration_source_digest' => $facts->sourceDigest,
-                'registration_detached' => $facts->detached,
-                'status' => InstanceState::SourceResolved,
-                'failed_step' => null,
-                'error_code' => null,
-            ]);
-        });
-
-        $instance = $instance->refresh();
-        $this->sources->prepareLaravelRollback($instance);
-
-        try {
-            $this->provisioner->reserve($instance, $domain);
-            $completed = $this->provisioner->complete($instance, $domain);
-        } catch (Throwable $exception) {
-            $this->sources->restoreLaravelConfiguration($instance);
-
-            throw $exception;
-        }
-
-        return $this->finishPublishedRegistration($completed);
-    }
-
-    private function retainedRouteDomain(Instance $instance, ?string $domain): ?string
-    {
-        if ($domain !== null) {
-            return $domain;
-        }
-
-        $route = $instance->routes()->sole();
-
-        return $route->provenance === RouteProvenance::Explicit ? $route->domain : null;
-    }
-
-    private function finishPublishedRegistration(Instance $completed): Instance
-    {
-        $completed->update([
-            'registration_completed_at' => now(),
-            'failed_step' => null,
-            'error_code' => null,
-        ]);
-        $this->sources->discardLaravelRollback($completed);
-
-        return $completed->refresh()->load('routes.targets');
-    }
-
     private function assertPlacement(Node $node): void
     {
         if (
@@ -1174,19 +1046,6 @@ final readonly class RegisterInstanceAction
                 422,
             );
         }
-    }
-
-    private function recordFailure(Instance $instance, Throwable $exception): void
-    {
-        $errorCode = property_exists($exception, 'errorCode') && is_string($exception->errorCode)
-            ? $exception->errorCode
-            : 'instance.registration_incomplete';
-        Instance::query()
-            ->whereKey($instance->id)
-            ->update([
-                'failed_step' => 'registration',
-                'error_code' => $errorCode,
-            ]);
     }
 
     private function conflict(string $code, string $message): ResourceOperationException

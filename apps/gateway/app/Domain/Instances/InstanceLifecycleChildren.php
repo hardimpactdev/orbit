@@ -28,6 +28,8 @@ final readonly class InstanceLifecycleChildren
         $children = match ($parent->kind) {
             'instance.create' => $this->create($parent, $id),
             'instance.rename' => $this->rename($parent),
+            'instance.register' => $this->register($parent),
+            'instance.clone' => $this->clone($parent, $id),
             'instance.destroy' => $this->destroy($parent),
             default => [],
         };
@@ -99,6 +101,54 @@ final readonly class InstanceLifecycleChildren
         return $parent->input['domain'] !== null && $this->ready($parent, 'rename-inspect')
             ? [$this->child($parent, 'route-update', 'route.update', ['route_id' => $parent->input['route_id'], 'domain' => $parent->input['domain']])]
             : [];
+    }
+
+    /** @return list<ChildIntent> */
+    private function register(Operation $parent): array
+    {
+        $children = [];
+        foreach (InstanceLifecycleInput::members($parent->input) as $member) {
+            $id = ValidatedData::integer($member['instance_id']);
+            if ($member['route_id'] !== null && ($member['completed'] === true || $this->ready($parent, "registration-{$id}-configuration"))) {
+                $children[] = $this->child($parent, "route-{$id}", 'route.converge', ['route_id' => $member['route_id'], 'instance_id' => $id]);
+            }
+        }
+        if ($parent->input['run_setup'] === true) {
+            $primary = ValidatedData::integer($parent->input['instance_id']);
+            $member = array_find(InstanceLifecycleInput::members($parent->input), static fn (array $member): bool => $member['instance_id'] === $primary);
+            if ($member !== null && ($member['completed'] === true || $this->ready($parent, "registration-{$primary}-activate"))) {
+                $children[] = $this->steps($parent, 'setup', $primary, 'setup', $parent->input['setup_digest']);
+            }
+        }
+
+        return $children;
+    }
+
+    /** @return list<ChildIntent> */
+    private function clone(Operation $parent, int $id): array
+    {
+        if ($parent->input['initial_completed'] === true) {
+            return [];
+        }
+        $children = [];
+        if ($this->ready($parent, 'clone-environment')) {
+            if ($parent->input['sqlite_source_path'] !== null && $this->ready($parent, 'clone-sqlite-intent')
+                && ! app(InstanceSqliteSeedIntent::class)->retainedClone($parent)) {
+                $children[] = app(InstanceSqliteSeedIntent::class)->cloneChild($parent);
+            }
+            if ($parent->input['sqlite_source_path'] === null || $this->ready($parent, 'clone-sqlite-attach')) {
+                $children[] = $this->child($parent, 'clone-environment-sync', 'instance.sync_environment', ['instance_id' => $id]);
+            }
+        }
+        if ($this->ready($parent, 'clone-definitions') && $this->succeeded($parent, 'clone-environment-sync')) {
+            $children[] = $this->child($parent, 'clone-processes', 'process.install_instance_definitions', ['instance_id' => $id]);
+            $children[] = $this->child($parent, 'clone-schedules', 'schedule.install_instance_definitions', ['instance_id' => $id]);
+            if ($parent->input['route_id'] !== null && $this->succeeded($parent, 'clone-processes') && $this->succeeded($parent, 'clone-schedules')) {
+                $children[] = $this->child($parent, 'route-converge', 'route.converge', ['instance_id' => $id, 'route_id' => $parent->input['route_id']]);
+            }
+        }
+
+        return $children;
     }
 
     /** @return list<ChildIntent> */

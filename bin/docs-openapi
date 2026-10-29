@@ -2131,15 +2131,6 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['503'] = {'description': 'An HTML failure page with the animated Orbit mark, the stored error, and a Try again link. It does not poll.', 'content': {'text/html': {'schema': {'type': 'string'}}}}
     else:
         data, is_list = data_schema_for(route)
-        if route['name'] == 'instance:clone':
-            data = {'allOf': [data, {'type': 'object', 'properties': {
-                'warnings': {'type': 'array', 'items': {'type': 'string'},
-                    'description': 'Key-only review hints for copied development hosts, filesystem paths, and service drivers. Values are never included; settings are not rewritten. Empty when no hints apply.'},
-            }, 'required': ['warnings']}]}
-        if route['name'] == 'instance:register':
-            registration = components['InstanceRegistration']
-            registration['properties']['name_converted_from'] = NAME_CONVERTED_FROM
-            registration['required'] = ['name_converted_from']
         if is_list:
             data = {'type': 'array', 'items': data}
         if route['name'] == 'websocket:operation:show':

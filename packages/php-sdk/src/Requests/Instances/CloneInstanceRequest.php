@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Requests\Instances;
 
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Responses\Instances\InstanceResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
@@ -26,16 +26,23 @@ final class CloneInstanceRequest extends GatewayRequest implements HasBody
         private readonly ?string $branch = null,
         #[\SensitiveParameter]
         private readonly ?string $sqliteSourcePath = null,
+        private readonly ?string $idempotencyKey = null,
     ) {}
+
+    /** @return array<string, string> */
+    protected function defaultHeaders(): array
+    {
+        return $this->idempotencyKey === null ? [] : ['Idempotency-Key' => $this->idempotencyKey];
+    }
 
     public function resolveEndpoint(): string
     {
         return "/api/v1/instances/{$this->candidateId}/clone";
     }
 
-    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): InstanceResponse
+    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): OperationResponse
     {
-        return InstanceResponse::fromGatewayData(
+        return OperationResponse::fromGatewayData(
             $this->unwrapData($response),
             $this->successRequestId($response),
         );
