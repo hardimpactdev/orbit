@@ -33,7 +33,11 @@ class FleetNativeTest(unittest.TestCase):
         workflows = self.repo / "workflows"
         workflows.mkdir()
         for name in ("operation-runner", "operation-dispatch", "operation-fleet"):
-            shutil.copy(ROOT / f"workflows/workflow-{name}.yaml", workflows)
+            source = (ROOT / f"workflows/workflow-{name}.yaml").read_text()
+            # Process recovery is local; shipped workflows keep worker placement.
+            source = "\n".join(line for line in source.splitlines()
+                               if not line.startswith(("labels:", "queueTimeout:"))) + "\n"
+            (workflows / f"workflow-{name}.yaml").write_text(source)
         self.state = {
             "operation": {"id": 9, "node_id": 2, "kind": "fleet.recipe", "status": "queued",
                           "cancel_requested": False, "steps": [], "step_results": {},

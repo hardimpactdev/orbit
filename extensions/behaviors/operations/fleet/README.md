@@ -31,6 +31,13 @@ keeps that Operation and never claims a different one.
   the shared `/wait` primitive. The Gateway reads proven child results for Caddy
   skips.
 
+Both Fleet workflows run on the `migration` worker pool, with a 300-second queue
+timeout. Maintenance uses the Gateway endpoints available to configured executor
+peers; it does not call the Services-only claimable discovery endpoint. The
+shared operation runner keeps that discovery on Services. Native recovery tests
+use local copies with placement removed; deployed workflows keep their worker
+labels.
+
 The maintenance workflow runs each minute. It refreshes desired state and peer
 DNS every five minutes, opens daily PRs after 03:00 Amsterdam, and admits
 ordered recipe and rollout visits. Catch-up visits wait five minutes.
