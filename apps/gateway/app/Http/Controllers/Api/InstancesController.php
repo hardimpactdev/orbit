@@ -126,7 +126,7 @@ final class InstancesController extends Controller
         StartInstanceDestroyAction $action,
     ): JsonResponse {
         $target = Instance::query()->findOrFail($instance);
-        if (! $target->placedOnAppDev()) {
+        if ($target->placedOnAppProd()) {
             return response()->json([
                 'data' => InstanceRemovalData::fromModel(app(DestroyInstanceAction::class)->execute($target, $request->force()))->toArray(),
                 'meta' => $this->meta($request),
