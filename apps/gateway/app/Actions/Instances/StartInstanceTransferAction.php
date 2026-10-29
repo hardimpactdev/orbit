@@ -120,6 +120,10 @@ final readonly class StartInstanceTransferAction
             );
         }
 
+        if (($existing->recovery_evidence['rollback_pending'] ?? false) === true) {
+            throw $this->conflict('instance.transfer_recovery_pending', 'The recorded transfer recovery must finish before another attempt can start.');
+        }
+
         return $existing;
     }
 

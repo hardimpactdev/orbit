@@ -47,7 +47,7 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
         return $child;
     }
 
-    /** @return array{descriptors: list<Descriptor>} */
+    /** @return array{descriptors: list<Descriptor>, result?: array<string, mixed>} */
     public function context(Operation $operation): array
     {
         $descriptors = match ($operation->kind) {
@@ -74,7 +74,9 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
         }
         unset($descriptor);
 
-        return ['descriptors' => $descriptors];
+        return ['descriptors' => $descriptors, ...($operation->kind === 'instance.transfer' ? ['result' => [
+            'rollback_pending' => app(TransferLifecycleExecution::class)->cancellationPendingRecovery($operation),
+        ]] : [])];
     }
 
     /** @param RunInput $run
@@ -239,6 +241,11 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
 
     public function assertCompletion(Operation $operation, OperationOutcome $outcome): void
     {
+        if ($operation->kind === 'instance.transfer' && ($outcome->result['rollback_pending'] ?? false) === true
+            && ($outcome->status !== OperationStatus::Cancelled
+                || ! app(TransferLifecycleExecution::class)->cancellationPendingRecovery($operation))) {
+            throw new ResourceOperationException('operation.completion_unproven', 'Pending recovery requires the cancelled transfer original capture intent.', 409);
+        }
         if ($operation->kind === 'instance.register' && $outcome->status !== OperationStatus::Succeeded) {
             app(RegistrationLifecycleExecution::class)->assertFailure($operation, $outcome);
         }
@@ -247,6 +254,11 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
             && app(InstanceLifecycleChildren::class)->succeeded($operation, 'transfer-stop-source')
             && ($operation->cancel_requested_at !== null || app(TransferCompensation::class)->eligible($operation))) {
             if (app(TransferLifecycleExecution::class)->capturePending($operation)) {
+                if ($outcome->status === OperationStatus::Cancelled
+                    && app(TransferLifecycleExecution::class)->cancellationPendingRecovery($operation)
+                    && ($outcome->result['rollback_pending'] ?? null) === true) {
+                    return;
+                }
                 throw new ResourceOperationException('operation.execution_uncertain', 'Read the original transfer-capture receipt before admitting compensation or ending this transfer.', 409);
             }
             $rollback = app(OperationChildren::class)->child($operation, 'transfer-rollback');

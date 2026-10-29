@@ -69,22 +69,29 @@ final readonly class InstanceTransferState
     /** @return array<string, mixed> */
     private function cutover(Operation $operation, Instance $instance, InstanceTransfer $transfer): array
     {
-        $execution = app(InstanceLifecycleExecution::class);
-        $execution->assertChild($operation, 'transfer-destination', 'instance.transfer_destination');
-        if ($transfer->cutover_at !== null) {
-            return ['cutover' => true, 'transfer_id' => $transfer->id];
-        }
-        if ($instance->node_id !== $transfer->source_node_id || $instance->checkout_path !== $transfer->source_path) {
-            throw $this->conflict('instance.transfer_cleanup_conflict', 'The source placement changed before cutover.');
-        }
-        $destination = Node::query()->findOrFail($transfer->destination_node_id);
-        app(ProcessAdmissionLock::class)->run([$instance->id], function () use ($instance, $destination, $transfer, $operation): void {
-            app(ScheduleTargetUseGuard::class)->assertInstanceStable($instance->refresh());
-            $this->prepareRoute($instance, $destination, $transfer);
-            $this->cutoverPlacement($instance, $destination, $transfer, ValidatedData::integer($operation->input['source_cluster_id']));
-        });
+        return DB::transaction(function () use ($operation, $instance, $transfer): array {
+            $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
+            $transfer->refresh();
+            if ($operation->cancel_requested_at !== null && $transfer->cutover_at === null) {
+                throw $this->conflict('operation.cancelled', 'Cancellation won before the transfer cutover commit.');
+            }
+            $execution = app(InstanceLifecycleExecution::class);
+            $execution->assertChild($operation, 'transfer-destination', 'instance.transfer_destination');
+            if ($transfer->cutover_at !== null) {
+                return ['cutover' => true, 'transfer_id' => $transfer->id];
+            }
+            if ($instance->node_id !== $transfer->source_node_id || $instance->checkout_path !== $transfer->source_path) {
+                throw $this->conflict('instance.transfer_cleanup_conflict', 'The source placement changed before cutover.');
+            }
+            $destination = Node::query()->findOrFail($transfer->destination_node_id);
+            app(ProcessAdmissionLock::class)->run([$instance->id], function () use ($instance, $destination, $transfer, $operation): void {
+                app(ScheduleTargetUseGuard::class)->assertInstanceStable($instance->refresh());
+                $this->prepareRoute($instance, $destination, $transfer);
+                $this->cutoverPlacement($instance, $destination, $transfer, ValidatedData::integer($operation->input['source_cluster_id']));
+            });
 
-        return ['cutover' => true, 'transfer_id' => $transfer->id];
+            return ['cutover' => true, 'transfer_id' => $transfer->id];
+        });
     }
 
     /** @return array<string, mixed> */

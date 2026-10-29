@@ -37,7 +37,6 @@ final readonly class TransferLifecycleExecution
         app(OperationChildren::class)->verify($parent, $operation);
         $action = match ([$operation->kind, $operation->child_key]) {
             ['instance.transfer_destination', 'transfer-destination'] => 'materialize',
-            ['instance.transfer_destination', 'transfer-discard-destination'] => 'discard',
             ['instance.transfer_activate', 'transfer-activate-destination'] => 'activate',
             default => throw $this->forbidden(),
         };
@@ -53,6 +52,14 @@ final readonly class TransferLifecycleExecution
         $capture = ValidatedData::object($operation->state['executor_runs'] ?? [])['transfer-capture'] ?? null;
 
         return is_array($capture) && ($capture['started'] ?? false) === true && ($capture['result'] ?? null) === null;
+    }
+
+    public function cancellationPendingRecovery(Operation $operation): bool
+    {
+        return $operation->kind === 'instance.transfer' && $operation->cancel_requested_at !== null
+            && app(InstanceTransferState::class)->transfer($operation)->cutover_at === null
+            && $this->capturePending($operation)
+            && app(InstanceLifecycleChildren::class)->succeeded($operation, 'transfer-stop-source');
     }
 
     /** @return list<Descriptor> */

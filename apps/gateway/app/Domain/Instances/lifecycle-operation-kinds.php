@@ -6,6 +6,7 @@ use App\Domain\Instances\InstanceDestroyCancelGuard;
 use App\Domain\Instances\InstanceLifecycleChildAdmission;
 use App\Domain\Instances\InstanceLifecycleCompletion;
 use App\Domain\Instances\InstanceLifecycleExecution;
+use App\Domain\Instances\InstanceTransferCancelGuard;
 use App\Domain\Instances\TransferCompensation;
 use App\Domain\Operations\OperationKinds;
 
@@ -71,6 +72,7 @@ return (static function (): array {
                 'captured', 'cleaned', 'database_required', 'seed_required', 'attached', 'written', 'activated', 'environment_copied', 'definitions_captured', 'prepared', 'relocated',
                 'inspected', 'revalidated', 'accepted', 'removal_id', 'route_cleared', 'finalized', 'receipt', 'deleted', 'home_removed', 'detached',
                 'total', 'completed', 'remaining', 'cutover', 'transfer_id',
+                ...($verb === 'transfer' ? ['rollback_pending'] : []),
                 ...($verb === 'rename' ? [] : [
                     ['name' => 'instance_ids', 'type' => 'list', 'items' => 'integer', 'max' => 1024],
                     ['name' => 'member_ids', 'type' => 'list', 'items' => 'integer', 'max' => 1024],
@@ -87,6 +89,9 @@ return (static function (): array {
     if (OperationKinds::supports('compensations')) {
         $kinds['instance.transfer']['compensations'] = ['instance.transfer_rollback'];
         $kinds['instance.transfer']['cancellation_boundary'] = 'transfer-stop-source';
+    }
+    if (OperationKinds::supports('cancel_guard')) {
+        $kinds['instance.transfer']['cancel_guard'] = InstanceTransferCancelGuard::class;
     }
     foreach (['instance.transfer_rollback', 'instance.transfer_discard'] as $kind) {
         $kinds[$kind] = ['executor' => 'swamp', 'execution' => TransferCompensation::class,

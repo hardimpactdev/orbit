@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\DatabaseServers\DatabaseOperationExecution;
 use App\Domain\Instances\InstanceLifecycleCompletion;
@@ -27,7 +28,7 @@ final readonly class CompensationProcessAdmission implements OperationChildAdmis
 {
     public function admit(Operation $parent, array $intent): Operation
     {
-        return app(StartOperationAction::class)->execute('process.instance_runtime', 'instance', $parent->target_id, $intent['node_id'], $intent['input'], null, null);
+        return app(StartOperationAction::class)->execute($intent['kind'], 'instance', $parent->target_id, $intent['node_id'], $intent['input'], null, null);
     }
 }
 
@@ -38,6 +39,7 @@ beforeEach(function (): void {
             'completion' => InstanceLifecycleCompletion::class, 'runs' => [['transport' => 'gateway', 'name' => 'instance.lifecycle-state']],
             'completion_contract' => ['step' => 'fixture', 'transport' => 'gateway', 'name' => 'instance.lifecycle-state', 'result' => []], 'result_fields' => ['ready']],
     ];
+    $definitions['instance.transfer_activate'] = $definitions['process.instance_runtime'];
     // This compensation path has scalar receipts; C gates the complete root family.
     $definitions['instance.transfer']['result_fields'] = array_values(array_filter($definitions['instance.transfer']['result_fields'], is_string(...)));
     app()->instance(OperationKinds::class, new OperationKinds(app(), $definitions));
@@ -237,3 +239,80 @@ it('recovers an uncertain capture receipt after cancellation before admitting so
     expect($rollback->kind)->toBe('instance.transfer_rollback')->and($rollback->node_id)->toBe($this->transfer->source_node_id);
     expect($this->executor->receipt($this->root, 'transfer-capture', $this->peer))->toBe($receipt);
 });
+
+it('ends an unknown cancelled capture with recorded pending recovery and no restoration or second capture', function (): void {
+    $this->stop->update(['status' => 'succeeded']);
+    $execution = app(InstanceLifecycleExecution::class);
+    $descriptor = array_find($execution->context($this->root)['descriptors'], static fn (array $entry): bool => $entry['key'] === 'transfer-capture');
+    $run = ['worker' => 'parent-worker', 'key' => $descriptor['key'], 'transport' => $descriptor['transport'], 'name' => $descriptor['name'], 'input' => $descriptor['input']];
+    $this->executor->step($this->root, ['worker' => 'parent-worker', 'key' => 'capture:start', 'name' => 'transfer-capture', 'status' => 'running'], $this->peer);
+    $runner = Mockery::mock(AgentCommandRunner::class);
+    $runner->shouldReceive('run')->once()->withArgs(fn (Node $node, string $name): bool => $node->id === $this->peer && $name === 'instance.transfer-source')
+        ->andThrow(new RuntimeException('SSH dropped before dispatch'));
+    app()->instance(AgentCommandRunner::class, $runner);
+    expect(fn () => $this->executor->run($this->root, $run, $this->peer))->toThrow(ResourceOperationException::class);
+    $this->root->refresh()->update(['cancel_requested_at' => now()]);
+    $runner->shouldReceive('run')->once()->withArgs(fn (Node $node, string $name): bool => $node->id === $this->peer && $name === 'agent.effect-receipt')
+        ->andReturn(['effect_key' => 'op-'.$this->root->id.'.transfer-capture', 'state' => 'unknown',
+            'result' => null, 'exit_code' => null, 'finished_at' => null]);
+
+    expect($this->executor->receipt($this->root, 'transfer-capture', $this->peer)['state'])->toBe('unknown');
+    expect($execution->context($this->root)['result'])->toBe(['rollback_pending' => true]);
+    expect(fn () => $this->executor->child($this->root, ['worker' => 'parent-worker', 'key' => 'transfer-rollback'], $this->peer))
+        ->toThrow(ResourceOperationException::class);
+    $result = ['error_code' => 'operation.cancelled', 'rollback_pending' => true];
+    $this->executor->step($this->root, ['worker' => 'parent-worker', 'key' => 'capture:pending', 'name' => 'transfer-capture',
+        'status' => 'failed', 'error_code' => 'operation.cancelled', 'result' => $result], $this->peer);
+    $this->executor->complete($this->root, ['worker' => 'parent-worker', 'status' => 'cancelled', 'error_code' => 'operation.cancelled', 'result' => $result], $this->peer);
+
+    expect($this->root->refresh()->status->value)->toBe('cancelled')->and($this->root->lock_key)->toBeNull();
+    expect($this->root->state['executor_runs']['transfer-capture']['result'])->toBeNull();
+    expect($this->transfer->refresh()->recovery_evidence)->toBe([
+        'rollback_pending' => true, 'capture_pending' => true, 'transfer_operation_id' => $this->root->id,
+    ]);
+    expect($this->transfer->rolled_back_at)->toBeNull();
+    expect($this->root->children()->pluck('child_key')->all())->toBe(['transfer-stop-source']);
+    $this->assertDatabaseHas('instances', ['id' => $this->instance->id, 'node_id' => $this->peer]);
+});
+
+it('refuses a caller pending-recovery claim without its original uncertain capture', function (): void {
+    $this->root->update(['cancel_requested_at' => now()]);
+
+    expect(fn () => $this->executor->complete($this->root, ['worker' => 'parent-worker', 'status' => 'cancelled',
+        'result' => ['rollback_pending' => true]], $this->peer))->toThrow(ResourceOperationException::class);
+
+    expect($this->root->refresh()->status->value)->toBe('running');
+    expect($this->transfer->refresh()->recovery_evidence)->toBeNull();
+});
+
+it('refuses cancel after committed cutover before changing the parent or its activation child', function (bool $receiptSaved): void {
+    $this->stop->update(['status' => 'succeeded']);
+    $this->transfer->update(['cutover_at' => now(), 'current_step' => 'cutover']);
+    $this->instance->update(['node_id' => $this->transfer->destination_node_id, 'checkout_path' => $this->transfer->destination_path]);
+    if ($receiptSaved) {
+        $this->root->update(['state' => [...$this->root->state, 'executor_runs' => ['transfer-cutover' => [
+            'transport' => 'gateway', 'name' => 'instance.lifecycle-state',
+            'input' => ['action' => 'transfer-cutover', 'operation_id' => $this->root->id],
+            'result' => ['cutover' => true, 'transfer_id' => $this->transfer->id]]]]]);
+        $this->root->steps()->create(['position' => 1, 'name' => 'transfer-cutover', 'status' => 'succeeded', 'sequence' => 1]);
+    }
+    $activation = $this->executor->child($this->root, ['worker' => 'parent-worker', 'key' => 'transfer-activate-destination'], $this->peer)['operation'];
+    $parentBefore = $this->root->refresh()->getAttributes();
+    $childBefore = $activation->getAttributes();
+
+    expect(fn () => app(CancelOperationAction::class)->execute($this->root))->toThrow(function (ResourceOperationException $exception): void {
+        expect($exception->errorCode)->toBe('operation.cancel_refused');
+    });
+
+    expect($this->root->refresh()->getAttributes())->toBe($parentBefore);
+    expect($activation->refresh()->getAttributes())->toBe($childBefore);
+    expect($this->executor->child($this->root, ['worker' => 'parent-worker', 'key' => 'transfer-activate-destination'], $this->peer)['operation']->id)->toBe($activation->id);
+})->with(['proven cutover' => [true], 'lost cutover reply' => [false]])
+    ->skip(! OperationKinds::supports('cancel_guard'), 'Await the lane 0d cancel guard runtime.');
+
+it('still stamps and cascades pre-cutover cancellation through the shared cancel action', function (): void {
+    app(CancelOperationAction::class)->execute($this->root);
+
+    expect($this->root->refresh()->cancel_requested_at)->not->toBeNull();
+    expect($this->stop->refresh()->status->value)->toBe('cancelled');
+})->skip(! OperationKinds::supports('cancel_guard'), 'Await the lane 0d cancel guard runtime.');

@@ -186,6 +186,45 @@ it('returns 404 for a missing source Instance before recording a transfer', func
     expect(InstanceTransfer::query()->count())->toBe(0)->and(Operation::query()->count())->toBe(0);
 });
 
+it('refuses identical new admission while the stored attempt has pending recovery', function (array $evidence): void {
+    app()->instance(OperationKinds::class, new OperationKinds(app(), [
+        ...OperationKinds::definitions(), ...require app_path('Domain/Instances/lifecycle-operation-kinds.php'),
+    ]));
+    InstanceTransfer::query()->create([
+        'instance_id' => $this->instance->id, 'source_node_id' => $this->sourceNode->id,
+        'destination_node_id' => $this->destinationNode->id, 'requested_name' => 'preview', 'destination_name' => 'preview',
+        'source_path' => $this->instance->checkout_path, 'source_layout' => 'checkout',
+        'destination_path' => '/srv/orbit/apps/transfer-api/preview', 'destination_domain' => 'preview.transfer-api.other.orbit',
+        'source_route_id' => $this->instance->routes()->sole()->id, 'status' => 'failed', 'current_step' => 'source-captured',
+        'recovery_evidence' => $evidence,
+    ]);
+    $agent = Mockery::mock(AgentCommandRunner::class);
+    $agent->shouldNotReceive('run');
+    app()->instance(AgentCommandRunner::class, $agent);
+
+    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->postJson($this->transferUrl, ['node_id' => $this->destinationNode->id, 'name' => 'preview'])
+        ->assertConflict()->assertJsonPath('error.code', 'instance.transfer_recovery_pending');
+
+    expect(Operation::query()->count())->toBe(0)->and(InstanceTransfer::query()->sole()->recovery_evidence)->toBe($evidence);
+    $this->assertDatabaseHas('instances', ['id' => $this->instance->id, 'node_id' => $this->sourceNode->id]);
+    $this->assertDatabaseCount('vite_port_assignments', 0);
+    $this->assertDatabaseCount('ssr_port_assignments', 0);
+})->with([
+    'uncertain capture' => [['rollback_pending' => true, 'capture_pending' => true, 'transfer_operation_id' => 123]],
+    'interrupted rollback' => [['rollback_pending' => true]],
+]);
+
+it('keeps transfer gated closed without recording intent while handlers or cancel guards are missing', function (): void {
+    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->postJson($this->transferUrl, ['node_id' => $this->destinationNode->id])
+        ->assertStatus(503)->assertJsonPath('error.code', 'operation.kind_unavailable');
+
+    $this->assertDatabaseCount('operations', 0);
+    $this->assertDatabaseCount('instance_transfers', 0);
+    $this->assertDatabaseHas('instances', ['id' => $this->instance->id, 'node_id' => $this->sourceNode->id]);
+});
+
 function swamp_transfer_api_node(string $name): Node
 {
     return Node::query()->create([

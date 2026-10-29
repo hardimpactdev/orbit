@@ -9,7 +9,7 @@ use App\Domain\Operations\OperationKinds;
 $family = require __DIR__.'/lifecycle-operation-kinds.php';
 $enabled = ['instance.destroy', 'instance.create', 'instance.rename', 'instance.register', 'instance.clone'];
 // The relay slice and its complete destination/activation handlers land separately.
-if (OperationKinds::supports('archive_relay') && OperationKinds::supports('compensations')
+if (OperationKinds::supports('archive_relay') && OperationKinds::supports('compensations') && OperationKinds::supports('cancel_guard')
     && isset($family['instance.transfer_destination'], $family['instance.transfer_activate'])) {
     $enabled = [...$enabled, 'instance.transfer', 'instance.transfer_destination', 'instance.transfer_activate',
         'instance.transfer_rollback', 'instance.transfer_discard'];
