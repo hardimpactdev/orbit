@@ -26,7 +26,7 @@ jobs:
           deno-version: v2.9.8
       - name: Check compiler
         run: |
-          deno fmt --check family bin/compile-family.ts tests/fixtures/family
+          deno fmt --check family/*.ts family/deno.lock bin/compile-family.ts tests/fixtures/family
           deno lint family bin/compile-family.ts
           deno check --lock=family/deno.lock --frozen bin/compile-family.ts family/compiler_test.ts
       - name: Install pinned Swamp and verify generated workflow

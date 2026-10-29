@@ -1,5 +1,6 @@
 import { z } from "npm:zod@4.4.3";
 import { Ajv2020 as Ajv } from "npm:ajv@8.17.1/dist/2020.js";
+import { readCatalogue } from "./catalogue.ts";
 
 const Name = z.string().regex(/^[a-z][a-z0-9_-]*$/);
 const SymbolName = z.string().regex(/^[a-z][a-z0-9_.-]*$/);
@@ -19,6 +20,7 @@ const Vault = z.enum([
 // returned by the pinned Swamp binary, rather than a second DAG implementation.
 export const Family = z.strictObject({
   schema: z.literal("orbit.family/v1"),
+  catalogue: z.string().regex(/^[a-f0-9]{64}$/),
   family: Name,
   kind: Kind,
   actions: Names.nonempty(),
@@ -28,7 +30,7 @@ export const Family = z.strictObject({
   commands: z.record(
     SymbolName,
     z.strictObject({
-      transport: z.literal("orbit-agent"),
+      transport: z.enum(["orbit-agent", "gateway"]),
       names: z.array(z.string().regex(/^[a-z][a-z0-9_.:-]*$/)).nonempty(),
     }),
   ),
@@ -127,8 +129,28 @@ function checkDependencies(
   nodes.forEach((node) => visit(node.name));
 }
 
-export async function compileFamily(raw: unknown, nativeSchema: object) {
+export async function compileFamily(
+  raw: unknown,
+  nativeSchema: object,
+  catalogueBytes: string,
+) {
   const spec = Family.parse(raw);
+  const catalogue = await readCatalogue(catalogueBytes, spec.catalogue);
+  if (!catalogue.projections.includes(spec.projection)) {
+    throw new Error("Unknown family projection");
+  }
+  if (spec.invariants.some((name) => !catalogue.invariants.includes(name))) {
+    throw new Error("Unknown family invariant");
+  }
+  for (const declaration of Object.values(spec.commands)) {
+    unique(declaration.names, "command names");
+    const known = catalogue.commands[declaration.transport];
+    if (
+      declaration.names.some((name) =>
+        !known.some((command) => command.name === name)
+      )
+    ) throw new Error("Unknown family command");
+  }
   const ajv = new Ajv({
     strict: false,
     allErrors: true,
@@ -171,6 +193,14 @@ export async function compileFamily(raw: unknown, nativeSchema: object) {
       name: string;
       allowFailure?: boolean;
       dependsOn: { step: string }[];
+      forEach?: unknown;
+      task: {
+        type: string;
+        behavior?: string;
+        behaviorType?: string;
+        methodName?: string;
+        inputs?: Record<string, unknown> | string;
+      };
     }[];
   }[];
   unique(jobs.map((job) => job.name), "native jobs");
@@ -188,6 +218,13 @@ export async function compileFamily(raw: unknown, nativeSchema: object) {
         dependencies: step.dependsOn.map((dep) => dep.step),
       })),
     );
+    for (const step of job.steps) {
+      if (
+        !spec.steps.some((binding) =>
+          binding.job === job.name && binding.step === step.name
+        )
+      ) throw new Error("Unbound native step");
+    }
   }
   const keys = new Set(spec.steps.map((step) => step.key));
   if (!keys.has(spec.cancel.boundary)) {
@@ -207,10 +244,46 @@ export async function compileFamily(raw: unknown, nativeSchema: object) {
     if (step.effect === "keyed" && !step.command) {
       throw new Error("Keyed effects require a fixed command catalogue");
     }
+    if (nativeStep.forEach !== undefined) {
+      throw new Error("Expanded step receipts are not supported");
+    }
+    if (step.command) {
+      const declared = spec.commands[step.command];
+      const method = catalogue.native_methods.find((entry) =>
+        entry.transport === declared.transport &&
+        entry.behavior_type === nativeStep.task.behaviorType &&
+        entry.method === nativeStep.task.methodName
+      );
+      if (
+        nativeStep.task.type !== "behavior" || nativeStep.task.behavior ||
+        !method
+      ) throw new Error("Unregistered native command method");
+      const inputs = nativeStep.task.inputs;
+      if (
+        declared.names.length !== 1 || typeof inputs !== "object" ||
+        inputs === null || inputs[method.command_input] !== declared.names[0]
+      ) throw new Error("Native step command does not match its declaration");
+      const command = catalogue.commands[declared.transport].find((entry) =>
+        entry.name === declared.names[0]
+      )!;
+      if (command.mutates && step.effect !== "keyed") {
+        throw new Error("Mutating command requires a keyed effect");
+      }
+      if (step.effect === "keyed" && !method.keyed) {
+        throw new Error("Native method does not support keyed effects");
+      }
+    } else if (nativeStep.task.type !== "assert" || step.effect !== "read") {
+      throw new Error("Native step requires a registered command binding");
+    }
     if (spec.done_when.receipts.includes(step.key) && nativeStep.allowFailure) {
       throw new Error("Completion receipts cannot allow failure");
     }
   }
+  if (
+    Object.keys(spec.commands).some((name) =>
+      !spec.steps.some((step) => step.command === name)
+    )
+  ) throw new Error("Unused command declaration");
   const vaultFor = {
     input: "orbit-control-inputs",
     "node-access": "orbit-node-access",

@@ -82,7 +82,7 @@
     },
     "max_bytes": 1024
   },
-  "projection": "example_projection",
+  "projection": "tools.record_intent",
   "invariants": [],
   "cancel": {
     "mode": "cooperative",
@@ -91,5 +91,6 @@
   "health": {
     "unclaimed_seconds": 120,
     "stalled_seconds": 900
-  }
+  },
+  "catalogue": "65a91541b1441277a77dc3cef0cfda14c16e631c30d3812c3b01c0ef57790678"
 }

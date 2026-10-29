@@ -58,6 +58,9 @@ if (import.meta.main) {
   const compiled = await compileFamily(
     parse(await Deno.readTextFile(specPath)),
     schema,
+    await Deno.readTextFile(
+      new URL("../family/catalogue.json", import.meta.url),
+    ),
   );
   // Never overwrite an existing build or an active workflow. A release must
   // explicitly select and install the complete pair after review.
