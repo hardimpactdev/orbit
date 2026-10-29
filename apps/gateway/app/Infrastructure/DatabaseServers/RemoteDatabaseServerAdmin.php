@@ -65,6 +65,24 @@ final readonly class RemoteDatabaseServerAdmin implements DatabaseServerAdmin
         return $rows;
     }
 
+    public function copyDatabase(DatabaseServer $server, string $source, string $target): void
+    {
+        if ($server->driver !== DatabaseDriver::Mysql || $source === $target) {
+            throw new ResourceOperationException('database.driver_unsupported', 'Instance database cloning requires MySQL.', 422);
+        }
+        foreach ([$source, $target] as $database) {
+            if (preg_match('/\A[A-Za-z0-9_]{1,64}\z/D', $database) !== 1) {
+                throw $this->failed($server);
+            }
+        }
+
+        try {
+            $this->run($server, ['operation' => 'copy', 'source' => $source, 'target' => $target]);
+        } catch (AgentCommandRefused|AgentRunnerFailure) {
+            throw $this->failed($server);
+        }
+    }
+
     /** @return array{string, list<string>} The password variable and the client arguments. */
     private function client(DatabaseServer $server, bool $tcp = false): array
     {

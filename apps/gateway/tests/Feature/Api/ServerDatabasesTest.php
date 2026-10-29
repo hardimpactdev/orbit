@@ -9,6 +9,7 @@ use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 
 require_once __DIR__.'/../../Support/ServerDatabaseFixtures.php';
+require_once __DIR__.'/../../Support/DatabaseCreationProofs.php';
 
 uses(ServerDatabaseFixtures::class);
 
@@ -246,6 +247,7 @@ describe('managed database removal preflight', function (): void {
 
     it('refuses MySQL sessions and external definers before dropping anything', function (): void {
         $this->postJson('/api/v1/database-connections', ['slug' => 'app', 'server' => $this->server->slug])->assertAccepted();
+        databaseCreatedProof(DatabaseConnection::query()->where('slug', 'app')->sole());
         $this->admin->statements = [];
         $this->admin->rows['SELECT DISTINCT blocker'] = ['app', 'external'];
 

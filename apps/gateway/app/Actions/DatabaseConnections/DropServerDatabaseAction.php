@@ -14,12 +14,15 @@ use App\Domain\DatabaseServers\MysqlStatements;
 use App\Domain\DatabaseServers\PostgresStatements;
 use App\Domain\DatabaseServers\PostgresTestDatabases;
 use App\Domain\DatabaseServers\PreparedDatabaseOperation;
+use App\Domain\DatabaseServers\ValkeyAclLock;
+use App\Domain\DatabaseServers\ValkeyServerAdmin;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\DatabaseServer;
 use App\Models\Operation;
 use App\Support\ValidatedData;
+use Closure;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -39,6 +42,8 @@ final readonly class DropServerDatabaseAction
         private DatabaseRemovalLock $removalLock,
         private RecordDatabaseOperationAction $operations,
         private DatabaseOwnership $ownership,
+        private RunSynchronousDatabasePlanAction $synchronous,
+        private ValkeyServerAdmin $valkey,
     ) {}
 
     public function execute(DatabaseConnection $connection): Operation
@@ -53,6 +58,44 @@ final readonly class DropServerDatabaseAction
     public function executeMany(array $connections): array
     {
         return DB::transaction(fn (): array => array_map($this->operations->start(...), $this->prepareMany($connections)));
+    }
+
+    /** Retained lifecycle deletion holds the full server set through recheck, effects and row deletion.
+     * @param  list<DatabaseConnection>  $connections
+     * @param  Closure(DatabaseConnection): mixed  $afterDrop
+     */
+    public function dropSynchronously(array $connections, Closure $afterDrop): void
+    {
+        $serverIds = array_values(array_filter(array_map(static fn (DatabaseConnection $connection): ?int => $connection->database_server_id, $connections)));
+        $this->removalLock->run($serverIds, function () use ($connections, $afterDrop): void {
+            $managed = array_values(array_filter($connections, static fn (DatabaseConnection $connection): bool => $connection->server !== null && $connection->server->driver !== DatabaseDriver::Redis));
+            $prepared = $this->prepareLocked($managed, null);
+            try {
+                foreach ($prepared as $plan) {
+                    $intent = DatabaseExecutionIntent::recorded($plan->input['intent_id']);
+                    $this->assertRemovalStillSafe($plan->input, $intent);
+                    $this->synchronous->execute($plan);
+                }
+                foreach ($connections as $connection) {
+                    if ($connection->server?->driver === DatabaseDriver::Redis) {
+                        ValkeyAclLock::run($connection->server, function () use ($connection, $afterDrop): void {
+                            $connection->refresh()->load(['server', 'users']);
+                            $server = $connection->server ?? throw new ResourceOperationException('database.server_required', 'The removal server is missing.', 409);
+                            foreach ($this->unsharedUsers($connection, $server) as $username) {
+                                if (! in_array($username, ['', 'default'], true)) {
+                                    $this->valkey->deleteUser($server, $username);
+                                }
+                            }
+                            $afterDrop($connection);
+                        });
+                    } else {
+                        $afterDrop($connection);
+                    }
+                }
+            } finally {
+                DatabaseExecutionIntent::query()->whereIn('id', array_column(array_column($prepared, 'input'), 'intent_id'))->delete();
+            }
+        });
     }
 
     /** @param list<DatabaseConnection> $connections
@@ -124,10 +167,16 @@ final readonly class DropServerDatabaseAction
 
     public function assertUsersStillUnshared(Operation $operation, DatabaseExecutionIntent $intent): void
     {
-        if (($operation->input['driver'] ?? null) !== 'mysql') {
+        $this->assertRemovalStillSafe($operation->input, $intent);
+    }
+
+    /** @param array<string,mixed> $input */
+    private function assertRemovalStillSafe(array $input, DatabaseExecutionIntent $intent): void
+    {
+        if (($input['driver'] ?? null) !== 'mysql') {
             return;
         }
-        $ids = ValidatedData::integerList($operation->input['connection_ids'] ?? []);
+        $ids = ValidatedData::integerList($input['connection_ids'] ?? []);
         $connections = DatabaseConnection::query()->whereIn('id', $ids)->with('users', 'server')->get();
         $current = [];
         foreach ($connections as $connection) {
@@ -135,6 +184,7 @@ final readonly class DropServerDatabaseAction
             if (! $server instanceof DatabaseServer) {
                 throw new ResourceOperationException('database.server_required', 'The removal server is missing.', 409);
             }
+            $this->ownership->assertMysqlNames($connection, $intent->payload['projection']['drop_databases'][$connection->id] ?? []);
             $current = [...$current, ...$this->unsharedUsers($connection, $server, $ids)];
         }
         if (array_diff($intent->payload['projection']['drop_users'] ?? [], $current) !== []) {
@@ -184,6 +234,15 @@ final readonly class DropServerDatabaseAction
                     $this->statements->forDriver($server->driver)->databasesNamed($connection->test_database, $connection->test_database),
                 ),
             ];
+        }
+
+        if ($server->driver === DatabaseDriver::Mysql && $connection->test_database !== null) {
+            // Include recorded test members even when inventory no longer returns them.
+            foreach ($this->ownership->mysqlNames($connection) as $name) {
+                if (str_starts_with($name, $connection->test_database)) {
+                    $databases[] = $name;
+                }
+            }
         }
 
         return array_values(array_unique($databases));

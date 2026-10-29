@@ -11,7 +11,7 @@ use App\Models\DatabaseServer;
 use App\Models\Process;
 use SensitiveParameter;
 
-/** Renders fixed command intent. Only Swamp invokes it through Kit v2.
+/** Renders the SQL shared by Swamp Operations and retained synchronous lifecycle callers.
  * @phpstan-import-type Command from \App\Models\DatabaseExecutionIntent
  */
 final readonly class DatabaseCommands

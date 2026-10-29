@@ -22,4 +22,7 @@ interface DatabaseServerAdmin
      * @return list<string>
      */
     public function execute(DatabaseServer $server, string $sql): array;
+
+    /** Retained Instance clones finish the copy before setup runs. */
+    public function copyDatabase(DatabaseServer $server, string $source, string $target): void;
 }

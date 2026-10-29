@@ -56,6 +56,12 @@ final readonly class CloneInstanceDatabaseAction
             return $settled;
         }
 
+        $existing = DatabaseConnection::query()->where('owner_instance_id', $instance->id)->where('slug', $this->slug($instance))->first();
+        if ($plan->source->id === $instance->id || ($existing !== null && $existing->database_server_id !== null
+            && $existing->database_server_id === $plan->connection->database_server_id && $existing->database === $plan->connection->database)) {
+            throw new ResourceOperationException('instance.database_clone_unsupported', 'The source and target must be different databases.', 422);
+        }
+
         try {
             $this->importEnvironment($instance);
             $connection = $this->recorded($instance, $plan);

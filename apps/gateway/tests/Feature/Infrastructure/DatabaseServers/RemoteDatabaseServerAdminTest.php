@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\DatabaseServers\RemoteDatabaseServerAdmin;
 use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Models\DatabaseServer;
@@ -93,3 +94,21 @@ it('waits for the root login over TCP and reports a timeout', function (): void 
         ])
         ->and(remote_database_server_admin($late)->waitUntilReady($server, 30))->toBeFalse();
 });
+
+it('finishes retained MySQL copies through the protected agent command', function (): void {
+    $server = remote_database_server();
+    $agents = new FakeAgentCommandRunner()->answer('database.server-admin', []);
+
+    remote_database_server_admin($agents)->copyDatabase($server, 'source_db', 'target_db');
+
+    expect($agents->calls)->toHaveCount(1)
+        ->and($agents->calls[0]['input'])->toMatchArray(['operation' => 'copy', 'source' => 'source_db', 'target' => 'target_db', 'password' => REMOTE_DATABASE_SERVER_ROOT]);
+});
+
+it('refuses an unsafe or identical retained MySQL copy before invoking the agent', function (string $source, string $target): void {
+    $server = remote_database_server();
+    $agents = new FakeAgentCommandRunner;
+
+    expect(fn () => remote_database_server_admin($agents)->copyDatabase($server, $source, $target))->toThrow(ResourceOperationException::class);
+    expect($agents->calls)->toBe([]);
+})->with([['same_db', 'same_db'], ['source; DROP DATABASE other', 'target_db']]);

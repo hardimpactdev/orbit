@@ -97,6 +97,27 @@ final readonly class PredisValkeyServerAdmin implements ValkeyServerAdmin
         );
     }
 
+    public function deleteUser(DatabaseServer $server, string $username): void
+    {
+        $this->connected($server, true, function (Client $client) use ($server, $username): void {
+            $previous = $this->users($server, $client)[$username] ?? null;
+            $this->command($server, $client, ['ACL', 'DELUSER', $username]);
+            try {
+                $this->command($server, $client, ['ACL', 'SAVE']);
+            } catch (ResourceOperationException $exception) {
+                if ($previous instanceof ValkeyAclUser) {
+                    try {
+                        $this->command($server, $client, self::setUserArguments($previous));
+                        $this->command($server, $client, ['ACL', 'SAVE']);
+                    } catch (ResourceOperationException) {
+                        // The record remains available for retry and Doctor reports any live drift.
+                    }
+                }
+                throw $exception;
+            }
+        });
+    }
+
     public function aclUsers(DatabaseServer $server): array
     {
         return $this->connected($server, true, fn (Client $client): array => $this->users($server, $client));
@@ -213,6 +234,16 @@ final readonly class PredisValkeyServerAdmin implements ValkeyServerAdmin
         ], [
             'connections' => new DeadlineValkeyConnectionFactory($this->deadline),
         ]);
+    }
+
+    /** @return list<string> */
+    private static function setUserArguments(ValkeyAclUser $user): array
+    {
+        return [
+            'ACL', 'SETUSER', $user->name, 'reset',
+            ...explode(' ', $user->rules),
+            ...array_map(static fn (string $hash): string => '#'.$hash, $user->passwordHashes),
+        ];
     }
 
     private function failed(DatabaseServer $server): ResourceOperationException

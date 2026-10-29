@@ -475,16 +475,14 @@ describe('interrupted clones', function (): void {
 
         $clone = DatabaseConnection::query()->where('slug', 'acme-feature-x')->sole();
 
-        expect($this->admin->sql())->toBe(implode("\n", [
+        expect($this->admin->sql())->toContain(
             "CREATE USER IF NOT EXISTS 'acme_feature_x'@'%' IDENTIFIED BY '{$password}';",
             "ALTER USER 'acme_feature_x'@'%' IDENTIFIED BY '{$password}';",
-            'DROP DATABASE IF EXISTS `acme_feature_x`;',
-            'DROP DATABASE IF EXISTS `acme_feature_x_test`;',
-            'CREATE DATABASE `acme_feature_x`;',
+            "DROP DATABASE IF EXISTS `acme_feature_x`;\nCREATE DATABASE `acme_feature_x`;",
+            "DROP DATABASE IF EXISTS `acme_feature_x_test`;\nCREATE DATABASE `acme_feature_x_test`;",
             "GRANT ALL PRIVILEGES ON `acme_feature_x`.* TO 'acme_feature_x'@'%';",
-            'CREATE DATABASE `acme_feature_x_test`;',
             "GRANT ALL PRIVILEGES ON `acme\\_feature\\_x\\_test%`.* TO 'acme_feature_x'@'%';",
-        ])."\n")
+        )
             ->and($this->admin->copies)->toBe([['source' => 'acme_default', 'target' => 'acme_feature_x']])
             ->and($clone->password)->toBe($password)
             ->and($clone->clone_step?->value)->toBe('complete')
@@ -684,7 +682,7 @@ describe('instance:create with database_server', function (): void {
         expect(Instance::query()->where('name', 'feature-x')->exists())->toBeFalse()
             ->and(DatabaseConnection::query()->where('slug', 'acme-feature-x')->exists())->toBeFalse()
             ->and($this->transport->inputs)->toBe([])
-            ->and($this->admin->sql())->toContain('DROP DATABASE IF EXISTS `acme_feature_x`;');
+            ->and($this->admin->sql())->not->toContain('DROP DATABASE');
     });
 
     it('creates the missing database on a retry of an interrupted create, then runs setup', function (): void {
@@ -1133,3 +1131,23 @@ it('refuses cloning over an unrecorded MySQL database or user before destructive
     'database' => ['SCHEMA_NAME =', 'acme_feature_x'],
     'user' => ['FROM mysql.user', 'acme_feature_x'],
 ]);
+
+it('refuses a retained clone aliasing its source before reset or failure cleanup', function (bool $sameInstance): void {
+    $server = database_clone_server($this->node);
+    $source = database_clone_source($this->default, [
+        'driver' => 'mysql', 'database_server_id' => $server->id, 'database' => 'acme_default', 'username' => 'acme_default', 'password' => 'default-secret',
+    ]);
+    $plan = app(InstanceDatabaseClonePlanner::class)->plan($this->project, 'feature-x');
+    $target = $sameInstance ? $this->default : Instance::query()->create([
+        'project_id' => $this->project->id, 'node_id' => $this->node->id, 'name' => 'feature-x',
+        'checkout_path' => '/srv/orbit/apps/acme/feature-x', 'status' => InstanceState::Active,
+    ]);
+    if (! $sameInstance) {
+        DatabaseConnection::query()->create(['slug' => 'acme-feature-x', 'driver' => 'mysql', 'owner_instance_id' => $target->id,
+            'database_server_id' => $server->id, 'database' => $source->database, 'username' => $source->username]);
+    }
+
+    expect(fn () => app(CloneInstanceDatabaseAction::class)->execute($target, $plan))->toThrow(ResourceOperationException::class, 'different databases');
+    expect($this->admin->statements)->toBe([])->and($this->admin->copies)->toBe([]);
+    $this->assertModelExists($source);
+})->with([true, false]);
