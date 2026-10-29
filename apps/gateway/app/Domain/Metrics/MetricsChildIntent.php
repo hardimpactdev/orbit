@@ -13,6 +13,11 @@ use App\Support\ValidatedData;
 /** Reads only children durably admitted by the generic executor. */
 final readonly class MetricsChildIntent
 {
+    public static function interrupted(Operation $child): bool
+    {
+        return $child->status === OperationStatus::Cancelled || in_array($child->error_code, ['node.lock_lost', 'operation.lease_lost'], true);
+    }
+
     public function find(Operation $parent, string $key): ?Operation
     {
         if (! $parent->children()->where('child_key', $key)->exists()) {

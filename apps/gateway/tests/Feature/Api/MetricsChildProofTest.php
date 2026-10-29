@@ -306,3 +306,65 @@ it('proves the whole captured fleet before allowing the Metrics receipt', functi
     $runtime->update(['input' => [...$runtime->input, 'assignment_id' => 999]]);
     expect(fn () => $execution->beforeRun($this->parent, $run))->toThrow(ResourceOperationException::class);
 });
+
+it('offers complete rollback and settles after an interrupted service mutation', function (string $error): void {
+    $this->parent->update(['input' => [...$this->parent->input, 'fleet' => [$this->parent->input['fleet'][0]]]]);
+    $key = 'service-apply-'.$this->nodes[0]->id;
+    for ($stage = 0; $stage < 20; $stage++) {
+        foreach (metricsChildIntents($this->parent) as $intent) {
+            if ($this->parent->children()->where('child_key', $intent['key'])->exists()) {
+                continue;
+            }
+            if ($intent['key'] === $key) {
+                recordMetricsChild($this->parent, $intent, $error === 'operation.cancelled' ? 'cancelled' : 'failed', $error);
+                break 2;
+            }
+            recordMetricsChild($this->parent, $intent);
+        }
+    }
+    $intents = metricsChildIntents($this->parent);
+    expect(array_column($intents, 'key'))->toContain('service-restore-'.$this->nodes[0]->id)
+        ->not->toContain('metrics-runtime');
+    for ($stage = 0; $stage < 3; $stage++) {
+        foreach (metricsChildIntents($this->parent) as $intent) {
+            if (str_contains($intent['key'], '-restore-') && ! $this->parent->children()->where('child_key', $intent['key'])->exists()) {
+                recordMetricsChild($this->parent, $intent);
+            }
+        }
+    }
+
+    $outcome = $error === 'operation.cancelled' ? OperationOutcome::cancelled() : OperationOutcome::failed($error);
+    app(MetricsFleetExecution::class)->assertCompletion($this->parent, $outcome);
+})->with(['node.lock_lost', 'operation.lease_lost', 'operation.cancelled']);
+
+it('refuses success and exposes rollback when local service recovery is interrupted', function (string $component, string $error): void {
+    $this->parent->update(['input' => [...$this->parent->input, 'fleet' => [$this->parent->input['fleet'][0]]]]);
+    $nodeId = $this->nodes[0]->id;
+    for ($stage = 0; $stage < 20; $stage++) {
+        $created = 0;
+        foreach (metricsChildIntents($this->parent) as $intent) {
+            if ($this->parent->children()->where('child_key', $intent['key'])->exists()) {
+                continue;
+            }
+            $failed = in_array($intent['key'], ['service-apply-'.$nodeId, $component.'-'.$nodeId], true);
+            recordMetricsChild($this->parent, $intent, $failed ? 'failed' : 'succeeded', $failed ? 'metrics.service_failed' : null);
+            $created++;
+        }
+        if ($created === 0) {
+            break;
+        }
+    }
+    $execution = app(MetricsFleetExecution::class);
+    $outcome = OperationOutcome::succeeded(['backend' => 'active']);
+    $execution->assertCompletion($this->parent, $outcome);
+    $this->parent->children()->where('child_key', $component.'-'.$nodeId)->sole()->update([
+        'status' => $error === 'operation.cancelled' ? 'cancelled' : 'failed', 'error_code' => $error,
+    ]);
+
+    expect(fn () => $execution->assertCompletion($this->parent, $outcome))->toThrow(ResourceOperationException::class);
+    $this->parent->children()->whereIn('child_key', ['metrics-runtime', 'metrics-credentials-verified'])->delete();
+    $keys = array_column(metricsChildIntents($this->parent), 'key');
+    expect($keys)->not->toContain('metrics-runtime');
+    expect($keys)->toContain('cadvisor-restore-'.$nodeId, 'node_exporter-restore-'.$nodeId);
+    $execution->assertCompletion($this->parent, OperationOutcome::failed('metrics.rollback_failed'));
+})->with(['service-restore', 'service-caddy-restore'])->with(['node.lock_lost', 'operation.lease_lost', 'operation.cancelled']);

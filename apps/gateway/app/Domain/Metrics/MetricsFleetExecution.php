@@ -80,7 +80,7 @@ final readonly class MetricsFleetExecution implements OperationFamilyChildren, O
                 $restore = $this->requireChild($operation, $key, 'metrics.'.$component.'_restore', $node['node_id'],
                     [...$input, 'source_operation_id' => $snapshot->id, 'source_key' => $snapshotKey, 'restore_key' => $key], false);
                 if ($restore->status !== OperationStatus::Succeeded) {
-                    if ($rollbackFailed && $restore->status === OperationStatus::Failed && $restore->error_code !== null) {
+                    if ($rollbackFailed && ($restore->status === OperationStatus::Cancelled || ($restore->status === OperationStatus::Failed && $restore->error_code !== null))) {
                         return;
                     }
                     $this->unproven();
@@ -88,7 +88,7 @@ final readonly class MetricsFleetExecution implements OperationFamilyChildren, O
                 if ($component === 'service') {
                     $caddy = $this->requireChild($operation, 'service-caddy-restore-'.$node['node_id'], 'metrics.service_caddy_restore', $node['node_id'], ['restore_key' => $key], false);
                     if ($caddy->status !== OperationStatus::Succeeded) {
-                        if ($rollbackFailed && $caddy->status === OperationStatus::Failed && $caddy->error_code !== null) {
+                        if ($rollbackFailed && ($caddy->status === OperationStatus::Cancelled || ($caddy->status === OperationStatus::Failed && $caddy->error_code !== null))) {
                             return;
                         }
                         $this->unproven();
@@ -134,6 +134,9 @@ final readonly class MetricsFleetExecution implements OperationFamilyChildren, O
                 }
                 $serviceInput = [...$addresses, 'instance_ids' => $node['instance_ids'], 'caddy' => $node['caddy'], 'fpm' => $node['fpm']];
                 $snapshot = $this->requireChild($operation, 'service-snapshot-'.$node['node_id'], 'metrics.service_snapshot', $node['node_id'], $serviceInput, false);
+                if (MetricsChildIntent::interrupted($snapshot)) {
+                    $this->unproven();
+                }
                 if ($snapshot->status === OperationStatus::Failed) {
                     continue;
                 }
@@ -141,10 +144,17 @@ final readonly class MetricsFleetExecution implements OperationFamilyChildren, O
                     $this->unproven();
                 }
                 $apply = $this->requireChild($operation, 'service-apply-'.$node['node_id'], 'metrics.service_converge', $node['node_id'], $serviceInput, false);
+                if (MetricsChildIntent::interrupted($apply)) {
+                    $this->unproven();
+                }
                 if ($apply->status === OperationStatus::Failed) {
                     $key = 'service-restore-'.$node['node_id'];
-                    $this->requireChild($operation, $key, 'metrics.service_restore', $node['node_id'], [...$serviceInput, 'source_operation_id' => $snapshot->id, 'source_key' => 'service-snapshot-'.$node['node_id'], 'restore_key' => $key], false);
-                    $this->requireChild($operation, 'service-caddy-restore-'.$node['node_id'], 'metrics.service_caddy_restore', $node['node_id'], ['restore_key' => $key], false);
+                    $restore = $this->requireChild($operation, $key, 'metrics.service_restore', $node['node_id'], [...$serviceInput, 'source_operation_id' => $snapshot->id, 'source_key' => 'service-snapshot-'.$node['node_id'], 'restore_key' => $key], false);
+                    $caddy = $this->requireChild($operation, 'service-caddy-restore-'.$node['node_id'], 'metrics.service_caddy_restore', $node['node_id'], ['restore_key' => $key], false);
+
+                    if (MetricsChildIntent::interrupted($restore) || MetricsChildIntent::interrupted($caddy)) {
+                        $this->unproven();
+                    }
 
                     continue;
                 }

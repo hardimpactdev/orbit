@@ -80,7 +80,7 @@ final class MetricsFleetChildren
                         $ready = false;
                     } elseif ($snapshot->status === OperationStatus::Succeeded) {
                         $snapshots[] = $node;
-                    } elseif ($snapshot->status === OperationStatus::Cancelled || in_array($snapshot->error_code, ['node.lock_lost', 'operation.lease_lost'], true)) {
+                    } elseif (MetricsChildIntent::interrupted($snapshot)) {
                         $ready = false;
                         $fatal = true;
                     }
@@ -93,12 +93,19 @@ final class MetricsFleetChildren
                             break;
                         }
                         if ($apply->status !== OperationStatus::Succeeded) {
-                            if (in_array($apply->error_code, ['node.lock_lost', 'operation.lease_lost'], true)) {
+                            if (MetricsChildIntent::interrupted($apply)) {
                                 $ready = false;
+                                $fatal = true;
                                 break;
                             }
                             $restored = $this->restore($operation, $node, 'service');
-                            if (! $restored) {
+                            foreach (['service-restore-', 'service-caddy-restore-'] as $prefix) {
+                                $recovery = $this->children->find($operation, $prefix.$node['node_id']);
+                                if ($recovery !== null && MetricsChildIntent::interrupted($recovery)) {
+                                    $fatal = true;
+                                }
+                            }
+                            if (! $restored || $fatal) {
                                 $ready = false;
                                 break;
                             }
