@@ -15,14 +15,20 @@ use App\Domain\Operations\EffectReceiptMetadata;
 use App\Domain\Operations\OperationChildIntent;
 use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Routes\RouteEnvironmentOperationLock;
 use App\Domain\Shared\LifecycleStatus;
+use App\Http\Controllers\Api\OperationExecutorController;
+use App\Http\Middleware\Instances\SerializeInstanceEnvironment;
+use App\Http\Middleware\Routes\SerializeRouteEnvironment;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Models\Route;
+use Illuminate\Routing\Router;
 use Tests\Support\FakeAgentCommandRunner;
 
 function environmentChildExecutor($test): array
@@ -170,7 +176,7 @@ it('hydrates a protected Route URL boolean without persisting environment materi
     expect(json_encode($operation->refresh()->toArray()))->not->toContain('Synthetic stored name', 'APP_KEY=');
 })->with([false, true]);
 
-it('admits the exact Route-owned environment child and replays it after the association is removed', function (): void {
+it('completes a Route-owned environment child through both serialization middlewares with native lock reentry', function (bool $multipleTargets): void {
     [$instance, , $agents] = environmentChildExecutor($this);
     $instance->environmentValues()->create(['env_key' => 'APP_URL', 'env_value' => 'https://fixed.example.test']);
     $route = Route::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id,
@@ -178,12 +184,31 @@ it('admits the exact Route-owned environment child and replays it after the asso
     $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => 'active']);
     $route->targets()->delete();
+    $owners = [$instance->id];
+    if ($multipleTargets) {
+        $sibling = Instance::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id,
+            'name' => 'sibling', 'checkout_path' => '/fast/apps/dev935/sibling', 'source_layout' => 'checkout',
+            'branch' => 'main', 'status' => 'active', 'provisioning_step' => 'active', 'source_is_laravel' => false]);
+        $owners[] = $sibling->id;
+    }
+    $pipeline = app(Router::class);
+    $runRoute = $pipeline->getRoutes()->getByAction(OperationExecutorController::class.'@run');
+    $serializers = array_values(array_intersect($pipeline->gatherRouteMiddleware($runRoute), [
+        SerializeInstanceEnvironment::class,
+        SerializeRouteEnvironment::class,
+    ]));
+    expect($serializers)->toBe([
+        SerializeInstanceEnvironment::class,
+        SerializeRouteEnvironment::class,
+    ]);
+    expect(app(InstanceEnvironmentOperationLock::class))
+        ->toBeInstanceOf(RouteEnvironmentOperationLock::class);
     $key = 'environment-synchronized.'.$instance->id;
     $intent = ['key' => $key, 'kind' => 'instance.sync_environment', 'node_id' => $instance->node_id,
         'input' => ['instance_id' => $instance->id, 'route_domain' => 'authoritative']];
     $parent = Operation::query()->create(['kind' => 'route.target_set', 'target_type' => 'route', 'target_id' => $route->id,
         'node_id' => $instance->node_id, 'status' => 'queued', 'sequence' => 1,
-        'input' => ['route_id' => $route->id, 'target_instance_ids' => [], 'previous_target_instance_ids' => [$instance->id]],
+        'input' => ['route_id' => $route->id, 'target_instance_ids' => [], 'previous_target_instance_ids' => $owners],
         'state' => ['route_active_stage' => 'environment-synchronized', 'route_plan' => ['mode' => 'state_only',
             'node_ids' => [$instance->node_id], 'stages' => ['environment-synchronized' => [$intent]]]]]);
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => $parent->kind, 'worker' => 'parent'])->assertOk()->assertJsonPath('data.id', $parent->id);
@@ -210,7 +235,7 @@ it('admits the exact Route-owned environment child and replays it after the asso
     expect($instance->refresh()->environment_owned_keys)->toBe(['APP_URL']);
     expect(app(OperationChildren::class)->requireSucceeded($parent->refresh(), $key)->id)->toBe($childId);
 
-});
+})->with(['single target' => false, 'multiple targets' => true]);
 
 it('requires the managed testing write receipt and keeps tracked testing files unchanged', function (): void {
     [$instance, , $agents] = environmentChildExecutor($this);
