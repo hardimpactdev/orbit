@@ -57,8 +57,8 @@ snapshot before applying compaction. Keep other Swamp CLI writers stopped too.
 From the Services checkout, using its installed Deno runtime:
 
 ```sh
-~/.swamp/deno/deno run --allow-read=/proc,. --allow-write=. bin/compact-services.ts > /tmp/services-compaction-preview.json
-~/.swamp/deno/deno run --allow-read=/proc,. --allow-write=. bin/compact-services.ts --apply > /tmp/services-compaction-result.json
+~/.swamp/deno/deno run -A bin/compact-services.ts > /tmp/services-compaction-preview.json
+~/.swamp/deno/deno run -A bin/compact-services.ts --apply > /tmp/services-compaction-result.json
 swamp data query 'modelName == "orbit-gateway"' --select name --json > /tmp/services-compaction-query.json
 ```
 
@@ -66,19 +66,42 @@ Unset server URL variables for the local query. On restart, run local
 `swamp run doctor --fix --json` once before resuming schedules, then restore
 only the schedules in the saved snapshot. Check the active/queued run counts,
 Gateway receipts and one existing group's owner before resuming normal work.
-A shipped `runtime-retention` workflow runs hourly at minute 17, second 20,
-under its own model lock. Serve dispatches a separate native CLI process; it
-does not import the planner or parse history. The executor has a two-minute
-deadline and its own native model lock. Every run uses local repository APIs,
-with remote URL environment variables cleared. Each pass removes at most 5,000 paths through native
-data deletion and preserves the shared catalog. It excludes active model writers,
-keeps at least one hour of fresh versions, and rechecks each producer's latest
-version before deleting. New writes defer that name until the next pass. Use the offline initial pass to clear an existing backlog before schedules resume;
-the online pass has a fixed budget and does not promise to drain a backlog. Terminal histories age out after seven days; the offline compactor also retires unused auto-definitions. This thread changes no live
-schedule or service; the workflow takes effect when Nick deploys it.
+The online `runtime-retention` schedule is paused by Nick's decision on 2026-10-29: its bounded passes produced no removals and consumed CPU. Keep it paused. Preserve every other schedule's saved state, including the historically paused `subtasks-driver`. Do not pause lane 13's separate `observation-retention` schedule. The planner code and checkpoint remain until a later cleanup PR.
 
-The repository declares seven-day workflow/output retention. Its own scheduled
-pruner enforces it, with native automatic global GC disabled: it does not know which finished child runs our
+## Repeat-compaction runbook
+
+Check Services free space at least every 12 hours through the existing fleet observation or `df -B1` on the Services checkout. The recent datastore growth sample was about 72 MB/h apparent and 173 MB/h allocated: up to about 2.1 GB per 12 hours. This is a short-window estimate; remeasure after each compaction. Arrange a maintenance window before available disk reaches **4 GB**, or sooner if projected growth will cross that threshold before the next window. Use decimal bytes for these thresholds.
+
+Keep room for a fresh backup as well. The current maintenance helper requires free space greater than the datastore's apparent size plus 1 GiB before archiving; that reserve can trigger compaction earlier than 4 GB. A compressed archive may be much smaller, but do not assume a compression ratio. If the reserve is unavailable, stop before applying: use an approved backup destination or ask Nick which old verified backup may be removed. Never remove a backup or recovery evidence merely to force the check through.
+
+1. On Services as `orbit`, save all schedule states in a protected snapshot. Pause the enabled schedules, let active runs and queued fires drain, then stop only `swamp-serve` (Process 281). Leave the databases, PowerSync, workers and other Processes running. Use the existing `bin/deploy-services` lock, pause/drain and restoration procedure; every failure must restore the saved states and restart serve. Keep other datastore writers out of the window.
+2. With serve stopped, record `du -sb .swamp`, `du -s --block-size=1 .swamp` and `df -B1 .`. Take a fresh mode-0600 `.tar.zst` archive of `.swamp` in `/home/orbit/backups`. Record its path, byte size and SHA256. Require `zstd --test`, a complete `tar -tf` listing and a read-only catalog `PRAGMA quick_check` to pass before compaction. Verify the protected receipt manifest before proceeding; the 2026-10-29 baseline has 412 files. Preserve that manifest and include any new receipt roots in later windows.
+3. Run only the preview first. Store its JSON outside `.swamp`. Stop if the command fails.
+
+   ```sh
+   unset SWAMP_SERVER_URL SWAMP_SERVE_URL
+   ~/.swamp/deno/deno run -A bin/compact-services.ts > /tmp/services-compaction-preview.json
+   ```
+
+4. **Stop and check the preview before apply.** Compare every planned removal with the protected receipt manifest. A protected file or any parent version directory in the plan blocks compaction. The compactor does not perform this manifest comparison for you. Keep writers stopped; proceed only after this check passes. Run each command below only if the preceding command succeeded. Apply recomputes the plan; verify the receipt hashes immediately afterward, before continuing to the query. Never clear receipts, reset factories or run native GC.
+
+   ```sh
+   ~/.swamp/deno/deno run -A bin/compact-services.ts --apply > /tmp/services-compaction-result.json
+   ```
+
+   After the apply succeeds and the receipt hashes still match:
+
+   ```sh
+   set -eu
+   swamp data query 'modelName == "orbit-gateway"' --select name --json > /tmp/services-compaction-query.json
+   swamp run doctor --fix --json > /tmp/services-compaction-doctor.json
+   ```
+
+5. The query rebuilds the invalidated derived catalog before serve resumes. Record the after-size and free-space measurements. Restart serve and require authenticated readiness. Restore every saved schedule state, then explicitly keep `runtime-retention` paused. Compare all states with the snapshot, allowing only that requested pause. Verify the receipt hashes after restart and record a 20-second serve CPU/RSS sample, actual removed-version count and backup details. Clear the maintenance marker only after restoration is verified; on failure print the marker and exact saved resume commands for recovery.
+
+Do not make compaction a new unattended schedule. Repeat it through an approved maintenance window based on free space and current growth. Keep `UPSTREAM-RETENTION.md` as a local draft; do not file it. Retiring the inactive online planner and its checkpoint is a separate later cleanup PR.
+
+The repository declares seven-day workflow/output retention. Native automatic global GC remains disabled: it does not know which finished child runs our
 live receipts reference. Do not substitute a broad `data gc`, `run gc`,
 `data prune`, `behavior delete` or a recursive directory deletion. None can
 express this receipt-protection rule. `swamp datastore compact` only vacuums
@@ -89,13 +112,13 @@ its SQLite catalog; it does not reclaim these version/history files.
 The first online pruner loaded all workflow snapshots into serve and filtered
 the full snapshot array once per referenced run. The observed pass took
 531 seconds; it starved the event loop even though deletions were capped.
-The corrected executor indexes snapshots, run IDs, model names and output
+The inactive executor indexes snapshots, run IDs, model names and output
 provenance once. Planning runs outside serve with a fixed deadline. A child
 failure preserves the remaining history for the next run; no receipt clearing
 or broad GC is part of recovery. A deployment restart stops the old in-process
 pass; updating code alone cannot move that already-running JavaScript frame.
 
-## Incremental online planning
+## Inactive online planner
 
 The 120-second child deadline is unchanged. Each pass uses at most 80 seconds for bounded scan, graph and prune work, leaving shutdown headroom. Progress is checkpointed in a private derived SQLite index at `.swamp/retention-planner.db`. It holds catalog and directory cursors, pending files, parsed records, graph edges and an expansion queue. Catalog and directory batches have at most 100 entries. A file or graph node completes individually; the next run continues its remaining queue. Large directories persist one complete listing in the checkpoint and consume it in 100-entry lexical batches, with a 250,000-entry safety bound. Writes during a listing pass do not reset its cursor. Only directories and YAML records enter the queue; logs remain governed by their owner records. Validation compares the names and fingerprints of YAML records and child directories before deletion. Log-only changes do not restart the reference graph. Changed YAML records still trigger a refresh, and unchanged file fingerprints do not requeue parsed records. New files before the old cursor and atomically replaced records are discovered by that refresh. No phase reparses the complete history into one array.
 
