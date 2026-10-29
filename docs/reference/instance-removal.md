@@ -22,6 +22,8 @@ Production removal stays synchronous until its own Swamp cutover. That cutover f
 
 Swamp removal records an Operation before effects. Retained Gateway callers keep the synchronous `DestroyInstanceAction` and its removal receipt until their owning cutover composes removal as a child. They do not admit an Operation and wait under the caller's lease.
 
+Runtime cleanup uses the successful Gateway inventory receipt, with integer Process IDs and Schedule UUIDs. Swamp admits one recorded `process.destroy` or `schedule.destroy` child per record. The owning adapters accept only the lifecycle parent's recorded Instance and Node. Empty inventories need no child. Every recorded child must succeed and both owned runtime sets must be empty before database or home removal; a later record cannot be silently omitted.
+
 When a Route changes its targets, it admits removal as `instance.destroy` with `{instance_id, force:true}`. The Instance admission checks the parent's stored removed set and placement, completed publication stages, and proven Gateway commit receipts. It can then remove the deliberately detached Instance without requiring its old Route association. The request cannot supply a detached flag or select another Instance or Node.
 
 ```bash

@@ -28,7 +28,7 @@ function ownedRemovalPrerequisites(Operation $parent, Instance $member): void
     foreach (['removal-accept', 'removal-'.$member->id.'-runtime-intent'] as $key) {
         ownedRemovalCheckpoint($parent, $key);
     }
-    foreach (['remove-processes-' => 'process.instance_runtime', 'remove-schedules-' => 'schedule.instance_runtime', 'cleanup-instance-' => 'route.cleanup_instance'] as $prefix => $kind) {
+    foreach (['cleanup-instance-' => 'route.cleanup_instance'] as $prefix => $kind) {
         $key = $prefix.$member->id;
         $input = ['instance_id' => $member->id];
         $child = Operation::query()->create(['kind' => $kind, 'target_type' => 'instance', 'target_id' => $member->id,
@@ -47,7 +47,7 @@ function ownedRemovalCheckpoint(Operation $parent, string $key): void
     $descriptor = $execution->descriptor($key, 'gateway', 'instance.lifecycle-state', ['action' => 'configuration', 'operation_id' => $parent->id]);
     $state = $parent->state ?? [];
     $state['lifecycle_bindings'][$key] = $descriptor;
-    $state['executor_runs'][$key] = [...$descriptor, 'result' => ['ready' => true]];
+    $state['executor_runs'][$key] = [...$descriptor, 'result' => str_ends_with($key, '-runtime-intent') ? ['process_ids' => [], 'schedule_ids' => []] : ['ready' => true]];
     $parent->update(['state' => $state]);
     $parent->steps()->firstOrCreate(['name' => $key], ['position' => $parent->steps()->count() + 1, 'sequence' => 1, 'status' => 'succeeded', 'resumable' => true]);
 }

@@ -264,8 +264,7 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
                 }
                 $this->assertChild($operation, "withdraw-instance-{$id}", 'route.withdraw_instance');
                 $this->assertChild($operation, "remove-databases-{$id}", 'database.destroy_owned');
-                $this->assertChild($operation, "remove-processes-{$id}", 'process.instance_runtime');
-                $this->assertChild($operation, "remove-schedules-{$id}", 'schedule.instance_runtime');
+                app(InstanceRemovalRuntime::class)->assertRemoved($operation, $id);
                 $this->assertChild($operation, "cleanup-instance-{$id}", 'route.cleanup_instance');
             }
         }

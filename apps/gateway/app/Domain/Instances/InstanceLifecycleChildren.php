@@ -84,14 +84,13 @@ final readonly class InstanceLifecycleChildren
                 $children[] = $this->child($parent, "withdraw-instance-{$id}", 'route.withdraw_instance', ['instance_id' => $id]);
             }
             if ($this->ready($parent, "removal-{$id}-database-intent")
-                && $this->succeeded($parent, "remove-processes-{$id}") && $this->succeeded($parent, "remove-schedules-{$id}")
+                && app(InstanceRemovalRuntime::class)->succeeded($parent, $id)
                 && $this->succeeded($parent, "cleanup-instance-{$id}")) {
                 $children[] = app(InstanceDatabaseIntent::class)->child($parent, "remove-databases-{$id}");
             }
             if ($this->ready($parent, "removal-{$id}-runtime-intent")) {
-                $children[] = $this->child($parent, "remove-processes-{$id}", 'process.instance_runtime', ['instance_id' => $id, 'action' => 'remove']);
-                $children[] = $this->child($parent, "remove-schedules-{$id}", 'schedule.instance_runtime', ['instance_id' => $id, 'action' => 'remove']);
-                if ($this->succeeded($parent, "remove-processes-{$id}") && $this->succeeded($parent, "remove-schedules-{$id}")) {
+                $children = [...$children, ...app(InstanceRemovalRuntime::class)->children($parent, $id)];
+                if (app(InstanceRemovalRuntime::class)->succeeded($parent, $id)) {
                     $children[] = $this->child($parent, "cleanup-instance-{$id}", 'route.cleanup_instance', ['instance_id' => $id]);
                 }
             }

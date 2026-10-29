@@ -23,7 +23,7 @@ return (static function (): array {
     ];
     $children = [
         'rename' => ['route.update'],
-        'destroy' => ['instance.run_steps', 'route.withdraw', 'route.withdraw_instance', 'route.cleanup_instance', 'process.instance_runtime', 'schedule.instance_runtime', 'database.destroy_owned'],
+        'destroy' => ['instance.run_steps', 'route.withdraw', 'route.withdraw_instance', 'route.cleanup_instance', 'process.destroy', 'schedule.destroy', 'database.destroy_owned'],
     ];
     $kinds = [];
     foreach ($commands as $verb => $runs) {
@@ -48,7 +48,7 @@ return (static function (): array {
                     ['name' => 'instance_ids', 'type' => 'list', 'items' => 'integer', 'max' => 1024],
                     ['name' => 'member_ids', 'type' => 'list', 'items' => 'integer', 'max' => 1024],
                     ['name' => 'process_ids', 'type' => 'list', 'items' => 'integer', 'max' => 1024],
-                    ['name' => 'schedule_ids', 'type' => 'list', 'items' => 'integer', 'max' => 1024],
+                    ['name' => 'schedule_ids', 'type' => 'list', 'items' => 'string', 'max' => 1024],
                     ['name' => 'database_ids', 'type' => 'list', 'items' => 'integer', 'max' => 1024],
                     ['name' => 'warnings', 'type' => 'list', 'items' => 'string', 'max' => 128],
                 ]),

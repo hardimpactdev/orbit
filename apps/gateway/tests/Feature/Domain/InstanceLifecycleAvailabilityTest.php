@@ -31,7 +31,7 @@ it('refuses unavailable child admissions before a lifecycle can record intent', 
         });
 
     $this->assertDatabaseCount('operations', 0);
-})->with(['instance.run_steps', 'route.withdraw', 'route.withdraw_instance', 'route.cleanup_instance', 'process.instance_runtime', 'schedule.instance_runtime'])
+})->with(['instance.run_steps', 'route.withdraw', 'route.withdraw_instance', 'route.cleanup_instance', 'process.destroy', 'schedule.destroy'])
     ->with(['unregistered' => [false], 'no adapter' => [true]]);
 
 it('accepts the complete child registry without admitting or executing a child', function (): void {

@@ -110,11 +110,11 @@ final readonly class RemovalLifecycleExecution
                 $execution->proven($operation, $previous);
             }
             if ($match[2] === 'database-intent') {
-                foreach (['remove-processes-' => 'process.instance_runtime', 'remove-schedules-' => 'schedule.instance_runtime', 'cleanup-instance-' => 'route.cleanup_instance'] as $prefix => $kind) {
-                    $execution->assertChild($operation, $prefix.$match[1], $kind);
-                }
+                app(InstanceRemovalRuntime::class)->assertRemoved($operation, (int) $match[1]);
+                $execution->assertChild($operation, 'cleanup-instance-'.$match[1], 'route.cleanup_instance');
             }
             if ($match[2] === 'row-delete') {
+                app(InstanceRemovalRuntime::class)->assertRemoved($operation, (int) $match[1]);
                 $execution->assertChild($operation, "remove-databases-{$match[1]}", 'database.destroy_owned');
             }
         }
