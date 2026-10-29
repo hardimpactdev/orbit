@@ -87,16 +87,91 @@ final readonly class OperationKinds
     /** @param array<string, mixed> $definition */
     private static function validateDefinition(string $kind, array $definition): void
     {
-        self::assertKeys($kind, 'kind', $definition, ['executor', 'completion', 'execution', 'runs', 'completion_contract', 'result_fields']);
+        self::assertKeys($kind, 'kind', $definition, ['executor', 'completion', 'execution', 'runs', 'completion_contract', 'result_fields', 'children', 'admission', 'compensations', 'cancellation_boundary']);
         if (($definition['executor'] ?? null) !== 'swamp' || ! is_array($definition['completion_contract'] ?? null) || ! is_array($definition['runs'] ?? null)) {
             throw new LogicException("Operation kind [{$kind}] requires a supported Swamp contract.");
         }
-        self::assertKeys($kind, 'completion_contract', ValidatedData::object($definition['completion_contract']), ['step', 'transport', 'name', 'result']);
+        self::assertKeys($kind, 'completion_contract', ValidatedData::object($definition['completion_contract']), ['step', 'transport', 'name', 'result', 'children_succeeded']);
+        self::validateChildren($kind, $definition);
+        if (array_key_exists('compensations', $definition) || array_key_exists('cancellation_boundary', $definition)) {
+            $compensations = $definition['compensations'] ?? null;
+            $boundary = $definition['cancellation_boundary'] ?? null;
+            $childKinds = array_column(is_array($definition['children'] ?? null) ? $definition['children'] : [], 'kind');
+            if (! is_array($compensations) || ! array_is_list($compensations) || $compensations === []
+                || ! is_string($boundary) || preg_match('/\A[a-z][a-z0-9_.:-]{0,127}\z/D', $boundary) !== 1) {
+                throw new LogicException("Operation kind [{$kind}] requires declared compensations and a child cancellation boundary.");
+            }
+            foreach ($compensations as $compensation) {
+                if (! is_string($compensation) || ! in_array($compensation, $childKinds, true)) {
+                    throw new LogicException("Operation kind [{$kind}] compensations must be declared child kinds.");
+                }
+            }
+        }
+
+        $proof = $definition['completion_contract'];
+        $stepKeys = array_intersect(['step', 'transport', 'name', 'result'], array_keys($proof));
+        if (($stepKeys !== [] && count($stepKeys) !== 4) || ($stepKeys === [] && ($proof['children_succeeded'] ?? []) === [])) {
+            throw new LogicException("Operation kind [{$kind}] requires a complete enforced completion proof.");
+        }
+        if ($stepKeys !== []) {
+            foreach (['step', 'transport', 'name'] as $field) {
+                if (! is_string($proof[$field]) || $proof[$field] === '') {
+                    throw new LogicException("Operation kind [{$kind}] needs named completion evidence.");
+                }
+            }
+            if (! is_array($proof['result'])) {
+                throw new LogicException("Operation kind [{$kind}] needs a typed completion result.");
+            }
+        }
         foreach ($definition['runs'] as $run) {
             if (! is_array($run)) {
                 throw new LogicException("Operation kind [{$kind}] requires named run contracts.");
             }
             self::assertKeys($kind, 'runs', ValidatedData::object($run), ['transport', 'name', 'input_fields', 'input_values', 'bind', 'secrets', 'resumable', 'uncertain_error_code', 'node_field', 'input_schema']);
+        }
+    }
+
+    /** @param array<string,mixed> $definition */
+    private static function validateChildren(string $kind, array $definition): void
+    {
+        if (isset($definition['admission']) && (! is_string($definition['admission']) || ! is_a($definition['admission'], OperationChildAdmission::class, true))) {
+            throw new LogicException("Operation kind [{$kind}] needs an owning child admission adapter.");
+        }
+        $children = $definition['children'] ?? [];
+        if (! is_array($children) || ! array_is_list($children)) {
+            throw new LogicException("Operation kind [{$kind}] needs a list of child declarations.");
+        }
+        foreach ($children as $child) {
+            if (! is_array($child)) {
+                throw new LogicException("Operation kind [{$kind}] needs exact child declarations.");
+            }
+            self::assertKeys($kind, 'children', ValidatedData::object($child), ['kind', 'node_from', 'bind']);
+            if (! is_string($child['kind'] ?? null) || preg_match(self::NamePattern, $child['kind']) !== 1
+                || ! is_string($child['node_from'] ?? null)
+                || (str_starts_with($child['node_from'], 'state.') && preg_match('/\Astate\.(?:child_intents|integration_intent|route_plan|role_intent)(?:\.|$)/D', $child['node_from']) !== 1)
+                || preg_match('/\A(?:operation\.node_id|(?:input|state|intent)\.[a-zA-Z0-9_.-]+)\z/D', $child['node_from']) !== 1) {
+                throw new LogicException("Operation kind [{$kind}] needs a bound child kind and Node relation.");
+            }
+            if (isset($child['bind'])) {
+                if (! is_array($child['bind'])) {
+                    throw new LogicException("Operation kind [{$kind}] needs child input bindings.");
+                }
+                foreach ($child['bind'] as $parameter => $path) {
+                    if (! is_string($parameter) || ! is_string($path) || preg_match('/\A(?:input|intent)\.[a-zA-Z0-9_.-]+\z/D', $path) !== 1) {
+                        throw new LogicException("Operation kind [{$kind}] needs exact child input paths.");
+                    }
+                }
+            }
+        }
+        $proof = ValidatedData::object($definition['completion_contract']);
+        $required = $proof['children_succeeded'] ?? [];
+        if (! is_array($required) || ! array_is_list($required)) {
+            throw new LogicException("Operation kind [{$kind}] needs required child kinds.");
+        }
+        foreach ($required as $requiredKind) {
+            if (! is_string($requiredKind) || ! in_array($requiredKind, array_column($children, 'kind'), true)) {
+                throw new LogicException("Operation kind [{$kind}] cannot require an undeclared child kind.");
+            }
         }
     }
 
@@ -117,7 +192,7 @@ final readonly class OperationKinds
      */
     public static function supports(string $capability): bool
     {
-        return $capability === 'receipts';
+        return in_array($capability, ['children', 'receipts', 'compensations'], true);
     }
 
     public static function executor(string $kind): string

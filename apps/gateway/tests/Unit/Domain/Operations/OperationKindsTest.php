@@ -40,15 +40,44 @@ it('refuses unenforced kind run and completion guarantees while loading declarat
     expect(fn () => new OperationKinds(new Container, ['test.remote' => $definition]))
         ->toThrow(LogicException::class, "unsupported {$part} keys: {$key}");
 })->with([
-    ['kind', 'children'], ['kind', 'children_succeeded'], ['kind', 'unknown_guarantee'],
-    ['completion_contract', 'children'], ['completion_contract', 'children_succeeded'], ['completion_contract', 'children_settled'],
+    ['kind', 'children_succeeded'], ['kind', 'unknown_guarantee'],
+    ['completion_contract', 'children'], ['completion_contract', 'children_settled'],
     ['runs', 'unknown_guard'],
 ]);
 
 it('reports optional capabilities unavailable until their enforcement ships', function (string $capability): void {
     expect(OperationKinds::supports($capability))->toBeFalse();
-})->with(['children', 'children_settled', 'list_of', 'unknown']);
+})->with(['children_settled', 'list_of', 'unknown']);
 
-it('reports the enforced target receipt capability', function (): void {
-    expect(OperationKinds::supports('receipts'))->toBeTrue();
+it('reports enforced child and target receipt capabilities', function (): void {
+    expect(OperationKinds::supports('children'))->toBeTrue()
+        ->and(OperationKinds::supports('receipts'))->toBeTrue()
+        ->and(OperationKinds::supports('compensations'))->toBeTrue();
 });
+
+it('rejects a child-only completion contract that proves no child', function (): void {
+    $definition = OperationKinds::definitions()['firewall.allow'];
+    $definition['completion_contract'] = ['children_succeeded' => []];
+    expect(fn () => new OperationKinds(new Container, ['test.empty' => $definition]))
+        ->toThrow(LogicException::class, 'complete enforced completion proof');
+});
+
+
+it('refuses child Node relations from Swamp-written state', function (string $path): void {
+    $definition = OperationKinds::definitions()['firewall.allow'];
+    $definition['children'] = [['kind' => 'test.child', 'node_from' => $path]];
+    expect(fn () => new OperationKinds(new Container, ['test.parent' => $definition]))->toThrow(LogicException::class);
+})->with(['state.steps.inspection.node_id', 'state.executor_runs.inspect.result.node_id', 'state.executor_reentry.children.0.node_id', 'state.unknown_plan.node_id']);
+
+it('requires compensation kinds to be declared with a bounded child boundary key', function (string $case): void {
+    $definition = OperationKinds::definitions()['firewall.allow'];
+    $definition['children'] = [['kind' => 'test.child', 'node_from' => 'operation.node_id']];
+    $definition['compensations'] = ['test.child'];
+    $definition['cancellation_boundary'] = 'stop-source';
+    match ($case) {
+        'kind' => $definition['compensations'] = ['test.foreign'],
+        'empty' => $definition['compensations'] = [],
+        'boundary' => $definition['cancellation_boundary'] = '',
+    };
+    expect(fn () => new OperationKinds(new Container, ['test.parent' => $definition]))->toThrow(LogicException::class);
+})->with(['kind', 'empty', 'boundary']);
