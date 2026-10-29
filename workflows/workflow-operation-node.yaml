@@ -1,0 +1,24 @@
+id: 04dac56c-8670-44b3-a29c-f337710ebdc4
+name: operation-node
+description: Claim and execute Node PHP package preparation on one placed worker.
+labels: { pool: migration }
+queueTimeout: 300
+autoResume: true
+inputs:
+  type: object
+  properties:
+    kind: { type: string, enum: [node.prepare_php_packages] }
+    worker: { type: string }
+  required: [kind, worker]
+jobs:
+  - name: node
+    steps:
+      - name: execute
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/operation-node"
+          behaviorName: operation-node-php-packages
+          methodName: execute
+          inputs:
+            kind: "${{ inputs.kind }}"
+            worker: "${{ inputs.worker }}"

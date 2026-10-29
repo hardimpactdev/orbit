@@ -1,0 +1,4 @@
+{
+  "kinds": ["node.prepare_php_packages"],
+  "workflow": "operation-node"
+}
