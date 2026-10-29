@@ -12,16 +12,22 @@ final readonly class WireGuardServerConfigRenderer
     /** @param Collection<int, Node> $nodes */
     public function render(VpnConfiguration $configuration, Collection $nodes): string
     {
+        return $this->renderForHub($configuration->server, $configuration->serverAddress, $configuration->port, $configuration->serverPrivateKey, $nodes);
+    }
+
+    /** @param Collection<int, Node> $nodes */
+    public function renderForHub(Node $hub, string $address, int $port, #[\SensitiveParameter] string $privateKey, Collection $nodes): string
+    {
         $lines = [
             '[Interface]',
-            "Address = {$configuration->serverAddress}",
-            "ListenPort = {$configuration->port}",
-            "PrivateKey = {$configuration->serverPrivateKey}",
+            "Address = {$address}",
+            "ListenPort = {$port}",
+            "PrivateKey = {$privateKey}",
         ];
 
         foreach ($nodes->sortBy('id') as $node) {
             if (
-                $node->is($configuration->server)
+                $node->is($hub)
                 || $node->wireguard_ip === null
                 || $node->wireguard_public_key === null
             ) {

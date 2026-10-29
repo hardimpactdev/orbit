@@ -26,7 +26,7 @@ function bootstrapOperation($test): array
         'architecture' => 'x86_64', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.10', 'wireguard_ip' => '10.44.0.3']);
     $input = ['agent_pin' => app(AgentDelivery::class)->pin($node), 'bootstrap_host' => '192.0.2.10', 'bootstrap_port' => 2222,
         'bootstrap_fingerprint' => 'SHA256:'.str_repeat('A', 43), 'bootstrap_user' => 'root', 'bootstrap_identity' => ['$secret' => 'node.bootstrap_ssh_identity', 'id' => $node->id], 'command_input' => []];
-    $operation = Operation::query()->create(['kind' => 'node.bootstrap_install', 'target_type' => 'node_bootstrap',
+    $operation = Operation::query()->create(['kind' => 'node.bootstrap_install', 'target_type' => 'node',
         'target_id' => $node->id, 'node_id' => $node->id, 'input' => $input, 'status' => 'queued', 'sequence' => 1, 'attempts' => 0]);
     $test->withServerVariables(['REMOTE_ADDR' => $services->wireguard_ip]);
     $test->postJson('/api/v1/operation-executor/claim', ['kind' => 'node.bootstrap_install', 'worker' => 'bootstrap-1'])->assertOk();
@@ -35,7 +35,7 @@ function bootstrapOperation($test): array
         'name' => 'agent.install', 'input' => $input]];
 }
 
-it('pins bootstrap SSH before installing and never uses the future WireGuard address', function (): void {
+it('pins bootstrap SSH and normalizes architecture aliases before selecting the build', function (string $observed): void {
     [$node, $operation, $body] = bootstrapOperation($this);
     $key = new HostKey('ssh-ed25519', 'public-key', $operation->input['bootstrap_fingerprint']);
     $scanner = Mockery::mock(HostKeyScanner::class);
@@ -53,7 +53,7 @@ it('pins bootstrap SSH before installing and never uses the future WireGuard add
         && $connection->port === 2222 && $connection->user === 'root'
         && $connection->hostIdentity === 'SHA256:'.str_repeat('A', 43)
         && $connection->identityFile === '/fake/gateway-identity' && ! $connection->shareConnection;
-    $runner->shouldReceive('architectureOver')->once()->withArgs(fn (Node $target, SshConnection $ssh): bool => $target->id === $node->id && $connection($ssh))->andReturn('x86_64');
+    $runner->shouldReceive('architectureOver')->once()->withArgs(fn (Node $target, SshConnection $ssh): bool => $target->id === $node->id && $connection($ssh))->andReturn($observed);
     $installer = Mockery::mock(NodeOperationAgentInstaller::class);
     $installer->shouldReceive('installEffect')->once()->withArgs(fn (Node $target, string $pin, array $run, SshConnection $ssh): bool => $target->architecture === 'x86_64' && $connection($ssh) && $pin === $operation->input['agent_pin'] && $run['effect_key'] === 'op-'.$operation->id.'.install')->andReturn(true);
     app()->instance(NodeOperationAgentInstaller::class, $installer);
@@ -61,7 +61,7 @@ it('pins bootstrap SSH before installing and never uses the future WireGuard add
 
     $this->postJson("/api/v1/operation-executor/{$operation->id}/run", $body)->assertOk()->assertJsonPath('data.installed', true);
     $this->postJson("/api/v1/operation-executor/{$operation->id}/run", $body)->assertOk();
-});
+})->with(['x86_64', 'amd64']);
 
 it('refuses a changed host, port, fingerprint, login or bootstrap command before SSH', function (string $field): void {
     [, $operation, $body] = bootstrapOperation($this);
