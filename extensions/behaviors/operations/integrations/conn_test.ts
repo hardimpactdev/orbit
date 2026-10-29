@@ -230,6 +230,7 @@ Deno.test("Conn registration cleanup handles repeated intermediate sessions and 
 });
 
 Deno.test("Conn maintenance admits pending registered environments, keeps active cleanup, and uses a stable bounded key", async () => {
+  let revision = 4;
   const keys: string[] = [];
   const paths: string[] = [];
   const http: Http = async (method, path, _body, key) => {
@@ -244,21 +245,25 @@ Deno.test("Conn maintenance admits pending registered environments, keeps active
               environment_id: "e".repeat(255),
               status: "registered",
               cleanup_pending: true,
+              cleanup_version: revision,
             },
             {
               environment_id: "busy",
               status: "registered",
               cleanup_pending: true,
+              cleanup_version: revision,
             },
             {
               environment_id: "expired",
               status: "session_expired",
               cleanup_pending: true,
+              cleanup_version: revision,
             },
             {
               environment_id: "clean",
               status: "registered",
               cleanup_pending: false,
+              cleanup_version: 0,
             },
           ],
         },
@@ -273,8 +278,11 @@ Deno.test("Conn maintenance admits pending registered environments, keeps active
       };
   };
   assertEquals(await maintainConn(http, "tick-1"), { admitted: [91], busy: 1 });
-  assertEquals(await maintainConn(http, "tick-1"), { admitted: [91], busy: 1 });
+  assertEquals(await maintainConn(http, "tick-2"), { admitted: [91], busy: 1 });
   assertEquals(keys[0], keys[2]);
+  revision++;
+  await maintainConn(http, "tick-3");
+  assertEquals(keys[0] === keys[4], false);
   assertMatch(keys[0], /^conn\.cleanup:[a-f0-9]{64}$/);
   assertEquals(
     paths.some((path) =>
@@ -292,6 +300,7 @@ Deno.test("Conn maintenance observes an already clean revision and refuses admis
         environment_id: "proof",
         status: "registered",
         cleanup_pending: true,
+        cleanup_version: 4,
       }],
     },
   };

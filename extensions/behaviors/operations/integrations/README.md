@@ -55,8 +55,10 @@ recovery.
 key. The Gateway exposes exact effect descriptors after proving the owner-bound
 session snapshot. A final receipt requires every effect. The Conn maintenance
 workflow checks pending registration revisions each minute; an active cleanup
-keeps its lock, and a later tick admits any newer revision. Registration never
-waits for that cleanup.
+keeps its lock. Admission is keyed by environment and `cleanup_version`, never
+by the maintenance run. A failed revision replays its existing Operation until a
+new registration or an explicit operator retry. Registration never waits for
+that cleanup.
 
 Focused checks:
 

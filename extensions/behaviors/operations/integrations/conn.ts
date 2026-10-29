@@ -131,7 +131,7 @@ export async function revokeConn(
 }
 
 /** Admission is periodic so a new registration cannot be lost behind an active cleanup. */
-export async function maintainConn(http: Http, tick: string) {
+export async function maintainConn(http: Http, _tick: string) {
   const response = await http("GET", "/api/v1/conn/environments");
   if (
     response.status === 403 &&
@@ -145,6 +145,7 @@ export async function maintainConn(http: Http, tick: string) {
         environment_id: z.string().max(255),
         status: z.string(),
         cleanup_pending: z.boolean().optional(),
+        cleanup_version: z.number().int().nonnegative(),
       }),
     ).max(4096),
   }).parse(response.body).data;
@@ -157,7 +158,10 @@ export async function maintainConn(http: Http, tick: string) {
     const digest = await crypto.subtle.digest(
       "SHA-256",
       new TextEncoder().encode(
-        JSON.stringify([environment.environment_id, tick]),
+        JSON.stringify([
+          environment.environment_id,
+          environment.cleanup_version,
+        ]),
       ),
     );
     const key = "conn.cleanup:" +
