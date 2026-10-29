@@ -25,11 +25,13 @@ class Fixture {
     state: "request",
     request_base64: btoa("public CSR"),
   };
-  receipts = new Map<string, Record<string, unknown>>();
+  receipts = new Map<string, unknown>();
   resources = new Map<string, Record<string, unknown>>();
   calls: { path: string; body: Record<string, unknown> }[] = [];
   runs = 0;
   loseRun = false;
+  emptyResultsAsArrays = false;
+  losePublish = false;
   loseComplete = false;
   worker = "run-1";
   available = true;
@@ -87,8 +89,17 @@ class Fixture {
             : key === "certificate-inspect"
             ? { present: true }
             : {};
-          this.receipts.set(key, value);
+          this.receipts.set(
+            key,
+            this.emptyResultsAsArrays && Object.keys(value).length === 0
+              ? []
+              : value,
+          );
           this.runs++;
+        }
+        if (this.losePublish && key === "certificate-publish") {
+          this.losePublish = false;
+          throw new Error("Lost publication response");
         }
         if (this.loseRun) {
           this.loseRun = false;
@@ -284,4 +295,60 @@ Deno.test("resumed family dispatch with a lost lease never claims a replacement 
   assertEquals(f.calls.slice(before).map((call) => call.path), [
     "/api/v1/operation-executor/7/heartbeat",
   ]);
+});
+
+Deno.test("empty PHP publication and removal maps finish as object results", async () => {
+  const publication = new Fixture();
+  publication.emptyResultsAsArrays = true;
+  assertEquals((await publication.execute()).status, "succeeded");
+  assertEquals(publication.operation.step_results["certificate-publish"], {});
+
+  const removal = new Fixture();
+  removal.operation.kind = "certificate.remove";
+  removal.emptyResultsAsArrays = true;
+  assertEquals((await removal.execute()).status, "succeeded");
+  assertEquals(removal.calls.at(-1)!.body.result, {});
+});
+
+Deno.test("lost empty publication reply recovers its receipt without repeating the effect", async () => {
+  const f = new Fixture();
+  f.emptyResultsAsArrays = true;
+  f.losePublish = true;
+  await assertRejects(() => f.execute(), Error, "Lost publication response");
+  assertEquals((await f.execute()).status, "succeeded");
+  assertEquals(f.runs, 4);
+  assertEquals(
+    f.calls.filter((c) =>
+      c.path.endsWith("/run") && c.body.key === "certificate-publish"
+    ).length,
+    1,
+  );
+  assertEquals(
+    f.calls.some((c) => c.path.endsWith("/receipts/certificate-publish")),
+    true,
+  );
+});
+
+Deno.test("a recorded empty publication result resumes at inspection", async () => {
+  const f = new Fixture();
+  f.operation.step_results = {
+    "certificate-request": {
+      state: "request",
+      request_base64: btoa("public CSR"),
+    },
+    "certificate-sign": { signed: true },
+    "certificate-publish": [],
+  };
+  assertEquals((await f.execute()).status, "succeeded");
+  assertEquals(
+    f.calls.filter((c) => c.path.endsWith("/run")).map((c) => c.body.name),
+    ["certificate.inspect-leaf"],
+  );
+});
+
+Deno.test("a nonempty array cannot prove certificate publication", async () => {
+  const f = new Fixture();
+  f.receipts.set("certificate-publish", [{ ready: true }]);
+  await assertRejects(() => f.execute());
+  assertEquals(f.calls.some((c) => c.path.endsWith("/complete")), false);
 });

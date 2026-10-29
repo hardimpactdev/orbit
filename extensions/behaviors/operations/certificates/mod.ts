@@ -12,6 +12,7 @@ import {
   EffectReceipt,
   Invocation,
   Leaf,
+  Result,
   Scope,
 } from "./contract.ts";
 import { CertificateRefusal } from "./contract.ts";
@@ -167,7 +168,7 @@ export function certificates(
           ) => {
             const recorded = operation.step_results[key];
             if (recorded) {
-              return z.record(z.string(), z.unknown()).parse(recorded);
+              return Result.parse(recorded);
             }
             await executor.post(`${path}/step`, {
               worker: args.worker,
@@ -230,7 +231,7 @@ export function certificates(
                 invocation,
               );
             }
-            const result = z.record(z.string(), z.unknown()).parse(
+            const result = Result.parse(
               recovered ??
                 await executor.post(`${path}/run`, {
                   worker: args.worker,

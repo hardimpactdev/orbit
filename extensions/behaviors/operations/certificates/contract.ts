@@ -9,9 +9,14 @@ export const Leaf = Scope.extend({
   root_hash: z.string().length(64),
   user: z.string().min(1),
 });
+// PHP serializes an empty map as []; nonempty lists remain invalid evidence.
+export const Result = z.preprocess(
+  (value) => Array.isArray(value) && value.length === 0 ? {} : value,
+  z.record(z.string(), z.unknown()),
+);
 export const Completion = z.object({
   status: z.enum(["succeeded", "failed", "cancelled"]),
-  result: z.record(z.string(), z.unknown()),
+  result: Result,
   error_code: z.string().regex(/^[a-z0-9_.-]+$/).nullable(),
 });
 
@@ -21,13 +26,7 @@ export const Invocation = z.object({
   name: z.string(),
   input: z.record(z.string(), z.unknown()),
 });
-export const EffectReceipt = z.object({
-  effect_key: z.string(),
-  state: z.enum(["succeeded", "failed", "running", "unknown"]),
-  exit_code: z.number().int().nullable(),
-  result: z.record(z.string(), z.unknown()).nullable(),
-  finished_at: z.string().nullable(),
-});
+export { EffectReceipt } from "../../operation-runner/mod.ts";
 
 export class CertificateRefusal extends Error {
   constructor(readonly code: string) {
