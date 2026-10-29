@@ -1,0 +1,31 @@
+id: f494f606-0050-446e-a025-25b6c160578c
+name: operation-fleet
+description: Claim and execute one Fleet kind in the same worker invocation.
+autoResume: true
+inputs:
+  type: object
+  properties:
+    kind: {
+      type: string,
+      enum: [
+        fleet.peer_dns,
+        fleet.recipe,
+        fleet.rollout,
+        fleet.recipe_pr,
+        fleet.cli_converge,
+      ],
+    }
+    worker: { type: string }
+  required: [kind, worker]
+jobs:
+  - name: fleet
+    steps:
+      - name: execute
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/operation-fleet"
+          behaviorName: '${{ "operation-fleet-" + {"fleet.peer_dns":"peer-dns", "fleet.recipe":"recipe", "fleet.rollout":"rollout", "fleet.recipe_pr":"recipe-pr", "fleet.cli_converge":"cli-converge"}[inputs.kind] }}'
+          methodName: execute
+          inputs:
+            kind: "${{ inputs.kind }}"
+            worker: "${{ inputs.worker }}"
