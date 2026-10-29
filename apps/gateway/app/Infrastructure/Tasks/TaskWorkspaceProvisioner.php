@@ -275,7 +275,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
     private function assertResolution(Instance $instance, DevelopmentSourceResolution $resolution): void
     {
         if (
-            $resolution->branch !== $this->expectedBranch($instance)
+            ! DevelopmentSourceResolution::matchesBranch($resolution->branch, $this->expectedBranch($instance), $instance->seed_commit, $instance->source_prepare_id)
             || preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $resolution->startingCommit) !== 1
         ) {
             throw new ResourceOperationException(
@@ -291,7 +291,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
         DevelopmentSourceResolution $resolution,
     ): void {
         if (
-            $instance->branch !== $this->expectedBranch($instance)
+            ! DevelopmentSourceResolution::matchesBranch($instance->branch, $this->expectedBranch($instance), $instance->seed_commit, $instance->source_prepare_id)
             || ! is_string($instance->starting_commit)
             || preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $instance->starting_commit) !== 1
         ) {

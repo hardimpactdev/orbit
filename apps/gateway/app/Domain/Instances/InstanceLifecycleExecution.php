@@ -421,6 +421,17 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
     /** @return list<Descriptor> */
     private function create(Operation $operation): array
     {
+        if ($operation->children()->where('child_key', 'rollback-removal')->where('status', 'succeeded')->exists()) {
+            $this->assertChild($operation, 'rollback-removal', 'instance.destroy');
+            $descriptors = [];
+            foreach (ValidatedData::object($operation->state['lifecycle_bindings'] ?? []) as $key => $binding) {
+                $binding = ValidatedData::object($binding);
+                $descriptors[] = $this->descriptor($key, ValidatedData::string($binding['transport']),
+                    ValidatedData::string($binding['name']), ValidatedData::object($binding['input']));
+            }
+
+            return $descriptors;
+        }
         $input = $operation->input;
         $database = $input['database_server_id'] !== null || $input['database_clone_source_id'] !== null
             ? [$this->descriptor('database-intent', 'gateway', 'instance.lifecycle-state', ['action' => 'database-intent', 'operation_id' => $operation->id])] : [];

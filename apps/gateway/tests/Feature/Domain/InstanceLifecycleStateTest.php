@@ -129,3 +129,16 @@ it('refuses a prepared database child with another owner or effect kind', functi
     $this->operation->state = ['lifecycle_database' => $descriptor];
     expect(fn () => app(InstanceDatabaseIntent::class)->child($this->operation, 'database'))->toThrow(ResourceOperationException::class);
 })->with(['owner', 'kind', 'intent']);
+
+it('pins a seeded worktree private branch to its admitted preparation identity', function (): void {
+    $this->operation->input = [...$this->operation->input, 'prepare_id' => 'attempt-proof', 'seed_commit' => str_repeat('a', 40),
+        'branch_override' => 'main'];
+    $receipt = ['branch' => 'orbit/instance/attempt-proof', 'commit' => str_repeat('a', 40)];
+
+    $this->state->resolved($this->operation, $receipt);
+    expect($this->instance->refresh()->branch)->toBe($receipt['branch']);
+    $this->instance->update(['status' => InstanceState::Active]);
+    expect($this->state->retainedSource($this->operation)['branch'])->toBe($receipt['branch']);
+    expect(fn () => $this->state->resolved($this->operation, [...$receipt, 'branch' => 'orbit/instance/another-attempt']))
+        ->toThrow(ResourceOperationException::class);
+});

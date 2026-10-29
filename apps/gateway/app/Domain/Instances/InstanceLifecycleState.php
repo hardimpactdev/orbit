@@ -63,10 +63,9 @@ final readonly class InstanceLifecycleState
     public function resolved(Operation $operation, array $result): void
     {
         $instance = $this->instance($operation);
-        $expected = $this->expectedBranch($operation, $instance);
         $branch = $result['branch'] ?? null;
         $commit = $result['commit'] ?? null;
-        if ($branch !== $expected || ! is_string($commit) || preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $commit) !== 1) {
+        if (! $this->matchesBranch($operation, $instance, $branch) || ! is_string($commit) || preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $commit) !== 1) {
             throw $this->invalidSource();
         }
         if ($instance->status !== InstanceState::CheckoutPrepared) {
@@ -83,13 +82,20 @@ final readonly class InstanceLifecycleState
     public function retainedSource(Operation $operation): array
     {
         $instance = $this->instance($operation);
-        if ($instance->status !== InstanceState::Active || $instance->branch !== $this->expectedBranch($operation, $instance)
+        if ($instance->status !== InstanceState::Active || ! is_string($instance->branch) || ! $this->matchesBranch($operation, $instance, $instance->branch)
             || ! is_string($instance->starting_commit)
             || preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $instance->starting_commit) !== 1) {
             throw new ResourceOperationException('instance.source_identity_changed', 'Instance source identity changed.', 409);
         }
 
         return ['source_verified' => true, 'branch' => $instance->branch];
+    }
+
+    private function matchesBranch(Operation $operation, Instance $instance, mixed $branch): bool
+    {
+        return DevelopmentSourceResolution::matchesBranch($branch, $this->expectedBranch($operation, $instance),
+            $operation->kind === 'instance.create' ? ($operation->input['seed_commit'] ?? null) : null,
+            $operation->input['prepare_id'] ?? null);
     }
 
     private function expectedBranch(Operation $operation, Instance $instance): string

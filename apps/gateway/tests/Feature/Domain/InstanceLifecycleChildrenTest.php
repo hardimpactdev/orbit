@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use App\Domain\Instances\InstanceLifecycleChildren;
 use App\Domain\Instances\InstanceLifecycleCommand;
+use App\Domain\Instances\InstanceLifecycleExecution;
 use App\Domain\Operations\OperationChildIntent;
+use App\Domain\Operations\OperationOutcome;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\Node;
@@ -130,4 +132,14 @@ it('refuses a Gateway state transition for another Operation id before projectio
         ->toThrow(ResourceOperationException::class);
     expect($command->run($this->parent, ['action' => 'configuration', 'operation_id' => $this->parent->id]))->toBe(['written' => true]);
     expect($this->parent->refresh()->state)->toBeNull();
+});
+
+it('admits normal failed-create removal after a proven native Git refusal', function (): void {
+    $this->parent->update(['state' => ['executor_runs' => ['source-resolve' => ['transport' => 'instance_lifecycle',
+        'name' => 'instance.resolve-development-source', 'step' => 'source-resolve',
+        'result' => ['error_code' => 'instance.git_failed']]]]]);
+
+    expect(app(InstanceLifecycleChildren::class)->canRemoveFailedCreate($this->parent))->toBeTrue();
+    app(InstanceLifecycleExecution::class)->assertCompletion($this->parent,
+        OperationOutcome::failed('instance.git_failed'));
 });
