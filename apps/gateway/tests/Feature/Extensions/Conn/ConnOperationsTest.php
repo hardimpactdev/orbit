@@ -5,9 +5,12 @@ declare(strict_types=1);
 use App\Domain\Operations\OperationKinds;
 use App\Models\Node;
 use App\Models\Operation;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Client\Request as HttpRequest;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Orbit\Extensions\Conn\Domain\ConnExecutionInput;
+use Orbit\Extensions\Conn\Domain\ConnPairingIssueCommand;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
 
@@ -28,7 +31,7 @@ beforeEach(function (): void {
     $this->environment = ConnEnvironment::query()->create(['environment_id' => 'conn-h-proof', 'label' => 'dev', 'node_id' => $this->services->id,
         'url' => 'http://dev.test', 'admin_session' => 'fixture-admin-session', 'admin_session_expires_at' => now()->addDay(), 'registered_at' => now()]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
-    $this->postJson('/api/v1/conn/environments/conn-h-proof/pairings')->assertAccepted();
+    $this->postJson('/api/v1/conn/environments/conn-h-proof/pairings', ['async' => true])->assertAccepted();
     $this->operation = Operation::query()->sole();
     $this->pairing = ConnPairing::query()->sole();
     $this->path = '/api/v1/operation-executor/'.$this->operation->id;
@@ -59,6 +62,8 @@ it('stores one encrypted output and preserves its exact reference through replay
     $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
     $this->getJson('/api/v1/conn/environments/conn-h-proof/pairings/'.$this->pairing->id)->assertOk()
         ->assertHeader('Cache-Control', 'no-store, private')->assertJsonPath('data.pairing_url', 'http://dev.test/pair#token=conn-one-time-sentinel');
+    expect($this->pairing->fresh()->credential)->toBeNull();
+    $this->getJson('/api/v1/conn/environments/conn-h-proof/pairings/'.$this->pairing->id)->assertConflict();
     $list = $this->getJson('/api/v1/conn/environments/conn-h-proof/pairings')->assertOk();
     expect($list->getContent())->not->toContain('conn-one-time-sentinel');
     $this->withServerVariables(['REMOTE_ADDR' => $this->other->wireguard_ip]);
@@ -142,7 +147,7 @@ it('refuses expired sessions and missing environments before admitting another i
     $this->environment->update(['admin_session_expires_at' => now()->subMinute()]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
 
-    $this->postJson('/api/v1/conn/environments/conn-h-proof/pairings')->assertConflict()->assertJsonPath('error.code', 'conn.session_expired');
+    $this->postJson('/api/v1/conn/environments/conn-h-proof/pairings', ['async' => true])->assertConflict()->assertJsonPath('error.code', 'conn.session_expired');
     $this->postJson('/api/v1/conn/environments/missing/pairings')->assertNotFound();
 
     expect(Operation::query()->count())->toBe(1)->and(ConnPairing::query()->count())->toBe(1);
@@ -189,5 +194,29 @@ it('keeps the revocation requester separate from its subject for owner access an
     $this->withServerVariables(['REMOTE_ADDR' => $this->other->wireguard_ip]);
     $this->getJson('/api/v1/conn/operations/'.$operation->id)->assertNotFound();
     $this->call('POST', '/api/v1/conn/operations/'.$operation->id.'/cancel', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')->assertNotFound();
+    Http::assertNothingSent();
+});
+
+it('keeps a credential unreadable before completion and clears it when expired', function (): void {
+    $this->pairing->update(['credential' => 'unread-sentinel', 'pairing_link_id' => 'link', 'expires_at' => now()->addMinute()]);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
+    $url = '/api/v1/conn/environments/conn-h-proof/pairings/'.$this->pairing->id;
+
+    $this->getJson($url)->assertConflict();
+
+    expect($this->pairing->fresh()->credential)->toBe('unread-sentinel');
+    $this->operation->update(['status' => 'succeeded']);
+    $this->travel(2)->minutes();
+    $this->getJson($url)->assertConflict();
+    expect($this->pairing->fresh()->credential)->toBeNull();
+});
+
+it('refuses an already revoked pairing before the issue command contacts its server', function (): void {
+    $this->pairing->update(['revoked_at' => now()]);
+
+    expect(fn () => app(ConnPairingIssueCommand::class)->run($this->operation,
+        ['environment' => new ConnExecutionInput(['id' => $this->environment->id, 'url' => $this->environment->url, 'admin_session' => 'fixture-admin-session']),
+            'pairing_ids' => [$this->pairing->id]]))->toThrow(ModelNotFoundException::class);
+
     Http::assertNothingSent();
 });

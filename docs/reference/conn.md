@@ -154,8 +154,8 @@ Every endpoint is under `https://gateway.orbit/api/v1/conn` and answers `{"data"
 | `GET /environments` | — | list of environment |
 | `POST /environments` | `{"environment_id", "label", "url", "admin_session"}` | environment |
 | `GET /environments/{environment_id}/pairings` | — | list of pairing, newest first |
-| `POST /environments/{environment_id}/pairings` | — | `{pairing, pairing_url}` (201) |
-| `POST /environments/{environment_id}/pairings/revoke` | `{"node_id": 4}`, optional | `{environment_id, node_id, revoked_sessions, pairings}` |
+| `POST /environments/{environment_id}/pairings` | optional `{"async": true}` | `{pairing, pairing_url}` (201), or Operation (202) when opted in |
+| `POST /environments/{environment_id}/pairings/revoke` | `{"node_id": 4}`, optional | Operation (202) |
 
 The objects:
 
@@ -210,12 +210,14 @@ The Gateway stores the versions apart from the document, in `section_meta` on th
 
 ## Pairing Operations
 
-Pairing creation and revocation return HTTP 202 with a normal Operation. Swamp executes the fixed Conn command through the Gateway executor. The Gateway resolves the stored environment session after checking the Operation's owner. A successful pairing stores its one-time credential encrypted on the pairing record through the executor's secret-output contract. Operation receipts contain safe identifiers and a stored-secret reference only.
+Existing Conn clients keep synchronous pairing creation: omit `async` or send `false` to receive HTTP 201 with `{pairing, pairing_url}`. This path creates no Operation and stores no credential. Send `{"async": true}` to opt into HTTP 202 with a normal Operation. Revocation returns an Operation. Swamp executes the fixed Conn command through the Gateway executor. The Gateway resolves the stored environment session after checking the Operation's owner. A successful pairing stores its one-time credential encrypted on the pairing record through the executor's secret-output contract. Operation receipts contain safe identifiers and a stored-secret reference only.
 
-After creation succeeds, the calling Node reads `GET /api/v1/conn/environments/{environment}/pairings/{pairing}` to receive its pairing URL. Another Node cannot read that credential. Listing pairings never includes it. Revocation removes it. A Gateway restart in the uncertain issue window never mints a second pairing link automatically; the Operation fails with `conn.pairing_outcome_unknown`, and an explicit new create uses a new pairing identity.
+After creation succeeds, the calling Node reads `GET /api/v1/conn/environments/{environment}/pairings/{pairing}` to receive its pairing URL. Read the URL once and open it immediately. The owner-checked read clears the encrypted credential; a second read, an expired pairing, or a read before completion returns HTTP 409. Another Node cannot read that credential. Listing pairings never includes it. Revocation removes it. A Gateway restart in the uncertain issue window never mints a second pairing link automatically; the Operation fails with `conn.pairing_outcome_unknown`, and an explicit new create uses a new pairing identity.
 
-Pairing creation is unavailable with `operation.kind_unavailable` until the executor enforces secret outputs. The family declares `credential` as a secret stored through `conn.pairing.credential`. Its owner check binds the pairing, calling Node and environment, and refuses a revoked pairing or a conflicting credential.
+Async pairing creation is unavailable with `operation.kind_unavailable` until the executor enforces secret outputs. The family declares `credential` as a secret stored through `conn.pairing.credential`. Its owner check binds the pairing, calling Node and environment, and refuses a revoked pairing or a conflicting credential.
 
 The producer is the Gateway-local `conn.pairing-issue` command. Kit H replaces its transient credential with `{"$secret":"conn.pairing.credential","id":<pairing id>}` before a run receipt, step or completion is stored. The encrypted owner write and run receipt commit together. A retry reads that reference and does not mint or store another credential. The existing profile and registration reads remain local Gateway behavior.
 
 Conn callers follow their own pairing Operations at `GET /api/v1/conn/operations/{operation}` and cancel them at `POST /api/v1/conn/operations/{operation}/cancel`. These endpoints check the original requester, including when a revocation names another Node. They expose no other Operation or Gateway authority. Re-registration keeps synchronous cleanup of older Gateway sessions, so repeated registrations cannot drop an intermediate session while cleanup is pending.
+
+Merge this cutover only after the paired orbit-swamp integration workflow runs on a placed worker. The synchronous pairing reply stays bound until both the Conn app and the relink script support the opt-in Operation flow.

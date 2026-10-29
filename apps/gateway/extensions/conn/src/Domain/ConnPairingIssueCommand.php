@@ -32,7 +32,7 @@ final readonly class ConnPairingIssueCommand implements OperationGatewayCommand
     {
         $environment = $input['environment']->jsonSerialize();
         $pairing = ConnPairing::query()->whereKey($operation->target_id)
-            ->where('conn_environment_id', $environment['id'])->sole();
+            ->where('conn_environment_id', $environment['id'])->whereNull('revoked_at')->sole();
         if ($operation->kind !== 'conn.pairing_create' || $input['pairing_ids'] !== [$pairing->id]) {
             throw new ResourceOperationException('operation.execution_forbidden', 'This issue does not belong to the pairing.', 422);
         }
