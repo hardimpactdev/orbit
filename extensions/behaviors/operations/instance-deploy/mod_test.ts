@@ -23,6 +23,7 @@ class Gateway {
   refused: string | null = null;
   kind = "instance.deploy";
   childStatus = "queued";
+  childKey = "vp_environment";
   legacy = false;
   config = {
     variant: "development",
@@ -73,13 +74,13 @@ class Gateway {
           ),
         ]
         : []),
-      ...(this.config.needs_vp
+      ...(this.config.needs_vp || this.childKey !== "vp_environment"
         ? [
           descriptor(
-            "child.vp_environment",
-            "vp_environment",
+            `child.${this.childKey}`,
+            this.childKey,
             "instance.child-receipt",
-            { child_key: "vp_environment" },
+            { child_key: this.childKey },
             "gateway",
           ),
         ]
@@ -160,10 +161,16 @@ class Gateway {
     let data: unknown = this.operation();
     if (path.endsWith("/claim") && !this.claimAvailable) data = null;
     if (path.endsWith("/wait")) {
+      if (Object.values(this.statuses).includes("running")) {
+        return {
+          status: 409,
+          body: { error: { code: "operation.step_running" } },
+        };
+      }
       data = { ...this.operation(), status: "waiting" };
     }
     if (path.endsWith("/children")) {
-      assertEquals(body, { worker: "workflow-7", key: "vp_environment" });
+      assertEquals(body, { worker: "workflow-7", key: this.childKey });
       data = { ...this.operation(), id: 71, status: this.childStatus };
     }
 
@@ -173,7 +180,7 @@ class Gateway {
         this.effects.push(key);
         this.runs.set(
           key,
-          key === "child.vp_environment"
+          key === `child.${this.childKey}`
             ? this.childStatus === "succeeded"
               ? { child_id: 71, child_status: "succeeded" }
               : { child_id: 71, error_code: "deployment.vp_store_failed" }
@@ -395,6 +402,7 @@ Deno.test("deployment yields its worker for a child and resumes before scripts w
   gateway.config.needs_vp = true;
   assertEquals((await gateway.execute()).status, "waiting");
   assertEquals(gateway.completion, null);
+  assertEquals(gateway.statuses.vp_environment, undefined);
   assertEquals(gateway.effects, ["source.resolve", "source.checkout"]);
   const wait = gateway.calls.find((call) => call.path.endsWith("/wait"))!;
   assertEquals(wait.body, { worker: "workflow-7", keys: ["vp_environment"] });
@@ -410,6 +418,32 @@ Deno.test("deployment yields its worker for a child and resumes before scripts w
     true,
   );
 });
+
+for (
+  const [variant, childKey] of [
+    ["production", "environment_sync"],
+    ["rollback", "process_restart"],
+  ]
+) {
+  Deno.test(`${variant} waits for ${childKey} before starting its receipt step`, async () => {
+    const gateway = new Gateway();
+    gateway.kind = variant === "rollback"
+      ? "instance.rollback"
+      : "instance.deploy";
+    gateway.config.variant = variant;
+    gateway.childKey = childKey;
+    assertEquals((await gateway.execute()).status, "waiting");
+    assertEquals(gateway.statuses[childKey], undefined);
+    assertEquals(gateway.completion, null);
+    gateway.childStatus = "succeeded";
+    assertEquals((await gateway.execute()).status, "succeeded");
+    assertEquals(gateway.statuses[childKey], "succeeded");
+    assertEquals(
+      gateway.effects.filter((key) => key === `child.${childKey}`).length,
+      1,
+    );
+  });
+}
 
 Deno.test("a failed required child stops deployment before scripts", async () => {
   const gateway = new Gateway();

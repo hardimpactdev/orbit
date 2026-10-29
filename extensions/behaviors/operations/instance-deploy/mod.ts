@@ -108,6 +108,11 @@ class Port implements DeploymentPort {
       );
       if (!next) return last;
       visited.add(next.key);
+      if (
+        next.transport === "gateway" && next.name === "instance.child-receipt"
+      ) {
+        await this.child(z.string().parse(next.input.child_key));
+      }
       const ended = operation.steps.some((step) =>
         step.name === next.step &&
         (step.status === "succeeded" || step.status === "failed")
@@ -123,11 +128,6 @@ class Port implements DeploymentPort {
       }
       let result: Receipt;
       try {
-        if (
-          next.transport === "gateway" && next.name === "instance.child-receipt"
-        ) {
-          await this.child(z.string().parse(next.input.child_key));
-        }
         const recovered = next.transport === "gateway"
           ? null
           : await this.receipt(next.key);
