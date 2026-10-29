@@ -53,11 +53,15 @@ it('reports only registered Swamp work without exposing records or writing anyth
         }
     });
     $response = $this->getJson('/api/v1/operation-executor/claimable')->assertOk();
-    expect($response->json('data'))->toBe(['kinds' => [
-        ['kind' => 'firewall.allow', 'claimable' => 2, 'oldest_at' => Carbon::now()->subSeconds(600)->toISOString()],
-        ['kind' => 'firewall.deny', 'claimable' => 0, 'oldest_at' => null],
-        ['kind' => 'firewall.remove', 'claimable' => 0, 'oldest_at' => null],
-    ]]);
+    $kinds = collect($response->json('data.kinds'))->keyBy('kind');
+    expect($kinds->only(['firewall.allow', 'firewall.deny', 'firewall.remove'])->all())->toBe([
+        'firewall.allow' => ['kind' => 'firewall.allow', 'claimable' => 2, 'oldest_at' => Carbon::now()->subSeconds(600)->toISOString()],
+        'firewall.deny' => ['kind' => 'firewall.deny', 'claimable' => 0, 'oldest_at' => null],
+        'firewall.remove' => ['kind' => 'firewall.remove', 'claimable' => 0, 'oldest_at' => null],
+    ])->and($kinds->has('unknown.kind'))->toBeFalse();
+    foreach ($kinds as $kind) {
+        expect($kind)->toHaveKeys(['kind', 'claimable', 'oldest_at'])->toHaveCount(3);
+    }
     $response->assertDontSee('never-return-operation-input');
     expect($writes)->toBe([])->and(Operation::query()->orderBy('id')->get()->toArray())->toBe($before);
 });
@@ -66,13 +70,15 @@ it('uses the same candidate set as claims from the placed worker', function (): 
     $queued = claimableFixture(OperationStatus::Queued);
     $expired = claimableFixture(OperationStatus::Running, idle: 120);
     claimableFixture(OperationStatus::Running, idle: 119);
-    $this->getJson('/api/v1/operation-executor/claimable')->assertOk()->assertJsonPath('data.kinds.0.claimable', 2);
+    $response = $this->getJson('/api/v1/operation-executor/claimable')->assertOk();
+    expect(collect($response->json('data.kinds'))->firstWhere('kind', 'firewall.allow')['claimable'])->toBe(2);
     $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip]);
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'firewall.allow', 'worker' => 'first'])->assertOk()->assertJsonPath('data.id', $queued->id);
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'firewall.allow', 'worker' => 'second'])->assertOk()->assertJsonPath('data.id', $expired->id);
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'firewall.allow', 'worker' => 'third'])->assertOk()->assertJsonPath('data', null);
     $this->withServerVariables(['REMOTE_ADDR' => $this->services->wireguard_ip]);
-    $this->getJson('/api/v1/operation-executor/claimable')->assertOk()->assertJsonPath('data.kinds.0.claimable', 0)->assertJsonPath('data.kinds.0.oldest_at', null);
+    $response = $this->getJson('/api/v1/operation-executor/claimable')->assertOk();
+    expect(collect($response->json('data.kinds'))->firstWhere('kind', 'firewall.allow'))->toBe(['kind' => 'firewall.allow', 'claimable' => 0, 'oldest_at' => null]);
 });
 
 it('allows only the active configured Services peer with Gateway access', function (string $case): void {
