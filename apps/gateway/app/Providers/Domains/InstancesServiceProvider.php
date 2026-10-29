@@ -53,6 +53,8 @@ use App\Domain\Instances\Transfer\InstanceTransferRouteProjector;
 use App\Domain\Instances\Transfer\InstanceTransferRuntime;
 use App\Domain\Instances\Transfer\InstanceTransferSource;
 use App\Domain\Operations\OperationSecretSource;
+use App\Http\Controllers\Api\OperationExecutorController;
+use App\Http\Middleware\Instances\SerializeInstanceEnvironment;
 use App\Infrastructure\AgentView\StreamWebSocketClient;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Dependencies\WebSocketSwampDependencyReader;
@@ -87,6 +89,7 @@ use App\Infrastructure\Instances\RemoteProductionRepositoryBinding;
 use App\Infrastructure\Instances\RemoteProductionWebRootManager;
 use App\Infrastructure\Instances\RemoteRegistrationSourceManager;
 use App\Infrastructure\Processes\CommandDeadline;
+use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
 
@@ -155,5 +158,16 @@ final class InstancesServiceProvider extends ServiceProvider
             DevelopmentInstanceSourceFinalizer::class,
             static fn (): DevelopmentInstanceSourceFinalizer => app(RemoteDevelopmentInstanceSourceRemoval::class),
         );
+    }
+
+    public function boot(): void
+    {
+        $this->app->booted(function (): void {
+            foreach ($this->app->make(Router::class)->getRoutes()->getRoutes() as $route) {
+                if ($route->getActionName() === OperationExecutorController::class.'@run') {
+                    $route->middleware(SerializeInstanceEnvironment::class);
+                }
+            }
+        });
     }
 }

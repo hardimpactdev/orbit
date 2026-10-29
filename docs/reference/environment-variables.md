@@ -80,11 +80,11 @@ Import, update, and synchronization use the Instance's recorded owning Node. A R
 
 ## Environment child Operations
 
-Route plans use `instance.sync_environment` with `{instance_id, route_domain: candidate|authoritative}`. Instance lifecycle and deployment parents use `{instance_id}`. The Gateway stamps parent ancestry and fixes the Instance and Node. Callers cannot supply a mode, a path, environment contents or parent metadata. Existing synchronous environment commands and retained deploy callers keep their current execution path until their owning cutover.
+Route plans use `instance.sync_environment` with `{instance_id, route_domain: candidate|authoritative}`. Instance lifecycle and deployment parents use `{instance_id}`. The Gateway stamps parent ancestry and fixes the Instance and Node. Callers cannot supply a mode, a path, environment contents or parent metadata. Existing synchronous environment commands and retained deploy callers keep their current execution path until their owning cutover. An explicit synchronous `env:sync` refuses with `env.operation_busy` while an Instance deploy or rollback is queued, running or waiting. Stored updates and imports remain available.
 
 Swamp executes preparation, the main environment write, managed testing-file merge, additional Route URL writes and final verification in that order. URL-only web-root stages, including rollback stages, leave the main environment and testing files alone. Removed targets remain owned through the Route's admitted previous-target set. Each required write needs its original keyed receipt and a matching successful step before the child can succeed.
 
-The Gateway resolves stored values and checks workload keys in memory immediately before dispatch. Operation input and workflow context contain protected references, never raw or encoded environment values. An uncertain write keeps its result open for the original target receipt; a retry does not render or write again. Cancellation cannot turn an unknown result into successful synchronization.
+Every environment-child run holds the Instance environment lock across protected rendering and hydration, dispatch and receipt projection. Concurrent synchronous updates, imports and syncs serialize on that same lock. The Gateway resolves stored values and checks workload keys in memory immediately before dispatch. Operation input and workflow context contain protected references, never raw or encoded environment values. An uncertain write keeps its result open for the original target receipt; a retry does not render or write again. Cancellation cannot turn an unknown result into successful synchronization.
 
 ## Where the file lives
 
