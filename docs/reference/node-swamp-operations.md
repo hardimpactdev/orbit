@@ -62,6 +62,8 @@ Before WireGuard exists, Node enrollment uses the family transport `bootstrap-ss
 
 Bootstrap receipt reads resolve only the declared existing connection identity through `OperationSecrets::connection`. The source implements `OperationConnectionSecretSource`; it reads the existing SSH identity without creating or rotating credentials. Receipt reads recheck the admitted host fingerprint and use the identity only for that connection. Payload sources and original redaction masks are never resolved again.
 
+`node.bootstrap_probe` reads the machine architecture through the pinned public SSH login before selecting an agent build. It installs nothing and executes no agent command. Its proven completion records the observed architecture and host key. The following installer child selects its pin from the parent's admitted delivery map; a requested architecture must match the observation when the Node has no recorded architecture.
+
 Agent installation records the delivered binary pin before dispatch and sends the shared effect key and original sanitization metadata to the native installer. A lost reply reads the original receipt, including whether the binary changed. Receipt reads use a verified staged binary without installing it. The Gateway refuses the effect when its release does not deliver the admitted pin.
 
 The transport registration uses `OperationTransport::schema(Operation, array $run)` and `run(Operation, array $run, array $hydratedInput)`. Schema preparation performs no remote work. The Gateway validates the allowlist, exact bindings, schema, and ownership before dispatching a run.

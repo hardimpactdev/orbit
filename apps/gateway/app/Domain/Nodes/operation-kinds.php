@@ -99,7 +99,23 @@ $nodeKinds = [
             ['name' => 'skipped', 'list_of' => ['child_id' => 'int', 'key' => 'string', 'kind' => 'string', 'reason' => 'string']],
         ],
     ],
+    'node.bootstrap_probe' => [
+        'admission' => NodeChildAdmission::class,
+        'executor' => 'swamp', 'completion' => NodeBootstrapOperationCompletion::class,
+        'runs' => [[
+            'transport' => 'bootstrap-ssh', 'name' => 'node.probe-bootstrap', 'resumable' => true,
+            'input_fields' => ['bootstrap_host', 'bootstrap_port', 'bootstrap_fingerprint', 'bootstrap_user', 'bootstrap_identity', 'command_input'],
+            'secrets' => ['bootstrap_identity' => 'node.bootstrap_ssh_identity'],
+            'input_schema' => BootstrapSshOperationTransport::inputSchema('node.probe-bootstrap'),
+            'bind' => array_combine(['bootstrap_host', 'bootstrap_port', 'bootstrap_fingerprint', 'bootstrap_user', 'bootstrap_identity', 'command_input'],
+                array_map(static fn (string $field): string => 'input.'.$field,
+                    ['bootstrap_host', 'bootstrap_port', 'bootstrap_fingerprint', 'bootstrap_user', 'bootstrap_identity', 'command_input'])),
+        ]],
+        'completion_contract' => ['step' => 'bootstrap-probe', 'transport' => 'bootstrap-ssh', 'name' => 'node.probe-bootstrap', 'result' => ['probed' => true]],
+        'result_fields' => ['probed', 'architecture', 'host_type', 'public_key', 'host_key_fingerprint', 'error_code'],
+    ],
     'node.bootstrap_install' => [
+        'admission' => NodeChildAdmission::class,
         'executor' => 'swamp',
         'completion' => NodeBootstrapOperationCompletion::class,
         'runs' => [[

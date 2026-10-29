@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
+use App\Actions\Nodes\AdmitNodeBootstrapAction;
 use App\Actions\Nodes\AdmitNodeNetworkProjectionAction;
 use App\Actions\Nodes\AdmitNodeRemovalStageAction;
 use App\Actions\Nodes\AdmitNodeRoleOperationAction;
@@ -25,6 +26,9 @@ final readonly class NodeChildAdmission implements OperationChildAdmission
 
     public function admit(Operation $parent, array $intent): Operation
     {
+        if (in_array($intent['kind'], ['node.bootstrap_probe', 'node.bootstrap_install'], true)) {
+            return app(AdmitNodeBootstrapAction::class)->execute($parent, $intent);
+        }
         if ($intent['kind'] === 'node.network_projection') {
             return app(AdmitNodeNetworkProjectionAction::class)->execute($parent, $intent);
         }

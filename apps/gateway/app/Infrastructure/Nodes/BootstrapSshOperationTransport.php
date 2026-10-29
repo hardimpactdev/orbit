@@ -24,7 +24,7 @@ use LogicException;
 final readonly class BootstrapSshOperationTransport implements OperationEffectTransport
 {
     private const array Commands = [
-        'agent.install', 'agent.status', 'node.bootstrap', 'node.inspect-macos-enrollment',
+        'node.probe-bootstrap', 'agent.install', 'agent.status', 'node.bootstrap', 'node.inspect-macos-enrollment',
         'firewall.rules', 'wireguard.prepare-peer-key', 'wireguard.publish-peer',
         'wireguard.commit-peer', 'wireguard.rollback-peer',
     ];
@@ -49,7 +49,11 @@ final readonly class BootstrapSshOperationTransport implements OperationEffectTr
             throw $this->forbidden();
         }
         $command = ValidatedData::object($input['command_input'] ?? []);
-        if ($name === 'agent.install') {
+        if ($name === 'node.probe-bootstrap') {
+            if (array_keys($command) !== ['expected_architecture'] || ($command['expected_architecture'] !== null && ! is_string($command['expected_architecture']))) {
+                throw $this->forbidden();
+            }
+        } elseif ($name === 'agent.install') {
             if ($command !== []) {
                 throw $this->forbidden();
             }
@@ -62,6 +66,19 @@ final readonly class BootstrapSshOperationTransport implements OperationEffectTr
         }
 
         [$node, $connection, $key] = $this->connection($operation, $run, $input, $input['bootstrap_identity'] ?? null);
+        if ($name === 'node.probe-bootstrap') {
+            $architecture = $this->agents->architectureOver($node, $connection);
+            if (! in_array($architecture, $node->platform === 'linux' ? ['x86_64', 'amd64'] : ['x86_64', 'amd64', 'arm64', 'aarch64'], true)) {
+                return ['error_code' => 'node.architecture_unsupported'];
+            }
+            $expected = $node->architecture ?? $command['expected_architecture'];
+            if ($expected !== null && $expected !== $architecture) {
+                return ['error_code' => 'node.architecture_mismatch'];
+            }
+
+            return ['probed' => true, 'architecture' => $architecture, 'host_type' => $key->type,
+                'public_key' => $key->value, 'host_key_fingerprint' => $key->fingerprint];
+        }
         if ($name === 'agent.install') {
             $architecture = $this->agents->architectureOver($node, $connection);
             if ($node->platform === 'linux' && ! in_array($architecture, ['amd64', 'x86_64'], true)) {
@@ -82,7 +99,7 @@ final readonly class BootstrapSshOperationTransport implements OperationEffectTr
 
     public function effectful(Operation $operation, array $run): bool
     {
-        return in_array($run['name'], self::Commands, true) && ! in_array($run['name'], ['agent.status', 'node.inspect-macos-enrollment'], true);
+        return in_array($run['name'], self::Commands, true) && ! in_array($run['name'], ['node.probe-bootstrap', 'agent.status', 'node.inspect-macos-enrollment'], true);
     }
 
     public function receipt(Operation $operation, array $run, #[\SensitiveParameter] array $input): array
@@ -155,14 +172,17 @@ final readonly class BootstrapSshOperationTransport implements OperationEffectTr
     {
         $schemas = ValidatedData::object(json_decode((string) file_get_contents(AgentSchemas::Path), true, flags: JSON_THROW_ON_ERROR));
         $commands = ValidatedData::object($schemas['commands'] ?? null);
-        $entry = ValidatedData::object($commands[$name] ?? null);
-        $command = $name === 'agent.install'
+        $entry = $name === 'node.probe-bootstrap' ? [] : ValidatedData::object($commands[$name] ?? null);
+        $command = $name === 'node.probe-bootstrap'
+            ? ['type' => 'object', 'additionalProperties' => false, 'required' => ['expected_architecture'],
+                'properties' => ['expected_architecture' => ['type' => ['string', 'null']]]]
+            : ($name === 'agent.install'
             ? ['anyOf' => [['type' => 'object', 'additionalProperties' => false], ['type' => 'array', 'maxItems' => 0]]]
-            : ValidatedData::object($entry['input'] ?? null);
+            : ValidatedData::object($entry['input'] ?? null));
         $definitions = $command['$defs'] ?? [];
         unset($command['$defs']);
 
-        return [
+        $schema = [
             'type' => 'object', 'additionalProperties' => false, '$defs' => $definitions,
             'required' => ['agent_pin', 'bootstrap_host', 'bootstrap_port', 'bootstrap_fingerprint', 'bootstrap_user', 'bootstrap_identity', 'command_input'],
             'properties' => [
@@ -175,6 +195,12 @@ final readonly class BootstrapSshOperationTransport implements OperationEffectTr
                 'command_input' => $command,
             ],
         ];
+        if ($name === 'node.probe-bootstrap') {
+            $schema['required'] = array_values(array_diff($schema['required'], ['agent_pin']));
+            unset($schema['properties']['agent_pin']);
+        }
+
+        return $schema;
     }
 
     private function forbidden(): ResourceOperationException
