@@ -2,6 +2,7 @@ import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { join } from "jsr:@std/path@1.1.4";
 import { DatabaseSync } from "node:sqlite";
 import { compact } from "../bin/compact-services.ts";
+import { pruneOnline } from "../bin/retention-online.ts";
 
 Deno.test("native state compaction preserves latest, exact live versions and receipt-referenced runs", async () => {
   const root=await Deno.makeTempDir({prefix:"orbit-retention-"});
@@ -56,9 +57,12 @@ export const behavior={type:"@nckrtl/orbit-group-run",version:"2026.10.28.1",glo
     await command("behavior","run","orbit-group-tg-7","seed");
     await Deno.mkdir(join(root,"bin"),{recursive:true});
     await Deno.copyFile("bin/compact-services.ts",join(root,"bin/compact-services.ts"));
+    await Deno.copyFile("bin/retention-online.ts",join(root,"bin/retention-online.ts"));
     await Deno.writeTextFile(join(root,"extensions/behaviors/runtime_retention_executor.ts"),
       (await Deno.readTextFile("extensions/behaviors/runtime_retention_executor.ts")).replace("Date.now()","Date.now()+2*3600000"));
     await Deno.copyFile("extensions/behaviors/runtime_retention.ts",join(root,"extensions/behaviors/runtime_retention.ts"));
+    const yielded=await pruneOnline(root,{limit:100,budgetMs:0,deleteVersion:()=>{throw new Error("must not prune a partial graph");}},Date.now()+2*3600000);
+    assertEquals(yielded.partial,true);assertEquals(yielded.removedVersions,0);
     await command("behavior","create","@nckrtl/runtime-retention-executor","runtime-retention-executor");
     await command("behavior","create","@nckrtl/runtime-retention","runtime-retention");
     const writer = join(root,".swamp/outputs/active-writer.yaml");
@@ -67,7 +71,11 @@ export const behavior={type:"@nckrtl/orbit-group-run",version:"2026.10.28.1",glo
     await command("behavior","run","runtime-retention","prune");
     assert(await exists(join(tick,"5/raw")),"native prune must exclude an active model writer");
     await Deno.remove(writer);
+    // A planned model batch uses the native API and publishes actual removals.
     await command("behavior","run","runtime-retention","prune");
+    const progress=await command("data","query",'modelName == "runtime-retention-executor" && name == "progress"',"--select","attributes");
+    assertEquals(progress.results[0].phase,"done");
+    assert(progress.results[0].removedVersions>0);
     assert(await exists(dbPath),"online native pruning must retain the shared catalog");
     assert(await exists(join(tick,"2/raw")),"live exact version must survive native pruning");
     assert(!await exists(join(tick,"5/raw")),"superseded unreferenced version must be pruned natively");

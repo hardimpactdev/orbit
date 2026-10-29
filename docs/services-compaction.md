@@ -74,8 +74,7 @@ with remote URL environment variables cleared. Each pass removes at most 5,000 p
 data deletion and preserves the shared catalog. It excludes active model writers,
 keeps at least one hour of fresh versions, and rechecks each producer's latest
 version before deleting. New writes defer that name until the next pass. Use the offline initial pass to clear an existing backlog before schedules resume;
-the online pass has a fixed budget and does not promise to drain a backlog. Terminal histories and
-unused auto-definitions age out after seven days. This thread changes no live
+the online pass has a fixed budget and does not promise to drain a backlog. Terminal histories age out after seven days; the offline compactor also retires unused auto-definitions. This thread changes no live
 schedule or service; the workflow takes effect when Nick deploys it.
 
 The repository declares seven-day workflow/output retention. Its own scheduled
@@ -95,3 +94,13 @@ provenance once. Planning runs outside serve with a fixed deadline. A child
 failure preserves the remaining history for the next run; no receipt clearing
 or broad GC is part of recovery. A deployment restart stops the old in-process
 pass; updating code alone cannot move that already-running JavaScript frame.
+
+## Incremental online planning
+
+The 120-second child deadline is unchanged. Each pass uses at most 80 seconds for bounded scan, graph and prune work, leaving shutdown headroom. Progress is checkpointed in a private derived SQLite index at `.swamp/retention-planner.db`. It holds catalog and directory cursors, pending files, parsed records, graph edges and an expansion queue. Catalog and directory batches have at most 100 entries. A file or graph node completes individually; the next run continues its remaining queue. Large directories have a lexical cursor and a 250,000-entry safety bound. No phase reparses the complete history into one array.
+
+A budget yield publishes `partial: true` and succeeds with its actual removal counts. Nothing is deleted until receipt reachability is complete. Before pruning resumes, changed source directories and newly published data are refreshed, and new references are expanded. Source files remain authoritative; their inode, size, mtime and ctime invalidate cached parses. Malformed files, symlinks and redirected datastores fail closed. Latest state, current durable receipts, referenced completed children, their exact versions, fresh data and active writers remain protected. The online pass conservatively retains finished receipt roots too. Definition retirement remains in the existing offline compactor; the online fix does not remove model definitions.
+
+Deletion uses native version APIs, catalog batches of at most 100 candidates, an 80-second work budget and a 5,000-path pass cap. Finished, unreferenced history older than seven days is pruned with its owned logs and evaluated snapshots; deferred cleanup records survive a restart. The `progress` resource reports phase, work units and actual removed versions/paths. Keep the checkpoint index across budget yields. Removing it merely restarts planning; it never authorizes deletion.
+
+Upstream guidance: [Swamp repository retention](https://github.com/swamp-club/swamp/blob/main/design/surfaces/repo.md#retention) uses bounded batches and resumes at batch boundaries. [swamp-club#3178](https://github.com/swamp-club/swamp/pull/3178) fixes native cleanup cost and bounds automatic passes; it is already in the installed runtime. The newest checked release, `963e0d28`, changes remote datastore recovery and does not fix this extension's full-history YAML planner. Native `automatic: true` remains unsuitable here: it cannot follow Orbit's durable receipt references to finished runs and exact versions. No runtime upgrade or broader retention policy is needed for this correction.

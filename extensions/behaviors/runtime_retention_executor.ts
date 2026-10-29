@@ -1,8 +1,13 @@
 import { z } from "npm:zod@4";
-import { compact } from "../../bin/compact-services.ts";
+import { pruneOnline } from "../../bin/retention-online.ts";
 
 type Context = {
   repoDir: string;
+  writeResource: (
+    spec: string,
+    name: string,
+    value: Record<string, unknown>,
+  ) => Promise<{ name: string }>;
   modelType: { constructor: unknown };
   dataRepository: {
     findByName: (
@@ -17,17 +22,27 @@ type Context = {
       version: number,
     ) => Promise<void>;
   };
-  definitionRepository: {
-    findByNameGlobal: (
-      name: string,
-    ) => Promise<{ definition: { id: string }; type: unknown } | null>;
-    delete: (type: unknown, id: string, name: string) => Promise<void>;
-  };
 };
 export const behavior = {
   type: "@nckrtl/runtime-retention-executor",
   version: "2026.10.28.2",
   globalArguments: z.object({}),
+  resources: {
+    progress: {
+      description:
+        "Last bounded scan/prune result; source files remain authoritative",
+      schema: z.object({
+        partial: z.boolean(),
+        phase: z.string(),
+        scanned: z.number(),
+        removedVersions: z.number(),
+        removedPaths: z.number(),
+        more: z.boolean(),
+      }),
+      lifetime: "infinite",
+      garbageCollection: 1,
+    },
+  },
   methods: {
     prune: {
       description:
@@ -35,7 +50,7 @@ export const behavior = {
       outputLifetime: "7d",
       arguments: z.object({}),
       execute: async (_args: Record<string, never>, ctx: Context) => {
-        await compact(ctx.repoDir, true, Date.now(), {
+        const result = await pruneOnline(ctx.repoDir, {
           limit: 5000,
           deleteVersion: async (r) => {
             const type =
@@ -47,29 +62,30 @@ export const behavior = {
               r.data_name,
             );
             // A changed producer is held until a fresh graph snapshot next pass.
-            if (latest?.version !== r.snapshot_latest) return;
+            if (latest?.version !== r.snapshot_latest) return false;
             await ctx.dataRepository.delete(
               type,
               r.model_id,
               r.data_name,
               r.version,
             );
+            return true;
           },
-          retire: async (value) => {
-            const found = await ctx.definitionRepository.findByNameGlobal(
-              String(value.name),
-            );
-            if (!found || found.definition.id !== value.id) {
-              throw new Error("retention_definition_changed");
-            }
-            await ctx.definitionRepository.delete(
-              found.type,
-              found.definition.id,
-              String(value.name),
-            );
-          },
-        });
-        return { dataHandles: [] };
+        }, Date.now());
+        const progress = {
+          partial: result.partial,
+          phase: "phase" in result ? String(result.phase) : "prune",
+          scanned: result.scanned,
+          removedVersions: result.removedVersions,
+          removedPaths: result.removedPaths,
+          more: result.partial || ("more" in result && result.more),
+        };
+        const handle = await ctx.writeResource(
+          "progress",
+          "progress",
+          progress,
+        );
+        return { dataHandles: [handle], ...progress };
       },
     },
   },
