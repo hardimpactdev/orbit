@@ -727,3 +727,8 @@ The CI runner role uses the existing role lifecycle, firewall, Doctor, exporter,
 Container creation and org registration remain together in the operator script. Splitting creation into the role while leaving registration outside it would create unregistered containers and a second partial lifecycle. This host role does not implement Gateway-owned runner records or GitHub App registration: the deployed runners serve the organization, and the Gateway lacks the organization token. Giving the App repository Administration write would not implement that boundary and would expand its permissions. A future managed runner lifecycle needs an explicit credential and ownership decision.
 
 Gateway-owned runner records and their credential flow remain in progress in [ADR 0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role). This host role needs no GitHub permission change.
+
+
+### Pinned bootstrap transport
+
+The Node enrollment workflow uses `bootstrap-ssh` before its WireGuard address is available. `node.bootstrap_probe` proves the admitted host fingerprint and architecture. `node.bootstrap_install` installs the admitted agent pin only after that probe succeeds. Host, port, login and host fingerprint come from the Operation input. The worker cannot select a connection or credential. The Gateway resolves the existing SSH identity through a protected reference and refuses a different observed fingerprint before running a command. Receipt reads reuse that identity without creating or rotating credentials. These child primitives do not change the retained synchronous enrollment callers.
