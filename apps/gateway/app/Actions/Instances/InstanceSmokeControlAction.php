@@ -15,6 +15,8 @@ use App\Data\Instances\InstanceSmokeSelectionData;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Instances\Deployment\AutomaticDeployState;
+use App\Domain\Instances\Deployment\InstanceDeploymentAvailability;
+use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Operations\OperationKinds;
@@ -138,7 +140,8 @@ final readonly class InstanceSmokeControlAction
     {
         return $this->lock->run([$instance->id], function () use ($instance, $caller, $data, $requestId): Operation {
             $this->check($data->action === 'redeploy');
-            $input = [...$data->toArray(), 'smoke_hold_key' => $data->holdKey, 'commit' => $data->expected->commit, 'caller_node_id' => $caller->id];
+            $input = [...$data->toArray(), 'instance_id' => $instance->id, 'deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance), 'smoke_hold_key' => $data->holdKey, 'commit' => $data->expected->commit, 'caller_node_id' => $caller->id];
+            InstanceDeploymentAvailability::assertAvailable(ValidatedData::object($input['deployment']));
             $operation = new Operation(['input' => $input]);
             $this->guardRedeploy($instance, $operation);
 
@@ -153,7 +156,7 @@ final readonly class InstanceSmokeControlAction
         $caller = Node::query()->findOrFail($operation->callerNodeId());
         $hold = $this->state($instance)->hold ?? null;
         $this->check($hold !== null && $hold->key === $data->holdKey && $hold->caller === $caller->id);
-        $activated = DeployInstanceAction::storedRelease((is_array($operation->state['steps'] ?? null) ? $operation->state['steps'] : [])['activation'] ?? null);
+        $activated = InstanceDeploymentIntent::provenActivation($operation);
         if ($activated === null) {
             $this->selected($instance, $data->expected);
         } else {

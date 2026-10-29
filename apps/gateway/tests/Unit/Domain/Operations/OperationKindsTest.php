@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Domain\Instances\Deployment\InstanceDeployOperation;
+use App\Domain\Instances\Deployment\InstanceDeploymentExecution;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Tasks\TaskPublishOperation;
 use Illuminate\Container\Container;
@@ -14,9 +14,11 @@ describe(OperationKinds::class, function (): void {
     });
     it('discovers operation declarations from separate domains', function (): void {
         expect(OperationKinds::definitions())
-            ->toHaveKey(OperationKinds::InstanceDeploy, InstanceDeployOperation::class)
+            ->toHaveKey(OperationKinds::InstanceDeploy)
+            ->and(OperationKinds::definitions()[OperationKinds::InstanceDeploy]['execution'])->toBe(InstanceDeploymentExecution::class)
+            ->and(OperationKinds::definitions())
             ->toHaveKey(OperationKinds::TasksPublish, TaskPublishOperation::class);
-        expect(OperationKinds::executor(OperationKinds::InstanceDeploy))->toBe('php');
+        expect(OperationKinds::executor(OperationKinds::InstanceDeploy))->toBe('swamp');
     });
 
     it('refuses a Swamp declaration on the PHP execution path', function (): void {

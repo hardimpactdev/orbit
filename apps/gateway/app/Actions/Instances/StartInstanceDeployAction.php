@@ -7,6 +7,8 @@ namespace App\Actions\Instances;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
+use App\Domain\Instances\Deployment\InstanceDeploymentAvailability;
+use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitCommitSha;
@@ -18,13 +20,13 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Starts the `instance.deploy` operation (docs/reference/deployments.md#the-deploy-operation). It refuses an Instance
- * that cannot be deployed before it records anything; the job then runs the deployment on the Gateway queue. A
+ * that cannot be deployed before it records anything; Swamp then executes the recorded intent. A
  * `$commit` pins the deployment to that commit of the branch; without one it deploys the branch's newest commit.
  */
 final readonly class StartInstanceDeployAction
 {
     public function __construct(
-        private DeployInstanceAction $deploy,
+        private InstanceDeploymentIntent $intent,
         private StartOperationAction $operations,
         private AutomaticDeployPolicyWriter $writer,
     ) {}
@@ -34,10 +36,10 @@ final readonly class StartInstanceDeployAction
         if ($commit !== null) {
             GitCommitSha::validate($commit);
         }
-        $this->operations->assertAvailable();
-        $this->deploy->plan($instance);
+        $deployment = $this->intent->snapshot($instance);
+        InstanceDeploymentAvailability::assertAvailable($deployment);
 
-        $input = $commit === null ? [] : ['commit' => $commit];
+        $input = ['instance_id' => $instance->id, 'deployment' => $deployment, ...($commit === null ? [] : ['commit' => $commit])];
         if ($callerNodeId !== null) {
             $input['caller_node_id'] = $callerNodeId;
         }

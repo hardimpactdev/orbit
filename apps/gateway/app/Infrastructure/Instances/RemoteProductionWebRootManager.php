@@ -23,14 +23,7 @@ final readonly class RemoteProductionWebRootManager implements ProductionWebRoot
 
     public function prepare(Instance $instance, ?Route $activating = null): void
     {
-        $instance->loadMissing(['project', 'node']);
-        $applications = RouteWebRoot::servedApplications($instance, $activating);
-
-        if ($applications === []) {
-            return;
-        }
-
-        $this->run($instance, 'instance.prepare-served-web-roots', $applications, 'app-prod-web-roots');
+        throw new ResourceOperationException('operation.child_required', 'Web-root preparation requires its parent-bound instance.prepare_served_web_roots child.', 409);
     }
 
     public function assertServable(Instance $instance, string $webRoot): void

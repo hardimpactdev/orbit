@@ -49,7 +49,8 @@ final readonly class OperationChildren
         }
         $intent = $matches[0];
         $this->assertAncestors($parent);
-        if ($parent->cancel_requested_at !== null && ! $this->compensationAllowed($parent, $intent['kind'])) {
+        if ($parent->cancel_requested_at !== null && ! $this->contract->cancellationAllowsRun($parent)
+            && ! $this->compensationAllowed($parent, $intent['kind'])) {
             throw new ResourceOperationException('operation.cancelled', 'The parent was cancelled before child admission.', 409);
         }
         $this->authorize($parent, $intent, $context['intent']);

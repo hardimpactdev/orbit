@@ -9,7 +9,6 @@ use App\Actions\Instances\DestroyInstanceAction;
 use App\Actions\Instances\ListInstancesAction;
 use App\Actions\Instances\RegisterInstanceAction;
 use App\Actions\Instances\RenameInstanceAction;
-use App\Actions\Instances\RunInstanceSetupAction;
 use App\Actions\Instances\ShowInstanceAction;
 use App\Actions\Instances\UpdateInstanceAction;
 use App\Data\Instances\InstanceData;
@@ -111,15 +110,6 @@ final class InstancesController extends Controller
     {
         return response()->json([
             'data' => InstanceData::fromModel($action->execute($instance, $request->payload()))->toArray(),
-            'meta' => $this->meta($request),
-        ]);
-    }
-
-    #[RequiresNodeAccess(ServingNode::InstanceOwning)]
-    public function setup(Request $request, Instance $instance, RunInstanceSetupAction $action): JsonResponse
-    {
-        return response()->json([
-            'data' => InstanceData::fromModel($action->execute($instance))->toArray(),
             'meta' => $this->meta($request),
         ]);
     }

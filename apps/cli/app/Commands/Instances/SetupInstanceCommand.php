@@ -4,20 +4,22 @@ declare(strict_types=1);
 
 namespace App\Commands\Instances;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Instances\SetupInstanceRequest;
-use Orbit\Sdk\Responses\Instances\InstanceResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class SetupInstanceCommand extends GatewayCommand
 {
-    use InstanceOutput;
+    use FollowsOperations;
 
     #[\Override]
     protected $signature = 'instance:setup
         {instance : Numeric Instance ID}
-        {--json : Return machine-readable JSON}';
+        {--idempotency-key= : Reuse a key to retry this operation start}
+        {--json : Return the final operation as machine-readable JSON}';
 
     #[\Override]
     protected $description = 'Run the Project setup steps for one development Instance.';
@@ -30,31 +32,16 @@ final class SetupInstanceCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $connector = $this->gatewayConnector($repository, $connectors);
-
-        if ($connector === null) {
+        $profile = $this->activeGatewayProfile($repository);
+        if ($profile === null) {
             return self::FAILURE;
         }
+        $connector = $connectors->make($profile);
+        $key = $this->option('idempotency-key');
+        $operation = $this->send($connector, new SetupInstanceRequest($instanceId, is_string($key) ? $key : null), OperationResponse::class);
 
-        $response = $this->sendWithProgress(
-            $connector,
-            new SetupInstanceRequest($instanceId),
-            InstanceResponse::class,
-            ['Run setup', 'Running setup', 'Ran setup'],
-        );
-
-        if (! $response instanceof InstanceResponse) {
-            return self::FAILURE;
-        }
-
-        if ($this->option('json') === true) {
-            $this->writeJson($response->toArray());
-
-            return self::SUCCESS;
-        }
-
-        $this->writeInstanceDetails($response);
-
-        return self::SUCCESS;
+        return $operation instanceof OperationResponse
+            ? $this->followOperation($connector, $profile, $operation, "Set up Instance [{$instanceId}]", 'Setup')
+            : self::FAILURE;
     }
 }

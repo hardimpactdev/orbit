@@ -343,8 +343,10 @@ Repeat the same command to resume an interrupted removal. A failed development t
 
 Run the Project setup steps for one development Instance. The command runs every step from the start of the list. A failed step leaves the Instance in place.
 
+The Gateway returns an `instance.run_steps` Operation with status `202`. The CLI follows it to completion. `--json` returns the final Operation; `--idempotency-key` retries the same admission. Setup and teardown configuration remains Gateway data.
+
 ```bash
-orbit instance:setup <instance> [--json]
+orbit instance:setup <instance> [--idempotency-key=<key>] [--json]
 ```
 
 | Argument | Required | Meaning |
