@@ -7,6 +7,7 @@ namespace App\Actions\Fleet;
 use App\Domain\Fleet\FleetServingRelease;
 use App\Domain\Fleet\FleetVisitPrerequisites;
 use App\Domain\Fleet\FleetWindow;
+use App\Domain\Fleet\NodeRecipeVerification;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Shared\LifecycleStatus;
@@ -77,7 +78,8 @@ final readonly class RecipeFleetPlanAction
                 continue;
             }
             $verified = ValidatedData::object($node->settings['machine_recipe'] ?? []);
-            if (($verified['version'] ?? null) === $recipe->identity || ($verified['partial_version'] ?? null) === $recipe->identity) {
+            if (NodeRecipeVerification::verified($node)
+                && (($verified['version'] ?? null) === $recipe->identity || ($verified['partial_version'] ?? null) === $recipe->identity)) {
                 continue;
             }
 

@@ -22,8 +22,14 @@ final readonly class RecipeOperationCompletion implements OperationCompletion
     {
         $input = $operation->input;
         $steps = ValidatedData::object($operation->state['steps'] ?? []);
-        $node = Node::query()->findOrFail($operation->node_id);
+        $node = Node::query()->lockForUpdate()->findOrFail($operation->node_id);
+        $settings = $node->settings ?? [];
+        $attempt = $settings['machine_recipe_attempt'] ?? null;
+        $ownsAttempt = is_array($attempt) && ($attempt['operation_id'] ?? null) === $operation->id;
         if ($outcome->status === OperationStatus::Succeeded) {
+            if (! $ownsAttempt || ($attempt['identity'] ?? null) !== $input['identity'] || ($attempt['snapshot'] ?? null) !== $input['snapshot']) {
+                throw new ResourceOperationException('operation.completion_unproven', 'Recipe verification requires its recorded mutation attempt.', 409);
+            }
             $delivery = $this->receipt($operation, 'recipe.verify-delivery');
             if (count($delivery) !== 3
                 || ($this->receipt($operation, 'fleet.verify', 'gateway')['passed'] ?? false) !== true
@@ -42,13 +48,17 @@ final readonly class RecipeOperationCompletion implements OperationCompletion
                 && ($this->receipt($operation, 'php.install-build')['outcome'] ?? null) === 'applied') {
                 $this->children->succeeded($operation);
             }
-            $settings = $node->settings ?? [];
             $held = ($input['incus_hold'] ?? []) !== [];
             $newer = $this->receipt($operation, 'recipe.apply')['newer_than_recipe'] ?? [];
             $settings['machine_recipe'] = [($held ? 'partial_version' : 'version') => $input['identity'], 'snapshot' => $input['snapshot'], 'converged_at' => now()->toIso8601String(), ...($newer === [] ? [] : ['newer_than_recipe' => $newer])];
             if (! $held) {
                 unset($settings['machine_recipe_incus_hold']);
             }
+        }
+        if ($ownsAttempt) {
+            $settings['machine_recipe_attempt'] = [...$attempt,
+                'status' => $outcome->status === OperationStatus::Succeeded ? 'succeeded' : 'unverified',
+                'outcome' => $outcome->status->value, 'error_code' => $outcome->errorCode, 'finished_at' => now()->toIso8601String()];
             $node->update(['settings' => $settings]);
         }
         $build = isset($input['build_id']) ? TaskVmImageBuild::query()->find(ValidatedData::integer($input['build_id'])) : null;

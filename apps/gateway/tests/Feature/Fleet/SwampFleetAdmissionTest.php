@@ -5,10 +5,13 @@ declare(strict_types=1);
 use App\Actions\Fleet\AdmitNodeRecipeAction;
 use App\Actions\Fleet\FleetRolloutPlanAction;
 use App\Actions\Fleet\PlanNodeRecipeAction;
+use App\Actions\Fleet\RecipeFleetPlanAction;
 use App\Domain\Fleet\DesiredFleetState;
 use App\Domain\Fleet\FleetRolloutPlanner;
 use App\Domain\Fleet\FleetRolloutStatus;
 use App\Domain\Fleet\FleetWindow;
+use App\Domain\Fleet\NodeRecipeVerification;
+use App\Domain\Fleet\RecipeBeginCommand;
 use App\Domain\Fleet\RecipeOperationCompletion;
 use App\Domain\Fleet\RolloutOperationCompletion;
 use App\Domain\Nodes\RoleName;
@@ -19,13 +22,16 @@ use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Models\FleetRolloutNode;
 use App\Models\Operation;
+use App\Models\TaskVmImageBuild;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\Fleet\FleetFixtures;
 use Tests\Support\Fleet\InstalledFleetPrimitives;
 use Tests\Support\Fleet\RecordingReleaseAlertNotifier;
 use Tests\Support\PhpBuildAnswers;
+use Tests\Support\TaskVmSettingsBuilder;
 
 function fleetRecipeReads(bool $incusChange = false): FakeAgentCommandRunner
 {
@@ -61,7 +67,7 @@ it('uses Amsterdam windows for shared roles and allows app-dev all day across DS
     [[RoleName::AppDev, RoleName::AppProd], '2026-10-28T12:00:00Z', false],
 ]);
 
-it('records recipe intent with only reads and leaves the success marker until application begins', function (): void {
+it('records recipe intent with only reads and preserves the last successful recipe at admission', function (): void {
     InstalledFleetPrimitives::requireSupportedKit();
     InstalledFleetPrimitives::simulate();
     Queue::fake();
@@ -126,18 +132,26 @@ it('projects recipe identity only after application Doctor and exact delivery re
     $delivery = ['identity' => $recipe->identity, 'agent_sha256' => $recipe->agentDigest('x86_64'), 'cli_version' => '0.1.0'];
     $applied = ['healthy' => true];
     $verify = ['passed' => true];
-    $operation = new Operation(['node_id' => $node->id, 'kind' => 'fleet.recipe', 'input' => [...$delivery, 'snapshot' => $recipe->snapshot, 'has_php' => false, 'incus_hold' => []],
+    $node->update(['settings' => ['machine_recipe' => ['version' => 'previous'], 'other' => true]]);
+    $operation = Operation::query()->create(['target_type' => 'node', 'target_id' => $node->id, 'status' => 'running', 'node_id' => $node->id, 'kind' => 'fleet.recipe', 'input' => [...$delivery, 'snapshot' => $recipe->snapshot, 'has_php' => false, 'incus_hold' => []],
         'state' => ['steps' => ['recipe-apply' => $applied, 'verify' => $verify, 'recipe-delivery' => $delivery], 'executor_runs' => [
             'apply' => ['transport' => 'agent', 'name' => 'recipe.apply', 'result' => $applied],
             'verify' => ['transport' => 'gateway', 'name' => 'fleet.verify', 'result' => $verify],
             'delivery' => ['transport' => 'agent', 'name' => 'recipe.verify-delivery', 'result' => $forged ? [...$delivery, 'identity' => 'another'] : $delivery],
         ]]]);
+    expect(fn () => app(RecipeOperationCompletion::class)->complete($operation, OperationOutcome::succeeded($delivery)))
+        ->toThrow(ResourceOperationException::class, 'recorded mutation attempt');
+    app(RecipeBeginCommand::class)->run($operation, []);
     if ($forged) {
         expect(fn () => app(RecipeOperationCompletion::class)->complete($operation, OperationOutcome::succeeded($delivery)))->toThrow(ResourceOperationException::class);
-        expect($node->refresh()->settings['machine_recipe'] ?? null)->toBeNull();
+        expect($node->refresh()->settings['machine_recipe']['version'])->toBe('previous')
+            ->and(NodeRecipeVerification::verified($node))->toBeFalse();
     } else {
         app(RecipeOperationCompletion::class)->complete($operation, OperationOutcome::succeeded($delivery));
-        expect($node->refresh()->settings['machine_recipe']['version'])->toBe($recipe->identity);
+        expect($node->refresh()->settings['machine_recipe']['version'])->toBe($recipe->identity)
+            ->and($node->settings['machine_recipe_attempt']['status'])->toBe('succeeded')
+            ->and(NodeRecipeVerification::verified($node))->toBeTrue()
+            ->and($node->settings['other'])->toBeTrue();
     }
 })->with([false, true]);
 
@@ -176,3 +190,59 @@ it('projects deferred waiting and unreachable visit results without halting the 
     ['fleet.release_pending', 'waiting'],
     ['fleet.self_update_incomplete', 'waiting'],
 ]);
+
+it('preserves last success and makes a begun or failed recipe attempt unverified', function (string $end): void {
+    $node = FleetFixtures::node('recipe-attempt', [RoleName::AppDev]);
+    $last = ['version' => 'last-good', 'snapshot' => 'old', 'converged_at' => '2026-10-01T00:00:00Z'];
+    $node->update(['settings' => ['machine_recipe' => $last, 'other' => true]]);
+    $operation = Operation::query()->create(['kind' => 'fleet.recipe', 'target_type' => 'node', 'target_id' => $node->id,
+        'node_id' => $node->id, 'status' => 'running', 'input' => ['identity' => 'new-recipe', 'snapshot' => 'new']]);
+    expect(NodeRecipeVerification::verified($node))->toBeTrue();
+    app(RecipeBeginCommand::class)->run($operation, []);
+    $attempt = $node->refresh()->settings['machine_recipe_attempt'];
+    $this->travel(1)->minutes();
+    app(RecipeBeginCommand::class)->run($operation, []);
+    expect($node->refresh()->settings['machine_recipe_attempt'])->toBe($attempt);
+    if ($end !== 'crash') {
+        $outcome = $end === 'cancelled' ? OperationOutcome::cancelled() : OperationOutcome::failed($end);
+        app(RecipeOperationCompletion::class)->complete($operation, $outcome);
+    }
+    expect($node->refresh()->settings['machine_recipe'])->toBe($last)
+        ->and($node->settings['other'])->toBeTrue()
+        ->and($node->settings['machine_recipe_attempt']['operation_id'])->toBe($operation->id)
+        ->and($node->settings['machine_recipe_attempt']['status'])->toBe('unverified')
+        ->and(NodeRecipeVerification::verified($node))->toBeFalse();
+    $this->artisan('node:converge-recipe', ['--status' => true])
+        ->expectsOutputToContain('"recipe_verified":false')->assertSuccessful();
+})->with(['crash', 'node.recipe_health_failed', 'fleet.visit_interrupted', 'cancelled']);
+
+it('does not invalidate a last success when an Operation stops before mutation begins', function (): void {
+    $node = FleetFixtures::node('recipe-not-begun', [RoleName::AppDev]);
+    $node->update(['settings' => ['machine_recipe' => ['version' => 'last-good']]]);
+    $operation = Operation::query()->create(['kind' => 'fleet.recipe', 'target_type' => 'node', 'target_id' => $node->id,
+        'node_id' => $node->id, 'status' => 'running', 'input' => []]);
+    app(RecipeOperationCompletion::class)->complete($operation, OperationOutcome::failed('fleet.window_closed'));
+    expect($node->refresh()->settings['machine_recipe'])->toBe(['version' => 'last-good'])
+        ->and($node->settings['machine_recipe_attempt'] ?? null)->toBeNull()
+        ->and(NodeRecipeVerification::verified($node))->toBeTrue();
+});
+
+it('does not skip a matching historical recipe after an interrupted attempt', function (): void {
+    InstalledFleetPrimitives::simulate();
+    FleetFixtures::bind();
+    FleetFixtures::adopt(FleetFixtures::Commit);
+    $recipePath = config()->string('orbit.gateway_checkout').'/resources/machine-software';
+    mkdir($recipePath, 0755, true);
+    copy(resource_path('machine-software/recipe.json'), $recipePath.'/recipe.json');
+    $node = FleetFixtures::node('retry-recipe', [RoleName::AppDev]);
+    TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($node->id)]]);
+    $recipe = new RecipeLoader()->load();
+    DB::table('task_vm_image_recipe')->updateOrInsert(['id' => 1], ['identity' => $recipe->identity, 'generation' => 1]);
+    TaskVmImageBuild::query()->create(['host_node_id' => $node->id, 'recipe_identity' => $recipe->identity, 'recipe_generation' => 1,
+        'state' => 'succeeded', 'promoted_at' => now(), 'images' => ['base' => 'ready'], 'fleet_convergence' => ['generation' => 1, 'status' => 'ready', 'nodes' => []]]);
+    $node->update(['settings' => ['machine_recipe' => ['version' => $recipe->identity],
+        'machine_recipe_attempt' => ['status' => 'unverified', 'identity' => $recipe->identity, 'operation_id' => 1]]]);
+    expect(app(RecipeFleetPlanAction::class)->execute())->toMatchArray(['status' => 'ready', 'node_id' => $node->id]);
+    $node->update(['settings' => ['machine_recipe' => ['version' => $recipe->identity], 'machine_recipe_attempt' => ['status' => 'succeeded']]]);
+    expect(app(RecipeFleetPlanAction::class)->execute()['status'])->toBe('complete');
+});

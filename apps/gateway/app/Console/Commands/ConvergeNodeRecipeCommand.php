@@ -7,6 +7,7 @@ namespace App\Console\Commands;
 use App\Actions\Fleet\AdmitNodeRecipeAction;
 use App\Actions\Fleet\PlanNodeRecipeAction;
 use App\Data\Operations\OperationData;
+use App\Domain\Fleet\NodeRecipeVerification;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Models\Node;
 use Illuminate\Console\Command;
@@ -30,6 +31,7 @@ final class ConvergeNodeRecipeCommand extends Command
             if ($this->option('status')) {
                 $rows = Node::query()->orderBy('name')->get()->map(fn (Node $node): array => [
                     'node_id' => $node->id, 'name' => $node->name, 'machine_recipe' => $node->settings['machine_recipe'] ?? null,
+                    'machine_recipe_attempt' => $node->settings['machine_recipe_attempt'] ?? null, 'recipe_verified' => NodeRecipeVerification::verified($node),
                 ])->all();
                 $this->output->writeln(json_encode($rows, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
 
