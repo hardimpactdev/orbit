@@ -132,7 +132,7 @@ it('bounds CLI retry descriptors and keeps their inputs bound to the admitted Op
     ]]);
     $execution = app(OperationExecutionContract::class)->execution($operation);
     $run = ['worker' => 'proof', 'key' => 'cli-install-retry', 'name' => 'cli.install', 'transport' => 'agent', 'input' => []];
-    expect($execution->input($operation, $run))->toBe(['user' => 'orbit', 'release' => ['version' => '0.1.0'], 'profile' => 'admitted']);
+    expect($execution->input($operation, $run))->toEqual(['user' => 'orbit', 'release' => ['version' => '0.1.0'], 'profile' => 'admitted']);
     $run['key'] = 'cli-install-retry-retry';
     expect(fn () => $execution->input($operation, $run))->toThrow(ResourceOperationException::class);
 });
