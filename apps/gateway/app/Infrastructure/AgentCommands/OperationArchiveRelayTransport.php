@@ -26,6 +26,7 @@ final readonly class OperationArchiveRelayTransport implements OperationEffectTr
 
     public function schema(Operation $operation, array $run): array
     {
+        $this->contract->operationCommand($run['name']);
         $native = AgentSchemas::inputSchema($run['name']);
         if (! is_array($native) || $native === []) {
             $this->refuse();
@@ -103,8 +104,8 @@ final readonly class OperationArchiveRelayTransport implements OperationEffectTr
             $this->refuse();
         }
         $read = $binding['read'];
-        $reader = $this->contract->command($read['name']);
-        $receiver = $this->contract->command($run['name']);
+        $reader = $this->contract->operationCommand($read['name']);
+        $receiver = $this->contract->operationCommand($run['name']);
         $bytes = $facts['bytes'] ?? null;
         $digest = $facts['sha256'] ?? null;
         $artifactField = array_key_exists('archive', $read['input']) ? 'archive' : 'path';

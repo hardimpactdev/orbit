@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use App\Infrastructure\AgentCommands\AgentContract;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AgentCommands\OperationAgentTransport;
 use App\Models\Node;
+use App\Models\Operation;
 use Illuminate\Support\Facades\Http;
 
 function deliveryNode(string $architecture = 'x86_64', string $platform = 'linux'): Node
@@ -41,6 +43,15 @@ describe(AgentContract::class, function (): void {
             ->and($contract->command('agent.status')->outputMaxBytes)->toBe(0)
             ->and($contract->command('task-vm.export-git-pack')->outputMaxBytes)->toBe(2 * 1024 ** 3)
             ->and($contract->command('task-vm.export-git-pack')->needsSudo('linux'))->toBeFalse();
+    });
+
+    it('keeps credential issuance outside Operations while retaining the operator command', function (): void {
+        $contract = app(AgentContract::class);
+        expect($contract->command('swamp.issue-node-worker')->mutates)->toBeTrue()
+            ->and($contract->operationNames())->not->toContain('swamp.issue-node-worker');
+        expect(fn () => app(OperationAgentTransport::class)
+            ->schema(new Operation, ['name' => 'swamp.issue-node-worker']))
+            ->toThrow(LogicException::class, 'Operator-only command.');
     });
 
     it('refuses an unknown command as a programming error', function (): void {
@@ -81,12 +92,12 @@ describe(AgentDelivery::class, function (): void {
             ['agent' => 'tampered'],
         );
 
-        expect(fn () => (new AgentDelivery($manifest, sys_get_temp_dir()))->localFile(deliveryNode()))
+        expect(fn () => new AgentDelivery($manifest, sys_get_temp_dir())->localFile(deliveryNode()))
             ->toThrow(RuntimeException::class, 'does not match its pin');
     });
 
     it('refuses a manifest without a commit, version, or valid artifact digests', function (array $manifest): void {
-        expect(fn () => (new AgentDelivery(temporaryDelivery($manifest), sys_get_temp_dir()))->pin(deliveryNode()))
+        expect(fn () => new AgentDelivery(temporaryDelivery($manifest), sys_get_temp_dir())->pin(deliveryNode()))
             ->toThrow(RuntimeException::class);
     })->with([
         'no version' => [['commit' => 'c', 'artifacts' => []]],
@@ -112,7 +123,7 @@ it('refuses a corrupt adjacent artifact instead of downloading another copy', fu
         'linux-x86_64' => ['sha256' => hash('sha256', 'pinned'), 'path' => 'agent', 'url' => 'https://example.test/agent'],
     ]], ['agent' => 'corrupt']);
     Http::fake();
-    expect(fn () => (new AgentDelivery($manifest, dirname($manifest).'/cache'))->localFile(deliveryNode()))
+    expect(fn () => new AgentDelivery($manifest, dirname($manifest).'/cache')->localFile(deliveryNode()))
         ->toThrow(RuntimeException::class, 'does not match its pin');
     Http::assertNothingSent();
 });

@@ -2065,11 +2065,10 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         op['description'] = 'Protected Node lifecycle callback. Requires the active WireGuard peer and its root-held agent secret. No target or input fields. The operator rollout and issuer allowlists must both permit this Node. Credentials are returned only to that Node, without activity or Operation persistence.'
         op['requestBody'] = {'required': False, 'content': {'application/json': {'schema': {'type': 'object', 'additionalProperties': False}}}}
         pair = {'type': 'object', 'additionalProperties': False, 'properties': {
-            'node_id': {'type': 'integer'},
             'enrollment_token': {'type': 'string', 'format': 'password'},
             'server_token': {'type': 'string', 'format': 'password'},
             'expires_at': {'type': 'string', 'format': 'date-time'},
-        }, 'required': ['node_id', 'enrollment_token', 'server_token', 'expires_at']}
+        }, 'required': ['enrollment_token', 'server_token', 'expires_at']}
         responses['200'] = {'description': 'The short-lived pair. Cache-Control: no-store.', 'content': {'application/json': {'schema': pair}}}
         responses['503'] = error_response('The operator issuer is unavailable; no credential pair is returned.')
         responses['403'] = error_response('The caller is not an active WireGuard peer, its agent secret is invalid, or its persistent worker rollout is disabled (`swamp.worker_not_enabled`).')

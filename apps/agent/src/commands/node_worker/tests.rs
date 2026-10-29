@@ -13,7 +13,7 @@ impl Sandbox {
             "etc/systemd/system",
             "usr/local/share",
             "var/lib",
-            "opt",
+            "usr/local/bin",
         ] {
             fs::create_dir_all(root.join(dir)).unwrap();
         }
@@ -36,18 +36,10 @@ impl Sandbox {
         }
     }
     fn configured(&self) {
-        configure(
-            &self.0,
-            &mut Fake::new("inactive"),
-            &self.account(),
-            71,
-            false,
-        )
-        .unwrap();
+        configure(&self.0, &mut Fake::new("inactive"), &self.account(), false).unwrap();
     }
     fn pair(&self, expires: i64) -> Pair {
         Pair {
-            node_id: 71,
             enrollment_token: "orbit-node-71.abcdefghijklmnop".into(),
             server_token: "orbit-node-71-access.abcdefghijklmnop".into(),
             expires_at: time::OffsetDateTime::from_unix_timestamp(expires)
@@ -77,12 +69,14 @@ impl Drop for Sandbox {
 struct Fake {
     state: String,
     calls: Vec<Vec<String>>,
+    restarts: u64,
 }
 impl Fake {
     fn new(state: &str) -> Self {
         Self {
             state: state.into(),
             calls: vec![],
+            restarts: 0,
         }
     }
 }
@@ -90,7 +84,9 @@ impl Host for Fake {
     fn execute(&mut self, call: &Invocation) -> Result<HostOutput, Failure> {
         self.calls.push(call.argv.clone());
         Ok(HostOutput {
-            stdout: if call.argv.get(1).is_some_and(|s| s == "show") {
+            stdout: if call.argv.iter().any(|a| a == "--property=NRestarts") {
+                self.restarts.to_string()
+            } else if call.argv.get(1).is_some_and(|s| s == "show") || call.argv[0] == "uname" {
                 self.state.clone()
             } else {
                 String::new()
@@ -106,9 +102,9 @@ impl Host for Fake {
 fn configure_keeps_private_custody_and_a_non_root_runtime() {
     let sandbox = Sandbox::new();
     let mut host = Fake::new("inactive");
-    let first = configure(&sandbox.0, &mut host, &sandbox.account(), 71, false).unwrap();
+    let first = configure(&sandbox.0, &mut host, &sandbox.account(), false).unwrap();
     assert!(first.installed && first.changed);
-    let second = configure(&sandbox.0, &mut host, &sandbox.account(), 71, false).unwrap();
+    let second = configure(&sandbox.0, &mut host, &sandbox.account(), false).unwrap();
     assert!(!second.changed);
     for path in ["home", "cache", "work", "credentials"] {
         assert_eq!(
@@ -140,7 +136,7 @@ fn configure_refuses_linked_or_foreign_custody_and_root_accounts() {
     let mut account = sandbox.account();
     account.uid = 0;
     let mut host = Fake::new("inactive");
-    assert!(configure(&sandbox.0, &mut host, &account, 71, false).is_err());
+    assert!(configure(&sandbox.0, &mut host, &account, false).is_err());
     assert!(host.calls.is_empty());
     fs::create_dir(sandbox.0.path(ROOT)).unwrap();
     std::os::unix::fs::symlink(
@@ -148,44 +144,16 @@ fn configure_refuses_linked_or_foreign_custody_and_root_accounts() {
         sandbox.0.path(&format!("{ROOT}/credentials")),
     )
     .unwrap();
-    assert!(configure(&sandbox.0, &mut host, &sandbox.account(), 71, false).is_err());
+    assert!(configure(&sandbox.0, &mut host, &sandbox.account(), false).is_err());
     assert!(host.calls.is_empty());
 }
 
 #[test]
-fn an_interrupted_download_retries_without_replacing_the_installed_binary_with_bad_bytes() {
+fn unsupported_architecture_refuses_before_download() {
     let sandbox = Sandbox::new();
-    fs::create_dir_all(sandbox.0.path("/opt/orbit/swamp-worker")).unwrap();
-    sandbox
-        .0
-        .publish(
-            &sandbox.0.path(BINARY),
-            b"previous-binary",
-            0o755,
-            sandbox.0.uid,
-            sandbox.0.gid,
-            false,
-        )
-        .unwrap();
-    sandbox
-        .0
-        .publish(
-            &sandbox.0.path("/opt/orbit/swamp-worker/download"),
-            b"partial-download",
-            0o600,
-            sandbox.0.uid,
-            sandbox.0.gid,
-            false,
-        )
-        .unwrap();
-    let mut host = Fake::new("inactive");
+    let mut host = Fake::new("aarch64");
     assert!(install_binary(&sandbox.0, &mut host).is_err());
-    assert_eq!(host.calls[0][0], "curl");
-    assert_eq!(
-        fs::read(sandbox.0.path(BINARY)).unwrap(),
-        b"previous-binary"
-    );
-    assert!(!sandbox.0.path("/opt/orbit/swamp-worker/download").exists());
+    assert_eq!(host.calls, vec![vec!["uname", "-m"]]);
 }
 #[test]
 fn renewal_drains_before_requesting_new_credentials_and_never_kills_steps() {
@@ -197,7 +165,7 @@ fn renewal_drains_before_requesting_new_credentials_and_never_kills_steps() {
         &sandbox.0,
         &mut host,
         || 1000,
-        |_| panic!("must drain first"),
+        || panic!("must drain first"),
     )
     .unwrap();
     assert_eq!(
@@ -209,7 +177,7 @@ fn renewal_drains_before_requesting_new_credentials_and_never_kills_steps() {
         &sandbox.0,
         &mut draining,
         || 1000,
-        |_| panic!("still draining"),
+        || panic!("still draining"),
     )
     .unwrap();
     assert_eq!(draining.calls.len(), 1);
@@ -222,14 +190,14 @@ fn renewal_keeps_fresh_credentials_and_machine_cache_and_recovers_after_restart(
     let cache = sandbox.0.path(&format!("{ROOT}/cache/machine-id"));
     fs::write(&cache, "stable-machine").unwrap();
     let mut host = Fake::new("active");
-    renewal::rotate(&sandbox.0, &mut host, || 1000, |_| panic!("not due")).unwrap();
-    assert_eq!(host.calls.len(), 1);
+    renewal::rotate(&sandbox.0, &mut host, || 1000, || panic!("not due")).unwrap();
+    assert_eq!(host.calls.len(), 2);
     let mut host = Fake::new("inactive");
     renewal::rotate(
         &sandbox.0,
         &mut host,
         || 1000,
-        |_| panic!("reuse protected pair"),
+        || panic!("reuse protected pair"),
     )
     .unwrap();
     assert_eq!(host.calls.last().unwrap(), &["systemctl", "start", UNIT]);
@@ -247,20 +215,19 @@ fn renewal_refuses_wrong_node_or_failed_courier_without_starting() {
     let sandbox = Sandbox::new();
     sandbox.configured();
     let mut host = Fake::new("inactive");
-    assert!(renewal::rotate(&sandbox.0, &mut host, || 1000, |_| Err(failed())).is_err());
+    assert!(renewal::rotate(&sandbox.0, &mut host, || 1000, || Err(failed())).is_err());
     assert_eq!(host.calls.len(), 1);
     let mut wrong = sandbox.pair(15000);
-    wrong.node_id = 72;
-    assert!(renewal::rotate(&sandbox.0, &mut host, || 1000, |_| Ok(wrong)).is_err());
+    wrong.server_token = "orbit-node-72-access.abcdefghijklmnop".into();
+    assert!(renewal::rotate(&sandbox.0, &mut host, || 1000, || Ok(wrong)).is_err());
     assert_eq!(host.calls.len(), 2);
     let called = Cell::new(false);
     renewal::rotate(
         &sandbox.0,
         &mut host,
         || 1000,
-        |node| {
+        || {
             called.set(true);
-            assert_eq!(node, 71);
             Ok(sandbox.pair(15000))
         },
     )
@@ -268,16 +235,71 @@ fn renewal_refuses_wrong_node_or_failed_courier_without_starting() {
     assert!(called.get());
 }
 #[test]
+fn repeated_auto_restarts_drain_and_remint_before_the_two_hour_window() {
+    let sandbox = Sandbox::new();
+    sandbox.configured();
+    sandbox.save(&sandbox.pair(15000));
+    let mut host = Fake::new("activating");
+    host.restarts = 3;
+    renewal::rotate(
+        &sandbox.0,
+        &mut host,
+        || 1000,
+        || panic!("must drain first"),
+    )
+    .unwrap();
+    assert_eq!(
+        host.calls.last().unwrap(),
+        &["systemctl", "stop", "--no-block", UNIT]
+    );
+    assert!(!sandbox
+        .0
+        .path(&format!("{ROOT}/credentials/pair.json"))
+        .exists());
+    let mut host = Fake::new("inactive");
+    let called = Cell::new(false);
+    renewal::rotate(
+        &sandbox.0,
+        &mut host,
+        || 1000,
+        || {
+            called.set(true);
+            Ok(sandbox.pair(15000))
+        },
+    )
+    .unwrap();
+    assert!(called.get());
+}
+#[test]
+fn a_failed_worker_remints_even_when_its_pair_is_fresh() {
+    let sandbox = Sandbox::new();
+    sandbox.configured();
+    sandbox.save(&sandbox.pair(15000));
+    let called = Cell::new(false);
+    let mut host = Fake::new("failed");
+    renewal::rotate(
+        &sandbox.0,
+        &mut host,
+        || 1000,
+        || {
+            called.set(true);
+            Ok(sandbox.pair(15000))
+        },
+    )
+    .unwrap();
+    assert!(called.get());
+    assert_eq!(host.calls.last().unwrap(), &["systemctl", "start", UNIT]);
+}
+#[test]
 fn pair_validation_closes_identity_lifetime_and_secret_shape() {
     let sandbox = Sandbox::new();
     let pair = sandbox.pair(15000);
-    assert!(pair.validate(71, 1000).is_ok());
-    assert!(pair.validate(72, 1000).is_err());
-    assert!(pair.validate(71, 15000).is_err());
-    assert!(pair.validate(71, 0).is_err());
+    assert!(pair.validate(1000).is_ok());
+    assert!(pair.validate(15000).is_err());
+    assert!(pair.validate(0).is_err());
     let mut pair = sandbox.pair(15000);
     pair.server_token.push('\n');
-    assert!(pair.validate(71, 1000).is_err());
+    assert!(pair.validate(1000).is_err());
 }
 
 #[test]
@@ -290,7 +312,7 @@ fn renewal_validates_against_the_time_after_a_slow_courier() {
         &sandbox.0,
         &mut host,
         || clock.get(),
-        |_| {
+        || {
             clock.set(1010);
             Ok(sandbox.pair(1010 + 14400))
         },

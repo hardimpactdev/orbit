@@ -20,7 +20,7 @@ mod tests;
 pub const VERSION: &str = "20261028.205235.0-sha.1602a617";
 const DIGEST: &str = "38b81986c7203f1e93806fc7b6d38e560a86456ea755a4369a89b17b64d4fbe3";
 const URL: &str = "https://github.com/swamp-club/swamp/releases/download/v20261028.205235.0-sha.1602a617/swamp-linux-x86_64";
-const BINARY: &str = "/opt/orbit/swamp-worker/swamp";
+const BINARY: &str = recipe::swamp::BINARY;
 const ROOT: &str = "/var/lib/orbit-node-worker";
 const USER: &str = "orbit-swamp-worker";
 const UNIT: &str = "orbit-node-worker.service";
@@ -67,59 +67,28 @@ fn pinned(files: &Files) -> bool {
             .as_deref()
             == Some(DIGEST)
 }
+fn architecture(host: &mut impl Host) -> Result<(), Error> {
+    if call(host, &["uname", "-m"])?.trim() != "x86_64" {
+        return Err(invalid());
+    }
+    Ok(())
+}
 fn install_binary(files: &Files, host: &mut impl Host) -> Result<bool, Error> {
+    architecture(host)?;
     if pinned(files) {
         return Ok(false);
     }
-    private_dir(files, "/opt/orbit", files.uid, files.gid, 0o755)?;
-    private_dir(
-        files,
-        "/opt/orbit/swamp-worker",
-        files.uid,
-        files.gid,
-        0o755,
-    )?;
-    let candidate = files.path("/opt/orbit/swamp-worker/download");
-    // This private candidate can be left by a killed download. Publishing
-    // refuses links/foreign owners before replacing its managed content.
-    files
-        .publish(&candidate, &[], 0o600, files.uid, files.gid, false)
-        .map_err(|_| invalid())?;
-    let result = (|| {
-        call(
-            host,
-            &[
-                "curl",
-                "--fail",
-                "--location",
-                "--proto",
-                "=https",
-                "--tlsv1.2",
-                "--max-time",
-                "120",
-                "--output",
-                candidate.to_str().ok_or_else(invalid)?,
-                URL,
-            ],
-        )?;
-        if crate::command::run::file_sha256(&candidate).ok().as_deref() != Some(DIGEST) {
-            return Err(invalid());
-        }
-        let bytes = fs::read(&candidate).map_err(|_| failed())?;
-        files
-            .publish(
-                &files.path(BINARY),
-                &bytes,
-                0o755,
-                files.uid,
-                files.gid,
-                false,
-            )
-            .map_err(|_| failed())?;
-        Ok(true)
-    })();
-    let _ = fs::remove_file(candidate);
-    result
+    let input = serde_json::from_value(serde_json::json!({
+        "user": USER, "snapshot": "20261028T000000Z", "architecture": "amd64",
+        "tools": {"swamp": {"source": "artifact", "version": VERSION,
+            "artifacts": {"amd64": {"url": URL, "sha256": DIGEST}}}}
+    }))
+    .map_err(|_| invalid())?;
+    recipe::swamp::install(host, files, &input).map_err(|_| failed())?;
+    if !pinned(files) {
+        return Err(invalid());
+    }
+    Ok(true)
 }
 
 fn worker_unit() -> String {
@@ -145,11 +114,9 @@ fn configure(
     files: &Files,
     host: &mut impl Host,
     account: &Account,
-    node: u64,
     binary_changed: bool,
 ) -> Result<Output, Error> {
-    if node == 0
-        || account.uid == 0
+    if account.uid == 0
         || account.gid == 0
         || account.name != USER
         || account.home != Path::new(ROOT).join("home")
@@ -189,7 +156,6 @@ fn configure(
     }
     let mut changed = binary_changed;
     for (path, value, mode) in [
-        (format!("{ROOT}/node-id"), format!("{node}\n"), 0o600),
         (format!("/etc/systemd/system/{UNIT}"), worker_unit(), 0o644),
         (
             "/etc/systemd/system/orbit-node-worker-renew.service".into(),
@@ -235,13 +201,11 @@ fn configure(
         version: VERSION.into(),
     })
 }
-pub fn configure_native(node_id: u64, context: &Context) -> Result<Output, Error> {
-    if node_id == 0 {
-        return Err(invalid());
-    }
+pub fn configure_native(context: &Context) -> Result<Output, Error> {
     let _lock = lifecycle_lock(context)?;
     let files = Files::system();
     let mut host = recipe::Native(context);
+    architecture(&mut host)?;
     // Reject a pre-existing account with an unrelated home or privilege-bearing groups.
     if call(&mut host, &["getent", "passwd", USER]).is_err() {
         call(
@@ -280,7 +244,7 @@ pub fn configure_native(node_id: u64, context: &Context) -> Result<Output, Error
         return Err(invalid());
     }
     let changed = install_binary(&files, &mut host)?;
-    configure(&files, &mut host, &account, node_id, changed)
+    configure(&files, &mut host, &account, changed)
 }
 
 fn remove(files: &Files, host: &mut impl Host) -> Result<(), Error> {
@@ -312,7 +276,6 @@ fn remove(files: &Files, host: &mut impl Host) -> Result<(), Error> {
         "credentials/pair.json",
         "credentials/enrollment",
         "credentials/server",
-        "node-id",
     ] {
         let path = format!("{ROOT}/{name}");
         if files.path(&path).exists() {

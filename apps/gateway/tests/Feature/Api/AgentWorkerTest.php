@@ -21,8 +21,8 @@ beforeEach(function (): void {
 });
 
 it('couriers only the authenticated Node pair without recording credentials', function (): void {
-    $pair = ['node_id' => $this->pilot->id, 'enrollment_token' => 'enrollment-sentinel',
-        'server_token' => 'server-sentinel', 'expires_at' => '2026-10-30T05:00:00Z'];
+    $pair = ['enrollment_token' => 'orbit-node-'.$this->pilot->id.'.enrollment-sentinel',
+        'server_token' => 'orbit-node-'.$this->pilot->id.'-access.server-sentinel', 'expires_at' => '2026-10-30T05:00:00Z'];
     $runner = Mockery::mock(AgentCommandRunner::class);
     $runner->shouldReceive('run')->once()->withArgs(fn (Node $node, string $command, array $input): bool => $node->is($this->issuer) && $command === 'swamp.issue-node-worker' && $input === ['node_id' => $this->pilot->id])->andReturn($pair);
     app()->instance(AgentCommandRunner::class, $runner);
@@ -76,7 +76,7 @@ it('does not leak issuer diagnostics or a mismatched credential pair', function 
     if ($throws) {
         $call->andThrow(new RuntimeException('private-issuer-sentinel'));
     } else {
-        $call->andReturn(['node_id' => $this->issuer->id, 'enrollment_token' => 'private-issuer-sentinel', 'server_token' => 'other', 'expires_at' => 'later']);
+        $call->andReturn(['enrollment_token' => 'private-issuer-sentinel', 'server_token' => 'other', 'expires_at' => 'later']);
     }
     app()->instance(AgentCommandRunner::class, $runner);
     $response = $this->postJson('/api/v1/agent/swamp-worker')->assertServiceUnavailable()->assertJsonPath('error.code', 'swamp.issuer_unavailable');

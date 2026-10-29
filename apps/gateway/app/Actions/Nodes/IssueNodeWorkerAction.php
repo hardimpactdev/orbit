@@ -18,7 +18,7 @@ final readonly class IssueNodeWorkerAction
 {
     public function __construct(private AgentCommandRunner $agents, private NodeWorkerRollout $rollout) {}
 
-    /** @return array{node_id: int, enrollment_token: string, server_token: string, expires_at: string} */
+    /** @return array{enrollment_token: string, server_token: string, expires_at: string} */
     public function execute(Node $node): array
     {
         if (! $this->rollout->allows($node)) {
@@ -35,13 +35,15 @@ final readonly class IssueNodeWorkerAction
             $lock->block(1);
             try {
                 $pair = $this->agents->run($issuer, 'swamp.issue-node-worker', ['node_id' => $node->id]);
-                if (($pair['node_id'] ?? null) !== $node->id || ! is_string($pair['enrollment_token'] ?? null)
+                if (! is_string($pair['enrollment_token'] ?? null)
                     || ! is_string($pair['server_token'] ?? null) || ! is_string($pair['expires_at'] ?? null)
-                    || count($pair) !== 4) {
+                    || count($pair) !== 3
+                    || ! str_starts_with($pair['enrollment_token'], 'orbit-node-'.$node->id.'.')
+                    || ! str_starts_with($pair['server_token'], 'orbit-node-'.$node->id.'-access.')) {
                     throw new \RuntimeException;
                 }
 
-                return ['node_id' => $node->id, 'enrollment_token' => $pair['enrollment_token'],
+                return ['enrollment_token' => $pair['enrollment_token'],
                     'server_token' => $pair['server_token'], 'expires_at' => $pair['expires_at']];
             } finally {
                 $lock->release();

@@ -47,7 +47,7 @@ final readonly class AgentFootprintArtifact implements NodeFootprintArtifact
             'certificate' => hash('sha256', $this->certificates->rootCertificate()),
             'user' => $node->user,
             'settings' => $node->settings,
-            'worker_node_id' => app(NodeWorkerRollout::class)->allows($node) ? $node->id : null,
+            'worker' => app(NodeWorkerRollout::class)->allows($node),
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
     }
 

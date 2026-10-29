@@ -51,7 +51,7 @@ it('freezes worker installation only for the operator-selected Node', function (
     $command->run($operation, $operation->input);
 
     $configuration = $operation->refresh()->input['_footprint']['payloads']['agent']['configuration'];
-    expect(str_contains($configuration, 'swamp_worker_node_id = '.$node->id))->toBe($enabled);
+    expect(str_contains($configuration, 'swamp_worker = true'))->toBe($enabled);
 })->with([true, false]);
 
 it('prepares a matching footprint without any Node effect', function (): void {

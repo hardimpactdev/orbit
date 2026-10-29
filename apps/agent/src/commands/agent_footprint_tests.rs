@@ -81,17 +81,11 @@ fn input(secret_hash: Option<String>) -> ConfigureInput {
 }
 
 #[test]
-fn worker_opt_in_uses_the_existing_configuration_without_changing_the_command_shape() {
-    assert_eq!(
-        worker_node("gateway_url = 'https://gateway.orbit'\n").unwrap(),
-        None
-    );
-    assert_eq!(
-        worker_node("gateway_url = 'https://gateway.orbit'\nswamp_worker_node_id = 71\n").unwrap(),
-        Some(71)
-    );
+fn worker_opt_in_uses_a_boolean_without_an_extra_node_identity() {
+    assert!(!worker_enabled("gateway_url = 'https://gateway.orbit'\n").unwrap());
+    assert!(worker_enabled("swamp_worker = true\n").unwrap());
     for value in ["0", "-1", "'71'", "[]"] {
-        assert!(worker_node(&format!("swamp_worker_node_id = {value}\n")).is_err());
+        assert!(worker_enabled(&format!("swamp_worker = {value}\n")).is_err());
     }
 }
 

@@ -8,7 +8,6 @@ const NODES: &str = "/etc/orbit/swamp-issuer/nodes.json";
 #[derive(schemars::JsonSchema, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Pair {
-    pub node_id: u64,
     pub enrollment_token: String,
     pub server_token: String,
     pub expires_at: String,
@@ -22,8 +21,15 @@ impl Pair {
         .map(|d| d.unix_timestamp())
         .map_err(|_| invalid())
     }
-    pub fn validate(&self, node: u64, now: i64) -> Result<(), Error> {
-        let name = format!("orbit-node-{node}");
+    pub fn validate(&self, now: i64) -> Result<(), Error> {
+        let name = self.enrollment_token.split_once('.').ok_or_else(invalid)?.0;
+        if name
+            .strip_prefix("orbit-node-")
+            .and_then(|v| v.parse::<u64>().ok())
+            .is_none_or(|v| v == 0)
+        {
+            return Err(invalid());
+        }
         let token = |value: &str, prefix: &str| {
             value.strip_prefix(&format!("{prefix}.")).is_some_and(|s| {
                 s.len() >= 16
@@ -33,10 +39,8 @@ impl Pair {
             })
         };
         let remaining = self.expires()? - now;
-        if node == 0
-            || self.node_id != node
-            || !(3600..=14400).contains(&remaining)
-            || !token(&self.enrollment_token, &name)
+        if !(3600..=14400).contains(&remaining)
+            || !token(&self.enrollment_token, name)
             || !token(&self.server_token, &format!("{name}-access"))
         {
             return Err(invalid());
@@ -132,7 +136,7 @@ fn mint_pair(host: &mut impl Host, node: u64) -> Result<Pair, Error> {
     // be supplied by a workflow or task, and no grant is created here.
     revoke_existing(host, &["worker", "token"], &name)?;
     revoke_existing(host, &["access", "token"], &access)?;
-    const VAULT: &str = "orbit-node-access";
+    const VAULT: &str = "orbit-worker-enrollment";
     let enrollment = native(
         host,
         &[
@@ -186,7 +190,6 @@ fn mint_pair(host: &mut impl Host, node: u64) -> Result<Pair, Error> {
     // Enrollment is minted first, so its deadline bounds the later server token.
     let deadline = expires(&enrollment)?;
     let pair = Pair {
-        node_id: node,
         enrollment_token: enrollment["token"].as_str().ok_or_else(failed)?.into(),
         server_token: format!(
             "{access}.{}",
@@ -197,7 +200,7 @@ fn mint_pair(host: &mut impl Host, node: u64) -> Result<Pair, Error> {
             .format(&time::format_description::well_known::Rfc3339)
             .map_err(|_| failed())?,
     };
-    pair.validate(node, time::OffsetDateTime::now_utc().unix_timestamp())?;
+    pair.validate(time::OffsetDateTime::now_utc().unix_timestamp())?;
     Ok(pair)
 }
 pub struct Issue;
@@ -276,7 +279,7 @@ mod tests {
             expires,
         };
         let pair = mint_pair(&mut host, 71).unwrap();
-        assert_eq!(pair.node_id, 71);
+        assert!(pair.enrollment_token.starts_with("orbit-node-71."));
         let text = serde_json::to_string(&host.calls).unwrap();
         assert!(!text.contains("enrollmentSentinel"));
         assert!(!text.contains("serverSentinel"));
@@ -289,7 +292,7 @@ mod tests {
         let input = method.iter().position(|a| a == "--input").unwrap() + 1;
         let value: serde_json::Value = serde_json::from_str(&method[input]).unwrap();
         assert_eq!(value["principalId"], "worker:orbit-node-71");
-        assert_eq!(value["vaultName"], "orbit-node-access");
+        assert_eq!(value["vaultName"], "orbit-worker-enrollment");
         assert_eq!(value["durationMs"], 14400000);
         let entry = crate::command::registry::find("swamp.issue-node-worker").unwrap();
         let result = (entry.run)(

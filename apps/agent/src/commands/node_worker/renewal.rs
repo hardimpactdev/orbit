@@ -14,9 +14,9 @@ fn existing(files: &Files) -> Result<Option<Pair>, Error> {
         .map(Some)
         .map_err(|_| invalid())
 }
-async fn fetch(node: u64) -> Result<Pair, Error> {
+async fn fetch() -> Result<Pair, Error> {
     let config = crate::Config::load().map_err(|_| failed())?;
-    if config.swamp_worker_node_id != Some(node) {
+    if !config.swamp_worker {
         return Err(invalid());
     }
     let secret = crate::AgentSecret::load(crate::SECRET_PATH).map_err(|_| failed())?;
@@ -41,7 +41,7 @@ async fn fetch(node: u64) -> Result<Pair, Error> {
         bytes.extend_from_slice(&chunk);
     }
     let pair: Pair = serde_json::from_slice(&bytes).map_err(|_| failed())?;
-    pair.validate(node, time::OffsetDateTime::now_utc().unix_timestamp())?;
+    pair.validate(time::OffsetDateTime::now_utc().unix_timestamp())?;
     Ok(pair)
 }
 fn activate(files: &Files, host: &mut impl Host, pair: &Pair) -> Result<(), Error> {
@@ -68,22 +68,10 @@ pub(super) fn rotate(
     files: &Files,
     host: &mut impl Host,
     clock: impl Fn() -> i64,
-    obtain: impl FnOnce(u64) -> Result<Pair, Error>,
+    obtain: impl FnOnce() -> Result<Pair, Error>,
 ) -> Result<(), Error> {
     let now = clock();
-    owned_file(files, &format!("{ROOT}/node-id"), 0o600)?;
-    let node: u64 = fs::read_to_string(files.path(&format!("{ROOT}/node-id")))
-        .map_err(|_| invalid())?
-        .trim()
-        .parse()
-        .map_err(|_| invalid())?;
-    if node == 0 {
-        return Err(invalid());
-    }
     let pair = existing(files)?;
-    if pair.as_ref().is_some_and(|p| p.node_id != node) {
-        return Err(invalid());
-    }
     let state = call(
         host,
         &[
@@ -97,22 +85,35 @@ pub(super) fn rotate(
     let fresh = pair
         .as_ref()
         .is_some_and(|p| p.expires().is_ok_and(|expiry| expiry - now > 7200));
+    let crash_loop = fresh
+        && matches!(state.trim(), "active" | "activating")
+        && call(
+            host,
+            &["systemctl", "show", UNIT, "--property=NRestarts", "--value"],
+        )?
+        .trim()
+        .parse::<u64>()
+        .map_err(|_| failed())?
+            >= 3;
     match state.trim() {
-        "active" | "activating" if fresh => return Ok(()),
+        "active" | "activating" if fresh && !crash_loop => return Ok(()),
         "active" | "activating" => {
             // Native Swamp drains on its first SIGTERM. Never force-kill a step.
             call(host, &["systemctl", "stop", "--no-block", UNIT])?;
+            if crash_loop {
+                fs::remove_file(files.path(BUNDLE)).map_err(|_| failed())?;
+            }
             return Ok(());
         }
         "deactivating" => return Ok(()),
         "inactive" | "failed" => (),
         _ => return Err(failed()),
     }
-    let pair = if fresh {
+    let pair = if fresh && state.trim() == "inactive" {
         pair.ok_or_else(invalid)?
     } else {
-        let next = obtain(node)?;
-        next.validate(node, clock())?;
+        let next = obtain()?;
+        next.validate(clock())?;
         files
             .publish(
                 &files.path(BUNDLE),
@@ -152,12 +153,12 @@ impl orbit_agent_contract::Service for Service {
             &files,
             &mut recipe::Native(&context),
             || time::OffsetDateTime::now_utc().unix_timestamp(),
-            |node| {
+            || {
                 tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()
                     .map_err(|_| failed())?
-                    .block_on(fetch(node))
+                    .block_on(fetch())
             },
         );
         i32::from(result.is_err())
