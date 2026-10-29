@@ -13,6 +13,10 @@ use App\Actions\Processes\StartProcessAction;
 use App\Actions\Processes\StopProcessAction;
 use App\Actions\Processes\UpdateProcessAction;
 use App\Data\Operations\OperationData;
+use App\Data\Processes\ProcessData;
+use App\Domain\Processes\ProcessRuntimeManager;
+use App\Domain\Processes\ProcessSwampSafety;
+use App\Domain\Processes\ProcessTargetResolver;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
@@ -31,6 +35,8 @@ use SensitiveParameter;
 #[RequiresNodeAccess(ServingNode::ProcessOwning)]
 final class ProcessesController extends Controller
 {
+    public function __construct(private readonly ProcessSwampSafety $safety, private readonly ProcessTargetResolver $targets, private readonly ProcessRuntimeManager $runtime) {}
+
     public function index(ListProcessesRequest $request, ListProcessesAction $action): JsonResponse
     {
         $processes = $request->hasTarget()
@@ -46,30 +52,53 @@ final class ProcessesController extends Controller
     #[StartsOperation('process.create')]
     public function store(StoreProcessRequest $request, CreateProcessAction $action): JsonResponse
     {
-        return $this->operationResponse($request, $action->admit($request->payload(), $this->caller($request), $request->attributes->getString('orbit.request_id')));
+        $data = $request->payload();
+        if ($this->safety->requiresSynchronous($this->targets->resolve($data->targetType, $data->targetId)->node)) {
+            $result = $action->execute($data);
+
+            return $this->processResponse($request, $result['process'], $result['created'] ? 201 : 200);
+        }
+
+        return $this->operationResponse($request, $action->admit($data, $this->caller($request), $request->attributes->getString('orbit.request_id')));
     }
 
     #[StartsOperation('process.update')]
     public function update(UpdateProcessRequest $request, Process $process, UpdateProcessAction $action): JsonResponse
     {
+        if ($this->synchronous($process)) {
+            return $this->processResponse($request, $action->execute($process, $request->updates()));
+        }
+
         return $this->operationResponse($request, $action->admit($process, $request->updates(), $this->caller($request), $request->attributes->getString('orbit.request_id')));
     }
 
     #[StartsOperation('process.start')]
     public function start(Request $request, Process $process, StartProcessAction $action): JsonResponse
     {
+        if ($this->synchronous($process)) {
+            return $this->processResponse($request, $action->execute($process));
+        }
+
         return $this->operationResponse($request, $action->admit($process, $this->caller($request), $request->attributes->getString('orbit.request_id')));
     }
 
     #[StartsOperation('process.stop')]
     public function stop(Request $request, Process $process, StopProcessAction $action): JsonResponse
     {
+        if ($this->synchronous($process)) {
+            return $this->processResponse($request, $action->execute($process));
+        }
+
         return $this->operationResponse($request, $action->admit($process, $this->caller($request), $request->attributes->getString('orbit.request_id')));
     }
 
     #[StartsOperation('process.restart')]
     public function restart(Request $request, Process $process, RestartProcessAction $action): JsonResponse
     {
+        if ($this->synchronous($process)) {
+            return $this->processResponse($request, $action->execute($process));
+        }
+
         return $this->operationResponse($request, $action->admit($process, $this->caller($request), $request->attributes->getString('orbit.request_id')));
     }
 
@@ -95,7 +124,29 @@ final class ProcessesController extends Controller
     #[StartsOperation('process.destroy')]
     public function destroy(Request $request, string $process, DestroyProcessAction $action): JsonResponse
     {
-        return $this->operationResponse($request, $action->admit(Process::query()->findOrFail($process), caller: $this->caller($request), requestId: $request->attributes->getString('orbit.request_id')));
+        $record = Process::query()->findOrFail($process);
+        if ($this->synchronous($record)) {
+            $request->route()?->setParameter('process', $record);
+            $data = ProcessData::fromModel($record, 'absent')->toArray();
+            $action->execute($record);
+
+            return response()->json(['data' => $data, 'meta' => $this->meta($request)]);
+        }
+
+        return $this->operationResponse($request, $action->admit($record, caller: $this->caller($request), requestId: $request->attributes->getString('orbit.request_id')));
+    }
+
+    private function synchronous(Process $process): bool
+    {
+        return $this->safety->requiresSynchronous($this->targets->forInspection($process)->node);
+    }
+
+    private function processResponse(Request $request, #[SensitiveParameter] Process $process, int $status = 200): JsonResponse
+    {
+        return response()->json([
+            'data' => ProcessData::fromModel($process, $this->runtime->status($process))->toArray(),
+            'meta' => $this->meta($request),
+        ], $status);
     }
 
     private function operationResponse(Request $request, Operation $operation): JsonResponse

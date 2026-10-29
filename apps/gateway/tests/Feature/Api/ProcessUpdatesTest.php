@@ -20,6 +20,7 @@ beforeEach(function (): void {
         'name' => 'process-updates', 'status' => 'active', 'platform' => 'linux',
         'user' => 'orbit', 'wireguard_ip' => '10.44.0.3', 'public_ssh_host' => '192.0.2.3',
     ]));
+    config(['dependency_detection.services_node_id' => $this->node->id]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     $this->payload = [
         'target_type' => 'node', 'target_id' => $this->node->id, 'name' => 'cache',

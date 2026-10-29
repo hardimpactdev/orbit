@@ -14,8 +14,8 @@ use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
 use Orbit\Sdk\Requests\Processes\UpdateProcessRequest;
 use Orbit\Sdk\Requests\Projects\ListProcessDefinitionsRequest;
 use Orbit\Sdk\Requests\Projects\UpdateProcessDefinitionRequest;
-use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Orbit\Sdk\Responses\Processes\ProcessesResponse;
+use Orbit\Sdk\Responses\Processes\ProcessMutationResponse;
 use Orbit\Sdk\Responses\Projects\ProjectRuntimeDefinitionResponse;
 use Orbit\Sdk\Responses\Projects\ProjectRuntimeDefinitionsResponse;
 
@@ -223,10 +223,10 @@ final class UpdateProcessCommand extends ProcessCommand
                     restartOnDeploy: $this->option('no-restart-on-deploy') === true ? false : null,
                     idempotencyKey: is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null,
                 ),
-                OperationResponse::class, );
+                ProcessMutationResponse::class, );
 
-            return $response instanceof OperationResponse
-                ? $this->finishOperation($connector, $repository, $response, 'Update Process') : self::FAILURE;
+            return $response instanceof ProcessMutationResponse
+                ? $this->finishMutation($connector, $repository, $response, 'Update Process', 'updated') : self::FAILURE;
         }
         if ($this->option('no-restart-on-deploy') === true) {
             return $this->renderGatewayFailure('process.option_invalid', 'Project definitions do not accept --no-restart-on-deploy.');

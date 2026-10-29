@@ -7,7 +7,7 @@ namespace App\Commands\Processes;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Responses\Operations\OperationResponse;
+use Orbit\Sdk\Responses\Processes\ProcessMutationResponse;
 
 abstract class ProcessActionCommand extends ProcessCommand
 {
@@ -27,13 +27,13 @@ abstract class ProcessActionCommand extends ProcessCommand
             return self::FAILURE;
         }
 
-        $process = $this->send($connector, $this->request($processId), OperationResponse::class);
+        $process = $this->send($connector, $this->request($processId), ProcessMutationResponse::class);
 
-        if (! $process instanceof OperationResponse) {
+        if (! $process instanceof ProcessMutationResponse) {
             return self::FAILURE;
         }
 
-        return $this->finishOperation($connector, $repository, $process, $this->progressLabels()[0]);
+        return $this->finishMutation($connector, $repository, $process, $this->progressLabels()[0], $this->pastTense());
     }
 
     abstract protected function request(int $processId): GatewayRequest;

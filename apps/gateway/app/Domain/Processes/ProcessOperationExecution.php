@@ -98,6 +98,7 @@ final readonly class ProcessOperationExecution implements OperationFamilyChildre
     {
         $process = Process::query()->whereKey($operation->target_id)->firstOrFail();
         $target = $operation->kind === 'process.destroy' ? $this->targets->forRemoval($process) : $this->targets->forInstallation($process);
+        app(ProcessSwampSafety::class)->assertAllowed($target->node);
         if ($operation->target_type !== 'process' || $process->id !== ($operation->input['process_id'] ?? null)
             || $target->node->id !== $operation->node_id || $process->runtime->value !== ($operation->input['runtime'] ?? null)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The Process placement changed after admission.', 409);

@@ -14,8 +14,10 @@ use Orbit\Sdk\Requests\Processes\RestartProcessRequest;
 use Orbit\Sdk\Requests\Processes\StartProcessRequest;
 use Orbit\Sdk\Requests\Processes\StopProcessRequest;
 use Orbit\Sdk\Requests\Processes\UpdateProcessRequest;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Orbit\Sdk\Responses\Processes\ProcessesResponse;
 use Orbit\Sdk\Responses\Processes\ProcessLogsResponse;
+use Orbit\Sdk\Responses\Processes\ProcessMutationResponse;
 use Orbit\Sdk\Responses\Processes\ProcessResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
@@ -35,7 +37,7 @@ describe('ProcessUser', function (): void {
         $envelope = process_envelope();
         $envelope['data']['user'] = 'svc-runner';
         $mock = new MockClient([CreateProcessRequest::class => MockResponse::make($envelope, 201)]);
-        $response = process_connector($mock)->send(new CreateProcessRequest(target: new NodeProcessTarget(4), name: 'worker', user: 'svc-runner'))->dto();
+        $response = process_connector($mock)->send(new CreateProcessRequest(target: new NodeProcessTarget(4), name: 'worker', user: 'svc-runner'))->dto()->result;
         expect($response)->toBeInstanceOf(ProcessResponse::class)
             ->and($response->user)->toBe('svc-runner')->and($response->toArray()['user'])->toBe('svc-runner');
     });
@@ -68,7 +70,7 @@ it('adds a process with the explicit minimal runtime contract', function (): voi
         restartPolicy: 'unless-stopped',
         start: true,
     );
-    $response = process_connector($mock)->send($request)->dto();
+    $response = process_connector($mock)->send($request)->dto()->result;
 
     expect($request->getMethod())
         ->toBe(Method::POST)
@@ -312,7 +314,7 @@ it('maps lifecycle and remove endpoints to one typed process response', function
     $mock = new MockClient([
         $request::class => MockResponse::make(process_envelope()),
     ]);
-    $response = process_connector($mock)->send($request)->dto();
+    $response = process_connector($mock)->send($request)->dto()->result;
 
     expect($request->getMethod())
         ->toBe($method)
@@ -446,7 +448,7 @@ it('transports the deploy restart setting and preserves false in the Process res
     $envelope = process_envelope();
     $envelope['data']['restart_on_deploy'] = false;
     $mock = new MockClient([CreateProcessRequest::class => MockResponse::make($envelope, 201)]);
-    $response = process_connector($mock)->send($create)->dto();
+    $response = process_connector($mock)->send($create)->dto()->result;
     expect($response->restartOnDeploy)->toBeFalse()->and($response->toArray()['restart_on_deploy'])->toBeFalse();
 });
 
@@ -503,3 +505,25 @@ it('preserves the Route listener refusal from a Process update', function (): vo
     }
     expect($mock->getLastRequest()?->body()->all())->toBe(['ports' => []]);
 });
+
+it('keeps accepted mutations as Operations instead of synchronous Process data', function (object $request): void {
+    $operation = ['id' => 91, 'kind' => 'process.stop', 'target_type' => 'process', 'target_id' => 12,
+        'status' => 'queued', 'sequence' => 1, 'input' => [], 'result' => null];
+    $mock = new MockClient([$request::class => MockResponse::make([
+        'data' => $operation, 'meta' => ['request_id' => process_request_id()],
+    ], 202)]);
+
+    $response = process_connector($mock)->send($request)->dto();
+
+    expect($response)->toBeInstanceOf(ProcessMutationResponse::class)
+        ->and($response->result)->toBeInstanceOf(OperationResponse::class)
+        ->and($response->result->id)->toBe(91)->and($response->result->status)->toBe('queued')
+        ->and($response->result->requestId)->toBe(process_request_id());
+})->with([
+    'create' => [new CreateProcessRequest(new NodeProcessTarget(4), 'helper')],
+    'update' => [new UpdateProcessRequest(12, keepAlive: true)],
+    'start' => [new StartProcessRequest(12)],
+    'stop' => [new StopProcessRequest(12)],
+    'restart' => [new RestartProcessRequest(12)],
+    'destroy' => [new DestroyProcessRequest(12)],
+]);
